@@ -31,8 +31,8 @@
  *   The LOCAL parse therefore never emits a `claude-code` window, and
  *   `SOURCE_CAPABILITIES` still states that capability truthfully. Claude
  *   windows that DO appear here arrived through ENG-038's separate
- *   credentialed source class (`origin: 'provider-account'`, the vendor's
- *   own account endpoint) — never from a local file, and never fabricated.
+ *   account source class (`origin: 'provider-account'`, read through the
+ *   operator's own `claude`) — never from a local file, and never fabricated.
  *   When that read is off or failing, the entries are simply absent again.
  * - Degenerate windows (`windowMinutes <= 0`) are discarded before the
  *   snapshot, but counted in `discardedDegenerateWindows` — dropped from use,
@@ -56,33 +56,45 @@ import { emptyDiagnostics } from './types';
 /**
  * ENG-038 — one provider's plan-account read, as carried on the snapshot.
  *
- * This is the OTHER source class beside the local parse: a credentialed,
- * remote, read-only fetch of the vendor's own account state (for Claude, the
- * endpoint Claude Code's `/usage` consults). Its windows enter
+ * This is the OTHER source class beside the local parse: a read-only ask of
+ * the vendor's own account state, made through the operator's own harness
+ * binary and sign-in (Claude: `claude -p "/usage"`; Codex: its app-server), so
+ * Exawatt holds no credential. Its windows enter
  * `LiveConsumptionSnapshot.planWindows` with `origin: 'provider-account'`
  * and flow through the same freshness rules; this record carries the
  * account-level facts that are not windows.
  *
  * Honesty rules:
- * - `unavailable` (endpoint failed, token expired, schema drifted) presents
- *   as ABSENCE downstream, never as an error state, and any windows still on
- *   the snapshot keep their true (old) `observedAt` for the freshness rule
- *   to judge.
+ * - `unavailable` (the read failed, or its answer was not understood) never
+ *   presents as zero or as a fresh figure: any windows still on the snapshot
+ *   keep their true (old) `observedAt` for the freshness rule to judge, and
+ *   `failure` names why when the source knows.
  * - `disabled` means the operator switched the read off: nothing is fetched
  *   and no windows from this account ride the snapshot at all.
- * - `unconfigured` means THIS BUILD holds no grant to make the read (the
- *   distribution declares no stable signed identity, BUG-060), so there is
- *   no switch for the operator to have turned. It is never presented as the
- *   operator's own choice; Settings shows the same fact as "Not configured
- *   in this build" (BUG-149).
  * - `spend` is the vendor's usage-credit figure (the spend-class dimension,
  *   captured for the model; deliberately no UI in ENG-038 slice 1).
  */
-export type ProviderPlanAccountStatus =
-  | 'ok'
-  | 'unavailable'
-  | 'disabled'
-  | 'unconfigured';
+export type ProviderPlanAccountStatus = 'ok' | 'unavailable' | 'disabled';
+
+/**
+ * Why the last account read produced nothing (ENG-038 slice 3). Each is its
+ * own fact, so the surface can say which one instead of one blanket failure:
+ *
+ * - `not-installed`  the harness binary was not found.
+ * - `no-plan`        the harness ran but reported no plan limits: it is
+ *                    signed out, or signed in with an API key rather than a
+ *                    subscription.
+ * - `timed-out`      the harness did not answer in time.
+ * - `exited`         the harness stopped with an error.
+ * - `unrecognized`   the harness answered in a format Exawatt does not know.
+ *                    Never read as zero.
+ */
+export type PlanAccountFailureCause =
+  | 'not-installed'
+  | 'no-plan'
+  | 'timed-out'
+  | 'exited'
+  | 'unrecognized';
 
 /** Vendor-reported usage-credit spend, in minor currency units. */
 export interface ProviderPlanSpend {
@@ -131,6 +143,9 @@ export interface PlanCreditBalance {
 export interface ProviderPlanAccountState {
   source: ConsumptionSourceId;
   status: ProviderPlanAccountStatus;
+  /** Why the latest read failed. Absent while reads succeed and when the
+   *  source cannot say. Never persisted: the next read decides it afresh. */
+  failure?: PlanAccountFailureCause;
   /** ISO 8601 instant of the last SUCCESSFUL fetch; null before one. */
   observedAt: string | null;
   /** The account's own plan identity, e.g. `max`. */

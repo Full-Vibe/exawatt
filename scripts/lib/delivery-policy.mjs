@@ -752,7 +752,6 @@ export const SURFACE_GATES = [
     // needs no dev server, so the floor can run it unattended.
     match: file =>
       file.startsWith('packages/core/src/distribution/') ||
-      file === 'electron/main/consumption/claude-plan-account.ts' ||
       file === 'scripts/lib/packaged-app.mjs' ||
       file === 'scripts/community-network-observatory.mjs',
   },

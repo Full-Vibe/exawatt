@@ -12,6 +12,13 @@ module merged behind the same IPC seam.
 
 ## 1. Slice 1 — Claude plan-window visibility (landed 2026-08-11)
 
+> **Superseded in part 2026-10-04 by slice 3** (see the milestone log). The
+> endpoint, Keychain custody, signed-transport identity and distribution gate
+> described in this section are deleted; the Claude read now runs the
+> operator's own `claude -p "/usage"`. What follows is the history of slice 1
+> as it stood, kept because the reconnaissance, the chat-usage decision, the
+> refresh policy and the off switch still hold.
+
 Operator pull, same day: claude.ai/settings/usage showed rich plan truth
 (Max 20x — session %, weekly all-models %, weekly per-model %, resets, usage
 credits) while Exawatt's Usage popover said "No plan record on disk —
@@ -56,6 +63,10 @@ fix is the vendor read this item was created for.
   presented as fresh.
 
 ### Credential custody
+
+*Superseded 2026-10-04 (slice 3): Exawatt no longer reads Claude Code's
+Keychain item at all, and the "never refreshed" and "never sent expired"
+rules are moot because no token is held.*
 
 The token is the one Claude Code itself already holds on this machine:
 macOS Keychain, service **`Claude Code-credentials`**, a JSON payload whose
@@ -259,3 +270,81 @@ Verified live: the production Codex reader, run against the installed
 codex-cli 0.158.0, returned the Pro week at 45%, three resets expiring
 2026-10-05, 10-22 and 10-29 (UTC), and the credit balance.
 
+
+### Slice 3 — Claude plan usage through Claude Code's own `/usage` (2026-10-04)
+
+Replaces slice 1's custody. The Keychain item cannot be approved once (Claude
+Code rewrites `Claude Code-credentials` on each refresh and resets its partition
+list), the read went through `/usr/bin/security`, and Anthropic's terms forbid
+intermediating Claude.ai credentials. The operator wanted one durable
+connection and no change to anyone's Claude install.
+
+**Mechanism.** `ClaudePlanAccountService` now supplies a reader that runs the
+operator's own `claude -p "/usage" --no-session-persistence --output-format
+json` through their login shell (so it is found where their terminal finds it),
+from Exawatt's scratch directory, with `DISABLE_AUTOUPDATER=1`, a 45 second
+limit and the process group killed on timeout. The reader parses the envelope's
+`result` text. Zero turns, zero cost, no session file (checked: nothing under
+`~/.claude/projects`).
+
+**Real output, captured 2026-10-04 on Claude Code 2.1.289**, pinned in
+`electron/main/consumption/claude-usage.fixtures.ts`:
+
+- Signed in (Max): `Current session: 4% used · resets Oct 4 at 7pm
+  (America/Los_Angeles)`, `Current week (all models): 92% used · …`, `Current
+  week (Fable): 58% used · …`, then free-text contributing sections. Resets
+  print minutes only when non-zero ("7pm", "6:59pm").
+- Signed out (scratch `CLAUDE_CONFIG_DIR`; `claude auth status` said
+  `loggedIn: false`): exit 0, `is_error: false`, and only a cost summary
+  (`Total cost: $0.0000 …`). An API-key session prints the same, so the cause is
+  `no-plan`, not "signed out".
+
+**Parser.** Line grammar `Current (session|week)( (scope))?: N% used( · resets
+…)?`; the model scope is whatever is printed (`Fable`, `Sonnet only`, a future
+name), slugged to the same `claude-weekly-*` ids slice 1 used so pace history
+continues. The printed IANA zone and date resolve to an absolute instant by
+`Intl`, judging the year in that zone and rolling to the next year when the
+date lands more than a day behind the read. A `Current …` line the grammar
+cannot read fails the whole report. Unknown zones, impossible dates, out-of-range
+percentages and duplicate limits are each unrecognized, never guessed.
+
+**States.** `ProviderPlanAccountState.failure`: `not-installed` (exit 127 or the
+shell's "command not found"), `no-plan`, `timed-out`, `exited` (non-zero exit,
+`is_error`, or a process that would not start), `unrecognized`. The Usage card
+says "Couldn't read plan limits." plus the reason; the last good windows keep
+their true observed time and drop out once their reset passes. The cause is not
+persisted. The account statuses are now `ok | unavailable | disabled`.
+
+**Deleted.** The Keychain read and token types, the usage-endpoint request, the
+redirect/expiry rules, `isClaudePlanRemoteReadAllowed`, `remoteReadAllowed` and
+the `unconfigured` status through the renderer, the capability projection and
+`requiresDistributionCapability` value, the "Not configured in this build"
+Privacy row state, the `eval:community:network` own-account assertion,
+`EXAWATT_DEV_CLAUDE_PLAN_NETWORK`, and `distribution:custody:upgrade`. A
+reintroduction guard in `claude-plan-account.test.ts` scans source for the
+retired tokens.
+
+**`ownAccount` decision.** Nothing else read it (Codex was never gated). The
+resolved contract drops it. Schema 2 still accepts and validates the key, now
+optional (published `contracts/distribution/v2/schema.json` loosened, backward
+compatible), because stored copies of the official contract sit in Vercel, a
+GitHub secret and operator custody; schema 1 is unchanged. No schema 3.
+
+**Evidence.** Unit and fixture suite (101 tests) with mutation checks (year roll,
+partial-line tolerance, reintroduced Keychain token, removed throttle, dropped
+cause, ungated disabled read each fail a test). The production runner was run
+against the operator's real `claude` through their fish login shell: three real
+windows in about 4.4 s. In a headless Electron launch against this worktree's
+dev server with an isolated user-data directory, turning the Privacy switch on
+produced the real session, week and Fable windows with absolute resets and the
+Usage card rendered them; turning it off served `status: disabled` and no
+windows. Not run: an installed (signed) build, since the dev build is community.
+
+**Recorded losses.** `/usage` states no plan tier (the card no longer says "Max
+20x"; `claude auth status` reports `subscriptionType` without a token and is a
+candidate), and it printed no extra-usage spend on 2026-10-04 although the
+operator's account had it enabled in August, so the Claude spend lane is absent
+until a format carrying it is seen.
+
+**Naming.** The demo arc's G4 / ENG-008 E16 Google read was labelled "ENG-038
+slice 3"; it is now slice 4.

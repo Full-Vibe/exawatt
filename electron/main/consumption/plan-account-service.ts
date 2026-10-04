@@ -4,15 +4,15 @@
  * Every credentialed or harness-protocol account read has the same life: a
  * throttled fetch that never blocks a snapshot, a last-known state persisted
  * for warm launches, a bounded history of observations so pace is
- * observable, an operator off switch, and a build-level grant. This class is
+ * observable, and an operator off switch. This class is
  * that life; a vendor supplies only its `read` (Claude: the usage endpoint
- * behind Claude Code's own Keychain sign-in; Codex: its own app-server). A
+ * through the operator's own `claude` binary; Codex: its own app-server). A
  * future Agent Source plugin adds an account the same way.
  *
- * Failure semantics: absence, never an error state. A failed read leaves the
- * last successful observation in place with its TRUE `observedAt` (the
- * renderer's freshness rule and the account card's as-of judge it) and marks
- * the account `unavailable`.
+ * Failure semantics: never zero, never fresh. A failed read leaves the last
+ * successful observation in place with its TRUE `observedAt` (the renderer's
+ * freshness rule and the account card's as-of judge it), marks the account
+ * `unavailable`, and carries the reader's named cause when it gave one.
  *
  * Persistence holds last-known state only, never credential material.
  */
@@ -23,6 +23,7 @@ import {
   WindowObservationAccumulator,
   derivePlanWindowRates,
   type ConsumptionSourceId,
+  type PlanAccountFailureCause,
   type PlanCreditBalance,
   type PlanResets,
   type PlanWindow,
@@ -46,8 +47,22 @@ export interface PlanAccountRead {
   credits?: PlanCreditBalance;
 }
 
-/** Resolves null when the account could not be read this time. */
-export type PlanAccountReader = () => Promise<PlanAccountRead | null>;
+/** A read that failed for a reason the source can name. */
+export interface PlanAccountReadFailure {
+  failure: PlanAccountFailureCause;
+}
+
+/** Resolves null (cause unknown) or a named failure when the account could
+ *  not be read this time. */
+export type PlanAccountReader = () => Promise<
+  PlanAccountRead | PlanAccountReadFailure | null
+>;
+
+function isReadFailure(
+  read: PlanAccountRead | PlanAccountReadFailure | null
+): read is PlanAccountReadFailure {
+  return read !== null && 'failure' in read;
+}
 
 export interface PlanAccountView {
   windows: PlanWindow[];
@@ -74,11 +89,6 @@ interface PlanAccountServiceOptions {
   stateLabel: string;
   /** Seeded from settings; `setEnabled` applies the toggle live. */
   enabled: boolean;
-  /**
-   * Immutable runtime capability: false when this build holds no grant to
-   * make the read at all, so a settings write cannot open it (BUG-060).
-   */
-  remoteReadAllowed?: boolean;
   read: PlanAccountReader;
   /** Re-reads a saved window in the current meaning (schema moves). */
   migrateWindow?: (window: PlanWindow) => PlanWindow;
@@ -155,7 +165,6 @@ export class PlanAccountService implements PlanAccountSource {
   private readonly now: () => number;
   private readonly minFetchIntervalMs: number;
   private readonly jitterMs: number;
-  private readonly remoteReadAllowed: boolean;
 
   private preferenceEnabled: boolean;
   private last: Omit<PersistedPlanState, 'version' | 'observations'> = {
@@ -166,6 +175,8 @@ export class PlanAccountService implements PlanAccountSource {
   };
   private observations = new WindowObservationAccumulator();
   private available = false;
+  /** Why the latest read failed; null while reads succeed. Not persisted. */
+  private failure: PlanAccountFailureCause | null = null;
   private revision = 0;
   private nextAllowedAtMs = 0;
   private inFlight: Promise<void> | null = null;
@@ -184,7 +195,6 @@ export class PlanAccountService implements PlanAccountSource {
     this.stateFileName = options.stateFileName;
     this.watch = new UnreadableStateWatch(this.stateFile, options.stateLabel);
     this.preferenceEnabled = options.enabled;
-    this.remoteReadAllowed = options.remoteReadAllowed ?? true;
     this.read = options.read;
     this.migrateWindow = options.migrateWindow ?? (window => window);
     this.now = options.now ?? Date.now;
@@ -195,13 +205,11 @@ export class PlanAccountService implements PlanAccountSource {
   }
 
   private get enabled(): boolean {
-    return this.preferenceEnabled && this.remoteReadAllowed;
+    return this.preferenceEnabled;
   }
 
   /** Current state, synchronously. Disabled serves ABSENCE (no windows, no
-   *  rates) while persisted state stays on disk for a later re-enable. A
-   *  build with no grant says so as its own status (BUG-149): the capability
-   *  fact and the operator's preference are two different facts. */
+   *  rates) while persisted state stays on disk for a later re-enable. */
   view(): PlanAccountView {
     if (!this.enabled) {
       return {
@@ -210,7 +218,7 @@ export class PlanAccountService implements PlanAccountSource {
         rates: {},
         account: {
           source: this.source,
-          status: this.remoteReadAllowed ? 'disabled' : 'unconfigured',
+          status: 'disabled',
           observedAt: null,
           planType: null,
           spend: null,
@@ -227,6 +235,7 @@ export class PlanAccountService implements PlanAccountSource {
       account: {
         source: this.source,
         status: this.available ? 'ok' : 'unavailable',
+        ...(this.failure ? { failure: this.failure } : {}),
         observedAt: last.observedAt,
         planType: last.planType,
         spend: last.spend,
@@ -288,10 +297,21 @@ export class PlanAccountService implements PlanAccountSource {
     if (this.unreadable && this.loadPersisted()) this.bump();
     const read = await this.read().catch(() => null);
     if (this.disposed || !this.enabled) return;
-    if (!read || (read.windows.length === 0 && !read.spend && !read.resets)) {
-      // Failure, or schema drift into nothing: absence, with the previous
-      // observation kept at its true age for freshness to judge.
-      this.markUnavailable();
+    if (
+      !read ||
+      isReadFailure(read) ||
+      (read.windows.length === 0 && !read.spend && !read.resets)
+    ) {
+      // A failure, or an answer with nothing in it: the previous observation
+      // is kept at its true age for freshness to judge, and the account says
+      // it could not be read. An empty answer is never a zero reading.
+      this.markUnavailable(
+        read === null
+          ? null
+          : isReadFailure(read)
+            ? read.failure
+            : 'unrecognized'
+      );
       return;
     }
     const observedAt = new Date(this.now()).toISOString();
@@ -305,14 +325,17 @@ export class PlanAccountService implements PlanAccountSource {
       ...(read.credits ? { credits: read.credits } : {}),
     };
     this.available = true;
+    this.failure = null;
     for (const window of read.windows) this.observations.addWindow(window);
     this.persist();
     this.bump();
   }
 
-  private markUnavailable(): void {
-    if (!this.available) return; // already absent: nothing changed
+  private markUnavailable(cause: PlanAccountFailureCause | null): void {
+    // Nothing changed when the account was already unreadable for this cause.
+    if (!this.available && this.failure === cause) return;
     this.available = false;
+    this.failure = cause;
     this.bump();
   }
 

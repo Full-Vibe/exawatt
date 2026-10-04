@@ -232,12 +232,14 @@ describe('Apache compatibility contracts', () => {
     }
   });
 
-  // BUG-060. V2 is the version this build emits, and V1 is still accepted so
-  // that stored copies of the official contract keep working while their
-  // custodians rewrite them. Both halves of that have to be true of the
-  // published schema as well as of the runtime parser, or the compatibility
-  // surface is describing a client that no longer exists.
-  it('publishes V2 and keeps V1 readable as an ownAccount-free upgrade', async () => {
+  // BUG-060, retired by ENG-038 slice 3. V2 is the version this build emits
+  // and V1 is still accepted, so stored copies of the official contract keep
+  // working. V2's `ownAccount` is retired: still accepted and validated when a
+  // stored copy carries it, never required, never produced, never read. Both
+  // halves have to be true of the published schema as well as of the runtime
+  // parser, or the compatibility surface describes a client that no longer
+  // exists.
+  it('publishes V2, accepts its retired ownAccount key and keeps V1 readable', async () => {
     const validator = ajv();
     const v2 = validator.compile(
       await json<AnySchema>(`${CONTRACT_ROOT}distribution/v2/schema.json`)
@@ -260,35 +262,38 @@ describe('Apache compatibility contracts', () => {
     expect(parseDistributionContract(community)).toEqual(
       COMMUNITY_DISTRIBUTION
     );
+    // A stored copy that still declares the retired key is valid under both
+    // the schema and the parser, and the resolved contract does not carry it.
+    expect(custom).toHaveProperty('ownAccount');
     expect(v2(custom), formatErrors(v2.errors)).toBe(true);
-    expect(parseDistributionContract(custom).ownAccount).toEqual({
-      claudePlanUsage: 'stable-signed',
-    });
+    expect(parseDistributionContract(custom)).not.toHaveProperty('ownAccount');
+    expect(parseDistributionContract(community)).not.toHaveProperty(
+      'ownAccount'
+    );
 
-    // Only 'stable-signed' declares the capability; nothing else does.
+    // The retired key is still held to its old shape.
     expect(v2(invalidOwnAccount)).toBe(false);
     expect(() => parseDistributionContract(invalidOwnAccount)).toThrow();
 
-    // Exact-key strictness is PER VERSION. Neither schema accepts the other's
-    // key set, and neither does the parser.
+    // Exact-key strictness is PER VERSION. V1 never knew `ownAccount`, so a V1
+    // document carrying it is invalid to the schema and to the parser, and
+    // the retired key does not widen V1.
     const v1Fixture = await json<JsonObject>(
       `${CONTRACT_ROOT}distribution/v1/fixtures/custom-distributor.json`
     );
-    expect(v2({ ...v1Fixture, schemaVersion: 2 })).toBe(false);
-    expect(() =>
-      parseDistributionContract({ ...v1Fixture, schemaVersion: 2 })
-    ).toThrow();
+    expect(v2({ ...v1Fixture, schemaVersion: 2 })).toBe(true);
+    expect(parseDistributionContract({ ...v1Fixture, schemaVersion: 2 })).toEqual(
+      parseDistributionContract(v1Fixture)
+    );
     expect(v1({ ...custom, schemaVersion: 1 })).toBe(false);
     expect(() =>
       parseDistributionContract({ ...custom, schemaVersion: 1 })
     ).toThrow();
 
-    // A V1 document is accepted by the V1 schema and by the runtime, and the
-    // runtime upgrade withholds the capability rather than inventing it.
+    // A V1 document is accepted by the V1 schema and by the runtime.
     expect(v1(v1Fixture), formatErrors(v1.errors)).toBe(true);
     expect(parseDistributionContract(v1Fixture)).toMatchObject({
       schemaVersion: 2,
-      ownAccount: null,
     });
   });
 

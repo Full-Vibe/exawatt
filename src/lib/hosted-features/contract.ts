@@ -98,7 +98,6 @@ export interface OutboundControl {
     | 'enrichment.conversationSummaries'
     | 'enrichment.goalVisuals'
     | 'services.operatorStats'
-    | 'ownAccount.claudePlanUsage'
     | 'analytics'
     | null;
 }
@@ -187,16 +186,17 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     purpose:
       'Shows your Claude session and weekly limits in the Usage meter and page.',
     sends:
-      'Nothing from your machine. One read-only usage request, authorized by the sign-in Claude Code already keeps in your Keychain. The credential is read in place, never stored or copied.',
+      'Nothing from Exawatt. Your own claude app asks your Claude account for its usage, under the sign-in Claude Code already keeps. Exawatt never reads that sign-in.',
     destination:
       'Anthropic, through your own Claude Code sign-in, never Exawatt',
     cost: 'Claude shows no plan windows here; local token counts stay.',
     defaultEnabled: true,
-    // Unlike the recap, this request leaves through Exawatt's OWN Chromium
-    // network stack, so it carries this build's signing identity. Only a
-    // distribution that declares a stable signed one may make it
-    // automatically (BUG-060, decision `0036` §6).
-    requiresDistributionCapability: 'ownAccount.claudePlanUsage',
+    // Genuinely null since ENG-038 slice 3 (2026-10-04): the request is made
+    // by the operator's own `claude` binary under its own firewall identity,
+    // never under Exawatt's signature, so no distribution declaration gates
+    // it. Before slice 3 it left through Exawatt's own Chromium stack with a
+    // Keychain token and was gated on a distribution declaration (BUG-060).
+    requiresDistributionCapability: null,
   },
   codexPlanWindows: {
     id: 'codexPlanWindows',

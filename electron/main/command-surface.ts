@@ -6,10 +6,7 @@ import { registerAnalyticsIPC } from './analytics-ipc';
 import { createElectronAuthCookies } from './auth-cookies';
 import type { ElectronAuthCoordinator } from './auth-coordinator';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
-import {
-  ClaudePlanAccountService,
-  isClaudePlanRemoteReadAllowed,
-} from './consumption/claude-plan-account';
+import { ClaudePlanAccountService } from './consumption/claude-plan-account';
 import { CodexPlanAccountService } from './consumption/codex-plan-account';
 import { ProviderPlanCompositeSource } from './consumption/provider-plan-composite';
 import { sampleRetentionPolicy } from './consumption/retention-policy';
@@ -277,8 +274,8 @@ export async function bootstrapCommandSurface(
     logPath: authLogPath,
   });
 
-  // Chromium's network stack, not Node's: the account and plan reads leave
-  // from the app's own signed identity (see the plan-account note below).
+  // Chromium's network stack, not Node's: the account reads leave from the
+  // app's own signed identity.
   const electronNetworkFetch: typeof fetch = (input, init) =>
     deps.electron.net.fetch(
       input instanceof URL ? input.toString() : input,
@@ -370,27 +367,14 @@ export async function bootstrapCommandSurface(
     {
       id: 'consumption',
       register: () => {
-        // ENG-038: the credentialed Claude plan-account read — a SIBLING of
-        // the scanner (the local parse stays credential- and network-free),
-        // merged behind the same IPC seam by the composite.
+        // ENG-038 slice 3: the Claude account, asked of the operator's own
+        // `claude` (`/usage`) under its own sign-in, merged behind the same
+        // IPC seam by the composite. Nothing leaves through Exawatt's network
+        // identity and Exawatt reads no credential, so no distribution grant
+        // applies; automated test launches still never start a process.
         const claudePlanAccount = new ClaudePlanAccountService({
           stateDir: path.join(userDataPath(), 'consumption-plan'),
-          enabled: isClaudePlanWindowsEnabled(loadSettings()),
-          // Chromium owns the request in installed builds, so Little Snitch
-          // sees a stable Developer ID instead of Node or an ad-hoc Electron
-          // helper. WHICH builds those are is the distribution's declaration,
-          // not `app.isPackaged` — an ad-hoc community package is packaged
-          // too (BUG-060, decision `0036` §6). Routine unpackaged and
-          // automated test launches stay local; the narrow override
-          // deliberately exercises this exact account integration.
-          remoteReadAllowed: isClaudePlanRemoteReadAllowed({
-            stableSignedIdentity:
-              distribution.ownAccount?.claudePlanUsage === 'stable-signed',
-            packaged: app.isPackaged,
-            testMode: deps.isTest,
-            developmentOptIn: deps.env.EXAWATT_DEV_CLAUDE_PLAN_NETWORK,
-          }),
-          fetchFn: electronNetworkFetch,
+          enabled: isClaudePlanWindowsEnabled(loadSettings()) && !deps.isTest,
         });
         runtime.claudePlanAccount = claudePlanAccount;
         // ENG-038 slice 2: the Codex account, asked of the operator's own

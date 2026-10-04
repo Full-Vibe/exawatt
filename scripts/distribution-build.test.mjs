@@ -49,9 +49,7 @@ test('a valid official overlay is canonicalized before Next', async () => {
   const prepared = await prepareDistribution({ root, inputJson });
   assert.equal(prepared.contract.brand.productName, 'Exawatt');
   assert.equal(prepared.contract.services.projects, null);
-  assert.deepEqual(prepared.contract.ownAccount, {
-    claudePlanUsage: 'stable-signed',
-  });
+  assert.equal('ownAccount' in prepared.contract, false);
 });
 
 test('a downstream distributor browser mark is projected from its contract-owned ICNS', async () => {
@@ -109,23 +107,36 @@ test('a prepared browser mark whose bytes drift is refused by its digest', async
   );
 });
 
-// BUG-060. Every stored copy of the official contract is a schema-1 document
-// until its custodian rewrites it, and those live in Vercel, a GitHub secret,
-// and an operator's home directory rather than in this repository. The build
-// must keep accepting them, and the upgrade must go the fail-safe way.
-test('a stored schema-1 official contract still builds, without the own-account grant', async () => {
+// BUG-060, retired by ENG-038 slice 3. Stored copies of the official contract
+// live in Vercel, a GitHub secret, and an operator's home directory rather
+// than in this repository, so each of these shapes has to keep building: the
+// schema-1 document, and the schema-2 document that still declares the
+// retired `ownAccount` key. Neither carries it into the prepared contract.
+test('a stored schema-1 official contract still builds', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
-  const { ownAccount, ...v1 } = JSON.parse(
-    await readFile(officialFixture, 'utf8')
-  );
-  assert.deepEqual(ownAccount, { claudePlanUsage: 'stable-signed' });
+  const v1 = JSON.parse(await readFile(officialFixture, 'utf8'));
   const prepared = await prepareDistribution({
     root,
     inputJson: JSON.stringify({ ...v1, schemaVersion: 1 }),
   });
   assert.equal(prepared.contract.schemaVersion, 2);
   assert.equal(prepared.contract.brand.productName, 'Exawatt');
-  assert.equal(prepared.contract.ownAccount, null);
+  assert.deepEqual(await readPreparedDistribution(root), prepared);
+});
+
+test('a stored schema-2 official contract with the retired ownAccount key still builds, without carrying it', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-distribution-'));
+  const v2 = JSON.parse(await readFile(officialFixture, 'utf8'));
+  const prepared = await prepareDistribution({
+    root,
+    inputJson: JSON.stringify({
+      ...v2,
+      ownAccount: { claudePlanUsage: 'stable-signed' },
+    }),
+  });
+  assert.equal(prepared.contract.brand.productName, 'Exawatt');
+  assert.equal('ownAccount' in prepared.contract, false);
+  assert.equal(prepared.canonical.includes('ownAccount'), false);
   assert.deepEqual(await readPreparedDistribution(root), prepared);
 });
 
@@ -329,7 +340,6 @@ test('operator custody is opt-in, fails loudly, and never downgrades', async t =
     },
     analytics: null,
     updates: null,
-    ownAccount: { claudePlanUsage: 'stable-signed' },
   });
   await writeFile(custody, official, { mode: 0o600 });
 

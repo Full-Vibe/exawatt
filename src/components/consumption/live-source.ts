@@ -167,6 +167,7 @@ export function accountReads(
       : null;
     out[account.source] = {
       status: account.status,
+      ...(account.failure ? { failure: account.failure } : {}),
       observedAtMs:
         observedAtMs === null || Number.isNaN(observedAtMs)
           ? null

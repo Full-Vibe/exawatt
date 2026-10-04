@@ -269,9 +269,10 @@ integrated affordances, both still provisional until the Friday checkpoint.
   `agy -p "/usage" --output-format json` through the account service, with
   the E12/E15 honesty rules: absent is never zero, and losing information never
   moves the headline the reassuring way.
-- **Operator prerequisite:** `pnpm distribution:custody:upgrade` and a release
-  before Tuesday, or the installed build keeps saying plan limits are not
-  available for Claude (BUG-060, operator half).
+- **Operator prerequisite: retired 2026-10-04.** ENG-038 slice 3 reads Claude
+  through its own `/usage` in every build, so `distribution:custody:upgrade`
+  and a release are no longer needed for the Claude windows. (This item's
+  Google read was "ENG-038 slice 3" when written; it is slice 4.)
 - **Do not touch:** the launcher, the harness registry.
 - **Acceptance:** the Usage page on the dogfood build shows Claude, Codex and
   Google cards with reset times, and a burn line that moves while agents work;
@@ -341,7 +342,8 @@ integrated affordances, both still provisional until the Friday checkpoint.
 - Say go.
 - Friday checkpoint: the lens landing state, the two affordances, the board
   look.
-- `pnpm distribution:custody:upgrade` and a release before Tuesday (the Claude
-  windows on Usage depend on it).
+- ~~`pnpm distribution:custody:upgrade` and a release before Tuesday (the Claude
+  windows on Usage depend on it).~~ Retired 2026-10-04: ENG-038 slice 3 needs
+  neither.
 - Be present for G3 step 0 if the signed-in `agy` run needs the Google account
   in a browser.

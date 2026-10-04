@@ -33,7 +33,7 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 | `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com`                                                                                        | Hosted feature                                   | On when signed in                                                                                                                                | Settings → Privacy → Conversation summaries                                                                                                                                                              |
 | `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media`                                                                                              | Hosted feature                                   | On when signed in                                                                                                                                | Settings → Privacy → Agent tile backgrounds                                                                                                                                                              |
 | `claude` CLI → `api.anthropic.com` (the **user's own** Claude Code sign-in)                                                                               | Own-account feature (re-entry recap)             | On                                                                                                                                               | Settings → Privacy → Since-you-left recaps; `EXAWATT_SUMMARIES=0`                                                                                                                                        |
-| Signed Exawatt Chromium network stack → `api.anthropic.com/api/oauth/usage` (the **user's own** Claude Code OAuth token, read in place from the Keychain) | Own-account feature (Claude plan usage, ENG-038) | On in packaged builds whose distribution declares `ownAccount.claudePlanUsage: 'stable-signed'`; off in community builds, development, and tests | Settings → Privacy → Claude plan usage (a build without the declaration shows "Not configured in this build" instead of a switch); focused integration testing only: `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1` |
+| `claude -p "/usage"` → Anthropic (the **user's own** Claude Code sign-in; Exawatt never reads it)                                                        | Own-account feature (Claude plan usage, ENG-038) | On, except automated test launches                                                                                                               | Settings → Privacy → Claude plan usage                                                                                                                                                                   |
 | `codex app-server` → OpenAI (the **user's own** Codex sign-in; Exawatt never reads it)                                                                   | Own-account feature (Codex plan usage, ENG-038)  | On, except automated test launches                                                                                                               | Settings → Privacy → Codex plan usage                                                                                                                                                                    |
 | `<project>.supabase.co`                                                                                                                                   | Account, sync, feedback, stats                   | On when signed in                                                                                                                                | Sign out; individual features listed below                                                                                                                                                               |
 | `<project>.supabase.co/storage/.../desktop-updates`                                                                                                       | App updates                                      | Always on in signed builds                                                                                                                       | No user switch (known gap)                                                                                                                                                                               |
@@ -377,49 +377,37 @@ rather than under hosted features.
   the environment override; `EXAWATT_SUMMARIZER_CMD` redirects the engine.
 
 A second own-account path exists since 2026-08-11 (ENG-038): **Claude plan
-usage** (`electron/main/consumption/claude-plan-account.ts`). Electron main
-issues a read-only `GET https://api.anthropic.com/api/oauth/usage` —
-the request Claude Code's own `/usage` command makes — authorized by the
-OAuth token Claude Code already stores in the macOS Keychain
-(`Claude Code-credentials`).
+usage** (`electron/main/consumption/claude-plan-account.ts`). Since 2026-10-04
+(slice 3) Electron main runs the operator's own `claude` binary through their
+login shell as `claude -p "/usage" --no-session-persistence --output-format
+json` with `DISABLE_AUTOUPDATER=1`, the same report Claude Code's `/usage`
+command prints. Claude Code makes the request to Anthropic under its own
+sign-in; Exawatt never reads a Claude credential, holds no token, and no
+request leaves through Exawatt's network identity, so no distribution
+declaration gates it. (Before slice 3 this read took Claude Code's OAuth token
+from the macOS Keychain and sent it to `api.anthropic.com/api/oauth/usage`
+through Exawatt's own Chromium stack; that path and its distribution gate are
+deleted.)
 
-- **Sent**: nothing from the machine beyond the request itself. No body, no
-  content, no paths — only the bearer token, to Anthropic, over TLS with
-  redirects refused so the token cannot leave `api.anthropic.com`.
-- **Received and kept**: plan-window percentages/resets and usage-credit
-  totals, cached locally under `userData/consumption-plan/`. The token is
-  read in place at request time and is never persisted, logged, or included
-  in any state — unit tests pin this.
+- **Sent**: nothing from Exawatt. The command asks for one local report; it
+  costs no turn and no money and saves no session.
+- **Received and kept**: the account's window percentages and reset times
+  (the printed zone and date resolved to an absolute instant), cached locally
+  under `userData/consumption-plan/claude-plan.json`. The report's free-text
+  sections are not read or kept. A failed or unrecognized read is never shown
+  as 0% or as fresh: the last good value stays at its true observed time, and
+  the card names the cause (no `claude`, signed out, timed out, stopped with
+  an error, or a report format Exawatt does not know).
 - **Purpose**: the Claude session/weekly rows in the Usage meter and `/usage`
   page — plan truth local files definitively lack.
-- **Default**: on (the operator-pulled feature; own-account default-on per
-  decision `0031`'s disclosure contract) in an installed build. Routine
-  unpackaged development and eval launches keep the remote read disabled:
-  Electron's downloaded development runtime is ad-hoc signed on macOS, so it
-  cannot present Little Snitch with Exawatt's durable Developer ID. A focused
-  integration run may opt in with `EXAWATT_DEV_CLAUDE_PLAN_NETWORK=1`.
-  Since 2026-08-17 (BUG-060) the grant is the distribution's own declaration,
-  `ownAccount.claudePlanUsage: 'stable-signed' | null` in schema V2, not
-  `app.isPackaged` — an ad-hoc community artifact is packaged too. Community
-  declares none, so a community build never makes this request automatically.
-  Packaging remains necessary as well: an unpackaged run built from an
-  official contract is still ad-hoc-signed Electron. A stored schema-1
-  contract is still accepted and reads as `ownAccount: null`, so a build from
-  one makes no automatic read until its custodian rewrites it.
+- **Default**: on, in every build. Automated test launches never run it, and a
+  machine with no Claude Code logs is never asked.
 - **Off**: Settings → Privacy → **Claude plan usage**
-  (`claudePlanWindows.enabled`), enforced at the boundary: off constructs no
-  request and the meter shows Claude as unmetered again. Exawatt never
-  refreshes the token; if Claude Code's token is expired, no request is made
-  at all.
-- **Cadence**: at most one request per ~5 minutes, and only while the app is
-  open with a consumption surface alive.
-- **Transport identity**: installed builds issue the request through
-  `electron.net.fetch`, the same Chromium network boundary used by desktop
-  authentication. The packaged app and helper are Developer ID signed as
-  Exawatt; the request does not use Node's global `fetch`. A community build
-  makes no automatic read; a distributor enables it only by declaring its own
-  stable signed identity in its distribution contract. That declaration is a
-  local capability, never Exawatt service authorization.
+  (`claudePlanWindows.enabled`), enforced at the boundary: off starts no
+  process and the meter shows Claude as unmetered again.
+- **Cadence**: at most one read per ~5 minutes, only while a consumption
+  surface is alive. A read analyses local session history and can take several
+  seconds of CPU on a large one, so it is never started more often.
 
 A third own-account path exists since 2026-09-29 (ENG-038 slice 2): **Codex
 plan usage** (`electron/main/consumption/codex-plan-account.ts`). Electron main
@@ -479,21 +467,20 @@ or event.
 - Host split: the same suite asserts the desktop `api_host` is the absolute
   hosted origin and never a loopback address.
 - Claude plan usage: `pnpm vitest run
-electron/main/consumption/claude-plan-account.test.ts`. The tests pin the
-  single host, refused redirects, the never-send-expired-token rule, the
-  token's absence from persisted state and the served view, and every failure
-  mode degrading to absence. They also pin the installed-vs-unpackaged runtime
-  boundary and prove a settings write cannot open the disabled dev path. OS4
-  adds the distribution-contract cases: ad-hoc packaged community remains
-  closed, while `stable-signed` exercises the Chromium transport.
+  electron/main/consumption/claude-plan-account.test.ts`, pinned to real
+  `/usage` output (signed in, signed out). It covers every unrecognized format
+  degrading to "couldn't read", each failure state as its own cause, the
+  throttle, the off switch, and a guard that fails if the Keychain read, its
+  endpoint, or the distribution gate is reintroduced.
 - Codex plan usage: `pnpm vitest run
   electron/main/consumption/codex-plan-account.test.ts`, pinned to a recorded
   answer from a real Pro account.
 - End to end: run a production build with the network inspector open, or watch
   the app's outbound connections in a firewall tool. The desktop app should
   show `exawatt.ai`, — when signed in and using hosted features — the Supabase
-  project host, and `api.anthropic.com` only from the Claude plan usage read
-  (or the `claude` CLI the recap spawns); no PostHog or fal hostname should
+  project host, and `api.anthropic.com` only from the `claude` CLI the recap
+  and the Claude plan usage read spawn (a separate program with its own
+  firewall identity, never Exawatt's); no PostHog or fal hostname should
   appear.
 
 ## Known gaps

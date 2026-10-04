@@ -50,7 +50,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-034 | Multiplayer and sharing                          | planned      | UNSHAPED pending a design pass — Docs-like permissions and sharing over ENG-027's Workspace scope.                                                                                     |
 | ENG-035 | Leaderboard and shareable stats                  | active-build | Agentmaxxing: opt-in public operator identity, multi-axis global ranks, activity graph, and shareable Runs.                                                                            |
 | ENG-037 | Cross-harness Session transfer                   | planned      | UNSHAPED pending a design pass — freeze a Session mid-work and reinflate it into another harness with one gesture.                                                                     |
-| ENG-038 | Provider consumption accounts                    | active-build | Slices 1–2 landed: Claude plan windows and the Codex account (windows, credits, banked resets) through one account service; other vendors and API billing remain.                 |
+| ENG-038 | Provider consumption accounts                    | active-build | Slices 1–3 landed: Claude plan windows (since slice 3, through Claude Code's own `/usage`) and the Codex account (windows, credits, banked resets) through one account service; other vendors and API billing remain. |
 | ENG-040 | Semantic agent search                            | planned      | UNSHAPED pending a design pass — reach the Agent by what it did, not by tab title, from `⌘K` and Fleet.                                                                                |
 | ENG-041 | Public defect communication                       | planned      | UNSHAPED pending a design pass — an industry-standard public way to collect, represent, and communicate defects, replacing the private backlog for outside readers. |
 | ENG-042 | Published research                               | planned      | UNSHAPED pending a design pass — publish the fleet's research and investigations as public articles or guides. |
@@ -126,11 +126,11 @@ Ordered work (packets G1 to G7 in `projects/demo-arc-execution.md`, Wave 3):
    landing moves queued to checking to landed on Team while it happens; an
    unreadable queue is "not shown", never "nothing queued".
 5. **G4 Usage: live burn and the Google account** (ENG-008 E16, ENG-038
-   slice 3): tokens per minute and dollars per hour now, per vendor, above
+   slice 4, renumbered 2026-10-04): tokens per minute and dollars per hour now, per vendor, above
    the cards; a Google card read from `agy -p "/usage" --output-format json`.
-   The E12/E15 honesty rules stand. Operator prerequisite: `pnpm
-   distribution:custody:upgrade` and a release, or the installed build keeps
-   showing no Claude windows (BUG-060, operator half).
+   The E12/E15 honesty rules stand. The Claude-window custody prerequisite
+   (`distribution:custody:upgrade`) was retired 2026-10-04: ENG-038 slice 3
+   reads Claude through its own `/usage` in every build.
 6. **G6 Future-state affordances** (ENG-033, ENG-044): Push to cloud (tab
    menu, demo pane chip) leads to `/cloud`, which names a Gemini managed
    environment (Gemini API managed agents, public preview) beside
@@ -867,7 +867,7 @@ Milestones:
 - E13 Live work velocity (planned; product-feedback `2986a19e`): add an honestly windowed/stale per-Agent throughput signal for “is work moving?”, never a productivity score and never zero for unreported sources.
 - E14 Operator power envelope (planned; product-feedback `4a720856`): measure whole-app power by regime, visibility, projection, motion, DPR, scale, and power source before adding explicit fidelity/cadence preferences.
 - E15 Usage as account bars (landed 2026-09-29; operator design pass in session, RESOLVES E12 — see the Amendment chain). Operator brief: "dramatically simplified … like the familiar usage bars the frontier model companies" ship, so he can "quickly pop open the usage page and multiplex across different vendors or accounts and see where my usage is and my burn", pacing a fleet against two different weekly resets without "10 unfinished tasks" when a limit hits. Operator answers: (1) ONE CARD PER ACCOUNT, claude.ai/ChatGPT-style bars, with a single sentence above the cards only when something runs out before its reset or a banked reset would expire unused; (2) the attribution drill moves to an Analytics tab, cut to spend by Project and by Agent, and the heat, sessions grid, diagnostics and burn chart are deleted; (3) agent-count translation ("room for 3 more agents") is parked; (4) he pays by the dollar on every lane but paces to his weekly plan limits and increasingly spends banked resets. Architecture: the vendor ACCOUNT is the unit (a harness draws on an account; claude.ai chat and Claude Code draw on one), each account's meters are the vendor's own windows plus its pay-as-you-go lane and banked resets, and one pure projection (`src/components/consumption/accounts.ts`) feeds the page, the chrome meter and the scenario workbench. Pace moves with the operator's velocity: the observed rate prefers the trailing six hours of the current cycle and falls back to the cycle average, and the headline window is the one that runs out first, not the fullest. Scope: the projection and page; the E12 study retired and replaced by `/hud-gallery/usage-scenarios`, named scenarios driven through the production builder with a burn-forward simulator; meter labels without em dashes; data-side slice in ENG-038 slice 2. Exit criteria: on the operator's own machine the page answers "what runs out first, when, and before which reset" in the first line; a failed or unconfigured read renders a card that says so with its true as-of, never a reassuring absence; every scenario renders through the production components with its geometry asserted; the chrome meter and the page name the same headline window. Narrative in `projects/consumption-spine.md` §E15.
-- E16 Live burn and the Google account (planned 2026-10-02; demo arc G4; ENG-038 slice 3): tokens per minute and dollars per hour now, per vendor, above the account cards, from the sample log with modelled dollars labelled; a Google account card read from `agy -p "/usage" --output-format json` (five-hour and weekly buckets per model, plan tier) through the account service; E12/E15 honesty rules stand (absent never zero, losing information never moves the headline the reassuring way). Prerequisite for the Claude windows on installed builds: the operator's custody upgrade and a release (BUG-060).
+- E16 Live burn and the Google account (planned 2026-10-02; demo arc G4; ENG-038 slice 4, renumbered 2026-10-04 when the Claude `/usage` read took slice 3): tokens per minute and dollars per hour now, per vendor, above the account cards, from the sample log with modelled dollars labelled; a Google account card read from `agy -p "/usage" --output-format json` (five-hour and weekly buckets per model, plan tier) through the account service; E12/E15 honesty rules stand (absent never zero, losing information never moves the headline the reassuring way). The Claude-window prerequisite (custody upgrade and a release, BUG-060) was retired 2026-10-04 by ENG-038 slice 3.
 
 Project doc:
 
@@ -2085,7 +2085,7 @@ current work (`462b165f`); the report and shaping boundary are recorded in the
 
 ### ENG-038 Provider consumption accounts
 
-Status: active-build — slice 1 (Claude plan-window visibility) shaped and landed 2026-08-11, operator-pulled ahead of the planned sequencing ("it's missing Claude even though I have visibility here", real Max-account values on claude.ai beside an empty Exawatt row). Network identity repaired 2026-08-16: the installed app uses its signed Chromium transport, and routine unsigned development cannot initiate the credentialed read. Created 2026-08-03 from the operator brief captured in `projects/consumption-spine.md` §4 and the same-day vision review. Project doc: `projects/provider-consumption-accounts.md` (endpoint reconnaissance, custody design, refresh policy, milestone log).
+Status: active-build — slice 1 (Claude plan-window visibility) shaped and landed 2026-08-11, operator-pulled ahead of the planned sequencing ("it's missing Claude even though I have visibility here", real Max-account values on claude.ai beside an empty Exawatt row). Network identity repaired 2026-08-16: the installed app uses its signed Chromium transport, and routine unsigned development cannot initiate the credentialed read. **Slice 3 LANDED 2026-10-04 and supersedes slice 1's custody:** the Claude read now runs through the operator's own `claude` (`/usage`), with no Keychain access, no Exawatt-held credential, and no distribution gate; see Slice 3 below and the Amendment chain. Created 2026-08-03 from the operator brief captured in `projects/consumption-spine.md` §4 and the same-day vision review. Project doc: `projects/provider-consumption-accounts.md` (endpoint reconnaissance, custody design, refresh policy, milestone log).
 
 Direction (operator framing, abridged — full quote in the spine doc): the operator checks four vendor pages daily (claude.ai usage, Anthropic Console workspace cost, OpenAI billing, ChatGPT/Codex analytics) "to check all my consumption and usage as my agents burn down my plan… it would be good to see all this in one place — much in the same way analogously that cmd+t in our app is sort of an aggregator for starting agents of different harnesses or vendors, sort of making that distinction less meaningful."
 
@@ -2101,7 +2101,7 @@ an inference.
 
 Why a separate item and not an ENG-008 milestone: the spine's thesis — read-only local parse, no credential, no network call — is load-bearing (its privacy posture and open-source argument rest on it) and must not be amended quietly. This item is the OTHER source class: credentialed, remote, per-vendor reads that land as `reported`/`verified` rungs of the existing assurance ladder. The contract comes free from the spine: `PlanWindow` keyed by `limitId` with `observedAt`/freshness, source-agnostic rollups, absent-never-zero, and the per-source capability pattern (`SOURCE_CAPABILITIES`). ENG-008 is the consumer; ENG-011 is explicitly NOT the owner (a billing API has no sessions to command — forcing it through the Agent Source contract would be shape-abuse); ENG-012 is the hosted successor.
 
-Design-pass answers (2026-08-11, slice 1 — full evidence in the project doc):
+Design-pass answers (2026-08-11, slice 1 — full evidence in the project doc). **SUPERSEDED IN PART 2026-10-04 by slice 3 (below):** the Endpoint, Credential custody, and "Network identity repaired 2026-08-16" decisions in this list describe code that no longer exists (the Keychain read, the `api.anthropic.com/api/oauth/usage` request, and the distribution gate are deleted). The polling, chat-usage, spend-class and off-switch decisions stand, except that a build no longer gates the switch.
 
 - **Endpoint**: `GET https://api.anthropic.com/api/oauth/usage` with `anthropic-beta: oauth-2025-04-20` — verified as what the installed Claude Code binary's own `/usage` calls (`fetchUtilization`), and verified live against the operator's Max account. Its self-describing `limits[]` array (session / weekly-all / weekly-scoped-per-model with `percent`, `resets_at`, model scope) is the primary parse; legacy `five_hour`/`seven_day` is the fallback; the churning experiment codename buckets are never parsed. Undocumented and unstable by construction, so it lives behind a clearly-marked adapter whose every failure mode (network, 401, expired token, schema drift) degrades to the pre-ENG-038 absence — never an error state, never a stale figure presented as fresh.
 - **Credential custody**: reuse, in place, the OAuth token Claude Code itself holds in the macOS Keychain (service `Claude Code-credentials`). Read at request time, never copied/persisted/logged, sent only to `api.anthropic.com` with redirects refused, never sent expired, and NEVER refreshed by Exawatt (rotating it would race Claude Code's own credential lifecycle). Unit-pinned. This is interim custody, not a Connection: ENG-009 still owns the first-class Connection this item eventually consumes.
@@ -2113,7 +2113,46 @@ Design-pass answers (2026-08-11, slice 1 — full evidence in the project doc):
 Slice 2 — the Codex plan account (shaped and landed 2026-09-29 with ENG-008 E15): Codex's own app-server answers `account/rateLimits/read` with the account's windows, prepaid credit balance, and banked "Full reset" credits with their expiry (verified live against the operator's Pro account, 0.158.0). The request leaves through the operator's own `codex` binary and sign-in, so custody is source-owned like the re-entry recap: Exawatt never reads `~/.codex/auth.json`, and no distribution capability gates it. It matters beyond resets because rollout logs only update on a Codex turn: after the operator spent a reset the logs still read 78% while the account read 45%. It rides a new own-account privacy switch (`codexPlanWindows`, default on) and generalizes the plan composite from one Claude service to a list of account sources, which is the seam a future agent plugin implements. `ProviderPlanAccountState` gains banked `resets` and a prepaid `credits` balance, absent never zero. Claude's own free resets are claimed through an endpoint Exawatt does not read, so they stay out of scope.
 
 Slice 3 — Claude plan usage through Claude Code's own `/usage` (shaped
-2026-10-04, ready for pickup). Replaces the slice-1 Keychain custody.
+2026-10-04, **LANDED 2026-10-04**). Replaces the slice-1 Keychain custody.
+
+LANDED 2026-10-04 as built (evidence in the project doc's milestone log):
+
+- `electron/main/consumption/claude-plan-account.ts` runs `claude -p "/usage"
+  --no-session-persistence --output-format json` through the operator's login
+  shell (found where their terminal finds it) with `DISABLE_AUTOUPDATER=1`, in
+  Exawatt's scratch directory, and parses the envelope's `result`. The Keychain
+  read, the usage endpoint request, the token handling, and the
+  `isClaudePlanRemoteReadAllowed` guard are deleted. The parser is pinned to
+  real captured output (signed in, signed out) and resolves the printed
+  zone and date to an absolute reset instant, rolling the year.
+- `ProviderPlanAccountState` gains `failure`: `not-installed`, `no-plan`
+  (signed out, or an API-key session: Claude Code prints only a cost summary,
+  verified with a scratch `CLAUDE_CONFIG_DIR`), `timed-out`, `exited`, and
+  `unrecognized`. Each reads "Couldn't read plan limits" plus its own reason on
+  the Usage card; `unrecognized` (any `Current …` line the grammar cannot read)
+  fails the whole report rather than serving a partial list. The last good
+  value keeps its true observed time; Codex's unnamed failures keep the old
+  sentence. The `unconfigured` account status, its renderer plumbing and the
+  "not available in this build" sentence are deleted with the gate.
+- `ownAccount` decision: nothing else used it (Codex never had a gate). The
+  resolved distribution contract no longer carries it and no capability
+  projection, Privacy row, or guard reads it. The wire key stays accepted and
+  validated in schema 2 (and is now optional there, in the published
+  `contracts/distribution/v2/schema.json`) because stored copies of the
+  official contract live outside the repository; schema 1 is unchanged. No
+  schema 3 was cut. `distribution:custody:upgrade`, which only existed to
+  rewrite those stores to declare it, is deleted; the operator's custody
+  rewrite and release for this purpose are no longer needed.
+- Known losses against slice 1, recorded not hidden: `/usage` states no plan
+  tier, so the card no longer says "Max 20x" (`claude auth status` reports
+  `subscriptionType` without a token and is a candidate for a later slice); and
+  it printed no extra-usage (pay-as-you-go) figures on 2026-10-04 even though
+  the operator's account has extra usage enabled, so the spend lane for Claude
+  is absent until a format carrying it is observed. Both are absent, never
+  zero.
+- Cost note: a read analyses local session history (about 4 seconds of CPU on a
+  316-session machine), which is why the 5-minute throttle is kept and the
+  timeout is 45 seconds.
 
 - Why: the Keychain read can never be granted once. Claude Code rewrites
   `Claude Code-credentials` on each token refresh and resets the item's
@@ -3635,6 +3674,8 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ENG-038 slice 1's Keychain-token custody, its `api.anthropic.com/api/oauth/usage` request, and the 2026-08-16 "signed Chromium transport" network identity | ENG-038 slice 3, 2026-10-04 | The Claude plan read runs the operator's own `claude -p "/usage"`; Exawatt reads no credential and makes no request. The Keychain path is deleted and a test fails if it returns. Claude Code rewrites its Keychain item on each refresh, so a one-time approval could never hold, and Anthropic's terms forbid intermediating Claude.ai credentials. |
+| BUG-060 / decision `0036` §6 distribution gate `ownAccount.claudePlanUsage` for the Claude plan read, BUG-149's `unconfigured` account status, and the custody-upgrade prerequisite | ENG-038 slice 3, 2026-10-04 | Nothing is gated: the read runs the operator's own binary. The resolved contract drops `ownAccount`; the wire key is still accepted and ignored in schema 2 and absent in schema 1; `unconfigured` is deleted from the account statuses; `distribution:custody:upgrade` is deleted and no release is needed for Claude windows. |
 | October 4 polish shaping-only authorization | Operator execution directive, 2026-10-04 | Execute the agreed purpose/attention/restart/orientation/shared-foundation work in parallel isolated worktrees; retain existing visual-review and exact-tree evidence gates. ENG-036 execution checkpoint names owners and dependencies. No major feature expansion or cancellation of existing commitments. |
 | ENG-015 S1 focus-clears-attention and age-only Cmd+J with results excluded | Decision 0046, operator UX steering, 2026-10-04 | Accepted future contract: inspection clears unread but preserves unresolved requests; visit hard blockers, then working questions, then unread results, oldest within class. Execution, request and read state remain separate. Restart restores context paused with explicit resume for the previously running set; automatic resume is future scope. Implementation is planned, not shipped. |
 | ENG-042 limited to publishing existing investigations; feature-led next-work selection for this polish pass | Operator steering, 2026-10-04 | Add cited research-informed design explanations; prioritize active-user journeys and shared owners, with newcomer discoverability and demonstrated improvement. Decision 0046 accepts attention semantics and pause-first restart with explicit resume; implementation remains planned. Existing workshop commitments are not cancelled; major feature work is not a prerequisite or newly authorized. |
@@ -3873,3 +3914,18 @@ model actions, but the hardened runtime carries no
 no `NSAppleEventsUsageDescription`, so the Apple Event most likely fails with
 -1743 in signed builds. Reproduce on an installed build first; then add both,
 or replace the Terminal hand-off with an Exawatt-owned terminal tab.
+
+### BUG-276 The release feed publisher test fails on a clean `master`
+
+Status: bug · ENG-030 · found 2026-10-04 running the full suite for ENG-038
+slice 3; the failure reproduces on `master` at `19c43383`, so it is not from
+that work.
+
+Both cases in the release publisher's test spawn the feed publication script,
+which since BUG-256 (`4855b70a`) requires `EXAWATT_RELEASE_TAG` and
+`EXAWATT_RELEASE_STAGING_PERCENTAGE`; the test's child environment sets
+neither, so the script refuses before reaching the behavior the test asserts
+(`Official update publication refused: missing EXAWATT_RELEASE_TAG`). The
+landing floor runs only related tests, so it has not blocked anything. Fix the
+test's premise by supplying both variables in its child environment; do not
+weaken the script's requirement.

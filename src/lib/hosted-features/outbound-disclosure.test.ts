@@ -111,9 +111,6 @@ describe('outbound controls are grounded in the distribution contract', () => {
         capabilityValue(OFFICIAL, capability),
         `${id}: an official contract must configure ${capability}`
       ).not.toBeNull();
-      // Nullish either way: `ownAccount` is null outright in community, so its
-      // member does not resolve. Both readings mean withheld, and the official
-      // assertion above is what proves the path is real.
       expect(
         capabilityValue(COMMUNITY_DISTRIBUTION, capability) ?? null,
         `${id}: a community build must withhold ${capability}`
@@ -352,8 +349,6 @@ const OUTBOUND_CALL_SITES: Record<string, string | readonly string[] | null> = {
   'electron/main/auth-coordinator.ts': '## 5. Supabase',
   // Wraps whatever transport it is handed and records phase metadata locally.
   'electron/main/auth-diagnostics.ts': null,
-  'electron/main/consumption/claude-plan-account.ts':
-    '## 7. Locally spawned agent harnesses',
   // Injects `electron.net.fetch` into the modules above; opens no destination.
   // Bootstrap moved out of `main.ts` with the ENG-039 composition root.
   'electron/main/command-surface.ts': null,

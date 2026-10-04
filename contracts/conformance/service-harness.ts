@@ -648,7 +648,6 @@ function dynamicDistribution(origin: string): DistributionContractV2 {
         protocolVersion: 1,
       },
     },
-    ownAccount: null,
     analytics: null,
     updates: null,
   });

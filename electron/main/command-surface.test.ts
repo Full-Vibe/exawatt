@@ -81,7 +81,6 @@ type Dependencies = Parameters<typeof bootstrapCommandSurface>[0];
 
 const OFFICIAL: DistributionContractV2 = {
   ...COMMUNITY_DISTRIBUTION,
-  ownAccount: { claudePlanUsage: 'stable-signed' },
   updates: { feedUrl: 'https://updates.example.test/feed.json' },
 } as DistributionContractV2;
 
@@ -301,16 +300,26 @@ describe('bootstrapCommandSurface', () => {
     expect(official.runtime.currentUpdateStatus()).toEqual({ phase: 'idle' });
   });
 
-  it('asks the plan-account gate the contract question (BUG-060)', async () => {
+  it('starts the Claude plan read in every build, and in no automated test launch', async () => {
+    // ENG-038 slice 3: the read runs the operator's own `claude`, so no
+    // distribution grant, packaging state or network transport is part of the
+    // question; only the operator's switch and an automated launch are.
     await bootstrapCommandSurface(dependencies({ contract: OFFICIAL }).deps);
     await bootstrapCommandSurface(dependencies().deps);
     await bootstrapCommandSurface(
       dependencies({ contract: OFFICIAL, packaged: false }).deps
     );
+    await bootstrapCommandSurface(dependencies({ isTest: true }).deps);
 
-    expect(
-      world.planAccountOptions.map(options => options.remoteReadAllowed)
-    ).toEqual([true, false, false]);
+    expect(world.planAccountOptions.map(options => options.enabled)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+    for (const options of world.planAccountOptions) {
+      expect(Object.keys(options).sort()).toEqual(['enabled', 'stateDir']);
+    }
   });
 
   it('keeps every earlier row registered when a service constructor throws', async () => {

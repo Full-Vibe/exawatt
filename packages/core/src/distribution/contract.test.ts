@@ -68,17 +68,19 @@ const OFFICIAL = {
   },
 } as const;
 
-/** The same distribution as a schema-1 document: every stored copy of the
- *  official contract is one of these until its operator-custody owner
- *  rewrites it, so this shape has to keep parsing (BUG-060). */
+/** The same distribution as a schema-1 document: a stored copy of the
+ *  official contract may still be one of these, so this shape has to keep
+ *  parsing (BUG-060). */
 const OFFICIAL_V1 = (() => {
   const { ownAccount: _dropped, ...rest } = OFFICIAL;
   return { ...rest, schemaVersion: 1 } as const;
 })();
 
-/** V1's exact key set claiming to be V2. Exact-key strictness is per version,
- *  so this is as invalid as a V1 document carrying `ownAccount`. */
-const OFFICIAL_V1_KEYS_AT_V2 = { ...OFFICIAL_V1, schemaVersion: 2 } as const;
+/** The resolved contract: V2's members without the retired `ownAccount`. */
+const OFFICIAL_RESOLVED = (() => {
+  const { ownAccount: _retired, ...rest } = OFFICIAL;
+  return rest;
+})();
 
 describe('distribution contract', () => {
   it('defaults to a deeply immutable service-neutral community contract', () => {
@@ -100,7 +102,6 @@ describe('distribution contract', () => {
       },
       analytics: null,
       updates: null,
-      ownAccount: null,
     });
     expect(Object.isFrozen(COMMUNITY_DISTRIBUTION)).toBe(true);
     expect(Object.isFrozen(COMMUNITY_DISTRIBUTION.services)).toBe(true);
@@ -121,31 +122,26 @@ describe('distribution contract', () => {
     });
   });
 
-  it('upgrades a schema-1 document fail-safe instead of rejecting it', () => {
+  it('reads a schema-1 document instead of rejecting it', () => {
     // The stored copies of the official contract (Vercel Production and
     // Preview, the release workflow's repository secret, operator custody)
-    // are all schema 1 and are rewritten by their owner, not by this commit.
-    // Rejecting them here is how incident `0017` happened; loosening V2's
-    // strictness to swallow them is how a half-configured official build
-    // happens. Upgrading in memory is neither.
+    // are rewritten by their owner, not by this commit. Rejecting them here
+    // is how incident `0017` happened.
     const upgraded = parseDistributionContract(OFFICIAL_V1);
     expect(upgraded.schemaVersion).toBe(2);
-    // The direction matters: a contract written before the declaration
-    // existed does NOT acquire the capability it never declared.
-    expect(upgraded.ownAccount).toBeNull();
+    expect(upgraded).toEqual(OFFICIAL_RESOLVED);
     expect(upgraded.brand).toEqual(OFFICIAL.brand);
     expect(upgraded.services).toEqual(OFFICIAL.services);
     // And a community document from the same era resolves to exactly the
     // community contract this build ships.
-    const { ownAccount: _dropped, ...communityV1 } = COMMUNITY_DISTRIBUTION;
     expect(
-      parseDistributionContract({ ...communityV1, schemaVersion: 1 })
+      parseDistributionContract({ ...COMMUNITY_DISTRIBUTION, schemaVersion: 1 })
     ).toEqual(COMMUNITY_DISTRIBUTION);
   });
 
   it('validates and canonically serializes an official overlay', () => {
     const parsed = parseDistributionContract(OFFICIAL);
-    expect(parsed).toEqual(OFFICIAL);
+    expect(parsed).toEqual(OFFICIAL_RESOLVED);
     expect(resolveDistributionIdentity(parsed)).toMatchObject({
       productName: 'Exawatt',
       appId: 'ai.exawatt.desktop',
@@ -154,12 +150,11 @@ describe('distribution contract', () => {
       stateNamespace: 'ai.exawatt.desktop',
       cacheNamespace: 'ai.exawatt.desktop',
     });
-    expect(parsed.ownAccount).toEqual({ claudePlanUsage: 'stable-signed' });
     expect(serializeDistributionContract(parsed)).toBe(
       serializeDistributionContract(JSON.parse(JSON.stringify(OFFICIAL)))
     );
     // A V2 document survives a full serialize/parse cycle unchanged, so the
-    // cross-process digest agreement holds on the declaration too.
+    // cross-process digest agreement holds.
     expect(
       parseDistributionContract(
         JSON.parse(serializeDistributionContract(parsed))
@@ -175,7 +170,6 @@ describe('distribution contract', () => {
     ],
     ['unsupported future version', { ...OFFICIAL, schemaVersion: 3 }],
     ['unsupported version zero', { ...OFFICIAL, schemaVersion: 0 }],
-    ['schema-2 document missing ownAccount', OFFICIAL_V1_KEYS_AT_V2],
     [
       'schema-1 document carrying ownAccount',
       { ...OFFICIAL, schemaVersion: 1 },

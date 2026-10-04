@@ -3,7 +3,7 @@
   "$id": "https://exawatt.ai/contracts/distribution/v2/schema.json",
   "$comment": "SPDX-License-Identifier: Apache-2.0",
   "title": "Exawatt distribution contract V2",
-  "description": "Build-time capabilities supplied by a distributor. Null capabilities are absent and cause no network request. V2 adds ownAccount: whether this distribution supplies a stable signed identity for automatic reads against the operator's own vendor account. A V1 document is still accepted by the Exawatt client and is read as ownAccount: null.",
+  "description": "Build-time capabilities supplied by a distributor. Null capabilities are absent and cause no network request. V2 added ownAccount, which is now retired: the Exawatt client accepts it, validates it, and ignores it, because the automatic own-account read it gated now runs through the operator's own claude binary. A document may omit it. A V1 document is still accepted by the Exawatt client.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,8 +13,7 @@
     "services",
     "enrichment",
     "analytics",
-    "updates",
-    "ownAccount"
+    "updates"
   ],
   "properties": {
     "schemaVersion": {
@@ -67,6 +66,8 @@
       ]
     },
     "ownAccount": {
+      "deprecated": true,
+      "description": "Retired. Accepted and ignored by the Exawatt client; may be omitted.",
       "oneOf": [
         {
           "type": "null"

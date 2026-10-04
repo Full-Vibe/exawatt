@@ -1233,27 +1233,24 @@ Built:
   authenticated idempotent sync/disable/status API, and RLS-backed Supabase
   aggregate schema with enabled-only anonymous leaderboard/profile/Run
   projections
-- ENG-038 provider plan-account read (slice 1): a credentialed, remote,
-  read-only Electron-main sibling of the local Consumption scanner that
-  fetches Claude plan windows from the vendor's own account endpoint using
-  the Keychain credential Claude Code already holds (read in place, never
-  persisted or refreshed), merges them into the live snapshot as reported
-  plan-level capacity behind the same IPC seam, degrades every failure to
-  absence, and carries a default-on own-account privacy switch. Installed
-  Exawatt injects `electron.net.fetch` so the signed Chromium helper owns the
-  request; unpackaged development and automated tests cannot open that path
-  without the narrow explicit integration opt-in. ENG-030 OS4 replaces the
-  temporary `app.isPackaged` capability test with the versioned distribution
-  declaration `ownAccount.claudePlanUsage`: community defaults it absent,
-  while official or downstream distributions may set `stable-signed` beside
-  their signing custody. The declaration controls local automatic traffic and
-  is never service authentication.
+- ENG-038 provider plan-account read (slice 1, custody superseded by slice 3
+  on 2026-10-04): an Electron-main sibling of the local Consumption scanner
+  that reads Claude plan windows from the vendor's account, merges them into
+  the live snapshot as reported plan-level capacity behind the same IPC seam,
+  and carries a default-on own-account privacy switch. Slice 1 read Claude
+  Code's Keychain credential and sent it to the usage endpoint through
+  Electron's Chromium transport, gated by the distribution declaration
+  `ownAccount.claudePlanUsage` (ENG-030 OS4, BUG-060). Slice 3 deleted all of
+  that: the read now runs the operator's own `claude -p "/usage"` and parses
+  its report, so Exawatt holds no credential, makes no request, and no
+  distribution gate applies.
 - ENG-038 slice 2 and ENG-008 E15 (2026-09-29): plan-account reads are one
   vendor-neutral `PlanAccountService` (throttled read, last-known state,
-  bounded pace history, off switch, build grant) with a per-vendor reader, and
-  the composite merges a list of them. Claude keeps its credentialed endpoint
-  reader; Codex reads `account/rateLimits/read` from its own app-server under
-  its own sign-in (source-owned custody, no distribution grant), which adds
+  bounded pace history, off switch) with a per-vendor reader, and the
+  composite merges a list of them. Claude read its credentialed endpoint
+  (until slice 3, which moved it to its own `/usage`); Codex reads
+  `account/rateLimits/read` from its own app-server under its own sign-in
+  (source-owned custody, no distribution grant), which adds
   banked resets, the prepaid credit balance, and windows fresher than the
   rollout logs. The composite skips an account whose harness left no local
   files and derives one pace per bucket from the merged history. The renderer

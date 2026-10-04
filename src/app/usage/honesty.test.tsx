@@ -52,7 +52,7 @@ function claudeRead(status: ProviderPlanAccountState['status']): UsageScenario {
 
 describe('an account Exawatt cannot read keeps its card', () => {
   const sentences = new Map<string, string>();
-  for (const status of ['unconfigured', 'disabled', 'unavailable'] as const) {
+  for (const status of ['disabled', 'unavailable'] as const) {
     it(`${status}: says why, with no bar and no percentage`, () => {
       const { view } = renderScenario(claudeRead(status));
       const card = claudeCard(view.container);
@@ -66,7 +66,7 @@ describe('an account Exawatt cannot read keeps its card', () => {
     });
   }
 
-  it('gives each cause its own sentence (off is never "not in this build")', () => {
+  it('gives each cause its own sentence (off is never "couldn\'t read")', () => {
     expect(new Set(sentences.values()).size).toBe(sentences.size);
   });
 

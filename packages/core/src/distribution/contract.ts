@@ -61,28 +61,18 @@ export interface DistributionUpdatesV1 {
 }
 
 /**
- * Schema V2's only addition, and the reason the version moved.
+ * V2 is V1 plus a RETIRED `ownAccount` key, and the resolved contract is
+ * therefore V1's members unchanged.
  *
- * Decision `0036` §6 (amended 2026-08-16 after incident `0011`): an automatic
- * credentialed read against the operator's OWN vendor account has to be gated
- * on a durable network identity, and packaging is not that. A contributor's
- * ad-hoc package reports `app.isPackaged === true` and presents Little Snitch
- * a new CDHash on every Electron revision, so an automatic read from it
- * recreates the approval churn `0011` recorded.
- *
- * The DISTRIBUTOR therefore declares whether it supplies a stable signed
- * identity for Exawatt-owned own-account traffic. `'stable-signed'` is the
- * only value: this is a declaration, not a scale. It controls local behaviour
- * only, and is never proof of officiality or authorization to use any Exawatt
- * service.
- */
-export interface DistributionOwnAccountV2 {
-  claudePlanUsage: 'stable-signed';
-}
-
-/**
- * V2 = V1 plus `ownAccount`. Every other member keeps its V1 shape unchanged,
- * which is why those interfaces keep their V1 names: they did not move.
+ * Decision `0036` §6 (amended 2026-08-16 after incident `0011`) added
+ * `ownAccount.claudePlanUsage` to gate an automatic Claude plan read made
+ * through Exawatt's own signed network identity. ENG-038 slice 3 (2026-10-04)
+ * moved that read to the operator's own `claude` binary, which holds its own
+ * identity and sign-in, so the declaration gates nothing and the resolved
+ * contract no longer carries it. The version number stays 2 and the wire key
+ * stays ACCEPTED (and still validated) because stored copies of the official
+ * contract live in Vercel, a GitHub secret, and operator custody, outside this
+ * repository, and a published V2 document must keep parsing.
  */
 export interface DistributionContractV2 {
   schemaVersion: typeof DISTRIBUTION_SCHEMA_VERSION;
@@ -92,8 +82,6 @@ export interface DistributionContractV2 {
   enrichment: DistributionEnrichmentV1;
   analytics: DistributionAnalyticsV1 | null;
   updates: DistributionUpdatesV1 | null;
-  /** Absent declaration means no automatic own-account read. Fail-safe. */
-  ownAccount: DistributionOwnAccountV2 | null;
 }
 
 export interface DistributionIdentity {
@@ -130,9 +118,6 @@ export const COMMUNITY_DISTRIBUTION: DistributionContractV2 = Object.freeze({
   enrichment: COMMUNITY_ENRICHMENT,
   analytics: null,
   updates: null,
-  // Community supplies no signing custody, so it declares no own-account
-  // capability. This is the value that closes BUG-060.
-  ownAccount: null,
 });
 
 export const COMMUNITY_IDENTITY: DistributionIdentity = Object.freeze({
@@ -414,8 +399,13 @@ function updates(value: unknown): DistributionUpdatesV1 | null {
   });
 }
 
-function ownAccount(value: unknown): DistributionOwnAccountV2 | null {
-  if (value === null) return null;
+/**
+ * The retired `ownAccount` key (see `DistributionContractV2`). Still held to
+ * its old shape so a malformed stored copy keeps failing loudly, but its value
+ * is discarded: nothing in the product reads it.
+ */
+function retiredOwnAccount(value: unknown): void {
+  if (value === null) return;
   const parsed = record(value, 'ownAccount');
   exactKeys(parsed, ['claudePlanUsage'], 'ownAccount');
   if (parsed.claudePlanUsage !== 'stable-signed') {
@@ -423,13 +413,13 @@ function ownAccount(value: unknown): DistributionOwnAccountV2 | null {
       "Invalid distribution config: ownAccount.claudePlanUsage must be 'stable-signed' or ownAccount must be null"
     );
   }
-  return Object.freeze({ claudePlanUsage: 'stable-signed' as const });
 }
 
 /** Root keys per document version. Each version stays exact-key-strict for
- *  its OWN shape: a V1 document carrying `ownAccount` is as invalid as a V2
- *  document missing it. Strictness is what makes an absent or half-written
- *  input select community rather than half-configure an official build. */
+ *  its OWN shape: a V1 document carrying `ownAccount` is invalid, while V2
+ *  accepts the retired key as OPTIONAL. Strictness is what makes an absent or
+ *  half-written input select community rather than half-configure an official
+ *  build. */
 const ROOT_KEYS_V1 = [
   'schemaVersion',
   'brand',
@@ -439,17 +429,12 @@ const ROOT_KEYS_V1 = [
   'analytics',
   'updates',
 ] as const;
-const ROOT_KEYS_V2 = [...ROOT_KEYS_V1, 'ownAccount'] as const;
 
 /**
- * Accepts every supported document version and returns the CURRENT one.
- *
- * A schema-1 document is upgraded in memory with `ownAccount: null`. That
- * direction is deliberate and fail-safe: a contract written before the
- * declaration existed does not get the capability it never declared. It is
- * also what lets the schema change land before the stored copies of the
- * official contract are rewritten, since those live in Vercel, a GitHub
- * secret, and operator custody rather than in this repository.
+ * Accepts every supported document version and returns the CURRENT one. A
+ * schema-1 document and a schema-2 document without `ownAccount` resolve to
+ * the same contract, so no stored copy of the official contract has to be
+ * rewritten for any release.
  */
 export function parseDistributionContract(
   value: unknown
@@ -464,11 +449,13 @@ export function parseDistributionContract(
       `Invalid distribution config: schemaVersion must be one of ${SUPPORTED_DISTRIBUTION_SCHEMA_VERSIONS.join(', ')}`
     );
   }
-  exactKeys(
-    parsed,
-    documentVersion === 1 ? ROOT_KEYS_V1 : ROOT_KEYS_V2,
-    'root'
-  );
+  if (documentVersion === 1) {
+    exactKeys(parsed, ROOT_KEYS_V1, 'root');
+  } else {
+    const { ownAccount: retired, ...rest } = parsed;
+    exactKeys(rest, ROOT_KEYS_V1, 'root');
+    if ('ownAccount' in parsed) retiredOwnAccount(retired);
+  }
   const contract = Object.freeze({
     schemaVersion: DISTRIBUTION_SCHEMA_VERSION,
     brand: brand(parsed.brand),
@@ -477,7 +464,6 @@ export function parseDistributionContract(
     enrichment: enrichment(parsed.enrichment),
     analytics: analytics(parsed.analytics),
     updates: updates(parsed.updates),
-    ownAccount: documentVersion === 1 ? null : ownAccount(parsed.ownAccount),
   });
   const authenticatedEndpoints = [
     contract.services.productFeedback,

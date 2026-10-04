@@ -139,6 +139,7 @@ export type {
   PlanWindowObservation,
   ProviderPlanAccountState,
   ProviderPlanAccountStatus,
+  PlanAccountFailureCause,
   ProviderPlanSpend,
   PlanCreditBalance,
   PlanResetCredit,

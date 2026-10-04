@@ -7,7 +7,11 @@ counsel review is trigger-deferred, not a publication gate (see Amendment);
 amended 2026-08-16: automatic own-account network reads require a
 distribution-declared stable signing identity; amended 2026-08-17: that
 declaration landed as schema V2, with V1 still accepted and read as
-`ownAccount: null`
+`ownAccount: null`; **amended 2026-10-04 (ENG-038 slice 3): the declaration is
+retired** — the Claude plan read it gated now runs the operator's own `claude`,
+so no Exawatt-owned own-account network read remains for it to gate (the
+resolved contract drops `ownAccount`; schema 2 still accepts and ignores the key
+so stored copies keep parsing)
 
 ## Context
 
@@ -216,6 +220,16 @@ none; the official overlay declares the capability alongside signing custody;
 a downstream distributor may declare it for its own stable signed build. This
 field controls local behavior only. It is never proof of officiality or
 authorization to use an Exawatt service.
+
+**Retired 2026-10-04 (ENG-038 slice 3).** The own-account Claude plan read no
+longer leaves through Exawatt's network identity: it runs the operator's own
+`claude -p "/usage"`, under that binary's identity and sign-in, and Exawatt
+reads no credential. The declaration in this section therefore gates nothing.
+The resolved contract no longer carries `ownAccount`; schema 2 keeps accepting
+(and validating) the key, now optional, and schema 1 is unchanged, so no stored
+copy of the official contract needs rewriting. The rule stands for any FUTURE
+read that does leave through Exawatt's own network stack: it needs a durable
+signed identity first. The text below is the history.
 
 Amended 2026-08-17 (BUG-060), because the declaration above was specified into
 schema V1 and never implemented: it lands as schema **V2**'s required

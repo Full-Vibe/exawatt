@@ -1,181 +1,226 @@
 /**
- * ENG-038 slice 1 — the Claude plan-account read.
+ * ENG-038 slice 3 — the Claude plan-account read, through Claude Code's own
+ * `/usage`.
  *
- * Claude Code definitively records no plan, quota, or rate-limit data in its
- * local files (`docs/engineering/projects/consumption-spine.md` §4), so plan
- * truth for Claude can only come from the vendor: the endpoint Claude Code's
- * own `/usage` consults, `GET https://api.anthropic.com/api/oauth/usage`.
- * That makes this module the OTHER consumption source class — CREDENTIALED,
- * REMOTE, read-only — and it is deliberately a SIBLING of the scanner
- * service, never part of it: the local-parse spine's no-credential/no-network
- * thesis is load-bearing and untouched.
+ * Claude Code records no plan, quota, or rate-limit data in its local files
+ * (`docs/engineering/projects/consumption-spine.md` §4), so plan truth for
+ * Claude can only come from the vendor. Slice 1 got it by reading Claude
+ * Code's OAuth token out of the macOS Keychain; that path is gone. The
+ * request now leaves through the operator's own `claude` binary and sign-in:
  *
- * Custody invariants (unit-pinned in `claude-plan-account.test.ts`):
+ *   claude -p "/usage" --no-session-persistence --output-format json
  *
- * - The OAuth token is the one Claude Code itself already holds on this
- *   machine (macOS Keychain, service `Claude Code-credentials`). It is READ
- *   where it lives, held only in a local variable for the duration of one
- *   request, and never copied, persisted, logged, or included in any error
- *   or state object.
- * - Requests go to `api.anthropic.com` and nowhere else; redirects are
- *   refused (`redirect: 'error'`) so the token cannot be replayed to another
- *   host.
- * - An expired token is never sent, and this module NEVER refreshes it —
- *   rotating the refresh token would race Claude Code's own credential
- *   handling. Claude Code refreshes it in normal use; until then the read
- *   degrades to absence.
+ * which answers with the account's windows and costs zero turns, zero money
+ * and no saved session (verified 2026-10-04 on Claude Code 2.1.289). Custody
+ * is SOURCE-OWNED, the same shape as the Codex app-server read: Exawatt never
+ * reads, holds, or sends a Claude credential, makes no network call itself,
+ * and so no distribution capability gates it.
  *
- * Failure semantics: absence, never an error state. A failed fetch, expired
- * token, revoked scope, or drifted schema leaves the last successful
- * observation in place with its TRUE `observedAt` (the renderer's existing
- * freshness rule judges it) and, when nothing was ever observed, leaves
- * Claude exactly as it read before ENG-038 — "unmetered here, not at zero".
+ * `/usage` prints prose, not a schema, so every unrecognized shape degrades
+ * to a NAMED failure ("couldn't read" with a cause), never to 0% and never to
+ * a stale figure shown as fresh. The parser is strict about the lines it
+ * reads (`Current session|week …`) and ignores everything else, because the
+ * report also carries free-text sections that change freely.
  *
- * Refresh policy (the shared `PlanAccountService`): pulled by the composite
- * on snapshot pulls and rescans, throttled to one fetch per
- * `minFetchIntervalMs` (default 5 minutes) plus jitter. The vendor page self-describes as sub-minute fresh; five minutes is
- * deliberately conservative and the renderer's existing 5-minute visible
- * rescan drives the cadence without a dedicated timer.
+ * Throttle and persistence are the shared `PlanAccountService`: one read per
+ * five minutes riding snapshot pulls, the last good value kept at its true
+ * `observedAt`.
  */
-import { execFile } from 'node:child_process';
-import type { PlanWindow, ProviderPlanSpend } from '@exawatt/core';
+import { spawn } from 'node:child_process';
+import type { PlanAccountFailureCause, PlanWindow } from '@exawatt/core';
+import { defaultShell } from '../pty/session-manager';
+import { planLoginShell, shellQuote } from '../pty/login-shell';
 import {
   PlanAccountService,
+  type PlanAccountRead,
   type PlanAccountReader,
-  type PlanAccountView,
+  type PlanAccountReadFailure,
 } from './plan-account-service';
 
-/** The one host this module may speak to. */
-export const CLAUDE_USAGE_ENDPOINT =
-  'https://api.anthropic.com/api/oauth/usage';
-
-/** The beta header the endpoint requires for OAuth bearer tokens. */
-export const CLAUDE_OAUTH_BETA_HEADER = 'oauth-2025-04-20';
-
-/** Keychain item Claude Code stores its own OAuth credential under. */
-export const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials';
-
-/**
- * Credentialed account reads belong to a build with a DURABLE network
- * identity, and the distribution contract is what declares one (BUG-060).
- *
- * Packaging alone was the pre-split proxy and is not the boundary: a
- * contributor's ad-hoc package reports `app.isPackaged === true` and presents
- * Little Snitch a new CDHash on every Electron revision, which is exactly the
- * approval churn incident `0011` recorded. Decision `0036` §6 therefore moves
- * the grant into schema V2's `ownAccount.claudePlanUsage`, which the
- * distributor sets beside its own signing custody. Community declares none.
- *
- * Packaging remains NECESSARY, not sufficient: an unpackaged run built from an
- * official contract is still ad-hoc-signed Electron, so it is still `0011`.
- * A focused developer may opt in explicitly when exercising this exact
- * integration; routine dev and eval launches stay local.
- */
-export function isClaudePlanRemoteReadAllowed(options: {
-  /** `ownAccount.claudePlanUsage === 'stable-signed'` in the resolved
-   *  distribution contract. The grant. */
-  stableSignedIdentity: boolean;
-  /** The running artifact is a package, not an unpackaged dev runtime. */
-  packaged: boolean;
-  testMode?: boolean;
-  developmentOptIn?: string;
-}): boolean {
-  return (
-    options.developmentOptIn === '1' ||
-    (options.stableSignedIdentity &&
-      options.packaged &&
-      options.testMode !== true)
-  );
-}
-
 const STATE_FILE = 'claude-plan.json';
-const DEFAULT_TIMEOUT_MS = 10_000;
-
-/* ------------------------------------------------------------------ */
-/* credential — read where it lives, never kept                        */
-/* ------------------------------------------------------------------ */
-
-export interface ClaudeOauthCredential {
-  accessToken: string;
-  /** ms epoch; null when the record does not state one. */
-  expiresAtMs: number | null;
-  /** e.g. `max` — the plan identity the account itself reports. */
-  subscriptionType: string | null;
-  /** e.g. `default_claude_max_20x` — the tier within the plan. */
-  rateLimitTier: string | null;
-}
-
-function runSecurity(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      '/usr/bin/security',
-      ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE, '-w'],
-      { timeout: 5_000, maxBuffer: 1024 * 1024 },
-      (error, stdout) => {
-        if (error) reject(new Error('keychain read failed'));
-        else resolve(stdout);
-      }
-    );
-  });
-}
-
 /**
- * Reads Claude Code's own credential from the Keychain. Returns null on any
- * failure — a missing item, an unparsable payload, no signed-in OAuth block.
- * The rejection above deliberately carries a fixed message: the real error
- * could echo command output, and nothing token-adjacent may reach a log.
+ * `/usage` also analyses the local session history, which took four seconds
+ * of CPU on a 316-session machine, so the wait has to be generous.
  */
-export async function readClaudeCredential(
-  run: () => Promise<string> = runSecurity
-): Promise<ClaudeOauthCredential | null> {
-  let raw: string;
-  try {
-    raw = await run();
-  } catch {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as {
-      claudeAiOauth?: {
-        accessToken?: unknown;
-        expiresAt?: unknown;
-        subscriptionType?: unknown;
-        rateLimitTier?: unknown;
-      };
-    };
-    const oauth = parsed.claudeAiOauth;
-    if (!oauth || typeof oauth.accessToken !== 'string' || !oauth.accessToken) {
-      return null;
-    }
-    return {
-      accessToken: oauth.accessToken,
-      expiresAtMs:
-        typeof oauth.expiresAt === 'number' && Number.isFinite(oauth.expiresAt)
-          ? oauth.expiresAt
-          : null,
-      subscriptionType:
-        typeof oauth.subscriptionType === 'string'
-          ? oauth.subscriptionType
-          : null,
-      rateLimitTier:
-        typeof oauth.rateLimitTier === 'string' ? oauth.rateLimitTier : null,
-    };
-  } catch {
-    return null;
-  }
-}
+const DEFAULT_TIMEOUT_MS = 45_000;
+const MAX_OUTPUT_BYTES = 1024 * 1024;
 
-/* ------------------------------------------------------------------ */
-/* response parse — pure, fixture-drivable                             */
-/* ------------------------------------------------------------------ */
-
-export interface ClaudeUsageParse {
-  windows: PlanWindow[];
-  spend: ProviderPlanSpend | null;
-}
+/** The exact invocation. Pinned by a test; every flag matters. */
+export const CLAUDE_USAGE_ARGS = [
+  '-p',
+  '/usage',
+  '--no-session-persistence',
+  '--output-format',
+  'json',
+] as const;
 
 const WEEK_MINUTES = 7 * 24 * 60;
 const SESSION_MINUTES = 5 * 60;
+
+/* ------------------------------------------------------------------ */
+/* reset time — "Oct 4 at 6:59pm (America/Los_Angeles)" to an instant   */
+/* ------------------------------------------------------------------ */
+
+const MONTHS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
+
+/** `Oct`, `Sept` and `October` name month 10; `Octember` names none. */
+function monthNumber(token: string): number {
+  const lowered = token.toLowerCase();
+  if (lowered.length < 3) return 0;
+  return MONTHS.findIndex(name => name.startsWith(lowered)) + 1;
+}
+
+interface WallClock {
+  year: number;
+  month: number; // 1-12
+  day: number;
+  hour: number;
+  minute: number;
+}
+
+/** The zone's offset from UTC at an instant, in ms. Throws on an unknown zone. */
+function zoneOffsetMs(instantMs: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+  }).formatToParts(new Date(instantMs));
+  const get = (type: string) =>
+    Number(parts.find(part => part.type === type)?.value);
+  const asUtc = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second')
+  );
+  return asUtc - Math.floor(instantMs / 1000) * 1000;
+}
+
+/** The instant a wall-clock reading names in a zone. Two passes settle DST. */
+function zonedInstantMs(wall: WallClock, timeZone: string): number {
+  const naive = Date.UTC(
+    wall.year,
+    wall.month - 1,
+    wall.day,
+    wall.hour,
+    wall.minute
+  );
+  const first = naive - zoneOffsetMs(naive, timeZone);
+  return naive - zoneOffsetMs(first, timeZone);
+}
+
+function yearInZone(instantMs: number, timeZone: string): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric' }).format(
+      new Date(instantMs)
+    )
+  );
+}
+
+const RESET_PATTERN =
+  /^(?:([A-Za-z]{3,9}) (\d{1,2}) (?:at )?)?(\d{1,2})(?::(\d{2}))? ?(am|pm) \(([^()]+)\)$/i;
+
+/**
+ * Resolves the printed reset to an absolute instant, or null when the text is
+ * not that grammar. `/usage` prints no year, and a reset is always ahead of
+ * the read, so the year is the zone's current one unless that lands more than
+ * a day behind `nowMs`, which means the reset is in the new year (a Dec 31
+ * read of a "Jan 1" reset). A time with no date is the next such time.
+ */
+export function parseClaudeResetTime(
+  text: string,
+  nowMs: number
+): string | null {
+  const match = RESET_PATTERN.exec(text.trim());
+  if (!match) return null;
+  const [, monthName, dayText, hourText, minuteText, meridiem, timeZone] =
+    match;
+  const hour12 = Number(hourText);
+  const minute = minuteText === undefined ? 0 : Number(minuteText);
+  if (hour12 < 1 || hour12 > 12 || minute > 59) return null;
+  const hour = (hour12 % 12) + (meridiem.toLowerCase() === 'pm' ? 12 : 0);
+  try {
+    if (monthName === undefined) {
+      const zoneYear = yearInZone(nowMs, timeZone);
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+      }).formatToParts(new Date(nowMs));
+      const get = (type: string) =>
+        Number(parts.find(part => part.type === type)?.value);
+      const today = {
+        year: zoneYear,
+        month: get('month'),
+        day: get('day'),
+        hour,
+        minute,
+      };
+      const todayMs = zonedInstantMs(today, timeZone);
+      if (todayMs >= nowMs) return new Date(todayMs).toISOString();
+      const tomorrow = new Date(
+        Date.UTC(today.year, today.month - 1, today.day + 1)
+      );
+      return new Date(
+        zonedInstantMs(
+          {
+            year: tomorrow.getUTCFullYear(),
+            month: tomorrow.getUTCMonth() + 1,
+            day: tomorrow.getUTCDate(),
+            hour,
+            minute,
+          },
+          timeZone
+        )
+      ).toISOString();
+    }
+    const month = monthNumber(monthName);
+    const day = Number(dayText);
+    if (month < 1 || day < 1 || day > 31) return null;
+    const year = yearInZone(nowMs, timeZone);
+    let instant = zonedInstantMs({ year, month, day, hour, minute }, timeZone);
+    if (instant < nowMs - 24 * 60 * 60_000) {
+      instant = zonedInstantMs(
+        { year: year + 1, month, day, hour, minute },
+        timeZone
+      );
+    }
+    // A date the calendar rolled over (Feb 30) is not a reset time.
+    const back = new Date(instant + zoneOffsetMs(instant, timeZone));
+    if (back.getUTCMonth() + 1 !== month || back.getUTCDate() !== day) {
+      return null;
+    }
+    return new Date(instant).toISOString();
+  } catch {
+    // Not an IANA zone Intl knows: unrecognized, never guessed.
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* the report — pure, fixture-drivable                                  */
+/* ------------------------------------------------------------------ */
 
 const slug = (value: string) =>
   value
@@ -183,84 +228,162 @@ const slug = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
-function isoOrNull(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  return Number.isNaN(Date.parse(value)) ? null : value;
-}
+/**
+ * `Current session: 4% used · resets Oct 4 at 7pm (America/Los_Angeles)`
+ * `Current week (Fable): 58% used · resets Oct 5 at 2am (America/Los_Angeles)`
+ * The model scope is whatever Claude Code prints, never a fixed list.
+ */
+const LIMIT_LINE =
+  /^Current (session|week)(?: \(([^()]+)\))?: (\d+(?:\.\d+)?)% used(?: · resets (.+))?$/;
 
-function finiteOrNull(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
+/** Printed when `/usage` has no plan to report: signed out, or an API key. */
+const COST_SUMMARY_LINE = /^Total cost:\s/m;
 
-interface LimitRow {
-  kind: string | null;
-  group: string | null;
-  percent: number | null;
-  resetsAt: string | null;
-  scopeLabel: string | null;
-}
+type ClaudeUsageReportParse =
+  | { kind: 'windows'; windows: PlanWindow[] }
+  | { kind: 'no-plan' }
+  | { kind: 'unrecognized'; detail: string };
 
-function readLimitRow(candidate: unknown): LimitRow | null {
-  if (!candidate || typeof candidate !== 'object') return null;
-  const row = candidate as {
-    kind?: unknown;
-    group?: unknown;
-    percent?: unknown;
-    resets_at?: unknown;
-    scope?: unknown;
-  };
-  let scopeLabel: string | null = null;
-  if (row.scope && typeof row.scope === 'object') {
-    const scope = row.scope as {
-      model?: { display_name?: unknown } | null;
-      surface?: unknown;
-    };
-    if (typeof scope.model?.display_name === 'string') {
-      scopeLabel = scope.model.display_name;
-    } else if (typeof scope.surface === 'string') {
-      scopeLabel = scope.surface;
+function windowOf(
+  line: RegExpExecArray,
+  observedAt: string,
+  nowMs: number
+): (PlanWindow & { limitId: string }) | string {
+  const [, kind, scopeText, percentText, resetText] = line;
+  const usedPercent = Number(percentText);
+  if (!Number.isFinite(usedPercent) || usedPercent < 0 || usedPercent > 100) {
+    return `percent out of range in "${line[0]}"`;
+  }
+  let resetsAt: string | null = null;
+  if (resetText !== undefined) {
+    resetsAt = parseClaudeResetTime(resetText, nowMs);
+    if (resetsAt === null) return `reset time not understood in "${line[0]}"`;
+  }
+  let limitId: string;
+  let limitName: string | null = null;
+  let windowMinutes: number;
+  if (kind === 'session') {
+    limitId = 'claude-session';
+    windowMinutes = SESSION_MINUTES;
+  } else {
+    windowMinutes = WEEK_MINUTES;
+    const scope = scopeText?.replace(/\s+only$/i, '').trim() ?? '';
+    if (!scope || /^all models$/i.test(scope)) {
+      limitId = 'claude-weekly-all';
+    } else {
+      limitId = `claude-weekly-${slug(scope)}`;
+      limitName = scope;
     }
   }
   return {
-    kind: typeof row.kind === 'string' ? row.kind : null,
-    group: typeof row.group === 'string' ? row.group : null,
-    percent: finiteOrNull(row.percent),
-    resetsAt: isoOrNull(row.resets_at),
-    scopeLabel,
+    source: 'claude-code',
+    limitId,
+    limitName,
+    scope: 'primary',
+    usedPercent,
+    windowMinutes,
+    resetsAt,
+    planType: null,
+    observedAt,
+    providerSessionId: '',
+    origin: 'provider-account',
   };
 }
 
 /**
- * `limits[]` row → window identity. The window LENGTH comes from the vendor's
- * own `group` vocabulary (`session` = 5h, `weekly` = 7d) so a renamed `kind`
- * still parses; an unknown group is skipped — absence over a guessed
- * denominator. `limitId` is the stable per-window bucket id ENG-038 requires.
+ * The `/usage` text to windows. Throw-free. A `Current …` line this grammar
+ * cannot read fails the WHOLE report: a half-read limit list could hide the
+ * very limit that is about to bite, so nothing partial is served.
  */
-function limitIdentity(
-  row: LimitRow
-): { limitId: string; limitName: string | null; windowMinutes: number } | null {
-  const group = row.group ?? (row.kind === 'session' ? 'session' : null);
-  if (group === 'session') {
+export function parseClaudeUsageReport(
+  text: string,
+  nowMs: number
+): ClaudeUsageReportParse {
+  const observedAt = new Date(nowMs).toISOString();
+  const byId = new Map<string, PlanWindow>();
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line.startsWith('Current ')) continue;
+    const match = LIMIT_LINE.exec(line);
+    if (!match)
+      return { kind: 'unrecognized', detail: `unreadable line "${line}"` };
+    const parsed = windowOf(match, observedAt, nowMs);
+    if (typeof parsed === 'string') {
+      return { kind: 'unrecognized', detail: parsed };
+    }
+    if (byId.has(parsed.limitId)) {
+      return {
+        kind: 'unrecognized',
+        detail: `two lines for the same limit "${parsed.limitId}"`,
+      };
+    }
+    byId.set(parsed.limitId, parsed);
+  }
+  if (byId.size > 0) return { kind: 'windows', windows: [...byId.values()] };
+  if (COST_SUMMARY_LINE.test(text)) return { kind: 'no-plan' };
+  return { kind: 'unrecognized', detail: 'no limit lines in the report' };
+}
+
+/** What `claude -p … --output-format json` printed, judged. */
+type ClaudeUsageOutputParse =
+  | { kind: 'windows'; windows: PlanWindow[] }
+  | { kind: 'failure'; cause: PlanAccountFailureCause; detail: string };
+
+/**
+ * The JSON envelope to windows. The report is the envelope's `result` text;
+ * a login shell may print startup noise around it, so the envelope is the
+ * last stdout line that is a JSON object.
+ */
+export function parseClaudeUsageOutput(
+  stdout: string,
+  nowMs: number
+): ClaudeUsageOutputParse {
+  let envelope: Record<string, unknown> | null = null;
+  const lines = stdout.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim();
+    if (!line.startsWith('{')) continue;
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        envelope = parsed as Record<string, unknown>;
+        break;
+      }
+    } catch {
+      // Not the envelope; keep looking upward.
+    }
+  }
+  if (!envelope) {
     return {
-      limitId: 'claude-session',
-      limitName: null,
-      windowMinutes: SESSION_MINUTES,
+      kind: 'failure',
+      cause: 'unrecognized',
+      detail: 'no JSON envelope',
     };
   }
-  if (group !== 'weekly') return null;
-  if (row.scopeLabel) {
+  if (envelope.is_error === true) {
     return {
-      limitId: `claude-weekly-${slug(row.scopeLabel)}`,
-      // The model the limit is scoped to, in the vendor's own words.
-      limitName: row.scopeLabel,
-      windowMinutes: WEEK_MINUTES,
+      kind: 'failure',
+      cause: 'exited',
+      detail: 'claude reported an error',
     };
   }
-  return {
-    limitId: 'claude-weekly-all',
-    limitName: null,
-    windowMinutes: WEEK_MINUTES,
-  };
+  if (envelope.type !== 'result' || typeof envelope.result !== 'string') {
+    return {
+      kind: 'failure',
+      cause: 'unrecognized',
+      detail: 'envelope has no result text',
+    };
+  }
+  const report = parseClaudeUsageReport(envelope.result, nowMs);
+  if (report.kind === 'windows') return report;
+  if (report.kind === 'no-plan') {
+    return {
+      kind: 'failure',
+      cause: 'no-plan',
+      detail: 'no plan limits reported',
+    };
+  }
+  return { kind: 'failure', cause: 'unrecognized', detail: report.detail };
 }
 
 /**
@@ -269,229 +392,147 @@ function limitIdentity(
  * window is re-read in the current meaning rather than rendered verbatim.
  */
 export function migratePersistedLimitName(window: PlanWindow): PlanWindow {
-  if (window.limitId === 'claude-session' || window.limitId === 'claude-weekly-all') {
+  if (
+    window.limitId === 'claude-session' ||
+    window.limitId === 'claude-weekly-all'
+  ) {
     return window.limitName === null ? window : { ...window, limitName: null };
   }
   const legacy = /^Weekly\s+\S\s+(.+)$/u.exec(window.limitName ?? '');
   return legacy ? { ...window, limitName: legacy[1] } : window;
 }
 
-function parseSpend(payload: {
-  spend?: unknown;
-  extra_usage?: unknown;
-}): ProviderPlanSpend | null {
-  if (payload.spend && typeof payload.spend === 'object') {
-    const spend = payload.spend as {
-      used?: { amount_minor?: unknown; currency?: unknown; exponent?: unknown };
-      limit?: { amount_minor?: unknown } | null;
-      percent?: unknown;
-      enabled?: unknown;
-    };
-    const usedMinor = finiteOrNull(spend.used?.amount_minor);
-    if (usedMinor !== null) {
-      return {
-        usedMinor,
-        limitMinor: finiteOrNull(spend.limit?.amount_minor),
-        currency:
-          typeof spend.used?.currency === 'string'
-            ? spend.used.currency
-            : 'USD',
-        exponent: finiteOrNull(spend.used?.exponent) ?? 2,
-        percent: finiteOrNull(spend.percent),
-        enabled: spend.enabled === true,
-      };
-    }
-  }
-  if (payload.extra_usage && typeof payload.extra_usage === 'object') {
-    const extra = payload.extra_usage as {
-      used_credits?: unknown;
-      monthly_limit?: unknown;
-      utilization?: unknown;
-      currency?: unknown;
-      decimal_places?: unknown;
-      is_enabled?: unknown;
-    };
-    const usedMinor = finiteOrNull(extra.used_credits);
-    if (usedMinor !== null) {
-      return {
-        usedMinor,
-        limitMinor: finiteOrNull(extra.monthly_limit),
-        currency: typeof extra.currency === 'string' ? extra.currency : 'USD',
-        exponent: finiteOrNull(extra.decimal_places) ?? 2,
-        percent: finiteOrNull(extra.utilization),
-        enabled: extra.is_enabled === true,
-      };
-    }
-  }
-  return null;
-}
+/* ------------------------------------------------------------------ */
+/* the process — the operator's own claude, asked once                  */
+/* ------------------------------------------------------------------ */
+
+/** What one run of the command produced. Nothing here is a credential. */
+export type ClaudeUsageRun =
+  | { kind: 'finished'; exitCode: number; stdout: string; stderr: string }
+  | { kind: 'timed-out' }
+  | { kind: 'spawn-failed' };
+
+export type ClaudeUsageRunner = (timeoutMs: number) => Promise<ClaudeUsageRun>;
+
+/** A shell that cannot find the command says so in one of these ways. */
+const COMMAND_NOT_FOUND =
+  /command not found|unknown command|is not recognized/i;
 
 /**
- * Response → plan windows + spend. Pure, throw-free: anything unrecognizable
- * contributes nothing. The self-describing `limits[]` array is primary (it is
- * what claude.ai's own usage page renders); the legacy `five_hour`/`seven_day`
- * fields are the fallback for an older response shape. The legacy top-level
- * bucket names beyond those two are experiment codenames observed to churn
- * (`tangelo`, `nimbus_quill`, …) and are deliberately not parsed.
+ * Runs the operator's own `claude` through their login shell, so it is found
+ * where their terminal finds it (a packaged app has a bare PATH). Pinned to
+ * Exawatt's scratch directory, with the auto-updater off so a read can never
+ * change anyone's install.
  */
-export function parseClaudeUsage(
-  payload: unknown,
-  observedAt: string,
-  planType: string | null
-): ClaudeUsageParse {
-  if (!payload || typeof payload !== 'object') {
-    return { windows: [], spend: null };
-  }
-  const body = payload as {
-    limits?: unknown;
-    five_hour?: unknown;
-    seven_day?: unknown;
-    spend?: unknown;
-    extra_usage?: unknown;
-  };
-
-  const shared = {
-    source: 'claude-code' as const,
-    scope: 'primary' as const,
-    planType,
-    observedAt,
-    providerSessionId: '',
-    origin: 'provider-account' as const,
-  };
-
-  const byId = new Map<string, PlanWindow>();
-
-  if (Array.isArray(body.limits)) {
-    for (const candidate of body.limits) {
-      const row = readLimitRow(candidate);
-      if (!row || row.percent === null) continue;
-      const identity = limitIdentity(row);
-      if (!identity) continue;
-      byId.set(identity.limitId, {
-        ...shared,
-        ...identity,
-        usedPercent: row.percent,
-        resetsAt: row.resetsAt,
-      });
-    }
-  }
-
-  if (byId.size === 0) {
-    const legacy: Array<[unknown, ReturnType<typeof limitIdentity>]> = [
-      [
-        body.five_hour,
-        {
-          limitId: 'claude-session',
-          limitName: null,
-          windowMinutes: SESSION_MINUTES,
-        },
-      ],
-      [
-        body.seven_day,
-        {
-          limitId: 'claude-weekly-all',
-          limitName: null,
-          windowMinutes: WEEK_MINUTES,
-        },
-      ],
-    ];
-    for (const [candidate, identity] of legacy) {
-      if (!candidate || typeof candidate !== 'object' || !identity) continue;
-      const bucket = candidate as {
-        utilization?: unknown;
-        resets_at?: unknown;
+export function createClaudeUsageRunner(
+  options: { resolveShell?: () => Promise<string> } = {}
+): ClaudeUsageRunner {
+  const resolveShell = options.resolveShell ?? defaultShell;
+  return async timeoutMs => {
+    const shell = await resolveShell();
+    const plan = planLoginShell(shell, {
+      command: `claude ${CLAUDE_USAGE_ARGS.map(shellQuote).join(' ')}`,
+    });
+    return new Promise<ClaudeUsageRun>(resolve => {
+      let settled = false;
+      const settle = (run: ClaudeUsageRun) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(run);
       };
-      const percent = finiteOrNull(bucket.utilization);
-      if (percent === null) continue;
-      byId.set(identity.limitId, {
-        ...shared,
-        ...identity,
-        usedPercent: percent,
-        resetsAt: isoOrNull(bucket.resets_at),
+      let child: ReturnType<typeof spawn>;
+      try {
+        child = spawn(shell, plan.args, {
+          cwd: plan.cwd,
+          env: { ...process.env, SHELL: shell, DISABLE_AUTOUPDATER: '1' },
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
+        });
+      } catch {
+        resolve({ kind: 'spawn-failed' });
+        return;
+      }
+      const timer = setTimeout(() => {
+        if (child.pid) {
+          try {
+            process.kill(-child.pid, 'SIGKILL');
+          } catch {
+            child.kill('SIGKILL');
+          }
+        }
+        settle({ kind: 'timed-out' });
+      }, timeoutMs);
+      let stdout = '';
+      let stderr = '';
+      child.stdout?.on('data', (data: Buffer) => {
+        if (stdout.length < MAX_OUTPUT_BYTES) stdout += data.toString();
       });
-    }
-  }
+      child.stderr?.on('data', (data: Buffer) => {
+        if (stderr.length < 64 * 1024) stderr += data.toString();
+      });
+      child.on('error', () => settle({ kind: 'spawn-failed' }));
+      child.on('close', code =>
+        settle({ kind: 'finished', exitCode: code ?? -1, stdout, stderr })
+      );
+    });
+  };
+}
 
-  return { windows: [...byId.values()], spend: parseSpend(body) };
+const runClaudeUsage: ClaudeUsageRunner = createClaudeUsageRunner();
+
+/**
+ * One run, judged: windows, or the one named reason there are none. Each of a
+ * missing binary, a timeout, a non-zero exit, a signed-out `claude` and an
+ * unknown format is its own cause.
+ */
+export function judgeClaudeUsageRun(
+  run: ClaudeUsageRun,
+  nowMs: number
+): PlanAccountRead | PlanAccountReadFailure {
+  if (run.kind === 'timed-out') return { failure: 'timed-out' };
+  if (run.kind === 'spawn-failed') return { failure: 'exited' };
+  if (run.exitCode !== 0) {
+    return {
+      failure:
+        run.exitCode === 127 || COMMAND_NOT_FOUND.test(run.stderr)
+          ? 'not-installed'
+          : 'exited',
+    };
+  }
+  const parsed = parseClaudeUsageOutput(run.stdout, nowMs);
+  if (parsed.kind === 'failure') return { failure: parsed.cause };
+  return { windows: parsed.windows, planType: null, spend: null };
+}
+
+function claudePlanReader(options: {
+  run: ClaudeUsageRunner;
+  now: () => number;
+  timeoutMs: number;
+}): PlanAccountReader {
+  return async () => {
+    const run = await options
+      .run(options.timeoutMs)
+      .catch((): ClaudeUsageRun => ({ kind: 'spawn-failed' }));
+    return judgeClaudeUsageRun(run, options.now());
+  };
 }
 
 /* ------------------------------------------------------------------ */
-/* the service — the shared account-read life, with Claude's reader    */
+/* the service — the shared account-read life, with Claude's reader     */
 /* ------------------------------------------------------------------ */
-
-export type ClaudePlanAccountView = PlanAccountView;
 
 export interface ClaudePlanAccountOptions {
   /** Directory this service may write. Its ONLY write path. */
   stateDir: string;
   /** Seeded from settings; `setEnabled` applies the toggle live. */
   enabled: boolean;
-  /**
-   * Immutable runtime capability. False for unsigned development copies so a
-   * settings write cannot accidentally open this credentialed network path.
-   */
-  remoteReadAllowed?: boolean;
-  fetchFn?: typeof fetch;
-  readCredential?: () => Promise<ClaudeOauthCredential | null>;
+  /** The process run; injectable so tests replay recorded output. */
+  run?: ClaudeUsageRunner;
   now?: () => number;
   minFetchIntervalMs?: number;
   jitterMs?: number;
   timeoutMs?: number;
-}
-
-/**
- * One read of the Claude account: Claude Code's own credential, read in
- * place, sent to `api.anthropic.com` only, never when expired, never
- * refreshed here. Null on any failure; the service turns that into absence.
- */
-function claudePlanReader(options: {
-  fetchFn: typeof fetch;
-  readCredential: () => Promise<ClaudeOauthCredential | null>;
-  now: () => number;
-  timeoutMs: number;
-}): PlanAccountReader {
-  return async () => {
-    const credential = await options.readCredential().catch(() => null);
-    if (!credential) return null;
-    // An expired token is never sent, and never refreshed here: Claude Code
-    // owns that credential's lifecycle. Degrade to absence until it does.
-    if (
-      credential.expiresAtMs !== null &&
-      credential.expiresAtMs <= options.now()
-    ) {
-      return null;
-    }
-    let payload: unknown;
-    try {
-      const response = await options.fetchFn(CLAUDE_USAGE_ENDPOINT, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${credential.accessToken}`,
-          'anthropic-beta': CLAUDE_OAUTH_BETA_HEADER,
-          'Content-Type': 'application/json',
-        },
-        // The token must not follow a redirect off api.anthropic.com.
-        redirect: 'error',
-        signal: AbortSignal.timeout(options.timeoutMs),
-      });
-      if (!response.ok) return null;
-      payload = await response.json();
-    } catch {
-      return null;
-    }
-    const observedAt = new Date(options.now()).toISOString();
-    const parsed = parseClaudeUsage(
-      payload,
-      observedAt,
-      credential.subscriptionType
-    );
-    return {
-      windows: parsed.windows,
-      spend: parsed.spend,
-      planType: credential.subscriptionType,
-      rateLimitTier: credential.rateLimitTier,
-    };
-  };
 }
 
 export class ClaudePlanAccountService extends PlanAccountService {
@@ -503,10 +544,8 @@ export class ClaudePlanAccountService extends PlanAccountService {
       stateFileName: STATE_FILE,
       stateLabel: 'Claude plan history',
       enabled: options.enabled,
-      remoteReadAllowed: options.remoteReadAllowed,
       read: claudePlanReader({
-        fetchFn: options.fetchFn ?? fetch,
-        readCredential: options.readCredential ?? readClaudeCredential,
+        run: options.run ?? runClaudeUsage,
         now,
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       }),

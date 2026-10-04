@@ -39,8 +39,6 @@ export function isOutboundControlConfigured(
       return capabilities.enrichment.goalVisuals;
     case 'services.operatorStats':
       return capabilities.services.operatorStats;
-    case 'ownAccount.claudePlanUsage':
-      return capabilities.ownAccount.claudePlanUsage;
     default: {
       const unreachable: never = required;
       throw new Error(`Unhandled distribution capability: ${unreachable}`);

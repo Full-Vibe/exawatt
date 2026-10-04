@@ -23,12 +23,5 @@ export function distributionCapabilities(contract: DistributionContractV2) {
       preferences: contract.services.preferences !== null,
       accountData: contract.services.accountData !== null,
     },
-    // Not an Exawatt service: this family is traffic to the operator's OWN
-    // vendor account, and the contract only declares whether this
-    // distribution has the stable signed identity that may carry it
-    // automatically (decision `0036` §6).
-    ownAccount: {
-      claudePlanUsage: contract.ownAccount?.claudePlanUsage === 'stable-signed',
-    },
   } as const;
 }

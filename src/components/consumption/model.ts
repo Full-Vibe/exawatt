@@ -36,6 +36,7 @@ import {
   planWindowKey,
   type ConsumptionRollup,
   type ConsumptionSourceId,
+  type PlanAccountFailureCause,
   type PlanWindow,
   type RawUsage as CoreRawUsage,
 } from '@exawatt/core';
@@ -241,7 +242,9 @@ export interface AccountSpendView {
  * is made, once, for every surface.
  */
 export interface AccountReadView {
-  status: 'ok' | 'unavailable' | 'disabled' | 'unconfigured';
+  status: 'ok' | 'unavailable' | 'disabled';
+  /** Why the latest read produced nothing, when the source could say. */
+  failure?: PlanAccountFailureCause;
   /** Last SUCCESSFUL read; null when none has ever succeeded. */
   observedAtMs: number | null;
   /** The account's own plan identity, e.g. `max`. */
@@ -351,15 +354,15 @@ export function meterLabel(windowMinutes: number, scope: string | null): string 
 /* ------------------------------------------------------------------ */
 
 /**
- * The four honest answers to "what is this source's plan position?".
+ * The honest answers to "what is this source's plan position?".
  *
  *   reported   — a live window exists; read it.
  *   none       — the source keeps no plan record and no account read is
  *                configured. A capability fact: there is nothing to see.
  *   off        — an account read exists and the operator turned it off.
  *   unreadable — an account read exists and currently cannot be read
- *                (token expired, network down, schema drift, never
- *                configured, or its last observation went stale).
+ *                (the harness is missing or signed out, it timed out, its
+ *                report changed shape, or its last observation went stale).
  *
  * `off` and `unreadable` are the UNKNOWN states, and they are the reason this
  * function exists: before it, all three of `none`/`off`/`unreadable` rendered
@@ -371,7 +374,6 @@ export type PlanReadState =
   | 'reported'
   | 'none'
   | 'off'
-  | 'unconfigured'
   | 'unreadable';
 
 export function planReadState(
@@ -384,10 +386,6 @@ export function planReadState(
   const account = source.accountRead;
   if (!account) return 'none';
   if (account.status === 'disabled') return 'off';
-  // The build holds no grant to read the account (BUG-149). The position is
-  // as unknown as `off`, but it was never the operator's switch, and there
-  // is no Settings control to send them to.
-  if (account.status === 'unconfigured') return 'unconfigured';
   // `ok` with nothing live means the read succeeded but its observation has
   // gone stale — still unknown, never a reassuring absence.
   return 'unreadable';
@@ -395,7 +393,7 @@ export function planReadState(
 
 /** True for the states where the source's true position is UNKNOWN. */
 export function planReadIsUnknown(state: PlanReadState): boolean {
-  return state === 'off' || state === 'unconfigured' || state === 'unreadable';
+  return state === 'off' || state === 'unreadable';
 }
 
 /** Sources whose plan position is unknown right now. */

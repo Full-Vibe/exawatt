@@ -268,15 +268,16 @@ export const USAGE_SCENARIOS: readonly UsageScenario[] = [
     tokens: HEAVY_TOKENS,
   },
   {
-    id: 'claude-not-in-build',
-    title: 'Claude not readable in this build',
-    shows: 'The installed build has no grant to read the Claude account, while Claude does the heavy lifting.',
+    id: 'claude-not-readable',
+    title: 'Claude not readable',
+    shows: 'Claude Code is not signed in to a plan, so there is nothing to meter, while Claude does the heavy lifting.',
     nowMs: SCENARIO_NOW_MS,
     ...windows([codexWeek(78, 1.635)]),
     accounts: [
       {
         source: 'claude-code',
-        status: 'unconfigured',
+        status: 'unavailable',
+        failure: 'no-plan',
         observedAt: null,
         planType: null,
         spend: null,
@@ -292,7 +293,11 @@ export const USAGE_SCENARIOS: readonly UsageScenario[] = [
     nowMs: SCENARIO_NOW_MS,
     ...windows([...claudeWindows(at(-26)), codexWeek(40, 0.7)]),
     accounts: [
-      claudeAccount({ status: 'unavailable', observedAt: iso(at(-26)) }),
+      claudeAccount({
+        status: 'unavailable',
+        failure: 'timed-out',
+        observedAt: iso(at(-26)),
+      }),
       codexAccount({ resets: { available: 0, credits: [] } }),
     ],
     tokens: HEAVY_TOKENS,

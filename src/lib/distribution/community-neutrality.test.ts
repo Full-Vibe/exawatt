@@ -15,8 +15,10 @@ import { electronBuilderDistributionConfig } from '../../../scripts/lib/distribu
 // The own-account boundary lives in Electron main, but it is a distribution
 // property, so it is asserted here beside every other capability the
 // community contract withholds.
-import { isClaudePlanRemoteReadAllowed } from '../../../electron/main/consumption/claude-plan-account';
-import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
+import {
+  OUTBOUND_CONTROLS,
+  OWN_ACCOUNT_FEATURE_IDS,
+} from '@/lib/hosted-features/contract';
 import { isOutboundControlConfigured } from '@/lib/hosted-features/distribution-availability';
 
 describe('community distribution neutrality', () => {
@@ -38,9 +40,6 @@ describe('community distribution neutrality', () => {
         projects: false,
         preferences: false,
         accountData: false,
-      },
-      ownAccount: {
-        claudePlanUsage: false,
       },
     });
     expect(resolveDistributionIdentity(COMMUNITY_DISTRIBUTION)).toMatchObject({
@@ -113,57 +112,22 @@ describe('community distribution neutrality', () => {
     }
   });
 
-  // BUG-060. This is the OTHER outbound family: not an Exawatt service, but a
-  // credentialed read against the operator's own vendor account that leaves
-  // through Exawatt's own network stack and therefore carries this build's
-  // code signature. Incident `0011` is what that costs from an ad-hoc-signed
-  // artifact, and `app.isPackaged` stops being the boundary the moment a
-  // contributor packages the public repository: their build is packaged too.
-  it('permits no automatic own-account read from a packaged community build', () => {
-    expect(COMMUNITY_DISTRIBUTION.ownAccount).toBeNull();
-    const stableSignedIdentity = distributionCapabilities(
-      COMMUNITY_DISTRIBUTION
-    ).ownAccount.claudePlanUsage;
-    expect(stableSignedIdentity).toBe(false);
-
-    // Packaged, not a test run, no developer opt-in: the exact shape of a
-    // contributor's ad-hoc `pnpm electron:build` artifact on a real desktop.
-    expect(
-      isClaudePlanRemoteReadAllowed({
-        stableSignedIdentity,
-        packaged: true,
-        testMode: false,
-        developmentOptIn: undefined,
-      })
-    ).toBe(false);
-
-    // And the grant is real in the other direction, so this asserts a
-    // boundary rather than a disabled feature: a distribution that declares
-    // the stable signed identity gets the read in its packaged build.
-    expect(
-      isClaudePlanRemoteReadAllowed({
-        stableSignedIdentity: true,
-        packaged: true,
-        testMode: false,
-        developmentOptIn: undefined,
-      })
-    ).toBe(true);
-  });
-
-  it('offers no dead Claude plan switch on a community Privacy surface', () => {
+  // BUG-060, superseded by ENG-038 slice 3. The own-account family used to be
+  // a credentialed read made through Exawatt's own network stack, gated on a
+  // distribution-declared stable signing identity. It now runs the operator's
+  // own binary, so there is nothing to gate: every own-account control is
+  // configured in every build, and the distribution carries no declaration
+  // for it. The reintroduction guard lives beside the module
+  // (`claude-plan-account.test.ts`).
+  it('keeps every own-account control switchable on a community Privacy surface', () => {
     const capabilities = distributionCapabilities(COMMUNITY_DISTRIBUTION);
-    expect(
-      isOutboundControlConfigured(
-        OUTBOUND_CONTROLS.claudePlanWindows,
-        capabilities
-      )
-    ).toBe(false);
-    // The recap is the control on the same group that no distribution
-    // capability gates: it runs the operator's own `claude` CLI, a separate
-    // program with its own firewall identity, so it stays switchable here.
-    expect(
-      isOutboundControlConfigured(OUTBOUND_CONTROLS.reentryRecap, capabilities)
-    ).toBe(true);
+    expect(capabilities).not.toHaveProperty('ownAccount');
+    for (const id of OWN_ACCOUNT_FEATURE_IDS) {
+      expect(
+        isOutboundControlConfigured(OUTBOUND_CONTROLS[id], capabilities),
+        `${id} must keep its switch in a community build`
+      ).toBe(true);
+    }
   });
 
   it('short-circuits a null product service before auth or fetch', async () => {

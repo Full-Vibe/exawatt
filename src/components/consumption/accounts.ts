@@ -17,8 +17,8 @@
  *   says it is stale. It never disappears, and it keeps forecasting from that
  *   reading at its true age, so losing a read can never make the headline
  *   calmer than the last thing Exawatt saw.
- * - "Off", "not available in this build", "couldn't read" and "keeps no plan
- *   record" are four different sentences (`planReadState`), never one.
+ * - "Off", "couldn't read" and "keeps no plan record" are three different
+ *   sentences (`planReadState`), never one.
  * - Absent is never zero: an account whose source cannot report resets or
  *   credits carries `null`, not an empty count.
  *
@@ -28,6 +28,7 @@
 import {
   CONSUMPTION_SOURCE_IDS,
   type ConsumptionSample,
+  type PlanAccountFailureCause,
 } from '@exawatt/core';
 import {
   ACCOUNT_NAME,
@@ -67,7 +68,6 @@ const RESET_EXPIRY_HEADLINE_MS = 3 * DAY;
  *                  is older than the window; shown with their true as-of.
  *   unreadable   — an account read exists and has nothing current.
  *   off          — the operator turned the account read off.
- *   unconfigured — this build holds no grant to read the account.
  *   unmetered    — the source keeps no plan record at all (a fact).
  */
 type AccountHealth =
@@ -75,7 +75,6 @@ type AccountHealth =
   | 'stale'
   | 'unreadable'
   | 'off'
-  | 'unconfigured'
   | 'unmetered';
 
 type MeterForecast =
@@ -127,6 +126,9 @@ export interface UsageAccount {
   credits: { balance: number | null; unlimited: boolean } | null;
   /** Banked resets. null when the source cannot report them. */
   resets: AccountResets | null;
+  /** Why the account's latest read produced nothing, when its source could
+   *  say; undefined while reads succeed. */
+  failure: PlanAccountFailureCause | null;
   /** Raw tokens measured locally for this source over the view's window. */
   observedTokens: number;
 }
@@ -232,11 +234,9 @@ function accountOf(
         ? 'stale'
         : state === 'off'
           ? 'off'
-          : state === 'unconfigured'
-            ? 'unconfigured'
-            : state === 'unreadable'
-              ? 'unreadable'
-              : 'unmetered';
+          : state === 'unreadable'
+            ? 'unreadable'
+            : 'unmetered';
 
   const windowAsOf = source.windows
     .map(w => w.observedAtMs)
@@ -258,6 +258,7 @@ function accountOf(
     spend: readable ? (read?.spend ?? null) : null,
     credits: readable ? (read?.credits ?? null) : null,
     resets: readable ? resetsOf(read, nowMs) : null,
+    failure: read?.status === 'unavailable' ? (read.failure ?? null) : null,
     observedTokens,
   };
 }
@@ -546,22 +547,40 @@ export function forecastLine(
   }
 }
 
+/** The one sentence for a named read failure, naming the app the account is
+ *  read through ("Claude Code", "Codex"). */
+function failureSentence(cause: PlanAccountFailureCause, app: string): string {
+  switch (cause) {
+    case 'not-installed':
+      return `${app} isn't installed on this machine.`;
+    case 'no-plan':
+      return `${app} isn't signed in to a plan.`;
+    case 'timed-out':
+      return `${app} didn't answer in time.`;
+    case 'exited':
+      return `${app} stopped with an error.`;
+    case 'unrecognized':
+      return `${app} answered in a format Exawatt doesn't know yet.`;
+  }
+}
+
 /** Why a card has no bars, as one short product sentence. */
 export function healthLine(account: UsageAccount, nowMs: number): string | null {
+  const app = account.harness === 'claude-code' ? 'Claude Code' : account.name;
+  const cause = account.failure ? failureSentence(account.failure, app) : null;
   switch (account.health) {
     case 'reporting':
       return null;
     case 'stale':
-      return 'Not read recently. Figures are from the last read.';
+      return cause
+        ? `Couldn't read plan limits. ${cause} Figures are from the last read.`
+        : 'Not read recently. Figures are from the last read.';
     case 'off':
       return 'Plan usage is turned off in Settings, Privacy.';
-    case 'unconfigured':
-      return "Plan limits aren't available in this build.";
     case 'unreadable': {
       const ago = asOfPhrase(account.asOfMs, nowMs);
-      return ago
-        ? `Couldn't read plan limits. ${ago.replace('Updated', 'Last read')}.`
-        : "Couldn't read plan limits.";
+      const last = ago ? ` ${ago.replace('Updated', 'Last read')}.` : '';
+      return `Couldn't read plan limits.${cause ? ` ${cause}` : ''}${last}`;
     }
     case 'unmetered':
       return 'No plan limits reported.';

@@ -45,8 +45,5 @@
   },
   "updates": {
     "feedUrl": "https://updates.exawatt.ai/macos/arm64"
-  },
-  "ownAccount": {
-    "claudePlanUsage": "stable-signed"
   }
 }

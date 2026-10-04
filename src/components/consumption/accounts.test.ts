@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   gapPhrase,
+  healthLine,
   planLabel,
   resetPhrase,
   usageOverview,
@@ -103,11 +104,38 @@ describe('what runs out first, when, and before which reset', () => {
 });
 
 describe('absence and failure stay visible', () => {
-  it('shows a Claude card that says the build cannot read it, with its local tokens', () => {
-    const claude = account(scenarioOverview(usageScenario('claude-not-in-build')), 'claude-code')!;
-    expect(claude.health).toBe('unconfigured');
+  it('shows a Claude card that says why it cannot be read, with its local tokens', () => {
+    const claude = account(scenarioOverview(usageScenario('claude-not-readable')), 'claude-code')!;
+    expect(claude.health).toBe('unreadable');
+    expect(claude.failure).toBe('no-plan');
     expect(claude.meters).toEqual([]);
     expect(claude.observedTokens).toBeGreaterThan(0);
+  });
+
+  it('says which thing went wrong, one sentence per cause, with no figure invented', () => {
+    const causes = ['not-installed', 'no-plan', 'timed-out', 'exited', 'unrecognized'] as const;
+    const lines = causes.map(failure => {
+      const s = usageScenario('claude-not-readable');
+      const read: UsageScenario = {
+        ...s,
+        accounts: s.accounts.map(a => (a.source === 'claude-code' ? { ...a, failure } : a)),
+      };
+      const claude = account(scenarioOverview(read), 'claude-code')!;
+      expect(claude.failure).toBe(failure);
+      expect(claude.meters).toEqual([]);
+      return healthLine(claude, SCENARIO_NOW_MS)!;
+    });
+    // Every cause reads as "couldn't read" plus its own reason.
+    for (const line of lines) expect(line).toMatch(/^Couldn't read plan limits\./u);
+    expect(new Set(lines).size).toBe(causes.length);
+    // A read that fails for a reason the source cannot name still says so.
+    const unnamed = account(
+      scenarioOverview(withFailedRead(usageScenario('claude-read-failing'), 'claude-code')),
+      'claude-code'
+    )!;
+    expect(healthLine({ ...unnamed, failure: null }, SCENARIO_NOW_MS)).toBe(
+      'Not read recently. Figures are from the last read.'
+    );
   });
 
   it('keeps a failing read on screen at its true age', () => {

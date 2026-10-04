@@ -71,9 +71,9 @@ export function registerConsumptionIPC(
     });
   }
   if (planAccount) {
-    // ENG-038: the off switch for the credentialed Claude plan-window read.
-    // Applied to the service BEFORE the write is announced, so no request can
-    // be constructed after the operator has switched the read off; the
+    // ENG-038: the off switch for the Claude plan-window read. Applied to the
+    // service BEFORE the write is announced, so no process can be started
+    // after the operator has switched the read off; the
     // service's own revision bump then pushes `consumption:updated`, and the
     // next pull serves absence.
     handleBounded('settings:set-claude-plan-windows', (_event, enabled) => {

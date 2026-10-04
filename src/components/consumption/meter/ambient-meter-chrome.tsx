@@ -33,7 +33,7 @@ export const AMBIENT_CHROME_METER_ENABLED = true;
  */
 export function meterAriaLabel(overview: UsageOverview): string {
   const unknown = overview.accounts.some(a =>
-    ['stale', 'unreadable', 'off', 'unconfigured'].includes(a.health)
+    ['stale', 'unreadable', 'off'].includes(a.health)
   );
   const partial = unknown ? ' Some accounts cannot be read right now.' : '';
   if (overview.headline) {

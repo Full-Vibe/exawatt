@@ -5,7 +5,10 @@ import {
   parseDistributionContract,
 } from '@exawatt/core/distribution';
 import { DEFAULT_AGENT_PERMISSION_MODE } from '@/components/workspace/agent-sources';
-import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
+import {
+  OUTBOUND_CONTROLS,
+  OWN_ACCOUNT_FEATURE_IDS,
+} from '@/lib/hosted-features/contract';
 import { MachineDisclosures } from './machine-disclosures';
 
 afterEach(cleanup);
@@ -122,13 +125,13 @@ describe('a community distribution says what it does not do, and what it still d
     expect(screen.getByText('There are no updates to wait for')).toBeVisible();
   });
 
-  it('makes no automatic own-account read, because none is granted', () => {
-    // BUG-060's boundary: the automatic Claude plan read needs
-    // `ownAccount.claudePlanUsage`, which community never declares. If that
-    // ever changes, the community disclosure above stops being complete.
-    expect(COMMUNITY_DISTRIBUTION.ownAccount).toBe(null);
-    expect(
-      OUTBOUND_CONTROLS.claudePlanWindows.requiresDistributionCapability
-    ).toBe('ownAccount.claudePlanUsage');
+  it('names no distribution grant for any own-account read', () => {
+    // ENG-038 slice 3 (superseding BUG-060's boundary): the Claude plan read
+    // runs the operator's own `claude`, like the recap and the Codex read, so
+    // no outbound control in the own-account group waits on a declaration a
+    // distributor could withhold.
+    for (const id of OWN_ACCOUNT_FEATURE_IDS) {
+      expect(OUTBOUND_CONTROLS[id].requiresDistributionCapability).toBe(null);
+    }
   });
 });

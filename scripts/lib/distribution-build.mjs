@@ -205,8 +205,8 @@ export async function readOfficialCustody(file = OFFICIAL_CUSTODY_FILE) {
   } catch {
     throw new Error(
       `Official distribution custody is missing: ${file}\n` +
-        'Write the validated official contract there with mode 0600 (schema 2; ' +
-        'a schema-1 file is still accepted and reads as ownAccount: null), or ' +
+        'Write the validated official contract there with mode 0600 (schema 1 ' +
+        'and schema 2 are both accepted), or ' +
         'build without EXAWATT_DISTRIBUTION_PROFILE=official for a community build.'
     );
   }
