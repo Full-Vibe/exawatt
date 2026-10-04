@@ -261,3 +261,16 @@ Session's request remains visible and navigable without changing its stopped
 lifecycle. This review also pulled independent request/result records forward
 under the attention owner, so a turn result cannot overwrite a still-open
 working question. Integration remains gated on the combined tests and review.
+
+Preservation boundary (2026-10-04): the current checkpoint carries active
+Project, per-Project selected tab, Project/tab order, pin, purpose/context,
+operator title ownership, exact conversation identity, model/effort and authored
+new-Agent draft choices (task/source/model/effort/worktree/branch/roadmap link).
+Main retains bounded terminal history. This slice adds durable attention/read
+receipts and the previously-running recovery set. It does **not** capture xterm
+viewport/selection or unsent text inside a running provider TUI: those have no
+existing source-aware checkpoint seam. A resumed provider determines its own
+input restoration; Exawatt must not replay ambiguous terminal bytes as new
+operator commands. Those portions of the original BUG-260 report stay open for
+separate shaping and literal evidence. BUG-117's all-Claude-missing observation
+also remains an operator recheck, distinct from the automated recents fixture.
