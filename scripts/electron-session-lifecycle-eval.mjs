@@ -207,6 +207,7 @@ function waitForClose(app) {
 
 let exactIds = [];
 let previouslyPausedId;
+let previouslyPausedCheckpoint;
 let retainedRequestId;
 try {
   console.log('[eng-018] launch fixture');
@@ -269,13 +270,13 @@ try {
       await page.evaluate(async paused => {
         await window.electron.pty.pauseSessions([paused], true);
       }, previouslyPausedId);
-      await waitForPageCondition(
+      previouslyPausedCheckpoint = await waitForPageCondition(
         page,
         async paused => {
           const layout = await window.electron.workspace.load();
           return layout?.projects
             ?.flatMap(project => project.tabs)
-            .some(
+            .find(
               tab => tab.durableSessionId === paused && tab.sessionId === null
             );
         },
@@ -302,9 +303,16 @@ try {
     throw new Error(
       `Every tab this eval starts is a local Session: ${JSON.stringify(tabs.map(t => t.kind))}`
     );
+  // Quit owns only the still-running processes. The already-paused Session
+  // must retain its observed stopped lifecycle, not be relabeled by shutdown.
   if (
     tabs.some(
-      tab => tab.lifecycle !== 'stopped-clean' || tab.sessionId !== null
+      tab =>
+        tab.sessionId !== null ||
+        tab.lifecycle !==
+          (tab.durableSessionId === previouslyPausedId
+            ? previouslyPausedCheckpoint.lifecycle
+            : 'stopped-clean')
     )
   ) {
     throw new Error(
