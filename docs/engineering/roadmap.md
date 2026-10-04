@@ -3435,7 +3435,7 @@ truth is preserved, and foreign servers remain untouched.
 
 ### BUG-272 Feedback recovery fails delivery and breaks workflow continuity
 
-Status: active-build · ENG-025 with ENG-036 · bug · operator recovery 2026-10-04.
+Status: bug · ENG-025 · operator recovery 2026-10-04; active-build F7 with ENG-036.
 
 F6's new fingerprint column lacks authenticated INSERT permission; production
 POST returns 503 and read-only EXPLAIN reproduces `42501`. Close-on-send then
