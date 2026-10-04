@@ -235,9 +235,25 @@ export function DemoWorkspaceClient() {
   const setActiveId = useCallback((id: string) => setActiveSessionId(id), []);
   useEffect(() => {
     if (!activeId) return;
-    void attentionSource?.focus(activeId);
-    return () => {
+    const acknowledge = () => {
+      if (document.hasFocus() && document.visibilityState !== 'hidden') {
+        void attentionSource?.focus(activeId);
+      }
+    };
+    const blur = () => {
       void attentionSource?.focus(null);
+    };
+    const visibility = () =>
+      document.visibilityState === 'hidden' ? blur() : acknowledge();
+    acknowledge();
+    window.addEventListener('focus', acknowledge);
+    window.addEventListener('blur', blur);
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      window.removeEventListener('focus', acknowledge);
+      window.removeEventListener('blur', blur);
+      document.removeEventListener('visibilitychange', visibility);
+      blur();
     };
   }, [activeId, attentionSource]);
 

@@ -21,6 +21,7 @@ try {
         ...process.env,
         NODE_ENV: 'development',
         EXAWATT_TEST: '1',
+        EXAWATT_WINDOW_MODE: 'foreground',
         EXAWATT_USER_DATA: userData,
         EXAWATT_DEV_URL: `${base}/workspace`,
       },
@@ -93,6 +94,13 @@ try {
       );
       await page.keyboard.press('Enter');
       await page.waitForURL('**/workspace*');
+      await app.evaluate(({ app, BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows()[0];
+        window.show();
+        window.focus();
+        app.focus({ steal: true });
+      });
+      await page.waitForFunction(() => document.hasFocus());
       await waitForPageCondition(
         page,
         async id =>

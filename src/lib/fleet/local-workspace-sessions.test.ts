@@ -115,6 +115,30 @@ describe('mergeLocalWorkspaceSessions', () => {
     });
   });
 
+  it('honors an exited runtime owner that positively resolved an older saved request', () => {
+    const result = mergeLocalWorkspaceSessions(
+      [live({ exited: true, attention: null })],
+      {
+        projects: [
+          {
+            dir: '/code/exawatt',
+            tabs: [
+              {
+                id: 'tab-live',
+                durableSessionId: 'durable-1',
+                harness: 'claude',
+                cwd: '/code/exawatt',
+                attention: { kind: 'blocked', since: 1, unread: true },
+              },
+            ],
+          },
+        ],
+      }
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].attention).toBeNull();
+  });
+
   it('keeps an exited PTY addressable through its stable tab identity', () => {
     const result = mergeLocalWorkspaceSessions(
       [live({ exited: true, exitCode: 0 })],

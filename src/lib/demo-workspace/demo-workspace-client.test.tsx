@@ -9,7 +9,11 @@ import {
 } from '@/components/workspace/session-jump';
 import { getWorkspaceCommandAvailability } from '@/components/workspace/workspace-command-availability';
 import { demoShellAgents, demoShellProjects } from './model';
-import { FleetProvider } from '@/lib/fleet/fleet-provider';
+import {
+  FleetProvider,
+  useFleet,
+  useSessionAttentionSource,
+} from '@/lib/fleet/fleet-provider';
 import { DemoWorkspaceClient } from './demo-workspace-client';
 
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -47,6 +51,55 @@ function projectOrder(container: HTMLElement): string[] {
 }
 
 describe('Demo workspace on the real ribbon (W6)', () => {
+  it('acknowledges only actual foreground inspection and acknowledges again on window return', async () => {
+    const target = demoShellAgents().find(
+      agent => agent.status === 'complete'
+    )!;
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    function ReadProbe() {
+      const { fleetState } = useFleet();
+      const commands = useSessionAttentionSource();
+      return (
+        <>
+          <output
+            data-receipt={String(
+              fleetState.agents[target.id]?.attention?.unread
+            )}
+          />
+          <button
+            data-test-mark
+            onClick={() => void commands?.markUnread(target.id)}
+          >
+            mark
+          </button>
+        </>
+      );
+    }
+    requestSessionJump(target.id);
+    const { container } = render(
+      <TooltipProvider>
+        <FleetProvider>
+          <DemoWorkspaceClient />
+          <ReadProbe />
+        </FleetProvider>
+      </TooltipProvider>
+    );
+    const receipt = () =>
+      container.querySelector('[data-receipt]')?.getAttribute('data-receipt');
+    await waitFor(() => expect(receipt()).toBe('true'));
+    focused.mockReturnValue(true);
+    fireEvent.focus(window);
+    await waitFor(() => expect(receipt()).toBe('false'));
+    fireEvent.click(container.querySelector('[data-test-mark]')!);
+    await waitFor(() => expect(receipt()).toBe('true'));
+    focused.mockReturnValue(false);
+    fireEvent.blur(window);
+    focused.mockReturnValue(true);
+    fireEvent.focus(window);
+    await waitFor(() => expect(receipt()).toBe('false'));
+    focused.mockRestore();
+  });
+
   it('consumes an exact cross-route handoff only after commit under render replay', async () => {
     const target = demoShellAgents().find(
       agent => agent.id !== 'vg-home-onboard'
