@@ -376,7 +376,10 @@ describe('permanent verdicts about the installed app-server (BUG-146)', () => {
       method === 'initialize'
         ? { userAgent: 'exawatt-delegation/0.147.0 (fixture)' }
         : method === 'thread/items/list' && params.threadId === 'large'
-          ? { data: [{ item: { type: 'agentMessage', text: huge } }], nextCursor: null }
+          ? {
+              data: [{ item: { type: 'agentMessage', text: huge } }],
+              nextCursor: null,
+            }
           : { data: [], nextCursor: null }
     );
     const client = new CodexAppServerClient(async () => child);
@@ -494,7 +497,9 @@ describe('permanent verdicts about the installed app-server (BUG-146)', () => {
     expect(h.observer.verdict?.error).toBe(h.protocol.connectVerdict);
     expect(h.cleared).toEqual(['pty-codex']);
     // The binary is resolved once, at verdict time, and never on a poll.
-    await vi.waitFor(() => expect(h.observer.verdict?.binaryPath).not.toBeNull());
+    await vi.waitFor(() =>
+      expect(h.observer.verdict?.binaryPath).not.toBeNull()
+    );
     expect(h.resolves()).toBe(1);
 
     await h.observer.pollNow();
@@ -509,7 +514,9 @@ describe('permanent verdicts about the installed app-server (BUG-146)', () => {
       'installed app-server is older than 0.147.0'
     );
     await h.observer.pollNow();
-    await vi.waitFor(() => expect(h.observer.verdict?.fingerprint).not.toBeNull());
+    await vi.waitFor(() =>
+      expect(h.observer.verdict?.fingerprint).not.toBeNull()
+    );
     await h.observer.pollNow();
     expect(h.protocol.connectCalls).toBe(1);
 
@@ -597,6 +604,71 @@ describe('CodexDelegationObserver', () => {
     observer.observe(session());
     return { protocol, monitor, lifecycle, observer, observations };
   }
+
+  it('reads root lifecycle independently of child discovery and retains queued questions', async () => {
+    const h = harness();
+    let status = 'interrupted';
+    let questions = ['question:0'];
+    let answered: string[] = [];
+    Object.assign(h.protocol, {
+      rootObservation: async () => ({
+        turn: {
+          id: 'root-turn',
+          status,
+          completedAt: status === 'completed' ? 10 : null,
+        },
+        questions,
+        answered,
+      }),
+    });
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')).toMatchObject({
+      ownTurn: 'unknown',
+      blockedOn: 'question',
+      request: 'working',
+    });
+    status = 'completed';
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')).toMatchObject({
+      ownTurn: 'available',
+      blockedOn: 'question',
+    });
+    questions = [];
+    answered = ['question:0'];
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
+    expect(
+      h.lifecycle.filter(
+        event => (event as { kind: string }).kind === 'turn-end'
+      )
+    ).toHaveLength(1);
+  });
+
+  it('never applies root truth after the source identity changes during its read', async () => {
+    const h = harness();
+    let resolve!: (value: {
+      turn: null;
+      questions: string[];
+      answered: string[];
+    }) => void;
+    let started!: () => void;
+    const reading = new Promise<void>(done => {
+      started = done;
+    });
+    Object.assign(h.protocol, {
+      rootObservation: () =>
+        new Promise(done => {
+          resolve = done;
+          started();
+        }),
+    });
+    const poll = h.observer.pollNow();
+    await reading;
+    h.observer.observe(session({ harnessSessionId: 'other-root' }));
+    resolve({ turn: null, questions: ['wrong-question:0'], answered: [] });
+    await poll;
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
+  });
 
   it('reports an exact two-child census once and ends children by source ID', async () => {
     const h = harness();
@@ -763,18 +835,33 @@ describe('CodexDelegationObserver', () => {
   // handling is where the cross-Session failure began.
   it("does not let one Session's unreadable data freeze another Session", async () => {
     const OTHER = 'other-root';
-    let otherChild: CodexTurnSummary = { status: 'inProgress', completedAt: null };
+    let otherChild: CodexTurnSummary = {
+      status: 'inProgress',
+      completedAt: null,
+    };
     const process = fakeAppServerAnswering((method, params) => {
       if (method === 'initialize')
         return { userAgent: 'exawatt-delegation/0.147.0 (fixture)' };
       if (method === 'thread/list')
         return params.ancestorThreadId === ROOT
           ? {
-              data: [child('huge', 1, { agentNickname: 'x'.repeat(2_200_000) })],
+              data: [
+                child('huge', 1, { agentNickname: 'x'.repeat(2_200_000) }),
+              ],
               nextCursor: null,
             }
-          : { data: [child('b-child', 5, { parentThreadId: OTHER })], nextCursor: null };
-      if (method === 'thread/turns/list') return { data: [otherChild] };
+          : {
+              data: [child('b-child', 5, { parentThreadId: OTHER })],
+              nextCursor: null,
+            };
+      if (method === 'thread/turns/list')
+        return {
+          data: [
+            params.threadId === ROOT || params.threadId === OTHER
+              ? { id: 'baseline', status: 'completed', completedAt: 1 }
+              : otherChild,
+          ],
+        };
       return { data: [], nextCursor: null };
     });
     const client = new CodexAppServerClient(async () => process);
@@ -826,7 +913,9 @@ describe('CodexDelegationObserver', () => {
       let lineageReads = 0;
       h.protocol.listDescendants = async () => {
         lineageReads += 1;
-        throw new CodexSessionDataError('thread/list row 0 has an invalid child shape');
+        throw new CodexSessionDataError(
+          'thread/list row 0 has an invalid child shape'
+        );
       };
       await h.observer.pollNow();
       await h.observer.pollNow();
@@ -861,7 +950,9 @@ describe('CodexDelegationObserver', () => {
     );
     h.protocol.listDescendants = async (root?: string) => {
       if (root === 'other-root')
-        throw new CodexProtocolIncompatibleError('JSON-RPC response has no result');
+        throw new CodexProtocolIncompatibleError(
+          'JSON-RPC response has no result'
+        );
       return [child('healthy-child', 10)];
     };
     h.protocol.turns.set('healthy-child', {

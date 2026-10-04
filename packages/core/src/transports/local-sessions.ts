@@ -28,7 +28,7 @@ import {
 import type {
   AgentBlocker,
   AgentDelegation,
-  AgentStatus,
+  AgentWorkState,
   ExawattAgent,
 } from '../types/index';
 import { INITIAL_AGENT_METRICS } from '../types/index';
@@ -64,7 +64,7 @@ export interface LocalSessionSnapshot {
    *  does not report delegation, never an empty stand-in for zero */
   delegation?:
     | (AgentDelegation & {
-        ownTurn?: 'generating' | 'available';
+        ownTurn?: 'generating' | 'available' | 'unknown';
         backgroundTasks?: SessionBackgroundTask[];
         blockedOn?: string | null;
       })
@@ -132,7 +132,7 @@ export function sessionStatus(
   lastActivityAt: number,
   now: number,
   workingWindowMs: number
-): AgentStatus {
+): AgentWorkState {
   if (session.exited)
     return !session.exitSignal &&
       (session.exitCode == null || session.exitCode === 0)
@@ -146,6 +146,8 @@ export function sessionStatus(
   if (session.delegation?.blockedOn) return 'blocked';
   if (sessionHasBackgroundWork(session.delegation)) return 'working';
   if (session.delegation?.ownTurn === 'generating') return 'working';
+  if (session.delegation?.ownTurn === 'unknown')
+    return session.working ? 'working' : null;
   if (session.delegation?.ownTurn === 'available') return 'complete';
   if (session.working !== undefined) {
     if (session.working) return 'working';

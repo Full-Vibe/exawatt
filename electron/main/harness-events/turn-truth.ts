@@ -71,17 +71,46 @@ export function wireReportedTurnTruth({
     attention.noteReportedBackgroundWork(id);
   });
 
+  const lifecycle = record
+    ? boundDiagnosticRecorder(record, { perMinute: 120, perRun: 4000, now })
+    : null;
   delegation.on('harness-event', (id: string, event: HarnessEvent) => {
+    if (
+      event.kind === 'turn-start' ||
+      event.kind === 'turn-end' ||
+      event.kind === 'turn-unknown' ||
+      event.kind === 'blocked' ||
+      event.kind === 'unblocked'
+    ) {
+      const truth = delegation.get(id);
+      lifecycle?.('harness.turn-truth', {
+        sessionId: id,
+        harness: harnessOf(id),
+        boundary: event.kind,
+        ownTurn: truth?.ownTurn ?? null,
+        blockedOn: truth?.blockedOn ?? null,
+        childCount: truth?.children.length ?? 0,
+        backgroundTypes: truth?.backgroundTasks?.map(task => task.type) ?? [],
+      });
+    }
     // A reported turn boundary is stronger evidence than inferred quiescence,
     // and it arrives 6–7 s sooner. Turn-start also matters for the turn a
     // CHILD opens by returning its result: no keystroke precedes it, so
     // nothing else would reopen the turn.
+    if (
+      (event.kind === 'turn-start' || event.kind === 'turn-end') &&
+      !delegation.get(id)?.blockedOn
+    )
+      attention.noteHarnessUnblocked(id);
     if (event.kind === 'turn-start') attention.noteHarnessTurnStart(id);
+    if (event.kind === 'turn-unknown')
+      attention.noteHarnessTurnUnknown(id, event.preserveResult);
     if (event.kind === 'turn-end') attention.noteHarnessTurnEnd(id);
     // An Agent waiting on a question, a permission, or an elicitation is
     // neither working nor finished (D4). Reported, because no amount of
     // staring at the byte stream can tell a pause from a gate.
-    if (event.kind === 'blocked') attention.noteHarnessBlocked(id);
+    if (event.kind === 'blocked')
+      attention.noteHarnessBlocked(id, event.request, event.requestId);
     if (event.kind === 'unblocked') attention.noteHarnessUnblocked(id);
     // The result of a DELEGATING Session arrives when its last child stops,
     // not when its own turn ended — that boundary was deliberately withheld

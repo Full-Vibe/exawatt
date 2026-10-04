@@ -7766,3 +7766,65 @@ as needs-you: BUG-264. Two rows (`f60d6cda`, `55bb0776`) describe the update
 restart he wants to take and cannot, because relaunch does not bring back the
 attention marks he is holding: BUG-260, the first operator evidence for
 ENG-019. All four are roadmap backlog items.
+
+### 2026-10-04 — Source truth distinguishes unknown execution and queued questions (BUG-257 / BUG-264; BUG-258 diagnosis remains open)
+
+**Codex root truth now has an owner; missing evidence cannot mean finished.**
+Execution lane: `agent/polish-source-truth`, coordinated with the attention and
+restart lanes; the restart lane owns their combined integration and dogfood
+request. This checkpoint is implemented with targeted verification, not yet
+integrated or installed.
+
+Root cause established for BUG-257: the read-side app-server observed child
+turns but never the Session's own root turn. Root completion therefore remained
+PTY quiescence/BEL inference even while compaction continued. A read-only probe
+of installed Codex **0.160.0** on 2026-10-04 found a live TUI root represented as
+`interrupted` with `completedAt: null`, while `thread/items/list` returned its
+current structured activity. Completed control Sessions returned `completed`
+with a completion timestamp. `thread.status: notLoaded` describes this separate
+observer, not the TUI's work. Incident 0023's older item-method refusal was not
+reproduced on this version; schema presence alone still proves nothing.
+
+Implementation reads bounded root items, then latest root lifecycle through the
+existing shared observer and generation guard. Only a new positive completion
+boundary raises a result. Initial old completion is baseline, repeated polls
+are idempotent, and ambiguous interrupted/null or failed reads retain explicit
+unknown. A new incomplete turn supersedes an old result; a read outage preserves
+known unread results. Child census and root lifecycle fail independently.
+Unknown does not create a permanent spinner or a green completion. Existing
+source-neutral projection keeps unknown work as absence (`null`), not a seventh
+Agent work state. No timeout was widened, no rollout file or TUI prose is read.
+
+BUG-264's producer is source-owned `agentMessage` items with `delivery: async`
+and a `questions` array. The installed protocol and actual reply items exposed
+stable per-question IDs in `send_user_message_question_reply` envelopes. The
+adapter correlates those exact IDs; arbitrary reply prose cannot resolve a
+question. Partial answers leave the remaining questions outstanding, new
+questions create a new bounded hashed revision, repeated snapshots do not
+re-alert, and execution completion does not resolve an asynchronous question.
+Observation and tombstone sets are bounded; missing items do not mean answered.
+The shared ledger carries `request: working` separately from own execution.
+
+BUG-258 is **not claimed resolved**. Existing Claude Stop/census paths pass;
+production diagnostics show repeated stale-child withdrawals, but previously
+kept no accepted Stop/boundary evidence to correlate with the reported screenshot.
+The production wiring now records bounded, content-free lifecycle events
+(`harness.turn-truth`: Session, harness, boundary, own turn, gate, child count,
+background task types) alongside existing expiry evidence. No prompt or response
+text enters diagnostics. Next recurrence: compare Stop receipt, remaining census
+and inferred expiry for the affected Session before changing the source contract.
+The [official Claude hook contract](https://code.claude.com/docs/en/hooks#stop)
+distinguishes normal Stop, user interruption and StopFailure; the screenshot alone
+does not establish which path occurred. The
+[Codex app-server reference](https://learn.chatgpt.com/docs/app-server) describes
+the protocol reads; this implementation additionally relies on measured installed
+0.160.0 shapes, never an assumption that a schema advertises working support.
+
+Verification so far: 100 focused source/reducer/turn-wiring/device-power tests
+passed including root observer identity/reply integration cases; Electron
+compilation passed on the combined attention foundation. Added cases replay
+interrupted/null → compaction → positive completion, independent question replies,
+read failure/recovery, repeated snapshots, and source identity changes in flight.
+The real Electron turn-truth gate now checks reading versus resolution and manual
+unread intent through the production bridge. Combined owner must run that gate,
+required floor/gates and dogfood delivery before advancing this checkpoint.

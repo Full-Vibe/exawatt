@@ -25,7 +25,7 @@ import type {
 /** What inference withdrew when a reported record lost coverage (D7). */
 interface StaleReportReclaim {
   /** the parent's reported turn at the moment of reclaim; null if unreported */
-  ownTurn: 'generating' | 'available' | null;
+  ownTurn: SessionDelegation['ownTurn'] | null;
   /** children withdrawn — never completed — because nothing vouched for them */
   withdrawn: DelegatedChild[];
 }
@@ -109,6 +109,8 @@ export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
     const visible =
       before.ownTurn !== after.ownTurn ||
       before.blockedOn !== after.blockedOn ||
+      before.request !== after.request ||
+      before.requestId !== after.requestId ||
       before.children !== after.children ||
       before.backgroundTasks !== after.backgroundTasks;
     if (visible) {
@@ -176,6 +178,8 @@ export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
       cached &&
       cached.ownTurn === ledger.ownTurn &&
       cached.blockedOn === ledger.blockedOn &&
+      cached.request === ledger.request &&
+      cached.requestId === ledger.requestId &&
       cached.children === ledger.children &&
       cached.backgroundTasks === ledger.backgroundTasks
     )
@@ -183,6 +187,8 @@ export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
     const next: SessionDelegation = {
       ownTurn: ledger.ownTurn,
       blockedOn: ledger.blockedOn,
+      ...(ledger.request ? { request: ledger.request } : {}),
+      ...(ledger.requestId ? { requestId: ledger.requestId } : {}),
       children: ledger.children,
       ...(ledger.backgroundTasks
         ? { backgroundTasks: ledger.backgroundTasks }

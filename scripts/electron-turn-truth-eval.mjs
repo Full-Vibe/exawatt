@@ -266,6 +266,36 @@ try {
         beforeFocus === 'blocked' && (await status()) === 'blocked'
       );
 
+      // Make OS focus explicit: Playwright activation alone does not emit
+      // browser-window-focus in this harness. Then exercise the real bridge.
+      await app.evaluate(({ app, BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows()[0];
+        app.emit('browser-window-focus', {}, window);
+      });
+      await page.evaluate(id => window.electron.pty.focus(id), claude.id);
+      await until(
+        async () =>
+          (await sessions()).find(s => s.id === claude.id)?.attention
+            ?.unread === false,
+        'viewing to mark the request read'
+      );
+      check(
+        'reading preserves the outstanding source request',
+        (await attentionOf()) === 'blocked' &&
+          (await blockedOn()) === 'question'
+      );
+      await page.evaluate(id => window.electron.pty.markUnread(id), claude.id);
+      await until(
+        async () =>
+          (await sessions()).find(s => s.id === claude.id)?.attention
+            ?.unread === true,
+        'manual unread intent'
+      );
+      check(
+        'mark unread preserves the same source request',
+        (await blockedOn()) === 'question'
+      );
+
       // Answering releases the gate and the Session goes back to working.
       await send('answer');
       await until(
@@ -318,7 +348,10 @@ try {
         'inference to reclaim the abandoned report',
         30_000
       );
-      check('an aborted turn stops spinning without any reported boundary', true);
+      check(
+        'an aborted turn stops spinning without any reported boundary',
+        true
+      );
       await until(
         async () => (await status()) === 'done',
         'the reclaimed turn to read as a result'
@@ -331,7 +364,10 @@ try {
         async () => (await blockedOn()) === 'permission',
         'the permission gate'
       );
-      check('a permission prompt reads as needs-you', (await status()) === 'blocked');
+      check(
+        'a permission prompt reads as needs-you',
+        (await status()) === 'blocked'
+      );
       await send('batch');
       await until(
         async () => (await blockedOn()) === 'none',

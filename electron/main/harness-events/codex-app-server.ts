@@ -26,6 +26,12 @@ import {
 } from './delegation-observation';
 import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 
+import {
+  CodexRootTruth,
+  parseCodexRootObservation,
+  type CodexRootObservation,
+} from './codex-turn-observation';
+
 const MINIMUM_PROTOCOL_VERSION = [0, 147, 0] as const;
 const MAX_FRAME_BYTES = 2 * 1024 * 1024;
 /** How much of an oversize frame's head and tail is kept to find its id. */
@@ -74,6 +80,7 @@ export interface CodexDelegationProtocol {
   close(): void;
   listDescendants(ancestorThreadId: string): Promise<CodexChildThread[]>;
   latestTurn(threadId: string): Promise<CodexTurnSummary | null>;
+  rootObservation?(threadId: string): Promise<CodexRootObservation>;
   latestSubagentActivity(
     parentThreadId: string,
     childThreadIds: readonly string[]
@@ -191,8 +198,7 @@ export class CodexSessionDataError extends Error {
 /** Is this a failure of one Session's data rather than of the binary? */
 export function isSessionDataError(error: unknown): error is Error {
   return (
-    error instanceof Error &&
-    (error as { scope?: unknown }).scope === 'session'
+    error instanceof Error && (error as { scope?: unknown }).scope === 'session'
   );
 }
 
@@ -374,10 +380,7 @@ export function parseCodexConversationItems(value: unknown): unknown[] {
  * `{"error":…,"id":3}`, so one edge names the request. Null for a
  * notification or any other layout.
  */
-function oversizeFrameId(frame: {
-  head: string;
-  tail: string;
-}): number | null {
+function oversizeFrameId(frame: { head: string; tail: string }): number | null {
   const match =
     /^\s*\{\s*"id"\s*:\s*(\d+)\s*,/u.exec(frame.head) ??
     /,\s*"id"\s*:\s*(\d+)\s*\}\s*$/u.exec(frame.tail);
@@ -554,6 +557,24 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     throw sessionDataError('thread/list exceeded the bounded descendant pages');
   }
 
+  async rootObservation(threadId: string): Promise<CodexRootObservation> {
+    // Read items BEFORE the latest turn: a turn completed before a newer item
+    // read must never settle work begun in the meantime. The final lifecycle
+    // read owns the boundary. Both reads are bounded and source-owned.
+    const items = await this.request('thread/items/list', {
+      threadId,
+      limit: ACTIVITY_WINDOW,
+      sortDirection: 'desc',
+    });
+    const turns = await this.request('thread/turns/list', {
+      threadId,
+      limit: 1,
+      sortDirection: 'desc',
+      itemsView: 'summary',
+    });
+    return parseCodexRootObservation(turns, items);
+  }
+
   async latestTurn(threadId: string): Promise<CodexTurnSummary | null> {
     return parseCodexLatestTurn(
       await this.request('thread/turns/list', {
@@ -587,7 +608,9 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
       if ([...wanted].every(childId => latest.has(childId))) return latest;
       const nextCursor = nullableString(page?.nextCursor);
       if (nextCursor === undefined) {
-        throw sessionDataError('thread/items/list response has an invalid cursor');
+        throw sessionDataError(
+          'thread/items/list response has an invalid cursor'
+        );
       }
       cursor = nextCursor;
       if (!cursor) return latest;
@@ -864,6 +887,7 @@ interface ObservedCensus {
  */
 export class CodexDelegationObserver {
   private readonly roots = new Map<string, ObservedRoot>();
+  private readonly rootTruth = new Map<string, CodexRootTruth>();
   private readonly clientFactory: () => CodexDelegationProtocol;
   private readonly pollIntervalMs: number;
   private readonly autoPoll: boolean;
@@ -902,7 +926,8 @@ export class CodexDelegationObserver {
     this.observations = options.observations ?? delegationObservations;
     this.sink = options.sink ?? null;
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinary;
-    this.fingerprintBinary = options.fingerprintBinary ?? fingerprintCodexBinary;
+    this.fingerprintBinary =
+      options.fingerprintBinary ?? fingerprintCodexBinary;
   }
 
   /** The permanent verdict this observer is holding, if any. */
@@ -939,11 +964,13 @@ export class CodexDelegationObserver {
     this.roots.set(session.id, {
       threadId: session.harnessSessionId,
     });
+    this.rootTruth.set(session.id, new CodexRootTruth());
     this.rootsGeneration += 1;
     if (this.autoPoll) this.schedule(0);
   }
 
   drop(sessionId: string): void {
+    this.rootTruth.delete(sessionId);
     if (this.roots.delete(sessionId)) this.rootsGeneration += 1;
     this.observations.drop(sessionId);
     if (this.roots.size === 0) {
@@ -982,7 +1009,11 @@ export class CodexDelegationObserver {
       const snapshots = await settleConcurrent(
         roots,
         MAX_ROOT_READS,
-        ([, root]) => this.snapshot(client, root)
+        async ([sessionId, root]) => {
+          if (client.rootObservation)
+            await this.readRootTruth(client, sessionId, root);
+          return this.snapshot(client, root);
+        }
       );
       if (this.client !== client) return;
       for (let index = 0; index < roots.length; index += 1) {
@@ -1130,6 +1161,28 @@ export class CodexDelegationObserver {
       return false;
     }
     return true;
+  }
+
+  private async readRootTruth(
+    client: CodexDelegationProtocol,
+    sessionId: string,
+    root: ObservedRoot
+  ): Promise<void> {
+    if (!client.rootObservation) return;
+    const truth = this.rootTruth.get(sessionId);
+    if (!truth) return;
+    try {
+      const observation = await this.dataRead(`root:${root.threadId}`, () =>
+        client.rootObservation!(root.threadId)
+      );
+      if (this.roots.get(sessionId) !== root || this.client !== client) return;
+      for (const event of truth.accept(observation))
+        this.sink?.report(sessionId, event);
+    } catch {
+      if (this.roots.get(sessionId) !== root || this.client !== client) return;
+      for (const event of truth.unavailable())
+        this.sink?.report(sessionId, event);
+    }
   }
 
   private async snapshot(

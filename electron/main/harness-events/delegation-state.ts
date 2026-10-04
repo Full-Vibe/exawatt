@@ -109,11 +109,17 @@ export interface DelegationLedger extends SessionDelegation {
 
 export type HarnessEvent =
   | { kind: 'turn-start' }
+  | { kind: 'turn-unknown'; preserveResult?: boolean }
   /** A boundary may carry the source's census of what is still running
    *  (Claude Code's `background_tasks`, ENG-023 D7); it is applied after the
    *  boundary itself, so the record a subscriber reads is already current. */
   | { kind: 'turn-end'; census?: ReportedChildCensus }
-  | { kind: 'blocked'; reason: SessionBlockedReason }
+  | {
+      kind: 'blocked';
+      reason: SessionBlockedReason;
+      request?: 'blocking' | 'working';
+      requestId?: string;
+    }
   /** Releases only a gate of this reason; omit to release whatever is open. */
   | { kind: 'unblocked'; reason?: SessionBlockedReason }
   /** A spawn label from the parent, ahead of its child's start (D3a). */
@@ -168,6 +174,7 @@ export function delegationIsLive(
     !!delegation &&
     (sessionHasBackgroundWork(delegation) ||
       delegation.ownTurn === 'generating' ||
+      delegation.ownTurn === 'unknown' ||
       !!delegation.blockedOn)
   );
 }
@@ -292,7 +299,7 @@ function closeTurn(state: DelegationLedger): DelegationLedger {
   return {
     ...state,
     ownTurn: 'available',
-    blockedOn: null,
+    blockedOn: state.request === 'working' ? state.blockedOn : null,
     pending: [],
     adoptedLabelIds: [],
   };
@@ -327,9 +334,9 @@ function applyDelta(
   event: Exclude<HarnessEvent, { kind: 'turn-end' | 'child-end' | 'census' }>
 ): DelegationLedger {
   switch (event.kind) {
-    // A turn boundary in EITHER direction also closes any open operator gate.
-    // A new prompt means the last question was answered; a finished turn means
-    // the Agent is no longer sitting behind one. Without this, a gate whose own
+    // Turn boundaries backstop blocking gates. Asynchronous questions are
+    // independent of execution and retain their own source-correlated release.
+    // A finished turn means the Agent is no longer sitting behind a hard gate. Without this, a gate whose own
     // release event went missing would latch "needs you" forever — the exact
     // failure mode that makes a status indicator untrustworthy.
     //
@@ -339,6 +346,10 @@ function applyDelta(
     // ended-child tombstones clear only at turn-START — children routinely
     // outlive the parent's turn-end (the measured 74s case), so their
     // duplicate-absorbing memory must too.
+    case 'turn-unknown':
+      return state.ownTurn === 'unknown'
+        ? state
+        : { ...state, ownTurn: 'unknown' };
     case 'turn-start':
       if (
         state.ownTurn === 'generating' &&
@@ -351,7 +362,7 @@ function applyDelta(
       return {
         ...state,
         ownTurn: 'generating',
-        blockedOn: null,
+        blockedOn: state.request === 'working' ? state.blockedOn : null,
         pending: [],
         adoptedLabelIds: [],
         endedChildIds: [],
@@ -365,8 +376,17 @@ function applyDelta(
     // (`PostToolUse[AskUserQuestion]`) is scoped to the reason the FIRST
     // report set. One wait is one gate, however many times it is announced.
     case 'blocked':
-      if (state.blockedOn) return state;
-      return { ...state, blockedOn: event.reason };
+      if (
+        state.blockedOn &&
+        (!event.requestId || state.requestId === event.requestId)
+      )
+        return state;
+      return {
+        ...state,
+        blockedOn: event.reason,
+        ...(event.request ? { request: event.request } : {}),
+        ...(event.requestId ? { requestId: event.requestId } : {}),
+      };
 
     // Releases are reason-SCOPED so a release that belongs to one gate can
     // never close a different one. The permission backstop (`PostToolBatch`)
@@ -376,7 +396,12 @@ function applyDelta(
     case 'unblocked':
       if (!state.blockedOn) return state;
       if (event.reason && state.blockedOn !== event.reason) return state;
-      return { ...state, blockedOn: null };
+      return {
+        ...state,
+        blockedOn: null,
+        request: undefined,
+        requestId: undefined,
+      };
 
     // Stage a spawn label until its child starts (D3a). Deduped by
     // tool_use_id against BOTH the staging list and the already-adopted set:

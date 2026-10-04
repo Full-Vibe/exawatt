@@ -1,4 +1,4 @@
-import type { AgentStatus } from '@exawatt/core';
+import type { AgentWorkState } from '@exawatt/core';
 import type {
   DeviceKeepAwakePolicy,
   DevicePowerStatus,
@@ -7,7 +7,7 @@ import type {
 
 interface PowerSession {
   harness: string;
-  status: AgentStatus;
+  status: AgentWorkState;
   optOutAppliedAtLaunch: boolean;
 }
 

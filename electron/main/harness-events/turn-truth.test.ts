@@ -41,6 +41,9 @@ function rig() {
     attention,
     delegation,
     log,
+    get expiries() {
+      return log.filter(entry => entry.event === CENSUS_EXPIRED_EVENT);
+    },
     silence: (ms: number) => {
       clock += ms;
       attention.sweepNow();
@@ -50,6 +53,61 @@ function rig() {
 }
 
 describe('wireReportedTurnTruth', () => {
+  it('keeps content-free evidence of a Stop and its remaining census', () => {
+    const r = rig();
+    r.delegation.report('S', { kind: 'turn-start' });
+    r.delegation.report('S', {
+      kind: 'turn-end',
+      census: { live: [], completed: [], at: 1 },
+    });
+    expect(
+      r.log
+        .filter(entry => entry.event === 'harness.turn-truth')
+        .map(entry => entry.fields)
+    ).toEqual([
+      {
+        sessionId: 'S',
+        harness: 'claude',
+        boundary: 'turn-start',
+        ownTurn: 'generating',
+        blockedOn: null,
+        childCount: 0,
+        backgroundTypes: [],
+      },
+      {
+        sessionId: 'S',
+        harness: 'claude',
+        boundary: 'turn-end',
+        ownTurn: 'available',
+        blockedOn: null,
+        childCount: 0,
+        backgroundTypes: [],
+      },
+    ]);
+  });
+
+  it('keeps an async request through completion and quiet unknown observations', () => {
+    const r = rig();
+    r.delegation.report('S', { kind: 'turn-start' });
+    r.stream(2000);
+    r.delegation.report('S', {
+      kind: 'blocked',
+      reason: 'question',
+      request: 'working',
+      requestId: 'question:0',
+    });
+    expect(r.attention.isWorking('S')).toBe(true);
+    r.delegation.report('S', { kind: 'turn-end' });
+    expect(r.delegation.get('S')?.blockedOn).toBe('question');
+    expect(r.attention.get('S')?.kind).toBe('blocked');
+    r.delegation.report('S', { kind: 'turn-unknown' });
+    r.silence(120_000);
+    expect(r.delegation.get('S')?.ownTurn).toBe('unknown');
+    expect(r.attention.get('S')?.kind).toBe('blocked');
+    r.delegation.report('S', { kind: 'unblocked', reason: 'question' });
+    expect(r.attention.get('S')).toBeNull();
+  });
+
   it('logs an expired census with the child ids and the silence that expired it', () => {
     const r = rig();
     r.delegation.report('S', { kind: 'turn-start' });
@@ -62,7 +120,7 @@ describe('wireReportedTurnTruth', () => {
     });
     r.delegation.report('S', { kind: 'turn-end' });
     r.silence(13_000);
-    expect(r.log).toEqual([
+    expect(r.expiries).toEqual([
       {
         event: CENSUS_EXPIRED_EVENT,
         fields: expect.objectContaining({
@@ -75,7 +133,7 @@ describe('wireReportedTurnTruth', () => {
         }),
       },
     ]);
-    expect(r.log[0].fields.quietMs).toBeGreaterThanOrEqual(12_000);
+    expect(r.expiries[0].fields.quietMs).toBeGreaterThanOrEqual(12_000);
   });
 
   it('delivers the withheld result when the parent had already reported its turn ended', () => {
@@ -104,7 +162,7 @@ describe('wireReportedTurnTruth', () => {
     r.silence(13_000);
     expect(r.delegation.get('S')?.ownTurn).toBe('available');
     expect(r.attention.get('S')?.kind).toBe('turn-end');
-    expect(r.log).toEqual([]);
+    expect(r.expiries).toEqual([]);
   });
 
   it('never expires a census behind an open gate', () => {
@@ -119,6 +177,6 @@ describe('wireReportedTurnTruth', () => {
     r.delegation.report('S', { kind: 'blocked', reason: 'question' });
     r.silence(120_000);
     expect(r.delegation.get('S')?.children).toHaveLength(1);
-    expect(r.log).toEqual([]);
+    expect(r.expiries).toEqual([]);
   });
 });
