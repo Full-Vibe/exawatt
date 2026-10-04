@@ -138,24 +138,7 @@ export function ResumeRecoveryBar({
         {status}
       </span>
 
-      {recoveringPrevious && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled}
-          onClick={onResumePreviouslyRunning}
-          title="Resume the exact conversations that were running before restart. Previously paused Agents stay paused."
-          className="h-7 shrink-0 font-mono"
-        >
-          <PlayIcon className="h-3.5 w-3.5" />
-          {progress
-            ? 'Resuming…'
-            : `Resume previously running (${previouslyRunningCount})`}
-        </Button>
-      )}
-      {!recoveringPrevious &&
-        readyAgentCount > 0 &&
+      {readyAgentCount > 0 &&
         (projectIsUsefulScope ? (
           <div className="flex shrink-0">
             <Button
@@ -163,23 +146,44 @@ export function ResumeRecoveryBar({
               variant="outline"
               size="sm"
               disabled={disabled}
-              aria-label={`Resume ${agentsNoun(activeProjectReadyCount)} in ${activeProjectName}`}
-              onClick={onResumeActiveProject}
+              aria-label={
+                recoveringPrevious
+                  ? `Resume previously running (${previouslyRunningCount})`
+                  : `Resume ${agentsNoun(activeProjectReadyCount)} in ${activeProjectName}`
+              }
+              title={
+                recoveringPrevious
+                  ? 'Resume the exact conversations that were running before restart. Previously paused Agents stay paused.'
+                  : undefined
+              }
+              onClick={
+                recoveringPrevious
+                  ? onResumePreviouslyRunning
+                  : onResumeActiveProject
+              }
               className="h-7 rounded-r-none border-r-0 font-mono"
             >
               <PlayIcon className="h-3.5 w-3.5" />
-              {progress ? 'Resuming…' : SESSION_RESUME_SCOPE_LABEL.project}
+              {progress
+                ? 'Resuming…'
+                : recoveringPrevious
+                  ? 'Resume previously running'
+                  : SESSION_RESUME_SCOPE_LABEL.project}
               {!progress && (
                 <>
                   <span className="text-chrome-micro opacity-60">
-                    {activeProjectReadyCount}
+                    {recoveringPrevious
+                      ? previouslyRunningCount
+                      : activeProjectReadyCount}
                   </span>
-                  <ChordHint shortcutId="workspace-resume-scope" />
+                  {!recoveringPrevious && (
+                    <ChordHint shortcutId="workspace-resume-scope" />
+                  )}
                 </>
               )}
             </Button>
 
-            {hasAlternateScope && (
+            {(hasAlternateScope || recoveringPrevious) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -224,7 +228,9 @@ export function ResumeRecoveryBar({
                       {activeProjectReadyCount}
                     </span>
                     <DropdownMenuShortcut>
-                      <ChordHint shortcutId="workspace-resume-scope" />
+                      {!recoveringPrevious && (
+                        <ChordHint shortcutId="workspace-resume-scope" />
+                      )}
                     </DropdownMenuShortcut>
                   </DropdownMenuItem>
                   {allIsDistinctScope && (
@@ -251,18 +257,32 @@ export function ResumeRecoveryBar({
             variant="outline"
             size="sm"
             disabled={disabled}
-            aria-label={`${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(readyAgentCount)}`}
-            onClick={onResumeAll}
+            aria-label={
+              recoveringPrevious
+                ? `Resume previously running (${previouslyRunningCount})`
+                : `${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(readyAgentCount)}`
+            }
+            onClick={
+              recoveringPrevious ? onResumePreviouslyRunning : onResumeAll
+            }
             className="h-7 shrink-0 font-mono"
           >
             <PlayIcon className="h-3.5 w-3.5" />
-            {progress ? 'Resuming…' : SESSION_RESUME_SCOPE_LABEL.all}
+            {progress
+              ? 'Resuming…'
+              : recoveringPrevious
+                ? 'Resume previously running'
+                : SESSION_RESUME_SCOPE_LABEL.all}
             {!progress && (
               <>
                 <span className="text-chrome-micro opacity-60">
-                  {readyAgentCount}
+                  {recoveringPrevious
+                    ? previouslyRunningCount
+                    : readyAgentCount}
                 </span>
-                <ChordHint shortcutId="workspace-resume-scope" />
+                {!recoveringPrevious && (
+                  <ChordHint shortcutId="workspace-resume-scope" />
+                )}
               </>
             )}
           </Button>

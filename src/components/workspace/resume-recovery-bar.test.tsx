@@ -175,3 +175,15 @@ describe('ResumeRecoveryBar', () => {
     ).toBeDisabled();
   });
 });
+
+it('makes restart recovery an explicit action over the previously running set only', () => {
+  const onResumePreviouslyRunning = vi.fn();
+  const value = props({ previouslyRunningCount: 3, onResumePreviouslyRunning });
+  render(<ResumeRecoveryBar {...value} />);
+  fireEvent.click(
+    screen.getByRole('button', { name: /Resume previously running/ })
+  );
+  expect(onResumePreviouslyRunning).toHaveBeenCalledTimes(1);
+  expect(value.onResumeAll).not.toHaveBeenCalled();
+  expect(value.onResumeActiveProject).not.toHaveBeenCalled();
+});

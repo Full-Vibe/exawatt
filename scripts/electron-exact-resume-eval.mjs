@@ -207,8 +207,9 @@ try {
       });
       await page.keyboard.press('Escape');
 
-      await resumeBanner
-        .getByRole('button', { name: /Resume 2 agents in other-project/i })
+      await scope.click();
+      await page
+        .getByRole('menuitem', { name: 'Resume 2 agents in this project' })
         .click();
       await waitForSessionCount(page, 2);
 
@@ -223,7 +224,7 @@ try {
       }
 
       await resumeBanner
-        .getByRole('button', { name: 'Resume all 4 agents' })
+        .getByRole('button', { name: 'Resume previously running (4)' })
         .click();
       await waitForSessionCount(page, 6);
 

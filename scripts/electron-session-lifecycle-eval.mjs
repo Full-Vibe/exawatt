@@ -205,6 +205,8 @@ function waitForClose(app) {
 }
 
 let exactIds = [];
+let previouslyPausedId;
+let retainedRequestId;
 try {
   console.log('[eng-018] launch fixture');
   await withElectronApp(
@@ -259,6 +261,32 @@ try {
         throw new Error('Cancel did not leave all five processes running');
       }
 
+      // A mixed workspace must preserve the distinction between already paused
+      // and paused by this restart, as well as a read but unresolved request.
+      previouslyPausedId = agents[0].durableSessionId;
+      retainedRequestId = agents[1].durableSessionId;
+      await page.evaluate(
+        async ({ paused, waiting }) => {
+          const pty = window.electron.pty;
+          await pty.pauseSessions([paused], true);
+          await pty.restoreAttention(waiting, {
+            kind: 'blocked',
+            since: 42,
+            unread: false,
+            request: 'blocking',
+            requestId: 'restart-request',
+          });
+        },
+        { paused: previouslyPausedId, waiting: agents[1].id }
+      );
+      await page.waitForFunction(async paused => {
+        const layout = await window.electron.workspace.load();
+        return layout?.projects
+          ?.flatMap(project => project.tabs)
+          .some(
+            tab => tab.durableSessionId === paused && tab.sessionId === null
+          );
+      }, previouslyPausedId);
       const closed = waitForClose(app);
       await requestQuit(app);
       await closed;
@@ -299,6 +327,16 @@ try {
   ) {
     throw new Error(`Expected four exact provider IDs: ${exactIds.join(',')}`);
   }
+  if (
+    tabs.find(tab => tab.durableSessionId === previouslyPausedId)
+      ?.resumeAfterRestart === true
+  )
+    throw new Error('Already-paused Agent entered the restart recovery set');
+  const retained = tabs.find(
+    tab => tab.durableSessionId === retainedRequestId
+  )?.attention;
+  if (retained?.requestId !== 'restart-request' || retained.unread !== false)
+    throw new Error('Shutdown lost the read but unresolved request');
   if (pids().some(alive))
     throw new Error('Confirmed quit left an agent or shell alive');
   const histories = readdirSync(join(userData, 'sessions')).filter(name =>
@@ -356,7 +394,28 @@ try {
       });
       await page.getByRole('button', { name: 'Start new shell' }).click();
       await waitForSessions(page, 1);
-      await ready.getByRole('button', { name: /Resume 4 agents in /i }).click();
+      await ready
+        .getByRole('button', { name: 'Resume previously running (3)' })
+        .click();
+      await waitForSessions(page, 4);
+      if (
+        (await sessions(page)).some(
+          session => session.durableSessionId === previouslyPausedId
+        )
+      )
+        throw new Error('Restart recovery resumed an already-paused Agent');
+      const afterResume = await page.evaluate(async () =>
+        window.electron.workspace.load()
+      );
+      const request = afterResume.projects
+        .flatMap(project => project.tabs)
+        .find(tab => tab.durableSessionId === retainedRequestId);
+      // The resumed provider may establish new source truth. The saved receipt
+      // must exist before source evidence, not become a running indicator.
+      if (!request)
+        throw new Error('Restart dropped the retained request Session');
+      // The remaining paused Agent is still explicitly resumable by Project scope.
+      await ready.getByRole('button', { name: /Resume 1 agent in /i }).click();
       await waitForSessions(page, 5);
       console.log('[eng-018] workspace Agent recovery completed');
       const resumed = await sessions(page);
