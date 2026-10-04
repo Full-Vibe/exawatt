@@ -1,5 +1,5 @@
 'use client';
-import { sessionSource } from './harnesses';
+import { sessionTabSource } from './harnesses';
 import { useCallback } from 'react';
 import { SessionModelControl } from './session-model-control';
 import type { SessionTab } from './use-workspace-state';
@@ -14,19 +14,19 @@ export function LiveSessionModelControl({
   busy: boolean;
   change: (id: string, choice: SessionModelChange) => Promise<void>;
 }) {
-  const source = sessionSource(tab.harness);
+  const source = sessionTabSource(tab);
+  const harness = source.harness;
   const loadCatalog = useCallback(async () => {
     const api = window.electron?.pty;
-    const source = sessionSource(tab.harness);
-    if (!api || !source.harness || source.harness === 'shell')
+    if (!api || !harness || harness === 'shell')
       throw new Error('Model catalog unavailable.');
-    return api.listAgentModels(source.harness, tab.cwd);
-  }, [tab.harness, tab.cwd]);
+    return api.listAgentModels(harness, tab.cwd);
+  }, [harness, tab.cwd]);
   const apply = useCallback(
     (choice: SessionModelChange) => change(tab.id, choice),
     [change, tab.id]
   );
-  const supported = tab.harness === 'claude' || tab.harness === 'codex';
+  const supported = harness === 'claude' || harness === 'codex';
   return (
     <SessionModelControl
       loadCatalog={loadCatalog}
