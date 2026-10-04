@@ -153,9 +153,9 @@ interface SessionStoreSeeds {
  * What every Session-keyed store starts from.
  *
  * The persisted layout restores each Session's goal first; live truth from
- * main overrides it, all by durable id. Attention, activity, and started
- * flags adopt from live main truth (D22/D29), so renderer reloads cannot
- * regress any status surface.
+ * main overrides it, all by durable id. Attention restores by durable Session,
+ * while a current live snapshot (including absence) outranks disk. Activity
+ * and started flags adopt only from main, never from a saved working badge.
  */
 export function seedSessionStores(
   live: readonly PtySessionInfo[],

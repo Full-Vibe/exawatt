@@ -68,7 +68,9 @@ export interface ResumeRecoveryBarProps {
 }
 
 /**
- * Relaunch recovery, once (ENG-016 D36/D47). The counts and every resume
+ * Relaunch recovery, once (ENG-016 D36/D47; BUG-260). An explicit restart
+ * default targets the previously running set; the scope menu preserves
+ * deliberate Agent/Project/all recovery. The counts and every resume
  * verb come from the shared lifecycle vocabulary (ENG-015 S6.4), so the bar
  * says "paused" only when every Agent it counts is Paused on its own tab,
  * and "to resume" when the count mixes in Interrupted or Exited Agents

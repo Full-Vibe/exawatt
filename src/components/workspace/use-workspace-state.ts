@@ -138,7 +138,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** Goal visuals share the same durable-Session identity and source seam. */
   const [goalVisuals, setGoalVisuals, goalVisualsRef] =
     useSessionScopedRecord<GoalVisual>(sessionScope);
-  /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
+  /** Operator read/request facts keyed by durable Session; live source events
+   * reconcile them, while stopped Sessions retain them across restarts. */
   const [attention, setAttention, attentionRef] =
     useSessionScopedRecord<PtyAttention>(sessionScope);
   /** sessions actively producing output right now, keyed by sessionId

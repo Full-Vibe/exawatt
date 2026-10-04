@@ -282,8 +282,9 @@ export function attentionAt(
  *
  * So eligibility lives here, next to the predicate it depends on, and every
  * surface that paints or navigates attention calls it rather than restating
- * it. `live` is the caller's `tabIsLive(tab)`; keeping it a plain boolean is
- * what lets this module stay render-free and free of workspace types.
+ * it. `live` is current execution; `retained` admits a stopped Session whose
+ * durable request remains inspectable. Neither navigation nor attention can
+ * promote retained state into proof of running execution.
  *
  * The map is a `FleetAttentionSignals` (BUG-026): one rule over an incomplete
  * map still lies, so the rule only accepts a map whose producers all cover
