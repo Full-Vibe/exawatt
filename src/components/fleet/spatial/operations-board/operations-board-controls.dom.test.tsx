@@ -100,8 +100,11 @@ describe('the delegation overflow lobe', () => {
     const { container, layout, lobe } = renderAt('fleet');
     expect(layout.altitude).toBe('fleet');
     expect(lobe.overflowCount).toBe(5);
-    const count = container.querySelector(
-      `[data-board-delegation-overflow="${lobe.id}"]`
+    const count = [
+      ...container.querySelectorAll('[data-board-delegation-overflow]'),
+    ].find(
+      element =>
+        element.getAttribute('data-board-delegation-overflow') === lobe.id
     );
     expect(count?.textContent).toBe(`+${lobe.overflowCount}`);
     // Zones own the drill verb at this altitude: no in-world buttons.
@@ -111,8 +114,10 @@ describe('the delegation overflow lobe', () => {
   it('shows its count on its control inside a Project', () => {
     const { container, layout, lobe } = renderAt('project');
     expect(layout.altitude).toBe('project');
-    const control = container.querySelector(
-      `[data-board-delegation-unit="${lobe.id}"]`
+    const control = [
+      ...container.querySelectorAll('[data-board-delegation-unit]'),
+    ].find(
+      element => element.getAttribute('data-board-delegation-unit') === lobe.id
     );
     expect(control?.tagName).toBe('BUTTON');
     expect(control?.textContent).toBe(`+${lobe.overflowCount}`);

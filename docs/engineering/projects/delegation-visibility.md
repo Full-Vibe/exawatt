@@ -1895,8 +1895,13 @@ operator rejected the earlier persistent side roster; do not revive it.
 Production query wiring, full-roster inspection, aggregate navigation and
 semantic selection beyond drawn units remain outstanding. BUG-134 stays open
 until the complete find → inspect → owning Session journey is proven in Demo
-and Live. Verification: UI-model suite (190 tests), inspector behavior (14 tests),
+and Live. Verification: UI-model suite (191 tests), inspector behavior (10 tests),
 TypeScript including Electron tests, and the signed-browser R3F suite (10/10
 scenes, aggregate 100/100) pass on this worktree. The explicit aggregate-filter
 regression is also included. Current state: verified foundation; normal landing
 and dogfood request pending. No full BUG-134 closure or installed claim.
+
+Foundation verification also repaired two old DOM test selectors that embedded
+opaque unit identities directly into CSS. Tests now compare data-attribute values
+without treating source-derived identity as selector syntax. The behavior
+assertions (overflow visible at both altitudes) remain unchanged.
