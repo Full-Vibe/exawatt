@@ -2123,3 +2123,18 @@ to reach `origin/master`, then run the normal floor and all 28 declared surface
 gates with `--dogfood`. No gate waiver or visual adoption is included. Original
 Fleet and source-compatibility contributor branches remain recoverable until
 this combined delivery integrates.
+
+### 2026-10-04 — Final delivery consolidation supersedes split-stack sequencing
+
+**One combined transaction now owns every remaining approved polish slice.**
+The operator coordinator assigned `agent/polish-attention` the original recovery
+stack (`1286c537`), reviewed attention/Fleet/source-compatibility followthrough,
+purpose chain through `e569d31b`, approved unread adoption `d3196985`, and root
+canon `9886c07d`. All are composed in this worktree. This supersedes every
+earlier instruction here to wait for a separate recovery landing or deliver
+purpose/unread independently. Contributor branches remain recovery checkpoints.
+
+The union currently requires 30 surface gates, the full repository-owned floor
+and dogfood. Final composition review and focused checks precede that run;
+no integration or installation is claimed yet. The root checkpoint in ENG-036
+owns the exact post-integration receipt and contributor cleanup checklist.

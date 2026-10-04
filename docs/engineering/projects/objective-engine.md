@@ -282,8 +282,10 @@ Initiative mechanism. Owner: `agent/polish-purpose`, sibling worktree
   and for restored Demo content to mount before checking it. This removes
   races against actual modal ownership and lazy rendering, without changing
   product focus behavior or weakening the lifecycle/Initiative contracts.
-- Delivery pending. Worktree bootstrap passed. This
-  checkpoint is execution detail for ENG-021/ENG-015/ENG-036, not a new plan.
+- Delivery is included in the attention-owned combined transaction, alongside
+  recovery, shared attention and approved unread rendering. The original clean
+  purpose worktree remains recoverable until verified integration; its separate
+  pre-admission run was stopped. This checkpoint is execution detail for ENG-021/ENG-015/ENG-036, not a new plan.
 
 ### 2026-07-26 — E1.1 Session comparison and titleless-tab incident
 

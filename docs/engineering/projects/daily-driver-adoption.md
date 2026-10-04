@@ -7775,9 +7775,10 @@ restart lanes; the restart lane owns their combined integration and dogfood
 request. This checkpoint is implemented with targeted verification, not yet
 integrated or installed.
 
-Root cause established for BUG-257: the read-side app-server observed child
-turns but never the Session's own root turn. Root completion therefore remained
-PTY quiescence/BEL inference even while compaction continued. A read-only probe
+Source ownership gap established in the BUG-257 path; the screenshot-specific
+trigger remains untraced. The read-side app-server observed child turns but
+never the Session's own root turn, leaving root completion dependent on PTY
+quiescence/BEL inference. A read-only probe
 of installed Codex **0.160.0** on 2026-10-04 found a live TUI root represented as
 `interrupted` with `completedAt: null`, while `thread/items/list` returned its
 current structured activity. Completed control Sessions returned `completed`

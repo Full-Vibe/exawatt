@@ -780,9 +780,9 @@ coverage, but the original screenshot's exact latch event was not captured.
 BUG-264 has provider-grounded typed question/reply formats and production-pipeline
 coverage; the live probe contained no questions, so it does not prove a fresh
 queued question appearing and resolving in the installed UI. BUG-258 remains
-open diagnosis. Final integration reconciliation must change the source log's
-“Root cause established for BUG-257” to “Source ownership gap established in
-the BUG-257 path; screenshot-specific trigger remains untraced.”
+open diagnosis. The source log now qualifies the finding as an established
+source ownership gap in the BUG-257 path; the screenshot-specific trigger
+remains untraced.
 
 History observations stay bounded: one fresh and one historical page per poll,
 partial until caught up, with unavailable coverage at capacity rather than
@@ -810,9 +810,9 @@ and final integrated-tree gates remain the adoption owner's responsibility.
 Evidence: `/tmp/exawatt-unread-evidence/`; durable behavior belongs in its
 shared implementation and eval contract.
 
-Final delivery consolidation: after behavior dependencies integrate, coordination
-will hand its reconciled canonical docs/runtime manifest to the unread adoption
-owner for one final reviewed transaction. This avoids a second full floor and
+Final delivery consolidation: the attention owner now holds the original
+recovery stack, all reviewed followthroughs, purpose, approved unread adoption,
+and the reconciled canonical docs/runtime manifest for one reviewed transaction. This avoids a second full floor and
 app installation solely for the map while keeping all required checks. Do not
 queue that transaction until the root's delivery statuses and dependency claims
 are reconciled. Retain the coordination branch/worktree until its commits are
