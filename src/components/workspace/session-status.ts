@@ -307,7 +307,7 @@ export function paintsAttention(
 }
 
 /** A result stays a result: unread makes it worth visiting, not blocked. */
-export function attentionIsJumpTarget(
+function attentionIsJumpTarget(
   signal?: SessionAttentionSignal | null
 ): boolean {
   return Boolean(
