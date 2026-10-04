@@ -257,3 +257,34 @@ deployment is READY and exact-SHA dogfood installation is confirmed. F6's delive
 log owns exact artifact evidence; do not infer installation from a queued or
 building worker. No broader whole-app quality or public-release claim follows
 from these verified flows.
+
+
+### 2026-10-04 — Retain the workflow; repair focus and action truth (F7)
+
+**Keep progress and recovery inside one recognizable workflow.** ENG-025 F7 /
+BUG-272 supersedes F6.4 close-on-send; artifact installation did not validate
+production writes. Incident 0032 owns the narrow missing-grant diagnosis. The
+broader G2 design-system work remains active; this is one follow-through
+increment, not a claim that the app-wide audit is complete.
+
+Independent official-source review, 2026-10-04:
+
+| Primary source | Confirmed guidance | Exawatt application / inference |
+| --- | --- | --- |
+| [W3C modal-dialog APG](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) | Open modal dialogs contain focus; close restores the invoker or logical workflow target. Modal ARIA is appropriate only when background interaction is actually blocked. | Shared Dialog must release trap/inert/pointer ownership on logical close. Nonblocking notices cannot use modal behavior; retained exit visuals are not an interactive dialog. |
+| [Carbon modal guidelines](https://www.carbondesignsystem.com/building-blocks/core/components/modal/guidelines) and [inline loading](https://www.carbondesignsystem.com/building-blocks/core/components/inline-loading/guidelines) | Validation/server failures remain in the form; short progress can use inline loading. Loading occupies the same position and prevents duplicate action. | Keep one dialog across input/pending/terminal; retain draft/evidence, use stable toolbar/action slots and native Button busy/disabled semantics. We do not adopt Carbon's timed success delay. |
+| [GOV.UK error messages](https://design-system.service.gov.uk/components/error-message/) | Preserve entered fields; user-fixable validation errors differ from service problems. | A valid report whose service failed is not an invalid text field. Plain language explains known refusal versus unconfirmed delivery and the safe next action. |
+| [Apple feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) | Integrate status in the interface and match interruption to importance. | Retained local progress/recovery keeps task context; unrelated passive notices never take focus. This is an application of the guidance, not a mandated Apple dialog layout. |
+
+Shared source owners are Dialog focus/presence, Button native action states, one
+action descriptor for visible and accessible shortcuts plus dispatch, and the
+feedback provider's existing immutable attempt. The user-text/status distinction
+uses current reading and status rungs rather than new muted cards. Stable
+geometry prevents changing enabled actions from moving neighboring targets.
+
+F7's executable sequence and behavior acceptance live in the feedback project,
+with least-privilege backend proof preceding real-delivery acceptance. Material
+cross-surface visual changes still require `/hud-gallery` operator review before
+adoption; neither this log nor the retired Oct2 study claims acceptance of the
+new retained-dialog flow. No additional permission request is made during
+shaping. Demo/Live and existing cmdk/Radix owners remain shared boundaries.

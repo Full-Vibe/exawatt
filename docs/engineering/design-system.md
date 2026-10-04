@@ -302,7 +302,7 @@ face (BUG-049; the ⌘W close confirm's `Close ⏎` is the precedent, D27).
 - Chord glyph register: `font-mono text-chrome-micro`, dimmed against the
   button's own foreground. No `kbd` chrome inside a filled button.
 
-### Comfortable overlays and operation receipts (ENG-025 F6 / ENG-036, 2026-10-02)
+### Comfortable overlays and operation receipts (ENG-025 F6, amended by F7 / ENG-036, 2026-10-04)
 
 **One clear path, visible owned keys, stable delivery truth.** The operator
 reviewed the paired Cmd+K/feedback study and authorized adoption after removing
@@ -340,8 +340,44 @@ material and action rungs; it introduces no palette or source-specific styling.
   compact receipt near the composer. Hiding recovery presentation preserves
   its immutable report and key until recovered, account sign-out or renderer teardown.
 
-The paired review study retires on adoption. Further app-wide motion work uses
-these shared owners and an operator-reviewed study, rather than local patches.
+The F6 review study retired on adoption. **F7 supersedes F6's close-on-send and
+focus handoff below; the earlier paragraphs record the shipped baseline.**
+
+- One workflow retains the same dialog across input, pending and terminal
+  states. Keep the user's text and evidence available for recovery. Sending
+  changes state in place; it does not dismiss the form, mount another dialog or
+  force the user to reconstruct context in a detached receipt. Explicit Close
+  and Escape remain available; dismissal preserves the attempt while running.
+- Modal is an interaction contract. While open, the dialog contains keyboard
+  focus and genuinely prevents background interaction. Once logically closed,
+  retained exit visuals are noninteractive and cannot keep a focus trap,
+  pointer shield or inert application alive. Restore focus to the invoker or
+  logical work target once, only on dismissal. Nonblocking notices never seize
+  focus, trap Tab or mark the application inert. Use Radix's supported lifecycle,
+  not guessed delays or a document-wide focus workaround.
+- Native `Button` semantics own activation, focus, disabled and busy state.
+  One action descriptor derives the visible label, enabled keyboard hint,
+  accessible shortcut metadata and dispatch predicate. Pending prevents a
+  second send. A disabled action advertises no executable shortcut; Return from
+  a focused control invokes that control, and IME composition never sends.
+  Shared recipes retain an accessible name, visible focus and real Tab order.
+- Keep the evidence toolbar and primary-action slot stable as controls become
+  selected, disabled or busy. Hide unavailable actions without shifting adjacent
+  targets; keep reading order and usable layout at large interface scales.
+- User-authored text is content, not muted system metadata. Preserve its reading
+  contrast and semantic grouping. Status explains the operation in a separate
+  polite live region; recovery buttons sit outside that announcement. Do not
+  repeatedly announce the entire form or use Agent attention colors as a receipt.
+- Failure copy says what is known and the next useful action in plain language.
+  A confirmed refusal can say the report was not saved. An unknown outcome says
+  we could not confirm delivery and Retry checks the same report. Saved feedback
+  with an unconfirmed image says both. Service failures do not mark valid user
+  text invalid, blame the user or expose idempotency/database jargon.
+
+These shared rules apply to Cmd+K, feedback and notices according to each
+surface's modality and action contract. A materially changed cross-surface
+visual treatment still requires `/hud-gallery` operator review before shared
+adoption; shaping F7 grants no new visual acceptance. No R3F changes are implied.
 
 ---
 

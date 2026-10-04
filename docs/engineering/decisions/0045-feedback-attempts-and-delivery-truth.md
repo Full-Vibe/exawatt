@@ -1,10 +1,15 @@
 # 0045 Feedback attempts preserve delivery truth
 
 Date: 2026-10-02
-Status: adopted; verified, integrated, deployed and dogfood-installed 2026-10-02
+Status: adopted; presentation amended 2026-10-04 by F7; production recovery active (BUG-272)
 
 **A feedback success means the report and every requested attachment were
 saved; a retry belongs to the same immutable attempt.**
+
+**2026-10-04 amendment:** F6 artifacts were integrated/deployed/installed, but
+that did not prove authenticated production delivery. Incident 0032 identifies
+the missing fingerprint INSERT grant. F7 supersedes close-on-send presentation;
+immutable attempts, exact-hash reconciliation and certainty remain binding.
 
 ## Context
 
@@ -96,6 +101,34 @@ would amplify misleading success and duplicate reports.
   preserves an unknown outcome and the frozen key for explicit retry; it does
   not prove rollback. No automatic retry is introduced.
 
+## F7 presentation and delivery amendment (2026-10-04)
+
+- Keep one dialog mounted across editing, pending and terminal results. Preserve
+  text/evidence and render progress/recovery in place. Sending does not restore
+  background focus; explicit dismissal does. The user can close while pending,
+  retain the frozen attempt and reopen without losing its state.
+- Shared Dialog owns truthful modal focus and release on logical dismissal;
+  nonblocking notices cannot retain a focus trap or inert background. A native
+  Button/action model derives labels, keyboard cues, accessibility and dispatch
+  from the same enabled action; pending/disabled controls do not promise sends.
+- Preserve the independent saved-report/image facts and retry permission versus
+  outcome certainty. Plain user copy expresses those facts without technical
+  keys. Explicit refusal does not erase an earlier unknown write; Finish without
+  image stops recovery but cannot prove an earlier retry stored no image.
+- Accept one PNG/JPEG/WebP image of at most 3 MiB decoded. The full serialized
+  UTF-8 request must fit 4,500,000 bytes, including base64 and diagnostics. Check
+  the actual wire body before dispatch and server-side, not only file size.
+  Oversize input preserves the valid draft. A 5 MiB file expands beyond the
+  hosted function's 4.5 MB request boundary. Direct/presigned upload is future
+  work, not a bypass introduced by recovery.
+- Repair the exact column grant while keeping identity/triage columns and RLS
+  protected. Effective authenticated permission read-back plus an authorized
+  saved receipt/row and same-key retry prove production delivery; READY,
+  installed SHA, unauthenticated 401 and CORS 204 prove different contracts.
+- F7 / BUG-272 owns executable scope and evidence. Material cross-surface visual
+  adoption still needs the design-system gallery review; the Oct2 retired study
+  is no longer acceptance for the changed retained-dialog flow.
+
 ## Alternatives and consequences
 
 | Alternative | Disposition / reason |
@@ -118,5 +151,6 @@ surface gates passed. The gallery study is retired. Combined UI deployment is RE
 actual dogfood installation is confirmed by update-state read-back of the exact
 client SHA, not inferred from a queued worker. Shared review evidence lives in
 [ENG-036's project doc](../projects/design-system-of-record.md#2026-10-02--app-wide-review-shapes-paired-flows-and-shared-foundations).
-ENG-025 F6 owns reporting execution and acceptance through the roadmap's
-project reference.
+ENG-025 F7 now owns reporting recovery and acceptance through the roadmap's
+project reference. The above Oct2 deployment/install evidence does not establish
+authenticated delivery; incident 0032 and F7 record its correction.

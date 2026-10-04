@@ -26,7 +26,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-004 | Modular UI regimes and Spatial Operations Board  | active-build | R3F tactical board as a sibling regime to the terminal; near-term job is an excellent demo asset.                                                                                      |
 | ENG-021 | Objective engine — context at every granularity  | active-build | Server-owned context labels answering "why does this Session exist?" at every granularity.                                                                                             |
 | ENG-008 | Consumption and controls                         | active-build | Read-only local consumption spine (E0–E3); Policy/Budget enforcement stays planned.                                                                                                    |
-| ENG-025 | Feedback capture and reinflation loop            | active-build | F1/F2 shipped the operator loop; F3 unparked 2026-08-06 to split the operator lane from a non-operator suggestions lane.                                                               |
+| ENG-025 | Feedback capture and reinflation loop            | active-build | F1/F2 established the loop; F7 repairs authenticated delivery and retains one recoverable workflow (BUG-272).                                                               |
 | ENG-036 | Design system of record and design authority     | active-build | Write down the taste the product already earned, and gate UI changes against it.                                                                                                       |
 | ENG-026 | Vision-complete information architecture         | active-build | Show the whole intended IA in the real app, with an honest readiness grammar and navigable preview surfaces.                                                                           |
 | ENG-027 | Workspace tenancy and the Demo Workspace         | active-build | Make Workspace a real switchable tenancy scope; Demo is its first non-personal tenant and carries the altitude-scale demo.                                                             |
@@ -873,6 +873,7 @@ Scope:
 - F3.1 (DEFECT, found 2026-08-06): the untriaged-count line F2.1 added reads under RLS, so it counts only the _signed-in user's own_ rows — the operator's inbox pressure will silently under-report the moment anyone else files. The same line also renders for every signed-in user, showing a non-operator an operator-only triage concept they cannot act on, which violates the production-voice rule. Scope the count to the operator lane and render it only for operators
 - F4 (added 2026-08-03 by ENG-017 S13.2): the triage protocol gains a second write target — a small fix or incident candidate writes a short **backlog entry into the owning repo's roadmap file** (title, owning item, provenance) in addition to its diagnostic narrative in the project doc. The entry is the machine-readable pointer that makes a defect visible to the roadmap lens; the project-doc note stays the reasoning. Today's triaged rows are prose only and therefore invisible to every UI. Depends on the convention/parser gaining a `backlog` status distinct from `later` — see ENG-017 S13.2
 - F6 (integrated 2026-10-02): app-wide review informed paired Cmd+K/feedback foundations with ENG-036. One composer provides truthful report/image receipts, immutable bounded retries, running-session drafts and single-image paste/drop/pick. Compact immediate receipts return work focus; shared notice presentation retains domain-specific lifetimes. Restart persistence and a shared notice destination remain future work.
+- F7 (active-build, 2026-10-04): repair missing authenticated fingerprint INSERT permission and prove a real stored receipt; retain one dialog across input/pending/result with shared truthful focus, native action/shortcut states and hosted image/wire budgets. Supersedes F6.4 close-on-send and the unevidenced production-delivery implication. BUG-272, incident 0032 and decision 0045; executable sequence in the feedback project.
 
 Exit criteria:
 
@@ -881,6 +882,7 @@ Exit criteria:
 - the tab label vote stream accretes as evidence against ENG-021 rather than sitting unread in the table
 - the triage step has authority to enqueue work, never to execute it
 - F6: one report per immutable attempt, truthful requested-image state and independent retry permission/outcome certainty, no stale completion altering newer drafts, accessible recoverable progress and image input; accepted paired foundations preserve keyboard/focus ownership.
+- F7: effective authenticated column permission remains least-privilege; a production saved receipt matches one row and same-key retry. One retained workflow preserves input and recovery; modal/nonblocking focus and native action shortcuts are truthful; image ≤3 MiB and serialized request ≤4,500,000 bytes. Shared visual adoption requires gallery review and exact deployed/installed evidence.
 
 Milestones:
 
@@ -891,7 +893,8 @@ Milestones:
 - F1.2 Screenshot-chip label (landed 2026-08-03): the quick-capture screenshot toggle gains a visible `Screenshot` label beside its thumbnail and ⌘S hint, matching the kind-chip grammar while retaining its accessible name — feedback row `486a87e1`.
 - F5 Anonymized diagnostics (2026-08-14, with ENG-030 OS1.6): a bug report can carry machine state instead of a user's recollection of it. Bug in ⌘⇧F gains an `Anonymized diagnostics` chip on ⌘D beside F1.2's screenshot chip, with a review affordance that shows the exact JSON before it is sent. The bundle is build/system facts plus bounded tails of the `updater`, `auth`, and `summarizer` logs; never transcript, prompt, Project, or file content. Because ⌘⇧F is a no-op signed out and a broken install is disproportionately signed out, Settings → Privacy → Diagnostics saves the same report to a file and reveals it in Finder with no account and no network. Redaction moves to write time (see F5.1) so the logs on disk are safe before anything reads them.
 - F5.1 Shared log redaction (2026-08-14, architecture): `auth-diagnostics.ts` sanitizes bearer tokens, JWTs, and long opaque values; `diagnostics-log.ts` states in its own header that it is a sibling of that module but only clips to 400 chars, so `summarizer.jsonl` and `updater.jsonl` have always been written unredacted. Extract the sanitizer into `diagnostics-redaction.ts`, have both writers use it, and add home-directory anonymization so a path reads `~/...`. This is a correctness fix independent of F5: it is why F5 can attach a log tail without a bespoke scrubbing pass at send time.
-- F6 Reliable reporting (integrated, deployed and dogfood-installed 2026-10-02): one composer, same-attempt recovery, truthful receipts, shared overlays/notices; decision 0045, BUG-261/266/269/270; exact artifact evidence in the project log.
+- F6 Reporting artifacts (integrated, deployed and dogfood-installed 2026-10-02; delivery acceptance reopened by F7): one composer, same-attempt recovery and shared overlays; decision 0045, BUG-261/266/269/270.
+- F7 Reliable recovery (active-build, 2026-10-04): narrow permission repair, retained dialog, shared focus/action accessibility and image/request budgets; BUG-272 / incident 0032; proof and exact artifact states in the project log.
 
 Non-goal, stated on purpose: **no anonymous network intake.** The obvious
 completion of F5 is a signed-out send endpoint, and it is deliberately not
@@ -1076,6 +1079,7 @@ Milestones:
 - G1 Gallery reconciliation (landed 2026-08-02): G0's decision list executed — quick-capture, context-label, and keyswitch/tactile studies retired (+301 lines of dead `.tactile-key` CSS out of `globals.css`), `/hud-gallery/agent-field` and `/hud-gallery/agent-sources` deleted, kept sections and labs indexed; `AGENTS.md` workbench rule amended to name the kernel as the source of design truth.
 - G2 Full system: component contracts, IA principles extracted from the existing decision records, and the recurring audit cadence.
 - G2 paired overlays/operations (integrated, deployed and dogfood-installed 2026-10-02): accepted shared primitives adopted with ENG-025 F6; the study is retired; full G2 remains open.
+- G2 F7 follow-through (active-build, 2026-10-04): retained workflow, shared modal/nonblocking focus and native action/accessibility/shortcut truth with ENG-025 BUG-272; material shared visuals require renewed gallery review; full G2 stays open.
 - G3 Review gate: the checklist-with-visual-evidence gate, later automated as ENG-028 T3's Designer Type.
 - G3 partial — demo-path polish (landed 2026-08-02; demo-arc packet P8): the kernel applied, with before/after screenshot evidence, to exactly the surfaces the demo walk shows — app chrome (title bar, account menu, Workspace switcher), the Agent-altitude chrome around the terminal (⌘T opener, launch controls, restore panel, terminal overlays), the Team overlay (tiles, roadmap rail + cards), the Fleet altitude's DOM layer, the ⌘K palette, and Settings' first screen. All bracketed px font sizes on those surfaces migrated to named rungs; 17px→`text-base`, 8/9px words→`text-chrome-micro`, glyph/ordinal 9px→`text-chrome-nano`, the roadmap card's fractional 11.5px snapped to label/meta. Deferred with owners and one flagged kernel contradiction (deliberate Exo 2 tile copy) recorded in the project doc's milestone log.
 - G3 partial — screen-copy guard (landed 2026-09-24; BUG-207): the Voice rung "no em dashes in operator copy" is enforced by `pnpm copy:check` on the landing floor; 65 strings rewritten first. Narrative in the project doc's milestone log.
@@ -3282,6 +3286,19 @@ attention marks with the tab, and make the restart banner say what it will
 preserve so the update can be taken without a sinking feeling. ENG-019 stays
 planned; this is its first operator evidence.
 
+2026-10-04 operator evidence (promoted from the recovery conversation):
+"Similar to the feedback I've given recently around the restart and relaunch
+experience, there should be a relaunch button or restart button in the "update
+available" toast that automatically restarts the app with the latest code and
+then also resumes all the sessions to preserve its state. It's completely
+seamless as if nothing changed except for the binary version updated."
+Scope includes attention/unread state, user inputs and navigation/scroll
+positions, not just provider checkpoints. Automatic resume is an explicit new
+request requiring a policy/design amendment; [decision 0032](decisions/0032-restore-project-scoped-session-recovery.md)
+still forbids silent revival and admits exact-identity eligible Agents only.
+Keep this review-needed scope here; do not add a second restart plan or promise
+all harnesses can revive transparently.
+
 ### BUG-261 Toasts and the feedback form's sending state use three treatments
 
 Status: done · ENG-036 · product-feedback d8a44d94 2026-09-29, 513ebfde
@@ -3416,12 +3433,31 @@ truth is preserved, and foreign servers remain untouched.
 [Incident 0031](incidents/0031-community-build-poisons-live-distribution-icon.md);
 [ENG-022 findings](projects/agent-development-loop.md#findings-log).
 
+### BUG-272 Feedback recovery fails delivery and breaks workflow continuity
+
+Status: active-build · ENG-025 with ENG-036 · bug · operator recovery 2026-10-04.
+
+F6's new fingerprint column lacks authenticated INSERT permission; production
+POST returns 503 and read-only EXPLAIN reproduces `42501`. Close-on-send then
+separates the report from progress/failure, while focus/action/accessibility and
+image wire budgets need shared correction. F7 owns one cohesive recovery scope:
+narrow column grant, retained input/pending/terminal dialog, shared modal versus
+nonblocking focus and native Button/shortcut truth, stable toolbar/readable
+user-content semantics, plain-language certainty and 3 MiB image/4,500,000-byte
+serialized-request limits. Exit: least-privilege production read-back plus an
+authorized receipt/one-row/same-key proof, real keyboard/recovery controls,
+reviewed material cross-surface visuals, and exact deployed/installed evidence.
+[Incident 0032](incidents/0032-feedback-fingerprint-column-denies-authenticated-inserts.md);
+[F7 execution](projects/feedback-reinflation.md#f7--reliable-recovery-in-one-workflow-active-build-2026-10-04);
+[decision 0045](decisions/0045-feedback-attempts-and-delivery-truth.md).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ENG-025 F6.4 close-on-send and F6 production-delivery acceptance; ENG-036 paired overlay follow-through | ENG-025 F7 / BUG-272, operator recovery 2026-10-04 | One dialog retains input, pending and terminal recovery. Shared Dialog/Button/action owners enforce truthful modality and native accessible shortcuts. Repair the missing fingerprint INSERT grant and inline image/wire budgets. Oct2 source/install/READY remain artifact history, not proof of authenticated delivery. Immutable key/certainty contracts remain; material cross-surface visuals require renewed gallery review. |
 | ENG-025 F6 separate quick/full composers and first gallery motion candidate | Operator review, 2026-10-02 | One shared composer replaces both forms. Keyboard hints sit beside owned actions; redundant image controls are removed. Elaborate state morphing is rejected: receipts update immediately with a pending-only spinner; real Radix presence owns panel entry/exit and reduced motion. The operator authorized production adoption; verified source is integrated and the combined UI deployed and exact-SHA dogfood installed; execution detail stays in F6 and decision 0045. |
 | ENG-025 F1 invisible optimistic send dismissal; BUG-261 adoption ordering | ENG-025 F6 / ENG-036 G2 paired-flow plan, operator 2026-10-02 | App-wide review informs Cmd+K/feedback together; paired gallery study precedes shared visual adoption. Compact sending/result receipt returns focus, retries retain immutable identity, and success confirms requested evidence. Reporting adopts first, then hint/update presentation with distinct lifetimes. Running-session drafts only; restart persistence and shared notice destination deferred. The accepted simplified implementation is verified, integrated, deployed and dogfood-installed. |
 | ENG-008 E12's recommendation "C's first screen over A's roster with B as the drill" and its fixed five-entry roster | ENG-008 E15, operator, 2026-09-29 | The operator picked one card per vendor account instead, with the attribution drill on an Analytics tab. E12's honesty rules still bind (a failed read keeps its true as-of and never reads better than a success), but the roster is the accounts the operator actually uses, not a fixed list that includes lanes nobody reads. The gallery study retired with its subject. |
