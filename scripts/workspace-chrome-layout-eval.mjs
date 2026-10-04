@@ -259,6 +259,12 @@ page.on('console', message => {
 await page.addInitScript(
   ({ sessions, layout, sourceRegistry }) => {
     const off = () => () => undefined;
+    const attentionListeners = new Set();
+    window.__fireAttention = event => {
+      const session = sessions.find(session => session.id === event.id);
+      if (session) session.attention = event.attention;
+      for (const listener of attentionListeners) listener(event);
+    };
     // A late eval step reloads while one session is already working. This
     // exercises D29's pty:list hydration path without weakening the initial
     // explicit-false fixtures used by the switcher parity assertions.
@@ -324,7 +330,27 @@ await page.addInitScript(
         resize: async () => undefined,
         kill: async () => undefined,
         rename: async () => undefined,
-        focus: async () => undefined,
+        focus: async id => {
+          const attention = sessions.find(
+            session => session.id === id
+          )?.attention;
+          if (!attention) return;
+          window.__fireAttention({
+            id,
+            attention: {
+              ...attention,
+              unread: false,
+              ...(attention.records
+                ? {
+                    records: attention.records.map(record => ({
+                      ...record,
+                      unread: false,
+                    })),
+                  }
+                : {}),
+            },
+          });
+        },
         restoreContext: async (_durableSessionId, summary) =>
           summary.startsWith('Based on my exploration') ? null : summary,
         list: async () => sessions,
@@ -374,8 +400,8 @@ await page.addInitScript(
         onContext: off,
         onRecap: off,
         onAttention: handler => {
-          window.__fireAttention = handler;
-          return () => undefined;
+          attentionListeners.add(handler);
+          return () => attentionListeners.delete(handler);
         },
         onIdentity: off,
         onNotificationClick: off,
@@ -809,15 +835,19 @@ try {
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'turn-states-rest.png'),
   });
-  // D33/D40: explicit input attention is a quiet needs-you marker. Ordinary
-  // turn completion is a Result light and must not enter the ⌘J queue. The
-  // needs-you marker must explain itself on
-  // hover, carry no alarm animation, and disappear before the selected tab
-  // can paint — never flash bell → working → done during one click.
+  // Inspection and source requests are independent: the quiet needs-you
+  // marker explains the outstanding request; its unread detail disappears
+  // before the selected tab paints. Reading never resolves the request.
+  // Unread results are eligible for the shared queue after requests.
   await page.evaluate(() => {
     window.__fireAttention?.({
       id: 'gpa-session',
-      attention: { kind: 'bell', since: Date.now() },
+      attention: {
+        kind: 'bell',
+        request: 'blocking',
+        since: Date.now(),
+        unread: true,
+      },
     });
   });
   const gpaTab = page.locator(
@@ -825,6 +855,8 @@ try {
   );
   const attentionMarker = gpaTab.locator('[data-attention]');
   await attentionMarker.waitFor();
+  const unreadMarker = gpaTab.locator('[data-session-unread]');
+  await unreadMarker.waitFor();
   if (
     (await attentionMarker.locator('.animate-ping, .lucide-bell').count()) > 0
   ) {
@@ -833,13 +865,14 @@ try {
   await attentionMarker.hover();
   const statusTooltip = page.getByRole('tooltip');
   await statusTooltip.waitFor();
+  const accessibleExplanation =
+    await attentionMarker.getAttribute('aria-label');
   if (
-    !/^Needs you\b[\s\S]*Open this Session to respond\.$/m.test(
-      await statusTooltip.innerText()
-    )
+    !accessibleExplanation?.trim() ||
+    !(await statusTooltip.innerText()).includes(accessibleExplanation)
   ) {
     throw new Error(
-      `Attention tooltip is unclear: ${await statusTooltip.innerText()}`
+      'Attention tooltip must expose the same explanation as its accessible status'
     );
   }
   await page.screenshot({
@@ -847,30 +880,43 @@ try {
   });
   await page.mouse.move(650, 400);
   await page.evaluate(() => {
-    window.__activeAttentionPaints = 0;
-    window.__sampleActiveAttention = true;
+    window.__activeUnreadPaints = 0;
+    window.__sampleActiveUnread = true;
     const sample = () => {
       const active = document.querySelector(
         '[data-workspace-tab-strip] [data-tab-id][data-active]'
       );
-      if (active?.querySelector('[data-attention]')) {
-        window.__activeAttentionPaints += 1;
+      if (active?.querySelector('[data-session-unread]')) {
+        window.__activeUnreadPaints += 1;
       }
-      if (window.__sampleActiveAttention) requestAnimationFrame(sample);
+      if (window.__sampleActiveUnread) requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
   });
   await gpaTab.locator('button').first().click();
   await settle();
-  const activeAttentionPaints = await page.evaluate(() => {
-    window.__sampleActiveAttention = false;
-    return window.__activeAttentionPaints;
+  const activeUnreadPaints = await page.evaluate(() => {
+    window.__sampleActiveUnread = false;
+    return window.__activeUnreadPaints;
   });
-  if (activeAttentionPaints !== 0 || (await attentionMarker.count()) !== 0) {
+  if (activeUnreadPaints !== 0 || (await unreadMarker.count()) !== 0) {
     throw new Error(
-      `Selecting a tab painted stale attention ${activeAttentionPaints} time(s)`
+      `Selecting a tab painted stale unread state ${activeUnreadPaints} time(s)`
     );
   }
+  if ((await attentionMarker.count()) !== 1) {
+    throw new Error(
+      'Reading a Session must preserve its outstanding request marker'
+    );
+  }
+  // Only authoritative source resolution removes the outstanding request.
+  await page.evaluate(() =>
+    window.__fireAttention({
+      id: 'gpa-session',
+      attention: null,
+    })
+  );
+  await attentionMarker.waitFor({ state: 'detached' });
   // Return to the original fixture state for the remaining parity checks.
   await page
     .locator('[data-project-parent="/tmp/exawatt"][data-tab-id="exawatt-tab"]')
