@@ -14,6 +14,7 @@ import { join, resolve } from 'node:path';
 import {
   openShellFromLauncher,
   startAgentFromLauncher,
+  waitForPageCondition,
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
@@ -268,14 +269,18 @@ try {
       await page.evaluate(async paused => {
         await window.electron.pty.pauseSessions([paused], true);
       }, previouslyPausedId);
-      await page.waitForFunction(async paused => {
-        const layout = await window.electron.workspace.load();
-        return layout?.projects
-          ?.flatMap(project => project.tabs)
-          .some(
-            tab => tab.durableSessionId === paused && tab.sessionId === null
-          );
-      }, previouslyPausedId);
+      await waitForPageCondition(
+        page,
+        async paused => {
+          const layout = await window.electron.workspace.load();
+          return layout?.projects
+            ?.flatMap(project => project.tabs)
+            .some(
+              tab => tab.durableSessionId === paused && tab.sessionId === null
+            );
+        },
+        previouslyPausedId
+      );
       const closed = waitForClose(app);
       await requestQuit(app);
       await closed;
