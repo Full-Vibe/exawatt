@@ -106,7 +106,7 @@ export function ResumeRecoveryBar({
   if (progress) {
     status = resumingAgentsCopy(progress.completed, progress.total);
   } else if (recoveringPrevious) {
-    status = `${agentsNoun(previouslyRunningCount)} paused after restart`;
+    status = `${resumableAgentsCopy({ count: previouslyRunningCount, allPaused: readyAgents.allPaused })} after restart`;
     const otherPaused = readyAgentCount - previouslyRunningCount;
     if (otherPaused > 0) status += ` · ${otherPaused} previously paused`;
     if (reconnectableAgentCount > 0)
