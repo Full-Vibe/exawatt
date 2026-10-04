@@ -13,7 +13,7 @@ import {
 } from '@exawatt/ui-model';
 import type { SessionGlyphState } from '../session-status';
 import type { AgentSourceId } from '../agent-sources';
-import type { PtyHarness } from '@exawatt/core';
+import { isPtyHarness, type PtyHarness } from '@exawatt/core';
 import type {
   ClosedSessionEntry,
   PtySessionRecord,
@@ -445,9 +445,12 @@ export function tabFromClosedEntry(
   entry: ClosedSessionEntry,
   id: string
 ): SessionTab {
-  // BUG-209: the ledger is a file, and main admits any harness string it
-  // finds there; this path has always assumed a harness this build knows.
-  const harness = entry.harness as PtyHarness;
+  const harness = entry.harness;
+  if (!isPtyHarness(harness)) {
+    throw new Error(
+      `This version of Exawatt does not support ${harness}. Exact resume is unavailable.`
+    );
+  }
   const repairsLegacyCatalogTitle =
     entry.titleKind === undefined &&
     isLegacyCatalogTitleLeak({

@@ -32,13 +32,11 @@
  * state: the bridge is here, nothing was read, and nothing will be until the
  * engine starts.
  */
-import {
-  HARNESS_ORDER,
-  isDefaultHarnessTitle,
-} from '@/components/workspace/harnesses';
+import { isDefaultHarnessTitle } from '@/components/workspace/harnesses';
 import { sessionDisplayCopy } from '@/components/workspace/session-display-copy';
 import {
   consumptionSourceForHarness,
+  isPtyHarness,
   emptyLiveConsumptionSnapshot,
   type ConsumptionUpdatedEvent,
   type LiveConsumptionSnapshot,
@@ -131,33 +129,34 @@ function engineBridge() {
 interface DurableMeta {
   title: string;
   titleKind: 'default' | 'operator';
-  harness: PtyHarness;
+  harness: PtyHarness | null;
   lifecycle: string;
   summary: string | null;
   projectDir: string | null;
 }
 
-const HARNESSES: readonly string[] = HARNESS_ORDER;
-const asHarness = (value: unknown): PtyHarness =>
-  typeof value === 'string' && HARNESSES.includes(value)
-    ? (value as PtyHarness)
-    : 'claude';
+const asHarness = (value: unknown): PtyHarness | null =>
+  isPtyHarness(value) ? value : null;
 
 /** A record that predates explicit title ownership states it by shape. */
 function titleKindOf(
   declared: unknown,
-  harness: PtyHarness,
+  harness: PtyHarness | null,
   title: string
 ): 'default' | 'operator' {
   if (declared === 'default' || declared === 'operator') return declared;
-  return isDefaultHarnessTitle(harness, title) ? 'default' : 'operator';
+  return harness && isDefaultHarnessTitle(harness, title)
+    ? 'default'
+    : 'operator';
 }
 
 function layoutMeta(layout: unknown): Map<string, DurableMeta> {
   const out = new Map<string, DurableMeta>();
   if (!layout || typeof layout !== 'object') return out;
   const root = layout as { projects?: unknown; initiatives?: unknown };
-  const groups = Array.isArray(root.projects) ? root.projects : root.initiatives;
+  const groups = Array.isArray(root.projects)
+    ? root.projects
+    : root.initiatives;
   if (!Array.isArray(groups)) return out;
   for (const candidate of groups) {
     if (!candidate || typeof candidate !== 'object') continue;
@@ -184,12 +183,15 @@ function layoutMeta(layout: unknown): Map<string, DurableMeta> {
       if (!durableId) continue;
       const harness = asHarness(tab.harness);
       const title =
-        typeof tab.title === 'string' && tab.title.trim() ? tab.title : 'Session';
+        typeof tab.title === 'string' && tab.title.trim()
+          ? tab.title
+          : 'Session';
       out.set(durableId, {
         title,
         titleKind: titleKindOf(tab.titleKind, harness, title),
         harness,
-        lifecycle: typeof tab.lifecycle === 'string' ? tab.lifecycle : 'stopped',
+        lifecycle:
+          typeof tab.lifecycle === 'string' ? tab.lifecycle : 'stopped',
         summary:
           typeof tab.contextSummary === 'string' && tab.contextSummary.trim()
             ? tab.contextSummary
@@ -210,9 +212,7 @@ function assembleIdentities(
   const meta = new Map<string, DurableMeta>();
   // Oldest truth first so fresher records override: ledger → layout → live.
   for (const entry of closed) {
-    // BUG-209: the ledger is a file, and main admits any harness string it
-    // finds there; identity assembly has always assumed a known harness.
-    const harness = entry.harness as PtyHarness;
+    const harness = asHarness(entry.harness);
     meta.set(entry.durableSessionId, {
       title: entry.title,
       titleKind: titleKindOf(entry.titleKind, harness, entry.title),
@@ -286,6 +286,11 @@ function assembleIdentities(
 
 /** The visible identity every Session surface must render (ENG-016 D18). */
 function displayTitle(m: DurableMeta): string {
+  // Unknown sources still have a durable identity. Preserve their authored
+  // copy without attributing them to another source or indexing its metadata.
+  if (!m.harness) {
+    return (m.titleKind === 'operator' ? m.title : m.summary) || m.title;
+  }
   return sessionDisplayCopy({
     harness: m.harness,
     title: m.title,

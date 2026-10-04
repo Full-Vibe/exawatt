@@ -52,6 +52,12 @@ describe('newDraftTab', () => {
 });
 
 describe('tabFromClosedEntry', () => {
+  it('refuses an unsupported source instead of producing a resumable tab', () => {
+    expect(() =>
+      tabFromClosedEntry(closedEntry({ harness: 'future-source' }), 't')
+    ).toThrow('future-source');
+  });
+
   it('reopens as a stopped tab that keeps its identity and never a process', () => {
     const tab = tabFromClosedEntry(
       closedEntry({ initialTask: 'Ship it' }),

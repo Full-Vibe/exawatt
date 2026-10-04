@@ -1,10 +1,10 @@
 import {
   isAgentHarness,
   isAgentPermissionMode,
+  isPtyHarness,
   isAgentSourceAdapterId,
   isSafetyControlId,
   type AgentPermissionMode,
-  type PtyHarness,
 } from '@exawatt/core';
 import type {
   AgentSourceScope,
@@ -77,10 +77,6 @@ function optionalNumber(value: unknown): boolean {
     value === null ||
     (typeof value === 'number' && Number.isFinite(value))
   );
-}
-
-function isPtyHarness(value: unknown): value is PtyHarness {
-  return value === 'shell' || isAgentHarness(value);
 }
 
 /**

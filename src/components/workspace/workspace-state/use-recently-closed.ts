@@ -240,9 +240,20 @@ export function useRecentlyClosed({
             reuseTabId
           )
         : operatorPosition.claimHere();
-      const entry = await api.reopenSession(durableSessionId);
-      if (!entry) return false;
-      const tab = tabFromClosedEntry(entry, reuseTabId ?? newTabId());
+      let entry: ClosedSessionEntry | null;
+      let tab: ReturnType<typeof tabFromClosedEntry>;
+      try {
+        entry = await api.reopenSession(durableSessionId);
+        if (!entry) {
+          setError('This Session is no longer in Recently closed.');
+          return false;
+        }
+        tab = tabFromClosedEntry(entry, reuseTabId ?? newTabId());
+      } catch (cause) {
+        const detail = cause instanceof Error ? ` ${cause.message}` : '';
+        setError(`Could not reopen this Session.${detail}`);
+        return false;
+      }
       if (entry.goal) {
         setSummaries(prev => ({
           ...prev,
@@ -261,7 +272,7 @@ export function useRecentlyClosed({
       if (mayMove) moveOperator(entry.projectDir, tab.id);
       return true;
     },
-    [moveOperator, setProjects, setSummaries, stateRef]
+    [moveOperator, setError, setProjects, setSummaries, stateRef]
   );
 
   const listClosedSessions = useCallback(
@@ -283,10 +294,7 @@ export function useRecentlyClosed({
       if (closing.length > 0) await Promise.allSettled(closing);
       const [latest] = await listClosedSessions();
       if (!latest) return;
-      const reopened = await reopenClosedSession(latest.durableSessionId);
-      if (!reopened) {
-        setError(`Could not reopen ${latest.title}.`);
-      }
+      await reopenClosedSession(latest.durableSessionId);
     });
     reopenLastClosedQueueRef.current = run.catch(() => {
       setError('Could not reopen the last closed tab.');

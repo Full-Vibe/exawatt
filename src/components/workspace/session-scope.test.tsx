@@ -294,6 +294,21 @@ describe('a forgotten Session leaves nothing behind in the renderer', () => {
     );
   });
 
+  it('reports a refused reopen without creating a tab or swallowing the source reason', async () => {
+    const { view, pty } = await mountedWorkspace([liveSession(DURABLE, PTY)]);
+    const before = view.result.current.projects;
+    pty.reopenSession.mockRejectedValue(
+      new Error('Unsupported source: future-source')
+    );
+    await act(async () => {
+      expect(await view.result.current.reopenClosedSession('unsupported')).toBe(
+        false
+      );
+    });
+    expect(view.result.current.projects).toBe(before);
+    expect(view.result.current.error).toContain('future-source');
+  });
+
   it('keeps the goal the operator can still see when a close is reopened', async () => {
     const { view, emit, pty } = await mountedWorkspace([
       liveSession(DURABLE, PTY),

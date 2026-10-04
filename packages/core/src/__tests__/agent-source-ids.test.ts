@@ -6,6 +6,7 @@ import {
   AGENT_SOURCE_ADAPTER_IDS,
   AGENT_SOURCE_CATALOG_IDS,
   isAgentHarness,
+  isPtyHarness,
   isAgentSourceAdapterId,
 } from '../agent-sources';
 
@@ -22,6 +23,15 @@ const contract = JSON.parse(
 ) as { sources: ContractEntry[]; comingSoon: ContractEntry[] };
 
 describe('Agent Source ids', () => {
+  it('accepts only shell and declared local harnesses for Session restore', () => {
+    for (const harness of ['shell', ...AGENT_HARNESSES]) {
+      expect(isPtyHarness(harness)).toBe(true);
+    }
+    for (const value of ['future-source', 'toString', '__proto__', null, 1]) {
+      expect(isPtyHarness(value)).toBe(false);
+    }
+  });
+
   it('derive from the contract, in contract order', () => {
     expect(AGENT_SOURCE_ADAPTER_IDS).toEqual(
       contract.sources.map(source => source.adapterId)

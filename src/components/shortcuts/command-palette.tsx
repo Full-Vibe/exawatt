@@ -1,5 +1,7 @@
 'use client';
 
+import { isPtyHarness } from '@exawatt/core';
+
 import {
   Fragment,
   useState,
@@ -1636,6 +1638,7 @@ export function CommandPalette({
           {closedSessions.map(entry => (
             <CommandItem
               key={entry.durableSessionId}
+              disabled={!isPtyHarness(entry.harness)}
               value={paletteValue(
                 `Reopen ${entry.projectName} · ${entry.goal ?? entry.title}`,
                 `closed-${entry.durableSessionId}`
@@ -1663,7 +1666,14 @@ export function CommandPalette({
             >
               <RotateCcw className="mr-2 h-4 w-4" />
               <span>
-                Reopen {entry.projectName} · {entry.goal ?? entry.title}
+                {isPtyHarness(entry.harness) ? 'Reopen ' : ''}
+                {entry.projectName} · {entry.goal ?? entry.title}
+                {!isPtyHarness(entry.harness) && (
+                  <span className="block text-xs text-muted-foreground">
+                    This version does not support {entry.harness}. Exact resume
+                    unavailable.
+                  </span>
+                )}
               </span>
             </CommandItem>
           ))}

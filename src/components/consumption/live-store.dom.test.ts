@@ -32,7 +32,10 @@ const NOW = Date.now();
 const HOUR = 3_600_000;
 const iso = (ms: number) => new Date(ms).toISOString();
 
-function codexSample(providerSessionId: string, atMs: number): ConsumptionSample {
+function codexSample(
+  providerSessionId: string,
+  atMs: number
+): ConsumptionSample {
   return {
     at: iso(atMs),
     source: 'codex',
@@ -166,9 +169,7 @@ describe('live store', () => {
     if (before.status === 'pending') {
       expect(before.view?.workspace.sessionCount).toBe(0);
     }
-    await vi.waitFor(() =>
-      expect(getLiveConsumption().status).toBe('ready')
-    );
+    await vi.waitFor(() => expect(getLiveConsumption().status).toBe('ready'));
     const state = getLiveConsumption();
     // fleet identity joined: the session carries its workspace title
     const rows = gridRows(state.view!);
@@ -214,9 +215,7 @@ describe('live store', () => {
   it('refetches only when the revision advances', async () => {
     const fake = installFakeBridge(readySnapshot());
     const off = subscribeLiveConsumption(() => {});
-    await vi.waitFor(() =>
-      expect(getLiveConsumption().status).toBe('ready')
-    );
+    await vi.waitFor(() => expect(getLiveConsumption().status).toBe('ready'));
     expect(fake.snapshotCalls).toBe(1);
 
     // stale revision: no pull
@@ -401,27 +400,32 @@ describe('session naming', () => {
     expect(await readyTitle()).toBe('New agent');
   });
 
-  it("reads a closed Session's goal from the ledger", async () => {
-    installNamingBridge({
-      ptys: [],
-      closed: [
-        {
-          durableSessionId: 'durable-1',
-          title: 'Codex',
-          titleKind: 'default',
-          goal: 'ENG-004 V3.3 F7 fleet board composition',
-          harness: 'codex',
-          cwd: '/Users/op/Code/exawatt',
-          projectDir: '/Users/op/Code/exawatt',
-          projectName: 'exawatt',
-          harnessSessionId: 'prov-1',
-          initialTask: null,
-          closedAt: NOW - HOUR,
-        },
-      ],
-    });
-    expect(await readyTitle()).toBe('ENG-004 V3.3 F7 fleet board composition');
-  });
+  it.each(['codex', 'future-source', 'toString'])(
+    "reads a closed Session's goal without requiring a known source: %s",
+    async harness => {
+      installNamingBridge({
+        ptys: [],
+        closed: [
+          {
+            durableSessionId: 'durable-1',
+            title: 'Codex',
+            titleKind: 'default',
+            goal: 'ENG-004 V3.3 F7 fleet board composition',
+            harness,
+            cwd: '/Users/op/Code/exawatt',
+            projectDir: '/Users/op/Code/exawatt',
+            projectName: 'exawatt',
+            harnessSessionId: 'prov-1',
+            initialTask: null,
+            closedAt: NOW - HOUR,
+          },
+        ],
+      });
+      expect(await readyTitle()).toBe(
+        'ENG-004 V3.3 F7 fleet board composition'
+      );
+    }
+  );
 
   it('reads a persisted workspace tab the same way the tab strip does', async () => {
     installNamingBridge({
@@ -446,7 +450,9 @@ describe('session naming', () => {
         ],
       },
     });
-    expect(await readyTitle()).toBe('Plan remote agent harness for Hetzner VPS');
+    expect(await readyTitle()).toBe(
+      'Plan remote agent harness for Hetzner VPS'
+    );
   });
 });
 
@@ -477,7 +483,10 @@ describe('provider plan accounts cross the bridge (D1/D2)', () => {
         onUpdated: () => () => {},
       },
       pty: { list: async () => [], closedSessions: async () => [] },
-      workspace: { load: async () => ({ projects: [] }), onChanged: () => () => {} },
+      workspace: {
+        load: async () => ({ projects: [] }),
+        onChanged: () => () => {},
+      },
     });
     const off = subscribeLiveConsumption(() => {});
     await vi.waitFor(() => expect(getLiveConsumption().status).toBe('ready'));

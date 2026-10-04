@@ -1,3 +1,4 @@
+import { isPtyHarness } from '@exawatt/core';
 import { readJsonDocument, writeJsonFileAtomic } from '../atomic-json-file';
 import type { ClosedSessionEntry } from '@exawatt/core/desktop-bridge';
 
@@ -107,6 +108,13 @@ export class ClosedSessionLedger {
       candidate => candidate.durableSessionId === durableSessionId
     );
     if (!entry) return null;
+    // A downgrade or retired source must not consume the only recovery row.
+    // Refuse here, before mutation, even when a renderer bypasses its UI guard.
+    if (!isPtyHarness(entry.harness)) {
+      throw new Error(
+        `This version of Exawatt does not support ${entry.harness}. Exact resume is unavailable; the closed Session has been kept.`
+      );
+    }
     this.persist(entries.filter(candidate => candidate !== entry));
     return entry;
   }

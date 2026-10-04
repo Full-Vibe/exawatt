@@ -205,6 +205,39 @@ const groupOf = (row: HTMLElement) =>
     ?.textContent ?? null;
 
 describe('⌘K opening highlight', () => {
+  it('keeps unsupported closed Sessions discoverable while refusing reopen', async () => {
+    const originalPath = window.location.pathname;
+    window.history.replaceState(null, '', '/workspace');
+    const entry = {
+      durableSessionId: 'closed-future',
+      title: 'Preserved work',
+      goal: 'Make recovery dependable',
+      harness: 'future-source',
+      cwd: '/repo',
+      projectDir: '/repo',
+      projectName: 'repo',
+      harnessSessionId: 'original-conversation',
+      initialTask: null,
+      closedAt: 1,
+    };
+    vi.mocked(window.electron!.pty!.closedSessions).mockResolvedValue([entry]);
+    try {
+      renderPalette();
+      let row: HTMLElement | undefined;
+      await waitFor(() => {
+        row = visibleRows().find(item =>
+          item.textContent?.includes(entry.goal)
+        );
+        expect(row).toBeDefined();
+      });
+      expect(row).toHaveAttribute('aria-disabled', 'true');
+      expect(row).toHaveTextContent(entry.harness);
+      expect(row).not.toHaveAttribute('aria-selected', 'true');
+    } finally {
+      window.history.replaceState(null, '', originalPath);
+    }
+  });
+
   it('never lands on a tenant switch, even with nothing else to offer', async () => {
     renderPalette();
     await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));

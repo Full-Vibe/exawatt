@@ -112,6 +112,19 @@ describe('ClosedSessionLedger (D23)', () => {
     }
   );
 
+  it.each(['future-source', 'toString', '__proto__'])(
+    'keeps unsupported source %s intact when reopen is refused',
+    harness => {
+      const ledger = make();
+      const saved = ledger.add({ ...entry('unsupported'), harness });
+      const bytes = fs.readFileSync(file, 'utf8');
+      expect(() => make().take(saved.durableSessionId)).toThrow(harness);
+      expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+      expect(make().list()).toEqual([saved]);
+      expect(purged).toEqual([]);
+    }
+  );
+
   it('take on an unknown id returns null without touching the file', () => {
     const ledger = make();
     ledger.add(entry('a'));
