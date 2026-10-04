@@ -74,6 +74,14 @@ export function TerminalPane({
   );
   const pane = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
+  // A Session runs in main even when no terminal renderer is attached.
+  // Returning from Fleet must attach the visible panes, not construct a
+  // WebGL terminal for every hidden tab in one task. Once shown, retain the
+  // renderer across tab switches so selection, search and scrollback survive.
+  const [hasBeenVisible, setHasBeenVisible] = useState(layout !== 'hidden');
+  useEffect(() => {
+    if (layout !== 'hidden') setHasBeenVisible(true);
+  }, [layout]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState('0/0');
@@ -207,7 +215,7 @@ export function TerminalPane({
     const el = container.current;
     const paneEl = pane.current;
     const api = window.electron?.pty;
-    if (!el || !paneEl || !api) return;
+    if (!hasBeenVisible || !el || !paneEl || !api) return;
     let disposed = false;
     // resources register the moment they exist (NOT in a batch at the end):
     // the destructor can run between any two awaits, and anything created
@@ -497,6 +505,10 @@ export function TerminalPane({
           __XTERMS__?: Record<string, unknown>;
         };
         w.__XTERMS__ = { ...w.__XTERMS__, [sessionId]: term };
+        cleanup.push(() => {
+          if (w.__XTERMS__?.[sessionId] === term)
+            delete w.__XTERMS__[sessionId];
+        });
       }
     })();
 
@@ -504,7 +516,7 @@ export function TerminalPane({
       disposed = true;
       dispose();
     };
-  }, [cwd, sessionId]);
+  }, [cwd, hasBeenVisible, sessionId]);
 
   useEffect(() => {
     if (!searchOpen || !searchQuery) {

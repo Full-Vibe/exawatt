@@ -275,7 +275,8 @@ await withElectronApp(
         window.electron?.pty?.write(id, `echo "EDIT ${relative} SEE ${url}"\n`),
       { id: sessionId, relative: MISSING_RELATIVE, url: EVAL_URL }
     );
-    await waitForPageCondition(page,
+    await waitForPageCondition(
+      page,
       async ({ id, needle }) =>
         (await window.electron?.pty?.buffer(id))?.includes(needle),
       { id: sessionId, needle: EVAL_URL }
@@ -495,7 +496,8 @@ await withElectronApp(
     );
     await textarea.focus();
     await textarea.press('Meta+v');
-    await waitForPageCondition(page,
+    await waitForPageCondition(
+      page,
       async ({ id, marker }) => {
         const buffer = await window.electron?.pty?.buffer(id);
         return buffer?.includes(marker);
@@ -587,27 +589,31 @@ await withElectronApp(
       mobile: false,
     });
     const assertFitted = async id => {
-      await waitForPageCondition(page, async sessionId => {
-        const term = window.__XTERMS__?.[sessionId];
-        const pane = term?.element?.closest('.terminal-pane');
-        const screen = term?.element?.querySelector('.xterm-screen');
-        if (!term || !pane || !screen || pane.dataset.pane === 'hidden')
-          return false;
-        const cell = screen.getBoundingClientRect().width / term.cols;
-        const available =
-          pane.getBoundingClientRect().width -
-          Number(pane.dataset.terminalInsetX) * 2 -
-          14;
-        const session = (await window.electron.pty.list()).find(
-          entry => entry.id === sessionId
-        );
-        return (
-          cell > 0 &&
-          term.cols === Math.max(2, Math.floor(available / cell)) &&
-          session?.cols === term.cols &&
-          session?.rows === term.rows
-        );
-      }, id);
+      await waitForPageCondition(
+        page,
+        async sessionId => {
+          const term = window.__XTERMS__?.[sessionId];
+          const pane = term?.element?.closest('.terminal-pane');
+          const screen = term?.element?.querySelector('.xterm-screen');
+          if (!term || !pane || !screen || pane.dataset.pane === 'hidden')
+            return false;
+          const cell = screen.getBoundingClientRect().width / term.cols;
+          const available =
+            pane.getBoundingClientRect().width -
+            Number(pane.dataset.terminalInsetX) * 2 -
+            14;
+          const session = (await window.electron.pty.list()).find(
+            entry => entry.id === sessionId
+          );
+          return (
+            cell > 0 &&
+            term.cols === Math.max(2, Math.floor(available / cell)) &&
+            session?.cols === term.cols &&
+            session?.rows === term.rows
+          );
+        },
+        id
+      );
     };
     // Wait for the renderer to consume the changed display scale before
     // asserting the fit; otherwise the old, internally consistent metrics
@@ -641,6 +647,68 @@ await withElectronApp(
         path: process.env.EXAWATT_EVAL_GEOMETRY_SCREENSHOT,
       });
     }
+    // Returning from Fleet attaches only visible renderers (BUG-262).
+    // Main still owns every Session's output; first reveal must replay it once.
+    const deferredId = beforeScale.sessions[2].id;
+    await page
+      .locator('[data-command-altitude-level="spatial"]')
+      .evaluate(button => button.click());
+    await page.waitForURL('**/fleet/spatial**');
+    await page.waitForFunction(
+      () => document.querySelector('canvas')?.width > 0
+    );
+    const deferredMarker = 'EXAWATT_DEFERRED_RENDERER_REPLAY';
+    await page.evaluate(
+      async ({ id, marker }) => {
+        await window.electron.pty.write(id, `/usr/bin/printf '${marker}\\n'\n`);
+      },
+      { id: deferredId, marker: deferredMarker }
+    );
+    await waitForPageCondition(
+      page,
+      async ({ id, marker }) =>
+        (await window.electron.pty.buffer(id)).includes(marker),
+      { id: deferredId, marker: deferredMarker }
+    );
+    await page
+      .locator('[data-command-altitude-level="terminal"]')
+      .evaluate(button => button.click());
+    await page.waitForURL('**/workspace');
+    await page.waitForFunction(() =>
+      document.activeElement?.classList.contains('xterm-helper-textarea')
+    );
+    check(
+      'Fleet return attaches only the visible terminal renderer',
+      (await page.locator('.terminal-pane .xterm').count()) === 1
+    );
+    check(
+      'unviewed terminal has no stale diagnostic handle',
+      await page.evaluate(id => !window.__XTERMS__?.[id], deferredId)
+    );
+    await page.keyboard.press('Meta+3');
+    await page.waitForFunction(
+      ({ id, marker }) => {
+        const buffer = window.__XTERMS__?.[id]?.buffer.active;
+        if (!buffer) return false;
+        let count = 0;
+        for (let row = 0; row < buffer.length; row++) {
+          if (buffer.getLine(row)?.translateToString(true) === marker) count++;
+        }
+        return count === 1;
+      },
+      { id: deferredId, marker: deferredMarker }
+    );
+    check(
+      'first reveal replays output produced while detached exactly once',
+      true
+    );
+    await assertFitted(deferredId);
+    check(
+      'first reveal fits the current display and focuses the active pane',
+      await page.evaluate(() =>
+        document.activeElement?.classList.contains('xterm-helper-textarea')
+      )
+    );
     await cdp.detach();
   },
   { maxMs: 240_000 }

@@ -20,6 +20,15 @@ import { getCommandVerb, SESSION_LIFECYCLE_WORD as WORD } from '@exawatt/core';
  * hands the renderer; this module decides which word a Session gets.
  */
 
+/** Fleet sources may report only that the process stopped, without the
+ * ending/resume facts needed to call it Paused, Exited or Interrupted.
+ * The outline carries that limited lifecycle fact independently of turn state. */
+export const SESSION_STOPPED_OUTLINE = {
+  label: 'Session stopped',
+  description:
+    'Dotted outline: Session stopped. The inner mark shows the last turn.',
+} as const;
+
 export type SessionLifecyclePhase =
   | 'draft'
   | 'running'

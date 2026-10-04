@@ -540,6 +540,118 @@ async function checkMarkStackDrawOrder(page) {
   return { bodies: stack.bodies.length, marks: stack.marks.length };
 }
 
+/** A display can change pixel density while its CSS viewport stays put.
+ * Also prove every working rotor moves, rather than counting frames emitted
+ * by an unrelated animation. The fixed 30-Agent fixture has quiet peers. */
+async function checkDisplayResolution(browser, lowPower = false) {
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
+    reducedMotion: 'no-preference',
+  });
+  await primeEvalBrowserPage(page);
+  await page.addInitScript(
+    cores => {
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        configurable: true,
+        value: cores,
+      });
+    },
+    lowPower ? 4 : 8
+  );
+  const result = {
+    name: lowPower ? 'display-low-power' : 'display-resolution',
+    passed: false,
+    errors: [],
+  };
+  page.on('pageerror', error => result.errors.push(error.message));
+  page.on('console', message => {
+    if (message.type() === 'error')
+      result.errors.push(consoleErrorText(message));
+  });
+  try {
+    await page.goto(`${EXA_BASE}/eval/t10-board-scale?agents=30&projects=5`, {
+      waitUntil: 'load',
+    });
+    await waitForSpatialCanvas(page);
+    const cdp = await page.context().newCDPSession(page);
+    await page.evaluate(() => {
+      window.__DISPLAY_ORIGINAL__ = {
+        canvas: document.querySelector('canvas'),
+        camera: window.__EVAL_CAM__,
+      };
+    });
+    const samples = [];
+    for (const dpr of [1, 2, 1.5, 1, 2]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: 1440,
+        height: 900,
+        deviceScaleFactor: dpr,
+        mobile: false,
+      });
+      // CDP changes devicePixelRatio but does not emit resolution media-query
+      // change events. Deliver the window resize signal a display move emits,
+      // without changing CSS dimensions (ResizeObserver must not rescue it).
+      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+      const expected = Math.min(dpr, lowPower ? 1.25 : 2);
+      await page.waitForFunction(
+        ratio => window.__EVAL_GL__.getPixelRatio() === ratio,
+        expected,
+        { timeout: 2000 }
+      );
+      const sample = await page.evaluate(async () => {
+        const gl = window.__EVAL_GL__;
+        const canvas = gl.domElement;
+        const before = new Map();
+        window.__EVAL_SCENE__.traverse(node => {
+          if (node.name.startsWith('mark:')) before.set(node, node.rotation.z);
+        });
+        for (let frame = 0; frame < 20; frame++)
+          await new Promise(resolve => requestAnimationFrame(resolve));
+        const rotors = [];
+        const quiet = [];
+        for (const [node, angle] of before) {
+          const isRotor =
+            node.parent?.geometry?.parameters?.thetaLength === Math.PI;
+          (isRotor ? rotors : quiet).push(node.rotation.z !== angle);
+        }
+        return {
+          dpr: window.devicePixelRatio,
+          rendererDpr: gl.getPixelRatio(),
+          width: canvas.width,
+          cssWidth: canvas.clientWidth,
+          retained:
+            canvas === window.__DISPLAY_ORIGINAL__.canvas &&
+            window.__EVAL_CAM__ === window.__DISPLAY_ORIGINAL__.camera,
+          rotors: rotors.length,
+          moving: rotors.filter(Boolean).length,
+          quietMoved: quiet.some(Boolean),
+        };
+      });
+      check(sample.retained, 'Display change replaced the canvas or camera');
+      check(
+        sample.width === Math.floor(sample.cssWidth * expected),
+        'Drawing buffer no longer matches bounded display resolution'
+      );
+      check(sample.rotors > 0, 'Fixture has no working rotors');
+      check(
+        sample.moving === (lowPower ? 0 : sample.rotors),
+        'Working rotor motion disagrees with the power policy'
+      );
+      check(!sample.quietMoved, 'A quiet status mark rotates');
+      samples.push(sample);
+    }
+    await page.screenshot({ path: join(REPORT_DIR, `${result.name}.png`) });
+    result.detail = { agents: 30, samples };
+    result.passed = result.errors.length === 0;
+  } catch (error) {
+    result.errors.push(String(error.message || error));
+  } finally {
+    await page.close();
+  }
+  return result;
+}
+
 async function openAgent(page, units) {
   const unitCount = await units.count();
   check(unitCount > 0, 'Project regime has no accessible Agent units');
@@ -972,6 +1084,8 @@ const browser = await chromium.launch({
 });
 const results = [];
 try {
+  results.push(await checkDisplayResolution(browser));
+  results.push(await checkDisplayResolution(browser, true));
   for (const scenario of scenarios) {
     results.push(await runScenario(browser, scenario));
   }

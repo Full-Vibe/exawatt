@@ -1,9 +1,6 @@
 'use client';
 
-import {
-  Canvas,
-  useThree,
-} from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import {
   Suspense,
   lazy,
@@ -21,28 +18,19 @@ import {
   type SpatialBoardProjection,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
-import {
-  createZoneLabelTierStore,
-} from './operations-board-label-tier';
-import {
-  BoardField,
-  BoardTransitionProvider,
-} from './operations-board-field';
+import { createZoneLabelTierStore } from './operations-board-label-tier';
+import { BoardField, BoardTransitionProvider } from './operations-board-field';
 import {
   ALTITUDE_HANDOFF_CROSSFADE_MS,
   ALTITUDE_HANDOFF_HOLD_MS,
   altitudeHandoffActive,
 } from '@/components/nav/altitude-handoff';
-import {
-  type SpatialThemeSnapshot,
-} from '../spatial-theme';
+import { type SpatialThemeSnapshot } from '../spatial-theme';
 import {
   type BoardClampEdges,
   type OperationsBoardViewport,
 } from './operations-board-camera';
-import type {
-  OperationsBoardPresentation,
-} from './operations-board-presentation';
+import type { OperationsBoardPresentation } from './operations-board-presentation';
 
 export type { OperationsBoardViewport } from './operations-board-camera';
 import { useLowPowerMode, useReducedMotion } from './operations-board-env';
@@ -72,6 +60,31 @@ const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 function InvalidateOnSpatialTheme({ theme }: { theme: SpatialThemeSnapshot }) {
   const invalidate = useThree(state => state.invalidate);
   useEffect(() => invalidate(), [invalidate, theme]);
+  return null;
+}
+
+/** Display changes can alter DPR without changing the canvas's CSS size.
+ * R3F's resize observer then has nothing to report. Re-resolve its bounded
+ * DPR through the store, retaining the camera, scene and demand loop. */
+function BoardDisplayResolution({ lowPower }: { lowPower: boolean }) {
+  const setDpr = useThree(state => state.setDpr);
+  useEffect(() => {
+    let query: MediaQueryList;
+    const update = () => {
+      query?.removeEventListener('change', update);
+      setDpr([1, lowPower ? 1.25 : 2]);
+      // Watch the new display's resolution after every change, in both
+      // directions; keeping the first query misses subsequent displays.
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      query.addEventListener('change', update);
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => {
+      query.removeEventListener('change', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [lowPower, setDpr]);
   return null;
 }
 
@@ -220,6 +233,7 @@ export function OperationsBoardCanvas({
           theme color without spending a draw call on a full-screen plane. */}
       <color attach="background" args={[theme.zone]} />
       <InvalidateOnSpatialTheme theme={theme} />
+      <BoardDisplayResolution lowPower={lowPower} />
       {/* Soft key + fill: gives zone plates and piece bodies a readable
           top/side split in the fixed-angle projection. */}
       <ambientLight intensity={1.15} />

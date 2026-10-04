@@ -1,5 +1,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { STATUS_LIGHT_META } from '@/components/status-light';
+import { SESSION_STOPPED_OUTLINE } from '@exawatt/ui-model';
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 
 /**
@@ -66,6 +68,21 @@ function tally(word: string): string {
 afterEach(cleanup);
 
 describe('the fleet status row', () => {
+  it('explains a stopped outline separately without changing last-turn counts or adding a status filter', () => {
+    const onToggle = vi.fn();
+    fleet.agents = [
+      { ...agent('finished', 'complete'), sessionState: 'stopped' },
+    ];
+    render(<FleetMetricsBar onToggleState={onToggle} />);
+    const explanation = screen.getByLabelText(
+      SESSION_STOPPED_OUTLINE.description
+    );
+    expect(explanation.closest('button')).toBeNull();
+    expect(tally(STATUS_LIGHT_META.result.label)).toBe('1');
+    expect(tally(STATUS_LIGHT_META.off.label)).toBe('0');
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
   it('does not count an unreported Agent as idle', () => {
     fleet.agents = [
       agent('resting', 'idle'),

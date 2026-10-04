@@ -2936,3 +2936,65 @@ legend and Agent detail/hover, using the shared lifecycle owner's words and
 preserving the separate turn mark. Review the meaning at overview zoom and in
 Air/Night before changing the glyph. No diagnosis or visual fix is claimed by
 this triage. R3F edits require the authoring guide and spatial/R3F evidence.
+
+### 2026-10-04 — Everyday-use polish execution: display resolution and motion diagnosis
+
+**Display density can go stale without a CSS resize; motion is a separate investigation.**
+Execution owner: `agent/polish-spatial`, sibling `exawatt-polish-spatial`.
+Scope: BUG-263 resolution/motion, BUG-262 measured Fleet-to-Agent handoff,
+BUG-268 lifecycle-outline explanation, and a BUG-113 recurrence check.
+
+- Reproduced on the real 30-Agent / five-Project board with signed Brave:
+  device DPR changed 1 → 2 while the CSS viewport remained 1440 × 900;
+  renderer DPR stayed 1 and its drawing buffer stayed 1440 × 900. Ten
+  working rotors advanced together while quiet peers remained still.
+- Installed R3F 9.6.1 resolves the bounded `dpr` prop when configuring a
+  canvas. A density-only display change need not produce a ResizeObserver
+  size change, so the memoized board has no reason to configure again.
+  Repair in progress uses R3F's `setDpr` inside a small canvas child, observing
+  resolution media-query changes and the window resize signal. It does not
+  remount the canvas, camera, layout, selection or status layers.
+- The existing low-power path intentionally caps DPR at 1.25 and stops
+  ambient status rotation; native battery state selects that path. Hidden,
+  locked and suspended rendering is independently suppressed. No power-policy
+  change is authorized by this diagnosis, and no frozen-motion repair is
+  claimed. The static Working half-disc remains distinct from Idle's arcs.
+- Regression evidence in progress: `eval:spatial` exercises density sequence
+  1 → 2 → 1.5 → 1 → 2 in normal and low-power modes, asserting retained
+  canvas/camera identity, bounded drawing-buffer dimensions, every active
+  rotor moving when permitted, and quiet marks remaining still. CDP changes
+  density without emitting media-query change events, so the fixture delivers
+  the real window resize signal while preserving CSS dimensions.
+- Remaining: finish browser gates and production-renderer transition profile;
+  explain lifecycle outlines in the existing legend/hover; land verified
+  cohesive changes with `--dogfood`, report frozen-motion uncertainty
+  separately, and remove the temporary worktree after integration.
+
+**Implementation checkpoint.** The density regression now passes all ten
+normal/low-power samples with ten active rotors per sample. The original
+canvas, restored as a control, still fails the same unchanged-CSS resize signal
+(DPR 2 with a DPR-1 drawing buffer). All existing `eval:spatial` scenarios pass.
+BUG-268 adds a dotted-outline key only when stopped Sessions exist; it is a
+lifecycle legend, not another status count or filter. Hover and legend share
+`SESSION_STOPPED_OUTLINE` from the existing lifecycle vocabulary owner; its
+limited source fact never promises Paused/resumable without evidence.
+Air/Night real-Electron captures are retained under
+`/tmp/exawatt-polish-spatial-evidence/legend-*`.
+
+**BUG-262 reproduced in the production renderer.** An isolated Electron app
+with thirty real shell Sessions across five Projects produced 503, 807, 524
+and 533 ms main-thread tasks on Fleet → Agent. The traced 807 ms sample includes
+trace overhead and contains 93 forced layouts. Workspace remount constructs
+all thirty xterm/WebGL renderers, including hidden panes, in the same task;
+this is not a board-camera interpolation or HMR delay.
+
+The implementation now attaches a terminal renderer when its pane first
+becomes visible and retains it through later hides. Main remains the authority
+for PTY execution, history, status and attention. The existing subscribe-before-
+snapshot/catchup cursor protocol supplies detached output on first reveal.
+The isolated real-Electron terminal fundamentals check passes: one renderer
+on return, no stale diagnostic handles, detached output replayed exactly once,
+focus and current display geometry correct; existing search, scrollback, links,
+clipboard, and hidden-resize checks pass. The unit lifecycle test additionally
+proves retained hidden output subscription and exactly-once disposal.
+Production before/after comparison and final landing gates remain pending.

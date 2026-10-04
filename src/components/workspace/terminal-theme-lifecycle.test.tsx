@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { THEME_REGISTRY } from '@/generated/theme-registry';
 import {
@@ -156,6 +156,71 @@ afterEach(() => {
 });
 
 describe('xterm theme lifecycle', () => {
+  it('attaches on first reveal, replays main-owned history, then retains the renderer while hidden', async () => {
+    const view = render(
+      <TerminalPane
+        active={false}
+        layout="hidden"
+        cwd="/tmp/project"
+        font={font}
+        sessionId="live-1"
+      />
+    );
+    await act(async () => {});
+    const pty = window.electron!.pty!;
+    expect(xterm.state.terminals).toHaveLength(0);
+    expect(pty.bufferSnapshot).not.toHaveBeenCalled();
+    expect(pty.resize).not.toHaveBeenCalled();
+
+    view.rerender(
+      <TerminalPane
+        active
+        layout="full"
+        cwd="/tmp/project"
+        font={font}
+        sessionId="live-1"
+      />
+    );
+    await waitFor(() =>
+      expect(xterm.state.terminals[0]?.writes).toEqual(['live history'])
+    );
+    const terminal = xterm.state.terminals[0];
+    const snapshots = vi.mocked(pty.bufferSnapshot).mock.calls.length;
+    const receive = vi.mocked(pty.onData).mock.calls[0][0];
+    const unsubscribe = vi.mocked(pty.onData).mock.results[0].value;
+    view.rerender(
+      <TerminalPane
+        active={false}
+        layout="hidden"
+        cwd="/tmp/project"
+        font={font}
+        sessionId="live-1"
+      />
+    );
+    receive({
+      id: 'live-1',
+      durableSessionId: 'durable-1',
+      data: ' later output',
+      cursor: 2,
+    });
+    expect(terminal.writes).toEqual(['live history', ' later output']);
+    view.rerender(
+      <TerminalPane
+        active
+        layout="left"
+        cwd="/tmp/project"
+        font={font}
+        sessionId="live-1"
+      />
+    );
+    expect(xterm.state.terminals).toEqual([terminal]);
+    expect(xterm.state.disposeCalls).toBe(0);
+    expect(pty.bufferSnapshot).toHaveBeenCalledTimes(snapshots);
+    view.unmount();
+    expect(xterm.state.disposeCalls).toBe(1);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('updates a live terminal without remount, replay, fit, or PTY resize', async () => {
     const view = render(
       <TerminalPane active cwd="/tmp/project" font={font} sessionId="live-1" />

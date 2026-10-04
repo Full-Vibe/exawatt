@@ -8,10 +8,7 @@
  */
 
 import { Html } from '@react-three/drei';
-import {
-  useFrame,
-  useThree,
-} from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import {
   memo,
   useLayoutEffect,
@@ -21,6 +18,7 @@ import {
 } from 'react';
 import * as THREE from 'three';
 import {
+  SESSION_STOPPED_OUTLINE,
   type SpatialBoardDelegationUnit,
   type SpatialBoardLayout,
   type SpatialBoardLens,
@@ -33,15 +31,9 @@ import {
   type StatusLightReading,
   type StatusLightState,
 } from '@/components/status-light/protocol';
-import {
-  type ZoneLabelTierStore,
-} from './operations-board-label-tier';
-import {
-  useBoardTransitionClock,
-} from './operations-board-field';
-import {
-  isBoardTransitionActive,
-} from './operations-board-transition';
+import { type ZoneLabelTierStore } from './operations-board-label-tier';
+import { useBoardTransitionClock } from './operations-board-field';
+import { isBoardTransitionActive } from './operations-board-transition';
 import {
   spatialColorWithAlpha,
   spatialPressureColor,
@@ -51,9 +43,7 @@ import {
 import { boardWorldPosition } from './operations-board-camera';
 import { delegationElapsedLabel } from '../spatial-agent-copy';
 import { useMinuteClock } from '../use-minute-clock';
-import type {
-  BoardAgentCandidate,
-} from './operations-board-presentation';
+import type { BoardAgentCandidate } from './operations-board-presentation';
 
 function ProjectHealthRail({
   zone,
@@ -231,8 +221,7 @@ export const ProjectControls = memo(function ProjectControls({
     // visible-zones order, skipping aggregates), worn on the chip the way an
     // RTS unit wears its control-group number. This is the binding's one
     // in-world teaching surface; the help modal documents the rest.
-    const hotkey =
-      index < 9 && !zone.isAggregate ? String(index + 1) : null;
+    const hotkey = index < 9 && !zone.isAggregate ? String(index + 1) : null;
     // The zone control is the focusable DOM equivalent of the zone plate, so
     // it carries both verbs: activate opens, shift-activate (pointer or
     // keyboard — synthesized clicks keep modifier state) toggles selection.
@@ -476,7 +465,7 @@ export const AgentControls = memo(function AgentControls({
                 ? (multiSelection?.has(piece.agentId!) ?? false)
                 : undefined
             }
-            aria-label={`${piece.label}${piece.activity ? `, ${piece.activity}` : ''}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? ', stopped session' : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
+            aria-label={`${piece.label}${piece.activity ? `, ${piece.activity}` : ''}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? `, ${SESSION_STOPPED_OUTLINE.description}` : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
             onClick={event => {
               // Shift-activate (pointer or keyboard) toggles the Agent in
               // the multi-selection (V3.2); plain activate inspects it.
@@ -570,7 +559,9 @@ export const AgentControls = memo(function AgentControls({
                 className="mt-0.5 block truncate text-chrome-nano font-normal"
                 style={{ color: theme.labelMuted }}
               >
-                {piece.activity ?? 'No recent activity reported'}
+                {piece.sessionState === 'stopped'
+                  ? SESSION_STOPPED_OUTLINE.label
+                  : (piece.activity ?? 'No recent activity reported')}
               </span>
               {delegationCopy && (
                 <span
@@ -620,8 +611,7 @@ function OverflowCount({
   const label = `+${unit.overflowCount}`;
   const span = useRef<HTMLSpanElement>(null);
   const camera = useThree(state => state.camera);
-  const size = (px: number) =>
-    `clamp(7px, ${px}px, var(--text-chrome-micro))`;
+  const size = (px: number) => `clamp(7px, ${px}px, var(--text-chrome-micro))`;
   const shown = useRef(overflowCountFontPx(unit.size * camera.zoom, label));
   useFrame(state => {
     const px = overflowCountFontPx(unit.size * state.camera.zoom, label);

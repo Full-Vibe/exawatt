@@ -5,6 +5,7 @@ import {
   StatusLight,
   type StatusLightState,
 } from '@/components/status-light';
+import { SESSION_STOPPED_OUTLINE } from '@exawatt/ui-model';
 import { fleetStatusCounts } from './fleet-status-counts';
 
 const STATUS_ORDER: StatusLightState[] = [
@@ -102,6 +103,28 @@ export function FleetMetricsBar({
           <span className="tabular-nums text-foreground">
             {counts.unreported}
           </span>
+        </span>
+      )}
+      {agents.some(agent => agent.sessionState === 'stopped') && (
+        <span
+          className="inline-flex items-center gap-1 whitespace-nowrap text-muted-foreground"
+          role="img"
+          title={SESSION_STOPPED_OUTLINE.description}
+          aria-label={SESSION_STOPPED_OUTLINE.description}
+        >
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
+            <circle
+              cx="8"
+              cy="8"
+              r="6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeDasharray="1 3"
+              strokeLinecap="round"
+            />
+          </svg>
+          <span>{SESSION_STOPPED_OUTLINE.label}</span>
         </span>
       )}
       <span className="flex-1" />
