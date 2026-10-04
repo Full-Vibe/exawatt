@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Shapes, Target } from 'lucide-react';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import {
@@ -76,6 +77,99 @@ export interface SessionOverviewCardContentProps {
   nextProgress?: string | null;
   /** Consumption readout (ENG-008); absent when the source reports none. */
   consumption?: SessionConsumptionReadout | null;
+  /** A card with sibling actions renders the shared header outside its open button. */
+  hideHeader?: boolean;
+}
+
+type SessionOverviewCardHeaderProps = Pick<
+  SessionOverviewCardContentProps,
+  | 'color'
+  | 'harness'
+  | 'glyphState'
+  | 'attention'
+  | 'unreadTreatment'
+  | 'delegation'
+  | 'agentType'
+  | 'initiative'
+  | 'fault'
+  | 'lifecycleLabel'
+> & { action?: ReactNode };
+
+/** Status and actions participate in one layout; neither can cover the other. */
+export function SessionOverviewCardHeader({
+  color,
+  harness,
+  glyphState,
+  attention,
+  unreadTreatment,
+  delegation,
+  agentType,
+  initiative,
+  fault = false,
+  lifecycleLabel,
+  action,
+}: SessionOverviewCardHeaderProps) {
+  return (
+    <div className="relative z-10 flex min-w-0 items-center justify-between gap-2">
+      <span className="inline-flex min-w-0 flex-1 items-center gap-2">
+        <span
+          aria-label={sessionSource(harness).label}
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center"
+          style={{ color }}
+        >
+          <HarnessGlyph harness={harness} size={13} />
+        </span>
+        {/* ENG-028 T1: the Type slot, what kind of worker rather than which
+              engine, rendered only when a source declares one. A chip shows
+              a VALUE, never its slot's name (operator, 2026-08-03). */}
+        {harness !== 'shell' && agentType && (
+          <span
+            data-session-agent-type
+            className="inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-chrome-micro"
+            style={{ color: HUD.textDim, borderColor: HUD.strokeFaint }}
+          >
+            <Shapes aria-hidden className="h-2.5 w-2.5" />
+            {agentType}
+          </span>
+        )}
+        {initiative && (
+          <span
+            data-session-initiative={initiative.id}
+            title={initiative.goal ?? initiative.name}
+            className="inline-flex min-w-0 items-center gap-1 font-ui text-chrome-meta"
+            style={{ color: HUD.textDim }}
+          >
+            <Target aria-hidden className="h-3 w-3 shrink-0" />
+            <span className="truncate">{initiative.name}</span>
+          </span>
+        )}
+        {lifecycleLabel && (
+          <span
+            data-expose-state={lifecycleLabel}
+            className="min-w-0 truncate font-mono text-chrome-meta"
+            title={lifecycleLabel}
+            style={{ color: HUD.textDim }}
+          >
+            {lifecycleLabel}
+          </span>
+        )}
+      </span>
+      {/* `shrink-0`: the state readout carries a word now (ENG-033 H2), and
+            the identity run to its left is the side that yields — it already
+            truncates, the state does not. */}
+      <span className="inline-flex shrink-0 items-center gap-1.5">
+        <DelegationDots color={color} delegation={delegation} />
+        <SessionStatusReadout
+          state={glyphState}
+          attention={attention}
+          unreadTreatment={unreadTreatment}
+          delegation={delegation}
+          fault={fault}
+        />
+      </span>
+      {action}
+    </div>
+  );
 }
 
 /**
@@ -102,6 +196,7 @@ export function SessionOverviewCardContent({
   next,
   nextProgress,
   consumption,
+  hideHeader = false,
 }: SessionOverviewCardContentProps) {
   // Monochrome until notable (design kernel): the FLUX channel lights only
   // once a Session crosses into the ramp's warm territory; the ramp boundary
@@ -114,63 +209,20 @@ export function SessionOverviewCardContent({
     : HUD.textDim;
   return (
     <>
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <span className="inline-flex min-w-0 flex-1 items-center gap-2">
-          <span
-            aria-label={sessionSource(harness).label}
-            className="inline-flex h-5 w-5 shrink-0 items-center justify-center"
-            style={{ color }}
-          >
-            <HarnessGlyph harness={harness} size={13} />
-          </span>
-          {/* ENG-028 T1: the Type slot, what kind of worker rather than which
-              engine, rendered only when a source declares one. A chip shows
-              a VALUE, never its slot's name (operator, 2026-08-03). */}
-          {harness !== 'shell' && agentType && (
-            <span
-              data-session-agent-type
-              className="inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-chrome-micro"
-              style={{ color: HUD.textDim, borderColor: HUD.strokeFaint }}
-            >
-              <Shapes aria-hidden className="h-2.5 w-2.5" />
-              {agentType}
-            </span>
-          )}
-          {initiative && (
-            <span
-              data-session-initiative={initiative.id}
-              title={initiative.goal ?? initiative.name}
-              className="inline-flex min-w-0 items-center gap-1 font-ui text-chrome-meta"
-              style={{ color: HUD.textDim }}
-            >
-              <Target aria-hidden className="h-3 w-3 shrink-0" />
-              <span className="truncate">{initiative.name}</span>
-            </span>
-          )}
-          {lifecycleLabel && (
-            <span
-              data-expose-state={lifecycleLabel}
-              className="font-mono text-chrome-meta"
-              style={{ color: HUD.textDim }}
-            >
-              {lifecycleLabel}
-            </span>
-          )}
-        </span>
-        {/* `shrink-0`: the state readout carries a word now (ENG-033 H2), and
-            the identity run to its left is the side that yields — it already
-            truncates, the state does not. */}
-        <span className="inline-flex shrink-0 items-center gap-1.5">
-          <DelegationDots color={color} delegation={delegation} />
-          <SessionStatusReadout
-            state={glyphState}
-            attention={attention}
-            delegation={delegation}
-            fault={fault}
-            unreadTreatment={unreadTreatment}
-          />
-        </span>
-      </div>
+      {!hideHeader && (
+        <SessionOverviewCardHeader
+          color={color}
+          harness={harness}
+          glyphState={glyphState}
+          attention={attention}
+          unreadTreatment={unreadTreatment}
+          delegation={delegation}
+          agentType={agentType}
+          initiative={initiative}
+          fault={fault}
+          lifecycleLabel={lifecycleLabel}
+        />
+      )}
 
       {/* Identity and Now share one clipping band. The tile is a fixed
           footprint, so when extreme content (a two-line rename, a context

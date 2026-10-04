@@ -130,7 +130,7 @@ try {
         );
         return current?.getAttribute('aria-label') !== previous;
       }, before);
-      if (!(await selected.locator('[data-expose-state]').isVisible())) {
+      if (!(await selected.getAttribute('data-expose-lifecycle'))?.startsWith('stopped')) {
         throw new Error(
           'Command-Shift-[ did not select the stopped Session in Sessions mode'
         );

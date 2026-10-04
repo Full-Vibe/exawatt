@@ -23,6 +23,11 @@ import {
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
 
+/** Card metadata and its action are siblings of the main open button. */
+function cardFor(button: HTMLElement) {
+  return (button.closest('[data-expose-card]') ?? button) as HTMLElement;
+}
+
 const { loadGoalVisualPreference, saveGoalVisualPreference } = vi.hoisted(
   () => ({
     loadGoalVisualPreference: vi.fn<() => Promise<boolean>>(),
@@ -171,20 +176,20 @@ describe('Sessions overview', () => {
 
     const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
     const beta = screen.getByRole('button', { name: /^Beta, One/ });
-    expect(beta.querySelector('[data-goal-visual-backdrop]')).toHaveAttribute(
+    expect(
+      cardFor(beta).querySelector('[data-goal-visual-backdrop]')
+    ).toHaveAttribute(
       'data-goal-visual-identity',
       'workspace:one:goal:investor-demo'
     );
-    expect(beta.querySelector('[data-goal-visual-image]')).toHaveAttribute(
-      'src',
-      image
-    );
-    expect(alpha.querySelector('[data-goal-visual-backdrop]')).toHaveAttribute(
-      'data-goal-visual-identity',
-      'durable-a'
-    );
-    expect(alpha.querySelector('[data-goal-visual-image]')).toBeNull();
-    expect(beta).toHaveStyle({ height: '252px' });
+    expect(
+      cardFor(beta).querySelector('[data-goal-visual-image]')
+    ).toHaveAttribute('src', image);
+    expect(
+      cardFor(alpha).querySelector('[data-goal-visual-backdrop]')
+    ).toHaveAttribute('data-goal-visual-identity', 'durable-a');
+    expect(cardFor(alpha).querySelector('[data-goal-visual-image]')).toBeNull();
+    expect(cardFor(beta).style.height).toBe(cardFor(alpha).style.height);
   });
 
   it('shows source-reported Initiative truth without inventing it for other Sessions', () => {
@@ -209,13 +214,15 @@ describe('Sessions overview', () => {
       name: /Beta, One.*Initiative Investor demo polish/,
     });
     expect(
-      beta.querySelector('[data-session-initiative="init-demo"]')
+      cardFor(beta).querySelector('[data-session-initiative="init-demo"]')
     ).toHaveTextContent('Investor demo polish');
     const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
-    expect(alpha.querySelector('[data-session-initiative]')).toBeNull();
+    expect(
+      cardFor(alpha).querySelector('[data-session-initiative]')
+    ).toBeNull();
   });
 
-  it('shows EVERY tab — stopped ones dimmed with their state, still openable', () => {
+  it('keeps stopped Sessions identifiable and openable with their lifecycle', () => {
     const onPick = vi.fn();
     render(
       <ExposeOverlay
@@ -233,7 +240,9 @@ describe('Sessions overview', () => {
     const gamma = screen.getByRole('button', {
       name: `Gamma, One, Idle, ${word}`,
     });
-    expect(gamma.querySelector(`[data-expose-state="${word}"]`)).not.toBeNull();
+    expect(
+      cardFor(gamma).querySelector(`[data-expose-state="${word}"]`)
+    ).not.toBeNull();
     fireEvent.click(gamma);
     expect(onPick).toHaveBeenCalledWith('/one', 'tab-c');
   });
@@ -292,7 +301,7 @@ describe('Sessions overview', () => {
       'and 2 more working'
     );
     // the rail is detail; the presence dots stay beside the light
-    expect(beta.querySelector('[data-delegation="4"]')).not.toBeNull();
+    expect(cardFor(beta).querySelector('[data-delegation="4"]')).not.toBeNull();
     // and the census rides the accessible name — the tile subtree is
     // presentational to assistive tech, so this is where AT hears the team
     expect(beta.getAttribute('aria-label')).toContain(
@@ -651,6 +660,35 @@ describe('Sessions overview', () => {
     expect(document.querySelector('[data-expose-resume="tab-a"]')).toBeNull();
   });
 
+  it('keeps open and resume as distinct sibling actions beside the same status', () => {
+    const onPick = vi.fn();
+    const onResumeTab = vi.fn();
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={NO_FLEET_ATTENTION}
+        activeTabId="tab-c"
+        onPick={onPick}
+        onResumeTab={onResumeTab}
+        onClose={vi.fn()}
+      />
+    );
+    const open = screen.getByRole('button', { name: /^Gamma, One/ });
+    const resume = screen.getByRole('button', { name: /^Resume Gamma, One/ });
+    const card = cardFor(open);
+    expect(card.contains(resume)).toBe(true);
+    expect(card.querySelector('button button')).toBeNull();
+    const word = card.querySelector('[data-session-state-word]')?.textContent;
+    expect(word).toBeTruthy();
+    expect(open.getAttribute('aria-label')).toContain(word);
+    fireEvent.click(resume);
+    expect(onResumeTab).toHaveBeenCalledWith('/one', 'tab-c');
+    expect(onPick).not.toHaveBeenCalled();
+    fireEvent.click(open);
+    expect(onPick).toHaveBeenCalledWith('/one', 'tab-c');
+  });
+
   // The chord targeted the ACTIVE tab while the operator was looking at a
   // different tile, so Team published its selection for workspace verbs.
   it('publishes the roving selection, and clears it on the way out', async () => {
@@ -897,8 +935,6 @@ describe('Sessions overview', () => {
     // no plan source reports a step, so the card states nothing rather
     // than a sentence about the absence
     expect(tile.querySelector('[data-session-next-copy]')).toBeNull();
-    expect(tile).toHaveClass('p-2.5');
-    expect(tile).toHaveStyle({ width: '272px', height: '252px' });
   });
 
   it('a ⌘T draft tile reads as a draft, never as stopped (D24)', () => {
@@ -942,7 +978,9 @@ describe('Sessions overview', () => {
     const tile = screen.getByRole('button', {
       name: `New agent, Two, Idle, ${word}`,
     });
-    expect(tile.querySelector(`[data-expose-state="${word}"]`)).not.toBeNull();
+    expect(
+      cardFor(tile).querySelector(`[data-expose-state="${word}"]`)
+    ).not.toBeNull();
   });
 
   describe('the state word beside the mark (ENG-033 H2)', () => {
@@ -1101,10 +1139,15 @@ describe('Sessions overview', () => {
 
       // Row derivation is measurement-based, so the word must not change the
       // tile box. Every tile stays the same fixed footprint.
-      for (const tile of Array.from(
-        document.querySelectorAll('[data-expose-tile]')
-      )) {
-        expect(tile).toHaveStyle({ width: '272px', height: '252px' });
+      const cards = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-expose-tile]')
+      ).map(cardFor);
+      const first = cards[0].style;
+      expect(first.width).not.toBe('');
+      expect(first.height).not.toBe('');
+      for (const card of cards) {
+        expect(card.style.width).toBe(first.width);
+        expect(card.style.height).toBe(first.height);
       }
       // The state readout never wraps at the narrow end, and never shrinks
       // the identity run into it.

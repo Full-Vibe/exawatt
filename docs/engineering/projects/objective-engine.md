@@ -267,6 +267,15 @@ Initiative mechanism. Owner: `agent/polish-purpose`, sibling worktree
   viewport, and Night at 120% type with reduced motion. Runtime fixture profiles,
   Projects and fake harnesses were removed after verification. No fresh
   unaided-newcomer walkthrough was available.
+- Screenshot review found an inherited header collision: the absolutely
+  positioned Resume action covered the stopped Session's status word. The
+  shared `SessionOverviewCardHeader` now lays out status and action together,
+  above a separate open button. Neither button nests inside another; the
+  existing roving focus and keyboard Resume contract remain. When Resume is
+  present, the redundant small lifecycle word yields to the complete status
+  word; the full lifecycle sentence remains below purpose. Runtime geometry
+  proves non-overlap at 100% and 120% type. All 79 focused tests, scoped lint,
+  type-check and the repeated Team navigation gate pass after this repair.
 - Delivery pending. Worktree bootstrap passed. This
   checkpoint is execution detail for ENG-021/ENG-015/ENG-036, not a new plan.
 

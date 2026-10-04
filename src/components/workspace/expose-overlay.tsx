@@ -46,6 +46,7 @@ import {
 } from './session-display-copy';
 import {
   SessionOverviewCardContent,
+  SessionOverviewCardHeader,
   type SessionConsumptionReadout,
   type SessionInitiativeReadout,
 } from './session-overview-card';
@@ -962,7 +963,7 @@ export function ExposeOverlay({
       attention: attentionSignal,
     });
     return (
-      // FLIP wrapper (S6.3): owns POSITION only. The button keeps its own
+      // FLIP wrapper (S6.3): owns POSITION only. The card keeps its own
       // entrance/selection transforms, so a glide and a hover can never
       // fight over one `transform`, and the entrance stagger's per-index
       // transition delay cannot postpone a re-sort glide.
@@ -972,65 +973,11 @@ export function ExposeOverlay({
         data-expose-tile-slot={tile.tabId}
         className="group/tile relative shrink-0"
       >
-        {/* FIX-010: Team paints stopped Agents, so it owes the verb too.
-            A sibling of the tile button, never nested inside it. */}
-        {tile.canResume && onResumeTab && (
-          <button
-            type="button"
-            data-expose-resume={tile.tabId}
-            tabIndex={-1}
-            title={`Resume ${display.primary}`}
-            aria-label={`Resume ${display.primary}, ${tile.projectName}`}
-            onClick={event => {
-              event.stopPropagation();
-              onResumeTab(tile.dir, tile.tabId);
-            }}
-            className={`absolute right-2 top-2 z-20 inline-flex min-h-7 items-center gap-1 rounded border px-2 font-mono text-chrome-micro outline-none transition-opacity duration-150 group-hover/tile:opacity-100 motion-reduce:transition-none ${
-              selected ? 'opacity-100' : 'opacity-0'
-            }`}
-            style={{
-              color: HUD.cyan,
-              borderColor: withThemeAlpha(HUD.cyan, 0.4),
-              background: HUD.bg.panelFill,
-            }}
-          >
-            <Play className="h-3 w-3" />
-            Resume
-          </button>
-        )}
-        <button
-          ref={node => {
-            if (node) tileRefs.current.set(tile.tabId, node);
-            else tileRefs.current.delete(tile.tabId);
-          }}
-          data-expose-tile
-          data-expose-tab={tile.tabId}
-          data-selected={selected || undefined}
-          tabIndex={selected ? 0 : -1}
-          // The tile subtree is presentational to AT (an aria-label'd button),
-          // so the delegation census must ride the accessible name — it is the
-          // only place a screen-reader user hears the team at all (ENG-023).
-          //
-          // ENG-033 H2: the accessible name says the SAME word the tile now
-          // prints beside the mark, from the same projection. It used to run a
-          // second vocabulary keyed on turn state behind a hand-written
-          // live/needs-you guard, which had already drifted: a live tile whose
-          // Agent had failed announced "result ready" while its light was red.
-          // A stopped tile keeps its word for the reason an unreachable remote
-          // Agent keeps its own — that IS the last work state Exawatt saw — and
-          // the lifecycle label right behind it says the process is not running.
-          aria-label={`${display.primary}, ${tile.projectName}, ${stateWord}${
-            tile.stateLabel ? `, ${tile.stateLabel}` : ''
-          }${
-            delegationCensus ? `, ${delegationCensus}` : ''
-          }${initiative ? `, Initiative ${initiative.name}` : ''}${
-            consumption ? `, ${formatTokens(consumption.rawTokens)} tokens` : ''
-          }`}
-          onClick={() => onPick(tile.dir, tile.tabId)}
+        <div
+          data-expose-card
           onMouseMove={event => {
             if (pointerClaims(event)) setSel(index);
           }}
-          onFocus={() => setSel(index)}
           className="relative isolate flex flex-col overflow-hidden rounded border p-2.5 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
           style={{
             width: TILE_W,
@@ -1060,36 +1007,116 @@ export function ExposeOverlay({
               projectColor={tile.color}
             />
           )}
-          <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-            <SessionOverviewCardContent
-              title={display.primary}
-              context={display.context}
-              titleIsContext={display.primaryKind === 'context'}
-              color={tile.color}
-              harness={tile.harness}
-              glyphState={glyphState}
-              attention={attentionSignal}
-              delegation={tileDelegation}
-              agentType={agentTypeByTab[tile.tabId] ?? null}
-              initiative={initiative}
-              fault={fault}
-              lifecycleLabel={tile.stateLabel}
-              current={current}
-              next={roadmap?.label ?? null}
-              nextProgress={roadmap?.fraction ?? null}
-              consumption={consumption}
-            />
-            {roadmap && (
-              <span
-                data-expose-roadmap-item
-                data-link-method={roadmap.inferred ? 'inferred' : 'declared'}
-                className="sr-only"
-              >
-                {roadmap.label}
-              </span>
-            )}
-          </div>
-        </button>
+
+          <SessionOverviewCardHeader
+            color={tile.color}
+            harness={tile.harness}
+            glyphState={glyphState}
+            attention={attentionSignal}
+            delegation={tileDelegation}
+            agentType={agentTypeByTab[tile.tabId] ?? null}
+            initiative={initiative}
+            fault={fault}
+            // Resume and the full lifecycle sentence already explain the
+            // stopped process. Keep room for the complete work-state word.
+            lifecycleLabel={
+              tile.canResume && onResumeTab ? null : tile.stateLabel
+            }
+            action={
+              tile.canResume &&
+              onResumeTab && (
+                <button
+                  type="button"
+                  data-expose-resume={tile.tabId}
+                  tabIndex={-1}
+                  title={`Resume ${display.primary}`}
+                  aria-label={`Resume ${display.primary}, ${tile.projectName}`}
+                  onClick={event => {
+                    event.stopPropagation();
+                    onResumeTab(tile.dir, tile.tabId);
+                  }}
+                  className={`inline-flex shrink-0 min-h-7 items-center gap-1 rounded border px-2 font-mono text-chrome-micro outline-none transition-opacity duration-150 group-hover/tile:opacity-100 motion-reduce:transition-none ${
+                    selected ? 'opacity-100' : 'opacity-0'
+                  }`}
+                  style={{
+                    color: HUD.cyan,
+                    borderColor: withThemeAlpha(HUD.cyan, 0.4),
+                    background: HUD.bg.panelFill,
+                  }}
+                >
+                  <Play className="h-3 w-3" />
+                  Resume
+                </button>
+              )
+            }
+          />
+          <button
+            ref={node => {
+              if (node) tileRefs.current.set(tile.tabId, node);
+              else tileRefs.current.delete(tile.tabId);
+            }}
+            data-expose-tile
+            data-expose-tab={tile.tabId}
+            data-expose-lifecycle={tile.lifecycle}
+            data-selected={selected || undefined}
+            tabIndex={selected ? 0 : -1}
+            // The tile subtree is presentational to AT (an aria-label'd button),
+            // so the delegation census must ride the accessible name — it is the
+            // only place a screen-reader user hears the team at all (ENG-023).
+            //
+            // ENG-033 H2: the accessible name says the SAME word the tile now
+            // prints beside the mark, from the same projection. It used to run a
+            // second vocabulary keyed on turn state behind a hand-written
+            // live/needs-you guard, which had already drifted: a live tile whose
+            // Agent had failed announced "result ready" while its light was red.
+            // A stopped tile keeps its word for the reason an unreachable remote
+            // Agent keeps its own — that IS the last work state Exawatt saw — and
+            // the lifecycle label right behind it says the process is not running.
+            aria-label={`${display.primary}, ${tile.projectName}, ${stateWord}${
+              tile.stateLabel ? `, ${tile.stateLabel}` : ''
+            }${
+              delegationCensus ? `, ${delegationCensus}` : ''
+            }${initiative ? `, Initiative ${initiative.name}` : ''}${
+              consumption
+                ? `, ${formatTokens(consumption.rawTokens)} tokens`
+                : ''
+            }`}
+            onClick={() => onPick(tile.dir, tile.tabId)}
+            onFocus={() => setSel(index)}
+            className="relative z-10 flex min-h-0 flex-1 flex-col text-left outline-none"
+          >
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+              <SessionOverviewCardContent
+                hideHeader
+                title={display.primary}
+                context={display.context}
+                titleIsContext={display.primaryKind === 'context'}
+                color={tile.color}
+                harness={tile.harness}
+                glyphState={glyphState}
+                attention={attentionSignal}
+                delegation={tileDelegation}
+                agentType={agentTypeByTab[tile.tabId] ?? null}
+                initiative={initiative}
+                fault={fault}
+                lifecycleLabel={tile.stateLabel}
+                current={current}
+                next={roadmap?.label ?? null}
+                nextProgress={roadmap?.fraction ?? null}
+                consumption={consumption}
+              />
+              {roadmap && (
+                <span
+                  data-expose-roadmap-item
+                  data-link-method={roadmap.inferred ? 'inferred' : 'declared'}
+                  className="sr-only"
+                >
+                  {roadmap.label}
+                </span>
+              )}
+            </div>
+          </button>
+        </div>
       </div>
     );
   };
