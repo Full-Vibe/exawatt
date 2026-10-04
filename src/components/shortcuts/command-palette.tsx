@@ -115,6 +115,7 @@ import {
 } from '@/components/nav/surfaces';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
+import { SessionSwitcherIdentity } from '@/components/workspace/session-switcher-identity';
 import {
   AttentionMarker,
   SESSION_GLYPH_LABEL,
@@ -1362,6 +1363,7 @@ export function CommandPalette({
                 key={s.id}
                 value={paletteValue(s.title, s.id)}
                 keywords={[
+                  s.searchValue,
                   s.projectName,
                   ...(s.roadmapItemId ? [s.roadmapItemId] : []),
                   ...(s.subtitle ? [s.subtitle] : []),
@@ -1384,14 +1386,7 @@ export function CommandPalette({
                     <HarnessGlyph harness={s.harness} size={12} />
                   </SourceIdentityMark>
                 )}
-                <span className="min-w-0 flex-1 truncate">
-                  {s.title}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {s.projectName}
-                    {s.roadmapItemId ? ` · ${s.roadmapItemId}` : ''}
-                    {s.subtitle ? ` · ${s.subtitle}` : ''}
-                  </span>
-                </span>
+                <SessionSwitcherIdentity session={s} />
                 <span
                   className="ml-3 inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
                   data-session-status={s.status}

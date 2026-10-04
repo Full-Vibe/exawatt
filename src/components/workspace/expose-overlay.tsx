@@ -1042,7 +1042,9 @@ export function ExposeOverlay({
             boxShadow: selected
               ? `0 0 14px ${withThemeAlpha(tile.color, 0.33)}`
               : 'none',
-            opacity: entered ? (tile.live ? 1 : 0.55) : 0,
+            // Lifecycle has its own word; purpose must stay readable even
+            // when the Session's process has stopped.
+            opacity: entered ? 1 : 0,
             transform: entered
               ? selected
                 ? 'scale(1.02)'

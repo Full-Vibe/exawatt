@@ -7,6 +7,7 @@ import {
   buildSessionRows,
 } from './switcher-rows';
 import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
+import { sessionDisplayCopy } from '@exawatt/ui-model';
 
 const session = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
   id: 'pty-1',
@@ -200,13 +201,88 @@ describe('buildSessionRows', () => {
     expect(fallback[0].color).toMatch(/^#|^rgb|^hsl/);
   });
 
-  it('search value carries title, project, and micro-context', () => {
-    const [row] = buildSessionRows(
-      [session({ contextSummary: 'fixing auth tests' })],
-      null
+  it('leads with shared purpose while retaining source and Project search aliases', () => {
+    const source = session({ contextSummary: 'Make updates dependable' });
+    const [row] = buildSessionRows([source], null);
+    expect(row.title).toBe(
+      sessionDisplayCopy({
+        harness: source.harness,
+        title: source.title,
+        titleKind: 'default',
+        lifecycle: 'running',
+        summary: source.contextSummary,
+      }).primary
     );
-    expect(row.searchValue).toBe('Claude Code alpha fixing auth tests');
-    expect(row.subtitle).toBe('fixing auth tests');
+    for (const alias of [
+      source.title,
+      source.projectName,
+      source.contextSummary!,
+    ]) {
+      expect(row.searchValue).toContain(alias);
+    }
+    expect(row.subtitle).toBeNull();
+  });
+
+  it('keeps explicit operator identity and durable purpose across PTY replacement', () => {
+    const source = session({ id: 'new-process', contextSummary: null });
+    const title = 'Release confidence';
+    const purpose = 'Make updates dependable';
+    const [row] = buildSessionRows([source], {
+      projects: [
+        {
+          tabs: [
+            {
+              sessionId: 'old-process',
+              durableSessionId: source.durableSessionId,
+              title,
+              titleKind: 'operator',
+              contextSummary: purpose,
+            },
+          ],
+        },
+      ],
+    });
+    expect(row.title).toBe(title);
+    expect(row.subtitle).toBe(purpose);
+    expect(row.id).toBe(source.id);
+  });
+
+  it('preserves a runtime rename when no persisted title provenance exists', () => {
+    const source = session({
+      title: 'Release confidence',
+      contextSummary: 'Safe updates',
+    });
+    const [row] = buildSessionRows([source], null);
+    expect(row.title).toBe(source.title);
+    expect(row.subtitle).toBe(source.contextSummary);
+  });
+
+  it('lets current main purpose supersede an older persisted label independently of status', () => {
+    const latest = 'Make recovery dependable';
+    const source = session({ contextSummary: latest });
+    const layout = {
+      projects: [
+        {
+          tabs: [
+            {
+              durableSessionId: source.durableSessionId,
+              title: source.title,
+              titleKind: 'default',
+              contextSummary: 'Previous purpose',
+            },
+          ],
+        },
+      ],
+    };
+    for (const facts of [
+      { working: true },
+      { exited: true },
+      { attention: { kind: 'bell' as const, since: 1 } },
+      { engaged: true },
+    ]) {
+      const [row] = buildSessionRows([{ ...source, ...facts }], layout);
+      expect(row.title).toBe(latest);
+    }
   });
 });
 

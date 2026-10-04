@@ -43,6 +43,7 @@ import type {
 import { computeAgentBurn, type AgentBurnEntry } from '@exawatt/ui-model';
 import type { PtyHarness } from '@exawatt/core';
 import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
+import { sessionDisplayCopy } from '@exawatt/ui-model';
 
 /** One stable "now" per app load: the whole demo tenant reads one clock. */
 const DEMO_SHELL_NOW_MS = Date.now();
@@ -314,12 +315,19 @@ export function demoSessionRows(): SessionRow[] {
     .map(agent => {
       const project = demoProjectFor(agent);
       const status = ROW_STATUS[agent.status];
+      const display = sessionDisplayCopy({
+        harness: demoHarness(agent),
+        title: agent.name,
+        titleKind: 'operator',
+        lifecycle: agent.status === 'error' ? 'failed' : 'running',
+        summary: agent.contextLabel,
+      });
       const row: SessionRow = {
         id: agent.id,
-        title: agent.name,
+        title: display.primary,
         harness: demoHarness(agent),
         projectName: project?.name ?? agent.projectKey,
-        subtitle: agent.contextLabel,
+        subtitle: display.context,
         color: project?.color ?? '#50E6FF',
         status,
         roadmapItemId: agent.roadmapItemId,

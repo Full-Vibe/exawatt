@@ -236,16 +236,14 @@ Initiative mechanism. Owner: `agent/polish-purpose`, sibling worktree
   The command palette bypasses that projection: it leads with the runtime
   source title and appends purpose after Project metadata. Team also lowers
   the opacity of the entire stopped tile to 55%, including its purpose.
-- Review candidate: `/hud-gallery/purpose-reentry` compares purpose-first
+- Review candidate: `/hud-gallery/purpose-reentry` compared purpose-first
   command rows and readable paused Team identity with their present hierarchy.
-  Named type/spacing and semantic paint come from the design kernel. DOM-only
-  first slice; no Fleet render or R3F change.
-- Next: operator review, then reuse the shared identity projection in palette
-  rows with persisted operator-rename authority and searchable source aliases;
-  preserve ordering/navigation/status contracts. Keep Demo/Live parity.
-  Verify purpose survives working, blocked, completed and stopped states,
-  runtime replacement and explicit renames. Apply paused opacity correction
-  only after review; retire the study when adopted.
+  Named type/spacing and semantic paint come from the design kernel. The
+  operator approved both right-hand treatments on 2026-10-04: purpose first,
+  and purpose remains readable when paused. Harness species is secondary;
+  richer shared iconography is future scope, not permission to remove words.
+  The approved study is retired; its shared row presenter now serves the
+  production palette. No Fleet render or R3F change.
 - Fleet audit: the board already leads with `goal`, and live snapshots already
   carry the durable purpose there. The stopped-layout adapter dropped
   `contextSummary`; preserving that source fact repairs purpose on return
@@ -255,8 +253,20 @@ Initiative mechanism. Owner: `agent/polish-purpose`, sibling worktree
   compatibility re-export. Preserve stopped `contextSummary` through the Fleet
   adapter. Tests prove identical purpose for live, exited and restored source
   records, and projection stability across execution lifecycles and harnesses.
-  Renderer type-check and focused tests pass. Palette/Team wiring still awaits
-  review.
+  Palette rows use that same identity projection in Demo and Live. Runtime
+  replacement keeps explicit operator names through durable Session identity;
+  latest main purpose wins over old persisted purpose. Source aliases stay
+  searchable and visible as secondary metadata. Team uses the existing
+  lifecycle word rather than lowering the entire paused tile's opacity.
+  Ordering, status and exact navigation targets are unchanged.
+- Verification: renderer type-check, scoped lint and 46 focused contract tests
+  passed. Team ordering/grid navigation and the full Electron navigation spine
+  passed. An isolated Electron fixture directly proved paused Team purpose
+  remains readable, the live palette row leads with purpose, and source-name
+  search still reaches that Session. Production screenshots cover Air, a 720px
+  viewport, and Night at 120% type with reduced motion. Runtime fixture profiles,
+  Projects and fake harnesses were removed after verification. No fresh
+  unaided-newcomer walkthrough was available.
 - Delivery pending. Worktree bootstrap passed. This
   checkpoint is execution detail for ENG-021/ENG-015/ENG-036, not a new plan.
 

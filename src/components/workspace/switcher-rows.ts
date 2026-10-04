@@ -5,6 +5,7 @@
  * ranking and status rules are unit-tested without a palette.
  */
 import { projectColor } from './project-colors';
+import { isDefaultHarnessTitle } from './harnesses';
 import {
   attentionNeedsOperator,
   sessionDelegationBusy,
@@ -12,6 +13,10 @@ import {
   sessionReportedBlocked,
 } from './session-status';
 import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
+import {
+  sessionDisplayCopy,
+  type SessionDisplayCopyInput,
+} from '@exawatt/ui-model';
 
 /**
  * Row vocabulary. Spelled out rather than derived from `SessionGlyphState`
@@ -177,6 +182,45 @@ const STATUS_RANK: Record<SessionRowStatus, number> = {
   exited: 6,
 };
 
+/** Main owns purpose; the workspace owns explicit renames. Index by durable
+ * identity so replacing a PTY cannot silently erase the operator's name. */
+function workspaceSessionIdentities(layout: unknown) {
+  const identities = new Map<
+    string,
+    Pick<SessionDisplayCopyInput, 'title' | 'summary'> &
+      Partial<Pick<SessionDisplayCopyInput, 'titleKind'>>
+  >();
+  if (!layout || typeof layout !== 'object') return identities;
+  const root = layout as { projects?: unknown; initiatives?: unknown };
+  const groups = Array.isArray(root.projects)
+    ? root.projects
+    : root.initiatives;
+  if (!Array.isArray(groups)) return identities;
+  for (const group of groups) {
+    const tabs = (group as { tabs?: unknown } | null)?.tabs;
+    if (!Array.isArray(tabs)) continue;
+    for (const value of tabs) {
+      if (!value || typeof value !== 'object') continue;
+      const tab = value as Record<string, unknown>;
+      const identity: Pick<SessionDisplayCopyInput, 'title' | 'summary'> &
+        Partial<Pick<SessionDisplayCopyInput, 'titleKind'>> = {
+        title: typeof tab.title === 'string' ? tab.title : '',
+        titleKind:
+          tab.titleKind === 'operator' || tab.titleKind === 'default'
+            ? tab.titleKind
+            : undefined,
+        summary:
+          typeof tab.contextSummary === 'string' ? tab.contextSummary : null,
+      };
+      if (typeof tab.durableSessionId === 'string')
+        identities.set(tab.durableSessionId, identity);
+      if (typeof tab.sessionId === 'string')
+        identities.set(tab.sessionId, identity);
+    }
+  }
+  return identities;
+}
+
 /** Needs-you first (oldest flag first), then semantic turn state; sessions
  * within the same state retain output-recency ordering. */
 export function buildSessionRows(
@@ -185,14 +229,26 @@ export function buildSessionRows(
 ): SessionRow[] {
   const colors = extractProjectColors(layout);
   const itemIds = extractRoadmapItemIds(layout);
+  const identities = workspaceSessionIdentities(layout);
   return sessions
     .map(s => {
-      const subtitle = s.contextSummary?.trim() || null;
+      const persisted =
+        identities.get(s.durableSessionId) ?? identities.get(s.id);
+      const display = sessionDisplayCopy({
+        harness: s.harness,
+        title: persisted?.titleKind === 'operator' ? persisted.title : s.title,
+        titleKind:
+          persisted?.titleKind ??
+          (isDefaultHarnessTitle(s.harness, s.title) ? 'default' : 'operator'),
+        lifecycle: s.exited ? 'stopped-clean' : 'running',
+        summary: s.contextSummary?.trim() || persisted?.summary,
+      });
+      const subtitle = display.context;
       const status = sessionRowStatus(s);
       const roadmapItemId = itemIds[s.id] ?? null;
       const row: SessionRow = {
         id: s.id,
-        title: s.title,
+        title: display.primary,
         harness: s.harness,
         projectName: s.projectName,
         subtitle,
@@ -200,7 +256,7 @@ export function buildSessionRows(
         status,
         roadmapItemId,
         searchValue:
-          `${s.title} ${s.projectName} ${subtitle ?? ''} ${roadmapItemId ?? ''}`.trim(),
+          `${display.primary} ${s.title} ${s.projectName} ${subtitle ?? ''} ${roadmapItemId ?? ''}`.trim(),
       };
       // within needs-you: oldest flag first (queue order); every other
       // rank (incl. exited-with-stale-flag) sorts by output recency
