@@ -400,9 +400,12 @@ attachments. The renderer submits through the distribution-declared
 before account/session work and no request is possible. Inference excerpts
 themselves are not persisted.
 
-ENG-025 F6 implements one renderer-lifetime feedback draft/attempt store behind
-keyboard, palette and Help entry commands. A Radix-hosted composer owns focus;
-its shared image path validates paste, drop and file selection. Capture and
+ENG-025 F7 retains one renderer-lifetime feedback draft/attempt store behind
+keyboard, palette and Help entry commands. One Radix-hosted dialog retains the
+report through editing, sending and recovery; `FeedbackComposerView` presents
+the frozen report after Send. Shared Dialog owns focus on mount and retained
+logical reopen. Its bounded body scrolls while Close and actions remain visible.
+The shared image path validates paste, drop and file selection. Capture and
 read channels use `useLatestRequest`; submission freezes payload, original
 context, evidence and idempotency key independently. A complete receipt clears
 only the matching draft; accepted text with a missing requested image remains
@@ -410,27 +413,31 @@ partial. Explicit retry reuses the attempt, and a 30-second foreground deadline
 leaves a timed-out result unconfirmed rather than claiming rollback. Retry
 permission honors the service's explicit flag independently of failure certainty;
 a later refused retry cannot prove an earlier lost-response write absent. Saved
-or unconfirmed drafts warn on generic reopen/edit, and unchanged nonretryable
-attempts cannot resubmit through Send. Account
+or unconfirmed attempts reopen in their retained workflow, and an unknown result
+offers same-key retry without creating another report through Edit. Explicitly
+refused attempts may be edited. Optional diagnostics never block text editing
+or text-only Send; freezing a submission invalidates unfinished evidence reads
+so they cannot advance the draft revision afterward. Account
 change/sign-out and provider unmount drop private in-memory draft/attempt data;
 restart persistence and automatic retry are not implemented.
 
 The hosted V1 route fingerprints immutable report fields and image bytes;
 duplicate responses reconcile stored evidence, changed same-key content is
 rejected, and concurrent image recovery shares an owned private object path.
-The fingerprint migration has been applied/read back and server reconciliation
-is integrated in `902ed1b5` with its production deployment READY. Shared DOM
-operation/overlay components implement the operator-authorized simplification:
-receipt states render immediately, with only a reduced-motion-aware pending
-spinner. Shared `DialogContent` owns Radix-observed named CSS presence (240ms
+The authenticated INSERT allowlist includes the request fingerprint while
+identity and triage fields remain protected. The V1 base64 image budget is
+3 MiB decoded; serialized UTF-8 requests are capped at 4,500,000 bytes before
+transport and at the route boundary. Real authenticated receipt/row and private
+image read-back prove delivery separately from deployment or installation.
+Shared `DialogContent` owns Radix-observed named CSS presence (240ms
 enter/160ms exit) with a typed `motion: auto | none` override; capture uses `none`
 to remove the overlay immediately. Cmd+K adopts comfortable shared presentation,
 keyboard footer and selected enabled Return cue while cmdk retains selection.
-State snapshots, receipt fades/background resizing and the operation-motion
-owner are removed. The gallery study is retired; the client is verified and
-integrated in `9d6b0d46`. Combined UI deployment is READY and exact-SHA dogfood installation is confirmed. One notice lane owns placement for update, hint and chord
-notices while callers retain actions and lifetime; feedback receipts remain
-near the composer. These presentation owners do not replace Agent status or
+Bounded content expansion keeps text unscaled and honors reduced motion;
+state snapshots, cloned plates and guessed animation delays are absent. One
+notice lane owns placement for update, hint and chord notices while callers
+retain actions and lifetime. Feedback remains in its own dialog workflow.
+These presentation owners do not replace Agent status or
 attention scheduling.
 
 Goal visual identity is a downstream projection of that accepted Session

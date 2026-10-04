@@ -15,6 +15,7 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import {
   isCompatibleServiceProblemError,
   isCompatibleServiceProtocolError,
+  ProductFeedbackRequestSizeError,
   submitProductFeedback,
 } from '@exawatt/core/distribution';
 import { commandVerbMenuCommandId } from '@exawatt/core';
@@ -40,7 +41,6 @@ import {
   validateFeedbackImageFiles,
 } from '@/lib/feedback/image';
 import { useLatestRequest } from '@/hooks/use-latest-request';
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -48,8 +48,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { COMFORTABLE_OVERLAY_CONTENT_CLASS } from '@/components/ui/overlay-presentation';
-import { FeedbackReceipt } from './feedback-receipt';
-import { QuickCaptureBar } from './quick-capture-bar';
+import { FeedbackComposerView } from './feedback-composer-view';
 import {
   resolveQuickDiagnostics,
   withDiagnostics,
@@ -114,24 +113,6 @@ function recordFailure(cause: unknown) {
   return problem;
 }
 
-const DUPLICATE_DELIVERY_WARNING =
-  'Earlier delivery may have succeeded. Sending edits creates a new report.';
-const UNRETRYABLE_ATTEMPT_REASON =
-  'This attempt cannot be retried. Change the report to send a new one.';
-
-function getDraftDeliveryWarning(
-  attempts: readonly FeedbackAttempt[],
-  draftId: string
-): string | null {
-  return attempts.some(
-    attempt =>
-      attempt.draftId === draftId &&
-      (attempt.receipt || attempt.failureOutcome === 'unconfirmed')
-  )
-    ? DUPLICATE_DELIVERY_WARNING
-    : null;
-}
-
 export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   const distribution = useMemo(() => resolvedDistribution(), []);
   const feedbackEndpoint = distribution.services.productFeedback;
@@ -146,14 +127,12 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [open, setOpen] = useState(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const assignInput = useCallback((node: HTMLTextAreaElement | null) => {
+    inputRef.current = node;
+  }, []);
   const [error, setError] = useState<string | null>(null);
-  // Explicit Edit creates a new draft identity but does not resolve the old write.
-  const [warnedEditingDraftId, setWarnedEditingDraftId] = useState<
-    string | null
-  >(null);
-  const [hiddenReceipts, setHiddenReceipts] = useState<ReadonlySet<string>>(
-    () => new Set()
-  );
+  const [activeAttemptId, setActiveAttemptId] = useState<string | null>(null);
   // Independent channels cannot unlock another channel's unfinished evidence.
   const [preparing, setPreparing] = useState({
     capture: false,
@@ -202,8 +181,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         setOpen(false);
         setPreparing({ capture: false, diagnostics: false, image: false });
         setError(null);
-        setWarnedEditingDraftId(null);
-        setHiddenReceipts(new Set());
+        setActiveAttemptId(null);
         accountRef.current = account;
         temporaryCaptureRef.current = false;
         setTemporaryCapture(false);
@@ -281,7 +259,14 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     invalidateReads();
     setPreparing({ capture: false, diagnostics: false, image: false });
     setOpen(false);
-  }, [invalidateReads]);
+    const attempt = store
+      .getSnapshot()
+      .attempts.find(value => value.id === activeAttemptId);
+    if (attempt?.status === 'sent') {
+      store.dismissAttempt(attempt.id);
+      setActiveAttemptId(null);
+    }
+  }, [invalidateReads, store, activeAttemptId]);
   const patch = useCallback(
     (next: FeedbackDraftPatch) => {
       store.updateDraft('composer', next);
@@ -301,14 +286,18 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         return;
       rememberInvoker();
       const state = store.getSnapshot();
-      if (
-        state.attempts.some(
+      const existing =
+        state.attempts.find(attempt => attempt.id === activeAttemptId) ??
+        state.attempts.find(
           attempt =>
-            attempt.status === 'sending' &&
+            attempt.status !== 'sent' &&
             attempt.draftId === state.drafts.composer.id
-        )
-      )
-        store.newDraft('composer', kind);
+        );
+      if (existing) {
+        setActiveAttemptId(existing.id);
+        setOpen(true);
+        return;
+      }
       const current = store.getSnapshot().drafts.composer;
       if (current.context) {
         setOpen(true);
@@ -352,6 +341,8 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         setOpen(true);
         setPreparing(value => ({ ...value, capture: false }));
         const report = await diagnostics;
+        if (ticket.current)
+          setPreparing(value => ({ ...value, diagnostics: false }));
         if (
           !ticket.current ||
           !tokenRef.current ||
@@ -362,10 +353,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
           diagnostics: report ?? null,
           attachDiagnostics: kind === 'bug' && !!report,
         });
-        setPreparing(value => ({ ...value, diagnostics: false }));
       })();
     },
-    [feedbackAvailable, captureReads, rememberInvoker, store]
+    [feedbackAvailable, captureReads, rememberInvoker, store, activeAttemptId]
   );
   const openQuickCapture = useCallback(
     (kind: QuickFeedbackKind = 'general') =>
@@ -414,26 +404,29 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         if (store.complete(attempt.id, receipt))
           window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
       } catch (cause) {
-        const problem = recordFailure(cause);
+        const tooLarge = cause instanceof ProductFeedbackRequestSizeError;
+        const problem = tooLarge ? null : recordFailure(cause);
         const retryable =
-          problem?.retryable ?? !isCompatibleServiceProtocolError(cause);
+          !tooLarge &&
+          (problem?.retryable ?? !isCompatibleServiceProtocolError(cause));
         const failureOutcome =
           attempt.failureOutcome === 'unconfirmed' && !attempt.receipt
             ? 'unconfirmed'
-            : problem && problem.status < 500 && problem.status !== 408
+            : tooLarge ||
+                (problem && problem.status < 500 && problem.status !== 408)
               ? 'not_accepted'
               : 'unconfirmed';
         store.fail(
           attempt.id,
-          attempt.receipt
-            ? retryable
-              ? 'Text saved. Retry checks the same image.'
-              : 'Text saved. Image delivery is incomplete. Review or finish without it.'
-            : failureOutcome === 'not_accepted'
-              ? 'Report not accepted. Review your draft.'
-              : retryable
-                ? 'Delivery unconfirmed. Draft kept. Retry checks the same report.'
-                : 'Delivery unconfirmed. Draft kept. Review before sending another report.',
+          tooLarge
+            ? 'This feedback is too large to send. Choose a smaller image.'
+            : attempt.receipt
+              ? retryable
+                ? 'Your feedback is saved. The image hasn’t been confirmed.'
+                : 'Your feedback is saved. Finish without the image.'
+              : failureOutcome === 'not_accepted'
+                ? 'Your feedback wasn’t accepted. Review it before trying again.'
+                : 'Your feedback is kept here. We couldn’t confirm it was saved.',
           retryable,
           failureOutcome
         );
@@ -442,7 +435,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     [store, upload]
   );
   const send = useCallback(() => {
-    if (!open || Object.values(preparing).some(Boolean) || !tokenRef.current)
+    if (!open || preparing.capture || preparing.image || !tokenRef.current)
       return;
     const current = store.getSnapshot().drafts.composer;
     if (!current.message.trim()) {
@@ -471,18 +464,22 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       },
       buildRef.current
     );
+    // Optional reads must not advance draft revision after this frozen write.
+    // Cancelling evidence collection never cancels the accepted submission.
+    invalidateReads();
+    setPreparing({ capture: false, diagnostics: false, image: false });
     const attempt = store.start('composer', request);
     if (!attempt) {
       setError(
         store.getSnapshot().attempts.some(value => value.status === 'sending')
           ? 'Still sending. New draft kept.'
-          : UNRETRYABLE_ATTEMPT_REASON
+          : 'Review your feedback before trying again.'
       );
       return;
     }
-    closeEditor();
+    setActiveAttemptId(attempt.id);
     void executeAttempt(attempt);
-  }, [open, preparing, store, closeEditor, executeAttempt]);
+  }, [open, preparing, store, executeAttempt, invalidateReads]);
   const retry = useCallback(
     (id: string) => {
       if (!tokenRef.current) return;
@@ -495,13 +492,10 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     (attempt: FeedbackAttempt) => {
       if (!tokenRef.current || !store.editAttempt(attempt.id)) return;
       rememberInvoker();
-      setWarnedEditingDraftId(
-        attempt.receipt || attempt.failureOutcome === 'unconfirmed'
-          ? store.getSnapshot().drafts.composer.id
-          : null
-      );
+      setActiveAttemptId(null);
       setError(null);
       setOpen(true);
+      inputRef.current?.focus({ preventScroll: true });
     },
     [store, rememberInvoker]
   );
@@ -537,7 +531,8 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   );
   const captureImage = useCallback(async () => {
     const capture = window.electron?.feedback?.captureScreenshot;
-    if (!capture || Object.values(preparing).some(Boolean)) return;
+    if (!capture || preparing.capture || preparing.image || activeAttemptId)
+      return;
     const ticket = imageReads.begin();
     const draftId = store.getSnapshot().drafts.composer.id;
     temporaryCaptureRef.current = true;
@@ -569,7 +564,42 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         setOpen(true);
       }
     }
-  }, [preparing, store, imageReads, patch]);
+  }, [preparing, store, imageReads, patch, activeAttemptId]);
+
+  const newFeedback = useCallback(() => {
+    const previous = store
+      .getSnapshot()
+      .attempts.find(value => value.id === activeAttemptId);
+    if (!previous || previous.status !== 'sent') return;
+    invalidateReads();
+    store.dismissAttempt(previous.id);
+    const kind =
+      previous.request.kind === 'context_label'
+        ? 'general'
+        : previous.request.kind;
+    const next = store.newDraft('composer', kind);
+    store.updateDraft('composer', {
+      context: currentContext(),
+      surface: window.location.pathname || 'unknown',
+    });
+    setActiveAttemptId(null);
+    setError(null);
+    setPreparing({ capture: false, image: false, diagnostics: true });
+    const ticket = captureReads.begin();
+    void Promise.resolve(window.electron?.app?.getDiagnosticsReport?.(true))
+      .catch(() => null)
+      .then(report => {
+        if (!ticket.current || !tokenRef.current) return;
+        setPreparing(value => ({ ...value, diagnostics: false }));
+        const current = store.getSnapshot().drafts.composer;
+        if (current.id === next.id)
+          store.updateDraft('composer', {
+            diagnostics: report ?? null,
+            attachDiagnostics: current.kind === 'bug' && !!report,
+          });
+      });
+    inputRef.current?.focus({ preventScroll: true });
+  }, [activeAttemptId, store, invalidateReads, captureReads]);
 
   const submitContextRating = useCallback(
     async (rating: ContextRating) => {
@@ -643,9 +673,8 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       attempt.status === 'error' &&
       !attempt.retryable
   );
-  const deliveryWarning =
-    getDraftDeliveryWarning(snapshot.attempts, draft.id) ??
-    (warnedEditingDraftId === draft.id ? DUPLICATE_DELIVERY_WARNING : null);
+  const activeAttempt =
+    snapshot.attempts.find(attempt => attempt.id === activeAttemptId) ?? null;
   return (
     <ProductFeedbackContext.Provider value={contextValue}>
       {children}
@@ -665,6 +694,10 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             none: 'Feedback sends Return from its composer; focused controls keep native activation.',
           }}
           onCloseAutoFocus={restoreFocus}
+          onOpenAutoFocus={event => {
+            event.preventDefault();
+            inputRef.current?.focus({ preventScroll: true });
+          }}
           onEscapeKeyDown={event => {
             if (event.isComposing || event.keyCode === 229)
               event.preventDefault();
@@ -674,9 +707,17 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
           <DialogDescription className="sr-only">
             Return sends feedback. Shift Return adds a line.
           </DialogDescription>
-          <QuickCaptureBar
+          <FeedbackComposerView
             dialogSemantics={false}
-            className="w-full border-0 bg-transparent shadow-none [&_textarea]:pr-12"
+            autoFocus={false}
+            inputRef={assignInput}
+            className="w-full border-0 bg-transparent shadow-none [&_label]:pr-8"
+            attempt={activeAttempt}
+            onRetry={retry}
+            onEdit={editAttempt}
+            onFinishWithoutImage={id => store.finishWithoutImage(id)}
+            onDone={closeEditor}
+            onNewFeedback={newFeedback}
             kind={draft.kind}
             onKindChange={kind => patch({ kind })}
             message={draft.message}
@@ -690,16 +731,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             onAttachDiagnosticsChange={attachDiagnostics =>
               patch({ attachDiagnostics })
             }
-            error={
-              [
-                error,
-                cannotRetryCurrent ? UNRETRYABLE_ATTEMPT_REASON : null,
-                deliveryWarning,
-              ]
-                .filter(Boolean)
-                .join(' ') || null
-            }
-            busy={Object.values(preparing).some(Boolean)}
+            error={error}
+            busy={preparing.capture || preparing.image}
+            diagnosticsPreparing={preparing.diagnostics}
             sendDisabled={pending || cannotRetryCurrent}
             onImageFiles={files => void imageFiles(files)}
             onCaptureImage={
@@ -709,44 +743,8 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             onSubmit={send}
             onDismiss={closeEditor}
           />
-          {snapshot.attempts.some(attempt =>
-            hiddenReceipts.has(attempt.id)
-          ) && (
-            <div className="border-t border-border px-4 py-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setHiddenReceipts(new Set());
-                  closeEditor();
-                }}
-              >
-                Recover feedback
-              </Button>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
-      {!open && isAuthenticated && snapshot.attempts.length > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 top-24 z-50 flex justify-center px-4">
-          <div className="pointer-events-auto flex max-h-[60dvh] w-full max-w-xl flex-col gap-2 overflow-y-auto">
-            {snapshot.attempts
-              .filter(attempt => !hiddenReceipts.has(attempt.id))
-              .map(attempt => (
-                <FeedbackReceipt
-                  key={attempt.id}
-                  attempt={attempt}
-                  store={store}
-                  onHide={id =>
-                    setHiddenReceipts(current => new Set([...current, id]))
-                  }
-                  onRetry={retry}
-                  onEdit={editAttempt}
-                />
-              ))}
-          </div>
-        </div>
-      )}
     </ProductFeedbackContext.Provider>
   );
 }

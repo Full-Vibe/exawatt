@@ -1,7 +1,8 @@
+import { MAX_FEEDBACK_ATTACHMENT_BYTES, MAX_FEEDBACK_REQUEST_BYTES } from '@exawatt/core/distribution';
+
+export { MAX_FEEDBACK_ATTACHMENT_BYTES, MAX_FEEDBACK_REQUEST_BYTES };
 export const MAX_FEEDBACK_MESSAGE_CHARS = 12_000;
 export const MAX_FEEDBACK_CONTEXT_BYTES = 32_000;
-export const MAX_FEEDBACK_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-export const MAX_FEEDBACK_REQUEST_BYTES = 7 * 1024 * 1024;
 export const PRODUCT_FEEDBACK_SCHEMA_VERSION = 1 as const;
 
 export type FeedbackKind = 'general' | 'bug' | 'idea' | 'context_label';

@@ -82,6 +82,18 @@ export interface ProductFeedbackResponseV1 {
   attachmentStored: boolean;
 }
 
+/** Base64 plus the bounded metadata must fit the hosted function's ingress limit. */
+export const MAX_FEEDBACK_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+export const MAX_FEEDBACK_REQUEST_BYTES = 4_500_000;
+
+/** This rejection happens before transport, so no report has been submitted. */
+export class ProductFeedbackRequestSizeError extends RangeError {
+  constructor() {
+    super('This feedback is too large to send. Choose a smaller image.');
+    this.name = 'ProductFeedbackRequestSizeError';
+  }
+}
+
 /** Foreground feedback never remains pending indefinitely; retries retain its key. */
 const FEEDBACK_REQUEST_DEADLINE_MS = 30_000;
 
@@ -141,14 +153,22 @@ async function callJson<T>(
   body: unknown | undefined,
   allowedStatuses: readonly number[],
   decode: (value: unknown) => T,
-  options: CompatibleServiceCallOptions
+  options: CompatibleServiceCallOptions,
+  maximumRequestBytes?: number
 ): Promise<T> {
+  const encodedBody = body === undefined ? undefined : JSON.stringify(body);
+  if (
+    encodedBody !== undefined && maximumRequestBytes !== undefined &&
+    new TextEncoder().encode(encodedBody).byteLength > maximumRequestBytes
+  ) {
+    throw new ProductFeedbackRequestSizeError();
+  }
   const response = await fetchCompatibleService(
     endpoint,
     {
       method,
       headers: authorizedHeaders(accessToken, body !== undefined),
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(encodedBody === undefined ? {} : { body: encodedBody }),
       ...(options.signal ? { signal: options.signal } : {}),
     },
     options.fetcher
@@ -371,7 +391,8 @@ export function submitProductFeedback(
     request,
     [200, 201],
     decodeProductFeedback,
-    { ...options, signal }
+    { ...options, signal },
+    MAX_FEEDBACK_REQUEST_BYTES
   );
 }
 

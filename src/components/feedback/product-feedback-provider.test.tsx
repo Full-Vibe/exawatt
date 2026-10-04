@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -135,6 +136,12 @@ function composerField() {
 
 function composerImage() {
   return screen.getByRole('img', { name: 'Feedback attachment preview' });
+}
+
+function receiptRegion() {
+  const element = document.querySelector<HTMLElement>('[data-feedback-attempt]');
+  expect(element).toBeInTheDocument();
+  return element!;
 }
 
 const { distributionState, clientState, createOptionalClient } = vi.hoisted(
@@ -268,6 +275,10 @@ describe('unified feedback composer continuity', () => {
         '[data-slot="dialog-content"][data-state="closed"]'
       )
     ).toBeInTheDocument();
+    // Native inertness blurs the retained input; jsdom does not implement
+    // that browser behavior. Reproduce the observed BODY focus explicitly.
+    field.blur();
+    expect(document.activeElement).toBe(document.body);
     await act(async () => feedback!.openQuickCapture());
     expect(composerField()).toHaveFocus();
     fireEvent.keyDown(composerField(), { key: 'Escape' });
@@ -277,6 +288,7 @@ describe('unified feedback composer continuity', () => {
     expect(document.activeElement).toBe(document.body);
     await act(async () => feedback!.openQuickCapture());
     expect(composerField().closest('[data-slot="dialog-content"]')).not.toHaveAttribute('inert');
+    expect(composerField()).toHaveFocus();
     fireEvent.keyDown(composerField(), { key: 'Escape' });
     finishDialogExit();
     await waitFor(() => expect(invoker).toHaveFocus());
@@ -329,7 +341,7 @@ describe('unified feedback composer continuity', () => {
         ).toBeInTheDocument()
       );
       if (retryable) {
-        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        fireEvent.click(screen.getByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ }));
         await waitFor(() =>
           expect(
             document.querySelector('[data-feedback-state="sent"]')
@@ -340,18 +352,30 @@ describe('unified feedback composer continuity', () => {
         );
       } else {
         expect(
-          screen.queryByRole('button', { name: 'Retry' })
+          screen.queryByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ })
         ).not.toBeInTheDocument();
         expect(fetchSpy).toHaveBeenCalledOnce();
-        fireEvent.click(screen.getByRole('button', { name: 'Edit feedback' }));
-        if (status >= 500)
-          expect(screen.getByRole('alert')).toBeInTheDocument();
-        else expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        if (status >= 500) {
+          expect(screen.queryByRole('button', { name: 'Edit feedback' })).not.toBeInTheDocument();
+          expect(composerField()).toHaveAttribute('readonly');
+        } else {
+          fireEvent.click(screen.getByRole('button', { name: 'Edit feedback' }));
+          expect(composerField()).not.toHaveAttribute('readonly');
+          fireEvent.change(composerField(), {
+            target: { value: 'An explicitly revised refused report' },
+          });
+          fireEvent.keyDown(composerField(), { key: 'Enter' });
+          await waitFor(() => expect(receiptRegion()).toHaveAttribute('data-feedback-state', 'sent'));
+          const original = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+          const revised = JSON.parse(String(fetchSpy.mock.calls[1][1]?.body));
+          expect(revised.idempotencyKey).not.toBe(original.idempotencyKey);
+          expect(revised.message).not.toBe(original.message);
+        }
       }
     }
   );
 
-  it('an invalid success response disables replay but warns before an edited report can duplicate uncertain delivery', async () => {
+  it('an invalid success response preserves its frozen report without offering another uncertain write', async () => {
     const fetchSpy = vi.fn<typeof fetch>(async () =>
       Response.json(
         { schemaVersion: 2 },
@@ -374,11 +398,12 @@ describe('unified feedback composer continuity', () => {
       ).toBeInTheDocument()
     );
     expect(
-      screen.queryByRole('button', { name: 'Retry' })
+      screen.queryByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ })
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit feedback' }));
+    expect(screen.queryByRole('button', { name: 'Edit feedback' })).not.toBeInTheDocument();
     expect(composerField()).toHaveValue('Possibly already accepted');
-    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(composerField()).toHaveAttribute('readonly');
+    fireEvent.keyDown(composerField(), { key: 'Enter' });
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
@@ -399,7 +424,7 @@ describe('unified feedback composer continuity', () => {
         document.querySelector('[data-feedback-state="error"]')
       ).toBeInTheDocument()
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ }));
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledTimes(2);
       expect(
@@ -407,17 +432,17 @@ describe('unified feedback composer continuity', () => {
       ).toBeInTheDocument();
     });
     expect(
-      screen.queryByRole('button', { name: 'Retry' })
+      screen.queryByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ })
     ).not.toBeInTheDocument();
     expect(fetchSpy.mock.calls[1][1]?.body).toBe(
       fetchSpy.mock.calls[0][1]?.body
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Edit feedback' }));
+    expect(screen.queryByRole('button', { name: 'Edit feedback' })).not.toBeInTheDocument();
     expect(composerField()).toHaveValue('May already be saved');
-    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(composerField()).toHaveAttribute('readonly');
   });
 
-  it('reopening an uncertain nonretryable report keeps the warning through edits and uses a new key only for changed input', async () => {
+  it('closing and reopening an uncertain nonretryable report cannot start another write', async () => {
     const fetchSpy = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -442,30 +467,17 @@ describe('unified feedback composer continuity', () => {
         document.querySelector('[data-feedback-state="error"]')
       ).toBeInTheDocument()
     );
+    const attemptId = receiptRegion().dataset.feedbackAttempt;
+    fireEvent.keyDown(composerField(), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await act(async () => feedback!.openQuickCapture());
     expect(composerField()).toHaveValue('Possibly accepted original');
-    expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Send feedback' })
-    ).toBeDisabled();
+    expect(composerField()).toHaveAttribute('readonly');
+    expect(receiptRegion().dataset.feedbackAttempt).toBe(attemptId);
+    expect(screen.queryByRole('button', { name: 'Edit feedback' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New feedback' })).not.toBeInTheDocument();
     fireEvent.keyDown(composerField(), { key: 'Enter' });
     expect(fetchSpy).toHaveBeenCalledOnce();
-    fireEvent.change(composerField(), {
-      target: { value: 'Deliberately changed report' },
-    });
-    expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send feedback' })).toBeEnabled();
-    fireEvent.keyDown(composerField(), { key: 'Enter' });
-    await waitFor(() =>
-      expect(
-        document.querySelector('[data-feedback-state="sent"]')
-      ).toBeInTheDocument()
-    );
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    const original = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
-    const edited = JSON.parse(String(fetchSpy.mock.calls[1][1]?.body));
-    expect(edited.idempotencyKey).not.toBe(original.idempotencyKey);
-    expect(edited.message).toBe('Deliberately changed report');
   });
 
   it('Help and shortcut reopening retain one draft, kind and captured evidence', async () => {
@@ -521,7 +533,61 @@ describe('unified feedback composer continuity', () => {
     );
   });
 
-  it('keeps delivery disabled until diagnostics and a subsequent image read each finish', async () => {
+  it('keeps the cold editor focused and editable while optional diagnostics are pending', async () => {
+    const diagnostics = deferred<DiagnosticsReport>();
+    installBridgeDouble({
+      feedback: {
+        setAuthenticated: vi.fn(),
+        captureScreenshot: vi.fn(async () => SHOT),
+      },
+      app: { getDiagnosticsReport: vi.fn(() => diagnostics.promise) },
+    });
+    await renderSignedIn();
+    await act(async () => feedback!.openQuickCapture('bug'));
+    const field = composerField();
+    expect(field).toBeEnabled();
+    expect(field).toHaveFocus();
+    fireEvent.change(field, { target: { value: 'Typing before diagnostics' } });
+    const kind = screen.getByRole('button', { name: /^Idea/ });
+    kind.focus();
+    await act(async () => diagnostics.resolve(REPORT));
+    expect(composerField()).toBe(field);
+    expect(field).toHaveValue('Typing before diagnostics');
+    expect(kind).toHaveFocus();
+  });
+
+  it('sends without optional diagnostics and late preparation cannot change the frozen report', async () => {
+    const diagnostics = deferred<DiagnosticsReport>();
+    const delivery = deferred<Response>();
+    installBridgeDouble({
+      feedback: {
+        setAuthenticated: vi.fn(),
+        captureScreenshot: vi.fn(async () => SHOT),
+      },
+      app: { getDiagnosticsReport: vi.fn(() => diagnostics.promise) },
+    });
+    const fetchSpy = vi.fn<typeof fetch>(() => delivery.promise);
+    vi.stubGlobal('fetch', fetchSpy);
+    await renderSignedIn();
+    await act(async () => feedback!.openQuickCapture('bug'));
+    fireEvent.change(composerField(), {
+      target: { value: 'The report must not wait for optional diagnostics' },
+    });
+    fireEvent.keyDown(composerField(), { key: 'Enter' });
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const frozen = String(fetchSpy.mock.calls[0][1]?.body);
+    expect(JSON.parse(frozen).context.diagnostics).toBeUndefined();
+    await act(async () => diagnostics.resolve(REPORT));
+    expect(String(fetchSpy.mock.calls[0][1]?.body)).toBe(frozen);
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    await act(async () => delivery.resolve(feedbackResponse(true)));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await act(async () => feedback!.openFeedback());
+    expect(composerField()).toHaveValue('');
+  });
+
+  it('a selected image read blocks delivery without blocking typing', async () => {
     const diagnostics = deferred<DiagnosticsReport>();
     const image =
       deferred<Awaited<ReturnType<typeof feedbackImageIO.readFeedbackImage>>>();
@@ -539,9 +605,8 @@ describe('unified feedback composer continuity', () => {
     vi.stubGlobal('fetch', fetchSpy);
     await renderSignedIn();
     await act(async () => feedback!.openQuickCapture('bug'));
-    expect(composerField()).toBeDisabled();
-    fireEvent.keyDown(composerField(), { key: 'Enter' });
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(composerField()).toBeEnabled();
+    expect(composerField()).toHaveFocus();
     await act(async () => diagnostics.resolve(REPORT));
     expect(composerField()).toBeEnabled();
     fireEvent.change(composerField(), {
@@ -552,7 +617,11 @@ describe('unified feedback composer continuity', () => {
         files: [new File(['new'], 'replacement.png', { type: 'image/png' })],
       },
     });
-    expect(composerField()).toBeDisabled();
+    expect(composerField()).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Send feedback' })).toBeDisabled();
+    fireEvent.change(composerField(), {
+      target: { value: 'Still typing while the chosen image loads' },
+    });
     fireEvent.keyDown(composerField(), { key: 'Enter' });
     expect(fetchSpy).not.toHaveBeenCalled();
     await act(async () =>
@@ -566,6 +635,7 @@ describe('unified feedback composer continuity', () => {
     fireEvent.keyDown(composerField(), { key: 'Enter' });
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
     const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(body.message).toBe('Still typing while the chosen image loads');
     expect(body.attachment).toEqual({
       dataUrl: NEW_SHOT,
       name: 'replacement.png',
@@ -605,7 +675,7 @@ describe('unified feedback composer continuity', () => {
     const original = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
     project = 'Later project';
     window.history.pushState(null, '', '/settings?feedback-retry');
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ }));
     await waitFor(() =>
       expect(
         document.querySelector('[data-feedback-state="sent"]')
@@ -622,7 +692,7 @@ describe('unified feedback composer continuity', () => {
     expect(retried.attachment).toMatchObject({ dataUrl: SHOT });
   });
 
-  it('an old completion cannot clear or close a newer draft from another invoking command', async () => {
+  it('reopening while pending resumes the same report and only explicit completion starts a new draft', async () => {
     const delivery = deferred<Response>();
     const fetchSpy = vi.fn<typeof fetch>(() => delivery.promise);
     vi.stubGlobal('fetch', fetchSpy);
@@ -637,19 +707,25 @@ describe('unified feedback composer continuity', () => {
     fireEvent.change(composerField(), { target: { value: 'First report' } });
     fireEvent.keyDown(composerField(), { key: 'Enter' });
     expect(fetchSpy).toHaveBeenCalledOnce();
+    const attemptId = receiptRegion().dataset.feedbackAttempt;
+    fireEvent.keyDown(composerField(), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await act(async () => feedback!.openFeedback());
     expect(composerField()).toBeEnabled();
-    fireEvent.change(composerField(), { target: { value: 'A newer draft' } });
-    expect(
-      screen.getByRole('button', { name: 'Send feedback' })
-    ).toBeDisabled();
+    expect(composerField()).toHaveAttribute('readonly');
+    expect(composerField()).toHaveValue('First report');
+    expect(receiptRegion().dataset.feedbackAttempt).toBe(attemptId);
     fireEvent.keyDown(composerField(), { key: 'Enter' });
     expect(fetchSpy).toHaveBeenCalledOnce();
     await act(async () => delivery.resolve(feedbackResponse()));
-    expect(composerField()).toHaveValue('A newer draft');
-    expect(screen.getByRole('button', { name: 'Send feedback' })).toBeEnabled();
+    expect(composerField()).toHaveValue('First report');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'New feedback' }));
+    expect(composerField()).toHaveValue('');
+    expect(composerField()).not.toHaveAttribute('readonly');
+    expect(composerField()).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Send feedback' })).toBeDisabled();
   });
 
   it('account changes discard private evidence and ignore the old account capture', async () => {
@@ -693,7 +769,7 @@ describe('unified feedback composer continuity', () => {
         document.querySelector('[data-feedback-state="error"]')
       ).toBeInTheDocument()
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ }));
     await waitFor(() =>
       expect(
         document.querySelector('[data-feedback-state="sent"]')
@@ -705,7 +781,7 @@ describe('unified feedback composer continuity', () => {
     );
   });
 
-  it('hiding and recovering failed feedback retains its retry identity and work focus', async () => {
+  it('closing and reopening failed feedback retains its retry identity and work focus', async () => {
     const fetchSpy = vi
       .fn<typeof fetch>()
       .mockRejectedValueOnce(new TypeError('Connection closed'))
@@ -727,22 +803,15 @@ describe('unified feedback composer continuity', () => {
     const attemptId = document.querySelector<HTMLElement>(
       '[data-feedback-attempt]'
     )!.dataset.feedbackAttempt;
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Hide feedback receipt' })
-    );
-    expect(
-      document.querySelector('[data-feedback-attempt]')
-    ).not.toBeInTheDocument();
-    invoker.focus();
+    fireEvent.click(within(receiptRegion()).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(invoker).toHaveFocus());
     await act(async () => feedback!.openFeedback());
     expect(composerField()).toHaveValue('Recover this report');
-    fireEvent.click(screen.getByRole('button', { name: 'Recover feedback' }));
-    await waitFor(() => expect(invoker).toHaveFocus());
     expect(
       document.querySelector<HTMLElement>('[data-feedback-attempt]')!.dataset
         .feedbackAttempt
     ).toBe(attemptId);
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ }));
     await waitFor(() =>
       expect(
         document.querySelector('[data-feedback-state="sent"]')
@@ -753,7 +822,7 @@ describe('unified feedback composer continuity', () => {
     );
   });
 
-  it('account reset discards hidden recovery evidence', async () => {
+  it('account reset discards closed recovery evidence', async () => {
     vi.stubGlobal(
       'fetch',
       vi
@@ -771,9 +840,7 @@ describe('unified feedback composer continuity', () => {
         document.querySelector('[data-feedback-state="error"]')
       ).toBeInTheDocument()
     );
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Hide feedback receipt' })
-    );
+    fireEvent.click(within(receiptRegion()).getByRole('button', { name: 'Close' }));
     const listener =
       clientState.current!.auth.onAuthStateChange.mock.calls[0][0];
     act(() => listener('SIGNED_OUT', null));
@@ -831,22 +898,17 @@ describe('unified feedback composer continuity', () => {
         document.querySelector('[data-feedback-state="partial"]')
       ).toBeInTheDocument()
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ }));
     await waitFor(() =>
       expect(
         document.querySelector('[data-feedback-state="error"]')
       ).toBeInTheDocument()
     );
-    expect(screen.getByRole('status')).toHaveTextContent(/text saved/i);
-    expect(screen.getByRole('status')).not.toHaveTextContent(
-      /report not accepted/i
-    );
+    expect(screen.getByRole('status')).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Retry' })
+      screen.queryByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/ })
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Hide feedback receipt' })
-    ).toBeInTheDocument();
+    expect(within(receiptRegion()).getByRole('button', { name: 'Close' })).toBeInTheDocument();
     expect(fetchSpy.mock.calls[1][1]?.body).toBe(
       fetchSpy.mock.calls[0][1]?.body
     );
@@ -931,7 +993,7 @@ describe('unified feedback composer continuity', () => {
     expect(composerField()).toBeEnabled();
   });
 
-  it('returns focus to the invoker after dismissal and send; receipts never take focus', async () => {
+  it('keeps one focused dialog through pending and outcome, restoring work focus only after Done', async () => {
     const delivery = deferred<Response>();
     vi.stubGlobal(
       'fetch',
@@ -945,16 +1007,27 @@ describe('unified feedback composer continuity', () => {
     fireEvent.keyDown(composerField(), { key: 'Escape' });
     await waitFor(() => expect(invoker).toHaveFocus());
     await act(async () => feedback!.openQuickCapture());
+    const dialog = screen.getByRole('dialog');
+    const field = composerField();
     fireEvent.change(composerField(), {
       target: { value: 'Return me to work' },
     });
     fireEvent.keyDown(composerField(), { key: 'Enter' });
-    await waitFor(() => expect(invoker).toHaveFocus());
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect(composerField()).toBe(field);
+    expect(field).toHaveFocus();
+    expect(field).toHaveAttribute('readonly');
     expect(
       document.querySelector('[data-feedback-state="sending"]')
     ).toBeInTheDocument();
     await act(async () => delivery.resolve(feedbackResponse()));
-    expect(invoker).toHaveFocus();
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect(composerField()).toBe(field);
+    expect(field).toHaveFocus();
+    expect(field).toHaveValue('Return me to work');
+    expect(within(dialog).getByRole('status')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(invoker).toHaveFocus());
   });
 });
 

@@ -86,14 +86,16 @@ describe('QuickCaptureBar', () => {
     expect(props.onKindChange).toHaveBeenCalledWith('idea');
   });
 
-  it('toggles the pre-captured screenshot with ⌘S', () => {
-    const props = renderBar();
-    expect(screen.getByText('Screenshot')).toBeVisible();
+  it('Cmd+S captures the window consistently whether an image is already attached', () => {
+    const props = renderBar({ onCaptureImage: vi.fn(), attachScreenshot: true });
     fireEvent.keyDown(screen.getByLabelText('Feedback'), {
       key: 's',
       metaKey: true,
     });
-    expect(props.onAttachScreenshotChange).toHaveBeenCalledWith(true);
+    expect(props.onCaptureImage).toHaveBeenCalledOnce();
+    expect(props.onAttachScreenshotChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Screenshot' }));
+    expect(props.onCaptureImage).toHaveBeenCalledTimes(2);
   });
 
   it('hides the screenshot toggle when capture was unavailable', () => {
@@ -127,7 +129,7 @@ describe('QuickCaptureBar', () => {
   it('does not offer diagnostics on a non-Bug kind', () => {
     renderBar({ kind: 'general', diagnostics: REPORT });
     expect(
-      screen.queryByLabelText('Attach anonymized diagnostics')
+      screen.queryByRole('button', { name: 'Attach anonymized diagnostics' })
     ).not.toBeInTheDocument();
   });
 
@@ -149,18 +151,14 @@ describe('QuickCaptureBar', () => {
     expect(without.onAttachDiagnosticsChange).not.toHaveBeenCalled();
   });
 
-  it('summarizes a failed update and reveals the exact payload on review', () => {
+  it('reveals the exact collected diagnostics payload on review', () => {
     renderBar({ kind: 'bug', diagnostics: REPORT, attachDiagnostics: true });
-    expect(
-      screen.getByText('Exawatt 0.1.9 · update failed · signed in')
-    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
     // the review shows the payload itself, not a description of it
-    expect(screen.getByText(/"reportVersion": 1/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/"installPath": "\/Applications/)
-    ).toBeInTheDocument();
+    const payload = document.querySelector('pre');
+    expect(payload).toBeInTheDocument();
+    expect(JSON.parse(payload!.textContent!)).toEqual(REPORT);
   });
 
   it('hides the summary until diagnostics are actually attached', () => {
@@ -286,7 +284,7 @@ describe('QuickCaptureBar', () => {
     expect(
       screen.getByRole('img', { name: 'Feedback attachment preview' })
     ).toHaveAttribute('src', SHOT);
-    fireEvent.click(screen.getByRole('button', { name: 'Image' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Attach image' }));
     expect(onPickImage).toHaveBeenCalledTimes(1);
     fireEvent.click(
       screen.getByRole('button', { name: 'Remove attached image' })
@@ -294,12 +292,12 @@ describe('QuickCaptureBar', () => {
     expect(onRemoveImage).toHaveBeenCalledTimes(1);
   });
 
-  it('freezes payload controls and prevents a second send while busy', () => {
+  it('blocks delivery and image replacement during preparation without blocking text editing', () => {
     const onImageFiles = vi.fn();
     const props = renderBar({ busy: true, onImageFiles });
-    expect(screen.getByLabelText('Feedback')).toBeDisabled();
-    for (const button of screen.getAllByRole('button'))
-      expect(button).toBeDisabled();
+    expect(screen.getByLabelText('Feedback')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Send feedback' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Attach image' })).toBeDisabled();
     fireEvent.keyDown(screen.getByLabelText('Feedback'), { key: 'Enter' });
     fireEvent.paste(screen.getByLabelText('Feedback'), {
       clipboardData: {
@@ -308,6 +306,10 @@ describe('QuickCaptureBar', () => {
     });
     expect(props.onSubmit).not.toHaveBeenCalled();
     expect(onImageFiles).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Feedback'), {
+      target: { value: 'Typing while evidence prepares' },
+    });
+    expect(props.onMessageChange).toHaveBeenCalledWith('Typing while evidence prepares');
   });
 
   it('allows editing a newer draft while an older attempt blocks another send', () => {

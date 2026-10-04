@@ -226,27 +226,27 @@ Choose General, Bug or Idea and type your report. **Return** sends from the text
 field; **Shift Return** adds a line. Escape keeps the draft while the app runs.
 Drafts are not preserved across restart.
 
-Paste or drop one PNG, JPEG or WebP image up to 5 MiB, or use **Attach image**.
+Paste or drop one PNG, JPEG or WebP image up to 3 MiB, or use **Attach image**.
 A valid new image replaces the previous one; its preview close icon removes it.
 Desktop capture takes the window before the composer appears. Bug reports
 include available captured evidence by default; review or remove the image and
-anonymized diagnostics before sending. Existing drafts keep their original
-context and evidence when reopened.
+anonymized diagnostics before sending. **Screenshot** or **⌘S** captures the
+current window again. Optional diagnostics preparation does not block typing
+or sending text. Existing drafts keep their original context and evidence when
+reopened.
 
-Sending closes the composer, shows a compact receipt and returns focus so you
-can continue working. Receipt states update immediately; the sending spinner
-indicates the pending request. **Feedback sent** confirms the report and any requested image were
-saved. If the receipt confirms the report but not its image, retry the same
-attempt or choose **Finish without image**. Finishing stops image recovery;
+Sending keeps your feedback in the same dialog and shows progress there.
+You can close it while sending and reopen it to see that same feedback.
+**Feedback sent** confirms the text and any requested image were saved.
+If only the text is confirmed, **Try again** retries the same image, or choose
+**Finish without image**. Finishing stops image recovery;
 it does not remove an image or prove that an earlier retry failed to store it.
-The receipt confirms saved feedback and keeps image delivery unconfirmed.
-**Delivery unconfirmed** keeps the attempt
-available for retry when offered; it does not mean nothing was saved. A later
-refused retry does not settle an earlier unconfirmed delivery. Some failed
-attempts cannot be retried unchanged. Editing an uncertain report starts a new
-report and can duplicate earlier text; the composer warns when you reopen or
-edit it. Hidden recovery
-receipts remain available from **Recover feedback** while signed in.
+If the app cannot confirm your feedback was saved, it keeps your text and image
+here. **Try again** uses the same report identity to avoid duplicates. A lost
+response does not mean nothing was saved. Editing is offered when the service
+has explicitly refused the report, rather than creating a second report from
+an uncertain result. **Done** closes a successful report; **New feedback**
+starts another.
 
 ## Modes
 

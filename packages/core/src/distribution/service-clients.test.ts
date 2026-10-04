@@ -8,6 +8,9 @@ import {
   getOperatorStatsProfile,
   publishOperatorStats,
   submitProductFeedback,
+  MAX_FEEDBACK_ATTACHMENT_BYTES,
+  MAX_FEEDBACK_REQUEST_BYTES,
+  ProductFeedbackRequestSizeError,
   summarizeConversations,
 } from './service-clients';
 import {
@@ -56,6 +59,39 @@ function problem(
 }
 
 describe('production compatible-service operations', () => {
+  it('rejects oversized UTF-8 feedback before sending any request', async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const request = {
+      schemaVersion: 1 as const,
+      kind: 'bug' as const,
+      message: 'Keep my draft',
+      surface: 'test',
+      idempotencyKey: '550e8400-e29b-41d4-a716-446655440000',
+      context: { oversized: '🪐'.repeat(Math.ceil(MAX_FEEDBACK_REQUEST_BYTES / 4)) },
+    };
+    await expect(submitProductFeedback(endpoint, 'token', request, { fetcher }))
+      .rejects.toBeInstanceOf(ProductFeedbackRequestSizeError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('fits a maximum image and bounded metadata within hosted ingress', async () => {
+    const receipt = { schemaVersion: 1, id: '550e8400-e29b-41d4-a716-446655440001', duplicate: false, attachmentStored: true };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(receipt, 201));
+    const request = {
+      schemaVersion: 1 as const,
+      kind: 'bug' as const,
+      message: '🪐'.repeat(6_000),
+      surface: 'test',
+      context: { diagnostics: 'x'.repeat(31_000) },
+      idempotencyKey: '550e8400-e29b-41d4-a716-446655440000',
+      attachment: { dataUrl: `data:image/png;base64,${Buffer.alloc(MAX_FEEDBACK_ATTACHMENT_BYTES).toString('base64')}` },
+    };
+    await expect(submitProductFeedback(endpoint, 'token', request, { fetcher })).resolves.toMatchObject({ attachmentStored: true });
+    const body = String(fetcher.mock.calls[0][1]?.body);
+    expect(new TextEncoder().encode(body).byteLength).toBeLessThanOrEqual(MAX_FEEDBACK_REQUEST_BYTES);
+    expect(JSON.parse(body).idempotencyKey).toBe(request.idempotencyKey);
+  });
+
   it('bounds feedback at the existing signal seam and preserves caller cancellation', async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);

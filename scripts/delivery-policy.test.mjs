@@ -648,7 +648,8 @@ test('quarantine says nothing about an untouched surface', () => {
 test('native feedback evidence is required when reporting ownership changes', () => {
   for (const file of [
     'src/components/feedback/product-feedback-provider.tsx',
-    'src/components/feedback/feedback-receipt.tsx',
+    'src/components/feedback/feedback-composer-view.tsx',
+    'src/components/feedback/feedback-motion.module.css',
     'src/components/feedback/quick-capture-bar.tsx',
     'src/lib/feedback/attempt-store.ts',
     'src/lib/feedback/image.ts',

@@ -794,7 +794,8 @@ export const SURFACE_GATES = [
       file === 'electron/main/pty/context-summarizer.ts' ||
       file === 'src/components/feedback/context-label-feedback.tsx' ||
       file === 'src/components/feedback/product-feedback-provider.tsx' ||
-      file === 'src/components/feedback/feedback-receipt.tsx' ||
+      file === 'src/components/feedback/feedback-composer-view.tsx' ||
+      file === 'src/components/feedback/feedback-motion.module.css' ||
       file === 'src/components/feedback/quick-capture-bar.tsx' ||
       file === 'src/lib/feedback/attempt-store.ts' ||
       file === 'src/lib/feedback/image.ts' ||
@@ -1513,6 +1514,9 @@ export const VERIFICATION_ROUTES = Object.freeze({
   ),
   'eval:electron:auth-session': manual(
     'signs in a real test user with production Supabase admin keys'
+  ),
+  'eval:electron:feedback-live': manual(
+    'authorized hosted writes from an explicitly named signed artifact using disposable account and exact cleanup'
   ),
   'eval:electron:real-harness': manual(
     'drives real signed-in Claude Code and Codex CLIs through paid provider turns'

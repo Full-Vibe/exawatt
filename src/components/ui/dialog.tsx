@@ -42,6 +42,21 @@ const DialogPrimaryActionContext =
   React.createContext<DialogPrimaryActionScope | null>(null);
 const DialogOpenContext = React.createContext(false);
 
+/** Radix owns autofocus on mount. Presence can reopen the same mounted scope;
+ * focus that committed open edge without rerunning or bypassing its lifecycle. */
+export function useDialogInitialFocus<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+  enabled = true
+) {
+  const open = React.useContext(DialogOpenContext);
+  const previousOpen = React.useRef(open);
+  React.useLayoutEffect(() => {
+    const reopening = open && !previousOpen.current;
+    previousOpen.current = open;
+    if (reopening && enabled) ref.current?.focus({ preventScroll: true });
+  }, [open, ref, enabled]);
+}
+
 /** The manifest's own default, used until the registry has loaded the
  *  operator's overrides. The hint is therefore on the button from the first
  *  paint: it never appears late, so it never moves the button under a hand. */
@@ -74,10 +89,13 @@ function Dialog({
   // uncontrolled state owner; Radix still owns its public interaction/focus API.
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
   const currentOpen = open ?? uncontrolledOpen;
-  const changeOpen = React.useCallback((next: boolean) => {
-    if (open === undefined) setUncontrolledOpen(next);
-    onOpenChange?.(next);
-  }, [open, onOpenChange]);
+  const changeOpen = React.useCallback(
+    (next: boolean) => {
+      if (open === undefined) setUncontrolledOpen(next);
+      onOpenChange?.(next);
+    },
+    [open, onOpenChange]
+  );
   return (
     <DialogOpenContext.Provider value={currentOpen}>
       <DialogPrimitive.Root
@@ -163,7 +181,12 @@ function DialogPrimaryActionScopeProvider({
     [declaration, publish]
   );
   React.useEffect(() => {
-    if (process.env.NODE_ENV === 'production' || !open || !spec || published.current) {
+    if (
+      process.env.NODE_ENV === 'production' ||
+      !open ||
+      !spec ||
+      published.current
+    ) {
       return;
     }
     console.error(

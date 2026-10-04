@@ -9,7 +9,31 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CommandDialog, CommandInput } from './command';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+function retainExit() {
+  const getStyle = window.getComputedStyle.bind(window);
+  vi.stubGlobal('getComputedStyle', (element: Element) => {
+    const style = getStyle(element);
+    return new Proxy(style, {
+      get(target, property) {
+        if (
+          property === 'animationName' &&
+          element.matches(
+            '[data-slot="dialog-content"], [data-slot="dialog-overlay"]'
+          )
+        )
+          return element.getAttribute('data-state') === 'closed'
+            ? 'retained-exit'
+            : 'entry';
+        return Reflect.get(target, property, target);
+      },
+    });
+  });
+}
 
 function EscapeHarness() {
   const [open, setOpen] = useState(false);
@@ -63,6 +87,29 @@ function HandoffHarness({ onAccepted }: { onAccepted: () => void }) {
 }
 
 describe('CommandDialog focus restoration', () => {
+  it('refocuses the same input when a retained closed palette reopens, preserving its work origin', async () => {
+    retainExit();
+    const origin = document.createElement('button');
+    document.body.appendChild(origin);
+    origin.focus();
+    const { rerender } = render(<ControlledDialog open />);
+    const input = screen.getByRole('combobox');
+    expect(input).toHaveFocus();
+    rerender(<ControlledDialog open={false} />);
+    expect(input.closest('[role="dialog"]')).toHaveAttribute('inert');
+    input.blur(); // jsdom does not implement native inert blur.
+    rerender(<ControlledDialog open />);
+    expect(screen.getByRole('combobox')).toBe(input);
+    expect(input).toHaveFocus();
+    rerender(<ControlledDialog open={false} />);
+    for (const element of document.querySelectorAll('[data-state="closed"]')) {
+      const event = new Event('animationend', { bubbles: true });
+      Object.defineProperty(event, 'animationName', { value: 'retained-exit' });
+      fireEvent(element, event);
+    }
+    await waitFor(() => expect(origin).toHaveFocus());
+    origin.remove();
+  });
   it('runs accepted handoff once after the origin is focused and palette removed', async () => {
     const accepted = vi.fn(() => {
       expect(screen.getByRole('button', { name: 'Work origin' })).toHaveFocus();

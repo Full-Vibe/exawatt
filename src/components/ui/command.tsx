@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
+  useDialogInitialFocus,
 } from '@/components/ui/dialog';
 import { MagnifyingGlassIcon } from '@radix-ui/react-icons';
 import {
@@ -47,6 +48,8 @@ interface CommandDialogProps extends DialogProps {
   /** Runs after Radix releases the palette and its origin has been restored. */
   onAfterClose?: () => void;
 }
+
+const CommandDialogInitialFocusContext = React.createContext(false);
 
 const CommandDialog = ({
   children,
@@ -92,15 +95,17 @@ const CommandDialog = ({
         <DialogDescription className="sr-only">
           {commandDescription}
         </DialogDescription>
-        <Command
-          value={commandValue}
-          onValueChange={onCommandValueChange}
-          filter={commandFilter}
-          className={COMFORTABLE_COMMAND_CLASS}
-        >
-          {children}
-          <CommandKeyboardFooter />
-        </Command>
+        <CommandDialogInitialFocusContext.Provider value>
+          <Command
+            value={commandValue}
+            onValueChange={onCommandValueChange}
+            filter={commandFilter}
+            className={COMFORTABLE_COMMAND_CLASS}
+          >
+            {children}
+            <CommandKeyboardFooter />
+          </Command>
+        </CommandDialogInitialFocusContext.Provider>
       </DialogContent>
     </Dialog>
   );
@@ -109,19 +114,29 @@ const CommandDialog = ({
 const CommandInput = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Input>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
->(({ className, ...props }, ref) => (
-  <div className="flex items-center border-b px-3" cmdk-input-wrapper="">
-    <MagnifyingGlassIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-    <CommandPrimitive.Input
-      ref={ref}
-      className={cn(
-        'flex h-10 w-full rounded-md bg-transparent py-3 pr-10 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
-        className
-      )}
-      {...props}
-    />
-  </div>
-));
+>(({ className, ...props }, ref) => {
+  const inputRef = React.useRef<React.ElementRef<
+    typeof CommandPrimitive.Input
+  > | null>(null);
+  React.useImperativeHandle(ref, () => inputRef.current!, []);
+  useDialogInitialFocus(
+    inputRef,
+    React.useContext(CommandDialogInitialFocusContext)
+  );
+  return (
+    <div className="flex items-center border-b px-3" cmdk-input-wrapper="">
+      <MagnifyingGlassIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+      <CommandPrimitive.Input
+        ref={inputRef}
+        className={cn(
+          'flex h-10 w-full rounded-md bg-transparent py-3 pr-10 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
+          className
+        )}
+        {...props}
+      />
+    </div>
+  );
+});
 
 CommandInput.displayName = CommandPrimitive.Input.displayName;
 

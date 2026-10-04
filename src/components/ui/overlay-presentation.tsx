@@ -6,11 +6,11 @@ import { cn } from '@/lib/utils';
 
 /** ENG-036 comfortable overlay candidate: existing spacing/type/material rungs. */
 export const COMFORTABLE_OVERLAY_CONTENT_CLASS =
-  'gap-0 overflow-hidden p-0 sm:max-w-2xl';
+  'flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl';
 
 /** Presentation only. cmdk continues to own selection, filtering and activation. */
 export const COMFORTABLE_COMMAND_CLASS =
-  '[&_[cmdk-input-wrapper]]:px-5 [&_[cmdk-input]]:h-16 [&_[cmdk-input]]:text-base [&_[cmdk-list]]:max-h-[min(55dvh,28rem)] [&_[cmdk-list]]:p-2 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-3 [&_[cmdk-group-heading]]:text-chrome-label [&_[cmdk-item]]:min-h-12 [&_[cmdk-item]]:gap-3 [&_[cmdk-item]]:px-3 [&_[cmdk-item]]:py-3 [&_[cmdk-item]]:rounded-md';
+  'min-h-0 [&_[cmdk-input-wrapper]]:px-5 [&_[cmdk-input]]:h-16 [&_[cmdk-input]]:text-base [&_[cmdk-list]]:max-h-[min(55dvh,28rem)] [&_[cmdk-list]]:p-2 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-3 [&_[cmdk-group-heading]]:text-chrome-label [&_[cmdk-item]]:min-h-12 [&_[cmdk-item]]:gap-3 [&_[cmdk-item]]:px-3 [&_[cmdk-item]]:py-3 [&_[cmdk-item]]:rounded-md';
 
 /**
  * Reserve the same trailing footprint on every row. Disabled rows never promise
