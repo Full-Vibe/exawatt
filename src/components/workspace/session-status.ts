@@ -15,6 +15,10 @@ export type SessionGlyphState =
 export interface SessionAttentionSignal {
   kind?: 'bell' | 'turn-end' | 'roadmap-blocked' | 'blocked';
   since: number;
+  /** Missing on legacy producers, which remain unread until acknowledged. */
+  unread?: boolean;
+  request?: 'blocking' | 'working' | 'unknown';
+  requestId?: string;
 }
 
 /** Turn completion is a ready result, not an operator gate. Presence-only
@@ -286,28 +290,52 @@ export function paintsAttention(
   return attentionNeedsOperator(attention[candidate.sessionId]);
 }
 
-/**
- * The ⌘J queue: every painted target, oldest signal first, minus the one you
- * are already standing on. Derived from `paintsAttention` so the queue and
- * the markers cannot disagree.
- */
+/** A result stays a result: unread makes it worth visiting, not blocked. */
+export function attentionIsJumpTarget(
+  signal?: SessionAttentionSignal | null
+): boolean {
+  return Boolean(
+    signal && (attentionNeedsOperator(signal) || signal.unread !== false)
+  );
+}
+
+/** Read state is operator inspection, not request resolution or turn truth. */
+export function attentionReadLabel(
+  signal?: SessionAttentionSignal
+): string | null {
+  if (!signal) return null;
+  if (attentionNeedsOperator(signal)) {
+    return signal.unread === false
+      ? 'Read · still needs you'
+      : 'Unread request';
+  }
+  return signal.unread === false ? 'Read result' : 'Unread result';
+}
+
+function attentionPriority(signal: SessionAttentionSignal): number {
+  if (!attentionNeedsOperator(signal)) return 2;
+  return signal.request === 'working' || signal.request === 'unknown' ? 1 : 0;
+}
+
+/** Eligibility follows visible Session ownership. Read requests remain in the
+ * queue; read results leave it. Neither changes the underlying execution state. */
 export function attentionJumpQueue(
   candidates: readonly AttentionCandidate[],
   attention: FleetAttentionSignals,
   activeSessionId: string | null
 ): string[] {
-  const painted = new Set<string>();
-  for (const candidate of candidates) {
-    if (paintsAttention(candidate, attention)) {
-      painted.add(candidate.sessionId as string);
-    }
-  }
+  const visible = new Set(
+    candidates
+      .filter(candidate => candidate.live)
+      .map(candidate => candidate.sessionId)
+  );
   return orderedAttentionTargets(attention, activeSessionId).filter(sessionId =>
-    painted.has(sessionId)
+    visible.has(sessionId)
   );
 }
 
-/** One ordering function feeds both command availability and navigation. */
+/** Hard blockers, working questions, unread results; oldest within each class.
+ * Identity breaks timestamp ties independently of producer insertion order. */
 export function orderedAttentionTargets(
   attention: FleetAttentionSignals,
   activeSessionId: string | null
@@ -315,10 +343,51 @@ export function orderedAttentionTargets(
   return Object.entries(attention)
     .filter(
       ([sessionId, signal]) =>
-        sessionId !== activeSessionId && attentionNeedsOperator(signal)
+        sessionId !== activeSessionId && attentionIsJumpTarget(signal)
     )
-    .sort((a, b) => a[1].since - b[1].since)
+    .sort(
+      (a, b) =>
+        attentionPriority(a[1]) - attentionPriority(b[1]) ||
+        a[1].since - b[1].since ||
+        a[0].localeCompare(b[0])
+    )
     .map(([sessionId]) => sessionId);
+}
+
+/** One pass visits every eligible Session once, even when reading cannot
+ * resolve its request. New arrivals join the remaining priority order; an
+ * exhausted pass starts again. Current focus counts as visited, including a
+ * manual selection. The caller retains this state across source updates. */
+export function nextAttentionTarget(
+  orderedTargets: readonly string[],
+  activeSessionId: string | null,
+  previouslyVisited: ReadonlyMap<string, string>,
+  signals: Readonly<Record<string, SessionAttentionSignal>> = {}
+): { target: string | null; visited: ReadonlyMap<string, string> } {
+  const identity = (id: string) => {
+    const signal = signals[id];
+    // Reading changes no source identity. A fresh request on an already
+    // visited Session is new work and may preempt the remaining pass.
+    return signal
+      ? `${signal.kind}:${signal.request ?? ''}:${signal.requestId ?? signal.since}`
+      : '';
+  };
+  const eligible = new Set(orderedTargets);
+  const visited = new Map(
+    [...previouslyVisited].filter(
+      ([id, value]) => eligible.has(id) && identity(id) === value
+    )
+  );
+  if (activeSessionId) visited.set(activeSessionId, identity(activeSessionId));
+  let target = orderedTargets.find(id => !visited.has(id));
+  if (!target) {
+    visited.clear();
+    if (activeSessionId)
+      visited.set(activeSessionId, identity(activeSessionId));
+    target = orderedTargets.find(id => !visited.has(id));
+  }
+  if (target) visited.set(target, identity(target));
+  return { target: target ?? null, visited };
 }
 
 /**
@@ -344,7 +413,7 @@ export interface SessionTurnFacts {
   blocked?: boolean;
   /** the source's OWN report of its turn, when it makes one (ENG-015 S1.1).
    *  Undefined means unreported, and the inferred byte activity stands. */
-  ownTurn?: 'generating' | 'available';
+  ownTurn?: 'generating' | 'available' | 'unknown';
 }
 
 /**
@@ -418,6 +487,7 @@ export function sessionGlyphState({
   // truth by 6-7s every turn — long enough to show "working" for an Agent
   // that had already finished, and to hide a result that was ready.
   if (ownTurn === 'generating') return 'working';
+  if (ownTurn === 'unknown') return working ? 'working' : 'quiet';
   // `available` resolves through the SAME rest vocabulary as inference, so a
   // reported turn changes when the strip is right, never what it can say.
   if (ownTurn === 'available') {
@@ -564,7 +634,7 @@ export function sessionDelegationBusy(
 export function sessionReportedBlocked(
   delegation?: SessionDelegation | null
 ): boolean {
-  return !!delegation?.blockedOn;
+  return !!delegation?.blockedOn && delegation.request !== 'working';
 }
 
 /** Names the gate for the tooltip and the accessible name. */

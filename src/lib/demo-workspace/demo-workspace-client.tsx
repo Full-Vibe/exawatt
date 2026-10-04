@@ -61,7 +61,7 @@ import {
 import {
   sessionTurnFacts,
   orderedAttentionTargets,
-  attentionNeedsOperator,
+  nextAttentionTarget,
   fleetAttention,
   mergeFleetAttention,
 } from '@/components/workspace/session-status';
@@ -162,20 +162,6 @@ export function DemoWorkspaceClient() {
   const [pausedIds, setPausedIds] = useState<ReadonlySet<string>>(
     () => new Set()
   );
-  const attention = useMemo(
-    () =>
-      mergeFleetAttention(
-        fleetAttention(
-          'demo',
-          Object.fromEntries(
-            Object.entries(demoShellAttention()).filter(
-              ([id]) => !pausedIds.has(id)
-            )
-          )
-        )
-      ),
-    [pausedIds]
-  );
   const activity = useMemo(
     () =>
       Object.fromEntries(
@@ -217,13 +203,40 @@ export function DemoWorkspaceClient() {
   // Fleet-board "Open session" targets any board agent, and every one of
   // them owns an honest session record. Only an unknown id falls back to
   // the default hero — never a known agent to unrelated content.
-  const [activeId, setActiveId] = useState<string>(() => {
+  const [activeId, setActiveSessionId] = useState<string>(() => {
     const pending = consumePendingSessionJump();
     if (pending && demoShellFleetAgentById(pending)) return pending;
     return agents.some(agent => agent.id === DEFAULT_SESSION_ID)
       ? DEFAULT_SESSION_ID
       : (agents[0]?.id ?? '');
   });
+  const [unreadOverrides, setUnreadOverrides] = useState<
+    Record<string, boolean>
+  >({});
+  const setActiveId = useCallback((id: string) => {
+    setActiveSessionId(id);
+    setUnreadOverrides(current => ({ ...current, [id]: false }));
+  }, []);
+  const attention = useMemo(
+    () =>
+      mergeFleetAttention(
+        fleetAttention(
+          'demo',
+          Object.fromEntries(
+            Object.entries(demoShellAttention())
+              .filter(([id]) => !pausedIds.has(id))
+              .map(([id, signal]) => [
+                id,
+                {
+                  ...signal,
+                  unread: unreadOverrides[id] ?? id !== activeId,
+                },
+              ])
+          )
+        )
+      ),
+    [activeId, pausedIds, unreadOverrides]
+  );
   const [reorderStatus, setReorderStatus] = useState({
     sequence: 0,
     message: '',
@@ -341,7 +354,7 @@ export function DemoWorkspaceClient() {
     };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
     return () => window.removeEventListener(SESSION_JUMP_EVENT, onJump);
-  }, [overviewOpen, router]);
+  }, [overviewOpen, router, setActiveId]);
 
   const allTabs = useMemo(
     () => projects.flatMap(project => project.tabs),
@@ -403,7 +416,7 @@ export function DemoWorkspaceClient() {
       if (overviewOpen) router.replace('/workspace', { scroll: false });
       return true;
     },
-    [overviewOpen, projects, router]
+    [overviewOpen, projects, router, setActiveId]
   );
 
   const selectTabOrdinal = useCallback(
@@ -414,7 +427,7 @@ export function DemoWorkspaceClient() {
       if (overviewOpen) router.replace('/workspace', { scroll: false });
       return true;
     },
-    [allTabs, overviewOpen, router]
+    [allTabs, overviewOpen, router, setActiveId]
   );
 
   const cycleTab = useCallback(
@@ -437,6 +450,7 @@ export function DemoWorkspaceClient() {
       activeProject?.dir,
       overviewOpen,
       publishTeamSelection,
+      setActiveId,
       ribbonProjects,
       teamDisplayedProjects,
     ]
@@ -591,7 +605,7 @@ export function DemoWorkspaceClient() {
         setActiveId(nextInProject ?? nextGlobal ?? '');
       }
     },
-    [activeId, allTabs, projects]
+    [activeId, allTabs, projects, setActiveId]
   );
 
   /** The live confirm gate: a working Session never closes on one keystroke. */
@@ -643,15 +657,38 @@ export function DemoWorkspaceClient() {
     });
     setActiveId(entry.tab.id);
     return true;
-  }, [closedTabs]);
+  }, [closedTabs, setActiveId]);
 
+  const attentionTargets = useMemo(() => {
+    const visible = new Set(
+      ribbonProjects.flatMap(project => project.tabs.map(tab => tab.id))
+    );
+    return orderedAttentionTargets(attention, null).filter(id =>
+      visible.has(id)
+    );
+  }, [attention, ribbonProjects]);
+  const attentionPass = useRef<ReadonlyMap<string, string>>(new Map());
   const jumpAttention = useCallback((): boolean => {
-    const [target] = orderedAttentionTargets(attention, activeId);
+    const next = nextAttentionTarget(
+      attentionTargets,
+      activeId,
+      attentionPass.current,
+      attention
+    );
+    attentionPass.current = next.visited;
+    const target = next.target;
     if (!target) return false;
     setActiveId(target);
     if (overviewOpen) router.replace('/workspace', { scroll: false });
     return true;
-  }, [activeId, attention, overviewOpen, router]);
+  }, [
+    activeId,
+    attention,
+    attentionTargets,
+    overviewOpen,
+    router,
+    setActiveId,
+  ]);
 
   const focusSession = useCallback((): boolean => {
     sessionPaneRef.current?.focus();
@@ -718,9 +755,7 @@ export function DemoWorkspaceClient() {
       canMoveProjectLeft: activeProjectIndex > 0,
       canMoveProjectRight:
         activeProjectIndex >= 0 && activeProjectIndex < projects.length - 1,
-      hasAttentionTarget: Object.values(attention).some(signal =>
-        attentionNeedsOperator(signal)
-      ),
+      hasAttentionTarget: attentionTargets.some(id => id !== activeId),
       closedSessionCount: closedTabs.length,
       // Demo tabs never own a provider identity and cannot spawn a process,
       // so relaunch recovery has nothing to offer here (ENG-027).
@@ -728,7 +763,14 @@ export function DemoWorkspaceClient() {
       activeProjectResumableAgents: NO_RESUMABLE_AGENTS,
       activeTabCanResume: false,
     });
-  }, [activeId, activeProject, activeTab, attention, closedTabs, projects]);
+  }, [
+    activeId,
+    activeProject,
+    activeTab,
+    attentionTargets,
+    closedTabs,
+    projects,
+  ]);
 
   useEffect(() => {
     publishWorkspaceCommandAvailability(commandAvailability);
@@ -848,6 +890,12 @@ export function DemoWorkspaceClient() {
               onPauseProject={dir => void projectPause.requestPause(dir)}
               onResumeProject={resumeProject}
               onRenameTab={renameTab}
+              onMarkUnread={tabId =>
+                setUnreadOverrides(current => ({
+                  ...current,
+                  [tabId]: true,
+                }))
+              }
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
               onReorderTab={reorderTabBeside}

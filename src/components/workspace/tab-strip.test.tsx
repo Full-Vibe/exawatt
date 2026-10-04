@@ -74,6 +74,7 @@ function strip({
   onRevealPath,
   cloneTargets,
   onCloneTab,
+  onMarkUnread,
   exitingProjectDirs,
   onCloseTab = vi.fn(),
   onSelectTab = vi.fn(),
@@ -92,6 +93,7 @@ function strip({
   onRevealPath?: (path: string) => void;
   cloneTargets?: CloneSessionTarget[];
   onCloneTab?: (tabId: string, target: CloneSessionTarget) => void;
+  onMarkUnread?: (tabId: string) => void;
   exitingProjectDirs?: ReadonlySet<string>;
   onCloseTab?: (tabId: string) => void;
   onSelectTab?: (dir: string, tabId: string) => void;
@@ -127,6 +129,7 @@ function strip({
           onResumeTab={vi.fn()}
           cloneTargets={cloneTargets}
           onCloneTab={onCloneTab}
+          onMarkUnread={onMarkUnread}
           onCloseProject={onCloseProject}
           onNewAgent={onNewAgent}
           onRevealPath={onRevealPath}
@@ -830,5 +833,35 @@ describe('TabStrip delegated work (ENG-023)', () => {
     rerenderDelegation({});
     expect(container.querySelector('[data-delegation]')).toBeNull();
     expect(container.querySelector('[data-status="done"]')).not.toBeNull();
+  });
+});
+
+describe('Session read state action', () => {
+  it.each([true, false])('marks a read result unread with live=%s', live => {
+    const onMarkUnread = vi.fn();
+    const session = tab({
+      id: 'read-result',
+      ...(live
+        ? {}
+        : {
+            sessionId: null,
+            resumeState: 'ended-resumable' as const,
+            lifecycle: 'stopped-clean' as const,
+          }),
+    });
+    strip({
+      tabs: [session],
+      onMarkUnread,
+      attention: {
+        [session.sessionId ?? session.durableSessionId]: {
+          kind: 'turn-end',
+          since: 1,
+          unread: false,
+        },
+      },
+    });
+    fireEvent.contextMenu(document.querySelector('[data-tab-chrome]')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark unread' }));
+    expect(onMarkUnread).toHaveBeenCalledExactlyOnceWith(session.id);
   });
 });

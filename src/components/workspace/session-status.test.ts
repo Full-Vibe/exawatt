@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attentionJumpQueue,
+  nextAttentionTarget,
   attentionNeedsOperator,
   paintsAttention,
   delegationCopy,
@@ -92,7 +93,7 @@ describe('sessionStatusLightState', () => {
     ).toEqual({ shared: { kind: 'roadmap-blocked', since: 10 } });
   });
 
-  it('orders only visible operator targets and skips the active Session', () => {
+  it('orders requests before unread results and skips the active Session', () => {
     expect(
       orderedAttentionTargets(
         mergeFleetAttention(
@@ -105,7 +106,7 @@ describe('sessionStatusLightState', () => {
         ),
         'active'
       )
-    ).toEqual(['earlier', 'later']);
+    ).toEqual(['earlier', 'later', 'result']);
   });
 });
 
@@ -438,7 +439,10 @@ describe('attention eligibility is one rule (BUG-009)', () => {
     const attention = fleet({ s1: { kind: 'turn-end' as const, since: 1 } });
     expect(
       attentionJumpQueue([{ sessionId: 's1', live: true }], attention, null)
-    ).toEqual([]);
+    ).toEqual(['s1']);
+    expect(paintsAttention({ sessionId: 's1', live: true }, attention)).toBe(
+      false
+    );
   });
 
   it('ignores a candidate with no session id', () => {
@@ -755,4 +759,142 @@ describe('the local path and the unreported word (ENG-010)', () => {
       statusLightWord('unreported')
     );
   });
+});
+
+describe('attention traversal passes (decision 0046)', () => {
+  it('visits persistent blockers, working questions, then unread results', () => {
+    const signals = mergeFleetAttention(
+      fleetAttention('test', {
+        result: { kind: 'turn-end', since: 1 },
+        read: { kind: 'turn-end', since: 0, unread: false },
+        question: {
+          kind: 'blocked',
+          request: 'working',
+          since: 2,
+          unread: false,
+        },
+        blockerB: {
+          kind: 'blocked',
+          request: 'blocking',
+          since: 4,
+          unread: false,
+        },
+        blockerA: { kind: 'blocked', request: 'blocking', since: 3 },
+      })
+    );
+    const targets = orderedAttentionTargets(signals, null);
+    expect(targets).toEqual(['blockerA', 'blockerB', 'question', 'result']);
+    let visited: ReadonlyMap<string, string> = new Map();
+    let active: string | null = null;
+    const selected = [];
+    for (let step = 0; step < targets.length + 1; step++) {
+      const next = nextAttentionTarget(targets, active, visited);
+      selected.push(next.target);
+      active = next.target;
+      visited = next.visited;
+    }
+    expect(selected).toEqual([...targets, 'blockerA']);
+  });
+
+  it('lets a newly arriving blocker preempt remaining lower-priority targets', () => {
+    const next = nextAttentionTarget(
+      ['new-blocker', 'old-blocker', 'question', 'result'],
+      'old-blocker',
+      new Map([['old-blocker', '']])
+    );
+    expect(next.target).toBe('new-blocker');
+    expect(
+      nextAttentionTarget(
+        ['new-blocker', 'old-blocker', 'question', 'result'],
+        next.target,
+        next.visited
+      ).target
+    ).toBe('question');
+  });
+
+  it('does not revisit the current Session and forgets removed targets', () => {
+    expect(
+      nextAttentionTarget(['current'], 'current', new Map([['removed', '']]))
+    ).toEqual({
+      target: null,
+      visited: new Map([['current', '']]),
+    });
+    expect(nextAttentionTarget([], null, new Map([['removed', '']]))).toEqual({
+      target: null,
+      visited: new Map(),
+    });
+  });
+
+  it('orders identical timestamps by identity regardless of source insertion', () => {
+    const signal = { kind: 'bell' as const, since: 1 };
+    const order = (entries: Record<string, typeof signal>) =>
+      orderedAttentionTargets(
+        mergeFleetAttention(fleetAttention('test', entries)),
+        null
+      );
+    expect(order({ b: signal, a: signal })).toEqual(
+      order({ a: signal, b: signal })
+    );
+  });
+});
+
+describe('independent request and execution facts', () => {
+  it('keeps a working question working rather than inventing a hard blocker', () => {
+    const facts = sessionTurnFacts(
+      { sessionId: 's', durableSessionId: 'd', harness: 'codex' },
+      {
+        activity: {},
+        engaged: { s: true },
+        summaries: {},
+        delegation: {
+          s: {
+            ownTurn: 'generating',
+            blockedOn: 'question',
+            request: 'working',
+            children: [],
+          },
+        },
+      }
+    );
+    expect(facts.blocked).toBe(false);
+    expect(sessionGlyphState(facts)).toBe('working');
+  });
+
+  it('does not report completion from unknown source truth', () => {
+    const facts = { agent: true, started: true, ownTurn: 'unknown' as const };
+    expect(sessionGlyphState({ ...facts, working: false })).toBe('quiet');
+    expect(sessionGlyphState({ ...facts, working: true })).toBe('working');
+  });
+});
+
+it('preempts a visited Session only for new source work, not read edits', () => {
+  const signals = {
+    blocker: { kind: 'blocked' as const, since: 1, requestId: 'first' },
+    question: {
+      kind: 'blocked' as const,
+      since: 2,
+      request: 'working' as const,
+    },
+    result: { kind: 'turn-end' as const, since: 3 },
+  };
+  const order = ['blocker', 'question', 'result'];
+  const first = nextAttentionTarget(order, null, new Map(), signals);
+  const second = nextAttentionTarget(
+    order,
+    first.target,
+    first.visited,
+    signals
+  );
+  expect(
+    nextAttentionTarget(order, second.target, second.visited, {
+      ...signals,
+      blocker: { ...signals.blocker, unread: false },
+    }).target
+  ).toBe('result');
+  expect(
+    nextAttentionTarget(order, second.target, second.visited, {
+      ...signals,
+      blocker: { ...signals.blocker, requestId: 'second', unread: true },
+    }).target
+  ).toBe('blocker');
 });

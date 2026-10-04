@@ -91,7 +91,7 @@ import {
   RENAME_ACTIVE_EVENT,
 } from './session-jump';
 import { tabIsPinnable } from './split-layout';
-import { paintsAttention } from './session-status';
+import { attentionReadLabel, paintsAttention } from './session-status';
 import {
   DelegationDots,
   SESSION_GLYPH_COPY,
@@ -182,6 +182,7 @@ export function TabStrip({
   onSelectTab,
   onCloseTab,
   onRenameTab,
+  onMarkUnread,
   onRenameProject,
   onSetProjectColor,
   feedbackEnabled = false,
@@ -211,6 +212,7 @@ export function TabStrip({
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onRenameTab: (tabId: string, title: string) => void;
+  onMarkUnread?: (tabId: string) => void;
   onRenameProject: (dir: string, name: string) => void;
   onSetProjectColor: (dir: string, color: string) => void;
   feedbackEnabled?: boolean;
@@ -1514,6 +1516,11 @@ export function TabStrip({
                 : undefined;
             // Same call the ⌘J queue makes, so the marker and the jump
             // cannot drift apart again (D51/BUG-009).
+            const readLabel = session
+              ? attentionReadLabel(
+                  attention[session.sessionId ?? session.durableSessionId]
+                )
+              : null;
             const needsYou = session
               ? paintsAttention(
                   { sessionId: session.sessionId, live: !dead },
@@ -1611,8 +1618,20 @@ export function TabStrip({
                         ? [
                             {
                               id: 'resume',
-                              label: SESSION_LIFECYCLE_VERB_LABEL[lifecycle.verb],
+                              label:
+                                SESSION_LIFECYCLE_VERB_LABEL[lifecycle.verb],
                               onSelect: () => onResumeTab(tab.id),
+                            },
+                          ]
+                        : []),
+                      ...(onMarkUnread &&
+                      attention[session.sessionId ?? session.durableSessionId]
+                        ?.unread === false
+                        ? [
+                            {
+                              id: 'mark-unread',
+                              label: 'Mark unread',
+                              onSelect: () => onMarkUnread(tab.id),
                             },
                           ]
                         : []),
@@ -1836,7 +1855,7 @@ export function TabStrip({
                               : glyphState
                                 ? SESSION_GLYPH_LABEL[glyphState]
                                 : ''
-                        }`
+                        }${readLabel ? ` · ${readLabel}` : ''}`
                   }
                   title={
                     remote
@@ -1859,7 +1878,7 @@ export function TabStrip({
                           dead && lifecycle
                             ? `\n${lifecycle.line ?? lifecycle.word}`
                             : ''
-                        }${ordinal ? `\nSelect ⌘${ordinal}` : ''}\n${
+                        }${readLabel ? `\n${readLabel}` : ''}${ordinal ? `\nSelect ⌘${ordinal}` : ''}\n${
                           isDraft
                             ? 'Start ⏎ · Discard ⌘W'
                             : 'Close ⌘W or middle-click · kept in Recently closed'

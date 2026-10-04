@@ -173,6 +173,7 @@ import {
 } from './roadmap-lens-input';
 import {
   attentionJumpQueue,
+  nextAttentionTarget,
   attentionNeedsOperator,
   fleetAttention,
   mergeAttention,
@@ -972,35 +973,52 @@ export function WorkspaceClient() {
       attentionJumpQueue(
         projects.flatMap(project =>
           project.tabs.filter(isSessionTab).map(tab => ({
-            sessionId: tab.sessionId,
-            live: tabIsLive(tab),
+            sessionId: tab.sessionId ?? tab.durableSessionId,
+            live: tabIsLive(tab) || !!mergedAttention[tab.durableSessionId],
           }))
         ),
         mergedAttention,
-        activeSessionTab?.sessionId ?? null
+        null
       ),
-    [activeSessionTab?.sessionId, mergedAttention, projects]
+    [mergedAttention, projects]
   );
-  const hasAttentionTarget = attentionJumpTargets.length > 0;
+  const attentionPass = useRef<ReadonlyMap<string, string>>(new Map());
+  const hasAttentionTarget = attentionJumpTargets.some(
+    id =>
+      id !== (activeSessionTab?.sessionId ?? activeSessionTab?.durableSessionId)
+  );
 
-  // ⌘J is a strict attention queue: every target has a visible needs-you
-  // marker. Empty-roadmap starvation remains visible in the roadmap itself,
-  // but must never surprise-navigate Terminal → Sessions without an amber
-  // target in the workspace.
+  // Preserve a traversal pass across focus/source changes: persistent requests
+  // must not starve working questions or unread results.
   const jumpAttentionQueue = useCallback((): boolean => {
-    for (const sessionId of attentionJumpTargets) {
-      for (const g of projects) {
-        const tab = g.tabs.find(
-          t => isSessionTab(t) && t.sessionId === sessionId
-        );
-        if (tab) {
-          selectTab(g.dir, tab.id);
-          return true;
-        }
+    const next = nextAttentionTarget(
+      attentionJumpTargets,
+      activeSessionTab?.sessionId ?? activeSessionTab?.durableSessionId ?? null,
+      attentionPass.current,
+      mergedAttention
+    );
+    attentionPass.current = next.visited;
+    if (!next.target) return false;
+    for (const project of projects) {
+      const tab = project.tabs.find(
+        tab =>
+          isSessionTab(tab) &&
+          (tab.sessionId ?? tab.durableSessionId) === next.target
+      );
+      if (tab) {
+        selectTab(project.dir, tab.id);
+        return true;
       }
     }
     return false;
-  }, [attentionJumpTargets, projects, selectTab]);
+  }, [
+    activeSessionTab?.sessionId,
+    activeSessionTab?.durableSessionId,
+    attentionJumpTargets,
+    mergedAttention,
+    projects,
+    selectTab,
+  ]);
 
   // the palette row dispatches OPEN_ROADMAP_EVENT; same summon as ⌘B
   useEffect(() => {
@@ -1504,6 +1522,7 @@ export function WorkspaceClient() {
   }, [
     activeProject,
     activeProjectReadyAgents,
+    activeProjectRootPath,
     activeTab,
     closedSessionCount,
     resumeTargetCanResume,
@@ -1656,8 +1675,8 @@ export function WorkspaceClient() {
         if (!jumpAttentionQueue()) {
           announceWorkspace(
             attentionJumpTargets.length === 0
-              ? 'No Agents need you'
-              : 'Already on the Agent that needs you'
+              ? 'No outstanding requests or unread results'
+              : 'Already on the only attention target'
           );
         }
         return true;
@@ -1920,6 +1939,16 @@ export function WorkspaceClient() {
               onSelectTab={selectTab}
               onCloseTab={id => void requestClose(id)}
               onRenameTab={renameTab}
+              onMarkUnread={tabId => {
+                const tab = projects
+                  .flatMap(project => project.tabs)
+                  .find(tab => tab.id === tabId);
+                if (tab && isSessionTab(tab)) {
+                  void window.electron?.pty.markUnread(
+                    tab.sessionId ?? tab.durableSessionId
+                  );
+                }
+              }}
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
               feedbackEnabled={feedbackEnabled}
