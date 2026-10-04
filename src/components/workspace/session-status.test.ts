@@ -1031,3 +1031,32 @@ it('retains distinct request identities from one source', () => {
   expect(merged.records?.map(record => record.requestId)).toEqual(['q1', 'q2']);
   expect(merged.unread).toBe(true);
 });
+
+it('names operator reminders without fabricating a source request or result', () => {
+  const reminder = {
+    kind: 'reminder' as const,
+    since: 1,
+    unread: true,
+    source: 'operator' as const,
+  };
+  expect(attentionReadLabel(reminder)).toBe('Marked unread');
+  expect(attentionReadLabel({ ...reminder, unread: false })).toBe('Read');
+  expect(
+    attentionReadLabel({
+      ...reminder,
+      records: [
+        reminder,
+        { kind: 'turn-end', since: 2, source: 'harness', unread: false },
+      ],
+    })
+  ).toBe('Read result · marked unread');
+  expect(
+    attentionReadLabel({
+      ...reminder,
+      records: [
+        reminder,
+        { kind: 'blocked', since: 2, source: 'harness', unread: false },
+      ],
+    })
+  ).toBe('Read · still needs you · marked unread');
+});

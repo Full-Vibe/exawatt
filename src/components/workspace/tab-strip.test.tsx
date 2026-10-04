@@ -865,3 +865,19 @@ describe('Session read state action', () => {
     expect(onMarkUnread).toHaveBeenCalledExactlyOnceWith(session.id);
   });
 });
+
+it('offers mark unread for working Sessions without a source request or result', () => {
+  const onMarkUnread = vi.fn();
+  const session = tab({ id: 'working' });
+  strip({
+    tabs: [session],
+    activity: { [session.sessionId!]: true },
+    onMarkUnread,
+  });
+  const glyph = document.querySelector('[data-status="working"]');
+  expect(glyph).not.toBeNull();
+  fireEvent.contextMenu(document.querySelector('[data-tab-chrome]')!);
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Mark unread' }));
+  expect(onMarkUnread).toHaveBeenCalledExactlyOnceWith(session.id);
+  expect(glyph).toHaveAttribute('data-status', 'working');
+});

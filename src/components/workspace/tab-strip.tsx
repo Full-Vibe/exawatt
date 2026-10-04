@@ -1631,9 +1631,7 @@ export function TabStrip({
                             },
                           ]
                         : []),
-                      ...(onMarkUnread &&
-                      attention[session.sessionId ?? session.durableSessionId]
-                        ?.unread === false
+                      ...(onMarkUnread
                         ? [
                             {
                               id: 'mark-unread',
