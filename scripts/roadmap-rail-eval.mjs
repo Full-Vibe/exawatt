@@ -387,7 +387,9 @@ await withElectronApp(
     await page.waitForTimeout(900);
     results.exposeMirror =
       (await page.locator('[data-expose-roadmap-item]').count()) >= 2;
-    const firstTile = page.locator('[data-expose-tile]').first();
+    // The full card owns the compact footprint; its open button excludes
+    // the shared status/action header so Resume remains a sibling action.
+    const firstTile = page.locator('[data-expose-card]').first();
     const tileBounds = await firstTile.boundingBox();
     results.compactTeamTiles =
       Math.round(tileBounds?.width ?? 0) === 272 &&
