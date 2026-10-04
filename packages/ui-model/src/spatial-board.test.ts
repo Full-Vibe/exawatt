@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { delegatedChildKey } from './fleet-census';
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
   selectSpatialBandSelection,
@@ -711,6 +712,7 @@ describe('piece delegation', () => {
     expect(piece?.delegation?.children).toHaveLength(5);
     expect(piece?.delegation?.children[0]).toEqual({
       id: 'c1',
+      key: delegatedChildKey('a', 'c1'),
       agentType: 'Explore',
       description: 'Map the release gates',
       startedAt: 1,

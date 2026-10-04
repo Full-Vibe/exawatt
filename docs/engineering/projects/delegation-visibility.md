@@ -1861,3 +1861,42 @@ crashes, the census withdraws, and a quiet parent (1.2 s quiet, 1-byte burst
 in that eval) raises `turn-end`. A two-process write loop measured 6,881 parse
 failures in 50,633 reads with plain writes and none with write-then-rename;
 `harness-event-fixture.mjs` now writes by rename.
+
+### 2026-10-04 — D6 census foundation resumed for everyday-use polish
+
+**Delegated membership is being separated from the drawing budget before new UI.**
+Execution owner: `agent/polish-delegation`, baseline `560c138f`. The clean
+`agent/delegation-build` checkpoint `a91871a7` was inspected read-only. Its census
+and board membership work is being adapted to current structural-sharing and
+selection contracts; its D8 launch-context changes and unreviewed Fleet popover
+remain untouched in that original branch. Do not cherry-pick the mixed checkpoint
+wholesale.
+
+This slice owns `packages/ui-model/src/fleet-census.ts`, the existing parent
+filter contract extracted into `fleet-filter.ts`, and semantic membership in
+`spatial-board.ts`. The production layout consumes the census, including full
+root-scoped child identities behind capped individual/overflow/aggregate
+geometry. Agent matches, delegated matches and contextual roots stay distinct;
+context roots never enter band-selected command targets. Filtered aggregate
+parent counts derive from actual matches rather than unfiltered totals.
+Structural sharing includes metadata beyond the drawing cap without repainting
+unchanged geometry.
+
+Source coverage remains deliberately limited to what the current transport
+proves: absent delegation is distinct from a reported empty list, and observed
+children are not a claim of complete observation. Immediate-parent lineage and
+per-root coverage are not transported by the current core Agent DTO and are not
+invented by this selector. Their source-owner integration remains D6 work.
+
+Next acceptance boundary: adapt the revised compact nonmodal picker in the
+existing board gallery, show context-only roots and child-only aggregates in
+DOM/R3F siblings, and obtain operator review before production wiring. The
+operator rejected the earlier persistent side roster; do not revive it.
+Production query wiring, full-roster inspection, aggregate navigation and
+semantic selection beyond drawn units remain outstanding. BUG-134 stays open
+until the complete find → inspect → owning Session journey is proven in Demo
+and Live. Verification: UI-model suite (190 tests), inspector behavior (14 tests),
+TypeScript including Electron tests, and the signed-browser R3F suite (10/10
+scenes, aggregate 100/100) pass on this worktree. The explicit aggregate-filter
+regression is also included. Current state: verified foundation; normal landing
+and dogfood request pending. No full BUG-134 closure or installed claim.

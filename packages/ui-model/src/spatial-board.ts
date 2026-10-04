@@ -13,6 +13,12 @@ import {
   type FleetBurnView,
 } from './consumption-burn';
 
+import {
+  selectFleetCensus,
+  shareFleetCensus,
+  type FleetCensus,
+} from './fleet-census';
+
 export type SpatialBoardAltitude = 'fleet' | 'project' | 'agent';
 export type SpatialBoardProjection = 'top-down' | 'fixed-angle';
 /**
@@ -103,6 +109,7 @@ export interface SpatialBoardZoneBurn {
  *  the source's own start time, which the focus detail turns into elapsed. */
 export interface SpatialBoardDelegatedChild {
   id: string;
+  key: string;
   agentType: string | null;
   description: string | null;
   startedAt: number | null;
@@ -113,6 +120,11 @@ export interface SpatialBoardDelegatedChild {
 export const SPATIAL_DELEGATION_SATELLITE_CAP = 5;
 
 export interface SpatialBoardPiece {
+  /** Inspectable owning root retained for a child match; never a command match. */
+  contextOnly?: boolean;
+  /** Matching children represented by this piece, independent of draw limits. */
+  childKeys?: string[];
+  delegatedCount?: number;
   id: string;
   slotIndex: number;
   kind: SpatialBoardPieceKind;
@@ -149,6 +161,7 @@ export interface SpatialBoardPiece {
 
 export interface SpatialBoardLayout {
   version: 2;
+  census: FleetCensus;
   altitude: SpatialBoardAltitude;
   focusedProjectId: string | null;
   /** Project carrying the selection treatment without implying descent. */
@@ -180,6 +193,7 @@ export interface SpatialBoardLayout {
 }
 
 export interface SpatialBoardLayoutOptions {
+  census?: FleetCensus;
   altitude?: SpatialBoardAltitude;
   focusedProjectId?: string | null;
   /** Presentation selection, independent of semantic altitude. */
@@ -897,7 +911,6 @@ function projectZone(
       projectPacking
     ),
     visible:
-      isAggregate ||
       visible.length > 0 ||
       (agents.length === 0 &&
         (visibleAgentIds === undefined ||
@@ -906,12 +919,7 @@ function projectZone(
     isAggregate,
     aggregatedProjectCount,
     agentCount: agents.length,
-    visibleAgentCount: isAggregate
-      ? agents.length
-      : agents.reduce(
-          (count, agent) => count + Number(visibleIds.has(agent.id)),
-          0
-        ),
+    visibleAgentCount: visibleIds.size,
     activeCount: counts.working + counts.reviewing,
     blockedCount: counts.blocked + counts.error,
     attentionPressure: group.summary.attentionPressure,
@@ -988,7 +996,8 @@ function individualPieces(
   visibleAgentIds: ReadonlySet<string> | undefined,
   labelLimit: number,
   previousLayout: SpatialBoardLayout | null | undefined,
-  burnView: FleetBurnView
+  burnView: FleetBurnView,
+  census: FleetCensus
 ): SpatialBoardPiece[] {
   const previousSlots = new Map<string, number>();
   if (previousLayout) {
@@ -1007,7 +1016,9 @@ function individualPieces(
     const slotIndex = slots.get(id)!;
     const position = slotPosition(zone, slotIndex);
     const showByBudget = index < labelLimit;
-    const delegated = agent.delegation?.children ?? [];
+    const delegated = (census.childrenByAgentId.get(agent.id) ?? []).filter(
+      child => census.matchingChildKeys.has(child.key)
+    );
     const latestActivity = [...(agent.activities ?? [])]
       .filter(activity => activity.type !== 'status_change')
       .sort((a, b) => b.timestamp - a.timestamp)[0]
@@ -1016,6 +1027,9 @@ function individualPieces(
       id,
       slotIndex,
       kind: 'agent' as const,
+      contextOnly: census.contextAgentIds.has(agentId),
+      childKeys: delegated.map(child => child.key),
+      delegatedCount: delegated.length,
       projectId: zone.id,
       agentId,
       label: agent.goal.trim() || agent.name,
@@ -1031,6 +1045,7 @@ function individualPieces(
                 .slice(0, SPATIAL_DELEGATION_SATELLITE_CAP)
                 .map(child => ({
                   id: child.id,
+                  key: child.key,
                   agentType: child.agentType,
                   description: child.description ?? null,
                   startedAt:
@@ -1073,19 +1088,51 @@ function bandLabel(status: AgentWorkState): string {
   return status ?? 'not reported';
 }
 
-function aggregatePieces(zone: SpatialBoardProjectZone): SpatialBoardPiece[] {
+function aggregatePieces(
+  zone: SpatialBoardProjectZone,
+  state: FleetState,
+  census: FleetCensus,
+  visibleAgentIds?: ReadonlySet<string>
+): SpatialBoardPiece[] {
   const pieces: SpatialBoardPiece[] = [];
+  const counts = statusCounts(
+    zone.agentIds
+      .filter(
+        id =>
+          visibleAgent(id, visibleAgentIds) && census.matchingAgentIds.has(id)
+      )
+      .map(id => state.agents[id]!)
+  );
+  // A bucket groups owning roots; its status/count describes parent Agents.
+  // Delegated membership stays a separate channel, never inflating that count
+  // or adding a spurious "0 working" status mark to an unfiltered board.
+  const childKeysByStatus = new Map<AgentWorkState, string[]>();
+  for (const id of zone.agentIds) {
+    if (!visibleAgent(id, visibleAgentIds)) continue;
+    const keys = (census.childrenByAgentId.get(id) ?? [])
+      .filter(child => census.matchingChildKeys.has(child.key))
+      .map(child => child.key);
+    if (keys.length === 0) continue;
+    const status = state.agents[id]!.status;
+    const bucket = childKeysByStatus.get(status) ?? [];
+    for (const key of keys) bucket.push(key);
+    childKeysByStatus.set(status, bucket);
+  }
   const marks = AGGREGATE_BANDS.filter(
-    status => zone.statusCounts[status ?? 'unreported'] > 0
+    status =>
+      counts[status ?? 'unreported'] > 0 || childKeysByStatus.has(status)
   );
   for (const status of marks) {
-    const count = zone.statusCounts[status ?? 'unreported'];
+    const count = counts[status ?? 'unreported'];
+    const childKeys = childKeysByStatus.get(status) ?? [];
     const slotIndex = pieces.length;
     const position = slotPosition(zone, slotIndex);
     pieces.push({
       id: `aggregate:${zone.id}:${status ?? 'unreported'}`,
       slotIndex,
       kind: 'aggregate',
+      childKeys,
+      delegatedCount: childKeys.length,
       projectId: zone.id,
       agentId: null,
       label: bandLabel(status),
@@ -1145,6 +1192,10 @@ export function selectSpatialBoardLayout(
   state: FleetState,
   options: SpatialBoardLayoutOptions = {}
 ): SpatialBoardLayout {
+  const census = options.census ?? selectFleetCensus(state);
+  const visibleAgentIds =
+    options.visibleAgentIds ??
+    (options.census ? census.visibleAgentIds : undefined);
   const selectedAgentId = options.selectedAgentId ?? null;
   const projectPacking = options.projectPacking ?? 'balanced';
   let altitude = options.altitude ?? 'fleet';
@@ -1299,7 +1350,7 @@ export function selectSpatialBoardLayout(
       projectPacking,
       selectedProjectId,
       selectedAgentId,
-      options.visibleAgentIds,
+      visibleAgentIds,
       options.visibleProjectIds,
       isAggregate,
       isAggregate ? aggregateProjectCount : 0
@@ -1335,17 +1386,18 @@ export function selectSpatialBoardLayout(
           zone,
           state,
           selectedAgentId,
-          options.visibleAgentIds,
+          visibleAgentIds,
           focused
             ? (options.projectAgentLabelLimit ??
                 DEFAULTS.projectAgentLabelLimit)
             : (options.fleetAgentLabelLimit ?? DEFAULTS.fleetAgentLabelLimit),
           options.previousLayout,
-          burnView
+          burnView,
+          census
         )
       );
     } else {
-      pieces.push(...aggregatePieces(zone));
+      pieces.push(...aggregatePieces(zone, state, census, visibleAgentIds));
     }
   }
 
@@ -1377,6 +1429,7 @@ export function selectSpatialBoardLayout(
 
   return shareSpatialBoardLayout(options.previousLayout ?? null, {
     version: 2,
+    census,
     altitude,
     focusedProjectId: altitude === 'fleet' ? null : focusedProjectId,
     selectedProjectId,
@@ -1427,6 +1480,7 @@ function shareSpatialBoardLayout(
 ): SpatialBoardLayout {
   if (!previous) return next;
 
+  const census = shareFleetCensus(previous.census, next.census);
   const previousZones = new Map(previous.zones.map(zone => [zone.id, zone]));
   const zones = shareArray(
     previous.zones,
@@ -1470,6 +1524,7 @@ function shareSpatialBoardLayout(
     : next.stats;
 
   if (
+    census === previous.census &&
     zones === previous.zones &&
     pieces === previous.pieces &&
     delegationUnits === previous.delegationUnits &&
@@ -1484,6 +1539,7 @@ function shareSpatialBoardLayout(
 
   return {
     ...next,
+    census,
     zones,
     pieces,
     delegationUnits,
@@ -1556,6 +1612,7 @@ const sameStats = scalarComparator<SpatialBoardLayout['stats']>({
 const sameLayoutScalars = scalarComparator<
   Omit<
     SpatialBoardLayout,
+    | 'census'
     | 'zones'
     | 'pieces'
     | 'delegationUnits'
@@ -1599,7 +1656,7 @@ const sameZoneScalars = scalarComparator<
 });
 
 const samePieceScalars = scalarComparator<
-  Omit<SpatialBoardPiece, 'delegation'>
+  Omit<SpatialBoardPiece, 'delegation' | 'childKeys'>
 >({
   id: true,
   slotIndex: true,
@@ -1609,6 +1666,8 @@ const samePieceScalars = scalarComparator<
   label: true,
   summary: true,
   activity: true,
+  contextOnly: true,
+  delegatedCount: true,
   status: true,
   sessionState: true,
   count: true,
@@ -1623,7 +1682,7 @@ const samePieceScalars = scalarComparator<
 });
 
 const sameDelegationUnitScalars = scalarComparator<
-  Omit<SpatialBoardDelegationUnit, 'tether'>
+  Omit<SpatialBoardDelegationUnit, 'tether' | 'childKeys'>
 >({
   id: true,
   parentPieceId: true,
@@ -1634,6 +1693,7 @@ const sameDelegationUnitScalars = scalarComparator<
   projectId: true,
   kind: true,
   childId: true,
+  childKey: true,
   agentType: true,
   description: true,
   startedAt: true,
@@ -1652,6 +1712,7 @@ const sameTether = scalarComparator<SpatialBoardDelegationUnit['tether']>({
 
 const sameDelegatedChild = scalarComparator<SpatialBoardDelegatedChild>({
   id: true,
+  key: true,
   agentType: true,
   description: true,
   startedAt: true,
@@ -1720,6 +1781,13 @@ function shareZone(
   return { ...next, agentIds, rect, minimapRect, statusCounts, burn };
 }
 
+function shareChildKeys(
+  previous: string[] | undefined,
+  next: string[] | undefined
+) {
+  return previous && next && sameStringArray(previous, next) ? previous : next;
+}
+
 function sharePiece(
   previous: SpatialBoardPiece | undefined,
   next: SpatialBoardPiece
@@ -1735,10 +1803,15 @@ function sharePiece(
     )
       ? previous.delegation
       : next.delegation;
-  if (delegation === previous.delegation && samePieceScalars(previous, next)) {
+  const childKeys = shareChildKeys(previous.childKeys, next.childKeys);
+  if (
+    childKeys === previous.childKeys &&
+    delegation === previous.delegation &&
+    samePieceScalars(previous, next)
+  ) {
     return previous;
   }
-  return delegation === next.delegation ? next : { ...next, delegation };
+  return { ...next, delegation, childKeys };
 }
 
 function shareDelegationUnit(
@@ -1749,10 +1822,15 @@ function shareDelegationUnit(
   const tether = sameTether(previous.tether, next.tether)
     ? previous.tether
     : next.tether;
-  if (tether === previous.tether && sameDelegationUnitScalars(previous, next)) {
+  const childKeys = shareChildKeys(previous.childKeys, next.childKeys);
+  if (
+    childKeys === previous.childKeys &&
+    tether === previous.tether &&
+    sameDelegationUnitScalars(previous, next)
+  ) {
     return previous;
   }
-  return tether === next.tether ? next : { ...next, tether };
+  return { ...next, tether, childKeys };
 }
 
 export type SpatialSelectionDirection = 'up' | 'down' | 'left' | 'right';
@@ -1913,7 +1991,8 @@ export function selectSpatialBandSelection(
   for (const piece of layout.pieces) {
     if (piece.kind !== 'agent' || !piece.visible || !piece.agentId) continue;
     pieceOwnedZones.add(piece.projectId);
-    if (inside(piece.x, piece.y)) captured.add(piece.agentId);
+    if (!piece.contextOnly && inside(piece.x, piece.y))
+      captured.add(piece.agentId);
   }
   for (const unit of units) {
     if (unit.kind !== 'child') continue;
@@ -1932,6 +2011,7 @@ export function selectSpatialBandSelection(
     if (!intersects) continue;
     for (const agentId of zone.agentIds) {
       if (visibleAgentIds && !visibleAgentIds.has(agentId)) continue;
+      if (!layout.census.matchingAgentIds.has(agentId)) continue;
       captured.add(agentId);
     }
   }
@@ -2095,6 +2175,9 @@ export interface SpatialBoardDelegationUnit {
   /** The source's own child id, unprefixed — `id` is board-scoped, so this is
    *  what other surfaces (the selection panel, delegation events) key on. */
   childId: string | null;
+  childKey?: string | null;
+  /** Exact membership; an overflow is a navigable bucket, never a count alone. */
+  childKeys?: string[];
   agentType: string | null;
   description: string | null;
   startedAt: number | null;
@@ -2164,8 +2247,8 @@ function seedDelegationUnits(
       const lobe = !child;
       units.push({
         id: lobe
-          ? `delegation:${piece.id}:overflow`
-          : `delegation:${piece.id}:${child!.id}`,
+          ? JSON.stringify(['delegation-overflow', piece.agentId])
+          : JSON.stringify(['delegation-child', child!.key]),
         parentPieceId: piece.id,
         parentAgentId: piece.agentId,
         parentX: piece.x,
@@ -2175,6 +2258,12 @@ function seedDelegationUnits(
         projectId: piece.projectId,
         kind: lobe ? 'overflow' : 'child',
         childId: lobe ? null : child!.id,
+        childKey: lobe ? null : child!.key,
+        childKeys: lobe
+          ? (
+              piece.childKeys ?? delegation.children.map(item => item.key)
+            ).slice(individuals.length)
+          : [child!.key],
         agentType: lobe ? null : child!.agentType,
         description: lobe ? null : child!.description,
         startedAt: lobe ? null : child!.startedAt,

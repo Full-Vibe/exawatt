@@ -1,3 +1,4 @@
+import { delegatedChildKey } from '@exawatt/ui-model';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { FleetAgentView } from '@exawatt/ui-model';
@@ -135,12 +136,14 @@ describe('SpatialSelectionPanel', () => {
         children: [
           {
             id: 'c1',
+            key: delegatedChildKey('a1', 'c1'),
             agentType: 'Explore',
             description: 'Map the release gates',
             startedAt: 3_600_000 - 25 * 60_000,
           },
           {
             id: 'c2',
+            key: delegatedChildKey('a1', 'c2'),
             agentType: 'general-purpose',
             description: null,
             startedAt: null,
@@ -168,12 +171,14 @@ describe('SpatialSelectionPanel', () => {
         children: [
           {
             id: 'c1',
+            key: delegatedChildKey('a1', 'c1'),
             agentType: 'Explore',
             description: 'First',
             startedAt: null,
           },
           {
             id: 'c2',
+            key: delegatedChildKey('a1', 'c2'),
             agentType: 'Explore',
             description: 'Second',
             startedAt: null,
@@ -199,6 +204,7 @@ describe('SpatialSelectionPanel', () => {
         children: [
           {
             id: 'c1',
+            key: delegatedChildKey('a1', 'c1'),
             agentType: 'Explore',
             description: null,
             startedAt: null,
@@ -219,6 +225,7 @@ describe('SpatialSelectionPanel', () => {
         children: [
           {
             id: 'c1',
+            key: delegatedChildKey('a1', 'c1'),
             agentType: 'Explore',
             description: null,
             startedAt: null,
@@ -268,9 +275,7 @@ describe('SpatialSelectionPanel', () => {
     });
     const unreported = screen.getByText('not reported').parentElement!;
     expect(unreported.textContent).toContain('1');
-    expect(
-      unreported.querySelector('[data-scope-mark="ring"]')
-    ).not.toBeNull();
+    expect(unreported.querySelector('[data-scope-mark="ring"]')).not.toBeNull();
     expect(screen.getByText('idle').parentElement!.textContent).toContain('0');
   });
 });
