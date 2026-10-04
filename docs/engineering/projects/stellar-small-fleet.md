@@ -2104,3 +2104,22 @@ this exact combined candidate through the normal floor, the union of 28 surface
 gates and a queued dogfood installation. No gate is waived. Final independent
 combined review is requested before queue admission. Purpose and approved
 unread-marker production adoption remain separate from this scope.
+
+### 2026-10-04 — Combined followthrough frozen after independent review
+
+**The combined followthrough is approved for the normal delivery queue.**
+Independent review approved `7b085afd` after checking authoritative roadmap
+attribution, paused attention custody, source-compatible recovery, Demo
+inspection, and the reminder-aware model-change guard. The candidate was then
+rebased onto the initial recovery stack's frozen `1286c537`, followed by
+`pnpm install`; no product behavior changed. Checkpoint `c8bccb5d` also keeps
+the shared queue eligibility predicate private to its owner; 65 focused queue
+and status tests pass. The worktree is `exawatt-polish-attention`, branch
+`agent/polish-attention`.
+
+This supersedes the preceding checkpoint's pending review and older dependency
+SHA. Implementation remains unintegrated: wait for the original recovery stack
+to reach `origin/master`, then run the normal floor and all 28 declared surface
+gates with `--dogfood`. No gate waiver or visual adoption is included. Original
+Fleet and source-compatibility contributor branches remain recoverable until
+this combined delivery integrates.
