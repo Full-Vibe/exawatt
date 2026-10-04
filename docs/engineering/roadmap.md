@@ -68,8 +68,10 @@ for newcomers throughout; a dedicated newcomer on-ramp is later. Shape existing
 backlog work as complete journeys with shared architectural ownership, and
 require before/after evidence for layout or flow changes. Significant feature
 expansion is outside this pass. The [ENG-036 shaping brief](projects/design-system-of-record.md#2026-10-04--everyday-use-polish-shaping-and-research-basis)
-links ENG-015/016 attention and continuity, ENG-004/023 orientation, ENG-025 F7
-recovery and bounded ENG-039 refactors. Decision [0046](decisions/0046-reading-does-not-resolve-attention.md) accepts
+links ENG-021/015 purpose-first re-entry, ENG-015/016 attention and continuity,
+ENG-004/023 orientation, ENG-025 F7 recovery and bounded ENG-039 refactors.
+Unread and already-read results must be distinguishable; exact styling remains
+exploratory and does not block planning. Decision [0046](decisions/0046-reading-does-not-resolve-attention.md) accepts
 read versus unresolved attention, priority ordering, and pause-first restart
 with explicit resume. This is planning authorization, not implementation approval or cancellation of the
 recorded workshop commitment. Research-informed public explanations feed

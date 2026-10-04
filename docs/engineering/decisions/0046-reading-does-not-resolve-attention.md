@@ -23,6 +23,11 @@ an intentional future interaction change, not a description of shipped code.
 - Read/unread records operator inspection. An outstanding needs-you request
   records unresolved work. Execution records what the source says is running.
   These dimensions may coexist and must not be collapsed into one enum.
+- Unread and already-read results must be distinguishable. Exact visual
+  treatment remains exploratory; it is not a blocker to semantic shaping.
+  Keep purpose legible and positions stable. No automatic dim/fold/hide/close
+  treatment is approved by this decision. Unresolved requests remain needs-you
+  even after reading; completion and unread are separate facts.
 - Opening a Session acknowledges inspection without resolving its request.
   Source-confirmed resolution retires that request; focus or arbitrary PTY
   keystrokes alone cannot prove resolution. Weak or unavailable source evidence

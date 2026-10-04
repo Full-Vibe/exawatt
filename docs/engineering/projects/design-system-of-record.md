@@ -346,6 +346,7 @@ evidence are being shaped; no new ENG item or competing plan is needed.
 
 | Journey / owning items | Existing work covered | Shared responsibility and exit proof |
 | --- | --- | --- |
+| Remember why this Session exists — ENG-021 / ENG-015, presentation ENG-036 | Existing Session context cues and S4 context paging | Reuse the purpose-label owner and stable Session identity. Across 5–20 distinct purposes, the operator can identify the intended outcome before interpreting the next request. Keep purpose legible in read/unread and working/finished states; change summaries are secondary. No new recap or Initiative feature. |
 | Trust what needs me — ENG-015 / ENG-016, Fleet consumer ENG-004 | BUG-257/258/264/265/163 | Source adapters supply explicit turn/request evidence. Shared projections distinguish execution, an unresolved request, unread results and operator reminders. The glyph, jump target and notification derive from accepted transitions; settings may mute sound. Replay compaction, child work, completion and working-with-question sequences without fabricated certainty or duplicate alerts. |
 | Leave and return safely — ENG-016 / ENG-015 | BUG-260/259/209 and BUG-117's remaining recheck | Persist operator state by durable Session identity through the existing checkpoint/restore owner. Verify mixed running/paused/needs-you/unread tabs, order, selection and exact conversation identity across update/relaunch. Unsupported harnesses remain visible with an honest recovery action. Restore paused and offer explicit resume for the previously running set; automatic execution stays future scope. |
 | Find and enter the right work — ENG-004 / ENG-023 | BUG-262/263/268/134, with BUG-113 reproduction if still present | Navigation owns selected identity; the source-neutral population/query owns membership; rendering owns resolution and motion. Preserve selection through filtering and altitude changes, explain lifecycle separately from turn state, and measure packaged transition work before optimization. Census expansion stays with D6, not a hidden prerequisite for every visual fix. |
@@ -367,6 +368,10 @@ a paused Session, and unavailable source evidence. Exercise finding the next
 request, inspecting without answering, returning later, changing altitude,
 restarting, and recovering a failed action.
 
+Also check re-entry across 5–20 distinct purposes: can the operator identify
+the overall goal without rereading the transcript? Agent count and purpose count
+are different dimensions; the fixture must exercise both.
+
 Record wrong targets, missed requests, lost context/input, accidental actions,
 focus loss, repeated scanning/backtracking and the operator's reported effort.
 Time is supporting usability/performance evidence, not a flaky unit-test oracle.
@@ -382,6 +387,17 @@ looks cleaner but hides unresolved work or adds steps to routine operation.
 Test behavior and state contracts, not today's wording or layout constants.
 
 #### Accepted operator steering and remaining detail
+
+- Accepted, follow-up: purpose is the highest-level re-entry cue. Show the
+  overall goal and why the Session exists before secondary activity/change
+  detail, while keeping an outstanding request visible. The operator reports
+  juggling 5–20 distinct whys; do not substitute an Agent-count assumption.
+- Accepted, follow-up: distinguish unread results from already-read results.
+  Exact treatment is exploratory and low priority; no further abstract styling
+  decision is needed now. Compare subtle treatments in the eventual paired
+  study, keeping purpose readable and positions stable. Automatic dimming,
+  folding, hiding or closing is not an accepted behavior. A read request that
+  remains unresolved keeps its needs-you signal.
 
 - Accepted: inspection clears unread but retains unresolved needs-you. The
   operator compared this to read mail still in the inbox awaiting reply/triage.

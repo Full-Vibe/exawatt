@@ -148,6 +148,15 @@ was I working on, and what is the reason for that work?** It should let the
 operator page the Session's world back into memory. It is not a transcription
 of the last command or a live activity indicator.
 
+Operator refinement, 2026-10-04: **purpose leads re-entry**. The operator
+reports holding 5–20 distinct purposes at once and most often forgetting the
+"why behind the why": the overall outcome that made this Session worth opening.
+Restore that context before asking the operator to interpret a request. Current
+needs-you remains visible and actionable; what changed since the last visit is
+secondary, not the lead cue. This is operator evidence, not a measured limit or
+a claim about every user. Improve the existing context-cue path under ENG-021
+and ENG-015 rather than adding a recap feature or the full Initiative primitive.
+
 Sessions are used both for deep work and as convenient scratchpads. A necessary
 subtask or direct continuation keeps the established cue. A newer durable
 purpose that changes the primary object or intended outcome enough to stand as

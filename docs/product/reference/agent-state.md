@@ -20,6 +20,12 @@ parent's turn and the source's ability to launch.
 
 ## Region / question model
 
+Purpose leads Session re-entry: the overall outcome and why this Session exists
+provide context for the next request. Current needs-you remains apparent;
+recent changes are secondary. Unread and already-read results are distinct from
+completion and unresolved requests. Their visual treatment remains exploratory
+under decision 0046; purpose must remain legible in either state.
+
 At a fleet-comparison altitude, every visual region should answer one operator
 question.
 
