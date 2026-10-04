@@ -498,6 +498,10 @@ test('every gate but a packaged one waits for the server, and a packaged one nev
   assert.equal(
     gateNeedsDevServer('lint'),
     false,
-    'a floor check is not a gate'
+    'checks without a server dependency must not launch one'
   );
+});
+
+test('the mandatory R3F floor starts the same owned server before navigating', () => {
+  assert.equal(gateNeedsDevServer('eval:r3f'), true);
 });

@@ -882,13 +882,14 @@ export function surfaceGateRecheck(declared, upstreamPaths) {
   return { rerun, stood: stood.sort() };
 }
 
-/**
- * Does this gate run against the `EXA_BASE` dev server? Every gate does
- * unless its entry says it launches a packaged build it makes itself
- * (`server: 'packaged'`). The landing refreshes that server before a gate
- * that reads it, so the gate sees the exact tree being landed.
- */
+// The R3F check is part of the mandatory floor rather than a declared surface
+// gate, but still navigates EXA_BASE. It needs the same owned-server lifecycle.
+const DEV_SERVER_FLOOR_CHECKS = new Set(['eval:r3f']);
+
+/** Does this check read EXA_BASE? Floor checks and declared surface gates
+ * share one server boundary; packaged gates launch their own artifact. */
 export function gateNeedsDevServer(id) {
+  if (DEV_SERVER_FLOOR_CHECKS.has(id)) return true;
   const entry = SURFACE_GATES.find(candidate => candidate.gate === id);
   return Boolean(entry) && entry.server !== 'packaged';
 }

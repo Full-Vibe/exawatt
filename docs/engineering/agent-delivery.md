@@ -447,9 +447,9 @@ rebase; in August a route deleted under a live server panicked Turbopack.
 So the landing owns the dev server its gates read (BUG-246,
 `scripts/lib/landing-dev-server.mjs`). `run-next-with-distribution.mjs` stamps
 every dev server with the commit it started from, and `/api/dev-identity`
-reports it as `sourceHead`. Before the first gate of each floor run that reads
-the server (every gate except the `server: 'packaged'` ones in
-`SURFACE_GATES`), the landing compares that stamp with HEAD. A server that
+reports it as `sourceHead`. Before each check that reads the server (the R3F
+floor and every gate except the `server: 'packaged'` ones in `SURFACE_GATES`),
+the landing compares that stamp with HEAD. A server that
 started on this tree, or on an ancestor of HEAD with every path changed since
 then one of the change's own, is trusted: the author's edits reached it
 through HMR. Anything else is restarted before the gate:
