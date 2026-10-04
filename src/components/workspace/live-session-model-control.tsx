@@ -1,4 +1,5 @@
 'use client';
+import { sessionSource } from './harnesses';
 import { useCallback } from 'react';
 import { SessionModelControl } from './session-model-control';
 import type { SessionTab } from './use-workspace-state';
@@ -13,11 +14,13 @@ export function LiveSessionModelControl({
   busy: boolean;
   change: (id: string, choice: SessionModelChange) => Promise<void>;
 }) {
+  const source = sessionSource(tab.harness);
   const loadCatalog = useCallback(async () => {
     const api = window.electron?.pty;
-    if (!api || tab.harness === 'shell')
+    const source = sessionSource(tab.harness);
+    if (!api || !source.harness || source.harness === 'shell')
       throw new Error('Model catalog unavailable.');
-    return api.listAgentModels(tab.harness, tab.cwd);
+    return api.listAgentModels(source.harness, tab.cwd);
   }, [tab.harness, tab.cwd]);
   const apply = useCallback(
     (choice: SessionModelChange) => change(tab.id, choice),
@@ -31,7 +34,8 @@ export function LiveSessionModelControl({
       initialModel={tab.launchModel}
       initialEffort={tab.launchEffort}
       unavailableReason={
-        !supported
+        source.unavailableReason ??
+        (!supported
           ? 'Change the model inside this Agent Source.'
           : !tab.sessionId
             ? 'Resume this Session to change its model.'
@@ -39,7 +43,7 @@ export function LiveSessionModelControl({
               ? 'Waiting for a saved conversation.'
               : busy
                 ? 'Available after the Agent and its delegated work finish.'
-                : undefined
+                : undefined)
       }
     />
   );

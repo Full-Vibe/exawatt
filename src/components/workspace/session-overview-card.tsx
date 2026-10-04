@@ -9,7 +9,7 @@ import {
   tokens,
 } from '@/components/consumption/flux';
 import { HarnessGlyph } from './harness-icons';
-import { HARNESS_META } from './harnesses';
+import { sessionSource } from './harnesses';
 import { SessionGoalSummary } from './session-goal-summary';
 import type { SessionUnreadTreatment } from './session-unread-marker';
 import {
@@ -19,7 +19,6 @@ import {
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from './status-glyphs';
-import type { PtyHarness } from '@exawatt/core';
 import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 /**
@@ -48,7 +47,7 @@ export interface SessionOverviewCardContentProps {
   context?: string | null;
   titleIsContext?: boolean;
   color: string;
-  harness: PtyHarness;
+  harness: string;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
   /** Gallery review candidate; production does not set this prop. */
@@ -118,7 +117,7 @@ export function SessionOverviewCardContent({
       <div className="flex min-w-0 items-center justify-between gap-3">
         <span className="inline-flex min-w-0 flex-1 items-center gap-2">
           <span
-            aria-label={HARNESS_META[harness].label}
+            aria-label={sessionSource(harness).label}
             className="inline-flex h-5 w-5 shrink-0 items-center justify-center"
             style={{ color }}
           >

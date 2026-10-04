@@ -14,6 +14,7 @@
  * parallel with the ENG-004 spatial regime — independent skins over the
  * same session system (see docs/product/operator-workflow.md).
  */
+import { sessionTabSource } from './harnesses';
 import { WorkspaceStorageRecovery } from './workspace-storage-recovery';
 import { sessionDelegationBusy } from './session-status';
 import { LiveSessionModelControl } from './live-session-model-control';
@@ -2344,7 +2345,11 @@ export function WorkspaceClient() {
                       if (layout === 'hidden') return null;
                       // a draft's pane IS the composer, and the composer is
                       // the single slot below (BUG-041)
-                      if (tab.lifecycle === 'draft') return null;
+                      if (
+                        tab.lifecycle === 'draft' &&
+                        sessionTabSource(tab).harness
+                      )
+                        return null;
                       const project = projects.find(p => p.dir === dir);
                       if (!project) return null;
                       return (
@@ -2415,7 +2420,12 @@ export function WorkspaceClient() {
                         <AgentComposer
                           projectDir={composerProject.dir}
                           projectName={composerProject.name}
-                          initialSource={composerTab?.draftSource ?? undefined}
+                          initialSource={
+                            composerTab?.draftSource &&
+                            isAgentSourceId(composerTab.draftSource)
+                              ? composerTab.draftSource
+                              : undefined
+                          }
                           initialTask={composerTab?.draftTask ?? undefined}
                           initialModel={composerTab?.draftModel ?? undefined}
                           initialEffort={composerTab?.draftEffort ?? undefined}

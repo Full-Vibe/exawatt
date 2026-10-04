@@ -29,19 +29,23 @@ function bridge() {
       recoveryFile: '/saved/workspace.corrupt',
     })),
     retryRecovery: vi.fn(async () => {}),
-    save: vi.fn(async () => {}),
+    save: vi.fn(async (_layout: unknown) => {}),
   };
   const offExit = vi.fn();
+  const create = vi.fn();
+  const changeModel = vi.fn();
   installBridgeDouble({
     workspace,
     pty: {
+      create,
+      changeModel,
       list: vi.fn(async () => []),
       closedSessions: vi.fn(async () => []),
       onExit: vi.fn(() => offExit),
       focus: vi.fn(async () => {}),
     },
   });
-  return { workspace, offExit };
+  return { workspace, offExit, create, changeModel };
 }
 
 afterEach(() => {
@@ -116,6 +120,54 @@ describe('workspace storage recovery', () => {
     expect(result.current.ready).toBe(false);
     act(() => window.dispatchEvent(new Event('beforeunload')));
     expect(workspace.save).not.toHaveBeenCalled();
+  });
+
+  it('hydrates an unsupported source without admitting runtime commands or losing its record', async () => {
+    const { workspace, create, changeModel } = bridge();
+    const saved = {
+      kind: 'session',
+      id: 'unsupported',
+      durableSessionId: 'durable-unsupported',
+      harness: 'future-source',
+      title: 'Keep the original purpose',
+      titleKind: 'operator',
+      cwd: '/saved',
+      harnessSessionId: 'exact-provider-id',
+      lifecycle: 'stopped-clean',
+      vendorThread: { opaque: 'kept' },
+    };
+    workspace.load.mockResolvedValue({
+      v: 7,
+      activeDir: '/saved',
+      lastUsedDir: '/saved',
+      projects: [
+        { dir: '/saved', name: 'Saved', activeTabId: saved.id, tabs: [saved] },
+      ],
+    });
+    const { result } = renderHook(() => useWorkspaceState());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(async () => {
+      expect(await result.current.resumeTab(saved.id)).toBe(false);
+      await expect(
+        result.current.changeSessionModel(saved.id, { model: 'replacement' })
+      ).rejects.toThrow();
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(changeModel).not.toHaveBeenCalled();
+    expect(result.current.activeProject?.tabs[0]).toMatchObject({
+      harness: saved.harness,
+      lifecycle: saved.lifecycle,
+      harnessSessionId: saved.harnessSessionId,
+    });
+    act(() => window.dispatchEvent(new Event('beforeunload')));
+    await waitFor(() => expect(workspace.save).toHaveBeenCalled());
+    expect(workspace.save.mock.calls.at(-1)?.[0]).toMatchObject({
+      projects: [
+        {
+          tabs: [{ harness: saved.harness, vendorThread: saved.vendorThread }],
+        },
+      ],
+    });
   });
 
   it('serializes recovery actions and surfaces a failed retry without dismissing preserved data', async () => {

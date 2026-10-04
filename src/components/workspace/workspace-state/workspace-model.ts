@@ -6,7 +6,11 @@
  * React, or the clock beyond minting an identity, so every rule about what a
  * tab IS can be unit-tested without mounting the workspace.
  */
-import { HARNESS_META, isDefaultHarnessTitle } from '../harnesses';
+import {
+  HARNESS_META,
+  isDefaultHarnessTitle,
+  sessionSource,
+} from '../harnesses';
 import {
   sessionCanResume,
   sessionLifecyclePresentation,
@@ -34,11 +38,13 @@ export interface SessionTab {
   launchModel?: string;
   launchEffort?: string;
   kind: 'session';
+  /** Opaque JSON extensions from a supported layout version; never runtime options. */
+  sourceRecordExtensions?: Readonly<Record<string, unknown>>;
   /** stable across revives (sessionId changes when a tab is re-launchd) */
   id: string;
   /** stable logical Session identity, distinct from tab/PTY/provider IDs */
   durableSessionId: string;
-  harness: PtyHarness;
+  harness: string;
   title: string;
   /** Ownership of the strip title. Provider/catalog labels never become
    * tab titles: only an explicit operator rename earns visible title copy. */
@@ -64,7 +70,7 @@ export interface SessionTab {
   startedAt?: number | null;
   /** draft tabs only (D24): the source the summon requested (palette
    *  "Start Agent with X"); null = use the recommendation */
-  draftSource?: AgentSourceId | null;
+  draftSource?: string | null;
   /** draft tabs only (D28): the composer's typed task — the draft's
    *  work-in-progress belongs to the TAB, so it survives the pane
    *  unmounting on tab/Project switches and (with content) restarts */
@@ -281,7 +287,8 @@ export function tabIsLive(tab: WorkspaceTab): boolean {
  * Paused. Every count, verb and refusal about resuming reads this.
  */
 export function tabCanResumeAsAgent(tab: WorkspaceTab): boolean {
-  if (isRemoteAgentTab(tab)) return false;
+  if (isRemoteAgentTab(tab) || !sessionSource(tab.harness).harness)
+    return false;
   return (
     !tabIsLive(tab) && tab.resumeState !== 'resuming' && sessionCanResume(tab)
   );
@@ -291,7 +298,8 @@ export function tabCanResumeAsAgent(tab: WorkspaceTab): boolean {
  *  before it can resume. The complement of `tabCanResumeAsAgent` among
  *  stopped Agents, from the same owner. */
 export function tabNeedsReconnection(tab: WorkspaceTab): boolean {
-  if (isRemoteAgentTab(tab)) return false;
+  if (isRemoteAgentTab(tab) || !sessionSource(tab.harness).harness)
+    return false;
   return (
     !tabIsLive(tab) &&
     tab.resumeState !== 'resuming' &&
@@ -386,7 +394,7 @@ const LEGACY_CATALOG_TITLE_MAX_CHARS = 72;
  * into a tab title. This shape is deliberately narrow: repair the known
  * migration artifact once without guessing away ordinary operator renames. */
 export function isLegacyCatalogTitleLeak(candidate: {
-  harness: PtyHarness;
+  harness: string;
   title: string;
   harnessSessionId: string | null;
   initialTask?: string | null;

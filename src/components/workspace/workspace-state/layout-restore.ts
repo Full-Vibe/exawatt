@@ -10,7 +10,7 @@
  * Pure. The hydration hook does every read (the stored layout, `pty:list`,
  * the recovery marker, main's context store) and hands the answers in.
  */
-import { isAgentSourceId, type AgentSourceId } from '../agent-sources';
+import { isPtyHarness } from '@exawatt/core';
 import { pickDistinctColor, projectColor } from '../project-colors';
 import type {
   GoalVisual,
@@ -43,6 +43,7 @@ export function resumeIdentityHints(
   return persisted.projects.flatMap(project =>
     project.tabs.flatMap(tab =>
       tab.kind === 'remote-agent' ||
+      !isPtyHarness(tab.harness) ||
       tab.harness === 'shell' ||
       tab.lifecycle === 'draft'
         ? []
@@ -251,9 +252,7 @@ function restoreDraftTab(
     lifecycle: 'draft' as const,
     resumeState: 'identity-missing' as const,
     draftTask: draftTask ?? null,
-    draftSource: isAgentSourceId(draftSource ?? '')
-      ? (draftSource as AgentSourceId)
-      : null,
+    draftSource: typeof draftSource === 'string' ? draftSource : null,
     draftModel:
       typeof draftModel === 'string' &&
       draftModel.length <= 512 &&

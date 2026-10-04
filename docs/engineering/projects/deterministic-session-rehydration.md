@@ -215,7 +215,6 @@ Project doc:
 
 - `docs/engineering/projects/deterministic-session-rehydration.md`
 
-
 ### 2026-10-04 — Restart continuity execution (BUG-260; in progress)
 
 **Restart preserves operator context without restarting work.** Implementation is
@@ -239,7 +238,6 @@ recovery and source-race cases; review the recovery action in the existing HUD
 workbench before any material new presentation; run the relevant Electron gates.
 BUG-209 is independently assigned to `agent/polish-unknown-harness`; unknown
 ledger rows remain visible and cannot be consumed or resumed as another harness.
-
 
 Implementation checkpoint: `0512a04c`/`97cfb109` plus attention foundation
 `67409f59` and outage followup `18214176` are committed in the restart worktree.
@@ -296,3 +294,28 @@ earlier descendant-signal test passed alone after a load-sensitive failure;
 two abandoned projector extracts from canceled runs were removed only from this
 worktree, after which the exact projection test passed. Normal delivery is being
 rerun; none of this evidence yet claims integration or installation.
+
+### 2026-10-04 — BUG-273 source-compatible saved Sessions (implementation checkpoint)
+
+**Unsupported Sessions retain their purpose and identity.** Known layout versions
+now separate saved source identity from admission to the installed runtime. A
+single total source descriptor supplies labels, glyph fallback, and capability
+availability to the retained Session surfaces; an unfamiliar source cannot throw
+from catalog metadata lookup or enter resume, clone, model-change, or identity
+reconciliation commands. Unsupported draft choices stay saved work with their
+original task instead of silently selecting another source in the composer.
+
+The known-version record boundary retains opaque JSON extension fields separately
+from normalized canonical Session fields. Serialization excludes canonical and
+prototype keys from the extension bag, then writes authoritative canonical fields.
+This is source compatibility within supported layout versions, not support for
+arbitrary future workspace schema versions. Purpose, exact provider and durable
+Session identities, existing lifecycle truth, retained history access, and draft
+source choices survive. Team and Fleet consume the same raw identity and purpose.
+
+At this checkpoint TypeScript and focused hydration, roundtrip, read-history,
+capability, and unavailable-action tests pass (58 tests across six
+files). Native mixed-layout recovery, normal delivery gates, integration, and
+dogfood remain pending. The implementation lives on
+`agent/polish-source-compatibility`; its dependency baseline is `98d77349` and only
+subsequent BUG-273 commits should replay after the coupled restart/attention stack.

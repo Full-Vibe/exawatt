@@ -9,6 +9,7 @@
  * Enter/click drops into the session, Escape closes. DOM-rendered per the
  * decision `0003` hybrid rule; motion respects prefers-reduced-motion.
  */
+import { sessionTabSource } from './harnesses';
 import {
   useCallback,
   useEffect,
@@ -89,7 +90,7 @@ import {
   type RoadmapReadSource,
   type RoadmapSessionDescriptor,
 } from '@/components/roadmap/use-project-roadmap';
-import type { AgentSourcePlacement, PtyHarness } from '@exawatt/core';
+import type { AgentSourcePlacement } from '@exawatt/core';
 import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 interface Tile {
@@ -99,7 +100,7 @@ interface Tile {
   durableSessionId: string;
   tabId: string;
   dir: string;
-  harness: PtyHarness;
+  harness: string;
   title: string;
   titleKind: 'default' | 'operator';
   lifecycle: string;
@@ -321,7 +322,7 @@ export function ExposeOverlay({
             durableSessionId: t.durableSessionId,
             tabId: t.id,
             dir: g.dir,
-            harness: t.harness,
+            harness: sessionTabSource(t).id,
             title: t.title,
             titleKind: t.titleKind,
             lifecycle: t.lifecycle,

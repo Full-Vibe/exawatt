@@ -1,3 +1,4 @@
+import { sessionTabSource } from './harnesses';
 /**
  * Split-view layout math (S2 ⌘D, reworked D26) — pure and unit-tested,
  * the tab-ring.ts pattern.
@@ -84,7 +85,8 @@ export function resolveStageLayout(options: {
     pinnedTabId !== null ? (byId.get(pinnedTabId) ?? null) : null;
   const pinned = pinnedRef && tabIsPinnable(pinnedRef.tab) ? pinnedRef : null;
   const active = activeTabId !== null ? (byId.get(activeTabId) ?? null) : null;
-  const activeIsPinned = !!pinned && !!active && active.tab.id === pinned.tab.id;
+  const activeIsPinned =
+    !!pinned && !!active && active.tab.id === pinned.tab.id;
 
   const driven = !pinned
     ? null
@@ -158,6 +160,7 @@ export function resolveComposerSlot(options: {
       (entry): entry is StageTabRef & { tab: SessionTab } =>
         entry.tab.kind === 'session' &&
         entry.tab.lifecycle === 'draft' &&
+        sessionTabSource(entry.tab).harness !== null &&
         stage.layoutFor(entry.tab.id) !== 'hidden'
     ) ?? null;
   const dir = draft

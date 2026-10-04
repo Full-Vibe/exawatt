@@ -135,6 +135,10 @@ export function mergeLocalWorkspaceSessions(
         durableSessionId?: unknown;
         sessionId?: unknown;
         harness?: unknown;
+        draftSource?: unknown;
+        draftTask?: unknown;
+        initialTask?: unknown;
+        contextSummary?: unknown;
         title?: unknown;
         cwd?: unknown;
         lifecycle?: unknown;
@@ -167,7 +171,15 @@ export function mergeLocalWorkspaceSessions(
       merged.push({
         id: `workspace:${durableSessionId}`,
         sessionKey: tab.id,
-        harness: tab.harness,
+        harness:
+          tab.lifecycle === 'draft' && typeof tab.draftSource === 'string'
+            ? tab.draftSource
+            : tab.harness,
+        contextSummary:
+          [tab.contextSummary, tab.initialTask, tab.draftTask].find(
+            (value): value is string =>
+              typeof value === 'string' && !!value.trim()
+          ) ?? null,
         title:
           typeof tab.title === 'string' && tab.title.trim()
             ? tab.title

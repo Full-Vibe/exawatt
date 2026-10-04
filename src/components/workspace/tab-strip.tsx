@@ -13,6 +13,7 @@
  * component owns interaction.
  */
 
+import { sessionTabSource } from './harnesses';
 import {
   useCallback,
   useEffect,
@@ -1939,7 +1940,10 @@ export function TabStrip({
                     !tightTab &&
                     !condensed && (
                       <span className="shrink-0" style={{ color }}>
-                        <HarnessGlyph harness={session.harness} size={11} />
+                        <HarnessGlyph
+                          harness={sessionTabSource(session).id}
+                          size={11}
+                        />
                       </span>
                     )}
                   {editing?.kind === 'tab' && editing.id === tab.id ? (

@@ -1,3 +1,4 @@
+import { sessionSource } from './harnesses';
 import type { AgentSourceId } from './agent-sources';
 import { AGENT_SOURCE_META, launchSourceSnapshots } from './agent-sources';
 import {
@@ -26,7 +27,8 @@ export function tabCanClone(
   tab: WorkspaceTab,
   input: { engaged?: boolean; contextSummary?: string | null } = {}
 ): boolean {
-  if (tab.kind === 'remote-agent') return false;
+  if (tab.kind === 'remote-agent' || !sessionSource(tab.harness).harness)
+    return false;
   return (
     tab.harness !== 'shell' &&
     tab.lifecycle !== 'draft' &&

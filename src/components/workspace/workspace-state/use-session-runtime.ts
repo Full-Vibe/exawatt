@@ -20,7 +20,7 @@ import type {
   PtyAttention,
   SessionModelChange,
 } from '@exawatt/core/desktop-bridge';
-import { HARNESS_META } from '../harnesses';
+import { sessionTabSource } from '../harnesses';
 import {
   DEFAULT_AGENT_PERMISSION_MODE,
   loadAgentSourcePreferences,
@@ -102,11 +102,15 @@ export function useSessionRuntime({
         operations.isBusy(tabId)
       )
         return false;
+      const source = sessionTabSource(tab);
+      if (!source.harness) {
+        setError(source.unavailableReason);
+        return false;
+      }
+      const harness = source.harness;
       const exactId = selectedHarnessId ?? tab.harnessSessionId;
-      if (tab.harness !== 'shell' && !exactId) {
-        setError(
-          `Choose the exact ${HARNESS_META[tab.harness].label} conversation.`
-        );
+      if (harness !== 'shell' && !exactId) {
+        setError(`Choose the exact ${source.label} conversation.`);
         return false;
       }
       // Admission precedes every await, including preference loading.
@@ -123,14 +127,14 @@ export function useSessionRuntime({
             project.tabs.some(candidate => candidate.id === tabId)
           )?.dir ?? tab.cwd;
         const preferenceLoad =
-          tab.harness === 'shell' ? null : await loadAgentSourcePreferences();
+          harness === 'shell' ? null : await loadAgentSourcePreferences();
         const permissionMode =
-          tab.harness === 'shell'
+          harness === 'shell'
             ? undefined
             : permissionModeFor(
                 preferenceLoad!.preferences,
                 projectDir,
-                tab.harness,
+                harness,
                 preferenceLoad!.usedSafeFallback
                   ? 'prompt'
                   : DEFAULT_AGENT_PERMISSION_MODE
@@ -154,7 +158,7 @@ export function useSessionRuntime({
           attentionRef.current
         );
         const result = await api.create({
-          harness: tab.harness,
+          harness,
           cwd: tab.cwd,
           title: tab.title,
           roadmapItemId: tab.roadmapItemId,
@@ -211,6 +215,8 @@ export function useSessionRuntime({
         .find(item => item.id === tabId);
       if (!api || !tab || !isSessionTab(tab) || !tab.sessionId)
         throw new Error('Session is no longer running.');
+      const source = sessionTabSource(tab);
+      if (!source.harness) throw new Error(source.unavailableReason!);
       if (operations.isBusy(tabId))
         throw new Error('A Session operation is already in progress.');
       operations.begin(tabId);

@@ -28,7 +28,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
 import { sessionLifecyclePresentation } from '@exawatt/ui-model';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
-import { HARNESS_META } from './harnesses';
+import { sessionTabSource } from './harnesses';
 import { lifecycleToneColor } from './session-lifecycle-tone';
 import type { SessionTab } from './use-workspace-state';
 
@@ -137,7 +137,7 @@ export function PausedAgentRecord({
     }
   }, [bridge, tab.durableSessionId]);
 
-  const goal = tab.initialTask?.trim() || null;
+  const goal = tab.draftTask?.trim() || tab.initialTask?.trim() || null;
   const context = summary?.trim() || null;
   const lifecycle = sessionLifecyclePresentation(tab);
 
@@ -154,7 +154,7 @@ export function PausedAgentRecord({
             className="font-mono text-chrome-micro tracking-[0.08em]"
             style={{ color: HUD.textDim }}
           >
-            {HARNESS_META[tab.harness].label} ·{' '}
+            {sessionTabSource(tab).label} ·{' '}
             <span style={{ color: lifecycleToneColor(lifecycle.tone) }}>
               {lifecycle.word}
             </span>
@@ -221,9 +221,14 @@ export function PausedAgentRecord({
             </div>
           ) : (
             <section className="flex min-h-0 flex-col gap-2">
-              <p className="font-mono text-chrome-micro" style={{ color: HUD.textDim }}>
+              <p
+                className="font-mono text-chrome-micro"
+                style={{ color: HUD.textDim }}
+              >
                 Transcript
-                {truncated > 0 ? ` · earliest ${truncated} lines not shown` : ''}
+                {truncated > 0
+                  ? ` · earliest ${truncated} lines not shown`
+                  : ''}
               </p>
               <pre
                 data-paused-transcript

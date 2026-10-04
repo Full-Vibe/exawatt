@@ -19,12 +19,10 @@
  * OpenAI and xAI each forbid altering their mark, recolouring included; that
  * file records the deviation and the remedy.
  */
+import { CircleHelp } from 'lucide-react';
+import { sessionSource } from './harnesses';
 import type { ComponentType, ReactNode } from 'react';
-import type {
-  AgentSourceAdapterId,
-  AgentSourceCatalogId,
-  PtyHarness,
-} from '@exawatt/core';
+import type { AgentSourceAdapterId } from '@exawatt/core';
 
 function ClaudeIcon({ size = 12 }: { size?: number }) {
   return (
@@ -169,7 +167,7 @@ export function SourceGlyph({
   size = 12,
   fallback = null,
 }: {
-  source: AgentSourceCatalogId | PtyHarness;
+  source: string;
   size?: number;
   fallback?: ReactNode;
 }) {
@@ -183,8 +181,18 @@ export function HarnessGlyph({
   harness,
   size = 12,
 }: {
-  harness: PtyHarness;
+  harness: string;
   size?: number;
 }) {
-  return <SourceGlyph source={harness} size={size} />;
+  return (
+    <SourceGlyph
+      source={harness}
+      size={size}
+      fallback={
+        sessionSource(harness).harness ? null : (
+          <CircleHelp size={size} aria-hidden="true" />
+        )
+      }
+    />
+  );
 }

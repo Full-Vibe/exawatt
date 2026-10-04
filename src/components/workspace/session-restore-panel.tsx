@@ -8,7 +8,7 @@ import {
 } from '@exawatt/ui-model';
 import { Button } from '@/components/ui/button';
 import type { SessionTab } from './use-workspace-state';
-import { HARNESS_META } from './harnesses';
+import { sessionTabSource } from './harnesses';
 import { lifecycleToneColor } from './session-lifecycle-tone';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import type { HarnessResumeCandidate } from '@exawatt/core/desktop-bridge';
@@ -32,17 +32,19 @@ export function SessionRestorePanel({
   );
   const [loading, setLoading] = useState(false);
   const [candidateError, setCandidateError] = useState(false);
-  const harnessLabel = HARNESS_META[tab.harness].label;
+  const source = sessionTabSource(tab);
+  const harnessLabel = source.label;
   const presentation = sessionLifecyclePresentation(tab);
   const tone = lifecycleToneColor(presentation.tone);
 
   const findConversations = async () => {
+    if (!source.harness) return;
     setLoading(true);
     setCandidateError(false);
     try {
       const found =
         (await window.electron?.pty?.listResumeCandidates(
-          tab.harness,
+          source.harness,
           tab.cwd
         )) ?? [];
       setCandidates(found);
@@ -53,7 +55,7 @@ export function SessionRestorePanel({
     }
   };
 
-  const verb = presentation.verb;
+  const verb = source.harness ? presentation.verb : null;
 
   return (
     <div
@@ -78,12 +80,12 @@ export function SessionRestorePanel({
         </span>
         <div className="min-w-48 flex-1">
           <p className="truncate text-xs font-medium">{tab.title}</p>
-          {presentation.line && (
+          {(source.unavailableReason || presentation.line) && (
             <p
               data-session-lifecycle-line
               className="mt-0.5 text-chrome-meta leading-4 text-hud-text-dim"
             >
-              {presentation.line}
+              {source.unavailableReason ?? presentation.line}
             </p>
           )}
         </div>

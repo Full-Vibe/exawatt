@@ -1,3 +1,4 @@
+import { splitSessionRecord } from './session-record-extensions';
 /**
  * The persisted workspace layout: every shape it has had on disk, and the
  * one reader that upgrades them all to the current one.
@@ -5,9 +6,8 @@
  * Pure: parsing never touches the desktop bridge. What the bridge answers
  * (the stored JSON, the configured sources) is passed in.
  */
-import { HARNESS_META, isDefaultHarnessTitle } from '../harnesses';
+import { isDefaultHarnessTitle, sessionSource } from '../harnesses';
 import { readPtyAttention } from '@exawatt/core/desktop-bridge';
-import type { PtyHarness } from '@exawatt/core';
 import type { GoalVisualRef, PtyAttention } from '@exawatt/core/desktop-bridge';
 import {
   isLegacyCatalogTitleLeak,
@@ -48,7 +48,9 @@ export interface PersistedV6 {
       durableSessionId: string;
       attention?: PtyAttention;
       resumeAfterRestart?: boolean;
-      harness: PtyHarness;
+      harness: string;
+      /** Decoder-only extensions; serializer returns them to the source record. */
+      sourceRecordExtensions?: Readonly<Record<string, unknown>>;
       title: string;
       titleKind: TabTitleKind;
       cwd: string;
@@ -191,14 +193,15 @@ function upgradeV5TabTitle(
   if (
     isDraft ||
     isDefaultHarnessTitle(tab.harness, tab.title) ||
-    isLegacyCatalogTitleLeak({
-      ...tab,
-      semanticSummary: tab.contextSummary,
-      draft: isDraft,
-    })
+    (sessionSource(tab.harness).harness !== null &&
+      isLegacyCatalogTitleLeak({
+        ...tab,
+        semanticSummary: tab.contextSummary,
+        draft: isDraft,
+      }))
   ) {
     return {
-      title: isDraft ? tab.title : HARNESS_META[tab.harness].label,
+      title: isDraft ? tab.title : sessionSource(tab.harness).label,
       titleKind: 'default',
     };
   }
@@ -296,7 +299,9 @@ export function parsePersisted(raw: unknown): PersistedV7 | null {
           }
           // Anything else is a Session tab, including one written by a v6
           // build straight into a v7 file by a hand edit.
-          const session = tab as PersistedSessionTab;
+          const { known: session, extensions } = splitSessionRecord(
+            tab as PersistedSessionTab
+          );
           let durableSessionId = session.durableSessionId || session.id;
           if (seen.has(durableSessionId))
             durableSessionId = `${session.id}-session`;
@@ -315,6 +320,7 @@ export function parsePersisted(raw: unknown): PersistedV7 | null {
           return [
             {
               ...session,
+              sourceRecordExtensions: extensions,
               launchModel:
                 typeof session.launchModel === 'string' &&
                 session.launchModel.length <= 512 &&

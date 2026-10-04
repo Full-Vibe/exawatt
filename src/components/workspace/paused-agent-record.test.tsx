@@ -31,7 +31,9 @@ const tab = (over: Partial<SessionTab> = {}): SessionTab =>
 
 /** The injectable bridge, so no test has to fake `window.electron` — a
  *  partial fake there is what made a browser look like Electron. */
-const bridge = (over: Partial<PausedHistoryBridge> = {}): PausedHistoryBridge => ({
+const bridge = (
+  over: Partial<PausedHistoryBridge> = {}
+): PausedHistoryBridge => ({
   retainedHistoryMeta: vi.fn(async () => ({
     bytes: 1_500_000,
     updatedAt: Date.now() - 3 * 60 * 60 * 1000,
@@ -63,7 +65,6 @@ describe('paused-Agent record copy', () => {
     expect(formatWhen(now - 5 * 3_600_000, now)).toBe('5 hr ago');
     expect(formatWhen(now - 72 * 3_600_000, now)).toBe('3 days ago');
   });
-
 });
 
 describe('PausedAgentRecord', () => {
@@ -87,12 +88,30 @@ describe('PausedAgentRecord', () => {
     );
   });
 
+  it('reads unsupported-source history by durable identity without source execution', async () => {
+    const api = bridge();
+    const saved = tab({ harness: 'future-source' });
+    render(<PausedAgentRecord tab={saved} bridge={api} />);
+    expect(screen.getByText(saved.initialTask!)).toBeVisible();
+    fireEvent.click(await screen.findByText('Show transcript'));
+    await waitFor(() =>
+      expect(api.retainedTranscript).toHaveBeenCalledWith(
+        saved.durableSessionId
+      )
+    );
+    expect(
+      document.querySelector('[data-paused-transcript]')
+    ).toHaveTextContent('first line');
+  });
+
   it('fetches the transcript only when asked, and renders it as lines', async () => {
     const api = bridge();
     render(<PausedAgentRecord tab={tab()} bridge={api} />);
 
     fireEvent.click(await screen.findByText('Show transcript'));
-    await waitFor(() => expect(api.retainedTranscript).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(api.retainedTranscript).toHaveBeenCalledTimes(1)
+    );
     const transcript = document.querySelector('[data-paused-transcript]');
     expect(transcript?.textContent).toBe('first line\nsecond line');
   });

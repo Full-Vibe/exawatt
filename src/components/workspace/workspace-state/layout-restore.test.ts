@@ -157,7 +157,7 @@ describe('restoreLayout', () => {
     });
   });
 
-  it('restores a draft as a composer, dropping launch choices it cannot trust', () => {
+  it('retains a draft source identity while rejecting malformed launch options', () => {
     const { restored } = restoreLayout(
       layout([
         savedTab('draft', {
@@ -180,7 +180,7 @@ describe('restoreLayout', () => {
       resumeState: 'identity-missing',
       sessionId: null,
       draftTask: 'Half-written brief',
-      draftSource: null,
+      draftSource: 'not-a-source',
       draftModel: null,
       draftEffort: 'high',
       draftTouched: true,

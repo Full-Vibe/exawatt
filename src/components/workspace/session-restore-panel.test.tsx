@@ -39,6 +39,21 @@ describe('SessionRestorePanel', () => {
     });
   });
 
+  it.each(['future-source', 'toString'])(
+    'keeps %s visible without offering runtime actions',
+    harness => {
+      const tab = { ...stoppedTab(), harness };
+      const onResumeTab = vi.fn(async () => true);
+      render(<SessionRestorePanel tab={tab} onResumeTab={onResumeTab} />);
+      expect(
+        document.querySelector('[data-session-lifecycle-line]')
+      ).toHaveTextContent(harness);
+      expect(screen.queryAllByRole('button')).toHaveLength(0);
+      expect(listResumeCandidates).not.toHaveBeenCalled();
+      expect(onResumeTab).not.toHaveBeenCalled();
+    }
+  );
+
   it('prints the shared lifecycle word and line, and the individual resume verb', () => {
     const tab = stoppedTab();
     const expected = sessionLifecyclePresentation(tab);
@@ -78,7 +93,9 @@ describe('SessionRestorePanel', () => {
       document.querySelector('[data-session-restore][data-identity-missing]')
     ).not.toBeNull();
     expect(
-      screen.queryByRole('button', { name: SESSION_LIFECYCLE_VERB_LABEL.resume })
+      screen.queryByRole('button', {
+        name: SESSION_LIFECYCLE_VERB_LABEL.resume,
+      })
     ).toBeNull();
     fireEvent.click(
       screen.getByRole('button', {

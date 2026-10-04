@@ -1,3 +1,5 @@
+import { sessionTabSource } from '../harnesses';
+import { safeSourceExtensions } from './session-record-extensions';
 /**
  * Writing the workspace layout (v7): what a save persists, and what it
  * deliberately leaves behind.
@@ -109,6 +111,7 @@ export function serializeLayout(
             // no unstarted state for a view of someone else's work.
             isRemoteAgentTab(tab) ||
             tab.lifecycle !== 'draft' ||
+            sessionTabSource(tab).harness === null ||
             tab.draftTouched === true ||
             !!tab.draftTask?.trim()
         )
@@ -132,6 +135,7 @@ export function serializeLayout(
               tabIsLive(tab) ||
               tab.lifecycle === 'resuming');
           return {
+            ...safeSourceExtensions(tab.sourceRecordExtensions),
             kind: 'session' as const,
             id: tab.id,
             durableSessionId: tab.durableSessionId,

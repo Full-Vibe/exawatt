@@ -1,3 +1,4 @@
+import { sessionSource } from './harnesses';
 import {
   isSessionLifecyclePhase,
   sessionLifecyclePresentation,
@@ -7,12 +8,11 @@ import {
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from './session-status';
-import type { PtyHarness } from '@exawatt/core';
 
 export const NEW_AGENT_TITLE = 'New agent';
 
 export interface SessionDisplayCopyInput {
-  harness: PtyHarness;
+  harness: string;
   title: string;
   titleKind: 'default' | 'operator';
   lifecycle: string;
@@ -87,7 +87,7 @@ export function sessionDisplayCopy(
  * lifecycle vocabulary (ENG-015 S6.4), the same line the pane prints.
  */
 export function sessionCurrentStateCopy(input: {
-  harness: PtyHarness;
+  harness: string;
   live: boolean;
   lifecycle: string;
   exitCode?: number | null;
@@ -96,6 +96,8 @@ export function sessionCurrentStateCopy(input: {
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
 }): string {
+  const source = sessionSource(input.harness);
+  if (source.unavailableReason) return source.unavailableReason;
   const lifecycle = isSessionLifecyclePhase(input.lifecycle)
     ? sessionLifecyclePresentation({
         lifecycle: input.lifecycle,
