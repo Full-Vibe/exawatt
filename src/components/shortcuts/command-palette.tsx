@@ -1635,7 +1635,6 @@ export function CommandPalette({
           {closedSessions.map(entry => (
             <CommandItem
               key={entry.durableSessionId}
-              disabled={!isPtyHarness(entry.harness)}
               value={paletteValue(
                 `Reopen ${entry.projectName} · ${entry.goal ?? entry.title}`,
                 `closed-${entry.durableSessionId}`

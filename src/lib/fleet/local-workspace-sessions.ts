@@ -140,7 +140,6 @@ export function mergeLocalWorkspaceSessions(
         initialTask?: unknown;
         contextSummary?: unknown;
         title?: unknown;
-        contextSummary?: unknown;
         cwd?: unknown;
         lifecycle?: unknown;
         exitCode?: unknown;
@@ -176,6 +175,7 @@ export function mergeLocalWorkspaceSessions(
           tab.lifecycle === 'draft' && typeof tab.draftSource === 'string'
             ? tab.draftSource
             : tab.harness,
+        // Preserve durable purpose; unopened work can use its saved task.
         contextSummary:
           [tab.contextSummary, tab.initialTask, tab.draftTask].find(
             (value): value is string =>
@@ -185,11 +185,6 @@ export function mergeLocalWorkspaceSessions(
           typeof tab.title === 'string' && tab.title.trim()
             ? tab.title
             : tab.harness,
-        // Purpose belongs to the durable Session, not the PTY. Fleet already
-        // leads with this goal; dropping it here made a paused Session revert
-        // to the source title precisely when the operator returns to it.
-        contextSummary:
-          typeof tab.contextSummary === 'string' ? tab.contextSummary : null,
         cwd: tab.cwd,
         projectDir: group.dir,
         projectName,

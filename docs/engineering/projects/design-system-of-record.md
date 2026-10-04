@@ -837,3 +837,21 @@ phrases and the source-cause qualification above. Publish this small receipt
 through `agent:land -- --docs`; it needs no second dogfood install. Then release
 contributors for branch/worktree cleanup, preserving the deliberately deferred
 delegation study branch. Root coordinates cleanup and final operator report.
+
+
+Combined delivery infrastructure prerequisite (`8e0b36b9`, independently
+reviewed by the recovery owner): the landing's server stop used port release
+as proof of process exit. A closing listener could therefore leave an owned
+Next worker writing while `.next/dev` was removed. Teardown now waits for both
+the selected owned PID/process group to disappear and the listener to close,
+within the existing TERM/KILL budgets. Ownership selection and refusal of
+borrowed servers are unchanged. All 10 focused tests passed; a real TCP/IPC
+regression fails under the old port-only mutation and passes the repair.
+
+Final composition rebase retained all upstream source capability and stopped
+outline work. Focused checks caught two clean-merge defects before admission:
+the old unsupported-source palette disable flag survived beside restore-only
+copy, and two lanes supplied the same persisted purpose field. The palette
+now admits saved-work reopening while execution stays guarded; one durable
+purpose projection retains its existing saved-task fallback. No new behavior
+policy or duplicate owner was introduced.
