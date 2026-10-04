@@ -2112,6 +2112,48 @@ Design-pass answers (2026-08-11, slice 1 — full evidence in the project doc):
 
 Slice 2 — the Codex plan account (shaped and landed 2026-09-29 with ENG-008 E15): Codex's own app-server answers `account/rateLimits/read` with the account's windows, prepaid credit balance, and banked "Full reset" credits with their expiry (verified live against the operator's Pro account, 0.158.0). The request leaves through the operator's own `codex` binary and sign-in, so custody is source-owned like the re-entry recap: Exawatt never reads `~/.codex/auth.json`, and no distribution capability gates it. It matters beyond resets because rollout logs only update on a Codex turn: after the operator spent a reset the logs still read 78% while the account read 45%. It rides a new own-account privacy switch (`codexPlanWindows`, default on) and generalizes the plan composite from one Claude service to a list of account sources, which is the seam a future agent plugin implements. `ProviderPlanAccountState` gains banked `resets` and a prepaid `credits` balance, absent never zero. Claude's own free resets are claimed through an endpoint Exawatt does not read, so they stay out of scope.
 
+Slice 3 — Claude plan usage through Claude Code's own `/usage` (shaped
+2026-10-04, ready for pickup). Replaces the slice-1 Keychain custody.
+
+- Why: the Keychain read can never be granted once. Claude Code rewrites
+  `Claude Code-credentials` on each token refresh and resets the item's
+  partition list, so any "Always Allow" is lost (anthropics/claude-code
+  #62361, #77697, #81707); the read goes through `/usr/bin/security`, so a
+  dialog names "security" and an approval widens access for every process;
+  and Anthropic's terms say developers "may not collect, store, or
+  intermediate Claude.ai credentials or session tokens"
+  (code.claude.com/docs/en/legal-and-compliance). The operator wants "one
+  connection that stays durable" and no change to anyone's Claude install or
+  experience outside Exawatt (2026-10-04).
+- Source: run the user's own `claude` binary as
+  `claude -p "/usage" --no-session-persistence --output-format json` with
+  `DISABLE_AUTOUPDATER=1`, and parse `result`. Verified 2026-10-04 on
+  Claude Code 2.1.289 against the operator's Max account: zero turns, zero
+  cost, no saved session, account-wide windows with reset times —
+  "Current session: 2% used · resets Oct 4 at 6:59pm (America/Los_Angeles)",
+  "Current week (all models): 92% used · resets …", "Current week (Fable):
+  58% used · resets …". The figures are the account's, including claude.ai
+  and other machines. Custody is source-owned, the same shape as slice 2's
+  Codex app-server read: Exawatt never reads the token.
+- Build: a Claude account source beside the Codex one in the plan composite;
+  a parser for the `/usage` text whose every unrecognized line or format
+  change degrades to "couldn't read" with the cause, never 0% and never a
+  stale figure shown as fresh (pin real output as fixtures; resolve the
+  printed timezone to an absolute reset time); throttle as slice 1 does
+  (one read per ~5 minutes, riding snapshot pulls); a missing or signed-out
+  `claude` is its own state. Delete the Keychain path entirely
+  (`electron/main/consumption/claude-plan-account.ts`'s `security` call and
+  the `api.anthropic.com/api/oauth/usage` request) and the distribution
+  `ownAccount.claudePlanUsage` gate, so every build gets it as Codex does;
+  update `OUTBOUND_CONTROLS.claudePlanWindows`' disclosure (the request now
+  leaves through the user's own `claude`) and
+  `docs/engineering/outbound-data.md`. The schema-2 distribution-secret
+  upgrade is no longer needed for this.
+- Done when: an installed build shows the operator's real Claude windows
+  with no Keychain access and no prompt, Settings ▸ Privacy's switch still
+  turns it off, a changed `/usage` format shows "couldn't read", and
+  `grep -r "Claude Code-credentials" electron src packages` is empty.
+
 Remaining scope, still unshaped pending its own passes:
 
 - other vendors (OpenAI/ChatGPT plan analytics, Anthropic Console workspace cost, OpenAI billing; xAI added 2026-08-12 — Grok Build's local `signals.json` belongs to ENG-008's local class via ENG-003 S4, while SuperGrok plan windows would be this item's credentialed class) — per-vendor reconnaissance of what exists and under which credential class
@@ -2478,17 +2520,46 @@ agents in Exawatt PTYs are attributed to Exawatt, so Exawatt can prime them;
 Keychain prompts are attributed to the calling binary, so it cannot prime an
 agent CLI's own.
 
-First slice (10 feet): the official build's own-account Claude plan read
-(ENG-038). The distribution secret's schema-2 `ownAccount` upgrade is held
-until it ships primed: the current read shells out to `/usr/bin/security`, so
-its dialog would name "security" and an "Always Allow" would widen access for
-every process; it moves to an in-process Keychain read behind a first-party
-primer, with the last good value kept and the read made on demand.
+Claude plan usage, the prompt that started this item, no longer needs a
+permission: ENG-038 slice 3 reads it through Claude Code's own `/usage`, so
+it never touches the Keychain (2026-10-04).
 
-Found while researching, not yet filed: no `NSLocalNetworkUsageDescription`
-(agents reaching LAN or `.local` hosts raise an unexplained prompt), and the
-"Sign in with {source}" `osascript` path has no Apple Events entitlement or
-usage string.
+First slice (10 feet, ready for pickup): notifications. Exawatt's first
+native notification today raises a bare macOS prompt with no explanation
+(`electron/main/pty-ipc.ts`, and `unreadable-state-notice.ts`, which posts
+regardless of the Settings switch and so can be the first prompt). Build:
+
+- A permission registry in `@exawatt/core`, shaped like `SAFETY_CONTROLS` and
+  `OUTBOUND_CONTROLS`: `{id, kind: 'os' | 'in-app', label, why, readStatus,
+  request, settingsLink?, needsRelaunch}` with states `unknown |
+  not-determined | granted | denied | restricted | needs-relaunch`; a status
+  that cannot be read is `unknown`, never `denied`. Main owns status reads and
+  requests; the renderer gets a read-only snapshot and calls `ensure(id,
+  {reason})` over the bridge contract. It declares and explains each grant;
+  it enforces nothing itself.
+- One entry, `notifications`. Its status needs `UNUserNotificationCenter`
+  settings, which Electron does not expose: a minimal first-party native
+  read, or, if that is not worth it yet, `unknown` until first use.
+- A first-party primer (in-app modal, macOS button semantics, one Continue
+  that leads into the system prompt, per Apple's HIG) shown at the moment of
+  need: turning on "Native macOS notifications" in Settings, or the first
+  notification Exawatt would post. `unreadable-state-notice.ts` respects the
+  same path.
+- A first Settings ▸ Permissions section listing the registry with status
+  and Allow or Open System Settings, so the operator can play with where it
+  belongs (the operator decides placement by using it).
+- Done when: on a Mac that never granted Exawatt notifications, the first
+  notification moment shows the primer, Continue raises macOS's prompt, the
+  section reflects the result, and a denied state offers the System Settings
+  pane; no other notification path can raise the prompt first.
+
+Next candidates, in order: folder access when a Project opens in Desktop,
+Documents, Downloads or a volume (privacy prompts from agent PTYs are
+attributed to Exawatt, so raising it from main first lets the primer explain
+it); Local Network (BUG-274); then the first in-app grant.
+
+Found while researching: BUG-274 (no Local Network usage string) and
+BUG-275 (the "Sign in with {source}" Terminal automation has no entitlement).
 
 Constraints already in canon: a registry declares and explains each grant and
 names its enforcer; it adds no second enforcement regime
@@ -3755,3 +3826,28 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | BUG-195's docs push guard, which let a docs push reach `master` once `docs:check` passed, and AGENTS.md's in-place docs path that pushed directly | BUG-200, 2026-09-24 | Only `agent:land` moves `master`. The pre-push hook refuses every other push to it, and documentation lands through `pnpm agent:land -- --docs`: no worktree, the docs checks only, a queue ticket like any other. |
 | ENG-030's latch policy as applied by `agent:land`: a latched publication failed the queue head, after its rebase and re-check | BUG-201, 2026-09-24 | The head checks publication before rebasing and holds, bounded and visible, instead of failing; a transient latch is retried, a deterministic one waits for the operator's recovery. Private `master` still never moves past unpublished work. |
 | BUG-162's rule that a failed roadmap read keeps the last good parse "as a fact with an age" | BUG-236, 2026-09-28 | Nothing aged it, so an unblocked Agent read blocked for as long as the file was unreadable. A failed read now declares the producer blind to that Project's Agents (unknown, never quiet or blocked); the block's `since` pin is held across the gap. |
+
+### BUG-274 Agents on the local network raise an unexplained macOS prompt
+
+Status: bug · ENG-045 · found 2026-10-04 by the permissions research.
+
+Exawatt declares no `NSLocalNetworkUsageDescription` (`electron-builder.yml`
+`extendInfo`). Command-line tools run from Terminal are exempt from Local
+Network privacy, but agents in Exawatt PTYs are attributed to Exawatt (TN3179),
+so the first agent connection to a LAN address or `.local` name raises macOS's
+prompt with no Exawatt explanation, and a denial blocks every agent's LAN
+access with no recovery shown. Fix: add the usage string in Exawatt's voice;
+the primer belongs to ENG-045.
+
+### BUG-275 "Sign in with {source}" drives Terminal without the Automation entitlement
+
+Status: bug · ENG-003 · found 2026-10-04 by the permissions research; failure
+inferred, not reproduced.
+
+`electron/main/pty/agent-source-registry.ts` runs `osascript` "tell
+application Terminal … do script" for Settings ▸ Agent Sources' sign-in and
+model actions, but the hardened runtime carries no
+`com.apple.security.automation.apple-events` entitlement and the app declares
+no `NSAppleEventsUsageDescription`, so the Apple Event most likely fails with
+-1743 in signed builds. Reproduce on an installed build first; then add both,
+or replace the Terminal hand-off with an Exawatt-owned terminal tab.
