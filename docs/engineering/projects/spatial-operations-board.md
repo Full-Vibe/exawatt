@@ -2998,3 +2998,21 @@ focus and current display geometry correct; existing search, scrollback, links,
 clipboard, and hidden-resize checks pass. The unit lifecycle test additionally
 proves retained hidden output subscription and exactly-once disposal.
 Production before/after comparison and final landing gates remain pending.
+
+**Production comparison verified; independent review clear.** The identical
+30-Session / five-Project fixture now settles in 437–440 ms with maximum frame
+gaps of 26–33 ms, no >50 ms frames and no long tasks in four runs. One renderer
+attaches on return. Baseline settle was 861–1356 ms with 506–832 ms frame gaps;
+one run in each set includes trace overhead. Existing transition timing is
+unchanged. [Incident 0034](../incidents/0034-fleet-return-rebuilds-hidden-terminals.md)
+retains the cause, control, falsified hypotheses and reproduction method.
+Evidence is retained outside the worktree at
+`/tmp/exawatt-polish-spatial-evidence/` before cleanup.
+
+`BUG-113` remains open: current normal-power fixtures move every working rotor,
+but the August report's specific affected source snapshot was not recovered.
+Do not relabel this as a source-specific fix. `BUG-263`'s display-density branch
+is verified; the reported frozen branch remains distinct from intentional
+battery/reduced-motion behavior and requires contemporaneous host/source facts
+if it recurs. Next action: run the declared landing floor and gates, integrate
+with dogfood queued, then remove this worktree and local branch.
