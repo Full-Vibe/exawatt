@@ -1898,3 +1898,47 @@ contracts and declared Electron/browser surface gates, inspect the read/unread
 presentation through the shared gallery review, then queue integration with
 `--dogfood`. Exact read/unread styling remains review work; no automatic
 purpose dimming, closing, folding, or rearrangement is authorized.
+
+### 2026-10-04 — Attention checkpoints and next producer boundary
+
+**The harness attention stack is ready for combined integration; roadmap parity remains open.**
+The integration owner is `agent/polish-restart`; source-truth and attention
+changes must land together with restart persistence. Attention's recoverable
+commits are `6ec302ff` (foundation), `45786629` (read-outage preservation),
+`48e63b49` (shared traversal/menu and review study), and `01a34dc5` (ambient
+terminal bells cannot override source-owned execution). The integration branch
+may contain cherry-picked equivalents. Evidence before integration: 72 monitor
+tests, 91 queue/tab tests, and 65 producer/ribbon tests passed; owned-file lint
+passed; the signed-browser study interaction passed. No integrated or installed
+claim follows from this evidence.
+
+The next bounded increment completes the existing roadmap producer's access to
+shared attention ownership. Today `useFleetRoadmapAttention` reconstructs a
+`roadmap-blocked` signal without the operator read bit and bypasses the main
+alert dispatcher. Therefore BUG-265 and the broader source parity contract
+remain partial. Fixing only its sound effect would preserve the ownership gap.
+
+Execution contract for the next increment, accepted in root coordination:
+
+- Keep decision 0011's renderer-owned roadmap parser. Issue an observation
+  token at the existing main read boundary and validate it on a typed covered
+  projection submission. Reject obsolete per-project tokens; pending/failed
+  coverage never proves resolution. A window closing or unmounting does not
+  resolve a source request.
+- Keep independent harness and roadmap request records under one main owner.
+  Stable identity uses durable Session, canonical Project, and roadmap item
+  identities. One typed projector produces the compatibility attention shape;
+  source-scoped read metadata preserves a newly arriving request as unread even
+  if another producer's request was already read. Resolving one source must not
+  erase another.
+- Persist canonical source records through the existing Session checkpoint.
+  Restore/mount/duplicate-window observations of a known request do not ring
+  again; a genuinely new live request must still ring on first observation.
+  Do not blanket-suppress initial observations or invent timestamp identities.
+- Prove duplicate-window delivery, obsolete tokens, unknown coverage, known
+  checkpoint restoration, new first observation, and resolution followed by
+  re-blocking. Read/unread changes stay independent of source alert delivery.
+
+Read/unread marker styling remains in `/hud-gallery/attention-reading` for
+operator review. Production purpose text, position, and completion glyphs do
+not change merely because a result was inspected.
