@@ -100,6 +100,7 @@
     "eval:electron:connected-fleet:live": "EXAWATT_FLEET_PACKAGED_LIVE=1 node scripts/electron-connected-fleet-eval.mjs",
     "eval:electron:code-identity": "node scripts/electron-code-identity-eval.mjs",
     "eval:electron:update": "node scripts/electron-product-update-eval.mjs",
+    "eval:electron:source-compatibility": "node scripts/electron-source-compatibility-eval.mjs",
     "eval:electron:resume": "node scripts/electron-exact-resume-eval.mjs",
     "eval:electron:idempotency": "node scripts/electron-rehydration-idempotency-eval.mjs",
     "eval:electron:lifecycle": "node scripts/electron-session-lifecycle-eval.mjs",

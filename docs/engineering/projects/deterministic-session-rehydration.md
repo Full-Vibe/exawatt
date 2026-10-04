@@ -337,6 +337,12 @@ unsupported draft task/source remain outside the launch composer, Team retains
 the unavailable row without Resume, and a known Claude Session resumes its exact
 saved provider identity. The subsequent v7 save preserves opaque source JSON and
 the unsupported draft choice. No renderer errors were observed. Screenshots:
-`/tmp/exawatt-source-compatibility-proof/{unsupported-agent,unsupported-draft,unsupported-team}.png`.
+`/tmp/exawatt-source-compatibility-proof/{unsupported-agent,unsupported-draft,unsupported-team,unsupported-fleet}.png`.
 Focused close/reopen and source compatibility checks pass (41 tests in four files).
 Normal delivery and dogfood remain pending the coupled stack's integration.
+
+The native proof is reproducible as `pnpm eval:electron:source-compatibility`
+against this worktree's `EXA_BASE`, and is declared for the persistence/ledger
+surfaces in the delivery map. It also verifies that Fleet retains all three
+mixed-source records. Normal delivery will rerun it on the exact integrated
+candidate rather than relying on an earlier manual screenshot.

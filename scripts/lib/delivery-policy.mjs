@@ -143,6 +143,20 @@ export const SURFACE_GATES = [
       ].includes(file),
   },
   {
+    gate: 'eval:electron:source-compatibility',
+    why: 'unsupported saved sources retain identity and readable work without admitting execution',
+    match: file =>
+      file === 'scripts/electron-source-compatibility-eval.mjs' ||
+      file === 'packages/core/src/session-record-extensions.ts' ||
+      file === 'electron/main/pty/closed-session-ledger.ts' ||
+      workspaceStateModule(
+        file,
+        'persisted-layout',
+        'layout-restore',
+        'layout-serialize'
+      ),
+  },
+  {
     gate: 'eval:electron:device-power',
     why: 'device power follows local work, power transitions and persisted operator policy without pausing Sessions',
     match: file =>
