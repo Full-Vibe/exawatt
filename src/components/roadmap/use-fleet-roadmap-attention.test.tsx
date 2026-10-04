@@ -66,6 +66,55 @@ describe('useFleetRoadmapAttention', () => {
     vi.restoreAllMocks();
   });
 
+  it('publishes covered stable source identities to main and leaves read/alert state to that owner', async () => {
+    const publishAttention = vi.fn().mockResolvedValue(true);
+    electron({
+      publishAttention,
+      read: vi.fn(async () => ({
+        status: 'ok',
+        text: BLOCKED,
+        file: 'ROADMAP.md',
+        mtimeMs: 1,
+        observationToken: 'a'.repeat(64),
+      })),
+    });
+    const project = {
+      ...BRAVO,
+      sessions: [{ ...BRAVO.sessions[0], durableSessionId: 'durable-b' }],
+    };
+    const { result } = renderHook(() => useFleetRoadmapAttention([project]));
+    await waitFor(() => expect(result.current.scope.kind).toBe('fleet'));
+    expect(publishAttention).toHaveBeenCalledWith({
+      projectDir: '/b',
+      observationToken: 'a'.repeat(64),
+      sessions: [
+        { sessionId: 'sb', durableSessionId: 'durable-b', itemIds: ['B-1'] },
+      ],
+    });
+    expect(result.current.signals).toEqual({});
+  });
+
+  it('keeps failed or rejected source publication explicitly outside its coverage', async () => {
+    const publishAttention = vi.fn().mockResolvedValue(false);
+    electron({
+      publishAttention,
+      read: vi.fn(async () => ({
+        status: 'ok',
+        text: BLOCKED,
+        file: 'ROADMAP.md',
+        mtimeMs: 1,
+        observationToken: 'b'.repeat(64),
+      })),
+    });
+    const project = {
+      ...BRAVO,
+      sessions: [{ ...BRAVO.sessions[0], durableSessionId: 'durable-b' }],
+    };
+    const { result } = renderHook(() => useFleetRoadmapAttention([project]));
+    await waitFor(() => expect(publishAttention).toHaveBeenCalled());
+    expect(attentionAt(mergeAttention(result.current), 'sb').known).toBe(false);
+  });
+
   it('reads EVERY open Project, not only the one in front (BUG-026)', async () => {
     const api = electron();
     const { result } = renderHook(() =>

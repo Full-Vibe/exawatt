@@ -25,7 +25,7 @@ export function attentionRecords(snapshot: PtyAttention): PtyAttentionRecord[] {
   );
 }
 
-function priority(record: PtyAttentionSignal): number {
+function priority(record: SessionAttentionSignal): number {
   if (record.kind === 'turn-end' || record.kind === 'reminder') return 2;
   return record.request === 'working' || record.request === 'unknown' ? 1 : 0;
 }
@@ -171,11 +171,6 @@ export function attentionIsJumpTarget(
   );
 }
 
-function attentionPriority(signal: SessionAttentionSignal): number {
-  if (!attentionNeedsOperator(signal)) return 2;
-  return signal.request === 'working' || signal.request === 'unknown' ? 1 : 0;
-}
-
 /** Hard blockers, working questions, unread results; oldest within each class.
  * Identity breaks timestamp ties independently of producer insertion order. */
 export function orderedAttentionTargets(
@@ -189,7 +184,7 @@ export function orderedAttentionTargets(
     )
     .sort(
       (a, b) =>
-        attentionPriority(a[1]) - attentionPriority(b[1]) ||
+        priority(a[1]) - priority(b[1]) ||
         a[1].since - b[1].since ||
         a[0].localeCompare(b[0])
     )

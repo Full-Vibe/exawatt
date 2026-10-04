@@ -228,6 +228,7 @@ interface DesktopWorkspaceApi {
 /** The roadmap lens (ENG-017): raw reads, one narrow write boundary. */
 interface DesktopRoadmapApi {
   read: BridgeInvoke<'roadmap:read'>;
+  publishAttention: BridgeInvoke<'roadmap:publish-attention'>;
   sessionEvidence: BridgeInvoke<'roadmap:session-evidence'>;
   activity: BridgeInvoke<'roadmap:activity'>;
   writeState: BridgeInvoke<'roadmap:write-state'>;

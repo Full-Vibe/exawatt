@@ -1,3 +1,6 @@
+import { attentionMonitor } from '../pty/attention-monitor';
+import { ptySessions } from '../pty/session-manager';
+import { RoadmapAttentionObservations } from './attention-observations';
 import { handleTrusted } from '../ipc-security';
 import { readRoadmap } from './roadmap-reader';
 import { readSessionEvidence } from './roadmap-evidence';
@@ -11,8 +14,17 @@ import { unwatchRoadmap, watchRoadmap } from './roadmap-watcher';
  * roadmaps: sequence and state only, compare-before-write, never git.
  */
 export function registerRoadmapIPC(): void {
+  const attention = new RoadmapAttentionObservations({
+    read: readRoadmap,
+    sessions: () => ptySessions.list(),
+    update: (id, requestIds) =>
+      attentionMonitor.updateRoadmapRequests(id, requestIds),
+  });
   handleTrusted('roadmap:read', (_event, projectDir: string) =>
-    readRoadmap(projectDir)
+    attention.read(projectDir)
+  );
+  handleTrusted('roadmap:publish-attention', (_event, observation) =>
+    attention.publish(observation)
   );
   handleTrusted('roadmap:session-evidence', (_event, cwd: string) =>
     readSessionEvidence(cwd)

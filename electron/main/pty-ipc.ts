@@ -622,6 +622,10 @@ export function registerPtyIPC(
     contextSummarizer.correct(durableSessionId, label)
   );
   handleTrusted('pty:mark-unread', (_event, id: string) => {
+    if (
+      !ptySessions.list().some(session => session.id === id && !session.exited)
+    )
+      return;
     attentionMonitor.markUnread(id);
   });
   handleTrusted('pty:focus', (_event, id: string | null) => {

@@ -4,6 +4,7 @@ import {
   attentionRecords,
   attentionRecordKey,
   projectSessionAttention,
+  markAttentionUnread,
   type SessionBackgroundTask,
 } from '@exawatt/core';
 import type { PtySessionManager } from './session-manager';
@@ -69,7 +70,7 @@ export interface ReportedTurn {
  * navigable, and they must never disagree about the class of a signal.
  */
 export function attentionIsOperatorGate(kind: PtyAttentionKind): boolean {
-  return kind !== 'turn-end';
+  return kind !== 'turn-end' && kind !== 'reminder';
 }
 
 /** Why inference reclaimed a reported record (ENG-023 D4/D7): the evidence
@@ -250,9 +251,50 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     this.emit('attention', id, this.get(id));
   }
 
+  /** A covered roadmap observation reconciles only that producer. Repeated
+   * window/mount observations preserve request identities and read receipts;
+   * newly observed live requests use the same alert transition as the harness. */
+  updateRoadmapRequests(id: string, requestIds: readonly string[]): void {
+    this.sourceObserved.add(id);
+    const previous = this.attention.get(id) ?? [];
+    const existing = new Map(
+      previous
+        .filter(record => record.source === 'roadmap')
+        .map(record => [record.requestId, record])
+    );
+    const ids = [...new Set(requestIds)].sort();
+    const added: PtyAttentionRecord[] = [];
+    const roadmap = ids.map(requestId => {
+      const held = existing.get(requestId);
+      if (held) return held;
+      const record: PtyAttentionRecord = {
+        source: 'roadmap',
+        kind: 'roadmap-blocked',
+        request: 'blocking',
+        requestId,
+        since: this.now(),
+        unread: !this.isWatched(id),
+      };
+      added.push(record);
+      return record;
+    });
+    if (added.length === 0 && existing.size === ids.length) return;
+    const next = [
+      ...previous.filter(record => record.source !== 'roadmap'),
+      ...roadmap,
+    ];
+    if (next.length) this.attention.set(id, next);
+    else this.attention.delete(id);
+    if (added.length) this.markEngaged(id);
+    this.emit('attention', id, this.get(id));
+    for (const record of added) this.emitFactAlert(id, record);
+  }
+
   /** Inspection and operator intent never raise a second source alert. */
   markUnread(id: string): void {
-    this.setUnread(id, true);
+    const snapshot = markAttentionUnread(this.get(id), this.now());
+    this.attention.set(id, attentionRecords(snapshot));
+    this.emit('attention', id, snapshot);
   }
 
   private setUnread(id: string, unread: boolean): void {
@@ -777,10 +819,14 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       next,
     ]);
     this.emit('attention', id, this.get(id));
+    this.emitFactAlert(id, next);
+  }
+
+  private emitFactAlert(id: string, record: PtyAttentionRecord): void {
     // Alert the new fact, not the selected compatibility projection: a result
     // can arrive behind an already-read request and still deserves one alert.
-    if (next.unread || attentionIsOperatorGate(kind)) {
-      const { source: _source, ...signal } = next;
+    if (record.unread || attentionIsOperatorGate(record.kind)) {
+      const { source: _source, ...signal } = record;
       this.emit('alert', id, signal);
     }
   }

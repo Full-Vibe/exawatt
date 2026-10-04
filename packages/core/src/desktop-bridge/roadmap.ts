@@ -5,8 +5,14 @@
  */
 
 export type RoadmapReadResult =
-  | { status: 'ok'; file: string; text: string; mtimeMs: number }
-  | { status: 'none'; checked: string[] }
+  | {
+      status: 'ok';
+      file: string;
+      text: string;
+      mtimeMs: number;
+      observationToken?: string;
+    }
+  | { status: 'none'; checked: string[]; observationToken?: string }
   | { status: 'error'; error: string };
 
 /**
@@ -62,3 +68,15 @@ export type RoadmapWriteResult =
 export type RoadmapUndoResult =
   | { status: 'applied'; contentHash: string }
   | { status: 'refused' | 'failed'; message: string };
+
+/** Covered source projection from the existing renderer-owned roadmap parser.
+ * Missing Sessions mean unobserved, not resolved. */
+export interface RoadmapAttentionObservation {
+  projectDir: string;
+  observationToken: string;
+  sessions: Array<{
+    sessionId: string;
+    durableSessionId: string;
+    itemIds: string[];
+  }>;
+}

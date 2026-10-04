@@ -247,6 +247,8 @@ const bridge = {
   },
   roadmap: {
     read: projectDir => invoke('roadmap:read', projectDir),
+    publishAttention: observation =>
+      invoke('roadmap:publish-attention', observation),
     sessionEvidence: cwd => invoke('roadmap:session-evidence', cwd),
     activity: projectDir => invoke('roadmap:activity', projectDir),
     writeState: request => invoke('roadmap:write-state', request),

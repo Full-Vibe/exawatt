@@ -43,6 +43,8 @@ export interface RoadmapBlockedSession {
  *  activity here would recompute every Project's links on every PTY tick. */
 export interface RoadmapAttentionSession {
   sessionId: string;
+  /** Stable operator identity for publishing covered source observations. */
+  durableSessionId?: string;
   tabId: string | null;
   title: string;
   cwd: string;

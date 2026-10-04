@@ -64,6 +64,7 @@ interface CachedRead {
   /** file mtime the cached parse came from; null when there is no file */
   mtimeMs: number | null;
   read: RoadmapAttentionRead;
+  observationToken?: string;
 }
 
 const PENDING: CachedRead = { mtimeMs: null, read: { status: 'pending' } };
@@ -77,6 +78,9 @@ export function useFleetRoadmapAttention(
   projects: readonly FleetRoadmapProject[]
 ): AttentionSource {
   const [reads, setReads] = useState<Record<string, CachedRead>>({});
+  const [published, setPublished] = useState<Record<string, string>>({});
+  const publicationTickets = useRef(new Map<string, number>());
+  const retriedPublications = useRef(new Map<string, string>());
   const dirsKey = useMemo(
     () => [...new Set(projects.map(project => project.dir))].sort().join('\n'),
     [projects]
@@ -135,7 +139,12 @@ export function useFleetRoadmapAttention(
           return;
         }
         if (result.status !== 'ok') {
-          commit(cached => (cached === ABSENT ? cached : ABSENT));
+          commit(cached =>
+            cached?.read.status === 'absent' &&
+            cached.observationToken === result.observationToken
+              ? cached
+              : { ...ABSENT, observationToken: result.observationToken }
+          );
           return;
         }
         commit(cached => {
@@ -145,13 +154,19 @@ export function useFleetRoadmapAttention(
             cached?.mtimeMs === result.mtimeMs &&
             cached.read.status === 'ok'
           ) {
-            return cached;
+            return cached.observationToken === result.observationToken
+              ? cached
+              : { ...cached, observationToken: result.observationToken };
           }
           const doc = parseRoadmap(result.text, {
             projectDir: dir,
             file: result.file,
           });
-          return { mtimeMs: result.mtimeMs, read: { status: 'ok', doc } };
+          return {
+            mtimeMs: result.mtimeMs,
+            read: { status: 'ok', doc },
+            observationToken: result.observationToken,
+          };
         });
       })
       .catch((reason: unknown) => {
@@ -225,6 +240,69 @@ export function useFleetRoadmapAttention(
     [projects, reads]
   );
 
+  // The renderer owns parsing and link inference; main owns source request
+  // identities, read receipts, checkpointing, and one alert transition.
+  const authoritative =
+    typeof window !== 'undefined' &&
+    !!window.electron?.roadmap?.publishAttention;
+  useEffect(() => {
+    const publish = window.electron?.roadmap?.publishAttention;
+    if (!publish) return;
+    for (const project of projects) {
+      const cached = reads[project.dir];
+      if (
+        !cached?.observationToken ||
+        (cached.read.status !== 'ok' && cached.read.status !== 'absent')
+      )
+        continue;
+      const sessions = project.sessions.flatMap(session =>
+        session.durableSessionId
+          ? [
+              {
+                sessionId: session.sessionId,
+                durableSessionId: session.durableSessionId,
+                itemIds: fleet.blocked
+                  .filter(entry => entry.sessionId === session.sessionId)
+                  .map(entry => entry.itemId),
+              },
+            ]
+          : []
+      );
+      if (sessions.length === 0) continue;
+      const ticket = (publicationTickets.current.get(project.dir) ?? 0) + 1;
+      publicationTickets.current.set(project.dir, ticket);
+      const token = cached.observationToken;
+      const acknowledge = (accepted: boolean) => {
+        if (publicationTickets.current.get(project.dir) !== ticket) return;
+        if (!accepted) {
+          const rejected = JSON.stringify([
+            token,
+            sessions.map(session => session.sessionId),
+          ]);
+          if (retriedPublications.current.get(project.dir) !== rejected) {
+            retriedPublications.current.set(project.dir, rejected);
+            load.current(project.dir, passes.current());
+          }
+        }
+        setPublished(previous => {
+          if (accepted && previous[project.dir] === token) return previous;
+          if (!accepted && !(project.dir in previous)) return previous;
+          const next = { ...previous };
+          if (accepted) next[project.dir] = token;
+          else delete next[project.dir];
+          return next;
+        });
+      };
+      void publish({
+        projectDir: project.dir,
+        observationToken: token,
+        sessions,
+      })
+        .then(acknowledge)
+        .catch(() => acknowledge(false));
+    }
+  }, [fleet, projects, reads, passes]);
+
   // `since` survives Project switches; see `pinRoadmapBlockedSince`.
   const pins = useRef<ReadonlyMap<string, number>>(new Map());
   return useMemo(() => {
@@ -233,7 +311,8 @@ export function useFleetRoadmapAttention(
     for (const entry of fleet.blocked) {
       const since = pins.current.get(entry.sessionId);
       if (since === undefined) continue;
-      signals[entry.sessionId] = { kind: 'roadmap-blocked', since };
+      if (!authoritative)
+        signals[entry.sessionId] = { kind: 'roadmap-blocked', since };
     }
     // Fleet-wide by construction: every open Project's live Sessions were
     // evaluated by the same rule, wherever the operator is standing. Unless
@@ -241,6 +320,16 @@ export function useFleetRoadmapAttention(
     // roadmap could not be read, is outside this producer's coverage, and
     // saying so is what keeps the merge from reading it as quiet.
     const blind = new Set([...fleet.pending, ...fleet.unread]);
+    if (authoritative) {
+      for (const project of projects) {
+        if (
+          !reads[project.dir]?.observationToken ||
+          published[project.dir] !== reads[project.dir]?.observationToken
+        ) {
+          for (const session of project.sessions) blind.add(session.sessionId);
+        }
+      }
+    }
     if (blind.size === 0) return fleetAttention('roadmap', signals);
     const covered = projects.flatMap(project =>
       project.sessions
@@ -248,5 +337,5 @@ export function useFleetRoadmapAttention(
         .filter(sessionId => !blind.has(sessionId))
     );
     return scopedAttention('roadmap', signals, covered);
-  }, [fleet, projects]);
+  }, [fleet, projects, authoritative, published, reads]);
 }

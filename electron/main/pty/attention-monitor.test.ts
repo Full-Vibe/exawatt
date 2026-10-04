@@ -190,6 +190,23 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')?.requestId).toBe('q3');
   });
 
+  it('marks a working Session unread as a silent operator reminder that source turns cannot resolve', () => {
+    add('a');
+    const alerts: string[] = [];
+    monitor.on('alert', (_id, signal) => alerts.push(signal.kind));
+    monitor.noteHarnessTurnStart('a');
+    monitor.markUnread('a');
+    expect(monitor.get('a')).toMatchObject({ kind: 'reminder', unread: true });
+    expect(monitor.isWorking('a')).toBe(true);
+    monitor.noteHarnessUnblocked('a');
+    monitor.noteHarnessTurnStart('a');
+    expect(monitor.get('a')?.kind).toBe('reminder');
+    expect(alerts).toEqual([]);
+    monitor.setWindowFocused(true);
+    monitor.setFocus('a');
+    expect(monitor.get('a')?.unread).toBe(false);
+  });
+
   it('restores silently and refuses a late checkpoint after fresh source evidence', () => {
     add('a');
     add('b');

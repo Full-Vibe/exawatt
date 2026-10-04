@@ -1976,3 +1976,42 @@ partial rediscovery of several request identities, new request notification,
 wrong-conversation isolation, and failure cleanup. The integration owner still
 must verify the combined source/restart/renderer tree and declared surface
 gates. Roadmap producer adoption and final marker styling remain pending.
+
+### 2026-10-04 — Roadmap requests and operator reminders join shared custody (implemented, not integrated)
+
+**Roadmap requests now use the same read receipts and notification transition as harness requests.**
+The followthrough remains in `agent/polish-attention` and must land after the
+coupled source/restart stack. It does not move roadmap parsing out of the
+renderer or add a second notification effect.
+
+- `RoadmapAttentionObservations` issues content provenance at the existing
+  `roadmap:read` boundary. The renderer submits covered exact Session/item
+  identities; main checks the latest Project observation and live durable
+  ownership before reconciling only the roadmap producer's records. Missing,
+  failed, or rejected coverage remains explicitly unknown and cannot resolve
+  another producer's request.
+- Concurrent Project-lens/fleet reads are a real boundary: every successful
+  read returns its content token, and publication waits for the latest read
+  before validating. Equivalent simultaneous observations are accepted and
+  deduplicated; different obsolete content is rejected. A rejected publisher
+  retries its read once per distinct snapshot, then remains visibly outside
+  known coverage rather than pretending the Project is clear.
+- A restored known request keeps its read receipt and produces no new alert.
+  A genuinely new initial live request rings once through the existing main
+  alert dispatcher. Resolution followed by re-blocking the same item is a new
+  transition. Duplicate windows, reads, and mounting do not replay sounds.
+- Mark unread is operator intent on any Session, including one currently
+  working without a source request or result. The canonical `operator`
+  `reminder` record says **Marked unread** and joins the third review tier by
+  timestamp. It never fabricates blocked/completed execution, never emits a
+  source alert, and only inspection acknowledges it. Source turns and releases
+  cannot clear it. This implements the original return-to-this-Session intent,
+  rather than limiting the command to already-finished work.
+
+Core reminder checkpoint: `de5bcbff`; UI command checkpoint: `73e831fd`.
+The full focused selection passed 199 tests; an additional source-isolation and
+reminder-restoration contract then passed in the 160-test focused selection.
+Owned followthrough lint and diff checks passed. Full
+compilation still awaits the coupled source branch's unknown-execution consumer
+changes in this worktree. No BUG-265 closure or installed claim is made before
+combined source parity, routing, and Electron evidence completes.

@@ -91,6 +91,7 @@ export function projectRoadmapAttentionSessions(
     .filter(t => t.sessionId && tabIsLive(t))
     .map(t => ({
       sessionId: t.sessionId as string,
+      durableSessionId: t.durableSessionId,
       tabId: t.id,
       title: t.title,
       cwd: t.cwd,

@@ -99,6 +99,7 @@ import type {
 import type {
   RoadmapProjectChange,
   RoadmapReadResult,
+  RoadmapAttentionObservation,
   RoadmapSessionEvidence,
   RoadmapUndoResult,
   RoadmapWriteRequest,
@@ -355,6 +356,10 @@ interface RequestTable {
   /** Opens the grant's own System Settings pane, or System Settings. */
   'permissions:open-settings': Call<[id: PermissionId], void>;
 
+  'roadmap:publish-attention': Call<
+    [observation: RoadmapAttentionObservation],
+    boolean
+  >;
   'roadmap:read': Call<[projectDir: string], RoadmapReadResult>;
   'roadmap:session-evidence': Call<[cwd: string], RoadmapSessionEvidence>;
   'roadmap:activity': Call<[projectDir: string], RoadmapProjectChange[]>;
