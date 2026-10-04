@@ -234,7 +234,10 @@ export function DemoWorkspaceClient() {
   const attentionSource = useSessionAttentionSource();
   const setActiveId = useCallback((id: string) => setActiveSessionId(id), []);
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId || overviewOpen) {
+      void attentionSource?.focus(null);
+      return;
+    }
     const acknowledge = () => {
       if (document.hasFocus() && document.visibilityState !== 'hidden') {
         void attentionSource?.focus(activeId);
@@ -255,7 +258,7 @@ export function DemoWorkspaceClient() {
       document.removeEventListener('visibilitychange', visibility);
       blur();
     };
-  }, [activeId, attentionSource]);
+  }, [activeId, attentionSource, overviewOpen]);
 
   const attention = useMemo(
     () =>

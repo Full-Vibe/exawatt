@@ -1,4 +1,5 @@
 import { StrictMode } from 'react';
+import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -16,11 +17,14 @@ import {
 } from '@/lib/fleet/fleet-provider';
 import { DemoWorkspaceClient } from './demo-workspace-client';
 
-const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
+const { replace, route } = vi.hoisted(() => ({
+  replace: vi.fn(),
+  route: { query: '' },
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace, push: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(route.query),
 }));
 
 vi.mock('./demo-session-pane', () => ({
@@ -31,6 +35,7 @@ vi.mock('./demo-session-pane', () => ({
 
 afterEach(() => {
   replace.mockClear();
+  route.query = '';
 });
 
 function view() {
@@ -96,6 +101,44 @@ describe('Demo workspace on the real ribbon (W6)', () => {
     fireEvent.blur(window);
     focused.mockReturnValue(true);
     fireEvent.focus(window);
+    await waitFor(() => expect(receipt()).toBe('false'));
+    focused.mockRestore();
+  });
+
+  it('keeps the obscured Session unread throughout Team overview and reads it on return', async () => {
+    const target = demoShellAgents().find(
+      agent => agent.status === 'complete'
+    )!;
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    function ReadProbe() {
+      const { fleetState } = useFleet();
+      return (
+        <output
+          data-receipt={String(fleetState.agents[target.id]?.attention?.unread)}
+        />
+      );
+    }
+    const contents = () => (
+      <TooltipProvider>
+        <GoalVisualPreferenceProvider>
+          <FleetProvider>
+            <DemoWorkspaceClient />
+            <ReadProbe />
+          </FleetProvider>
+        </GoalVisualPreferenceProvider>
+      </TooltipProvider>
+    );
+    route.query = 'view=sessions';
+    requestSessionJump(target.id);
+    const { container, rerender } = render(contents());
+    const receipt = () =>
+      container.querySelector('[data-receipt]')?.getAttribute('data-receipt');
+    await waitFor(() => expect(receipt()).toBe('true'));
+    fireEvent.blur(window);
+    fireEvent.focus(window);
+    expect(receipt()).toBe('true');
+    route.query = '';
+    rerender(contents());
     await waitFor(() => expect(receipt()).toBe('false'));
     focused.mockRestore();
   });
