@@ -276,6 +276,12 @@ Initiative mechanism. Owner: `agent/polish-purpose`, sibling worktree
   word; the full lifecycle sentence remains below purpose. Runtime geometry
   proves non-overlap at 100% and 120% type. All 79 focused tests, scoped lint,
   type-check and the repeated Team navigation gate pass after this repair.
+- Delivery verification repaired two old containment assertions to inspect
+  the complete card rather than its open button. The tenancy gate now waits
+  for the closing command dialog to detach before exercising workspace Escape,
+  and for restored Demo content to mount before checking it. This removes
+  races against actual modal ownership and lazy rendering, without changing
+  product focus behavior or weakening the lifecycle/Initiative contracts.
 - Delivery pending. Worktree bootstrap passed. This
   checkpoint is execution detail for ENG-021/ENG-015/ENG-036, not a new plan.
 

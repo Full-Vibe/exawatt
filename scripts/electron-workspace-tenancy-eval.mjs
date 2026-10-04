@@ -445,6 +445,9 @@ try {
         path: join(SCREENSHOT_DIR, 'demo-command-palette.png'),
       });
       await page.keyboard.press('Escape');
+      // The closing dialog retains its Escape owner through the exit motion.
+      // Exercise workspace focus only after that owner has unmounted.
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
 
       // Fixed workspace families run through a Demo-backed action adapter —
       // the help surface never advertises inert Live-only keys.
@@ -535,7 +538,7 @@ try {
         `tiles=${tileCount}`
       );
       const initiativeTiles = page.locator(
-        '[data-expose-tile] [data-session-initiative]'
+        '[data-expose-card] [data-session-initiative]'
       );
       const initiativeNames = new Set(await initiativeTiles.allInnerTexts());
       check(
@@ -694,6 +697,10 @@ try {
       );
       // Demo content — the shell or the board, depending on the remembered
       // surface — but never the contentless gate placeholder
+      await page
+        .locator('[data-demo-workspace], [data-spatial-command]')
+        .first()
+        .waitFor();
       const demoContent =
         (await page.locator('[data-demo-workspace]').count()) +
         (await page.locator('[data-spatial-command]').count());
