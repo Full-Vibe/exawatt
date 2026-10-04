@@ -228,8 +228,9 @@ describe('one Session, one lifecycle vocabulary', () => {
       />
     );
     const tile = document.querySelector('[data-expose-tile]')!;
+    const card = tile.closest('[data-expose-card]') ?? tile;
     expect(tile.getAttribute('aria-label')).toContain(`, ${expected.word}`);
-    expect(tile.querySelector('[data-expose-state]')).toHaveAttribute(
+    expect(card.querySelector('[data-expose-state]')).toHaveAttribute(
       'data-expose-state',
       expected.word
     );
