@@ -13,18 +13,22 @@ accepted the email-inbox analogy: an item may be read but still await a reply
 or triage. BUG-259/260 and BUG-257/258/264/265 belong to this broader separation
 of operator state, source requests and execution truth.
 
-The current Cmd+J projection orders operator gates by age and excludes turn-end
+Before this decision, Cmd+J ordered operator gates by age and excluded turn-end
 results. The operator accepted prioritizing blocked Agents, then questions from
-still-working Agents, then finished results, oldest within each class. This is
-an intentional future interaction change, not a description of shipped code.
+still-working Agents, then finished results, oldest within each class. This intentionally changes the earlier gate-only interaction.
 
 ## Decision
 
 - Read/unread records operator inspection. An outstanding needs-you request
   records unresolved work. Execution records what the source says is running.
   These dimensions may coexist and must not be collapsed into one enum.
-- Unread and already-read results must be distinguishable. Exact visual
-  treatment remains exploratory; it is not a blocker to semantic shaping.
+  A completed result and an unanswered request can coexist in one Session;
+  resolving the request must preserve the result and its inspection state.
+  Main owns these independent records and derives compatibility projections.
+- Unread and already-read results must be distinguishable. The operator
+  accepted a neutral corner dot attached to the existing status-icon location
+  for Agent and Team (2026-10-04 gallery review); the matching actual Fleet
+  renderer proof was subsequently inspected at normal and large text sizes. This detail is orthogonal to the status glyph, not a second status.
   Keep purpose legible and positions stable. No automatic dim/fold/hide/close
   treatment is approved by this decision. Unresolved requests remain needs-you
   even after reading; completion and unread are separate facts.
@@ -38,13 +42,17 @@ an intentional future interaction change, not a description of shipped code.
   not perpetually occupy the queue. A completed result remains a result, not a
   fabricated blocker. Mark unread returns operator intent without re-firing the
   original notification. All targets have a visible reason to be visited.
+  With no existing request/result, Mark unread creates an operator-owned
+  reminder in the same nonblocking review tier. This preserves execution truth
+  and never fabricates completion or needs-you. Only inspection clears this
+  intent; source turn transitions cannot resolve it.
 - Marker, queue, command availability and notifications consume shared
   transitions and identities. An unresolved request becoming read must not
   ring again merely because focus changed. Preserve sound preferences.
 - Predictability is the presentation goal. Prefer existing contextual command
   hints for any needed explanation over new permanent queue chrome or settings.
-  Exact copy and queue traversal behavior remain a design proposal; no visual
-  approval is implied.
+  The accepted corner-dot review governs visual adoption; queue traversal uses
+  the shared pass contract below.
 
 ## Implementation boundaries and proof
 
@@ -53,11 +61,11 @@ ENG-039 supplies bounded module ownership. Extend existing turn-truth,
 Session-lifecycle, navigation and checkpoint owners rather than adding a
 parallel engine. No new source, cloud service or full Initiative model is needed.
 
-Before implementation, specify pass traversal so repeated Cmd+J presses can
-visit all eligible targets even when the highest-priority requests remain
-unresolved; selection must not ping-pong forever between two blockers. Specify
-what happens to a visited target, a newly arriving hard block and an exhausted
-pass without moving Project/tab positions. Acceptance includes read-but-open
+One pass visits each eligible Session once, even when its request stays open.
+The current target counts as visited. Reading does not change source identity;
+a new request identity on an already-visited Session may reenter in priority
+order. Once the pass is exhausted it restarts, excluding the current target,
+without rearranging Projects or tabs. Acceptance includes read-but-open
 requests, working-with-question, unknown evidence, several persistent blockers,
 unread results, duplicate events and exact-Session restart restoration.
 

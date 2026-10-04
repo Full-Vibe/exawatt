@@ -1899,7 +1899,10 @@ and Live. Verification: UI-model suite (191 tests), inspector behavior (10 tests
 TypeScript including Electron tests, and the signed-browser R3F suite (10/10
 scenes, aggregate 100/100) pass on this worktree. The explicit aggregate-filter
 regression is also included. Current state: verified foundation; normal landing
-and dogfood request pending. No full BUG-134 closure or installed claim.
+integrated in `2b1bccdbe9f6` after the full rebase floor and R3F 100/100;
+dogfood queued. No full BUG-134 closure or installed claim. The operator
+deferred the subsequent Project-count popover for further refinement; its
+checkpoint is retained on `agent/polish-delegation-gallery` at `55026e5e`.
 
 Foundation verification also repaired two old DOM test selectors that embedded
 opaque unit identities directly into CSS. Tests now compare data-attribute values

@@ -306,6 +306,18 @@ stable refs/buffers and publishes React state only when a semantic boundary
 changes. DOM motion prefers transform/opacity after measurement, without blanket
 layer promotion or containment.
 
+Terminal presentation attaches on first visibility, not simply because an open
+Session appears in the workspace tree. Once attached, the same terminal renderer
+survives hidden-tab and split changes for that process incarnation. Main owns
+PTY execution and retained output throughout; the renderer attaches through the
+existing cursor-based replay boundary. This keeps Fleet-to-Agent return work
+proportional to visible panes without losing hidden Session output or changing
+source observation. Fleet density changes use R3F's `setDpr` owner with a
+rearmed display-resolution observer; they do not remount the canvas or bypass
+host-power limits. Gallery scene labels use DOM projection under unchanged CSP,
+with pointer pass-through and the same parent geometry/motion; they no longer
+start Troika blob workers for text.
+
 Performance work starts from an operator-visible gesture and an attributed
 trace, changes the narrowest proven owner, and reruns the same behavior and
 timing evidence on the exact tree. The cross-surface Electron evaluator planned
@@ -331,15 +343,54 @@ workspace key layer and passive hints, supplies disabled reasons to the command
 palette, and sends validated booleans through preload so Electron main can
 enable the same native Session-menu items. The projection never owns or mutates
 the underlying state; each command still validates its target in the workspace
-or Electron-main lifecycle authority. The application-global native menu also
-disables workspace-local rename, split, close, and attention verbs while
-another route such as Spatial owns the renderer; route-safe Project opening,
-shell launch, and closed-Session recovery retain their explicit navigation
-paths. Decision `0020` records the visible-target rule, including `⌘J`'s strict
-needs-you semantics. Electron invalidates the projection when document loading
+or Electron-main lifecycle authority. The application-global native menu scopes
+workspace-local rename, split and close to their owning surface. Attention
+availability comes from the active Agent/Team or Fleet owner; Fleet selects and
+follows a visible target, then Enter uses the existing exact Session handoff.
+Route-safe Project opening, shell launch and closed-Session recovery retain
+explicit navigation paths. Decisions `0020` and `0046` keep visible-target
+eligibility while ordering hard blockers, working questions and nonblocking
+unread review work through one pure queue/pass contract. Electron invalidates the projection when document loading
 starts, on main-frame navigation, and at renderer-process-loss boundaries;
 restored renderer state must republish before native contextual commands become
 available again.
+
+Session attention is separate from execution truth and process lifecycle.
+Electron main owns source-scoped request, result and operator-reminder records;
+compatibility attention fields are derived projections, not competing state.
+Inspection changes read receipts without resolving a request. A completed
+result survives behind an open question, and one producer cannot resolve
+another producer's records. Shared pure helpers supply queue priority, visible
+reason and unread presentation. A source transition can alert once; focus,
+restore and explicit Mark unread cannot replay that alert. Demo keeps the same
+record/command contract behind its own transport rather than component-local
+read overrides. See decision `0046` for the accepted inspection and queue rules.
+
+Roadmap attention enters that owner through content-addressed read provenance
+and exact Session coverage. Renderer observations carry coverage, not authority
+over a Session's roadmap assignment. Main joins the latest successfully read
+document to current Session evidence using the shared core parser/projector;
+explicit assignments persist on the existing Session metadata owner. Stale or failed observations cannot resolve a request. Partial coverage
+reconciles only the exact covered Sessions; omitted Sessions remain untouched.
+The source transition owns notification sound once; duplicate windows and
+inspection never become independent alert producers.
+
+Exact-Session restart hydration seeds durable attention before source observation
+starts. It preserves matching per-request receipts while admitting genuinely
+new requests. Saved execution badges never prove a process remains alive.
+Formerly running Sessions restore paused with a separate explicit resume set;
+already-paused Sessions are excluded from that default. Exawatt launch drafts
+and layout persist, but provider-owned unsubmitted input and terminal viewport
+anchors are not yet restored by this contract.
+
+Saved source identity is a string independent of the runtime capability to
+launch it. Total display metadata keeps an unsupported source's purpose, draft,
+history and exact identity readable; the shared `isPtyHarness` admission guard
+limits execution to supported sources. Reopening saved work restores the
+stopped view without starting a replacement source. Known-version layout and
+closed-ledger round trips preserve bounded JSON source extensions under one
+sanitizer; canonical fields win, and prototype keys are excluded. This is
+forward-compatible source identity, not support for arbitrary future schemas.
 
 ### Coordination and Intelligence Layer
 
@@ -399,6 +450,16 @@ attachments. The renderer submits through the distribution-declared
 `services.productFeedback` V1 endpoint; without it the intake is unavailable
 before account/session work and no request is possible. Inference excerpts
 themselves are not persisted.
+
+The inferred label feeds one pure display-identity projector in
+`@exawatt/ui-model` (`sessionDisplayCopy`). Explicit operator names remain
+first; otherwise meaningful purpose leads Session re-entry, with source/harness
+identity as searchable supporting metadata. Agent, Team, palette and Fleet
+consume this identity without owning separate provider-specific naming rules.
+Persisted labels remain last-good context for paused Sessions; a live main-owned
+label supersedes an older saved copy. Lifecycle styling does not dim the purpose
+of a stopped Session.
+
 
 ENG-025 F7 retains one renderer-lifetime feedback draft/attempt store behind
 keyboard, palette and Help entry commands. One Radix-hosted dialog retains the
@@ -597,7 +658,15 @@ descendant IDs, and translates reported lifecycle into the shared delegation
 model. Reconnect replaces the observation from a fresh descendant snapshot.
 The shared monitor applies each child census atomically, accepts source-proven
 resumption over delta-event tombstones, and emits completion only for explicit
-completed turns. One `census` event owns that reconciliation for every adapter:
+completed turns. Root turn observation reads typed items and the
+latest lifecycle independently of child rendering. The installed source can
+report a live TUI turn as interrupted without a completion timestamp; that is
+unknown, not positive completion. Per-question identities and exact replies
+own asynchronous request resolution. Bounded continuation reports partial
+coverage explicitly and commits its cursor only after a successful observation;
+missing pages or a connection outage cannot resolve a request. Root/census
+ordering prevents completion from racing newly observed children, while silent
+recovery restores known truth without re-alerting an old result. One `census` event owns that reconciliation for every adapter:
 Claude Code's `Stop` and `SubagentStop` carry the harness's own `background_tasks`
 census and the adapter applies it on every boundary, so a lost start or stop
 cannot outlive the next one. A reported child is a claim with coverage and an
@@ -635,15 +704,20 @@ An unavailable or incompatible protocol withdraws the observation to absent;
 files, worktrees, process trees, and terminal text are never delegation
 evidence.
 
-#### Planned delegation evidence and launch context (ENG-023 D6/D8)
+#### Delegation census and planned launch context (ENG-023 D6/D8)
 
 The [researched execution brief](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end)
 and proposed decision `0041` extend the existing owners rather than introducing
 another orchestration layer. Source/lifecycle adapters retain scoped identity,
 immediate-parent lineage and root coverage; shared `ui-model` selectors own the
 full census, same-entity query, match/context sets and exact summaries before
-bounded DOM/WebGL projection. Full inspection must not read a capped drawing
-payload. Parent Agent, delegated-run and bulk-command counts remain distinct.
+bounded DOM/WebGL projection. The D6 foundation places `selectFleetCensus` ahead
+of spatial layout, so exact population and parent-command counts do not come
+from capped drawing pieces. Parent Agent, delegated-run and bulk-command
+counts remain distinct. Production-wide child query and complete inspection
+remain unfinished: the operator deferred the Project-count popover on
+2026-10-04. Its saved study is not an adopted product interaction; future
+inspection must consume the full census rather than a drawing payload.
 
 Separately, Electron main prepares an optional Exawatt environmental contribution
 and a safe launch-generation receipt; each source adapter must prove instruction
@@ -1090,9 +1164,10 @@ Built:
   that PTY's collision-resistant launch-agent name. Persisted source IDs drive
   no-spawn relaunch with exact tab/Project/all resume actions; OpenCode resumes
   only through `-s`, never `--continue` or a timing/recency guess. The recovery
-  bar makes the selected Project the one-click default and nests the distinct
-  Agent/all-Projects scopes in one menu, so Project recovery does not restart
-  unrelated work or create three competing controls
+  bar first offers the previously-running set after restart, excluding Sessions
+  already paused before shutdown. Its existing scope menu retains Agent,
+  Project and all-Project recovery; explicit actions preserve exact identity
+  and never silently start new conversations
 - a pure retained-history projection in
   `packages/core/src/conversation/retained-history.ts` (ENG-016 D71). Codex
   full-turn records and already chain-selected Claude SDK message records

@@ -3000,7 +3000,7 @@ on return, no stale diagnostic handles, detached output replayed exactly once,
 focus and current display geometry correct; existing search, scrollback, links,
 clipboard, and hidden-resize checks pass. The unit lifecycle test additionally
 proves retained hidden output subscription and exactly-once disposal.
-Production before/after comparison and final landing gates remain pending.
+Production comparison and final delivery evidence follow below.
 
 **Production comparison verified; independent review clear.** The identical
 30-Session / five-Project fixture now settles in 437–440 ms with maximum frame
@@ -3017,8 +3017,11 @@ but the August report's specific affected source snapshot was not recovered.
 Do not relabel this as a source-specific fix. `BUG-263`'s display-density branch
 is verified; the reported frozen branch remains distinct from intentional
 battery/reduced-motion behavior and requires contemporaneous host/source facts
-if it recurs. Next action: run the declared landing floor and gates, integrate
-with dogfood queued, then remove this worktree and local branch.
+if it recurs. Integrated `6cbf83e1d5af` (2026-10-04), public projection published.
+The full floor and declared chrome, split, spatial/emergence/pointer, navigation,
+packaged Session-parity and terminal-fundamentals gates passed. Dogfood was
+queued at handoff, not yet installation evidence. Own server, worktree and
+branch were removed; retained evidence includes the landing log.
 
 ### 2026-10-04 — V3.9 decided: close pack plus focus field
 

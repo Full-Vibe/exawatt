@@ -34,7 +34,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-029 | Project blackboard and agent bus                 | planned      | The repo is the blackboard, ENG-023's event channel is the bus; C1 preview landed, substrate gated.                                                                                    |
 | ENG-019 | Cooperative session crystallization              | planned      | Agents write versioned per-Session handoffs on graceful quit; Exawatt coordinates, never runs git.                                                                                     |
 | ENG-003 | Unified Agent Source architecture                | active-build | Registry foundation, the S2 `opencode` adapter, and the S4 Grok Build adapter landed; S3 provider plurality remains, while remote/fleet work stays planned.                            |
-| ENG-023 | Delegation visibility — subagents as fleet truth | active-build | D5.1 and D7 landed; D6 census/query and D8 launch context shaped; D2 child zoom remains planned.                                                                                                                            |
+| ENG-023 | Delegation visibility — subagents as fleet truth | active-build | D5.1/D7 and D6 census foundation landed; complete child query/inspection deferred for refinement; D8 launch context and D2 child zoom remain planned.                                                                                                                            |
 | ENG-005 | Initiative primitive                             | planned      | Workspace → Initiative as the durable high-level frame, beyond ENG-002's label slice.                                                                                                  |
 | ENG-006 | Decision model                                   | planned      | Decision as a first-class scoped record with Approval scope and lifetime.                                                                                                              |
 | ENG-007 | Context Signals                                  | planned      | Many-to-many external inputs (PostHog, Slack, email, GitHub, calendar) as modeled sources.                                                                                             |
@@ -70,8 +70,9 @@ require before/after evidence for layout or flow changes. Significant feature
 expansion is outside this pass. The [ENG-036 shaping brief](projects/design-system-of-record.md#2026-10-04--everyday-use-polish-shaping-and-research-basis)
 links ENG-021/015 purpose-first re-entry, ENG-015/016 attention and continuity,
 ENG-004/023 orientation, ENG-025 F7 recovery and bounded ENG-039 refactors.
-Unread and already-read results must be distinguishable; exact styling remains
-exploratory and does not block planning. Decision [0046](decisions/0046-reading-does-not-resolve-attention.md) accepts
+Unread and already-read results remain distinct: the operator accepted a neutral
+corner dot within the existing Agent/Team status-icon location; matching Fleet
+render proof remains required. Decision [0046](decisions/0046-reading-does-not-resolve-attention.md) accepts
 read versus unresolved attention, priority ordering, and pause-first restart
 with explicit resume. Execution is authorized by the operator's 2026-10-04
 follow-up: parallel isolated worktrees, stateful handoffs and cleanup; material
@@ -1291,7 +1292,7 @@ Project doc:
 
 ### ENG-023 Delegation visibility — subagents as fleet truth
 
-Status: active-build — D1/D3a/D3b/D3c/D4/D5/D5.1/D7 landed; D2, expanded D6 and D8 planned. [D6/D8 research and execution brief](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end) defines evidence, shared contracts, parallel lanes and UX review gates. D7 (BUG-081) integrates the adjacent census/expiry candidate in the 0.1.11 batch; D6/D8 must preserve that lifecycle owner.
+Status: active-build — D1/D3a/D3b/D3c/D4/D5/D5.1/D7 and D6 census foundation landed; D2, remaining D6 inspection and D8 planned. [D6/D8 research and execution brief](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end) defines evidence, shared contracts, parallel lanes and UX review gates. D7 (BUG-081) integrates the adjacent census/expiry candidate in the 0.1.11 batch; D6/D8 must preserve that lifecycle owner.
 
 Direction: source-reported delegated work must remain observable without becoming
 synthetic top-level coworkers. D5.1 separates observation health from turn truth;
@@ -1357,7 +1358,7 @@ Milestones:
 - D4 "Is that tab done, or waiting on ME?" (landed 2026-08-02): the third reported fact — `blockedOn` — beside own turn and children, from the hooks that actually report an operator gate (`PreToolUse`/`PostToolUse` MATCHED to `AskUserQuestion`, `Notification` matched to `permission_prompt`/`agent_needs_input`/`elicitation_dialog`, `ElicitationResult`, and `PostToolBatch` as the granted-permission release). Captured 2026-08-02 from an operator report with screenshots: a `⌘4` tab showed a green Result while Claude sat on an `AskUserQuestion`, then flipped to the blue Active rotor the instant the tab was focused. Three defects, one event — (1) `attention-monitor` was handed a delegated-children boolean rather than the reported record, so quiescence went on concluding "turn finished" for a Session whose harness had reported the turn still `generating`; (2) no subscribed hook reported an operator gate at all, so the truthful `needs-you` light was unreachable and the tab read "working — output streaming" forever after focus cleared the bogus result; (3) `sessionStatusLightState` short-circuited to `result` on a turn-end signal instead of going through the priority encoder, so the contradiction stayed invisible until focus cleared the signal and revealed the state underneath. The durable rules: reported outranks inferred AT THE SOURCE (one `setReportedTurnSource`, not one injection per fact); gate releases are reason-scoped so an unrelated hook can never answer an open question, with turn boundaries as the never-latch backstop; and attention is what the operator has not SEEN while the light is what is TRUE, so focusing a tab can never change the light. `idle_prompt` is deliberately not a gate. Still no sixth light: a gate lands on the existing `needs-you`. `turn-truth-pipeline.test.ts` wires the real monitors to the real render derivation and asserts the light before and after focus on every path, and `eval:electron:turn-truth` replays the whole scenario in the running app. VERIFIED against Claude Code 2.1.220 itself, not only against fixtures: matchers genuinely scope HTTP hooks (a `Bash` call posts no `PreToolUse`/`PostToolUse`, so the no-activity-ticker boundary holds), and a live `AskUserQuestion` reports `UserPromptSubmit -> PreToolUse[AskUserQuestion] -> Notification[permission_prompt]` with NO `Stop` — the root cause, observed. That measurement also corrected the design mid-flight: one question is announced TWICE under two different names, so the first report of a gate wins until released, otherwise the second would overwrite the reason and strand the scoped release. REVIEWED and corrected 2026-08-02: D4's first cut suppressed inference for ANY reported-open turn, which was wrong — an aborted turn emits no boundary at all (measured against every documented hook), so a bare `generating` is not proof of life and every interrupted tab spun forever. A reported turn now outranks inference only while something EXPLAINS its silence (a running child, an open gate — both end with a guaranteed event); a bare `generating` is reclaimed by inference as an ordinary `turn-end`, on the same single condition that gates the queue so `⌘J` and the light can never disagree. The same review found the Project ribbon dot re-deriving Session truth from raw activity/attention instead of the shared derivation — the loudest surviving instance of the original bug, since a collapsed Project shows only that dot — and routed it through `sessionStatusLightState`
 - D5 Codex spawned-thread observation (landed 2026-08-16; product-feedback `72c79f40` / BUG-020): a version- and shape-probed read-side Codex 0.147 app-server adapter correlates exact parent/descendant thread IDs and source lifecycle into the existing delegation model; reconnect resnapshots authoritatively and protocol failure withdraws to absent without synthetic completion. The 23-check Electron eval drives two live children through Agent, Team, Fleet, exact completion, loss, and reconnect; no filesystem, worktree, process-tree, or terminal-text evidence enters the adapter
 - D5.1 Observation isolation and source disclosure (landed 2026-09-16; BUG-133 half 2): preserve independently verified children and publish complete/partial/unavailable protocol coverage in Agent Sources; [execution contract](projects/delegation-visibility.md#2026-09-16--bug-133-half-2-isolate-uncertainty-and-disclose-observation-health).
-- D6 Complete delegation census and projection (planned; BUG-094 / BUG-134): scoped lineage/coverage → entity query → exact summaries → bounded graphics/full inspection; [D6.1–D6.4 contracts](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end).
+- D6 Complete delegation census and projection (foundation landed `2b1bccdb`, 2026-10-04; BUG-094 / BUG-134 remain partial): source-neutral membership and aggregate filter truth precede bounded graphics; complete child query/inspection deferred by operator for refinement; [D6.1–D6.4 contracts](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end).
 - D8 Disclosed harness context (planned; BUG-133 half 1): typed optional launch contribution, instruction-preserving provider evidence, lifecycle receipts and existing-surface disclosure; [D8.1–D8.4 contracts](projects/delegation-visibility.md#2026-09-18--d6-and-d8-execution-brief-truthful-delegation-end-to-end).
 
 - D7 Delegation census coverage and expiry (landed 2026-09-16; BUG-081): a reported child is a claim with coverage and an expiry, not a latch. One `census` owner (`reconcileCensus`) serves Codex's D5 snapshot and Claude Code's `background_tasks`, which every `Stop`/`SubagentStop` carries (measured on 2.1.270); between boundaries the parent PTY's task-footer rendering is the coverage, and silence past the stale bound with no gate open withdraws the census on the same instant a bare turn is reclaimed, never completing it. The reported-turn wiring moved into `harness-events/turn-truth.ts`, shared by `pty-ipc` and the pipeline contract; expiries leave `delegation.census-expired` in `logs/main.jsonl`; both directions mutation-verified; `eval:electron:delegation` drives the interrupt, the covered child, and the lost stop. [Contract and measurements](projects/delegation-visibility.md#d7-census-coverage-and-expiry--landed-2026-09-16-bug-081)
@@ -2842,7 +2843,7 @@ Proven in `scripts/gate-recheck.test.mjs`.
 
 ### BUG-209 A Recently-closed row can name a harness this build does not know
 
-Status: bug · ENG-016 · found 2026-09-24 by the ENG-039 desktop bridge contract.
+Status: done · ENG-016 · found 2026-09-24 by the ENG-039 desktop bridge contract.
 
 The Recently-closed ledger is a file, and main admits any string as a row's
 `harness` (`closed-session-ledger.ts` checks `typeof`). The renderer's
@@ -2854,6 +2855,8 @@ says `string`; the two sites assume a known harness explicitly, marked
 BUG-209, with behaviour unchanged. The repair needs a decision on what an
 unknown harness reopens as; the ledger's own read must not drop the row, since
 absence is not an answer.
+
+Resolved 2026-10-04 in `f2cc99ea9800`. Unknown Recently-closed sources remain searchable and retained; exact resume is explicitly unavailable and cannot coerce into a shell or another harness. Consumption preserves known purpose/title without inventing a source. Three runtime gates and the full floor passed. Open-workspace unknown-source compatibility is a separate remaining assessment. [Delivery evidence](projects/design-system-of-record.md#integrated-delivery-ledger).
 
 ### BUG-218 Renderer tests timed out under load in jsdom's style engine
 
@@ -3509,8 +3512,7 @@ Scope includes attention/unread state, user inputs and navigation/scroll
 positions, not just provider checkpoints. Automatic resume is an explicit new
 request requiring a policy/design amendment; [decision 0032](decisions/0032-restore-project-scoped-session-recovery.md)
 still forbids silent revival and admits exact-identity eligible Agents only.
-Keep this review-needed scope here; do not add a second restart plan or promise
-all harnesses can revive transparently.
+Superseded by the subsequent 2026-10-04 operator steering and [decision 0046](decisions/0046-reading-does-not-resolve-attention.md): restore context paused, then offer explicit resume of the previously running set; already-paused Sessions stay excluded. Automatic resume is future scope. Preserve the input/navigation/scroll acceptance above and record any remaining gaps; do not promise every harness can revive transparently.
 
 ### BUG-261 Toasts and the feedback form's sending state use three treatments
 
@@ -3533,7 +3535,7 @@ Amended 2026-10-04: F7 supersedes reporting close-on-send with one compact dialo
 
 ### BUG-262 The Fleet to Agent transition stutters
 
-Status: bug · ENG-004 · product-feedback 98117f69 2026-09-30. "The loading
+Status: done · ENG-004 · product-feedback 98117f69 2026-09-30. "The loading
 animation going from Fleet to Agent feels a bit crunch and slow and sluggish."
 The altitude transition is the moment every demo passes through. Measure
 before fixing: frame times across the transition on the dogfood build with
@@ -3541,6 +3543,8 @@ about thirty live Agents; likely suspects are xterm mounting for the target
 Session during the transition and the board tearing down while the Agent
 surface paints. The timing sweep is advisory under HMR (no edits while it
 runs).
+
+Resolved 2026-10-04 in `6cbf83e1d5af`. First-visible terminal attachment removes the reproduced mass-initialization stall; existing history replay, focus, split and terminal fundamentals pass. Full floor and declared browser/R3F/Electron gates passed; dogfood queued. [Evidence](projects/spatial-operations-board.md#2026-10-04--everyday-use-polish-execution-display-resolution-and-motion-diagnosis).
 
 ### BUG-263 The Fleet board renders frozen and blurry
 
@@ -3554,6 +3558,8 @@ DPR/resize path that left the canvas at a stale size (a display change is the
 likely trigger). Check `invalidate` ownership against the R3F authoring guide
 and the canvas `dpr`/resize observer, and make `eval:spatial` assert motion
 while any Agent is working.
+
+2026-10-04 partial delivery: `6cbf83e1d5af` repairs reproduced stale DPR after a display-density change and verifies normal-power rotor motion. The frozen report remains open: intentional battery/reduced-motion behavior is distinct, and no source-specific freeze was reproduced. Do not close the whole report from density evidence. [Incident 0034](incidents/0034-fleet-return-rebuilds-hidden-terminals.md) records the adjacent transition diagnosis.
 
 ### BUG-264 A Codex queued question is not a needs-you
 
@@ -3607,9 +3613,11 @@ whether the moment stays local or publishes.
 
 ### BUG-268 Fleet's dotted stopped-Session outline is absent from the legend
 
-Status: paper-cut · ENG-004 · product-feedback 11909db1 2026-10-02.
+Status: done · ENG-004 · product-feedback 11909db1 2026-10-02.
 Explain the lifecycle outline separately from Idle and the last-turn mark.
 Evidence and acceptance: [Spatial project log](projects/spatial-operations-board.md#2026-10-02--explain-the-stopped-session-outline-bug-268).
+
+Resolved 2026-10-04 in `6cbf83e1d5af`. Legend and hover share the lifecycle-owned stopped outline, without equating it with Idle or promising resumability. Full floor and declared browser/R3F/Electron gates passed; dogfood queued. [Evidence](projects/spatial-operations-board.md#2026-10-04--everyday-use-polish-execution-display-resolution-and-motion-diagnosis).
 
 ### BUG-270 Consider spacious shared Cmd+K and feedback overlay language
 
@@ -3687,6 +3695,22 @@ networking, ordinary sign-in and real feedback POST/row/image proof with cleanup
 The stall no longer reproduces; keep the intermittent issue open until its cause
 or durable resolution is established.
 
+### BUG-273 Saved open Sessions fail when their source is unsupported
+
+Status: bug · ENG-016 · continuity audit, 2026-10-04; active follow-through with ENG-018.
+
+Known-version saved layouts assume every source string has current runtime
+metadata. Legacy migration can throw; current records with explicit title
+ownership can parse but fail in stopped/restore rendering. Unsupported draft
+source choice also becomes null. Preserve raw source identity and saved context
+separately from supported execution capabilities. Reuse one total presentation
+and capability contract across restore, paused details, Team and Fleet; never
+coerce into another source or fabricate process failure. Exit: mixed known and
+unsupported legacy/current layouts load; purpose/history and source/draft
+identity survive save; unsupported runtime actions stay unavailable; known
+exact resume remains correct. Arbitrary future schema versions are outside
+this compatibility slice. [Execution contract](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.
@@ -3695,9 +3719,13 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ENG-038 slice 1's Keychain-token custody, its `api.anthropic.com/api/oauth/usage` request, and the 2026-08-16 "signed Chromium transport" network identity | ENG-038 slice 3, 2026-10-04 | The Claude plan read runs the operator's own `claude -p "/usage"`; Exawatt reads no credential and makes no request. The Keychain path is deleted and a test fails if it returns. Claude Code rewrites its Keychain item on each refresh, so a one-time approval could never hold, and Anthropic's terms forbid intermediating Claude.ai credentials. |
 | BUG-060 / decision `0036` §6 distribution gate `ownAccount.claudePlanUsage` for the Claude plan read, BUG-149's `unconfigured` account status, and the custody-upgrade prerequisite | ENG-038 slice 3, 2026-10-04 | Nothing is gated: the read runs the operator's own binary. The resolved contract drops `ownAccount`; the wire key is still accepted and ignored in schema 2 and absent in schema 1; `unconfigured` is deleted from the account statuses; `distribution:custody:upgrade` is deleted and no release is needed for Claude windows. |
+| Separate initial, purpose, attention follow-through and unread/canon deliveries | Combined delivery coordination, 2026-10-04 | One reviewed attention-owned transaction now carries all remaining approved slices with the union of every required gate and dogfood. This replaces repeated dependent floors, not their acceptance criteria. Proof branches persist until verified integration; exact receipt and cleanup remain in ENG-036. |
 | October 4 polish shaping-only authorization | Operator execution directive, 2026-10-04 | Execute the agreed purpose/attention/restart/orientation/shared-foundation work in parallel isolated worktrees; retain existing visual-review and exact-tree evidence gates. ENG-036 execution checkpoint names owners and dependencies. No major feature expansion or cancellation of existing commitments. |
-| ENG-015 S1 focus-clears-attention and age-only Cmd+J with results excluded | Decision 0046, operator UX steering, 2026-10-04 | Accepted future contract: inspection clears unread but preserves unresolved requests; visit hard blockers, then working questions, then unread results, oldest within class. Execution, request and read state remain separate. Restart restores context paused with explicit resume for the previously running set; automatic resume is future scope. Implementation is planned, not shipped. |
-| ENG-042 limited to publishing existing investigations; feature-led next-work selection for this polish pass | Operator steering, 2026-10-04 | Add cited research-informed design explanations; prioritize active-user journeys and shared owners, with newcomer discoverability and demonstrated improvement. Decision 0046 accepts attention semantics and pause-first restart with explicit resume; implementation remains planned. Existing workshop commitments are not cancelled; major feature work is not a prerequisite or newly authorized. |
+| ENG-023 D6 Project-count popover adoption in the current polish pass | Operator review, 2026-10-04 | Deferred: the simplified interaction needs more refinement. Finish the independently verified census foundation; preserve the study for later, with no production popover adoption or new review request this pass. BUG-134 remains partial. |
+| Separate unread marker geography and exploratory Agent/Team styling | Operator gallery review, 2026-10-04 | Adopt A, a neutral corner dot attached to the existing status icon. Preserve status meaning, purpose and read-but-unresolved attention. Outer arc and separate-location dot are superseded; Fleet rendering still requires proof. |
+| BUG-260 earlier 2026-10-04 automatic-relaunch-and-resume request | Subsequent operator answer and decision 0046, 2026-10-04 | Pause-first restoration and explicit resume of only the previously-running set govern this execution. Automatic restart-and-resume stays future scope; context/input/position preservation remains acceptance work. |
+| ENG-015 S1 focus-clears-attention and age-only Cmd+J with results excluded | Decision 0046, operator UX steering, 2026-10-04 | Accepted future contract: inspection clears unread but preserves unresolved requests; visit hard blockers, then working questions, then unread results, oldest within class. Execution, request and read state remain separate. Restart restores context paused with explicit resume for the previously running set; automatic resume is future scope. Implementation is active in the coordinated polish stack; no delivery claim follows from this decision. |
+| ENG-042 limited to publishing existing investigations; feature-led next-work selection for this polish pass | Operator steering, 2026-10-04 | Add cited research-informed design explanations; prioritize active-user journeys and shared owners, with newcomer discoverability and demonstrated improvement. Decision 0046 accepts attention semantics and pause-first restart with explicit resume; implementation is active. Existing workshop commitments are not cancelled; major feature work is not a prerequisite or newly authorized. |
 | ENG-025 F6.4 close-on-send and F6 production-delivery acceptance; ENG-036 paired overlay follow-through | ENG-025 F7 / BUG-272, operator recovery 2026-10-04 | One dialog retains input, pending and terminal recovery. Shared Dialog/Button/action owners enforce truthful modality and native accessible shortcuts. Repair the missing fingerprint INSERT grant and inline image/wire budgets. Oct2 source/install/READY remain artifact history, not proof of authenticated delivery. Immutable key/certainty contracts remain; material cross-surface visuals require renewed gallery review. |
 | ENG-025 F7 first recovery gallery's stacked form and in-modal simulation controls | ENG-025 F7 compact refinement and final operator review, 2026-10-04 | Preserve delivery/focus/retry contracts; use compact writing, attachment presence with one remove action, conventional optional app details, and in-place status. Final review retains height motion, removes the heading, adds optional purpose help and standardizes trailing action hints. Shared language does not require Cmd+K density. Retire the gallery on adoption. |
 | ENG-025 F6 separate quick/full composers and first gallery motion candidate | Operator review, 2026-10-02 | One shared composer replaces both forms. Keyboard hints sit beside owned actions; redundant image controls are removed. Elaborate state morphing is rejected: receipts update immediately with a pending-only spinner; real Radix presence owns panel entry/exit and reduced motion. The operator authorized production adoption; verified source is integrated and the combined UI deployed and exact-SHA dogfood installed; execution detail stays in F6 and decision 0045. |

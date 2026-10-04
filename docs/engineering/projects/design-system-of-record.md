@@ -438,6 +438,22 @@ specific evidence available for each shipped interaction.
 
 ### 2026-10-04 — Everyday-use execution checkpoint
 
+**Current delivery owner: `agent/polish-attention`, one combined transaction.**
+This supersedes the separate initial/restart, purpose, follow-through and final
+unread/canon landings described in the historical updates below. All required
+checks are retained; the final union currently contains 30 surface gates.
+Restart and purpose stopped their retries before admission; no competing
+tickets exist. Compose, rebase/install, review the final joins, run the complete
+floor and gate union, integrate, then wait for dogfood installation evidence.
+Contributors retain proof branches until their content is verified integrated.
+
+Recoverable inputs: restart `1286c537`, follow-through `90349667`, purpose
+`e569d31b`, unread `d3196985`, and coordination's final canonical handoff.
+The assembled behavior tree reached `7f935cab`; a narrow owned-dev-server
+shutdown correction is being reviewed before the final run. The shutdown
+must wait for the owned process group to exit, not just for its listening
+port to close, before deleting the build cache.
+
 **Execution is authorized and running in isolated, coordinated worktrees.**
 The operator requested maximum useful parallelism, autonomous completion and
 cleanup, Boy Scout improvements to UX and architecture, and persistent handoffs.
@@ -451,9 +467,11 @@ accepted purpose, attention and pause-first restart rules are not re-interviewed
 | Source truth / `agent/polish-source-truth` | Source adapters, harness-events/turn-truth and their production pipeline; ENG-016 log | Trace Codex parent/child/compaction and Claude completion, verify installed provider evidence; coordinate additive source evidence with attention owner. |
 | Restart / `agent/polish-restart` | Persisted layout, checkpoint, serialization/restoration and exact-Session recovery; ENG-018 log | Depend on attention contract, then rebase on its landed implementation; preserve operator state and the previously-running set, restore paused, expose explicit eligible resume. |
 | Purpose / `agent/polish-purpose` | Existing purpose projection and its consumers; ENG-021 log | Paired DOM gallery comparison before material hierarchy adoption; no new recap/Initiative model. Workspace-client wiring belongs to attention until coordinated. |
+| Fleet attention / `agent/polish-fleet-attention` | BUG-163 global shortcut, shared priority/pass projection and exact Session handoff | Coordinate core attention metadata with source/restart; prove real Demo/Live Fleet Cmd+J, not just workspace selection. |
 | Spatial / `agent/polish-spatial` | Resolution, motion and handoff rendering; ENG-004 log | Reproduce on real 30-Agent fixture, prove DPR/display changes and characterize packaged transition; no state/query ownership fork. |
 | Delegation / `agent/polish-delegation` | Census/query/population responsibility; ENG-023 log | Read-only salvage from `agent/delegation-build`; exclude unrelated D8 and unreviewed Fleet presentation. Model proof first, concrete compact-popover review before new interaction adoption. |
 | Gallery hygiene / `agent/polish-gallery-hygiene` | Gallery index and confirmed consumer-less wrapper retirement | Preserve all active studies, including purpose and feedback; repair BUG-061/138 without a broad dead-code sweep. |
+| Gallery text / `agent/polish-text-worker` | Gallery WebGL scene labels and CSP-safe DOM projection; incident 0033 | Preserve CSP and geometry; prove real labels, hover, pointer pass-through and reduced motion with signed-browser evidence. |
 | Unknown-harness recovery / restart-owned delegated lane | Closed ledger and unavailable exact-resume behavior, BUG-209 | Preserve unknown records and explain unavailable capability; never coerce into a different harness. Coordinate workspace-model edits with restart. |
 
 Every lane bootstraps its own worktree and server, commits recoverable progress,
@@ -506,3 +524,316 @@ records those separately. This completes reviewed source and artifact adoption o
 increment, not broader G2/everyday-use polish, BUG-260 restart/resume policy,
 BUG-271 asset custody or persistent drafts/outbox work. Future material shared
 visual changes still require gallery review.
+
+
+#### Execution update — purpose review and integration boundaries
+
+The operator reviewed `/hud-gallery/purpose-reentry` on 2026-10-04 and accepted
+both right-hand treatments: purpose-first Cmd+K and readable paused Team cards.
+Harness species is redundant as a primary name in this context and is demoted;
+future iconography should use one product-wide language. This acceptance covers
+the shown hierarchy, not a new icon-only redesign or removal of source access.
+The purpose lane now proceeds to actual palette/Team adoption and narrow,
+large-type, theme and reduced-motion verification.
+
+Attention, source truth and restart share one contract and will land as a
+coherent stack in `agent/polish-restart`, with unique commits supplied by the
+attention/source lanes. They must not independently publish half-compatible
+semantics. Unknown-harness recovery remains independently landable. BUG-265
+cannot close solely on source alerts: roadmap attention also needs the shared
+notification boundary, with durable transition identity and duplicate-window
+suppression. This is a follow-through investigation, not a second renderer beep.
+
+Additional bounded diagnosis: Gallery's Troika text workers conflict with its
+CSP through blob importScripts. Only gallery scene labels use this text path;
+production Fleet labels use DOM. `agent/polish-text-worker` owns a canon-aligned
+DOM-label repair after confirming the dependency's worker-disable setting does
+not cover CPU SDF fallback. Global CSP stays unchanged. The separate gallery
+hygiene lane owns ordering/focus and the confirmed dead command-key wrapper.
+
+
+#### Execution update — independent state and measured handoff
+
+**Independent review is strengthening shared ownership before integration.**
+The attention/source/restart stack remains in progress. Review found a result
+lost when completion arrived behind an unanswered working question, a race
+between source observation and persisted read-state restoration, a Fleet
+projection treating working questions as blockers, and completed truth staying
+unknown after source recovery. Owners are correcting these at their boundaries:
+
+- Main owns independent request and result records, with one derived legacy
+  attention projection. Resolving a request cannot discard an unread result.
+  This is required by decision 0046, not a new attention engine.
+- Exact-Session restore seeds durable attention before source observation can
+  alert. Matching restored requests retain inspection state; fresh request IDs
+  still alert. Unknown evidence cannot erase a durable pending request.
+- Source truth handles bounded item coverage, positive resolution and silent
+  recovery. Renderer and Fleet consume the same blocking-versus-working fact.
+- Roadmap attention must subsequently enter the same main notification owner
+  through covered, token-validated observations. Duplicate windows and stale
+  reads cannot independently ring or resolve a request. BUG-265 remains open
+  until that producer is covered, not just PTY/source signals.
+
+Spatial diagnosis found that Fleet-to-Agent mounted all 30 terminal renderers
+at once. A candidate attaches each renderer when first shown and retains it
+thereafter; main still owns the running process and retained output. In the same
+30-live-Session/five-Project production fixture, four repaired runs settled in
+437–440 ms with 26–33 ms maximum frame gaps and no long tasks, versus baseline
+861–1356 ms and 503–807 ms long tasks. These are bounded benchmark observations,
+not a general speed or productivity claim. Terminal fundamentals passed,
+including delayed history replay, search, paste, display scale and split use;
+independent lifecycle review and normal delivery remain required. Evidence and
+exact fixture belong in the ENG-004 project log.
+
+The operator reviewed the neutral unread-dot study and accepted its familiar
+behavior, but requested the existing status-icon geography be reused instead
+of a second scanning location. `/hud-gallery/attention-reading` now explores
+an orthogonal unread detail within that same fixed slot. Preserve status meaning,
+accessible naming, purpose position and unresolved needs-you. Compare concrete
+options before production adoption; the separate-position dot is superseded,
+not accepted for production.
+
+**Historical gallery correction.** The September keyswitch-cleanup narrative
+above described home/launch consumers that no longer exist in current code.
+The gallery hygiene lane verified `CommandKeySwitchButton` has no consumers;
+`AgentStartKeySwitchButton` is eval-only, while the active T7 keyswitch study
+still uses shared scene machinery. Remove only the dead wrapper; preserve the
+active studies and avoid treating the old narrative as current architecture.
+
+
+Restart preservation inventory: existing checkpointing covers Project/tab order,
+selected Project/tab, pin, operator-owned title, task/context, launch choices and
+authored Exawatt launch drafts. The coupled slice adds durable request/result
+inspection and the previously-running resume set. Main retains bounded terminal
+history, but xterm viewport/selection has no durable checkpoint seam; text still
+unsubmitted inside a provider TUI belongs to that process and is not an Exawatt
+launch draft. BUG-260 stays partial until those remaining acceptance gaps have
+source-aware designs and proof. Never replay uncertain terminal bytes to pretend
+input preservation. This limitation does not block the accepted pause-first
+attention-preservation repair.
+
+
+Fleet follow-through is independently owned by `/root/fleet_attention`.
+Inspection confirmed current Fleet attention walking uses visible blocked/error
+geometry order and N/P, while the global Cmd+J dispatch only reaches workspace
+availability. Core local projection also omitted unread result metadata. BUG-163
+therefore cannot close with the workspace queue. The repair must consume the
+shared attention records/priority pass and use exact existing Session handoff;
+board geometry must not become the queue's data source.
+
+
+#### Integrated delivery ledger
+
+| Lane | Integrated evidence | Verification and remaining scope |
+| --- | --- | --- |
+| Gallery hygiene — BUG-061/138 | `bfce28fa9d16` (2026-10-04); public projection `a7f312d5ae1f` | Full delivery floor, production/community build and signed-browser smoke passed; desktop/mobile start at foundations without autofocus jumps or page overflow. T7/T9 render without errors and T9 activates once. Dead wrapper retired, active study machinery preserved. CSP text repair remains separate. Own server stopped and temporary worktree/branch removed; no dogfood install needed for this dev-only lane. |
+| Unknown Recently-closed source — BUG-209 | `f2cc99ea9800` (2026-10-04); public `246c1167af66` | Full floor: 2,933 tests/198 files; navigation-spine, Project-Agent and recents gates passed. Unknown source row stays retained/searchable with unavailable exact-resume action; no source substitution. Own server/worktree/branch removed. Dogfood requested, installation still queued at handoff. Open-layout compatibility remains a separate assessment. |
+| Delegation census foundation — D6 / BUG-134 partial | `2b1bccdbe9f6` (2026-10-04); public projection published | Full rebase floor, 688 related tests and R3F 100/100 passed. Membership and exact aggregate filter counts precede drawing budgets. Full query/inspection remains deferred with the operator-rejected-for-now popover. Foundation server/worktree/branch removed; deferred gallery branch intentionally retained. Dogfood queued at handoff. |
+| Gallery labels / incident 0033 | `2351022470c1` (2026-10-04); public projection published | DOM-projected labels preserve pointer pass-through, hover and reduced motion under unchanged CSP. Full floor and real desktop/narrow gallery gate passed after rebase. Unused 144 KB font retired. Own server/worktree/branch/attempt refs removed; dev-gallery-only, no dogfood request. |
+| Spatial performance / BUG-262/268; BUG-263 partial | `6cbf83e1d5af` (2026-10-04); public `c7a95aacf834` | Full floor, R3F and declared browser/Electron gates passed, including packaged parity and terminal replay. First-visible attachment removes the measured 30-Session stall; DPR change updates without remount; stopped outline shares lifecycle meaning. Frozen-source recurrence and BUG-113 remain open. Own server/worktree/branch/attempt refs removed; dogfood queued at handoff. |
+
+Evidence screenshots remain in `/tmp/exawatt-gallery-hygiene/`; durable facts
+and contract checks live in the integrated code/tests and this ledger, so a
+future agent does not need the removed worktree or an ephemeral screenshot to
+understand completion.
+
+
+#### Operator review update — corner dot accepted, worker review unresolved
+
+The operator accepted **A, the corner dot** in the updated unread comparison.
+Adopt it within the existing status-icon slot for Agent and Team; retain status
+meanings, purpose position and combined accessible explanation. Coordinate the
+shared Team header with the purpose lane's independently discovered Resume/status
+overlap repair. Do not reopen the source/restart stack midway through its gates
+for optional visual adoption; a dependent follow-through can carry it. Fleet's
+matching real-renderer proof remains required before board adoption.
+
+The Project worker-count popover has **not** been accepted. The operator replied
+“I'm not following.” Explain the actual gap with a concrete scenario: one Agent
+starts 27 helpers, the board cannot draw every helper, but all must remain
+findable by task and lead back to their owning Session. Simplify the review
+scaffolding before asking for adoption; source-neutral census/query foundation
+is independently deliverable, while BUG-134's complete inspection remains open.
+
+
+Independent read-only review approved the coupled source/attention/restart
+checkpoint `400444f4`. Regressions now cover transactional history continuation,
+source-specific async resolution, independent completion retention, silent
+completed-truth recovery, global source outage, same-question restore dedupe,
+working-question Fleet projection, paused focus and terminal-bell liveness.
+Final existing update/native restart copy is being verified separately; the
+normal floor and declared surface gates still precede integration. The approved
+corner dot follows purpose's shared header repair, without adding optional scope
+to the frozen source/restart gate run.
+
+
+The Mark unread follow-through must also cover a Session without an existing
+result/request. The initial stack safely no-ops for that case, but BUG-259 asks
+for putting a tab back in the review queue. Implement an independent
+operator-owned reminder record through the same attention owner; do not
+manufacture a completed result or a blocker. It shares the nonblocking unread
+review tier, preserves running truth, has a visible “Marked unread” reason,
+fires no source notification, and is cleared by inspection rather than by a
+source turn transition. This completes the accepted verb without a new reminder
+surface or separate state engine.
+
+
+**Subagent interaction deferred by the operator.** After the simplified
+count → task list → owning Agent example, the operator said it “needs more
+refining — leave for later.” Do not adopt the Project popover or ask another
+review question in this execution. Finish only the already-verified D6 census
+foundation. Preserve the gallery checkpoint on `agent/polish-delegation-gallery`
+(initial simplified tip `25dd9466`, final deferred handoff to follow), stop its
+preview and remove its temporary worktree while retaining the local branch for
+later reinflation. BUG-134 remains partial until a future accepted interaction
+makes all workers inspectable. This is an explicit scope deferral, not a failed
+implementation or implicit acceptance of the candidate.
+
+
+BUG-273 was allocated with `pnpm id:next BUG` for the related saved-open-source
+compatibility gap. Read-only probes on current origin and the restart candidate
+found: v5 or v7 without explicit title ownership throws during metadata lookup;
+v7 with explicit title ownership preserves raw source and durable/provider IDs
+through parse/serialize but unsafe render lookups remain; unsupported draft
+source becomes null. Parser failure leaves hydration unready and persistence
+writers gated, so wholesale disk loss was **not** demonstrated. Do not report it
+as such. The raw-identity/capability repair is a separate bounded lane,
+`agent/polish-source-compatibility`, after coupled restart integration. It owns
+known-version persistence, total metadata and explicit operation admission;
+no new harness or opaque future schema support is authorized.
+
+Deferred delegation study is now saved at `55026e5e4444500fecfc99532599f15079383e89`
+on `agent/polish-delegation-gallery`. Its server and worktree are removed; that
+local branch is intentionally retained. Reinflate with `git worktree add
+../exawatt-delegation-review agent/polish-delegation-gallery`, bootstrap there,
+and use `/hud-gallery/board-study?delegation=1` on its own server. Reconcile its
+copied foundation with integrated master before further refinement. The
+operator deferred production adoption; retaining the branch is not approval.
+
+
+Coordination delivery dependency: `agent/polish-coordination` now prepares
+architecture/manifest and public guide/reference updates for the coordinated
+result. Do not land this branch ahead of its behavior dependencies: source/
+attention/restart, purpose/header, spatial performance, Fleet attention,
+roadmap/reminder ownership and approved unread adoption. If resuming from this
+checkpoint, first reconcile each lane's integrated SHA and remaining scope;
+remove or qualify any instruction whose implementation did not land. BUG-273
+source compatibility is a separate follow-through. Preserve the operator's
+explicit subagent-interaction deferral.
+
+
+BUG-273 review adds the reversible close/reopen path to the same compatibility
+seam. BUG-209 initially refused unsupported rows before removing them because
+open tabs could not represent those sources. Once raw source identity is safe,
+**reopening saved work** may restore the stopped view without any runtime call;
+**resuming execution** remains unavailable. Preserve source extensions through
+the closed ledger using the same bounded helper, and test the full cycle.
+Do not invent a separate unknown-Session kind or lose readable history after
+Cmd+W. This supersedes the initial restore-only admission restriction without
+weakening exact execution admission.
+
+
+Follow-through delivery is consolidated under `agent/polish-attention` after the
+initial restart stack integrates: authoritative roadmap notifications/operator
+reminders, Fleet Cmd+J/retained read ownership, and BUG-273 raw source recovery
+will share one reviewed combined tree and the union of all required surface
+gates, with dogfood requested. No floor or gate is waived. This avoids three
+successive deliveries changing the same contracts and repeating their heavy
+checks; the implementation/review lanes remain independent.
+
+Recoverable inputs: Fleet `10ba086a` (own server stopped, clean worktree retained),
+BUG-273 code through `6f2fd87c` (proof branch `c8c71615` includes an optional
+standalone-delivery note that the combined owner must revise; own server
+stopped), and attention's clean `3d5bfaf8` before assembly. The initial coupled
+stack remains a separate frozen delivery. Preserve original branches until
+combined origin ancestry/patch integration is verified, then clean their owned
+worktrees and branches. Purpose/header and the approved unread visual adoption
+retain separate delivery ownership.
+
+
+Installation evidence: the delivery metric records `dogfood_installed` for
+`6cbf83e1d5af13b7566580f30b72fc5d8e7b4431` at 2026-10-04 21:16:44 UTC.
+That installed artifact includes the integrated census and earlier compatible
+recovery work as well as the spatial repair; it does not yet include the
+pending source/attention/restart, purpose or combined follow-through lanes.
+Installation stages the app without restarting the operator's running process.
+
+The approved corner-dot lane is now preparing separately in
+`agent/polish-unread-adoption`, consuming purpose's repaired shared header and
+the combined attention contract. It must reconcile onto their integrated
+commits before delivery and prove the same treatment in real DOM and R3F.
+
+
+Combined follow-through is committed and independently reviewed at `7b085afd`
+with no remaining P1/P2 findings. Focused checks cover model/pause admission,
+source recovery, Demo inspection, monitor records and switcher projection;
+TypeScript and Electron compilation pass. Reminder intent is nonblocking in
+model changes and Project pause as well as navigation. Attention owns the
+normal floor plus all 28 required surface gates after the initial stack lands;
+review approval is not integration or installation evidence.
+
+
+Backlog closure boundary from the source owner: BUG-257 and BUG-264 remain
+open for real installed-source acceptance even after the source-contract repair
+lands. BUG-257 has an established missing root-observation seam and regression
+coverage, but the original screenshot's exact latch event was not captured.
+BUG-264 has provider-grounded typed question/reply formats and production-pipeline
+coverage; the live probe contained no questions, so it does not prove a fresh
+queued question appearing and resolving in the installed UI. BUG-258 remains
+open diagnosis. Final integration reconciliation must change the source log's
+“Root cause established for BUG-257” to “Source ownership gap established in
+the BUG-257 path; screenshot-specific trigger remains untraced.”
+
+History observations stay bounded: one fresh and one historical page per poll,
+partial until caught up, with unavailable coverage at capacity rather than
+false absence. Integration is not permission to claim immediate complete
+history or to close these unobserved operator symptoms.
+
+
+Delivery verification exposed a real fixture race, repaired by purpose in
+`e569d31b`: OS child spawn did not prove the descendant had installed its
+SIGTERM handler before parent exit triggered process-group cleanup. The test
+now waits for a child-ready IPC message sent after handler registration.
+Independent review and all 30 tests in the file pass; the TERM sentinel,
+no-survivor assertion and original grace remain unchanged. This is a test
+ordering correction, not a weakened delivery floor. A separate queue-hold
+watchdog failure passed isolation and did not justify a product or timeout edit.
+
+
+The coordination reviewer inspected the approved A treatment in actual Agent
+TabStrip, shared Team Header and extracted production R3F StatusMarkLayer at
+1500 px/100% and 850 px/120%. Fleet faithfully matches the accepted corner
+detail; this is the requested renderer-parity check, not a new design choice.
+Reading removes six DOM markers and one Fleet draw call (7 to 6), without
+changing status geometry, layout or neighboring pieces. Theme/reduced-motion
+and final integrated-tree gates remain the adoption owner's responsibility.
+Evidence: `/tmp/exawatt-unread-evidence/`; durable behavior belongs in its
+shared implementation and eval contract.
+
+Final delivery consolidation: after behavior dependencies integrate, coordination
+will hand its reconciled canonical docs/runtime manifest to the unread adoption
+owner for one final reviewed transaction. This avoids a second full floor and
+app installation solely for the map while keeping all required checks. Do not
+queue that transaction until the root's delivery statuses and dependency claims
+are reconciled. Retain the coordination branch/worktree until its commits are
+verified integrated through that transaction, then remove it.
+
+
+Final unread implementation uses core `attentionIsUnread` and ui-model
+`attentionReadLabel` across regimes. `SpatialBoardPiece` carries inspection
+metadata alongside state; the existing production `StatusMarkLayer` supplies
+a neutral corner batch with shared normalized geometry and original
+anchor/emergence scaling. Reading invalidates the affected piece without
+rebuilding neighboring layout. The reviewed A/B study is retired in favor of
+the production-renderer eval fixture `/eval/session-unread`. Light/dark,
+large text and static-frame checks passed before combined delivery.
+
+Final receipt checklist for the combined owner after successful integration:
+record the immutable integrated SHA, full gate outcome and actual installed
+SHA here; close BUG-163/259/265/273 only with their exact final gates green;
+retain BUG-257/258/264, BUG-260's input/viewport gap, BUG-263's unobserved freeze,
+BUG-117 and deferred BUG-134 scope. Update purpose/source project-log pending
+phrases and the source-cause qualification above. Publish this small receipt
+through `agent:land -- --docs`; it needs no second dogfood install. Then release
+contributors for branch/worktree cleanup, preserving the deliberately deferred
+delegation study branch. Root coordinates cleanup and final operator report.

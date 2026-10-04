@@ -166,24 +166,27 @@ primary conversation; background activity never silently retargets that role.
 
 ## Attention navigation uses visible state
 
-The following describes current behavior. The accepted, not-yet-implemented
-[attention change](../../engineering/decisions/0046-reading-does-not-resolve-attention.md)
-separates reading from resolving and prioritizes blockers, working questions,
-then unread results. Update this reference when that implementation lands.
+Read state, unresolved requests and execution are independent. Opening a
+Session clears unread without resolving a request. The neutral corner dot
+shares the existing status-icon location; removing it does not change the
+status glyph or purpose. A completed result can coexist with an unanswered
+question; answering the question does not discard that result.
 
-The needs-you projection is also the navigation contract. `⌘J` walks the
-oldest visible needs-you Session and repeated presses continue through that
-queue. With no visible target, the command is unavailable and navigation stays
-where it is. A completed turn's Result light is not a needs-you target. Roadmap
-starvation, empty queues, and other useful but non-urgent states remain
-discoverable through their owning surface instead of silently borrowing the
-attention command.
+`⌘J` visits hard blockers, then questions while working, then unread review
+work, oldest within each class. A stable pass reaches all eligible targets even
+when high-priority requests remain unresolved. Fleet selects/follows the Agent
+and Enter uses its exact Session handoff. With no eligible visible target,
+navigation stays where it is. Read results leave the queue; unresolved requests
+remain eligible. Routine roadmap states such as starvation or an empty queue
+are still discoverable through their own surface rather than borrowing this
+command.
 
-When sources collide for one Session, semantic precedence applies before
-navigation or rendering: a bell or roadmap block remains needs-you even if a
-turn-end result arrives later. Within the winning class, the oldest timestamp
-sets queue order. The marker, command availability, and jump target all consume
-that merged projection.
+**Mark unread** restores operator review intent without re-alerting. With no
+existing request/result, it adds an operator-owned reminder in the nonblocking
+review tier. It never fabricates completion or a blocker and source turn
+transitions cannot clear it. Shared record helpers derive priority and visible
+reason across Live and Demo; reading a source request cannot resolve a different
+producer's request.
 
 The persistent hint bar, command palette, and native Session menu project the
 same target availability. Passive hints omit inapplicable commands; interactive

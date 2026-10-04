@@ -35,8 +35,8 @@ is mixed.
 These process states are separate from an Agent's turn state. A teal
 half-circle means the current turn is working; a green circled check means the
 turn finished. Electron main latches a finished Agent turn so later provider
-redraws, title changes, or terminal protocol replies cannot reopen it. Only a
-guaranteed operator interaction begins the next turn. Shells have no turn
+redraws, title changes, or terminal protocol replies cannot reopen it. A source-reported new turn or an accepted operator interaction begins the
+next turn; redraw alone does not. Shells have no turn
 boundary and continue to derive working/quiet from output.
 
 The context subtitle is separate from both process and turn state. It is a
@@ -50,11 +50,18 @@ agent** rather than exposing an image or temporary-file URI.
 ## Relaunch
 
 Relaunch restores Projects, tabs, status, and retained terminal history without
-starting work. The workspace recovery bar defaults to the selected Project and
-names its eligible-Agent count. Its scope menu can narrow recovery to the
-selected Agent or broaden it to all Projects. Every scope starts eligible agent
+starting work. Read receipts and unanswered requests return with durable
+Session identity; an old working badge never claims a process kept running.
+After restart, the recovery bar first offers the previously-running set, leaving
+already-paused Sessions excluded. Its scope menu retains Agent, Project and
+all-Project recovery. Every scope starts eligible agent
 Sessions sequentially and never starts shells. A closed shell offers **Start new
 shell** instead. An individual paused Agent offers **Resume this Agent**.
+
+Project/tab order, selection, pin, purpose, launch choices and authored Exawatt
+launch drafts remain durable. Provider-owned unsubmitted text and terminal
+viewport/selection anchors are separate remaining preservation gaps; retained
+terminal history is not a promise to restore those states.
 
 Recovery is reachable without the pointer. **⌘⌥R** resumes the selected Agent
 and **⌘⌥⇧R** resumes the bar's own default scope; both are rebindable, both
@@ -68,6 +75,11 @@ index as soon as the provider allocates or reveals it. Older identity-less
 Sessions repair automatically only when the saved opening task has one unique
 provider match; otherwise the pane clearly asks the operator to reconnect a
 conversation.
+
+If this version of Exawatt cannot run a saved Agent Source, its Session still
+opens with its purpose, source identity and retained history. Closing and
+reopening that saved work does not execute it. Resume remains unavailable until
+the source is supported; Exawatt never substitutes a different Agent Source.
 
 A Session that ends while its terminal is on screen keeps that terminal, with
 the Session's state, how it ended and its resume action shown above it, so a

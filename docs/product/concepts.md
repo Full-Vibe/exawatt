@@ -316,13 +316,13 @@ Attention Scheduling is not a literal neural graph or a decorative visualization
 
 Why it exists: tracking concurrent work and recovering interrupted context costs human attention. Exawatt should absorb bookkeeping rather than require the operator to remember every Session. Partner observations motivate this problem; they do not establish a universal five-or-six-context cognitive limit.
 
-Accepted direction, implementation planned (2026-10-04, decision
-[0046](../engineering/decisions/0046-reading-does-not-resolve-attention.md)):
-read/unread is distinct from an unresolved needs-you request and from execution
-state. Looking acknowledges the request; it does not resolve it. Cmd+J will
-prioritize hard blockers, then questions while working, then unread finished
-results, oldest within each class. Current behavior remains described in the
-Agent-state reference until implementation lands. Restart restores context
+Decision [0046](../engineering/decisions/0046-reading-does-not-resolve-attention.md)
+separates read/unread from unresolved requests and execution state. Looking
+acknowledges a request; it does not resolve it. Cmd+J prioritizes hard blockers,
+then questions while working, then nonblocking unread review work, oldest within
+each class. Explicit Mark unread is operator intent, not a fabricated result
+or blocker. Requests and completed results can coexist; resolving one cannot
+discard the other. Restart restores context
 paused, with an explicit resume action for the previously running set; already
 paused Agents remain excluded. Automatic resume is future scope, and saved
 attention never proves a process is running.

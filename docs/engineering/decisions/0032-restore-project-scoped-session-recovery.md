@@ -46,3 +46,29 @@ control**, not three competing controls.
 - The bar may remain after a successful Project batch because that is truthful:
   other Projects are still paused. Dismissal remains an explicit operator
   choice.
+
+
+## Amendments — 2026-10-04
+
+Decision [0046](0046-reading-does-not-resolve-attention.md) changes the relaunch
+default: offer the explicitly retained previously-running set first, excluding
+Sessions paused before shutdown. Project/Agent/all-Project scopes remain
+available through the same control. Automatic execution is still forbidden.
+
+BUG-273 extends the recovery boundary to unsupported saved sources. Persisted
+source identity is an opaque string; runtime admission requires a supported
+capability and exact identity. A source this build cannot run is not a failed
+process and is not a shell. Keep its purpose/history readable through existing
+paused surfaces and retain its saved source/draft choice, while resume,
+reconnect, model changes, clone and batch controls expose honest unavailability.
+A total source-presentation resolver supplies safe metadata; execution guards
+remain separate. This is known-schema compatibility, not automatic support for
+arbitrary future workspace formats or a new harness. Implementation joins the coordinated attention/restart polish transaction;
+its exact delivery receipt is recorded in the ENG-036 execution checkpoint.
+
+
+Opening a saved stopped view is not runtime admission. Once raw source identity
+is representable, unsupported Sessions may close and reopen with readable
+history; only execution-specific actions remain unavailable. This supersedes
+BUG-209's initial reject-before-ledger-take restoration guard, while preserving
+its no-substitution and retained-record protections.

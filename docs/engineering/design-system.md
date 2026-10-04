@@ -178,6 +178,27 @@ active semantic text roles. Every first-party source glyph clears 4.5:1 on the
 plate, and the plate boundary clears 3:1. Never apply a source brand color to a
 text-bearing ancestor—the Air preset is the regression oracle for this rule.
 
+Session purpose leads recognition in Session selection and re-entry. Harness
+identity is supporting metadata, not the primary name of the work. The approved
+2026-10-04 treatment leads Cmd+K with purpose and keeps paused Team purpose
+readable, using the existing type and semantic-color roles. Explicit operator
+names retain authority. Keep source metadata searchable and accessible.
+
+Future source-icon emphasis should reuse `SourceIdentityMark` and the same
+accessible naming across surfaces, with readable fallback for unknown/custom
+sources. The operator suggested this direction for later; it does not authorize
+an icon-only sweep now. Read/unread treatment remains separate from purpose,
+completion and unresolved needs-you; no whole-card dimming rule is inferred.
+The operator accepted the corner-dot treatment (A) on 2026-10-04: a small
+neutral unread detail attaches to the existing status glyph's top-right edge,
+inside the same fixed location. Reading removes only this detail; status shape,
+status color, purpose position and unresolved needs-you remain unchanged.
+Accessible text explains both state and inspection. Agent and Team adoption is
+approved. The matching production R3F sibling was inspected at normal and
+120% text scale on 2026-10-04 and faithfully preserves the same corner detail;
+Fleet adoption proceeds through the shared unread predicate and batched marks.
+The separate-location dot and outer-arc alternative are superseded.
+
 ---
 
 ## Status iconography
@@ -512,6 +533,15 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-10-04 — BUG-061 gallery foundations now lead active studies, with other
+  review benches grouped separately; specimen autofocus cannot seize page entry.
+  BUG-138 retires only the unused command-key wrapper, preserving active studies.
+
+- 2026-10-04 — ENG-036 purpose-first gallery comparison accepted: Cmd+K
+  leads with purpose; paused Team purpose remains readable. Source identity
+  becomes supporting metadata. Future iconography reuses the shared identity
+  language; no icon-only redesign is part of this adoption.
 
 - 2026-09-29 — ENG-008 E15: the Usage page becomes one card per vendor
   account with vendor-style limit bars (operator pick). The Consumption

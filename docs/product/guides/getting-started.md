@@ -162,11 +162,19 @@ redraw cannot change the check back to working. Typing the next instruction
 opens the next turn. The dashed circle means a new Agent has not received work
 yet; a plain hollow circle is a quiet shell.
 
-<!-- Authoring note: decision 0046 accepts a future attention/read-state and
-priority-order change. Keep the instructions below on shipped behavior until
-its implementation lands; then update this and the Agent-state reference. -->
-**⌘J** jumps to the oldest Session with a visible needs-you marker. If no
-Session needs you, it leaves the current Terminal in place. Commands that need
+**⌘J** visits hard blockers first, then questions from Agents still working,
+then unread work to review, oldest within each group. Repeated presses move
+through eligible Sessions without getting stuck on an unanswered request. In
+Fleet it selects and follows the Agent; press **Enter** to open its Session.
+With nothing eligible, the command leaves you where you are.
+
+Opening a Session marks it read; it does not answer its outstanding question.
+The small corner dot on the status icon means unread. A read request still says
+**Needs you**, and a read result still means the turn finished. Use **Mark
+unread** in a tab's context menu to revisit it later without ringing another
+notification. A running Agent keeps working when you mark its Session unread.
+
+Commands that need
 a Project, Session, split target, or recovery entry are hidden from the passive
 key legend or shown disabled with a short reason in the command palette and
 macOS Session menu.
@@ -192,20 +200,24 @@ through the existing recovery control to return to the exact conversations.
 ## Quitting and returning
 
 When local Sessions are running, quitting Exawatt asks before stopping them.
-Their layout, exact agent conversation identity, and retained terminal history
-return on the next launch, but nothing resumes automatically. The recovery bar
-resumes the selected Project by default, leaving other Projects paused. Its
-scope menu can instead resume the selected Agent or every eligible Agent across
-all Projects. A paused Agent also offers **Resume this Agent**; a closed shell
+Their layout, purpose, read state, unanswered requests, exact conversation
+identity and retained terminal history return on the next launch. Nothing
+resumes automatically. The recovery bar offers to resume the Agents that were
+running before restart; those already paused stay outside that set. Its scope
+menu also offers Agent, Project and all-Project recovery. A paused Agent also offers **Resume this Agent**; a closed shell
 offers **Start new shell**. If an older Session is missing its exact provider
 identity, it reads **conversation not recorded** and offers **Reconnect
 conversation** instead of guessing.
 
 Both recovery scopes are keyboard verbs too. **⌘⌥R** resumes the selected
 Agent; **⌘⌥⇧R** resumes the same scope the bar's one-click control would —
-the selected Project, or every Project when this one has nothing paused. Both
+the previously-running set after restart, or the available Project recovery
+scope. Both
 appear in **⌘K** while something is paused, and both are rebindable in
 Settings, so the chord the bar shows is always the chord you have.
+
+Exawatt's launch-form drafts are retained. Text still unsubmitted inside a
+provider's input box and the terminal's scroll position are not yet restored.
 
 See the [Session lifecycle reference](../reference/session-lifecycle.md) for the
 state and persistence contract.
