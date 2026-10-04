@@ -35,7 +35,7 @@ type V3 = [number, number, number];
 /** Gallery specimens are flat orthographic chrome, not volumetric text.
  * Html owns world-to-screen projection; its transform mode keeps text attached
  * to parent fit/hover transforms without React state on every frame. 400 makes
- * one CSS pixel one world unit at zoom 1 (drei's documented distance scale).
+ * one CSS pixel one world unit at zoom 1 (drei's CSS transform scale).
  * The local stacking context prevents labels from escaping above app overlays.
  * No Troika worker/font atlas is needed, including on GPU fallback paths. */
 function GalleryLabel({

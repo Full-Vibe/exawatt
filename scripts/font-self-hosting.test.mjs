@@ -21,11 +21,6 @@ const FONT_ASSETS = [
     sha256: '684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc',
     magic: 'wOF2',
   },
-  {
-    path: 'public/fonts/Exo2-Medium.ttf',
-    sha256: '956d939727817620d6b8c3b459d8086151bd6c2b6a48258d134f60a0dcb2b6d2',
-    magic: '\u0000\u0001\u0000\u0000',
-  },
 ];
 
 const SOURCE_EXTENSIONS = new Set([
@@ -85,8 +80,8 @@ test('the layout preserves the three typography variables and variable weights',
   assert.equal(layout.match(/style: 'normal'/g)?.length, 3);
   assert.equal(layout.match(/display: 'swap'/g)?.length, 3);
 
-  const scene = readFileSync('src/components/hud/webgl/scenes.tsx', 'utf8');
-  assert.match(scene, /const FONT = '\/fonts\/Exo2-Medium\.ttf'/);
+  // Gallery annotations now inherit these local DOM faces. The no-remote-font
+  // contract below covers them without pinning a retired WebGL implementation.
 });
 
 test('application sources have no remote Google font build or runtime dependency', () => {

@@ -12,7 +12,6 @@ font service.
 | `src/app/fonts/Exo2-Variable-Latin.woff2`      | Exo 2, normal, variable weight 100–900, Latin subset      | [Google Fonts Exo 2 v26](https://fonts.gstatic.com/s/exo2/v26/7cHmv4okm5zmbtYoK-4.woff2)                | `4a259dde317e08aa5d37e6eb684e222ae833516b2a0fccba36ee5e36224f16be` |
 | `src/app/fonts/Geist-Variable-Latin.woff2`     | Geist Sans, normal, variable weight 100–900, Latin subset | [Google Fonts Geist v5](https://fonts.gstatic.com/s/geist/v5/gyByhwUxId8gMEwcGFU.woff2)                 | `19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1` |
 | `src/app/fonts/GeistMono-Variable-Latin.woff2` | Geist Mono, normal, variable weight 100–900, Latin subset | [Google Fonts Geist Mono v6](https://fonts.gstatic.com/s/geistmono/v6/or3nQ6H-1_WfwkMZI_qYFrcdmg.woff2) | `684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc` |
-| `public/fonts/Exo2-Medium.ttf`                 | Exo 2 Medium for Troika/R3F scene text                    | [Google Fonts Exo 2 v26](https://fonts.gstatic.com/s/exo2/v26/7cH1v4okm5zmbvwkAx_sfcEuiD8jjPKcPg.ttf)   | `956d939727817620d6b8c3b459d8086151bd6c2b6a48258d134f60a0dcb2b6d2` |
 
 The three application webfonts are the same Google Fonts family revisions and
 Latin subset selected by the former `next/font/google` declarations. The
@@ -22,7 +21,9 @@ Google Fonts CSS declarations used to resolve the versioned files were:
 - `https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap`
 - `https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap`
 
-All four exact artifacts and their hashes were verified on 2026-08-16.
+These exact artifacts and their hashes were verified on 2026-08-16. The
+separate Exo 2 Medium TTF retired on 2026-10-04 when its final gallery consumer
+moved to the existing DOM font boundary.
 
 ## Authors, upstream source, and licenses
 

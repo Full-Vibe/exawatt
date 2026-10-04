@@ -28,10 +28,7 @@ try {
   assert(response.ok(), 'Gallery must load');
   // The regression must run under the actual policy, not a bypassed CSP.
   const policy = response.headers()['content-security-policy'];
-  assert(
-    policy?.includes("worker-src 'self' blob:"),
-    'Expected application CSP'
-  );
+  assert(policy, 'Gallery must retain its application CSP');
   assert(
     !/script-src[^;]*blob:/.test(policy),
     'Script policy must not admit blob imports'

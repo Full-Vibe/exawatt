@@ -115,6 +115,15 @@ const isBoardCanvas = file =>
 
 export const SURFACE_GATES = [
   {
+    gate: 'eval:gallery:labels',
+    why: 'gallery world annotations must paint under the real CSP and preserve pointer and reduced-motion behavior',
+    match: file =>
+      file === 'src/components/hud/webgl/scenes.tsx' ||
+      file === 'src/app/hud-gallery/page.tsx' ||
+      file === 'src/lib/distribution/next-policy.ts' ||
+      file === 'scripts/gallery-labels-eval.mjs',
+  },
+  {
     gate: 'eval:electron:device-power',
     why: 'device power follows local work, power transitions and persisted operator policy without pausing Sessions',
     match: file =>
@@ -1380,6 +1389,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'company:proof': LANDING,
 
   // (b) Declared surface gates.
+  'eval:gallery:labels': GATE,
   'eval:electron:project-pause': GATE,
   'eval:electron:clone-context': GATE,
   'eval:electron:model-change': GATE,
