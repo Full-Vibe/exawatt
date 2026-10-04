@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
 import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
+import { Button } from '@/components/ui/button';
+import { usePermissions } from '@/components/permissions/permissions-provider';
 
 /*
  * Data sharing is not a notification setting (ENG-030 OS1.5). Conversation
@@ -19,6 +21,7 @@ import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
 export function NotificationsSettings() {
   const [settings, setSettings] = useState<ExawattSettings | null>(null);
   const [available, setAvailable] = useState(false);
+  const permissions = usePermissions();
 
   useEffect(() => {
     const api = window.electron?.settings;
@@ -33,6 +36,11 @@ export function NotificationsSettings() {
 
   const attention = settings?.notifications?.attention ?? false;
   const dockBadge = settings?.notifications?.dockBadge ?? false;
+  const allowed = permissions.stateOf('notifications');
+  // The switch is the user's intent; macOS has the final say. When the two
+  // disagree the row says so and offers the way forward.
+  const blocked =
+    attention && (allowed === 'denied' || allowed === 'not-determined');
 
   return (
     <SettingsGroup
@@ -47,11 +55,60 @@ export function NotificationsSettings() {
         <SettingSwitch
           checked={attention}
           label="Native macOS notifications"
-          onChange={next =>
-            void window.electron?.settings?.setAttentionNotifications(next)
-          }
+          onChange={next => {
+            const settingsApi = window.electron?.settings;
+            if (!next) {
+              void settingsApi?.setAttentionNotifications(false);
+              return;
+            }
+            // Turning it on is a moment of need: the registry primes the
+            // system prompt first, and the switch follows the answer.
+            void permissions
+              .ensure(
+                'notifications',
+                'Turning this on lets Exawatt tell you when an agent needs you.'
+              )
+              .then(granted => {
+                if (granted) void settingsApi?.setAttentionNotifications(true);
+              });
+          }}
         />
       </SettingRow>
+      {blocked && (
+        <div
+          data-notifications-blocked
+          className="flex items-center justify-between gap-4 py-3 max-[520px]:flex-col max-[520px]:items-stretch"
+        >
+          <p className="font-ui text-chrome-label leading-5 text-[var(--settings-dim)]">
+            {allowed === 'denied'
+              ? 'Notifications are off for Exawatt in macOS.'
+              : 'Allow them for Exawatt in macOS and they start appearing.'}
+          </p>
+          {allowed === 'denied' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => permissions.openSettings('notifications')}
+            >
+              Open System Settings
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() =>
+                void permissions.ensure(
+                  'notifications',
+                  'Exawatt can tell you when an agent needs you.'
+                )
+              }
+            >
+              Allow
+            </Button>
+          )}
+        </div>
+      )}
       <SettingRow
         title="Dock badge count"
         description="Show the number of Sessions waiting for you on the Dock icon, with a bounce when the app is unfocused. It clears as soon as you look at each Session."

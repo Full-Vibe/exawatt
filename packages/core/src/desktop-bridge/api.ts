@@ -203,6 +203,16 @@ interface DesktopPtyApi {
   onNotificationClick: BridgeSubscribe<'pty:notification-click'>;
 }
 
+/** ENG-045: read-only status, and the one door to asking for a grant. */
+export interface DesktopPermissionsApi {
+  snapshot: BridgeInvoke<'permissions:snapshot'>;
+  refresh: BridgeInvoke<'permissions:refresh'>;
+  ensure: BridgeInvoke<'permissions:ensure'>;
+  openSettings: BridgeInvoke<'permissions:open-settings'>;
+  onChanged: BridgeSubscribe<'permissions:changed'>;
+  onPrimerRequested: BridgeSubscribe<'permissions:primer-requested'>;
+}
+
 interface DesktopWorkspaceApi {
   load: BridgeInvoke<'workspace:load'>;
   save: BridgeInvoke<'workspace:save'>;
@@ -357,6 +367,7 @@ interface DesktopBridgeShape {
   commandEngine: DesktopCommandEngineApi;
   consumption: DesktopConsumptionApi;
   pty: DesktopPtyApi;
+  permissions: DesktopPermissionsApi;
   workspace: DesktopWorkspaceApi;
   roadmap: DesktopRoadmapApi;
   settings: DesktopSettingsApi;

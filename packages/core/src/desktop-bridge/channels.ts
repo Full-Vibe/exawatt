@@ -17,6 +17,13 @@ import type { AgentLaunchConfigurationInput } from '../launch-configurations';
 import type { OperatorStatsPublicationPlan } from '../operator-stats/publication';
 import type { OperatorStatsSyncEvent } from '../operator-stats/sync-state';
 import type { KeyboardShortcutOverridesV1 } from '../shortcuts/keyboard-overrides';
+import type {
+  PermissionEnsureRequest,
+  PermissionEnsureResult,
+  PermissionId,
+  PermissionPrimerRequest,
+  PermissionsSnapshot,
+} from '../permissions';
 import type { SafetyControlId, SafetyControlsRead } from '../safety-controls';
 import type { ConnectedSourceView } from '../sources/connected-source';
 import type {
@@ -332,6 +339,18 @@ interface RequestTable {
     RecentConversation[]
   >;
 
+  /** ENG-045. Status is read without prompting; only an `ensure` the user
+   *  primed raises a system prompt. */
+  'permissions:snapshot': Call<[], PermissionsSnapshot>;
+  /** Re-reads every grant now (app focus, a primer or System Settings open). */
+  'permissions:refresh': Call<[], PermissionsSnapshot>;
+  'permissions:ensure': Call<
+    [id: PermissionId, request: PermissionEnsureRequest],
+    PermissionEnsureResult
+  >;
+  /** Opens the grant's own System Settings pane, or System Settings. */
+  'permissions:open-settings': Call<[id: PermissionId], void>;
+
   'roadmap:read': Call<[projectDir: string], RoadmapReadResult>;
   'roadmap:session-evidence': Call<[cwd: string], RoadmapSessionEvidence>;
   'roadmap:activity': Call<[projectDir: string], RoadmapProjectChange[]>;
@@ -459,6 +478,10 @@ interface PushTable {
   'consumption:updated': ConsumptionUpdatedEvent;
   /** An application-menu command name (ENG-016 D8). */
   'menu:command': string;
+  'permissions:changed': PermissionsSnapshot;
+  /** A moment of need arose while no window had the user's attention; show
+   *  the first-party primer now rather than let the system prompt appear. */
+  'permissions:primer-requested': PermissionPrimerRequest;
   'pty:activity': { id: string; working: boolean };
   'pty:attention': { id: string; attention: PtyAttention | null };
   /** Main-owned ledger cardinality after archive, reopen, or reap. */

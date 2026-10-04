@@ -56,7 +56,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-042 | Published research                               | planned      | UNSHAPED pending a design pass — publish the fleet's research and investigations as public articles or guides. |
 | ENG-043 | Documentation information architecture           | planned      | UNSHAPED pending a design pass — organize documentation by reader need, with Diátaxis as the candidate framework. |
 | ENG-044 | Agent safety and governance controls              | planned      | S1 landed: a Settings ▸ Safety home, one default-off control (block broad process kills). The enterprise governance product is UNSHAPED pending a design pass. |
-| ENG-045 | Permissions and grants                           | planned      | UNSHAPED pending a design pass — one registry of macOS permissions and in-app grants, primed first-party before any system dialog, with a Settings home. |
+| ENG-045 | Permissions and grants                           | planned      | S1 landed: a registry, a first-party primer and Settings ▸ Permissions for notifications. Folder access, Local Network and in-app grants are UNSHAPED pending a design pass. |
 | ENG-014 | Wattage allocation surface                       | planned      | Allocate wattage to goals instead of assigning tasks to agents.                                                                                                                        |
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
@@ -2532,8 +2532,9 @@ settings file unreadable since launch leaves new launches without the hook.
 
 ### ENG-045 Permissions and grants
 
-Status: planned — deliberately unshaped pending a design pass. Created
-2026-10-04 from operator direction.
+Status: planned — the notifications slice landed 2026-10-04; the rest is
+deliberately unshaped pending a design pass. Created 2026-10-04 from operator
+direction.
 
 Direction (operator, 2026-10-04): "architect 10 miles ahead even if we're only
 building 10 feet ahead." One modular system the app's happy paths consult,
@@ -2563,34 +2564,50 @@ Claude plan usage, the prompt that started this item, no longer needs a
 permission: ENG-038 slice 3 reads it through Claude Code's own `/usage`, so
 it never touches the Keychain (2026-10-04).
 
-First slice (10 feet, ready for pickup): notifications. Exawatt's first
-native notification today raises a bare macOS prompt with no explanation
-(`electron/main/pty-ipc.ts`, and `unreadable-state-notice.ts`, which posts
-regardless of the Settings switch and so can be the first prompt). Build:
+First slice: notifications. LANDED 2026-10-04 (`agent/permissions-primer`).
 
-- A permission registry in `@exawatt/core`, shaped like `SAFETY_CONTROLS` and
-  `OUTBOUND_CONTROLS`: `{id, kind: 'os' | 'in-app', label, why, readStatus,
-  request, settingsLink?, needsRelaunch}` with states `unknown |
-  not-determined | granted | denied | restricted | needs-relaunch`; a status
-  that cannot be read is `unknown`, never `denied`. Main owns status reads and
-  requests; the renderer gets a read-only snapshot and calls `ensure(id,
-  {reason})` over the bridge contract. It declares and explains each grant;
-  it enforces nothing itself.
-- One entry, `notifications`. Its status needs `UNUserNotificationCenter`
-  settings, which Electron does not expose: a minimal first-party native
-  read, or, if that is not worth it yet, `unknown` until first use.
-- A first-party primer (in-app modal, macOS button semantics, one Continue
-  that leads into the system prompt, per Apple's HIG) shown at the moment of
-  need: turning on "Native macOS notifications" in Settings, or the first
-  notification Exawatt would post. `unreadable-state-notice.ts` respects the
-  same path.
-- A first Settings ▸ Permissions section listing the registry with status
-  and Allow or Open System Settings, so the operator can play with where it
-  belongs (the operator decides placement by using it).
-- Done when: on a Mac that never granted Exawatt notifications, the first
-  notification moment shows the primer, Continue raises macOS's prompt, the
-  section reflects the result, and a denied state offers the System Settings
-  pane; no other notification path can raise the prompt first.
+- `PERMISSIONS` in `@exawatt/core` declares each grant once (id, kind, why,
+  primer copy, enforcer, System Settings pane); Electron main owns every
+  status read and system prompt (`electron/main/permissions/`); the renderer
+  holds a read-only snapshot and calls `ensure(id, {reason})` over the bridge
+  (`permissions:*` channels). `unknown` is never `denied`.
+- One entry, `notifications`. Every native notification posts through
+  `postNativeNotification`, which asks the registry first
+  (`notification-paths.test.ts` fails on a second path). Main-initiated
+  moments (an agent needs you while Exawatt is unfocused, the BUG-247
+  unreadable-state notice) drop the notice and offer the primer once per
+  launch; it shows when the user returns. Nothing is queued to post late.
+- The primer is the dialog primitive with one Continue. Turning on "Native
+  macOS notifications" is a moment of need: the switch stays off until the
+  grant is made. Denied shows the same dialog with Open System Settings.
+- Settings ▸ Permissions lists the registry with status and Allow or Open
+  System Settings. Placement is one entry in `SettingsNavigation`
+  (`settings-client.tsx`); the component stands alone. The grant is re-read on
+  window focus and while the primer or System Settings is open.
+- Status read: a first-party N-API addon (`electron/native/notification-authorization.mm`,
+  about 100 lines, no runtime dependency, built by `electron:compile` on
+  macOS, unpacked from the asar). Chosen over "unknown until first use"
+  because Electron's `Notification` events cannot read authorization: `show`
+  fires while the system prompt is still unanswered, and the first
+  `show()` raises that prompt itself, so a primer could neither precede it
+  nor Settings reflect its answer. A build without the addon reads `unknown`.
+  Follow-up if the addon is ever unwanted: `unknown` until first use plus
+  `failed` events, which loses the granted state.
+- Observed on this Mac (macOS 26.6.2): an ad-hoc signed bundle cannot raise
+  or show notifications at all (usernoted logs "Failed to find or validate
+  client"), so development builds read `unknown` or `denied`-like and only
+  a Developer ID build raises the prompt; the system reported `denied` while
+  its prompt was still unanswered (display asleep), so main holds a `denied`
+  read as `not-determined` until the request settles; the deep link
+  `x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=<bundle>`
+  launches the Notifications extension (the `id` focus is unverified).
+- Proven under a scratch Developer ID bundle identity with the real service,
+  provider and addon: reads and `require`/unprimed `ensure` send nothing to
+  macOS; the primed `ensure` is the first and only "Requesting authorization".
+  Not provable without a person at an unlocked Mac, and so asked of the
+  operator on an installed build: the visible alert, the Allow and Don't
+  Allow answers flowing back into Settings, the pane's per-app focus, and the
+  packaged build loading the addon.
 
 Next candidates, in order: folder access when a Project opens in Desktop,
 Documents, Downloads or a volume (privacy prompts from agent PTYs are
@@ -3929,3 +3946,17 @@ neither, so the script refuses before reaching the behavior the test asserts
 landing floor runs only related tests, so it has not blocked anything. Fix the
 test's premise by supplying both variables in its child environment; do not
 weaken the script's requirement.
+
+### BUG-277 `pnpm test:run` is red on master: the release publisher test does not supply `EXAWATT_RELEASE_TAG`
+
+Status: bug · ENG-030 · found 2026-10-04 while landing ENG-045 S1; reproduced on
+an unmodified `origin/master` (`19c43383`). Not caused by and not owned by the
+change that found it.
+
+The update-feed publish script now requires `EXAWATT_RELEASE_TAG` and
+`EXAWATT_RELEASE_STAGING_PERCENTAGE` before its dry run (the 2026-09-29 public
+Release work, `e38e7911`), and both release-publisher tests still state a
+child environment without them, so each exits with "missing EXAWATT_RELEASE_TAG".
+The tests' premise predates the script: supply the two values in the fixture
+environment (they are validation inputs, not custody), the same repair BUG-047
+made for the contract.

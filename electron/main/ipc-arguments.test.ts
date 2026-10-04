@@ -58,6 +58,11 @@ const WELL_FORMED: { [C in Channel]: unknown[] } = {
       },
     ],
   ],
+  'permissions:ensure': [
+    'notifications',
+    { reason: 'Hear from your agents', primed: true },
+  ],
+  'permissions:open-settings': ['notifications'],
   'settings:set-attention-notifications': [true],
   'settings:set-dock-badge': [false],
   'settings:set-keep-awake': ['ac-only'],
@@ -145,6 +150,22 @@ describe('argument boundaries', () => {
       [[{ harness: 'claude' }]],
       'Invalid Session identity hint',
     ],
+    [
+      'permissions:ensure',
+      ['camera', { reason: 'x' }],
+      'Invalid permission request',
+    ],
+    [
+      'permissions:ensure',
+      ['notifications', { reason: '' }],
+      'Invalid permission request',
+    ],
+    [
+      'permissions:ensure',
+      ['notifications', { reason: 'x', primed: 'yes' }],
+      'Invalid permission request',
+    ],
+    ['permissions:open-settings', ['../etc'], 'Invalid permission'],
     ['settings:set-dock-badge', ['on'], 'Invalid dock badge setting'],
     [
       'settings:set-claude-plan-windows',

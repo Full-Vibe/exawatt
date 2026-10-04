@@ -33,6 +33,7 @@ const NAMESPACES = [
   'commandEngine',
   'consumption',
   'pty',
+  'permissions',
   'workspace',
   'roadmap',
   'settings',

@@ -4,7 +4,6 @@ import { createSessionPauser } from './pty/session-pause';
 import { readSessionCloneContext } from './pty/session-clone-context';
 import {
   BrowserWindow,
-  Notification,
   app,
   nativeTheme,
   powerSaveBlocker,
@@ -85,6 +84,8 @@ import {
   shouldDeliverNativeNotification,
 } from './notification-policy';
 import { broadcastToWindows, pushToRenderer } from './window-broadcast';
+import { postNativeNotification } from './permissions/runtime';
+import type { NotificationHandle } from './permissions/native-notification';
 import {
   isAgentHarness,
   sessionStatus,
@@ -228,7 +229,8 @@ export function registerPtyIPC(
     hostedSummariesEnabled: () =>
       loadSettings().conversationSummaries?.hosted !== false,
   });
-  const nativeNotifications = new Map<string, Notification>();
+  const nativeNotifications = new Map<string, NotificationHandle>();
+  const attentionGeneration = new Map<string, number>();
 
   ptySessions.on(
     'data',
@@ -387,36 +389,42 @@ export function registerPtyIPC(
     }
     nativeNotifications.get(id)?.close();
     nativeNotifications.delete(id);
+    // A notice that waited on the permission registry must not post once this
+    // Session's attention has moved on.
+    const generation = (attentionGeneration.get(id) ?? 0) + 1;
+    attentionGeneration.set(id, generation);
     if (
       !shouldDeliverNativeNotification(
         loadSettings().notifications?.attention ?? false,
         BrowserWindow.getFocusedWindow() !== null,
         attention
-      ) ||
-      !Notification.isSupported()
+      )
     ) {
       return;
     }
     const session = ptySessions.list().find(item => item.id === id);
     if (!session) return;
-    const notice = new Notification({
-      ...nativeNotificationCopy(session),
-      silent: true,
+    let posted: NotificationHandle | null = null;
+    void postNativeNotification({
+      reason: 'An agent needed you while Exawatt was in the background.',
+      options: { ...nativeNotificationCopy(session), silent: true },
+      isCurrent: () => attentionGeneration.get(id) === generation,
+      onClick: () => {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (!win || win.isDestroyed()) return;
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+        pushToRenderer(win.webContents, 'pty:notification-click', { id });
+      },
+      onClose: () => {
+        if (nativeNotifications.get(id) === posted)
+          nativeNotifications.delete(id);
+      },
+    }).then(notice => {
+      posted = notice;
+      if (notice) nativeNotifications.set(id, notice);
     });
-    notice.on('click', () => {
-      const win = BrowserWindow.getAllWindows()[0];
-      if (!win || win.isDestroyed()) return;
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-      pushToRenderer(win.webContents, 'pty:notification-click', { id });
-    });
-    notice.on('close', () => {
-      if (nativeNotifications.get(id) === notice)
-        nativeNotifications.delete(id);
-    });
-    nativeNotifications.set(id, notice);
-    notice.show();
   });
 
   // structured result instead of a thrown error: IPC rejections arrive as

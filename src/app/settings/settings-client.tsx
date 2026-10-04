@@ -58,6 +58,7 @@ import type {
 import {
   AlertCircle,
   Blocks,
+  KeyRound,
   Lock,
   RotateCcw,
   Settings2,
@@ -69,9 +70,15 @@ import { ConnectSourceDialog } from '@/components/workspace/connect-source-dialo
 import { AgentSourcesSettings } from './agent-sources-settings';
 import { AppearanceSettings } from './appearance-settings';
 import { PrivacySettings } from './privacy-settings';
+import { PermissionsSettings } from './permissions-settings';
 import { SafetySettings } from './safety-settings';
 
-type SettingsSection = 'agent-sources' | 'preferences' | 'privacy' | 'safety';
+type SettingsSection =
+  | 'agent-sources'
+  | 'preferences'
+  | 'permissions'
+  | 'privacy'
+  | 'safety';
 
 function SettingsNavigation({
   active,
@@ -90,6 +97,11 @@ function SettingsNavigation({
       id: 'preferences' as const,
       label: 'Preferences',
       icon: SlidersHorizontal,
+    },
+    {
+      id: 'permissions' as const,
+      label: 'Permissions',
+      icon: KeyRound,
     },
     {
       id: 'privacy' as const,
@@ -458,6 +470,7 @@ export function SettingsClient() {
             openConnection={openConnection}
           />
         )}
+        {activeSection === 'permissions' && <PermissionsSettings />}
         {activeSection === 'privacy' && <PrivacySettings />}
         {activeSection === 'safety' && <SafetySettings />}
         {activeSection === 'preferences' && (

@@ -227,6 +227,14 @@ const bridge = {
     onDelegation: subscribe('pty:delegation'),
     onNotificationClick: subscribe('pty:notification-click'),
   },
+  permissions: {
+    snapshot: () => invoke('permissions:snapshot'),
+    refresh: () => invoke('permissions:refresh'),
+    ensure: (id, request) => invoke('permissions:ensure', id, request),
+    openSettings: id => invoke('permissions:open-settings', id),
+    onChanged: subscribe('permissions:changed'),
+    onPrimerRequested: subscribe('permissions:primer-requested'),
+  },
   workspace: {
     load: () => invoke('workspace:load'),
     save: state => invoke('workspace:save', state),

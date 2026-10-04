@@ -15,6 +15,9 @@ import {
 import { randomUUID } from 'crypto';
 import path from 'path';
 import { installUnreadableStateNotice } from './unreadable-state-notice';
+import { registerPermissionsIPC } from './permissions/permissions-ipc';
+import { installPermissions } from './permissions/runtime';
+import { testNotificationAuthorization } from './permissions/test-authorization';
 import { commandVerbCapabilities } from '@exawatt/core';
 import { registerMainChannels } from './app-ipc';
 import { observeHostPower } from './host-power';
@@ -387,6 +390,14 @@ function openMainWindow(workspaceReady: boolean): void {
 
 app.whenReady().then(() => {
   installMainInstrumentation(userDataPath(), mainDiagnostics, powerMonitor);
+  // Permissions come first: the unreadable-state notice and every other
+  // notification path ask the registry before they post (ENG-045).
+  registerPermissionsIPC(
+    installPermissions({
+      bundleId: app.isPackaged ? identity.stateNamespace : null,
+      testAuthorization: testNotificationAuthorization(isTest, env),
+    })
+  );
   installUnreadableStateNotice(identity.productName);
   const hostPower = observeHostPower(powerMonitor, snapshot => {
     broadcastToWindows(

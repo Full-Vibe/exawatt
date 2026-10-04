@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
+import { PERMISSIONS } from '@exawatt/core';
 import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 import { SettingsClient } from './settings-client';
 import {
@@ -263,6 +264,19 @@ describe('shortcut settings policy', () => {
     // that distinction. This test is about which section is showing.
     for (const control of Object.values(OUTBOUND_CONTROLS)) {
       expect(outboundRow(control.id)).not.toBeNull();
+    }
+  });
+
+  it('gives permissions their own section in the Settings navigation', async () => {
+    await renderSettings();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Permissions' }));
+    await act(async () => undefined);
+    expect(screen.getByRole('heading', { name: 'Permissions' })).toBeVisible();
+    for (const permission of PERMISSIONS) {
+      expect(
+        document.querySelector(`[data-permission="${permission.id}"]`)
+      ).not.toBeNull();
     }
   });
 

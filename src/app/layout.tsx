@@ -9,6 +9,7 @@ import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
 import { NoticeLaneProvider } from '@/components/ui/notice-lane';
 import { RendererErrorReporter } from '@/components/diagnostics/renderer-error-reporter';
+import { PermissionsProvider } from '@/components/permissions/permissions-provider';
 import { AccountFirstRunCard } from '@/components/auth/account-first-run-card';
 import { CommandNavigationProvider } from '@/components/nav/command-navigation-provider';
 import { ProductFeedbackProvider } from '@/components/feedback/product-feedback-provider';
@@ -104,14 +105,18 @@ export default function RootLayout({
                   read auth state for its quick-feedback verbs (ENG-025 F1) */}
                     <ProductFeedbackProvider>
                       <ShortcutProvider>
-                        <FleetProvider>
-                          <SiteHeader />
-                          <UpdateReadyNotice />
-                          {/* one-time, dismissible, never a gate (ENG-030
+                        {/* Permissions (ENG-045): the first-party primer
+                          before any system prompt, and the registry's status */}
+                        <PermissionsProvider>
+                          <FleetProvider>
+                            <SiteHeader />
+                            <UpdateReadyNotice />
+                            {/* one-time, dismissible, never a gate (ENG-030
                           OS0.1); it gates itself on signed-out app surfaces */}
-                          <AccountFirstRunCard />
-                          {children}
-                        </FleetProvider>
+                            <AccountFirstRunCard />
+                            {children}
+                          </FleetProvider>
+                        </PermissionsProvider>
                       </ShortcutProvider>
                     </ProductFeedbackProvider>
                   </NoticeLaneProvider>

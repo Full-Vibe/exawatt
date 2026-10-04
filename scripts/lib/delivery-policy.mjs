@@ -134,6 +134,18 @@ export const SURFACE_GATES = [
       file === 'scripts/electron-device-power-eval.mjs',
   },
   {
+    gate: 'eval:electron:permissions',
+    why: 'the first-party primer must come before any system permission prompt, and Settings must follow what macOS answered, through the real main, preload and renderer',
+    match: file =>
+      file.startsWith('electron/main/permissions/') ||
+      file === 'electron/native/notification-authorization.mm' ||
+      file === 'packages/core/src/permissions.ts' ||
+      file.startsWith('src/components/permissions/') ||
+      file === 'src/app/settings/permissions-settings.tsx' ||
+      file === 'src/app/settings/notifications-settings.tsx' ||
+      file === 'scripts/electron-permissions-eval.mjs',
+  },
+  {
     gate: 'eval:electron:source-power',
     why: 'sleep opt-out evidence belongs to the exact supported source process launched',
     match: file =>
@@ -1433,6 +1445,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:community:network': GATE,
   'eval:electron:source-power': GATE,
   'eval:electron:device-power': GATE,
+  'eval:electron:permissions': GATE,
   // Born quarantined by the BUG-211 audit and repaired under BUG-212 to
   // BUG-217; enforced like the rest.
   'eval:navigation-paint': GATE,

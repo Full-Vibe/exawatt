@@ -3,6 +3,7 @@ import {
   isAgentPermissionMode,
   isPtyHarness,
   isAgentSourceAdapterId,
+  isPermissionId,
   isSafetyControlId,
   type AgentPermissionMode,
 } from '@exawatt/core';
@@ -351,6 +352,29 @@ export const ARGUMENT_BOUNDARIES = {
         throw new Error('Invalid safety control setting');
       }
       return [control, enabled];
+    },
+  },
+  // A grant is asked for by its declared id and nothing else, with the
+  // sentence the primer will show under its own explanation.
+  'permissions:ensure': {
+    read([id, request]) {
+      if (
+        !isPermissionId(id) ||
+        !isRecord(request) ||
+        typeof request.reason !== 'string' ||
+        request.reason.length === 0 ||
+        request.reason.length > 300 ||
+        !(request.primed === undefined || typeof request.primed === 'boolean')
+      ) {
+        throw new Error('Invalid permission request');
+      }
+      return [id, { reason: request.reason, primed: request.primed === true }];
+    },
+  },
+  'permissions:open-settings': {
+    read([id]) {
+      if (!isPermissionId(id)) throw new Error('Invalid permission');
+      return [id];
     },
   },
   'settings:record-operator-profile-state': {

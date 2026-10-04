@@ -1000,6 +1000,22 @@ Built:
   read as "nothing matched" (BUG-243); a target the shell decides at run time
   runs. Every refusal is `safety.denied` and every unjudged command
   `safety.undecided` in `logs/main.jsonl`
+- permissions and grants (ENG-045) on the desktop bridge: `PERMISSIONS` in
+  `@exawatt/core` declares each grant once (id, kind, why, primer copy, who
+  enforces it, its System Settings pane) for Settings ▸ Permissions, for the
+  first-party primer, and for Electron main, which owns every status read and
+  every system prompt (`electron/main/permissions/`). The renderer holds a
+  read-only snapshot and one door, `ensure(id, {reason})`; only an `ensure`
+  the user primed with Continue raises macOS's prompt, and every native
+  notification posts through one registry-checked path
+  (`postNativeNotification`), because Electron's first `Notification.show()`
+  raises the prompt on its own. A status that cannot be read is `unknown`,
+  never `denied`, and `denied` read while a prompt is still up is not believed.
+  Notification authorization is read and requested through a first-party
+  N-API addon (`electron/native/notification-authorization.mm`, built by
+  `electron:compile` on macOS, unpacked from the asar); a build without it
+  reads `unknown`. The registry declares and explains and enforces nothing;
+  macOS enforces the grant
 - inert persisted Projects independent of Session tabs; a curated Project
   chooser with reviewed parent-folder import; and a lightweight task + Launch
   Configuration ribbon + Start composer. Its selected configuration carries an
