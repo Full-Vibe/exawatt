@@ -1,0 +1,173 @@
+import { inferSessionLinks, type SessionLinkCandidate } from './link';
+import type { RoadmapDoc, SessionLink } from './types';
+
+/**
+ * Roadmap-derived attention (ENG-017 S8): blocked items with live agents
+ * attached, expressed as inputs to the EXISTING needs-you pipeline — one
+ * attention truth, no second machine.
+ *
+ * FLEET-WIDE by construction (BUG-026). This used to read the active
+ * Project's lens, so a Session blocked on a roadmap item anywhere else wore
+ * no marker and ⌘J would not visit it; standing in that Project made the
+ * marker appear and leaving made it vanish. Attention is a fleet fact, so its
+ * producer takes the whole fleet: every open Project's parsed roadmap and
+ * every one of its live Sessions, evaluated by the same rule regardless of
+ * where the operator is standing.
+ *
+ * Deliberately git-free. Link evidence here is what every Project can produce
+ * without spawning a process per Session — declared ids, worktree path,
+ * session title, context and task. Branch and commit evidence stay the
+ * Project lens's DISPLAY enrichment: an attention signal that exists only for
+ * the Project you are standing in is the defect, not a feature.
+ *
+ * Pure and shared by main and renderer callers. This join owns linkage and
+ * blocked truth; callers own observation custody and read-state projection.
+ */
+
+export interface RoadmapBlockedSession {
+  sessionId: string;
+  tabId: string | null;
+  projectDir: string;
+  itemId: string;
+  /** "APP-018 is blocked" — badge/tooltip copy */
+  reason: string;
+}
+
+/** What the fleet producer needs about one live Session. No turn state: a
+ *  blocked item is blocked whether or not bytes are moving, and depending on
+ *  activity here would recompute every Project's links on every PTY tick. */
+export interface RoadmapAttentionSession {
+  sessionId: string;
+  /** Stable operator identity for publishing covered source observations. */
+  durableSessionId?: string;
+  tabId: string | null;
+  title: string;
+  cwd: string;
+  contextSummary: string | null;
+  initialTask: string | null;
+  /** roadmap item declared at launch (S4); overrides inference */
+  declaredItemId: string | null;
+}
+
+/** One Project's roadmap as the producer sees it. `pending` is the honest
+ *  third state: the read has not answered yet, so this Project's Sessions are
+ *  neither blocked nor cleared. `failed` is the fourth (BUG-162): the read
+ *  ran and could not answer (the file is over the reader's limit, the IPC
+ *  rejected), which is not the same fact as a Project with no roadmap. A
+ *  failed read is never evidence about the roadmap, so the producer's view
+ *  of that Project's Sessions is unknown, never quiet. */
+export type RoadmapAttentionRead =
+  | { status: 'pending' }
+  /** a successful read of nothing: no roadmap file in this Project */
+  | { status: 'absent' }
+  /** the read did not answer; nothing is known about this Project */
+  | { status: 'failed'; error: string }
+  | { status: 'ok'; doc: RoadmapDoc };
+
+export interface RoadmapAttentionProject {
+  dir: string;
+  read: RoadmapAttentionRead;
+  sessions: readonly RoadmapAttentionSession[];
+}
+
+export interface FleetRoadmapAttention {
+  /** every live Session attached to a blocked now/next item, fleet-wide */
+  blocked: RoadmapBlockedSession[];
+  /** Sessions whose Project has not answered yet — unknown, not clear */
+  pending: string[];
+  /** Sessions whose Project's roadmap could not be read — unknown, not clear
+   *  (BUG-162). Together with `pending`, the Sessions this producer must
+   *  declare itself blind to rather than let read as quiet. */
+  unread: string[];
+}
+
+/** Source-neutral worktree evidence: the basename of a Session cwd that has
+ *  left the Project root. Free, and the strongest non-git link signal. */
+function worktreeDirname(cwd: string, projectDir: string): string | null {
+  const normalized = cwd.replace(/\/+$/, '');
+  if (normalized === projectDir.replace(/\/+$/, '')) return null;
+  const base = normalized.split('/').pop();
+  return base || null;
+}
+
+function projectLinks(
+  project: RoadmapAttentionProject,
+  doc: RoadmapDoc
+): Map<string, SessionLink> {
+  const declared = new Map<string, SessionLink>();
+  const inferable: SessionLinkCandidate[] = [];
+  for (const session of project.sessions) {
+    if (session.declaredItemId) {
+      declared.set(session.sessionId, {
+        sessionId: session.sessionId,
+        tabId: session.tabId,
+        projectDir: project.dir,
+        itemId: session.declaredItemId,
+        method: 'declared',
+        confidence: 'high',
+        evidence: [{ kind: 'declared', excerpt: 'declared at launch' }],
+        evaluatedAt: 0,
+      });
+      continue;
+    }
+    inferable.push({
+      sessionId: session.sessionId,
+      tabId: session.tabId,
+      projectDir: project.dir,
+      title: session.title,
+      contextSummary: session.contextSummary,
+      initialTask: session.initialTask,
+      cwd: session.cwd,
+      branch: null,
+      worktreeDirname: worktreeDirname(session.cwd, project.dir),
+      commitSubjects: [],
+    });
+  }
+  for (const link of inferSessionLinks(doc, inferable)) {
+    if (!declared.has(link.sessionId)) declared.set(link.sessionId, link);
+  }
+  return declared;
+}
+
+/**
+ * Every Session the fleet's roadmaps say is blocked, plus the ones whose
+ * Project has not been read yet. The same computation for the Project the
+ * operator is standing in and every Project they are not.
+ */
+export function deriveFleetRoadmapBlocked(
+  projects: readonly RoadmapAttentionProject[]
+): FleetRoadmapAttention {
+  const blocked: RoadmapBlockedSession[] = [];
+  const pending: string[] = [];
+  const unread: string[] = [];
+  for (const project of projects) {
+    if (project.read.status === 'pending') {
+      pending.push(...project.sessions.map(session => session.sessionId));
+      continue;
+    }
+    if (project.read.status === 'failed') {
+      unread.push(...project.sessions.map(session => session.sessionId));
+      continue;
+    }
+    if (project.read.status !== 'ok') continue;
+    const doc = project.read.doc;
+    const links = projectLinks(project, doc);
+    if (links.size === 0) continue;
+    for (const item of doc.items) {
+      if (!item.blocked) continue;
+      if (item.status !== 'now' && item.status !== 'next') continue;
+      for (const session of project.sessions) {
+        const link = links.get(session.sessionId);
+        if (link?.itemId !== item.id) continue;
+        blocked.push({
+          sessionId: session.sessionId,
+          tabId: session.tabId,
+          projectDir: project.dir,
+          itemId: item.id,
+          reason: `${item.declaredId ?? item.title} is blocked`,
+        });
+      }
+    }
+  }
+  return { blocked, pending, unread };
+}

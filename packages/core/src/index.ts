@@ -54,6 +54,7 @@ export type {
 } from './transports/local-sessions';
 export { parseRoadmap, resolveRoadmapSectionStatus } from './roadmap/parse';
 export type { ParseRoadmapOptions } from './roadmap/parse';
+export * from './roadmap/attention';
 export { inferSessionLinks } from './roadmap/link';
 export type { SessionLinkCandidate } from './roadmap/link';
 export type {
