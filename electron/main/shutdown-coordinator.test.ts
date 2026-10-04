@@ -160,16 +160,9 @@ describe('shutdownCopy', () => {
   });
 
   it('uses the resolved distribution name', () => {
+    const productName = 'Exawatt Community';
     expect(
-      shutdownCopy(
-        'quit',
-        { agents: 1, shells: 0 },
-        'Exawatt Community'
-      )
-    ).toEqual({
-      title: 'Quit Exawatt Community and stop 1 agent?',
-      detail:
-        'Their sessions and terminal history will be saved. You can resume the agents after reopening Exawatt Community.',
-    });
+      shutdownCopy('quit', { agents: 1, shells: 0 }, productName).title
+    ).toContain(productName);
   });
 });

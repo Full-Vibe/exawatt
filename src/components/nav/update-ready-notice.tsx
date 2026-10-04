@@ -96,6 +96,11 @@ export function UpdateReadyNotice() {
                 : 'neutral'
         }
         title={message}
+        description={
+          !shutdownActive && (installedSha || status?.phase === 'downloaded')
+            ? 'Tabs, purpose, read status and unanswered requests are saved. Agents reopen paused; you choose when to resume.'
+            : undefined
+        }
         actions={
           !shutdownActive && !installedSha && status?.phase === 'downloaded' ? (
             <Button

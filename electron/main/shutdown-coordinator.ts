@@ -118,7 +118,7 @@ export function shutdownCopy(
       : '';
   const base =
     counts.agents > 0
-      ? `Their sessions and terminal history will be saved. You can resume the agents after reopening ${appName}.`
+      ? 'Tabs, purpose, read status, unanswered requests and terminal history will be saved. Agents reopen paused; you choose when to resume.'
       : 'Terminal history will be saved. Shells reopen as new processes in the same directories.';
   return {
     title: `${action} ${subject}?`,
