@@ -21,6 +21,7 @@
  * detection) — the fleet surfaces show the SAME result-vs-needs-you truth the
  * tab strip does. Quiet completion is not promoted into the blocker queue.
  */
+import { attentionNeedsOperator } from '../session-attention';
 import {
   sessionHasBackgroundWork,
   type SessionBackgroundTask,
@@ -34,11 +35,7 @@ import type {
 import { INITIAL_AGENT_METRICS } from '../types/index';
 import type { FleetManager } from '../state/fleet-manager';
 
-export interface LocalSessionAttention {
-  kind: string;
-  since: number;
-  request?: 'blocking' | 'working' | 'unknown';
-}
+export type LocalSessionAttention = import('../session-attention').SessionAttentionSignal;
 
 export interface LocalSessionSnapshot {
   id: string;
@@ -145,7 +142,7 @@ export function sessionStatus(
   // a Session whose team is working never reads as finished (ENG-023).
   if (
     session.attention &&
-    session.attention.kind !== 'turn-end' &&
+    attentionNeedsOperator(session.attention) &&
     session.attention.request !== 'working' &&
     session.attention.request !== 'unknown'
   )
@@ -171,7 +168,7 @@ function sessionBlocker(
   if (
     session.exited ||
     !session.attention ||
-    session.attention.kind === 'turn-end'
+    !attentionNeedsOperator(session.attention)
   )
     return undefined;
   return {

@@ -158,7 +158,7 @@ describe('sessionStatus', () => {
   });
 
   it('separates an explicit human gate from a quiet result boundary', () => {
-    const attention = { kind: 'bell', since: 9_500 };
+    const attention = { kind: 'bell' as const, since: 9_500 };
     expect(
       sessionStatus(
         { exited: false, exitCode: null, attention },
@@ -331,6 +331,21 @@ describe('LocalSessionsTransport', () => {
   const flush = async () => {
     await vi.advanceTimersByTimeAsync(0);
   };
+
+  it('keeps operator reminders orthogonal to work and blockers', async () => {
+    sessions[0] = {
+      ...sessions[0],
+      working: true,
+      attention: { kind: 'reminder', since: 1, unread: true },
+    };
+    transport.start();
+    await flush();
+    expect(manager.getAgent('pty-1')).toMatchObject({
+      status: 'working',
+      attention: { kind: 'reminder' },
+    });
+    expect(manager.getAgent('pty-1')?.blockerInfo).toBeUndefined();
+  });
 
   it('lists sessions into FleetState and decays working -> idle via polling', async () => {
     transport.start();
