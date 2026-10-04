@@ -102,6 +102,7 @@ const BOARD_CANVAS_DIR = 'src/components/fleet/spatial/operations-board/';
 const BOARD_CANVAS_MODULES = [
   'operations-board-canvas.tsx',
   'operations-board-agent-layer.tsx',
+  'operations-board-status-marks.tsx',
   'operations-board-camera-rig.tsx',
   'operations-board-controls.tsx',
   'operations-board-delegation-layer.tsx',

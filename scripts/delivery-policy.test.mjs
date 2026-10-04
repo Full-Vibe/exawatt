@@ -549,6 +549,7 @@ test('every module the Fleet board canvas was split into owes what the canvas ow
   assert.ok(canvas.includes('eval:spatial:emergence'));
   for (const part of [
     'operations-board-agent-layer.tsx',
+    'operations-board-status-marks.tsx',
     'operations-board-camera-rig.tsx',
     'operations-board-controls.tsx',
     'operations-board-delegation-layer.tsx',
