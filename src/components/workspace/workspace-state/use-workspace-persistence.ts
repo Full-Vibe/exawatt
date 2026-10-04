@@ -19,7 +19,7 @@ import type { PersistedV7 } from './persisted-layout';
 import {
   serializeLayout,
   shutdownTargets,
-  withLiveHarnessIdentities,
+  withLiveSessionFacts,
 } from './layout-serialize';
 import type { RecentProjects } from './recent-projects';
 
@@ -140,7 +140,7 @@ export function useWorkspacePersistence({
       const state = serializeWorkspace(stage === 'stopped');
       void ptyApi
         .list()
-        .then(live => ws.save(withLiveHarnessIdentities(state, live)))
+        .then(live => ws.save(withLiveSessionFacts(state, live)))
         .then(() => appApi.completeCheckpoint(requestId, true))
         .catch(() => appApi.completeCheckpoint(requestId, false));
     });

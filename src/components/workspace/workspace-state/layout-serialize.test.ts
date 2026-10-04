@@ -5,7 +5,7 @@ import {
   persistedGoalVisual,
   serializeLayout,
   shutdownTargets,
-  withLiveHarnessIdentities,
+  withLiveSessionFacts,
   type SerializeContext,
 } from './layout-serialize';
 import { parsePersisted, type PersistedSessionTab } from './persisted-layout';
@@ -266,7 +266,7 @@ describe('shutdownTargets', () => {
   });
 });
 
-describe('withLiveHarnessIdentities', () => {
+describe('withLiveSessionFacts', () => {
   it('adopts a conversation id main learned after the record was taken', () => {
     const saved = serializeLayout(
       workspace([
@@ -276,7 +276,7 @@ describe('withLiveHarnessIdentities', () => {
       ]),
       context()
     );
-    const next = withLiveHarnessIdentities(saved, [
+    const next = withLiveSessionFacts(saved, [
       ptySessionRecord({
         durableSessionId: 'durable-late',
         harnessSessionId: 'learned',

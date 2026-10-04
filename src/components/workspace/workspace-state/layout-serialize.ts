@@ -194,12 +194,12 @@ export function serializeLayout(
 }
 
 /**
- * The checkpoint's last word on provider identity: a conversation id main
- * learned after the renderer's copy was taken still reaches the record.
+ * The checkpoint's final live snapshot catches provider identity and attention
+ * changes that main observed before the renderer committed their events.
  */
-export function withLiveHarnessIdentities(
+export function withLiveSessionFacts(
   state: PersistedV7,
-  live: readonly PtySessionRecord[]
+  live: readonly (PtySessionRecord & { attention?: PtyAttention | null })[]
 ): PersistedV7 {
   const byDurable = new Map(
     live.map(session => [session.durableSessionId, session])
@@ -211,9 +211,16 @@ export function withLiveHarnessIdentities(
       tabs: project.tabs.map(tab => {
         if (tab.kind === 'remote-agent') return tab;
         const session = byDurable.get(tab.durableSessionId);
-        return session?.harnessSessionId
-          ? { ...tab, harnessSessionId: session.harnessSessionId }
-          : tab;
+        if (!session) return tab;
+        return {
+          ...tab,
+          harnessSessionId: session.harnessSessionId ?? tab.harnessSessionId,
+          // A stopped runtime has dropped its monitor; that is not source
+          // resolution. A live snapshot actively confirms absence too.
+          ...(!session.exited && session.attention !== undefined
+            ? { attention: session.attention ?? undefined }
+            : {}),
+        };
       }),
     })),
   };

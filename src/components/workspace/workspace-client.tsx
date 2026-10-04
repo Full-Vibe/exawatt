@@ -383,6 +383,7 @@ export function WorkspaceClient() {
     summaries,
     goalVisuals,
     attention,
+    markSessionUnread,
     activity,
     engaged,
     delegation,
@@ -1944,9 +1945,7 @@ export function WorkspaceClient() {
                   .flatMap(project => project.tabs)
                   .find(tab => tab.id === tabId);
                 if (tab && isSessionTab(tab)) {
-                  void window.electron?.pty.markUnread(
-                    tab.sessionId ?? tab.durableSessionId
-                  );
+                  markSessionUnread(tab);
                 }
               }}
               onRenameProject={renameProject}
