@@ -834,6 +834,7 @@ test(
       "process.on('SIGTERM', () => {",
       "  writeFileSync(process.argv[2], 'term-seen\\n');",
       '});',
+      "process.send('ready');",
       'setInterval(() => {}, 1_000);',
       '',
     ].join('\n')
@@ -844,9 +845,12 @@ test(
       "import { spawn } from 'node:child_process';",
       "import { writeFileSync } from 'node:fs';",
       'const child = spawn(process.execPath, [process.argv[2], process.argv[4]], {',
-      "  stdio: 'ignore',",
+      "  stdio: ['ignore', 'ignore', 'ignore', 'ipc'],",
       '});',
-      "child.once('spawn', () => {",
+      // OS spawn does not prove the descendant has installed its handler.
+      // Exit only after that handler is ready, so this tests escalation.
+      "child.on('message', message => {",
+      "  if (message !== 'ready') return;",
       '  writeFileSync(',
       '    process.argv[3],',
       '    JSON.stringify({ group: process.pid, grandchild: child.pid })',
