@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   attentionRecords,
   projectSessionAttention,
+  orderedAttentionTargets,
   readPtyAttention,
   withAttentionRead,
   markAttentionUnread,
@@ -96,4 +97,16 @@ describe('canonical Session attention records', () => {
       readPtyAttention({ kind: 'blocked', since: 1, records: [] })
     ).toBeNull();
   });
+});
+
+it('orders Sessions by eligible independent facts, not the oldest displayed facade', () => {
+  const mixed = projectSessionAttention([
+    { source: 'harness', kind: 'turn-end', since: 1, unread: false },
+    { source: 'operator', kind: 'reminder', since: 30, unread: true },
+  ])!;
+  const other = { kind: 'turn-end' as const, since: 20, unread: true };
+  expect(orderedAttentionTargets({ mixed, other }, null)).toEqual([
+    'other',
+    'mixed',
+  ]);
 });

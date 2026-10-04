@@ -178,10 +178,16 @@ export function orderedAttentionTargets(
   activeSessionId: string | null
 ): string[] {
   return Object.entries(attention)
-    .filter(
-      ([sessionId, signal]) =>
-        sessionId !== activeSessionId && attentionIsJumpTarget(signal)
-    )
+    .flatMap(([sessionId, signal]) => {
+      if (sessionId === activeSessionId) return [];
+      // A read result can share its facade with a newer unread reminder.
+      // Queue age belongs to eligible work, never to an ineligible older fact
+      // merely retained for presentation/history.
+      const eligible = (signal.records ?? [signal])
+        .filter(attentionIsJumpTarget)
+        .sort((a, b) => priority(a) - priority(b) || a.since - b.since);
+      return eligible[0] ? [[sessionId, eligible[0]] as const] : [];
+    })
     .sort(
       (a, b) =>
         priority(a[1]) - priority(b[1]) ||
