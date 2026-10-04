@@ -29,13 +29,14 @@ keys", in two regimes:
 
 The direction did ship — as two specific keys, not a component library:
 
-- `CommandKeySwitchButton` — the Smoke Low command key on the home hero
-  (`src/app/_home-hero.tsx`), covered by `/eval/t8-home-keyswitch`.
+- `CommandKeySwitchButton` originally shipped on the home hero. The hero board
+  superseded that surface and its `/eval/t8-home-keyswitch` battery; the
+  consumer-less wrapper was removed on 2026-10-04 (BUG-138).
 - `AgentStartKeySwitchButton` — retained as reusable R3F machinery and covered
   by `/eval/t9-agent-start-keyswitch`; the workspace New Agent composer moved
   back to the standard shadcn button on 2026-08-02.
 
-Shared machinery those keys still use lives on in
+Shared machinery retained by the active study and Agent Start eval lives on in
 `src/components/hud/webgl/keyswitch-study.tsx` (assembly, lighting, Smoke Low
 variant), `keyswitch-geometry.ts`, `keyswitch-motion.ts` (brown-switch travel
 curve, 190 ms), and `keyswitch-audio.ts` (sound profiles) — all still under

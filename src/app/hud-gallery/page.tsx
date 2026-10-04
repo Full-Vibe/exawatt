@@ -59,69 +59,9 @@ interface Section {
   showcase?: ReactNode;
 }
 
-const SECTIONS: Section[] = [
-  {
-    id: 'quick-capture',
-    title: 'Quick capture chip row',
-    meta: 'ENG-025 F5 — the diagnostics chip shipped unrendered and wrapped; densest state first',
-    showcase: <QuickCaptureStudy />,
-  },
-  {
-    id: 'readiness-grammar',
-    title: 'Readiness grammar',
-    meta: 'review candidate · ENG-026 N0 — live / preview / announced',
-    showcase: <ReadinessGrammarStudy />,
-  },
-  {
-    id: 'elastic-project-ribbon',
-    title: 'Elastic Project ribbon',
-    meta: 'production component · two-row target-bounds layout + Initiative projection',
-    showcase: <ProjectRibbonStudy />,
-  },
-  {
-    id: 'session-state-tiles',
-    title: 'Session state tiles',
-    meta: 'review candidate · region / question projection in production geometry',
-    showcase: <SessionStateTileStudy />,
-  },
-  {
-    id: 'status-lights',
-    title: 'Agent status lights',
-    meta: 'canon · D40 five-signal protocol',
-    dom: <StatusLightDomSpecimens />,
-    webgl: (
-      <div className="flex max-w-3xl flex-col gap-5">
-        <WebglStatusLightsScene />
-        <div className="flex items-start justify-between gap-5">
-          <div>
-            <p className="font-display text-sm font-semibold">
-              Spatial Agent pieces
-            </p>
-            <p
-              className="mt-1 max-w-[55ch] text-xs leading-relaxed"
-              style={{ color: HUD.textDim }}
-            >
-              Status stays in the emissive core. Project zones and identity
-              marks keep their own color channel.
-            </p>
-          </div>
-          <span
-            className="shrink-0 rounded border px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em]"
-            style={{ color: HUD.amber, borderColor: HUD.strokeSoft }}
-          >
-            Not wired
-          </span>
-        </div>
-        <StatusLightProtocolLegend compact />
-      </div>
-    ),
-  },
-  {
-    id: 'keyswitch-material-studies',
-    title: 'Keyswitch material studies',
-    meta: 'active R3F workbench · physical command controls · decision 0025',
-    showcase: <KeySwitchStudy />,
-  },
+// Foundations are ordered from primitives to composition. New experiments belong
+// in ACTIVE_STUDIES, never before the reusable vocabulary the gallery teaches.
+const FOUNDATIONS: Section[] = [
   {
     id: 'frames',
     title: 'Frames',
@@ -240,6 +180,38 @@ const SECTIONS: Section[] = [
     webgl: <WebglPillsScene />,
   },
   {
+    id: 'status-lights',
+    title: 'Agent status lights',
+    meta: 'canon · D40 five-signal protocol',
+    dom: <StatusLightDomSpecimens />,
+    webgl: (
+      <div className="flex max-w-3xl flex-col gap-5">
+        <WebglStatusLightsScene />
+        <div className="flex items-start justify-between gap-5">
+          <div>
+            <p className="font-display text-sm font-semibold">
+              Spatial Agent pieces
+            </p>
+            <p
+              className="mt-1 max-w-[55ch] text-xs leading-relaxed"
+              style={{ color: HUD.textDim }}
+            >
+              Status stays in the emissive core. Project zones and identity
+              marks keep their own color channel.
+            </p>
+          </div>
+          <span
+            className="shrink-0 rounded border px-2 py-1 font-mono text-chrome-nano uppercase tracking-[0.12em]"
+            style={{ color: HUD.amber, borderColor: HUD.strokeSoft }}
+          >
+            Not wired
+          </span>
+        </div>
+        <StatusLightProtocolLegend compact />
+      </div>
+    ),
+  },
+  {
     id: 'composed',
     title: 'Composed agent panel',
     meta: 'blocks assembled',
@@ -285,10 +257,49 @@ const SECTIONS: Section[] = [
   },
 ];
 
+const ACTIVE_STUDIES: Section[] = [
+  {
+    id: 'quick-capture',
+    title: 'Quick capture chip row',
+    meta: 'Diagnostic attachments in a compact feedback composer',
+    showcase: <QuickCaptureStudy />,
+  },
+  {
+    id: 'readiness-grammar',
+    title: 'Readiness grammar',
+    meta: 'Distinguishing available features from previews and announced work',
+    showcase: <ReadinessGrammarStudy />,
+  },
+  {
+    id: 'elastic-project-ribbon',
+    title: 'Elastic Project ribbon',
+    meta: 'Production Project navigation at different widths and grouping levels',
+    showcase: <ProjectRibbonStudy />,
+  },
+  {
+    id: 'session-state-tiles',
+    title: 'Session state tiles',
+    meta: 'Session activity and outstanding questions in compact cards',
+    showcase: <SessionStateTileStudy />,
+  },
+  {
+    id: 'keyswitch-material-studies',
+    title: 'Keyswitch material studies',
+    meta: 'Physical command controls: material, motion, and sound',
+    showcase: <KeySwitchStudy />,
+  },
+];
+
+const SECTION_GROUPS = [
+  { id: 'foundations', title: 'Foundations', sections: FOUNDATIONS },
+  { id: 'active-studies', title: 'Active studies', sections: ACTIVE_STUDIES },
+];
+const SECTIONS = SECTION_GROUPS.flatMap(group => group.sections);
+
 function ColumnLabel({ children }: { children: ReactNode }) {
   return (
     <span
-      className="font-mono text-[10px] uppercase tracking-[0.2em]"
+      className="font-mono text-chrome-micro uppercase tracking-[0.2em]"
       style={{ color: HUD.textDim }}
     >
       {children}
@@ -403,43 +414,52 @@ export default function HudGallery() {
           className="sticky top-10 hidden h-fit w-44 shrink-0 lg:block"
         >
           <p
-            className="font-mono text-[10px] uppercase tracking-[0.18em]"
+            className="font-mono text-chrome-micro uppercase tracking-[0.18em]"
             style={{ color: HUD.textDim }}
           >
             HUD library
           </p>
-          <ul className="mt-3 flex flex-col gap-0.5">
-            {SECTIONS.map(s => {
-              const on = s.id === active;
-              return (
-                <li key={s.id}>
-                  <a
-                    href={`#${s.id}`}
-                    onClick={e => {
-                      e.preventDefault();
-                      focusSection(s.id);
-                    }}
-                    aria-current={on ? 'true' : undefined}
-                    className="flex items-center gap-2 rounded-sm border px-2.5 py-1.5 font-ui text-sm outline-none transition-[background-color,color,border-color] duration-200 focus-visible:ring-2 focus-visible:ring-hud-cyan"
-                    style={{
-                      borderColor: on ? HUD.strokeSoft : 'transparent',
-                      color: on ? HUD.cyan : HUD.textDim,
-                      background: on ? 'rgba(25,230,255,0.06)' : 'transparent',
-                    }}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: on ? HUD.cyan : HUD.strokeSoft }}
-                    />
-                    {s.title}
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
+          {SECTION_GROUPS.map(group => (
+            <div key={group.id} className="mt-4">
+              <p className="px-2.5 text-chrome-label font-medium">
+                {group.title}
+              </p>
+              <ul className="mt-2 flex flex-col gap-0.5">
+                {group.sections.map(s => {
+                  const on = s.id === active;
+                  return (
+                    <li key={s.id}>
+                      <a
+                        href={`#${s.id}`}
+                        onClick={e => {
+                          e.preventDefault();
+                          focusSection(s.id);
+                        }}
+                        aria-current={on ? 'true' : undefined}
+                        className="flex items-center gap-2 rounded-sm border px-2.5 py-1.5 font-ui text-sm outline-none transition-[background-color,color,border-color] duration-200 focus-visible:ring-2 focus-visible:ring-hud-cyan"
+                        style={{
+                          borderColor: on ? HUD.strokeSoft : 'transparent',
+                          color: on ? HUD.cyan : HUD.textDim,
+                          background: on
+                            ? 'rgba(25,230,255,0.06)'
+                            : 'transparent',
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: on ? HUD.cyan : HUD.strokeSoft }}
+                        />
+                        {s.title}
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
           <p
-            className="mt-4 font-mono text-[10px] leading-relaxed"
+            className="mt-4 font-mono text-chrome-micro leading-relaxed"
             style={{ color: HUD.textDim }}
           >
             j / k · arrows to step
@@ -449,11 +469,11 @@ export default function HudGallery() {
         <main id="gallery-main" className="min-w-0 flex-1">
           <header className="mb-10">
             <div className="flex items-center gap-3">
-              <h1 className="font-display text-2xl font-semibold tracking-tight">
+              <h1 className="font-display text-surface-title font-semibold tracking-tight">
                 HUD component library
               </h1>
               <span
-                className="rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em]"
+                className="rounded border px-1.5 py-0.5 font-mono text-chrome-micro uppercase tracking-[0.16em]"
                 style={{
                   color: HUD.amber,
                   borderColor: 'rgba(255,176,46,0.4)',
@@ -474,97 +494,132 @@ export default function HudGallery() {
                 style={{ color: HUD.cyan }}
               >
                 Open the design canon briefing →
-              </a>{' '}
-              <a
-                href="/hud-gallery/agent-launcher"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the New Agent launcher →
-              </a>{' '}
-              <a
-                href="/hud-gallery/roadmap-lab"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the Roadmap lab →
-              </a>{' '}
-              <a
-                href="/hud-gallery/project-ribbon/bench"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the Ribbon dogfood bench →
-              </a>{' '}
-              <a
-                href="/hud-gallery/goal-visuals"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the Agent tile image bench →
-              </a>{' '}
-              <a
-                href="/hud-gallery/board-study"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the Fleet board study →
-              </a>{' '}
-              <a
-                href="/hud-gallery/hero-board"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the hero board study →
-              </a>{' '}
-              <a
-                href="/hud-gallery/fold-close"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the fold and close copy study →
-              </a>{' '}
-              <a
-                href="/hud-gallery/altitude-scroll"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the pinned altitude scroll study →
-              </a>{' '}
-              <a
-                href="/v2"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the proposed homepage at /v2 →
-              </a>{' '}
-              <a
-                href="/hud-gallery/usage-scenarios"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the Usage scenarios →
-              </a>{' '}
-              <a
-                href="/hud-gallery/connected-source"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the Connected Agents study →
-              </a>{' '}
-              <a
-                href="/hud-gallery/connect-flow"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the one-step Connect study →
               </a>
             </p>
+            <details
+              className="mt-4 rounded border p-3"
+              style={{ borderColor: HUD.strokeSoft }}
+            >
+              <summary className="cursor-pointer text-sm font-medium">
+                Review workbenches
+              </summary>
+              <nav
+                aria-label="Review workbenches"
+                className="mt-3 grid gap-3 text-sm sm:grid-cols-2"
+              >
+                <a
+                  href="/hud-gallery/agent-launcher"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the New Agent launcher →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/roadmap-lab"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the Roadmap lab →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/project-ribbon/bench"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the Ribbon dogfood bench →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/goal-visuals"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the Agent tile image bench →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/board-study"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the Fleet board study →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/hero-board"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the hero board study →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/fold-close"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the fold and close copy study →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/altitude-scroll"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the pinned altitude scroll study →
+                </a>{' '}
+                <a
+                  href="/v2"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the proposed homepage at /v2 →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/usage-scenarios"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the Usage scenarios →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/connected-source"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the Connected Agents study →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/connect-flow"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the one-step Connect study →
+                </a>
+              </nav>
+            </details>
+            <nav
+              aria-label="Gallery groups"
+              className="mt-4 flex gap-4 text-sm"
+            >
+              {SECTION_GROUPS.map(group => (
+                <a
+                  key={group.id}
+                  href={`#${group.sections[0].id}`}
+                  onClick={event => {
+                    event.preventDefault();
+                    focusSection(group.sections[0].id);
+                  }}
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  {group.title}
+                </a>
+              ))}
+            </nav>
           </header>
 
           <div className="flex flex-col gap-14">
             {SECTIONS.map(s => (
               <section
+                data-gallery-group={
+                  FOUNDATIONS.includes(s) ? 'foundations' : 'active-studies'
+                }
                 key={s.id}
                 id={s.id}
                 tabIndex={-1}
@@ -576,7 +631,18 @@ export default function HudGallery() {
                   revealed.has(s.id) ? 'is-in' : ''
                 }`}
               >
-                <div className="mb-5 flex items-baseline gap-3">
+                {SECTION_GROUPS.filter(group => group.sections[0] === s).map(
+                  group => (
+                    <p
+                      key={group.id}
+                      className="mb-4 font-mono text-chrome-micro uppercase tracking-[0.16em]"
+                      style={{ color: HUD.textDim }}
+                    >
+                      {group.title}
+                    </p>
+                  )
+                )}
+                <div className="mb-5 flex flex-wrap items-baseline gap-3">
                   <h2
                     id={`${s.id}-h`}
                     className="font-display text-lg font-semibold tracking-tight"
@@ -584,19 +650,19 @@ export default function HudGallery() {
                     {s.title}
                   </h2>
                   <span
-                    className="font-mono text-[11px]"
+                    className="font-mono text-chrome-meta"
                     style={{ color: HUD.textDim }}
                   >
                     {s.meta}
                   </span>
                 </div>
                 {s.showcase ? (
-                  <div>{s.showcase}</div>
+                  <div className="overflow-x-auto pb-2">{s.showcase}</div>
                 ) : (
                   <div className="grid grid-cols-1 gap-8 2xl:grid-cols-2">
                     <div className="flex min-w-0 flex-col gap-3">
                       <ColumnLabel>DOM / SVG</ColumnLabel>
-                      <div>{s.dom}</div>
+                      <div className="overflow-x-auto pb-2">{s.dom}</div>
                     </div>
                     <div className="flex min-w-0 flex-col gap-3">
                       <ColumnLabel>WebGL · Three.js</ColumnLabel>

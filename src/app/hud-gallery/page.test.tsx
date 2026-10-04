@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/components/hud/webgl/scenes', () => ({
@@ -45,6 +45,16 @@ describe('HUD gallery', () => {
     vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
   });
 
+  it('does not let embedded studies steal focus on entry', () => {
+    const invoker = document.createElement('button');
+    document.body.append(invoker);
+    invoker.focus();
+    render(<HudGallery />);
+
+    expect(invoker).toHaveFocus();
+    invoker.remove();
+  });
+
   it('keeps the R3F keyswitch material workbench reviewable', () => {
     render(<HudGallery />);
 
@@ -57,19 +67,9 @@ describe('HUD gallery', () => {
     ).toHaveAttribute('href', '#keyswitch-material-studies');
   });
 
-  it('retires the shipped application-theme study from the workbench', () => {
-    render(<HudGallery />);
-
-    expect(
-      screen.queryByRole('heading', { name: 'Application themes' })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('link', { name: /Application themes/ })
-    ).not.toBeInTheDocument();
-  });
-
   it('links the active Agent tile image geometry bench', () => {
     render(<HudGallery />);
+    fireEvent.click(screen.getByText('Review workbenches'));
 
     expect(
       screen.getByRole('link', { name: 'Open the Agent tile image bench →' })

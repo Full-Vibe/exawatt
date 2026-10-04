@@ -119,6 +119,8 @@ function StudyCase({ entry }: { entry: Case }) {
         {entry.label}
       </p>
       <QuickCaptureBar
+        autoFocus={false}
+        dialogSemantics={false}
         kind={kind}
         onKindChange={setKind}
         message={message}
