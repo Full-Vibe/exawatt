@@ -21,7 +21,7 @@ import { permissionDeclaration, type PermissionId } from '@exawatt/core';
  * moment after the user has already said no in macOS, where the only way
  * forward is System Settings and the one button opens it.
  */
-export type PrimerStep = 'intro' | 'denied';
+type PrimerStep = 'intro' | 'denied';
 
 export interface PrimerState {
   id: PermissionId;

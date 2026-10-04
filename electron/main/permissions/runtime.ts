@@ -24,7 +24,7 @@ import {
 
 let service: PermissionService | null = null;
 
-export interface PermissionsRuntimeOptions {
+interface PermissionsRuntimeOptions {
   /** The app's macOS bundle identifier; null in a development launch, whose
    *  bundle is Electron's own. */
   bundleId: string | null;
@@ -63,12 +63,6 @@ export function installPermissions(
   // A grant made in System Settings shows up when the user comes back.
   app.on('browser-window-focus', () => void built.refresh());
   return built;
-}
-
-/** The installed service; main's IPC and notification paths read it here. */
-export function permissionService(): PermissionService {
-  if (!service) throw new Error('Permissions are not installed');
-  return service;
 }
 
 const notify = createNativeNotifier({

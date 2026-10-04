@@ -18,7 +18,7 @@ export interface NotificationHandle {
   close(): void;
 }
 
-export interface NativeNotificationOptions {
+interface NativeNotificationOptions {
   title: string;
   body: string;
   silent?: boolean;
@@ -35,7 +35,7 @@ export interface NativeNotificationRequest {
   onClose?: () => void;
 }
 
-export interface NativeNotificationDependencies {
+interface NativeNotificationDependencies {
   permissions: Pick<PermissionService, 'require'>;
   /** Whether this platform can show a native notification at all. */
   supported: () => boolean;

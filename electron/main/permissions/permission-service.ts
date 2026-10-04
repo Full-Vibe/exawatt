@@ -35,11 +35,11 @@ export interface PermissionProvider {
 }
 
 /** Every declared grant has a provider, and nothing else does. */
-export type PermissionProviders = {
+type PermissionProviders = {
   readonly [K in PermissionId]: PermissionProvider;
 };
 
-export interface PermissionServiceDependencies {
+interface PermissionServiceDependencies {
   providers: PermissionProviders;
   /** The declarations to serve; the registry unless a test supplies its own. */
   declarations?: readonly PermissionDeclaration[];

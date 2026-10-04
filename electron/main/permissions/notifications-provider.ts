@@ -15,7 +15,7 @@ export function notificationsPaneUrl(
     : settingsLink;
 }
 
-export interface NotificationsProviderDependencies {
+interface NotificationsProviderDependencies {
   platform: NodeJS.Platform;
   /** Null when the native read is not available in this build. */
   authorization: NotificationAuthorization | null;

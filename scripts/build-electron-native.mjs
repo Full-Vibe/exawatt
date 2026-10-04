@@ -25,7 +25,7 @@ const ADDONS = [
 /** The oldest macOS the packaged app declares support for. */
 const MINIMUM_MACOS = '12.0';
 
-export function nodeApiHeadersDirectory(root) {
+function nodeApiHeadersDirectory(root) {
   const require = createRequire(path.join(root, 'package.json'));
   return path.join(
     path.dirname(require.resolve('node-api-headers/package.json')),
@@ -33,7 +33,7 @@ export function nodeApiHeadersDirectory(root) {
   );
 }
 
-export function compileCommand(addon, { root, arch, headers }) {
+function compileCommand(addon, { root, arch, headers }) {
   return {
     command: 'xcrun',
     args: [

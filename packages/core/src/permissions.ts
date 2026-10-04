@@ -94,7 +94,7 @@ export function permissionDeclaration(id: PermissionId): PermissionDeclaration {
 }
 
 /** One grant's state as the renderer sees it: read-only, never enforced. */
-export interface PermissionStatus {
+interface PermissionStatus {
   id: PermissionId;
   state: PermissionState;
   /** When the state was last read, in epoch ms; null when it never was. */
@@ -136,7 +136,7 @@ export interface PermissionEnsureRequest {
  * - `settings`: only System Settings can change it now.
  * - `relaunch`: given, and it takes effect when Exawatt restarts.
  */
-export type PermissionEnsureOutcome =
+type PermissionEnsureOutcome =
   | 'ready'
   | 'primer'
   | 'requested'
@@ -192,7 +192,7 @@ export const PERMISSION_STATE_LABELS: Record<PermissionState, string> = {
 };
 
 /** The action a state offers, or null when there is nothing to do here. */
-export type PermissionAction = 'allow' | 'open-settings';
+type PermissionAction = 'allow' | 'open-settings';
 
 export function permissionAction(
   state: PermissionState
