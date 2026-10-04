@@ -1045,10 +1045,13 @@ try {
   // in gpagent to reach its started Agent.
   await page.locator('[data-project="gpagent"] [data-project-chrome]').click();
   await page.waitForTimeout(320);
+  const closingGoal = liveSessions.find(
+    item => item.id === 'gpa-session'
+  ).contextSummary;
   const gpaClose = page
     .locator('[data-project-parent="/tmp/gpagent"][data-tab-id="gpa-tab"]')
     .getByRole('button', {
-      name: 'Close Testing UTC date parsing fix and seeding demo org',
+      name: `Close ${closingGoal}`,
     });
   await gpaClose.click();
   const closeConfirm = page.locator('[data-close-confirm]');
@@ -1071,13 +1074,9 @@ try {
   await gpaClose.waitFor({ state: 'detached' }); // optimistic: gone at once
   const toast = page.locator('[data-close-toast]');
   await toast.waitFor();
-  const toastText = await toast.innerText();
-  if (
-    (!toastText.includes('Recently closed') &&
-      !toastText.includes('kept for 14 days')) ||
-    !toastText.includes('reopen')
-  ) {
-    throw new Error(`Close toast does not narrate the outcome: ${toastText}`);
+  const toastText = await toast.getByRole('status').innerText();
+  if (!closingGoal || !toastText.includes(closingGoal)) {
+    throw new Error(`Close announcement lost the closed Session: ${toastText}`);
   }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-toast.png') });
   // 4. ⌘T ⌘W is a friction-free no-op: the draft discards, no dialog.
