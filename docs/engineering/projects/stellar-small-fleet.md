@@ -2042,3 +2042,21 @@ assignment/read receipts. Compilation still needs the coupled source stack's
 already implemented unknown-state types. The forthcoming shared Fleet reminder
 projection (`600dd1f8`) and exited-runtime attention custody (`2ccc9a18`) are
 required integration dependencies before this followthrough's runtime gates.
+
+
+### 2026-10-04 — Paused inspection retains source-owned read state (implemented, not integrated)
+
+**Pausing preserves facts without leaving a phantom live alert.** Fleet's
+`2ccc9a18` custody patch is applied as `84e072af`: main retains the exact final
+request/result/reminder snapshot (including authoritative empty state) per ended
+runtime, while live alerts/counts clear. Inspection and mark-unread edit that
+same retained owner. Main resolves a durable inspection target to its current
+or retained exact runtime; unknown/removed identities cannot create ghost
+reminders. Resume/forget prune obsolete retained incarnations immediately.
+
+The paused focus hook now sends durable identity to main and still updates its
+persisted projection when no runtime exists after restart. Initial focused
+monitor/routing/hook proof passed 81 tests. Final integration must also switch
+the restart lane's markSessionUnread callback to the operator-reminder helper
+and consume authoritative exited snapshots during checkpointing; the old
+exited-null guard becomes obsolete only with this custody patch present.

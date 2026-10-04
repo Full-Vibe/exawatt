@@ -234,6 +234,15 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
         this.drop(id);
       }
     );
+    manager.on('session', session => {
+      for (const [id, snapshot] of this.retainedAttention) {
+        if (
+          id !== session.id &&
+          snapshot.durableSessionId === session.durableSessionId
+        )
+          this.retainedAttention.delete(id);
+      }
+    });
     manager.on('session-forgotten', (durableSessionId: string) => {
       for (const [id, snapshot] of this.retainedAttention) {
         if (snapshot.durableSessionId === durableSessionId)

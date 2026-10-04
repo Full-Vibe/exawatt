@@ -585,6 +585,11 @@ describe('AttentionMonitor', () => {
     });
     expect(monitor.count()).toBe(0);
     expect(alerts).toEqual([]);
+    manager.emit('session', {
+      id: 'replacement',
+      durableSessionId: 'durable-pending',
+    });
+    expect(monitor.getForSession('pending')).toBeNull();
     manager.emit('session-forgotten', 'durable-pending');
     expect(monitor.getForSession('pending')).toBeNull();
     manager.sessions = [];

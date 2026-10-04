@@ -28,6 +28,7 @@ import {
   createDiagnosticsLog,
   type DiagnosticRecorder,
 } from './diagnostics-log';
+import { resolveAttentionSessionId } from './pty/attention-session-id';
 import { attentionMonitor } from './pty/attention-monitor';
 import { harnessEventChannel } from './harness-events/channel';
 import {
@@ -628,15 +629,13 @@ export function registerPtyIPC(
     contextSummarizer.correct(durableSessionId, label)
   );
   handleTrusted('pty:mark-unread', (_event, id: string) => {
-    if (
-      !ptySessions.list().some(session => session.id === id && !session.exited)
-    )
-      return;
-    attentionMonitor.markUnread(id);
+    const target = resolveAttentionSessionId(id, ptySessions.list());
+    if (target) attentionMonitor.markUnread(target);
   });
   handleTrusted('pty:focus', (_event, id: string | null) => {
-    attentionMonitor.setFocus(id);
-    contextSummarizer.setFocus(id);
+    const target = resolveAttentionSessionId(id, ptySessions.list());
+    attentionMonitor.setFocus(target);
+    contextSummarizer.setFocus(target);
   });
   // Persisted subtitles re-enter through main so the same validator owns
   // both generated and restored goal text. The accepted value returns to

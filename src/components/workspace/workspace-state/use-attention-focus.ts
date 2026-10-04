@@ -53,8 +53,8 @@ export function useAttentionFocus({
       });
     };
     acknowledge();
-    // Paused Sessions have no main-process focus target. Returning to the app
-    // must still acknowledge the retained record without requiring a tab hop.
+    // Returning to the app acknowledges the retained record without requiring
+    // a tab hop, even when this process has no current runtime for it.
     window.addEventListener('focus', acknowledge);
     return () => window.removeEventListener('focus', acknowledge);
   }, [activeSessionId, activeDurableSessionId, setAttention]);
@@ -62,10 +62,10 @@ export function useAttentionFocus({
   useEffect(() => {
     const api = window.electron?.pty;
     if (!api?.focus) return;
-    void api.focus(activeSessionId);
+    void api.focus(activeSessionId ?? activeDurableSessionId ?? null);
     // Main remains authoritative for background-window attention and
     // broadcasts the confirmed read state to every renderer on focus.
     // leaving the workspace (unmount) unfocuses — flags accumulate again
     return () => void api.focus(null);
-  }, [activeSessionId]);
+  }, [activeSessionId, activeDurableSessionId]);
 }
