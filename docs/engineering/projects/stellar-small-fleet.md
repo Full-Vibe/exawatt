@@ -2,6 +2,86 @@
 
 Roadmap item: ENG-015
 
+## Current execution handoff — 2026-10-04
+
+**Awaiting an unlocked Mac; implementation is committed and recoverable.**
+Candidate behavior and fixture checkpoint: `8a2bcd4816141a7a245ddef86fd556a0852dab40`
+on `agent/polish-attention` in `../exawatt-polish-attention`. This documentation
+checkpoint follows that immutable candidate. No queue ticket was admitted;
+none of this combined transaction is integrated or installed yet.
+
+- Full candidate floor at `23532a08` passed lint, both type checks, delivery
+  machinery tests, export ownership, 3,319 related tests (10 existing skips),
+  community build/runtime, Electron compilation, roadmap contracts and all ten
+  R3F scenes at 100/100. It stopped at the native Fleet inspection gate because
+  macOS was locked; the browser portion passed.
+- Independent collection at `84df4384` ran all other 29 gates: 24 passed and
+  five exposed obsolete fixture assumptions. Corrections changed verification
+  only. At `8a2bcd48`, all five passed their reruns, plus exact-resume passed
+  again after its selector audit. Repeated restart retained the same Session
+  identities and cumulative history across three generations.
+- **Remaining environment requirement:** unlock the macOS desktop so the eval's
+  real `BrowserWindow` can receive native focus. CDP `document.hasFocus()` is
+  insufficient. Final read-only IOKit check still reports
+  `CGSSessionScreenIsLocked=Yes`; main correctly retained unread while its
+  native window was unfocused. Do not weaken that guard or waive the gate.
+- Separate machine-readable evidence is retained in
+  `/tmp/exawatt-combined-independent-gates.json` and
+  `/tmp/exawatt-combined-fixture-reruns.json`; each row names its log. The first
+  file is original-candidate evidence, not proof of the corrected fixtures.
+  All 29 non-foreground gates now have passing evidence across these exact
+  checkpoints. Full normal admission must still run on the final candidate.
+- The owned QA server is stopped for this pending-input handoff.
+  Contributor branches/worktrees remain clean recovery inputs. Verify actual
+  unlock even if no text reply arrives, start this worktree's own dev server
+  with `pnpm dev -p 4317`, and rerun
+  `EXA_BASE=http://localhost:4317 pnpm eval:spatial:attention`. If it passes,
+  resume the sole normal delivery path below (all 30 gates, no waivers).
+
+```sh
+EXA_BASE=http://localhost:4317 pnpm agent:land -- \
+  --verify eval:spatial:attention \
+  --verify eval:electron:source-compatibility \
+  --verify eval:electron:device-power \
+  --verify eval:electron:source-power \
+  --verify eval:electron:project-pause \
+  --verify eval:electron:clone-context \
+  --verify eval:electron:model-change \
+  --verify eval:workspace:ribbon:bench \
+  --verify eval:workspace:chrome \
+  --verify eval:workspace:split \
+  --verify eval:workspace:paused \
+  --verify eval:workspace:team \
+  --verify eval:navigation:spine \
+  --verify eval:spatial:viewport \
+  --verify eval:electron:connected-fleet \
+  --verify eval:electron:project-agent \
+  --verify eval:roadmap:rail \
+  --verify eval:electron:recents \
+  --verify eval:electron:lifecycle \
+  --verify eval:electron:idempotency \
+  --verify eval:spatial \
+  --verify eval:spatial:emergence \
+  --verify eval:spatial:pointer \
+  --verify eval:electron:delegation \
+  --verify eval:electron:turn-truth \
+  --verify eval:electron:tenancy \
+  --verify eval:navigation:electron \
+  --verify eval:electron:resume \
+  --verify eval:electron:chrome \
+  --verify eval:electron:session-parity \
+  --dogfood
+```
+
+After integration, wait for the actual dogfood installed SHA, then publish the
+small documentation receipt using `agent:land -- --docs` without a second
+installation request. Only then close BUG-163/259/265/273 on their full evidence
+and release contributor cleanup. The source acceptance and deferred boundaries
+recorded below remain open.
+
+Historical scope and milestone evidence follows. The current combined delivery
+checkpoint above supersedes earlier separate-stack sequencing.
+
 The excellence arc on top of ENG-002 parity: make operating one to ten
 parallel agents genuinely stellar before any long-arc work. The investment
 target is the TERMINAL regime — the "solid, robust, approachable" AI-native
