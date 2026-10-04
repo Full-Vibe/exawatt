@@ -90,6 +90,11 @@ Current boundaries:
   keyswitch study — isolated workbench canvases under `/hud-gallery`. Ortho
   px-space (`zoom 1` ⇒ 1 world unit = 1 CSS px, centered), with `frameloop`
   **default (always)** where the study requires it.
+  Flat specimen annotations use Drei `Html` projection with pointer pass-through
+  and a local stacking context, following the production DOM/world split.
+  Do not reintroduce Troika `Text`: its blob worker imports violate the app CSP,
+  and disabling its typesetter worker leaves the CPU SDF worker fallback
+  (incident `0033`). The generated-texture keyswitch is a separate path.
 
 **Architecture (resolved):** WebGL renders the decorative/scalable *world*; ALL
 text and ALL interactivity for chrome live in a pixel-aligned **DOM overlay**

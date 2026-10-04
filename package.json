@@ -75,6 +75,7 @@
     "qa:browser:doctor": "node scripts/qa-browser-doctor.mjs",
     "qa:browser:smoke": "node scripts/qa-browser-smoke.mjs",
     "eval:consumption-scan": "node --expose-gc scripts/consumption-scan-eval.mjs",
+    "eval:gallery:labels": "node scripts/gallery-labels-eval.mjs",
     "eval:r3f": "node scripts/r3f-eval/run.mjs",
     "shots:readme": "node scripts/readme-shots.mjs",
     "eval:hero-board": "node scripts/hero-board-idle-eval.mjs",

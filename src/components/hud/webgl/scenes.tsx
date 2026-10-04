@@ -6,13 +6,13 @@
  *
  * Authoring convention: orthographic camera at zoom 1 → 1 world unit = 1 CSS px,
  * origin at the canvas center, +y up. So geometry/text is sized in pixels and
- * lines up with the DOM column. Text uses the vendored Exo2 (the only ttf we
- * ship) — note WebGL needs a vendored font at all, unlike the DOM column.
+ * lines up with the DOM column. Labels use DOM projection, matching the
+ * production world/chrome split and preserving the application CSP.
  */
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Line, Text, useCursor } from '@react-three/drei';
+import { Html, Line, useCursor } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { AgentStatus, AgentWorkState } from '@exawatt/core';
@@ -30,8 +30,78 @@ import {
   type HudTone,
 } from '../tokens';
 
-const FONT = '/fonts/Exo2-Medium.ttf';
 type V3 = [number, number, number];
+
+/** Gallery specimens are flat orthographic chrome, not volumetric text.
+ * Html owns world-to-screen projection; its transform mode keeps text attached
+ * to parent fit/hover transforms without React state on every frame. 400 makes
+ * one CSS pixel one world unit at zoom 1 (drei's documented distance scale).
+ * The local stacking context prevents labels from escaping above app overlays.
+ * No Troika worker/font atlas is needed, including on GPU fallback paths. */
+function GalleryLabel({
+  position,
+  typeRole,
+  color,
+  anchorX,
+  letterSpacing = 0,
+  maxWidth,
+  children,
+}: {
+  position: V3;
+  typeRole:
+    | 'chrome-micro'
+    | 'chrome-meta'
+    | 'chrome-label'
+    | 'body'
+    | 'title'
+    | 'section';
+  color: string;
+  anchorX: 'left' | 'center' | 'right';
+  letterSpacing?: number;
+  maxWidth?: number;
+  children: ReactNode;
+}) {
+  const typeClass = {
+    'chrome-micro': 'text-chrome-micro',
+    'chrome-meta': 'text-chrome-meta',
+    'chrome-label': 'text-chrome-label',
+    body: 'text-sm',
+    title: 'text-base',
+    section: 'text-lg',
+  }[typeRole];
+  return (
+    <Html
+      transform
+      distanceFactor={400}
+      position={position}
+      pointerEvents="none"
+      zIndexRange={[1, 0]}
+    >
+      <div
+        data-gallery-world-label=""
+        aria-hidden="true"
+        className={`${typeClass} ${letterSpacing ? 'font-mono' : 'font-ui'} font-medium`}
+        style={{
+          color,
+          width: 'max-content',
+          maxWidth,
+          letterSpacing: `${letterSpacing}em`,
+          lineHeight: 1.2,
+          transform:
+            anchorX === 'left'
+              ? 'translateX(50%)'
+              : anchorX === 'right'
+                ? 'translateX(-50%)'
+                : undefined,
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}
+      >
+        {children}
+      </div>
+    </Html>
+  );
+}
 
 // Interactive cards can grow to HOVER_MAX on hover; STAGE_PAD reserves px around
 // the content for line width / bloom / corner brackets. Both are baked into the
@@ -145,9 +215,11 @@ function WebglStage({
 }) {
   return (
     <div
+      data-gallery-world-stage=""
       style={{
         width: '100%',
         maxWidth: w * HOVER_MAX + STAGE_PAD * 2,
+        isolation: 'isolate',
         height: h * HOVER_MAX + STAGE_PAD * 2,
       }}
     >
@@ -310,28 +382,24 @@ export function WebglFramesScene() {
           <group key={s.tone} position={[cx, 0, 0]}>
             <InteractiveCard w={W} h={H}>
               <Frame w={W} h={H} tone={s.tone} bracket={s.bracket} />
-              <Text
-                font={FONT}
+              <GalleryLabel
                 position={[-W / 2 + 16, H / 2 - 22, 2]}
-                fontSize={11}
+                typeRole="chrome-meta"
                 color={color}
                 anchorX="left"
-                anchorY="middle"
                 letterSpacing={0.08}
               >
                 {s.label}
-              </Text>
-              <Text
-                font={FONT}
+              </GalleryLabel>
+              <GalleryLabel
                 position={[-W / 2 + 16, H / 2 - 48, 2]}
-                fontSize={17}
+                typeRole="title"
                 color="#EAF2FB"
                 anchorX="left"
-                anchorY="middle"
                 maxWidth={W - 32}
               >
                 {s.title}
-              </Text>
+              </GalleryLabel>
             </InteractiveCard>
           </group>
         );
@@ -414,17 +482,15 @@ export function WebglLabelsScene() {
               <planeGeometry args={[6, 6]} />
               <meshBasicMaterial color={color} toneMapped={false} />
             </mesh>
-            <Text
-              font={FONT}
+            <GalleryLabel
               position={[14, 0, 0]}
-              fontSize={12}
+              typeRole="chrome-label"
               color={color}
               anchorX="left"
-              anchorY="middle"
               letterSpacing={0.08}
             >
               {`${t} label`}
-            </Text>
+            </GalleryLabel>
           </group>
         );
       })}
@@ -482,27 +548,23 @@ export function WebglStatBarsScene() {
         const top = H / 2 - 18 - i * 34;
         return (
           <group key={r.label}>
-            <Text
-              font={FONT}
+            <GalleryLabel
               position={[x0, top, 0]}
-              fontSize={11}
+              typeRole="chrome-meta"
               color={HUD.textDim}
               anchorX="left"
-              anchorY="middle"
               letterSpacing={0.06}
             >
               {r.label}
-            </Text>
-            <Text
-              font={FONT}
+            </GalleryLabel>
+            <GalleryLabel
               position={[-x0, top, 0]}
-              fontSize={11}
+              typeRole="chrome-meta"
               color={HUD.text}
               anchorX="right"
-              anchorY="middle"
             >
               {`${Math.round(r.v * 100)}%`}
-            </Text>
+            </GalleryLabel>
             <Segments value={r.v} tone={r.tone} y={top - 16} w={barW} x0={x0} />
           </group>
         );
@@ -552,27 +614,23 @@ function Gauge({
         opacity={0.18}
       />
       <Line points={arc} color={color} lineWidth={3} toneMapped={false} />
-      <Text
-        font={FONT}
+      <GalleryLabel
         position={[0, 2, 2]}
-        fontSize={18}
+        typeRole="section"
         color={HUD.text}
         anchorX="center"
-        anchorY="middle"
       >
         {`${Math.round(value * 100)}%`}
-      </Text>
-      <Text
-        font={FONT}
+      </GalleryLabel>
+      <GalleryLabel
         position={[0, -r - 18, 2]}
-        fontSize={9}
+        typeRole="chrome-micro"
         color={HUD.textDim}
         anchorX="center"
-        anchorY="middle"
         letterSpacing={0.16}
       >
         {label.toUpperCase()}
-      </Text>
+      </GalleryLabel>
     </group>
   );
 }
@@ -631,17 +689,15 @@ function Pill({ status, cx }: { status: AgentStatus; cx: number }) {
         <circleGeometry args={[3.5, 16]} />
         <meshBasicMaterial color={color} toneMapped={false} />
       </mesh>
-      <Text
-        font={FONT}
+      <GalleryLabel
         position={[-w / 2 + 24, 0, 1]}
-        fontSize={10}
+        typeRole="chrome-micro"
         color={color}
         anchorX="left"
-        anchorY="middle"
         letterSpacing={0.06}
       >
         {status.toUpperCase()}
-      </Text>
+      </GalleryLabel>
     </group>
   );
 }
@@ -903,50 +959,42 @@ export function WebglComposedScene({
     <WebglStage w={W + 8} h={H + 8}>
       <InteractiveCard w={W} h={H}>
         <Frame w={W} h={H} tone={tone} bracket />
-        <Text
-          font={FONT}
+        <GalleryLabel
           position={[x0, H / 2 - 26, 2]}
-          fontSize={16}
+          typeRole="title"
           color="#EAF2FB"
           anchorX="left"
-          anchorY="middle"
           maxWidth={W - 90}
         >
           {name}
-        </Text>
-        <Text
-          font={FONT}
+        </GalleryLabel>
+        <GalleryLabel
           position={[W / 2 - 18, H / 2 - 24, 2]}
-          fontSize={10}
+          typeRole="chrome-micro"
           color={color}
           anchorX="right"
-          anchorY="middle"
           letterSpacing={0.1}
         >
           {(status ?? STATUS_LIGHT_META.unreported.protocolLabel).toUpperCase()}
-        </Text>
-        <Text
-          font={FONT}
+        </GalleryLabel>
+        <GalleryLabel
           position={[x0, H / 2 - 56, 2]}
-          fontSize={12}
+          typeRole="chrome-label"
           color={HUD.textDim}
           anchorX="left"
-          anchorY="middle"
           maxWidth={W - 36}
         >
           {blocker}
-        </Text>
-        <Text
-          font={FONT}
+        </GalleryLabel>
+        <GalleryLabel
           position={[x0, H / 2 - 84, 2]}
-          fontSize={9}
+          typeRole="chrome-micro"
           color={HUD.textDim}
           anchorX="left"
-          anchorY="middle"
           letterSpacing={0.12}
         >
           COST RATE
-        </Text>
+        </GalleryLabel>
         <Segments
           value={costRate / 2}
           tone="amber"
@@ -964,27 +1012,23 @@ export function WebglComposedScene({
           const cx = x0 + 4 + i * ((W - 44) / 3) + (W - 44) / 6;
           return (
             <group key={label} position={[cx, -H / 2 + 34, 2]}>
-              <Text
-                font={FONT}
+              <GalleryLabel
                 position={[0, 11, 0]}
-                fontSize={9}
+                typeRole="chrome-micro"
                 color={HUD.textDim}
                 anchorX="center"
-                anchorY="middle"
                 letterSpacing={0.08}
               >
                 {label}
-              </Text>
-              <Text
-                font={FONT}
+              </GalleryLabel>
+              <GalleryLabel
                 position={[0, -6, 0]}
-                fontSize={14}
+                typeRole="body"
                 color="#CFE3F2"
                 anchorX="center"
-                anchorY="middle"
               >
                 {value}
-              </Text>
+              </GalleryLabel>
             </group>
           );
         })}
