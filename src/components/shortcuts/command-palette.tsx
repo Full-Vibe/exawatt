@@ -1364,6 +1364,8 @@ export function CommandPalette({
                 value={paletteValue(s.title, s.id)}
                 keywords={[
                   s.searchValue,
+                  s.harness,
+                  HARNESS_META[s.harness].label,
                   s.projectName,
                   ...(s.roadmapItemId ? [s.roadmapItemId] : []),
                   ...(s.subtitle ? [s.subtitle] : []),

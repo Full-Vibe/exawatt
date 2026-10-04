@@ -9,12 +9,7 @@ import {
   type SessionGlyphState,
 } from './session-status';
 
-export {
-  NEW_AGENT_TITLE,
-  sessionDisplayCopy,
-  type SessionDisplayCopy,
-  type SessionDisplayCopyInput,
-} from '@exawatt/ui-model';
+export { sessionDisplayCopy } from '@exawatt/ui-model';
 
 /**
  * Truthful, source-agnostic current-state copy for a comparison card. A

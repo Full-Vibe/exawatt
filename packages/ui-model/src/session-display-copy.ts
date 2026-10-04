@@ -1,4 +1,4 @@
-export const NEW_AGENT_TITLE = 'New agent';
+const NEW_AGENT_TITLE = 'New agent';
 
 export interface SessionDisplayCopyInput {
   harness: string;
@@ -8,7 +8,7 @@ export interface SessionDisplayCopyInput {
   summary?: string | null;
 }
 
-export interface SessionDisplayCopy {
+interface SessionDisplayCopy {
   /** The copy every Session surface must render as its visible identity. */
   primary: string;
   /** A durable context cue beneath an operator-authored title, when distinct. */
