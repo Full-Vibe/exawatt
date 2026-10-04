@@ -2497,6 +2497,13 @@ not a second wizard (`docs/engineering/projects/daily-driver-adoption.md`),
 and the 2026-10-04 polish priority puts a dedicated newcomer on-ramp later.
 Registry shape to follow: `SAFETY_CONTROLS` and `OUTBOUND_CONTROLS`.
 
+Operator answers (2026-10-04): ask at the moment of need first, with
+onboarding reusing the same primers later; where the Settings home sits is
+decided by playing with a working slice, not on paper; a Keychain prompt that
+returns after each Claude Code token refresh is acceptable short term but "will
+get super annoying over time", so the goal is one durable connection that
+stays granted.
+
 Unshaped (for the design pass): the vocabulary (Permissions, Grants, Access,
 or ENG-044's Safety and Policy), where the Settings home sits relative to
 Safety and Privacy, grant scope and lifetime (with ENG-006 Approvals), managed
