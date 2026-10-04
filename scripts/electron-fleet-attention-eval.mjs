@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import {
   openShellFromLauncher,
   waitForWorkspaceReady,
+  waitForPageCondition,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 const base = process.env.EXA_BASE ?? 'http://localhost:7183';
@@ -35,7 +36,8 @@ try {
       await openShellFromLauncher(page);
       await page.locator('.xterm-helper-textarea').waitFor();
       await openShellFromLauncher(page);
-      await page.waitForFunction(
+      await waitForPageCondition(
+        page,
         async () => (await window.electron.pty.list()).length === 2
       );
       const ids = await page.evaluate(async () =>
@@ -50,7 +52,8 @@ try {
           id => window.electron.pty.write(id, "printf '\\a'\n"),
           id
         );
-        await page.waitForFunction(
+        await waitForPageCondition(
+          page,
           async id =>
             (await window.electron.pty.list()).find(
               session => session.id === id
@@ -90,7 +93,8 @@ try {
       );
       await page.keyboard.press('Enter');
       await page.waitForURL('**/workspace*');
-      await page.waitForFunction(
+      await waitForPageCondition(
+        page,
         async id =>
           (await window.electron.pty.list()).find(session => session.id === id)
             ?.attention?.unread === false,
