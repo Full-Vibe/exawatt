@@ -19,7 +19,6 @@ import {
 } from '@exawatt/core';
 export {
   attentionNeedsOperator,
-  attentionIsJumpTarget,
   orderedAttentionTargets,
   nextAttentionTarget,
   type SessionAttentionSignal,
