@@ -3614,7 +3614,7 @@ reviewed material cross-surface visuals, and exact deployed/installed evidence.
 
 ### BUG-278 Installed Chromium requests stall before authentication
 
-Status: bug · ENG-030 / ENG-022 · final F7 live verification, 2026-10-04.
+Status: bug · ENG-030 · final F7 live verification, 2026-10-04; ENG-022 diagnostic tooling.
 
 Signed installed `7254223b` password sign-in issued a POST but received no
 response before the probe bound. An independent credential-free renderer GET
