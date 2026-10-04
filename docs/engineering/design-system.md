@@ -417,7 +417,12 @@ These are principles applied to Exawatt, not claims of identical current layouts
 These shared rules apply to Cmd+K, feedback and notices according to each
 surface's modality and action contract. A materially changed cross-surface
 visual treatment still requires `/hud-gallery` operator review before shared
-adoption; shaping F7 grants no new visual acceptance. No R3F changes are implied.
+adoption. The compact F7 refinement has operator acceptance and verified source
+adoption in `7254223b`. Exact production deployment and physical installation
+are confirmed; the new-build live submission remains unverified because its
+probe stopped at sign-in before feedback. Distinct evidence is recorded in
+[F7 delivery evidence](projects/feedback-reinflation.md#2026-10-04--f7-delivery-verified).
+That acceptance does not extend to a different treatment. No R3F behavior changed.
 
 ---
 

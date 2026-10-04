@@ -298,8 +298,10 @@ records source research, independent task critiques and the executable response.
 The system now distinguishes shared interaction rules from shared density:
 compact writing, conventional optional controls, attachment presence and one
 local status/action area replace a stacked report builder. Preview machinery
-lives outside the specimen. This is an amendment to the feedback presentation,
-not acceptance of a new visual treatment or a replacement for the journeys below.
+lives outside the specimen. The operator subsequently accepted this compact
+refinement with trailing hints, no redundant heading and optional hover/focus
+help, while endorsing its height transitions. This acceptance covers this
+feedback increment; it does not replace the broader journeys below.
 
 ### 2026-10-04 — Everyday-use polish shaping and research basis
 
@@ -461,11 +463,13 @@ interfaces are coordinated before duplicate edits. The relevant owning project
 log records source findings, tests, current blockers and next steps. This table
 is a handoff index under the existing roadmap, not an independent plan.
 
-**Existing work preserved.** `agent/feedback-recovery` is a separate active,
-dirty worktree whose F7 candidate and real-delivery evidence already exist.
-Do not touch it, duplicate its Dialog/Button work, or claim its visual adoption.
-Its latest canonical log says real signed-app delivery is proved and retained
-workflow review remains pending. `agent/delegation-build` is clean but old;
+**Existing work preserved.** F7's accepted compact recovery is verified and
+integrated in `7254223b1028027e0443bc989331ab4943623c16` through ticket 567.
+Reuse its shared Dialog/Button/action owners; do not duplicate the recovery
+work. Production permission and earlier signed-app delivery are proved; exact
+new production deployment is READY and exact-SHA physical installation is
+confirmed; final new-build live submission is unverified because its probe
+stopped at password sign-in, before feedback. `agent/delegation-build` is clean but old;
 its checkpoint mixes useful D6 with D8 and unreviewed UI. Adapt useful portions
 in the new lane; leave the original untouched.
 
@@ -482,3 +486,23 @@ Remaining visual reviews will be presented as actual studies/screenshots with
 one recommendation; keep independent correctness work moving while a review is
 pending. No study is accepted merely because it renders, and no installed claim
 follows from a queued dogfood request. Update this checkpoint as lanes land.
+
+### 2026-10-04 — Accepted compact F7 source adopted
+
+**The reviewed recovery increment is integrated.** The operator's minor final
+corrections put shortcut hints after labels, remove the redundant Feedback
+heading while retaining accessible names, and provide optional purpose help on
+hover/focus/activation. Accepted height transitions preserve the same writing
+field and report context. Ticket 567 integrated
+`7254223b1028027e0443bc989331ab4943623c16`, with public projection published,
+normal floor and all declared gates passed, including R3F 100/100.
+
+Production deployment is READY at the exact source SHA and production aliases.
+Exact-SHA physical installation is confirmed at `2026-10-04T21:59:53.915Z`;
+final new-build submission is unverified: its ordinary password sign-in POST
+hung before feedback and the QA account had no recorded sign-in. Cleanup was
+verified; prior `9d6b0d46` real receipt/row/private-image proof remains valid; the [central F7 evidence](feedback-reinflation.md#2026-10-04--f7-delivery-verified)
+records those separately. This completes reviewed source and artifact adoption of the paired recovery
+increment, not broader G2/everyday-use polish, BUG-260 restart/resume policy,
+BUG-271 asset custody or persistent drafts/outbox work. Future material shared
+visual changes still require gallery review.

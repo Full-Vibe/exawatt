@@ -1,7 +1,7 @@
 # 0045 Feedback attempts preserve delivery truth
 
 Date: 2026-10-02
-Status: adopted; presentation amended 2026-10-04 by F7; production recovery active (BUG-272)
+Status: adopted; F7 accepted, verified, integrated, production-deployed and dogfood-installed 2026-10-04; final new-build submission unverified
 
 **A feedback success means the report and every requested attachment were
 saved; a retry belongs to the same immutable attempt.**
@@ -125,9 +125,10 @@ would amplify misleading success and duplicate reports.
   protected. Effective authenticated permission read-back plus an authorized
   saved receipt/row and same-key retry prove production delivery; READY,
   installed SHA, unauthenticated 401 and CORS 204 prove different contracts.
-- F7 / BUG-272 owns executable scope and evidence. Material cross-surface visual
-  adoption still needs the design-system gallery review; the Oct2 retired study
-  is no longer acceptance for the changed retained-dialog flow.
+- F7 / BUG-272 owns executable scope and evidence. The operator accepted the
+  compact retained-dialog refinement with trailing shortcuts, no redundant
+  heading and hover/focus purpose help. Its gallery review is complete; future
+  materially changed shared visuals still require a new design-system review.
 - The operator rejected F7's first gallery as bulky. Retained continuity means
   the same report and modal, not a large receipt panel or permanently reserved
   explanation space. The compact refinement shares action/focus/material rules
@@ -162,3 +163,25 @@ client SHA, not inferred from a queued worker. Shared review evidence lives in
 ENG-025 F7 now owns reporting recovery and acceptance through the roadmap's
 project reference. The above Oct2 deployment/install evidence does not establish
 authenticated delivery; incident 0032 and F7 record its correction.
+
+## F7 source adoption (2026-10-04)
+
+**The accepted compact workflow is integrated.** Ticket 567 integrated
+`7254223b1028027e0443bc989331ab4943623c16` and published its public projection.
+The normal floor and declared navigation-spine, Electron context-labels,
+workspace-chrome and launcher gates passed; 3,058 affected tests in 233 files
+passed (nine existing skips), and R3F scored 100/100. Source verification is distinct from artifact read-back. Production deployment `dpl_7B9oo2mwBceXvc7mQvGhYDcGdtsJ` is READY
+at `https://exawatt-8i738sbsb-fullvibe.vercel.app`, with `exawatt.ai` and
+`www.exawatt.ai` aliases serving the exact source SHA. Physical installation of exact SHA `7254223b1028027e0443bc989331ab4943623c16`
+is confirmed at `2026-10-04T21:59:53.915Z` in `/Applications/Exawatt.app`,
+with stable Team `5G5A77XLHZ`. Packaged smoke passed PTY, renderer/menu/preload/
+diagnostics, updater and persisted origin/storage across relaunch. The final
+new-build live probe stopped before feedback: an ordinary password sign-in POST
+hung for 30 seconds and the QA user's `last_sign_in_at` remained unset. No
+response, page error or held navigator lock explained it; QA cleanup was
+verified. Auth sources are unchanged from `9d6b0d46`. This is a separate auth/
+network diagnosis, not evidence that feedback delivery failed or passed on the
+new build. Prior real `9d6b0d46` POST 201, matching row and private-image proof
+remain valid. The `7254223b` installed submission is explicitly unverified. The
+[central F7 delivery evidence](../projects/feedback-reinflation.md#2026-10-04--f7-delivery-verified)
+owns exact artifact/read-back facts; immutable attempts and certainty are unchanged.
