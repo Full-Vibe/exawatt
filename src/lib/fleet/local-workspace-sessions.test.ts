@@ -5,6 +5,7 @@ import {
   mergeLocalWorkspaceSessions,
 } from './local-workspace-sessions';
 import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
+import { sessionToAgent } from '@exawatt/core';
 
 const live = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
   id: 'pty-1',
@@ -32,6 +33,35 @@ const live = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
 });
 
 describe('mergeLocalWorkspaceSessions', () => {
+  it('keeps the same purpose through live, exited and restored Fleet snapshots', () => {
+    const purpose = 'Make updates safe to install';
+    const session = live({ contextSummary: purpose });
+    const layout = {
+      projects: [
+        {
+          dir: session.projectDir,
+          tabs: [
+            {
+              id: 'stable-tab',
+              durableSessionId: session.durableSessionId,
+              sessionId: session.id,
+              harness: session.harness,
+              title: session.title,
+              cwd: session.cwd,
+              contextSummary: purpose,
+              lifecycle: 'stopped-clean',
+            },
+          ],
+        },
+      ],
+    };
+    for (const runtime of [[session], [{ ...session, exited: true }], []]) {
+      const [snapshot] = mergeLocalWorkspaceSessions(runtime, layout);
+      expect(snapshot.contextSummary).toBe(purpose);
+      expect(sessionToAgent(snapshot, 0, 0, 0).goal).toBe(purpose);
+    }
+  });
+
   it('preserves the terminal tabs reported activity and turn truth for Fleet', () => {
     const [result] = mergeLocalWorkspaceSessions(
       [

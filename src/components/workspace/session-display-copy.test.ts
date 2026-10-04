@@ -6,6 +6,27 @@ import {
 } from './session-display-copy';
 
 describe('sessionDisplayCopy', () => {
+  it('keeps purpose independent of execution lifecycle and source identity', () => {
+    const purpose = 'Make updates safe to install';
+    for (const lifecycle of [
+      'running',
+      'stopped-clean',
+      'failed',
+      'resuming',
+    ]) {
+      for (const harness of ['codex', 'claude', 'custom-source']) {
+        const display = sessionDisplayCopy({
+          harness,
+          title: harness,
+          titleKind: 'default',
+          lifecycle,
+          summary: purpose,
+        });
+        expect(display.primary).toBe(purpose);
+      }
+    }
+  });
+
   it('uses the durable context label as default Agent identity', () => {
     expect(
       sessionDisplayCopy({

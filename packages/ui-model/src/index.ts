@@ -20,6 +20,7 @@ export * from './roadmap-lens';
 export * from './roadmap-strip';
 export * from './roadmap-attention';
 export * from './session-lifecycle';
+export * from './session-display-copy';
 
 export interface FleetAgentView {
   id: string;

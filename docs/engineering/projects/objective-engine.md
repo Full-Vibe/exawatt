@@ -224,6 +224,42 @@ stability aid, not a substitute for that semantic contract.
 
 ## Roadmap milestone log
 
+### 2026-10-04 — Purpose-first re-entry execution checkpoint
+
+**Keep the Session's reason recognizable across navigation.** This slice uses
+the existing durable context-label owner; it adds no inference, recap or
+Initiative mechanism. Owner: `agent/polish-purpose`, sibling worktree
+`../exawatt-polish-purpose`.
+
+- Audit: Agent tabs and Team cards share `sessionDisplayCopy`; explicit
+  operator names remain authoritative and the durable purpose remains visible.
+  The command palette bypasses that projection: it leads with the runtime
+  source title and appends purpose after Project metadata. Team also lowers
+  the opacity of the entire stopped tile to 55%, including its purpose.
+- Review candidate: `/hud-gallery/purpose-reentry` compares purpose-first
+  command rows and readable paused Team identity with their present hierarchy.
+  Named type/spacing and semantic paint come from the design kernel. DOM-only
+  first slice; no Fleet render or R3F change.
+- Next: operator review, then reuse the shared identity projection in palette
+  rows with persisted operator-rename authority and searchable source aliases;
+  preserve ordering/navigation/status contracts. Keep Demo/Live parity.
+  Verify purpose survives working, blocked, completed and stopped states,
+  runtime replacement and explicit renames. Apply paused opacity correction
+  only after review; retire the study when adopted.
+- Fleet audit: the board already leads with `goal`, and live snapshots already
+  carry the durable purpose there. The stopped-layout adapter dropped
+  `contextSummary`; preserving that source fact repairs purpose on return
+  without changing the board or introducing another label policy.
+- Implemented pending delivery: move the component-free `sessionDisplayCopy`
+  projection to `@exawatt/ui-model` with the existing workspace import as a
+  compatibility re-export. Preserve stopped `contextSummary` through the Fleet
+  adapter. Tests prove identical purpose for live, exited and restored source
+  records, and projection stability across execution lifecycles and harnesses.
+  Renderer type-check and focused tests pass. Palette/Team wiring still awaits
+  review.
+- Delivery pending. Worktree bootstrap passed. This
+  checkpoint is execution detail for ENG-021/ENG-015/ENG-036, not a new plan.
+
 ### 2026-07-26 — E1.1 Session comparison and titleless-tab incident
 
 Operator report: the production Sessions cards were visually hard to read and
