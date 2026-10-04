@@ -244,8 +244,9 @@ ledger rows remain visible and cannot be consumed or resumed as another harness.
 Implementation checkpoint: `0512a04c`/`97cfb109` plus attention foundation
 `67409f59` and outage followup `18214176` are committed in the restart worktree.
 The recovery bar uses its existing design-system chrome-label/type/material
-recipe and retains its explicit scope menu. `/hud-gallery/restart-recovery`
-provides the real-component mixed-state fixture for review. Targeted checks:
+recipe and retains its explicit scope menu. The real-component `/hud-gallery/restart-recovery` mixed-state fixture was
+reviewed at 1280 and 800 px; its existing bar treatment was accepted, and the
+temporary study was retired as production adopted the action. Targeted checks:
 125 Session, hydration, persistence, focus and monitor tests passed, then nine
 reader/recovery-action checks passed. Full combined source-truth integration,
 Electron literal scenarios and normal delivery remain outstanding; this is
