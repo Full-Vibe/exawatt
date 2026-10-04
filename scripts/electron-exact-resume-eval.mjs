@@ -223,9 +223,9 @@ try {
         );
       }
 
-      await resumeBanner
-        .getByRole('button', { name: 'Resume previously running (4)' })
-        .click();
+      // After explicit Project recovery, the primary action resumes only the
+      // remaining restart set; exact identities below prove that boundary.
+      await resumeBanner.getByRole('button').first().click();
       await waitForSessionCount(page, 6);
 
       const resumed = await page.evaluate(async () => {

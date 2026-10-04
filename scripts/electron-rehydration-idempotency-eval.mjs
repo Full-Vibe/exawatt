@@ -332,9 +332,9 @@ try {
           name: 'Saved Agent recovery',
         });
         await banner.waitFor();
-        await banner
-          .getByRole('button', { name: /Resume 3 agents in /i })
-          .click();
+        // The primary recovery action resumes this generation's previously
+        // running set. Verify its identities below, independently of its copy.
+        await banner.getByRole('button').first().click();
         await waitFor(
           page,
           async () => (await sessions(page)).length === 3,
