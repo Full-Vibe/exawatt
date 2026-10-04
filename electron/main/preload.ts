@@ -186,8 +186,6 @@ const bridge = {
     setContextAuth: accessToken => invoke('pty:set-context-auth', accessToken),
     correctContext: (durableSessionId, label) =>
       invoke('pty:correct-context', durableSessionId, label),
-    restoreAttention: (id, attention) =>
-      invoke('pty:restore-attention', id, attention),
     restoreContext: (durableSessionId, subtitle) =>
       invoke('pty:restore-context', durableSessionId, subtitle),
     restoreGoalVisual: (durableSessionId, visual) =>

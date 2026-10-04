@@ -1,4 +1,4 @@
-import { readPtyAttention } from '@exawatt/core/desktop-bridge';
+import { withInitialSessionAttention } from './pty/initial-attention';
 import { createDevicePowerController } from './device-power';
 import type { HostPowerObserver } from './host-power';
 import { createSessionPauser } from './pty/session-pause';
@@ -490,7 +490,12 @@ export function registerPtyIPC(
           // unanswered probe does not refuse the launch.
         }
       }
-      const session = await ptySessions.create(options);
+      const session = await withInitialSessionAttention(
+        ptySessions,
+        attentionMonitor,
+        options,
+        () => ptySessions.create(options)
+      );
       // the composer's task is the goal — show it as the subtitle instantly;
       // a resume re-anchors the goal persisted with the layout (D21)
       // Restore durable truth before considering zero-network launch copy. A
@@ -616,15 +621,6 @@ export function registerPtyIPC(
   // Persisted subtitles re-enter through main so the same validator owns
   // both generated and restored goal text. The accepted value returns to
   // hydration; null actively sheds stale model preambles.
-  handleTrusted('pty:restore-attention', (_event, id, snapshot) => {
-    if (
-      !ptySessions.list().some(session => session.id === id && !session.exited)
-    )
-      return null;
-    const attention = readPtyAttention(snapshot);
-    if (attention) attentionMonitor.restore(id, attention);
-    return attentionMonitor.get(id);
-  });
   handleTrusted(
     'pty:restore-context',
     (_event, durableSessionId: string, subtitle: string) =>

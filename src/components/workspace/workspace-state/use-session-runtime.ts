@@ -149,11 +149,18 @@ export function useSessionRuntime({
           return false;
         const restoredSubtitle =
           summariesRef.current[tab.durableSessionId] ?? undefined;
+        const retainedAttention = attentionForSession(
+          tab,
+          attentionRef.current
+        );
         const result = await api.create({
           harness: tab.harness,
           cwd: tab.cwd,
           title: tab.title,
           durableSessionId: tab.durableSessionId,
+          ...(retainedAttention
+            ? { restoredAttention: retainedAttention }
+            : {}),
           ...(permissionMode ? { permissionMode } : {}),
           ...(exactId ? { resumeSessionId: exactId } : {}),
           ...(tab.launchModel ? { model: tab.launchModel } : {}),
@@ -163,13 +170,6 @@ export function useSessionRuntime({
           ...(sizeRef.current?.() ?? {}),
         });
         if (!result.ok) throw new Error(result.error);
-        const retainedAttention = attentionForSession(
-          tab,
-          attentionRef.current
-        );
-        if (retainedAttention && api.restoreAttention) {
-          await api.restoreAttention(result.session.id, retainedAttention);
-        }
         const adopted = await adoptSessionRuntime(
           { ...tab, harnessSessionId: exactId ?? null },
           result.session

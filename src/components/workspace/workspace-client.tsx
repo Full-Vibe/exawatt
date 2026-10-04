@@ -975,7 +975,8 @@ export function WorkspaceClient() {
         projects.flatMap(project =>
           project.tabs.filter(isSessionTab).map(tab => ({
             sessionId: tab.sessionId ?? tab.durableSessionId,
-            live: tabIsLive(tab) || !!mergedAttention[tab.durableSessionId],
+            live: tabIsLive(tab),
+            retained: !!mergedAttention[tab.durableSessionId],
           }))
         ),
         mergedAttention,

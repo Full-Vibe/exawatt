@@ -250,3 +250,13 @@ provides the real-component mixed-state fixture for review. Targeted checks:
 reader/recovery-action checks passed. Full combined source-truth integration,
 Electron literal scenarios and normal delivery remain outstanding; this is
 implemented/partially verified, not integrated or installed.
+
+Independent prelanding review found a restore/source race: seeding attention
+after `pty.create` could replay an already-read request if the source observed
+it before the reply. The current amendment carries validated saved attention
+inside exact-resume launch intent and seeds it at main's created boundary before
+source observation. The obsolete post-create restore IPC is retired. A paused
+Session's request remains visible and navigable without changing its stopped
+lifecycle. This review also pulled independent request/result records forward
+under the attention owner, so a turn result cannot overwrite a still-open
+working question. Integration remains gated on the combined tests and review.

@@ -398,3 +398,18 @@ describe('restart recovery contract', () => {
     });
   });
 });
+
+it('checkpoints fresh source resolution but never mistakes process teardown for resolution', () => {
+  const attention = { kind: 'blocked' as const, since: 1, unread: false };
+  const saved = serializeLayout(
+    workspace([tab('a')]),
+    context({ attention: { 'durable-a': attention } })
+  );
+  const current = ptySessionRecord({ durableSessionId: 'durable-a' });
+  const live = withLiveSessionFacts(saved, [{ ...current, attention: null }]);
+  expect(sessionTabs(live.projects[0].tabs)[0].attention).toBeUndefined();
+  const ended = withLiveSessionFacts(saved, [
+    { ...current, exited: true, attention: null },
+  ]);
+  expect(sessionTabs(ended.projects[0].tabs)[0].attention).toEqual(attention);
+});

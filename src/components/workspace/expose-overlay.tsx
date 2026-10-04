@@ -914,9 +914,7 @@ export function ExposeOverlay({
   const sessionTile = (tile: Tile) => {
     const index = items.findIndex(item => item.tabId === tile.tabId);
     const selected = index === sel;
-    const attentionSignal = tile.sessionId
-      ? attention[tile.sessionId]
-      : undefined;
+    const attentionSignal = attention[tile.sessionId ?? tile.durableSessionId];
     // A failed resume is a lifecycle fact, not a word: read the lifecycle,
     // never the printed label.
     const fault = tile.lifecycle === 'failed';

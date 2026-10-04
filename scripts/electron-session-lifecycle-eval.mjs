@@ -265,20 +265,9 @@ try {
       // and paused by this restart, as well as a read but unresolved request.
       previouslyPausedId = agents[0].durableSessionId;
       retainedRequestId = agents[1].durableSessionId;
-      await page.evaluate(
-        async ({ paused, waiting }) => {
-          const pty = window.electron.pty;
-          await pty.pauseSessions([paused], true);
-          await pty.restoreAttention(waiting, {
-            kind: 'blocked',
-            since: 42,
-            unread: false,
-            request: 'blocking',
-            requestId: 'restart-request',
-          });
-        },
-        { paused: previouslyPausedId, waiting: agents[1].id }
-      );
+      await page.evaluate(async paused => {
+        await window.electron.pty.pauseSessions([paused], true);
+      }, previouslyPausedId);
       await page.waitForFunction(async paused => {
         const layout = await window.electron.workspace.load();
         return layout?.projects
@@ -332,11 +321,16 @@ try {
       ?.resumeAfterRestart === true
   )
     throw new Error('Already-paused Agent entered the restart recovery set');
-  const retained = tabs.find(
-    tab => tab.durableSessionId === retainedRequestId
-  )?.attention;
-  if (retained?.requestId !== 'restart-request' || retained.unread !== false)
-    throw new Error('Shutdown lost the read but unresolved request');
+  // Seed a durable read request as an older checkpoint would carry it. The
+  // subsequent real restore/resume/quit must retain it without a replay alert.
+  tabs.find(tab => tab.durableSessionId === retainedRequestId).attention = {
+    kind: 'blocked',
+    since: 42,
+    unread: false,
+    request: 'blocking',
+    requestId: 'restart-request',
+  };
+  writeFileSync(join(userData, 'workspace.json'), JSON.stringify(persisted));
   if (pids().some(alive))
     throw new Error('Confirmed quit left an agent or shell alive');
   const histories = readdirSync(join(userData, 'sessions')).filter(name =>
@@ -443,6 +437,16 @@ try {
     launchLimits
   );
   console.log('[eng-018] resumed sessions stopped cleanly');
+  const restoredCheckpoint = JSON.parse(
+    readFileSync(join(userData, 'workspace.json'), 'utf8')
+  );
+  const retained = restoredCheckpoint.projects
+    .flatMap(project => project.tabs)
+    .find(tab => tab.durableSessionId === retainedRequestId)?.attention;
+  if (retained?.requestId !== 'restart-request' || retained.unread !== false)
+    throw new Error(
+      'Restart/resume/shutdown lost a read but unresolved request'
+    );
 
   await withElectronApp(
     launch('confirm'),

@@ -1514,10 +1514,9 @@ export function TabStrip({
             const summary = session
               ? summaries[session.durableSessionId]
               : undefined;
-            const attentionSignal =
-              session && !dead && session.sessionId
-                ? attention[session.sessionId]
-                : undefined;
+            const attentionSignal = session
+              ? attention[session.sessionId ?? session.durableSessionId]
+              : undefined;
             // Same call the ⌘J queue makes, so the marker and the jump
             // cannot drift apart again (D51/BUG-009).
             const readLabel = session
@@ -1527,7 +1526,11 @@ export function TabStrip({
               : null;
             const needsYou = session
               ? paintsAttention(
-                  { sessionId: session.sessionId, live: !dead },
+                  {
+                    sessionId: session.sessionId ?? session.durableSessionId,
+                    live: !dead,
+                    retained: !!attentionSignal,
+                  },
                   attention
                 )
               : false;

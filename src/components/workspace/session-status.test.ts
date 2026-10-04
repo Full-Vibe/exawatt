@@ -898,3 +898,13 @@ it('preempts a visited Session only for new source work, not read edits', () => 
     }).target
   ).toBe('blocker');
 });
+
+it('keeps paused retained requests visible and reachable without asserting execution', () => {
+  const signal = mergeFleetAttention({
+    durable: { kind: 'blocked', since: 1, unread: false },
+  });
+  const paused = { sessionId: 'durable', live: false, retained: true };
+  expect(paintsAttention(paused, signal)).toBe(true);
+  expect(attentionJumpQueue([paused], signal, null)).toEqual(['durable']);
+  expect(paused.live).toBe(false);
+});

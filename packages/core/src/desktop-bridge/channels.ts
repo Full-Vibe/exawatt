@@ -296,10 +296,6 @@ interface RequestTable {
     [durableSessionId: string, label: string],
     string | null
   >;
-  'pty:restore-attention': Call<
-    [id: string, attention: PtyAttention],
-    PtyAttention | null
-  >;
   'pty:restore-context': Call<
     [durableSessionId: string, subtitle: string],
     string | null

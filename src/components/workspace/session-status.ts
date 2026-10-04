@@ -280,13 +280,16 @@ export function attentionAt(
 export interface AttentionCandidate {
   sessionId: string | null;
   live: boolean;
+  /** Durable attention remains inspectable while execution is paused. */
+  retained?: boolean;
 }
 
 export function paintsAttention(
   candidate: AttentionCandidate,
   attention: FleetAttentionSignals
 ): boolean {
-  if (!candidate.sessionId || !candidate.live) return false;
+  if (!candidate.sessionId || (!candidate.live && !candidate.retained))
+    return false;
   return attentionNeedsOperator(attention[candidate.sessionId]);
 }
 
@@ -326,7 +329,7 @@ export function attentionJumpQueue(
 ): string[] {
   const visible = new Set(
     candidates
-      .filter(candidate => candidate.live)
+      .filter(candidate => candidate.live || candidate.retained)
       .map(candidate => candidate.sessionId)
   );
   return orderedAttentionTargets(attention, activeSessionId).filter(sessionId =>

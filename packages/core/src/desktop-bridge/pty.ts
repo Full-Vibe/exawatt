@@ -32,6 +32,8 @@ export interface PtyCreateOptions {
   /** Persisted goal subtitle re-seeded into the summarizer on resume (D21).
    *  Metadata only, transported to the context summarizer. */
   restoredSubtitle?: string;
+  /** Durable operator receipt seeded before observers publish a resumed Session. */
+  restoredAttention?: PtyAttention;
   /** Source-agnostic launch policy translated to provider CLI flags. */
   permissionMode?: AgentPermissionMode;
   /** Model choice resolved by the source catalog and pinned for this launch. */

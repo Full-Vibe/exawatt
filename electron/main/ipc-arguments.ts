@@ -1,3 +1,4 @@
+import { readPtyAttention } from '@exawatt/core/desktop-bridge';
 import {
   isAgentHarness,
   isAgentPermissionMode,
@@ -106,6 +107,8 @@ function launchOptions(value: unknown): PtyCreateOptions {
     (typeof value.cwd === 'string' && value.cwd.includes('\0')) ||
     !optionalNumber(value.cols) ||
     !optionalNumber(value.rows) ||
+    (value.restoredAttention !== undefined &&
+      !readPtyAttention(value.restoredAttention)) ||
     !(
       value.permissionMode === undefined ||
       value.permissionMode === null ||
@@ -115,7 +118,12 @@ function launchOptions(value: unknown): PtyCreateOptions {
     throw new Error('Invalid launch options');
   }
   // Accepted as sent: the launch path has always received this object.
-  return value as unknown as PtyCreateOptions;
+  return {
+    ...value,
+    ...(value.restoredAttention !== undefined
+      ? { restoredAttention: readPtyAttention(value.restoredAttention)! }
+      : {}),
+  } as unknown as PtyCreateOptions;
 }
 
 function resumeHints(value: unknown): ResumeIdentityHint[] {
