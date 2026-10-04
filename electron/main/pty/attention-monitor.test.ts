@@ -229,6 +229,25 @@ describe('AttentionMonitor', () => {
     }
   );
 
+  it('keeps output live across an ambient bell while an asynchronous question is open', () => {
+    add('a');
+    monitor.setReportedTurnSource(() => ({
+      ownTurn: 'unknown',
+      blockedOn: 'question',
+      request: 'working',
+      children: [],
+    }));
+    monitor.noteHarnessBlocked('a', 'working', 'q1');
+    data('a', 'first work');
+    data('a', BELL);
+    expect(monitor.isWorking('a')).toBe(true);
+    clock += 5000;
+    monitor.sweepNow();
+    data('a', 'more work');
+    expect(monitor.isWorking('a')).toBe(true);
+    expect(monitor.get('a')?.requestId).toBe('q1');
+  });
+
   it('never converts explicitly unknown source execution into a finished result', () => {
     add('a');
     monitor.setReportedTurnSource(() => ({

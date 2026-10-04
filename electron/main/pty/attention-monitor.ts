@@ -647,7 +647,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     if (
       bell &&
       report &&
-      !report.blockedOn &&
+      (!report.blockedOn || report.request === 'working') &&
       (report.ownTurn !== 'available' || sessionHasBackgroundWork(report))
     )
       return;
