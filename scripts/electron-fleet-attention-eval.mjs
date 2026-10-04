@@ -94,11 +94,33 @@ try {
       );
       await page.keyboard.press('Enter');
       await page.waitForURL('**/workspace*');
-      await app.evaluate(({ app, BrowserWindow }) => {
+      await app.evaluate(async ({ app, BrowserWindow }) => {
         const window = BrowserWindow.getAllWindows()[0];
+        // CDP can report document.hasFocus() while macOS is locked. Inspection
+        // requires the same native foreground fact that main consumes.
+        const focused = new Promise((resolve, reject) => {
+          const onFocus = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          const timer = setTimeout(() => {
+            window.removeListener('focus', onFocus);
+            reject(
+              new Error(
+                'Native foreground unavailable: unlock macOS and focus the eval window before verifying inspection.'
+              )
+            );
+          }, 30_000);
+          window.once('focus', onFocus);
+          if (window.isFocused()) {
+            window.removeListener('focus', onFocus);
+            onFocus();
+          }
+        });
         window.show();
         window.focus();
         app.focus({ steal: true });
+        await focused;
       });
       await page.waitForFunction(() => document.hasFocus());
       await waitForPageCondition(

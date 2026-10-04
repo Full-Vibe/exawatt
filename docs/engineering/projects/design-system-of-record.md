@@ -855,3 +855,15 @@ copy, and two lanes supplied the same persisted purpose field. The palette
 now admits saved-work reopening while execution stays guarded; one durable
 purpose projection retains its existing saved-task fallback. No new behavior
 policy or duplicate owner was introduced.
+
+
+Final native Fleet inspection verification reached the correct Session but
+correctly retained unread while the desktop was locked. Read-only diagnostics
+showed the exact selected runtime in main, `windowFocused: false`, and
+`BrowserWindow.isFocused(): false`, despite CDP's `document.hasFocus(): true`.
+`lsappinfo` identified `loginwindow` as frontmost and IOKit's console-session
+record reported `CGSSessionScreenIsLocked: Yes`. This falsifies a lost read
+receipt in that run. The gate now waits for native window focus and names the
+locked/foreground precondition explicitly; the product guard is unchanged.
+The operator unlock request remains pending. Continue independent checks, then
+rerun the unchanged full delivery floor after real foreground proof is possible.
