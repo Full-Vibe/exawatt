@@ -166,7 +166,7 @@ describe('main-owned roadmap assignment checkpoint', () => {
     };
     const source = [
       { durableSessionId: 'known', roadmapItemId: 'chosen' },
-    ] as Parameters<typeof mergeSessionRoadmapAssignments>[1];
+    ];
     expect(mergeSessionRoadmapAssignments(state, source)).toBe(true);
     expect(state.projects[0].tabs.map(tab => tab.roadmapItemId)).toEqual([
       'chosen',

@@ -132,7 +132,10 @@ export function setWorkspaceSessionMetadataSource(
 /** The chosen link is an operator command, not a stale renderer-save decision. */
 export function mergeSessionRoadmapAssignments(
   state: unknown,
-  sessions: readonly PtySessionRecord[]
+  sessions: readonly Pick<
+    PtySessionRecord,
+    'durableSessionId' | 'roadmapItemId'
+  >[]
 ): boolean {
   if (!state || typeof state !== 'object') return false;
   const projects = (state as { projects?: unknown }).projects;

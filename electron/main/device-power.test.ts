@@ -136,7 +136,7 @@ describe('device-owned sleep prevention', () => {
     const blocked = sessionStatus(
       {
         ...base,
-        attention: { kind: 'permission', since: 1 },
+        attention: { kind: 'blocked', request: 'blocking', since: 1 },
         delegation: { children: [], ownTurn: 'generating' },
       },
       0,
