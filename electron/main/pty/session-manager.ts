@@ -512,6 +512,7 @@ export class PtySessionManager extends EventEmitter {
       durableSessionId,
       harness: options.harness,
       title: options.title || options.harness,
+      roadmapItemId: options.roadmapItemId ?? null,
       projectDir: project.projectDir,
       projectName: project.projectName,
       cwd,
@@ -1029,6 +1030,23 @@ export class PtySessionManager extends EventEmitter {
     const s = this.sessions.get(id);
     const next = title.trim();
     if (s && next) s.info.title = next;
+  }
+
+  assignRoadmapItem(
+    id: string,
+    durableSessionId: string,
+    itemId: string
+  ): PtySessionRecord | null {
+    const session = this.sessions.get(id);
+    if (
+      !session ||
+      session.info.exited ||
+      session.info.durableSessionId !== durableSessionId
+    )
+      return null;
+    session.info.roadmapItemId = itemId;
+    session.launchOptions.roadmapItemId = itemId;
+    return { ...session.info };
   }
 
   resize(id: string, cols: number, rows: number): void {

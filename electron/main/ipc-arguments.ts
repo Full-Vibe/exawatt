@@ -99,12 +99,15 @@ function launchOptions(value: unknown): PtyCreateOptions {
     'initialPrompt',
     'statedTask',
     'restoredSubtitle',
+    'roadmapItemId',
     'model',
     'effort',
   ] as const;
   if (
     !textFields.every(field => optionalText(value[field])) ||
     (typeof value.cwd === 'string' && value.cwd.includes('\0')) ||
+    (typeof value.roadmapItemId === 'string' &&
+      value.roadmapItemId.length > 512) ||
     !optionalNumber(value.cols) ||
     !optionalNumber(value.rows) ||
     (value.restoredAttention !== undefined &&

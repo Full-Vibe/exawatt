@@ -2015,3 +2015,30 @@ Owned followthrough lint and diff checks passed. Full
 compilation still awaits the coupled source branch's unknown-execution consumer
 changes in this worktree. No BUG-265 closure or installed claim is made before
 combined source parity, routing, and Electron evidence completes.
+
+
+### 2026-10-04 — Authoritative roadmap attribution closes stale-window race (implemented, not integrated)
+
+**Current Session evidence now owns the roadmap join.** Independent review of
+`bcd7591d` found that a document token alone could not validate a delayed
+window's stale purpose/link evidence: an old empty inferred list could clear a
+newly linked blocker and replay its alert. This supersedes the renderer-claimed
+item-list portion of the preceding checkpoint.
+
+The existing pure parser and attribution rule now live in core (`874676a0`);
+UI-model reexports that rule for presentation. Main evaluates it against current
+PTY title/directory/task, current context summary, and the explicit roadmap
+assignment on the existing Session record. Renderer observations carry read
+provenance and exact Session coverage only; they cannot replace main's links.
+Explicit assignment goes through one command before every window adopts its
+projection. The same metadata travels with launch/exact resume and supersedes
+stale layout snapshots, including authoritative absence. No second link store
+or parser was added. The existing live-only assignment affordance remains;
+unavailable/paused coverage cannot clear prior requests.
+
+Tests cover contradictory same-document delayed windows, content replacement
+with unchanged mtime, explicit link change, unavailable coverage, and restored
+assignment/read receipts. Compilation still needs the coupled source stack's
+already implemented unknown-state types. The forthcoming shared Fleet reminder
+projection (`600dd1f8`) and exited-runtime attention custody (`2ccc9a18`) are
+required integration dependencies before this followthrough's runtime gates.

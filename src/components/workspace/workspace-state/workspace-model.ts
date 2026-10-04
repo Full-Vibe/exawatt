@@ -327,7 +327,10 @@ export function tabFromPtySession(
     lifecycle: session.exited ? 'exited' : 'running',
     exitCode: session.exited ? (session.exitCode ?? 0) : null,
     exitSignal: session.exited ? session.exitSignal : null,
-    roadmapItemId,
+    roadmapItemId:
+      session.roadmapItemId !== undefined
+        ? session.roadmapItemId
+        : roadmapItemId,
     initialTask,
     startedAt: session.startedAt,
     launchModel: session.launchModel,
@@ -512,6 +515,9 @@ export function runtimeAdoptionPatch(
     resumeAfterRestart: false,
     sessionId: exited ? null : session.id,
     harnessSessionId: session.harnessSessionId ?? tab.harnessSessionId,
+    ...(session.roadmapItemId !== undefined
+      ? { roadmapItemId: session.roadmapItemId }
+      : {}),
     cwd: session.cwd,
     launchModel: session.launchModel,
     launchEffort: session.launchEffort,

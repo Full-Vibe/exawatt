@@ -1,5 +1,10 @@
 import { createHash } from 'crypto';
 import path from 'path';
+import {
+  parseRoadmap,
+  deriveFleetRoadmapBlocked,
+  type RoadmapAttentionRead,
+} from '@exawatt/core';
 import type {
   PtySessionRecord,
   RoadmapAttentionObservation,
@@ -10,18 +15,24 @@ function projectKey(dir: string): string {
   return path.resolve(dir);
 }
 
-/** Read provenance only; parsing and link inference remain renderer-owned.
+/** Source read provenance and one authoritative join against current Session evidence.
  * Only the latest requested read may install a token. Duplicate
  * windows can publish the same current observation without owning alert state. */
 export class RoadmapAttentionObservations {
   private generation = new Map<string, number>();
   private tokens = new Map<string, string>();
+  private documents = new Map<string, RoadmapAttentionRead>();
   private pending = new Map<string, Promise<RoadmapReadResult>>();
 
   constructor(
     private readonly ports: {
       read(projectDir: string): Promise<RoadmapReadResult>;
-      sessions(): PtySessionRecord[];
+      sessions(): Array<
+        PtySessionRecord & {
+          contextSummary: string | null;
+          initialTask: string | null;
+        }
+      >;
       update(sessionId: string, requestIds: readonly string[]): void;
     }
   ) {}
@@ -38,20 +49,37 @@ export class RoadmapAttentionObservations {
     } catch (error) {
       if (this.generation.get(key) === generation) {
         this.tokens.delete(key);
+        this.documents.delete(key);
         this.pending.delete(key);
       }
       throw error;
     }
     if (this.generation.get(key) === generation) this.pending.delete(key);
     if (result.status === 'error') {
-      if (this.generation.get(key) === generation) this.tokens.delete(key);
+      if (this.generation.get(key) === generation) {
+        this.tokens.delete(key);
+        this.documents.delete(key);
+      }
       return result;
     }
     const observationToken = createHash('sha256')
       .update(JSON.stringify([key, result]))
       .digest('hex');
-    if (this.generation.get(key) === generation)
+    if (this.generation.get(key) === generation) {
       this.tokens.set(key, observationToken);
+      this.documents.set(
+        key,
+        result.status === 'ok'
+          ? {
+              status: 'ok',
+              doc: parseRoadmap(result.text, {
+                projectDir: key,
+                file: result.file,
+              }),
+            }
+          : { status: 'absent' }
+      );
+    }
     return { ...result, observationToken };
   }
 
@@ -86,15 +114,51 @@ export class RoadmapAttentionObservations {
       )
         return false;
     }
-    for (const claimed of observation.sessions) {
+    this.reconcile(
+      key,
+      observation.sessions.map(session => session.sessionId)
+    );
+    return true;
+  }
+  /** Recompute from current main-owned Session evidence, never renderer links. */
+  reconcile(projectDir: string, sessionIds?: readonly string[]): void {
+    const key = projectKey(projectDir);
+    const read = this.documents.get(key);
+    if (!read || !this.tokens.has(key) || this.pending.has(key)) return;
+    const sessions = this.ports
+      .sessions()
+      .filter(
+        session =>
+          !session.exited &&
+          projectKey(session.projectDir) === key &&
+          (!sessionIds || sessionIds.includes(session.id))
+      );
+    const fleet = deriveFleetRoadmapBlocked([
+      {
+        dir: key,
+        read,
+        sessions: sessions.map(session => ({
+          sessionId: session.id,
+          durableSessionId: session.durableSessionId,
+          tabId: null,
+          title: session.title,
+          cwd: session.cwd,
+          contextSummary: session.contextSummary,
+          initialTask: session.initialTask,
+          declaredItemId: session.roadmapItemId ?? null,
+        })),
+      },
+    ]);
+    for (const session of sessions) {
       this.ports.update(
-        claimed.sessionId,
-        claimed.itemIds.map(itemId =>
-          JSON.stringify([key, claimed.durableSessionId, itemId])
-        )
+        session.id,
+        fleet.blocked
+          .filter(item => item.sessionId === session.id)
+          .map(item =>
+            JSON.stringify([key, session.durableSessionId, item.itemId])
+          )
       );
     }
-    return true;
   }
 }
 
@@ -122,11 +186,6 @@ function readObservation(value: unknown): RoadmapAttentionObservation | null {
       session.sessionId.length > 200 ||
       typeof session.durableSessionId !== 'string' ||
       session.durableSessionId.length > 200 ||
-      !Array.isArray(session.itemIds) ||
-      session.itemIds.length > 128 ||
-      session.itemIds.some(
-        id => typeof id !== 'string' || !id || id.length > 512
-      ) ||
       ids.has(session.sessionId)
     )
       return null;

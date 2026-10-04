@@ -229,6 +229,8 @@ interface DesktopWorkspaceApi {
 interface DesktopRoadmapApi {
   read: BridgeInvoke<'roadmap:read'>;
   publishAttention: BridgeInvoke<'roadmap:publish-attention'>;
+  assignSession: BridgeInvoke<'roadmap:assign-session'>;
+  onSessionAssigned: BridgeSubscribe<'roadmap:session-assigned'>;
   sessionEvidence: BridgeInvoke<'roadmap:session-evidence'>;
   activity: BridgeInvoke<'roadmap:activity'>;
   writeState: BridgeInvoke<'roadmap:write-state'>;

@@ -356,6 +356,9 @@ export function restoreLayout(
           ...t,
           kind: 'session' as const,
           initialTask,
+          ...(s.roadmapItemId !== undefined
+            ? { roadmapItemId: s.roadmapItemId }
+            : {}),
           startedAt: s.startedAt,
           launchModel: s.launchModel,
           launchEffort: s.launchEffort,
@@ -375,6 +378,9 @@ export function restoreLayout(
           ...t,
           kind: 'session' as const,
           initialTask,
+          ...(s.roadmapItemId !== undefined
+            ? { roadmapItemId: s.roadmapItemId }
+            : {}),
           startedAt: s.startedAt,
           sessionId: null,
           harnessSessionId:

@@ -26,6 +26,37 @@ vi.mock('./process-groups', () => ({
 const { PtySessionManager } = await import('./session-manager');
 
 describe('Session operation ordering', () => {
+  it('owns an explicit roadmap assignment on the exact live Session and retains it on process replacement', async () => {
+    const manager = new PtySessionManager();
+    const session = await manager.create({
+      harness: 'claude',
+      cwd: process.cwd(),
+      roadmapItemId: 'ENG-015',
+    });
+    expect(session.roadmapItemId).toBe('ENG-015');
+    expect(
+      manager.assignRoadmapItem(session.id, 'wrong-durable', 'ENG-036')
+    ).toBeNull();
+    expect(
+      manager.assignRoadmapItem(session.id, session.durableSessionId, 'ENG-036')
+        ?.roadmapItemId
+    ).toBe('ENG-036');
+    expect(manager.list()[0].roadmapItemId).toBe('ENG-036');
+    processes.at(-1)!.exit();
+    expect(
+      manager.assignRoadmapItem(session.id, session.durableSessionId, 'ENG-015')
+    ).toBeNull();
+    const resumed = await manager.create({
+      harness: 'claude',
+      cwd: process.cwd(),
+      durableSessionId: session.durableSessionId,
+      resumeSessionId: session.harnessSessionId!,
+      roadmapItemId: 'ENG-036',
+    });
+    expect(resumed.roadmapItemId).toBe('ENG-036');
+    processes.at(-1)!.exit();
+  });
+
   it('waits for the exit event and blocks resume/model changes while pausing', async () => {
     const manager = new PtySessionManager();
     const session = await manager.create({

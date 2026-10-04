@@ -67,6 +67,19 @@ interface CachedRead {
   observationToken?: string;
 }
 
+function publicationKey(
+  token: string,
+  sessions: readonly { sessionId: string; durableSessionId?: string }[]
+): string {
+  return JSON.stringify([
+    token,
+    sessions
+      .filter(session => session.durableSessionId)
+      .map(session => [session.sessionId, session.durableSessionId])
+      .sort(),
+  ]);
+}
+
 const PENDING: CachedRead = { mtimeMs: null, read: { status: 'pending' } };
 const ABSENT: CachedRead = { mtimeMs: null, read: { status: 'absent' } };
 
@@ -152,11 +165,10 @@ export function useFleetRoadmapAttention(
           // returns the same state object, so no consumer re-renders.
           if (
             cached?.mtimeMs === result.mtimeMs &&
+            cached.observationToken === result.observationToken &&
             cached.read.status === 'ok'
           ) {
-            return cached.observationToken === result.observationToken
-              ? cached
-              : { ...cached, observationToken: result.observationToken };
+            return cached;
           }
           const doc = parseRoadmap(result.text, {
             projectDir: dir,
@@ -240,8 +252,8 @@ export function useFleetRoadmapAttention(
     [projects, reads]
   );
 
-  // The renderer owns parsing and link inference; main owns source request
-  // identities, read receipts, checkpointing, and one alert transition.
+  // Main evaluates the shared attribution rule against current Session evidence
+  // and owns request identities, read receipts, checkpointing, and alerts.
   const authoritative =
     typeof window !== 'undefined' &&
     !!window.electron?.roadmap?.publishAttention;
@@ -261,9 +273,6 @@ export function useFleetRoadmapAttention(
               {
                 sessionId: session.sessionId,
                 durableSessionId: session.durableSessionId,
-                itemIds: fleet.blocked
-                  .filter(entry => entry.sessionId === session.sessionId)
-                  .map(entry => entry.itemId),
               },
             ]
           : []
@@ -272,6 +281,7 @@ export function useFleetRoadmapAttention(
       const ticket = (publicationTickets.current.get(project.dir) ?? 0) + 1;
       publicationTickets.current.set(project.dir, ticket);
       const token = cached.observationToken;
+      const key = publicationKey(token, sessions);
       const acknowledge = (accepted: boolean) => {
         if (publicationTickets.current.get(project.dir) !== ticket) return;
         if (!accepted) {
@@ -285,10 +295,10 @@ export function useFleetRoadmapAttention(
           }
         }
         setPublished(previous => {
-          if (accepted && previous[project.dir] === token) return previous;
+          if (accepted && previous[project.dir] === key) return previous;
           if (!accepted && !(project.dir in previous)) return previous;
           const next = { ...previous };
-          if (accepted) next[project.dir] = token;
+          if (accepted) next[project.dir] = key;
           else delete next[project.dir];
           return next;
         });
@@ -322,9 +332,16 @@ export function useFleetRoadmapAttention(
     const blind = new Set([...fleet.pending, ...fleet.unread]);
     if (authoritative) {
       for (const project of projects) {
+        for (const session of project.sessions) {
+          if (!session.durableSessionId) blind.add(session.sessionId);
+        }
         if (
           !reads[project.dir]?.observationToken ||
-          published[project.dir] !== reads[project.dir]?.observationToken
+          published[project.dir] !==
+            publicationKey(
+              reads[project.dir]?.observationToken ?? '',
+              project.sessions
+            )
         ) {
           for (const session of project.sessions) blind.add(session.sessionId);
         }

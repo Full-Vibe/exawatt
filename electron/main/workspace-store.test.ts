@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { mergeHarnessIdentities, WorkspaceStore } from './workspace-store';
+import {
+  mergeHarnessIdentities,
+  mergeSessionRoadmapAssignments,
+  WorkspaceStore,
+} from './workspace-store';
 
 // This suite runs in Node, so importing the real `electron` package would run
 // its installer shim: it reads `node_modules/electron/path.txt`, and when that
@@ -142,5 +146,38 @@ describe('mergeHarnessIdentities', () => {
     expect(state.activeProjectId).toBe('p1');
     expect(state.projects[0].layout).toEqual({ split: 0.4 });
     expect(state.projects[0].tabs[0].title).toBe('keep me');
+  });
+});
+
+describe('main-owned roadmap assignment checkpoint', () => {
+  it('corrects stale window metadata by durable Session identity without inventing unknown assignments', () => {
+    const state = {
+      projects: [
+        {
+          tabs: [
+            { durableSessionId: 'known', roadmapItemId: 'old' },
+            {
+              durableSessionId: 'paused-no-runtime',
+              roadmapItemId: 'preserved',
+            },
+          ],
+        },
+      ],
+    };
+    const source = [
+      { durableSessionId: 'known', roadmapItemId: 'chosen' },
+    ] as Parameters<typeof mergeSessionRoadmapAssignments>[1];
+    expect(mergeSessionRoadmapAssignments(state, source)).toBe(true);
+    expect(state.projects[0].tabs.map(tab => tab.roadmapItemId)).toEqual([
+      'chosen',
+      'preserved',
+    ]);
+    expect(mergeSessionRoadmapAssignments(state, source)).toBe(false);
+    expect(
+      mergeSessionRoadmapAssignments(state, [
+        { ...source[0], roadmapItemId: null },
+      ])
+    ).toBe(true);
+    expect(state.projects[0].tabs[0].roadmapItemId).toBeNull();
   });
 });

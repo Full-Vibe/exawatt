@@ -17,7 +17,7 @@ import { withAttentionRead } from '@exawatt/core';
  *   an exact saved provider ID after an explicit operator action; a renderer
  *   reload re-adopts still-live PTYs.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useSessionScope,
   useSessionScopeRelease,
@@ -274,17 +274,53 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     setProjects(prev => patchSessionTab(prev, tabId, patch));
   }, []);
 
+  // Explicit assignment is commanded once; every window consumes main's
+  // projection. A routine read or stale layout cannot overwrite that choice.
+  useEffect(
+    () =>
+      window.electron?.roadmap?.onSessionAssigned?.(session => {
+        setProjects(previous =>
+          previous.map(project => ({
+            ...project,
+            tabs: project.tabs.map(tab =>
+              isSessionTab(tab) &&
+              tab.durableSessionId === session.durableSessionId &&
+              tab.sessionId === session.id
+                ? { ...tab, roadmapItemId: session.roadmapItemId ?? null }
+                : tab
+            ),
+          }))
+        );
+      }),
+    []
+  );
+
   /** S13.3 secondary path: attach a running Session to an item locally. */
   const attachRoadmapItem = useCallback(
     (tabId: string, roadmapItemId: string): boolean => {
       const tab = stateRef.current.projects
         .flatMap(project => project.tabs)
         .find(candidate => candidate.id === tabId);
-      if (!tab || !tabIsLive(tab)) return false;
-      updateTab(tabId, { roadmapItemId });
+      const assign = window.electron?.roadmap?.assignSession;
+      if (
+        !tab ||
+        !isSessionTab(tab) ||
+        !tabIsLive(tab) ||
+        !tab.sessionId ||
+        !assign
+      )
+        return false;
+      void assign(tab.sessionId, tab.durableSessionId, roadmapItemId)
+        .then(session => {
+          if (!session)
+            setError('The Session is no longer available to attach.');
+        })
+        .catch(() =>
+          setError('Could not attach the Session to that roadmap item.')
+        );
       return true;
     },
-    [updateTab]
+    [setError]
   );
 
   const {

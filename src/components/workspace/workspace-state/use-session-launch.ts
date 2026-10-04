@@ -204,6 +204,7 @@ export function useSessionLaunch({
             ? { resumeSessionId: opts.resumeSessionId }
             : {}),
           ...(statedTask ? { statedTask } : {}),
+          roadmapItemId: opts.roadmapItemId ?? null,
           ...(restoredSubtitle ? { restoredSubtitle } : {}),
           ...(size ?? {}),
         });

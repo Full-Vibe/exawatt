@@ -249,6 +249,9 @@ const bridge = {
     read: projectDir => invoke('roadmap:read', projectDir),
     publishAttention: observation =>
       invoke('roadmap:publish-attention', observation),
+    assignSession: (sessionId, durableSessionId, itemId) =>
+      invoke('roadmap:assign-session', sessionId, durableSessionId, itemId),
+    onSessionAssigned: subscribe('roadmap:session-assigned'),
     sessionEvidence: cwd => invoke('roadmap:session-evidence', cwd),
     activity: projectDir => invoke('roadmap:activity', projectDir),
     writeState: request => invoke('roadmap:write-state', request),

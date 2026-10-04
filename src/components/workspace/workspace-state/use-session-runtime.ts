@@ -157,6 +157,7 @@ export function useSessionRuntime({
           harness: tab.harness,
           cwd: tab.cwd,
           title: tab.title,
+          roadmapItemId: tab.roadmapItemId,
           durableSessionId: tab.durableSessionId,
           ...(retainedAttention
             ? { restoredAttention: retainedAttention }

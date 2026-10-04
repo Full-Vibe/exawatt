@@ -445,3 +445,18 @@ it('keeps retained attention while paused but lets fresh live absence resolve it
   ).toEqual({});
   expect(seedSessionStores([], restored, races).activity).toEqual({});
 });
+
+it('main explicit roadmap assignment supersedes stale layouts, including authoritative absence', () => {
+  for (const roadmapItemId of ['ENG-036', null]) {
+    const saved = layout([savedTab('a', { roadmapItemId: 'ENG-015' })]);
+    const main = ptySessionInfo({
+      id: 'live',
+      durableSessionId: 'durable-a',
+      roadmapItemId,
+    });
+    const restored = restoreLayout(saved, [main], quietRestart).restored!;
+    expect(sessionTabs(restored.projects[0].tabs)[0].roadmapItemId).toBe(
+      roadmapItemId
+    );
+  }
+});

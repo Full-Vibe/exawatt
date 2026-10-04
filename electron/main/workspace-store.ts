@@ -1,3 +1,4 @@
+import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 import { app } from 'electron';
 import {
   readJsonDocumentAsync,
@@ -120,6 +121,55 @@ export function mergeHarnessIdentities(
   return changed;
 }
 
+/** Main supplies current Session metadata; storage never becomes a second owner. */
+let sessionMetadata: () => readonly PtySessionRecord[] = () => [];
+export function setWorkspaceSessionMetadataSource(
+  source: () => readonly PtySessionRecord[]
+): void {
+  sessionMetadata = source;
+}
+
+/** The chosen link is an operator command, not a stale renderer-save decision. */
+export function mergeSessionRoadmapAssignments(
+  state: unknown,
+  sessions: readonly PtySessionRecord[]
+): boolean {
+  if (!state || typeof state !== 'object') return false;
+  const projects = (state as { projects?: unknown }).projects;
+  if (!Array.isArray(projects)) return false;
+  const assignments = new Map(
+    sessions
+      .filter(session => session.roadmapItemId !== undefined)
+      .map(session => [session.durableSessionId, session.roadmapItemId])
+  );
+  let changed = false;
+  for (const project of projects) {
+    if (!project || typeof project !== 'object' || !Array.isArray(project.tabs))
+      continue;
+    for (const tab of project.tabs) {
+      if (
+        !tab ||
+        typeof tab !== 'object' ||
+        typeof tab.durableSessionId !== 'string' ||
+        !assignments.has(tab.durableSessionId)
+      )
+        continue;
+      const itemId = assignments.get(tab.durableSessionId);
+      if (tab.roadmapItemId === itemId) continue;
+      tab.roadmapItemId = itemId;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Serialize a command's metadata checkpoint with pending layout replacements. */
+export async function checkpointWorkspaceSessionMetadata(): Promise<void> {
+  await store().load(async state =>
+    mergeSessionRoadmapAssignments(state, sessionMetadata())
+  );
+}
+
 let defaultStore: WorkspaceStore | null = null;
 
 function store(): WorkspaceStore {
@@ -160,6 +210,7 @@ export function loadWorkspace(): Promise<unknown | null> {
 }
 
 export async function saveWorkspace(state: unknown): Promise<void> {
+  mergeSessionRoadmapAssignments(state, sessionMetadata());
   await store().save(state);
   // The save path is the eviction owner: it is the only place that knows the
   // complete set of identity keys the layout still refers to.

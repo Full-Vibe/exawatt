@@ -87,9 +87,7 @@ describe('useFleetRoadmapAttention', () => {
     expect(publishAttention).toHaveBeenCalledWith({
       projectDir: '/b',
       observationToken: 'a'.repeat(64),
-      sessions: [
-        { sessionId: 'sb', durableSessionId: 'durable-b', itemIds: ['B-1'] },
-      ],
+      sessions: [{ sessionId: 'sb', durableSessionId: 'durable-b' }],
     });
     expect(result.current.signals).toEqual({});
   });

@@ -69,7 +69,7 @@ export type RoadmapUndoResult =
   | { status: 'applied'; contentHash: string }
   | { status: 'refused' | 'failed'; message: string };
 
-/** Covered source projection from the existing renderer-owned roadmap parser.
+/** Covered exact Sessions for main to evaluate against its current source evidence.
  * Missing Sessions mean unobserved, not resolved. */
 export interface RoadmapAttentionObservation {
   projectDir: string;
@@ -77,6 +77,5 @@ export interface RoadmapAttentionObservation {
   sessions: Array<{
     sessionId: string;
     durableSessionId: string;
-    itemIds: string[];
   }>;
 }

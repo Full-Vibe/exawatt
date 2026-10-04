@@ -1,3 +1,7 @@
+import { BrowserWindow } from 'electron';
+import { checkpointWorkspaceSessionMetadata } from '../workspace-store';
+import { broadcastToWindows } from '../window-broadcast';
+import { sessionContextSummary } from '../pty-ipc';
 import { attentionMonitor } from '../pty/attention-monitor';
 import { ptySessions } from '../pty/session-manager';
 import { RoadmapAttentionObservations } from './attention-observations';
@@ -9,14 +13,19 @@ import { undoRoadmapState, writeRoadmapState } from './roadmap-writer';
 import { unwatchRoadmap, watchRoadmap } from './roadmap-watcher';
 
 /**
- * Roadmap lens IPC (ENG-017). Reads remain parser-owned in the renderer.
+ * Roadmap lens IPC (ENG-017). Core owns parsing and attribution; main joins current Session evidence.
  * Decision 0035 adds one narrow main-process write boundary for declared
  * roadmaps: sequence and state only, compare-before-write, never git.
  */
 export function registerRoadmapIPC(): void {
   const attention = new RoadmapAttentionObservations({
     read: readRoadmap,
-    sessions: () => ptySessions.list(),
+    sessions: () =>
+      ptySessions.list().map(session => ({
+        ...session,
+        contextSummary: sessionContextSummary(session.durableSessionId),
+        initialTask: ptySessions.initialTask(session.id),
+      })),
     update: (id, requestIds) =>
       attentionMonitor.updateRoadmapRequests(id, requestIds),
   });
@@ -25,6 +34,40 @@ export function registerRoadmapIPC(): void {
   );
   handleTrusted('roadmap:publish-attention', (_event, observation) =>
     attention.publish(observation)
+  );
+  handleTrusted(
+    'roadmap:assign-session',
+    async (_event, id: string, durableSessionId: string, itemId: string) => {
+      if (
+        typeof id !== 'string' ||
+        typeof durableSessionId !== 'string' ||
+        typeof itemId !== 'string' ||
+        !itemId ||
+        itemId.length > 512
+      )
+        return null;
+      const session = ptySessions.assignRoadmapItem(
+        id,
+        durableSessionId,
+        itemId
+      );
+      if (!session) return null;
+      attention.reconcile(session.projectDir, [session.id]);
+      await checkpointWorkspaceSessionMetadata();
+      const current = ptySessions
+        .list()
+        .find(
+          record =>
+            record.id === id && record.durableSessionId === durableSessionId
+        );
+      if (!current) return null;
+      broadcastToWindows(
+        BrowserWindow.getAllWindows(),
+        'roadmap:session-assigned',
+        current
+      );
+      return current;
+    }
   );
   handleTrusted('roadmap:session-evidence', (_event, cwd: string) =>
     readSessionEvidence(cwd)

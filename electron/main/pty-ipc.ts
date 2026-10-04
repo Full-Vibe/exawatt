@@ -42,6 +42,7 @@ import { createWorktree, expandTilde } from './pty/project-resolve';
 import {
   loadWorkspace,
   saveWorkspace,
+  setWorkspaceSessionMetadataSource,
   recoverWorkspace,
   workspaceStorageRecovery,
 } from './workspace-store';
@@ -104,6 +105,10 @@ import type {
 } from '@exawatt/core/desktop-bridge';
 
 let activeContextSummarizer: ContextSummarizer | null = null;
+export function sessionContextSummary(durableSessionId: string): string | null {
+  return activeContextSummarizer?.getSummary(durableSessionId) ?? null;
+}
+
 let disposeDevicePower: (() => void) | null = null;
 
 // Engines and their model lists change on the order of days, but the composer
@@ -128,6 +133,7 @@ export function registerPtyIPC(
 ): void {
   const contextSummarizer = new ContextSummarizer({ distribution });
   activeContextSummarizer = contextSummarizer;
+  setWorkspaceSessionMetadataSource(() => ptySessions.list());
   const broadcast = <C extends DesktopBridgePushChannel>(
     channel: C,
     payload: DesktopBridgePush<C>

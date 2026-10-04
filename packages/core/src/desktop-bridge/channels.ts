@@ -85,6 +85,7 @@ import type {
   PtyIdentityEvent,
   PtyReentryRecap,
   PtySessionInfo,
+  PtySessionRecord,
   ReconciledResumeIdentity,
   RecentConversation,
   ResumeIdentityHint,
@@ -360,6 +361,10 @@ interface RequestTable {
     [observation: RoadmapAttentionObservation],
     boolean
   >;
+  'roadmap:assign-session': Call<
+    [sessionId: string, durableSessionId: string, itemId: string],
+    PtySessionRecord | null
+  >;
   'roadmap:read': Call<[projectDir: string], RoadmapReadResult>;
   'roadmap:session-evidence': Call<[cwd: string], RoadmapSessionEvidence>;
   'roadmap:activity': Call<[projectDir: string], RoadmapProjectChange[]>;
@@ -510,6 +515,7 @@ interface PushTable {
   'pty:identity': PtyIdentityEvent;
   'pty:notification-click': { id: string };
   'pty:recap': PtyReentryRecap;
+  'roadmap:session-assigned': PtySessionRecord;
   'roadmap:file-changed': { projectDir: string };
   'settings:changed': ExawattSettings;
   /** The saved layout, relayed to every other window. */

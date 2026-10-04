@@ -19,6 +19,8 @@ export interface PtyCreateOptions {
   rows?: number;
   /** Display title; defaults to the harness name. */
   title?: string;
+  /** Explicit operator roadmap assignment; restored with the durable Session. */
+  roadmapItemId?: string | null;
   /** Exact provider conversation id. Presence means resume that id. */
   resumeSessionId?: string;
   /** Stable Exawatt Session identity; survives PTY process replacement. */
@@ -62,6 +64,8 @@ export type PtyPowerControl =
  * (`PtySessionInfo`).
  */
 export interface PtySessionRecord {
+  /** Main-owned explicit roadmap assignment; ordinary reads cannot rewrite it. */
+  roadmapItemId?: string | null;
   id: string;
   durableSessionId: string;
   harness: PtyHarness;
