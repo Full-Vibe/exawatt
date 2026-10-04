@@ -1489,6 +1489,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:appearance': GATE,
   'eval:electron:context-labels': GATE,
   'eval:electron:resume': GATE,
+  'eval:electron:source-compatibility': GATE,
   'eval:electron:chrome': GATE,
   'eval:electron:session-parity': GATE,
 
