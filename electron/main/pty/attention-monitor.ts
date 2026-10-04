@@ -331,11 +331,12 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   }
 
   /** Lack of source visibility is not a finished turn or an operator gate. */
-  noteHarnessTurnUnknown(id: string): void {
+  noteHarnessTurnUnknown(id: string, preserveResult = false): void {
     this.sourceObserved.add(id);
     this.settled.delete(id);
     const kind = this.attention.get(id)?.kind;
-    if (kind === 'bell' || kind === 'turn-end') this.clear(id);
+    if (!preserveResult && (kind === 'bell' || kind === 'turn-end'))
+      this.clear(id);
   }
 
   /** Source work corrects an inferred bell/result even if its census arrived

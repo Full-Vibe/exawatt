@@ -118,6 +118,16 @@ describe('AttentionMonitor', () => {
     });
   });
 
+  it('does not erase a known result on a read outage, but a new incomplete turn supersedes it', () => {
+    add('a');
+    monitor.noteHarnessTurnEnd('a');
+    const result = monitor.get('a');
+    monitor.noteHarnessTurnUnknown('a', true);
+    expect(monitor.get('a')).toBe(result);
+    monitor.noteHarnessTurnUnknown('a');
+    expect(monitor.get('a')).toBeNull();
+  });
+
   it('never converts explicitly unknown source execution into a finished result', () => {
     add('a');
     monitor.setReportedTurnSource(() => ({
