@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attentionJumpQueue,
+  attentionReadLabel,
   nextAttentionTarget,
   attentionNeedsOperator,
   paintsAttention,
@@ -76,13 +77,13 @@ describe('sessionStatusLightState', () => {
         { kind: 'turn-end', since: 20 },
         { kind: 'roadmap-blocked', since: 10 }
       )
-    ).toEqual({ kind: 'roadmap-blocked', since: 10 });
+    ).toMatchObject({ kind: 'roadmap-blocked', since: 10 });
     expect(
       mergeSessionAttentionSignals(
         { kind: 'turn-end', since: 20 },
         { kind: 'bell', since: 30 }
       )
-    ).toEqual({ kind: 'bell', since: 30 });
+    ).toMatchObject({ kind: 'bell', since: 30 });
     expect(
       mergeFleetAttention(
         fleetAttention('pty', { shared: { kind: 'turn-end', since: 20 } }),
@@ -90,7 +91,7 @@ describe('sessionStatusLightState', () => {
           shared: { kind: 'roadmap-blocked', since: 10 },
         })
       )
-    ).toEqual({ shared: { kind: 'roadmap-blocked', since: 10 } });
+    ).toMatchObject({ shared: { kind: 'roadmap-blocked', since: 10 } });
   });
 
   it('orders requests before unread results and skips the active Session', () => {
@@ -488,7 +489,10 @@ describe('a producer declares its scope (BUG-026)', () => {
 
   it('answers unknown outside a source scope, never quiet', () => {
     const view = mergeAttention(pty, narrow);
-    expect(attentionAt(view, 'b1')).toEqual({ known: true, signal: blocked });
+    expect(attentionAt(view, 'b1')).toMatchObject({
+      known: true,
+      signal: blocked,
+    });
     expect(attentionAt(view, 'a1')).toEqual({
       known: false,
       unseenBy: ['roadmap'],
@@ -909,4 +913,121 @@ it('keeps paused retained requests visible and reachable without asserting execu
   expect(paintsAttention(paused, signal)).toBe(true);
   expect(attentionJumpQueue([paused], signal, null)).toEqual(['durable']);
   expect(paused.live).toBe(false);
+});
+
+describe('independent request and result inspection', () => {
+  const request = {
+    source: 'harness' as const,
+    kind: 'blocked' as const,
+    since: 1,
+    requestId: 'question',
+    unread: false,
+  };
+  const result = {
+    source: 'harness' as const,
+    kind: 'turn-end' as const,
+    since: 2,
+    unread: true,
+  };
+  const combined = { ...request, unread: true, records: [request, result] };
+
+  it('names the unread fact without pretending the already-read request is unread', () => {
+    expect(attentionReadLabel(combined)).toBe('Read request · unread result');
+    expect(
+      attentionReadLabel({
+        ...combined,
+        unread: false,
+        records: [request, { ...result, unread: false }],
+      })
+    ).toBe('Read request · read result');
+    expect(
+      attentionReadLabel({
+        ...combined,
+        records: [
+          { ...request, unread: true },
+          { ...result, unread: false },
+        ],
+      })
+    ).toBe('Unread request · read result');
+  });
+
+  it('revisits a Session for a new result behind its unchanged outstanding request', () => {
+    const order = ['blocked', 'other', 'remaining'];
+    const before = { blocked: { ...request, records: [request] } };
+    const first = nextAttentionTarget(order, null, new Map(), before);
+    const second = nextAttentionTarget(
+      order,
+      first.target,
+      first.visited,
+      before
+    );
+    expect(second.target).toBe('other');
+    expect(
+      nextAttentionTarget(order, second.target, second.visited, {
+        blocked: combined,
+      }).target
+    ).toBe('blocked');
+  });
+
+  it('ignores read edits and record ordering when advancing a pass', () => {
+    const order = ['blocked', 'other', 'remaining'];
+    const first = nextAttentionTarget(order, null, new Map(), {
+      blocked: combined,
+    });
+    const second = nextAttentionTarget(order, first.target, first.visited, {
+      blocked: combined,
+    });
+    const afterReading = {
+      ...combined,
+      unread: false,
+      records: [{ ...result, unread: false }, request],
+    };
+    expect(
+      nextAttentionTarget(order, second.target, second.visited, {
+        blocked: afterReading,
+      }).target
+    ).toBe('remaining');
+  });
+});
+
+it('merges independent sources without losing a read request or unread result', () => {
+  const readGate: SessionAttentionSignal = {
+    kind: 'roadmap-blocked',
+    since: 1,
+    unread: false,
+  };
+  const result: SessionAttentionSignal = {
+    kind: 'turn-end',
+    since: 2,
+    unread: true,
+  };
+  const merged = mergeSessionAttentionSignals(readGate, result)!;
+  expect(merged.kind).toBe('roadmap-blocked');
+  expect(merged.unread).toBe(true);
+  expect(merged.records).toEqual([
+    { ...readGate, source: 'roadmap' },
+    { ...result, source: 'harness' },
+  ]);
+  expect(attentionReadLabel(merged)).toBe('Read request · unread result');
+  expect(mergeSessionAttentionSignals(merged, readGate, result)).toEqual(
+    merged
+  );
+});
+
+it('retains distinct request identities from one source', () => {
+  const first: SessionAttentionSignal = {
+    kind: 'blocked',
+    since: 1,
+    requestId: 'q1',
+    unread: false,
+  };
+  const second: SessionAttentionSignal = {
+    kind: 'blocked',
+    since: 2,
+    requestId: 'q2',
+    unread: true,
+  };
+  const merged = mergeSessionAttentionSignals(first, second)!;
+  expect(merged.records?.map(record => record.requestId)).toEqual(['q1', 'q2']);
+  expect(merged.unread).toBe(true);
 });

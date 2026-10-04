@@ -19,6 +19,8 @@ export interface SessionAttentionSignal {
   unread?: boolean;
   request?: 'blocking' | 'working' | 'unknown';
   requestId?: string;
+  /** Independent source facts; when present these own read metadata. */
+  records?: PtyAttentionRecord[];
 }
 
 /** Turn completion is a ready result, not an operator gate. Presence-only
@@ -39,16 +41,26 @@ export function attentionNeedsOperator(
 export function mergeSessionAttentionSignals(
   ...signals: Array<SessionAttentionSignal | null | undefined>
 ): SessionAttentionSignal | undefined {
-  const present = signals.filter(
-    (signal): signal is SessionAttentionSignal =>
-      signal !== null && signal !== undefined
-  );
-  if (present.length === 0) return undefined;
-  const operatorGates = present.filter(attentionNeedsOperator);
-  const candidates = operatorGates.length > 0 ? operatorGates : present;
-  return candidates.reduce((oldest, signal) =>
-    signal.since < oldest.since ? signal : oldest
-  );
+  const unique = new Map<string, PtyAttentionRecord>();
+  for (const signal of signals) {
+    if (!signal) continue;
+    const records = signal.records ?? [
+      {
+        ...signal,
+        kind: signal.kind ?? 'bell',
+        source:
+          signal.kind === 'roadmap-blocked'
+            ? ('roadmap' as const)
+            : ('harness' as const),
+      },
+    ];
+    for (const record of records) {
+      const key = attentionRecordKey(record);
+      const existing = unique.get(key);
+      if (!existing || record.since < existing.since) unique.set(key, record);
+    }
+  }
+  return projectSessionAttention([...unique.values()]) ?? undefined;
 }
 
 /**
@@ -307,12 +319,22 @@ export function attentionReadLabel(
   signal?: SessionAttentionSignal
 ): string | null {
   if (!signal) return null;
-  if (attentionNeedsOperator(signal)) {
-    return signal.unread === false
-      ? 'Read · still needs you'
-      : 'Unread request';
+  const records = signal.records ?? [signal];
+  const requests = records.filter(attentionNeedsOperator);
+  const results = records.filter(record => record.kind === 'turn-end');
+  const requestUnread = requests.some(record => record.unread !== false);
+  const resultUnread = results.some(record => record.unread !== false);
+  if (requests.length && results.length) {
+    return `${requestUnread ? 'Unread' : 'Read'} request · ${resultUnread ? 'unread' : 'read'} result`;
   }
-  return signal.unread === false ? 'Read result' : 'Unread result';
+  if (requests.length) {
+    return requestUnread ? 'Unread request' : 'Read · still needs you';
+  }
+  return results.length
+    ? resultUnread
+      ? 'Unread result'
+      : 'Read result'
+    : null;
 }
 
 function attentionPriority(signal: SessionAttentionSignal): number {
@@ -371,9 +393,20 @@ export function nextAttentionTarget(
     const signal = signals[id];
     // Reading changes no source identity. A fresh request on an already
     // visited Session is new work and may preempt the remaining pass.
-    return signal
-      ? `${signal.kind}:${signal.request ?? ''}:${signal.requestId ?? signal.since}`
-      : '';
+    if (!signal) return '';
+    const records = signal.records ?? [signal];
+    return JSON.stringify(
+      records
+        .map(record =>
+          JSON.stringify([
+            'source' in record ? record.source : 'harness',
+            record.kind,
+            record.request ?? '',
+            record.requestId ?? record.since,
+          ])
+        )
+        .sort()
+    );
   };
   const eligible = new Set(orderedTargets);
   const visited = new Map(
@@ -748,10 +781,17 @@ export function sessionGlyphCopy(
   }
   return SESSION_GLYPH_COPY[state];
 }
-import { sessionHasBackgroundWork } from '@exawatt/core';
+import {
+  attentionRecordKey,
+  projectSessionAttention,
+  sessionHasBackgroundWork,
+} from '@exawatt/core';
 import {
   deriveStatusLightState,
   statusLightWord,
   type StatusLightState,
 } from '@/components/status-light/protocol';
-import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
+import type {
+  PtyAttentionRecord,
+  SessionDelegation,
+} from '@exawatt/core/desktop-bridge';

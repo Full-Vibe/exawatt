@@ -97,6 +97,7 @@ import {
 } from './model';
 import { DemoSessionPane } from './demo-session-pane';
 import type { SessionModelChange } from '@exawatt/core/desktop-bridge';
+import { withAttentionRead } from '@exawatt/core';
 
 /** The Session a walk-up demo opens first: the hero transcript. */
 const DEFAULT_SESSION_ID = 'vg-home-onboard';
@@ -227,10 +228,10 @@ export function DemoWorkspaceClient() {
               .filter(([id]) => !pausedIds.has(id))
               .map(([id, signal]) => [
                 id,
-                {
-                  ...signal,
-                  unread: unreadOverrides[id] ?? id !== activeId,
-                },
+                withAttentionRead(
+                  { ...signal, kind: signal.kind ?? 'bell' },
+                  unreadOverrides[id] ?? id !== activeId
+                ),
               ])
           )
         )

@@ -640,7 +640,8 @@ describe('source-reported background work (BUG-145)', () => {
     h.hook({ hook_event_name: 'UserPromptSubmit' });
     h.stream(2000);
     h.manager.emit('data', SESSION, '\x07');
-    expect(h.attention.get(SESSION)?.kind).toBe('bell');
+    // Ambient terminal bytes cannot contradict authoritative active work.
+    expect(h.attention.get(SESSION)).toBeNull();
     h.hook({ hook_event_name: 'Stop', background_tasks: [monitor] });
     expect(h.delegation.getLive(SESSION)?.children).toEqual([]);
     expect(h.light()).toBe('active');
