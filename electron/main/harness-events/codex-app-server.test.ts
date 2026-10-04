@@ -574,6 +574,59 @@ describe('permanent verdicts about the installed app-server (BUG-146)', () => {
 });
 
 describe('Codex root history coverage', () => {
+  it('does not advance an older-page cursor when the following lifecycle read fails', async () => {
+    let badTurn = true;
+    const cursors: string[] = [];
+    const process = fakeAppServerAnswering((method, params) => {
+      if (method === 'initialize')
+        return { userAgent: 'exawatt-delegation/0.160.0 (fixture)' };
+      if (method === 'thread/turns/list')
+        return badTurn
+          ? { data: [{}] }
+          : {
+              data: [{ id: 'turn', status: 'interrupted', completedAt: null }],
+            };
+      if (method === 'thread/items/list') {
+        const cursor =
+          typeof params.cursor === 'string' ? params.cursor : 'latest';
+        cursors.push(cursor);
+        if (cursor === 'latest')
+          return {
+            data: [{ item: { id: 'newest', type: 'reasoning' } }],
+            nextCursor: 'older',
+          };
+        return {
+          data: [
+            {
+              item: {
+                id: 'question',
+                type: 'agentMessage',
+                delivery: 'async',
+                questions: [{ title: 'Choose' }],
+              },
+            },
+          ],
+          nextCursor: 'oldest',
+        };
+      }
+      return { data: [], nextCursor: null };
+    });
+    const client = new CodexAppServerClient(async () => process);
+    try {
+      await client.connect();
+      await expect(client.rootObservation(ROOT)).rejects.toThrow(
+        'invalid turn identity'
+      );
+      badTurn = false;
+      expect((await client.rootObservation(ROOT)).questions).toContain(
+        'question:0'
+      );
+      expect(cursors).toEqual(['latest', 'older', 'latest', 'older']);
+    } finally {
+      client.close();
+    }
+  });
+
   it('continues older pages across polls and catches a gap beyond the fresh page', async () => {
     let phase = 0;
     const itemReads: string[] = [];
@@ -669,6 +722,27 @@ describe('CodexDelegationObserver', () => {
     observer.observe(session());
     return { protocol, monitor, lifecycle, observer, observations };
   }
+
+  it('withdraws execution authority when the shared connection fails', async () => {
+    const h = harness();
+    Object.assign(h.protocol, {
+      rootObservation: async () => ({
+        turn: { id: 'turn', status: 'inProgress', completedAt: null },
+        questions: [],
+        answered: [],
+      }),
+    });
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')?.ownTurn).toBe('generating');
+    h.protocol.connect = async () => {
+      throw new Error('disconnected');
+    };
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')).toMatchObject({
+      ownTurn: 'unknown',
+      requestCoverage: 'unavailable',
+    });
+  });
 
   it('publishes newly discovered live children before a positive root completion', async () => {
     const h = harness();

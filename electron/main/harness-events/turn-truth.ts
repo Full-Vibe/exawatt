@@ -102,11 +102,6 @@ export function wireReportedTurnTruth({
     // and it arrives 6–7 s sooner. Turn-start also matters for the turn a
     // CHILD opens by returning its result: no keystroke precedes it, so
     // nothing else would reopen the turn.
-    if (
-      (event.kind === 'turn-start' || event.kind === 'turn-end') &&
-      !delegation.get(id)?.blockedOn
-    )
-      attention.noteHarnessUnblocked(id);
     if (event.kind === 'turn-start') attention.noteHarnessTurnStart(id);
     if (event.kind === 'turn-unknown')
       attention.noteHarnessTurnUnknown(id, event.preserveResult);
@@ -117,7 +112,10 @@ export function wireReportedTurnTruth({
     // staring at the byte stream can tell a pause from a gate.
     if (event.kind === 'blocked')
       attention.noteHarnessBlocked(id, event.request, event.requestId);
-    if (event.kind === 'unblocked')
+    if (
+      event.kind === 'unblocked' &&
+      (event.requestId || !delegation.get(id)?.blockedOn)
+    )
       attention.noteHarnessUnblocked(id, event.requestId);
     // The result of a DELEGATING Session arrives when its last child stops,
     // not when its own turn ended — that boundary was deliberately withheld

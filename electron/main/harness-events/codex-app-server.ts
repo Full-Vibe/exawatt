@@ -584,9 +584,12 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     if (!page || !Array.isArray(page.data))
       throw sessionDataError('root item page has no rows');
     const ids = page.data.map(row => object(object(row)?.item)?.id);
-    const scan = this.rootScans.get(threadId) ?? {
-      watermark: null,
-      pending: [],
+    // Stage the cursor transaction: a failed lifecycle read or parse must
+    // retry the same historical facts, never advance past undelivered rows.
+    const previous = this.rootScans.get(threadId);
+    const scan = {
+      watermark: previous?.watermark ?? null,
+      pending: previous?.pending.map(span => ({ ...span })) ?? [],
     };
     const cursor = typeof page.nextCursor === 'string' ? page.nextCursor : null;
     if (cursor && (!scan.watermark || !ids.includes(scan.watermark))) {
@@ -599,10 +602,6 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
       } else scan.pending.unshift({ cursor, stopAt: scan.watermark });
     }
     scan.watermark = typeof ids[0] === 'string' ? ids[0] : scan.watermark;
-    this.rootScans.set(threadId, scan);
-    // Defensive bound for a dropped root whose first read was in flight.
-    while (this.rootScans.size > 256)
-      this.rootScans.delete(this.rootScans.keys().next().value!);
     const rows = [...page.data];
     const pending = scan.pending[0];
     if (pending) {
@@ -641,7 +640,12 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
       sortDirection: 'desc',
       itemsView: 'summary',
     });
-    return parseCodexRootObservation(turns, items);
+    const observation = parseCodexRootObservation(turns, items);
+    this.rootScans.set(threadId, scan);
+    // Defensive bound for a dropped root whose first read was in flight.
+    while (this.rootScans.size > 256)
+      this.rootScans.delete(this.rootScans.keys().next().value!);
+    return observation;
   }
 
   async latestTurn(threadId: string): Promise<CodexTurnSummary | null> {
@@ -1134,8 +1138,10 @@ export class CodexDelegationObserver {
       } else {
         failed = true;
         for (const [sessionId, root] of roots) {
-          if (this.roots.get(sessionId) === root)
+          if (this.roots.get(sessionId) === root) {
             this.withdraw(sessionId, error, client.version);
+            if (client.rootObservation) this.withdrawRootTruth(sessionId);
+          }
         }
       }
     } finally {
@@ -1146,6 +1152,7 @@ export class CodexDelegationObserver {
         // none may keep a census painted from before the verdict.
         for (const sessionId of this.roots.keys()) {
           this.withdraw(sessionId, verdict, client.version);
+          if (client.rootObservation) this.withdrawRootTruth(sessionId);
         }
         failed = true;
       }
@@ -1398,6 +1405,11 @@ export class CodexDelegationObserver {
         .filter(child => child.completed)
         .map(child => child.id)
     );
+  }
+
+  private withdrawRootTruth(sessionId: string): void {
+    for (const event of this.rootTruth.get(sessionId)?.unavailable() ?? [])
+      this.sink?.report(sessionId, event);
   }
 
   private withdraw(

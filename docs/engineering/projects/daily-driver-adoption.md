@@ -7863,3 +7863,14 @@ revision so partial rediscovery after resume cannot alert an already-read
 request; replies resolve exact restored IDs even when the new process never
 observed their earlier question. Full floor and native gate evidence remain
 with the combined integration owner.
+
+Independent review hardened three failure boundaries before integration. The
+history watermark/cursor transaction commits only after the lifecycle read and
+normalization succeed, so a failed final read cannot skip an undelivered question
+page. Generic turn boundaries no longer clear restored asynchronous requests
+before their source ledger rehydrates; a reason-mismatched release cannot clear
+another gate. Shared connection failures and held protocol verdicts withdraw
+root execution authority as well as children, preventing stale reported working
+from later becoming inferred completion. Targeted regression tests cover each
+sequence; these are correctness repairs to the source boundary, not timeout
+adjustments.

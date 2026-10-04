@@ -53,6 +53,41 @@ function rig() {
 }
 
 describe('wireReportedTurnTruth', () => {
+  it('does not resolve or re-alert a restored working request on a new turn', () => {
+    const r = rig();
+    let alerts = 0;
+    r.attention.on('alert', () => alerts++);
+    r.attention.restore('S', {
+      kind: 'blocked',
+      since: 1,
+      unread: false,
+      request: 'working',
+      requestId: 'old:0',
+    });
+    r.delegation.report('S', { kind: 'turn-start' });
+    expect(r.attention.get('S')).toMatchObject({
+      requestId: 'old:0',
+      unread: false,
+    });
+    r.delegation.report('S', {
+      kind: 'blocked',
+      reason: 'question',
+      request: 'working',
+      requestId: 'old:0',
+    });
+    expect(alerts).toBe(0);
+    expect(r.attention.get('S')?.unread).toBe(false);
+  });
+
+  it('only a source release for the active gate may clear attention', () => {
+    const r = rig();
+    r.delegation.report('S', { kind: 'blocked', reason: 'question' });
+    r.delegation.report('S', { kind: 'unblocked', reason: 'permission' });
+    expect(r.attention.get('S')?.kind).toBe('blocked');
+    r.delegation.report('S', { kind: 'unblocked', reason: 'question' });
+    expect(r.attention.get('S')).toBeNull();
+  });
+
   it('keeps content-free evidence of a Stop and its remaining census', () => {
     const r = rig();
     r.delegation.report('S', { kind: 'turn-start' });
