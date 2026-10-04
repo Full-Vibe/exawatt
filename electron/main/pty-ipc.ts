@@ -559,7 +559,17 @@ export function registerPtyIPC(
       );
     },
     restart: async (id, choice) => {
-      const session = await ptySessions.changeModel(id, choice);
+      const current = ptySessions.list().find(session => session.id === id);
+      const session = await withInitialSessionAttention(
+        ptySessions,
+        attentionMonitor,
+        {
+          durableSessionId: current?.durableSessionId,
+          resumeSessionId: current?.harnessSessionId ?? undefined,
+          restoredAttention: attentionMonitor.get(id) ?? undefined,
+        },
+        () => ptySessions.changeModel(id, choice)
+      );
       attentionMonitor.noteEngaged(session.id);
       return session;
     },
