@@ -223,7 +223,17 @@ export function useWorkspaceHydration({
       }
       const seeds = seedSessionStores(
         live,
-        { summaries: restoredSummaries, goalVisuals: restoredGoalVisuals },
+        {
+          summaries: restoredSummaries,
+          goalVisuals: restoredGoalVisuals,
+          attention: persisted?.projects.flatMap(project =>
+            project.tabs.flatMap(tab =>
+              tab.kind === 'session' && tab.attention
+                ? [[tab.durableSessionId, tab.attention] as const]
+                : []
+            )
+          ),
+        },
         {
           attentionCleared: clearedBeforeSeed,
           quiet: quietBeforeSeed,
@@ -361,17 +371,28 @@ export function useWorkspaceHydration({
         return { ...prev, [id]: next };
       });
     });
-    const offAttention = api.onAttention?.(({ id, attention: att }) => {
-      if (att) clearedBeforeSeed.delete(id);
-      else clearedBeforeSeed.add(id);
-      setAttention(prev => {
-        if (att) return { ...prev, [id]: att };
-        if (!(id in prev)) return prev;
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    });
+    const offAttention = api.onAttention?.(
+      ({ id, durableSessionId, runtimeEnded, attention: att }) => {
+        // Process cleanup is not evidence that its outstanding work was resolved.
+        if (runtimeEnded && !att) return;
+        const key =
+          durableSessionId ??
+          stateRef.current.projects
+            .flatMap(project => project.tabs)
+            .filter(isSessionTab)
+            .find(tab => tab.sessionId === id)?.durableSessionId ??
+          id;
+        if (att) clearedBeforeSeed.delete(id);
+        else clearedBeforeSeed.add(id);
+        setAttention(prev => {
+          if (att) return { ...prev, [key]: att };
+          if (!(key in prev)) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+    );
     return () => {
       hydrationRequests.invalidate();
       offExit();

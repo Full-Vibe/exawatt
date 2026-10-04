@@ -17,6 +17,7 @@ import { isPtyHarness, type PtyHarness } from '@exawatt/core';
 import type {
   ClosedSessionEntry,
   PtySessionRecord,
+  PtyAttention,
 } from '@exawatt/core/desktop-bridge';
 
 /**
@@ -28,6 +29,8 @@ import type {
  * rather than these fields with empty values in them.
  */
 export interface SessionTab {
+  /** Eligible for explicit restart recovery; never proof of a live process. */
+  resumeAfterRestart?: boolean;
   launchModel?: string;
   launchEffort?: string;
   kind: 'session';
@@ -506,6 +509,7 @@ export function runtimeAdoptionPatch(
 ): Partial<SessionTab> {
   const exited = session.exited || observedExit !== undefined;
   return {
+    resumeAfterRestart: false,
     sessionId: exited ? null : session.id,
     harnessSessionId: session.harnessSessionId ?? tab.harnessSessionId,
     cwd: session.cwd,
@@ -542,4 +546,25 @@ export interface WorkspaceLayout {
  *  being able to write it. */
 export interface Latest<T> {
   readonly current: T;
+}
+
+/** Attention belongs to the durable Session, including while its process is paused. */
+export function attentionForSession(
+  tab: SessionTab,
+  attention: Readonly<Record<string, PtyAttention>>
+): PtyAttention | undefined {
+  return (
+    attention[tab.durableSessionId] ??
+    (tab.sessionId ? attention[tab.sessionId] : undefined)
+  );
+}
+
+/** Only the running set parked by restart joins the recovery action. */
+export function restartRecoveryTabs(
+  projects: readonly Project[]
+): SessionTab[] {
+  return projects
+    .flatMap(project => project.tabs)
+    .filter(isSessionTab)
+    .filter(tab => tab.resumeAfterRestart === true && tabCanResumeAsAgent(tab));
 }

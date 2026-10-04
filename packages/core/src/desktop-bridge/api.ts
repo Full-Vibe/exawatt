@@ -160,6 +160,7 @@ interface DesktopPtyApi {
   correctContext: BridgeInvoke<'pty:correct-context'>;
   /** Revalidates a persisted goal through main before hydration. */
   restoreContext: BridgeInvoke<'pty:restore-context'>;
+  restoreAttention: BridgeInvoke<'pty:restore-attention'>;
   /** Re-seeds a persisted visual reference into main, which resolves it to
    *  pixels from the content store. */
   restoreGoalVisual: BridgeInvoke<'pty:restore-goal-visual'>;

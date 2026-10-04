@@ -32,6 +32,7 @@ import type {
   SessionDelegation,
 } from '@exawatt/core/desktop-bridge';
 import {
+  attentionForSession,
   isRemoteAgentTab,
   isSessionTab,
   newTabId,
@@ -136,7 +137,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [goalVisuals, setGoalVisuals, goalVisualsRef] =
     useSessionScopedRecord<GoalVisual>(sessionScope);
   /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
-  const [attention, setAttention] =
+  const [attention, setAttention, attentionRef] =
     useSessionScopedRecord<PtyAttention>(sessionScope);
   /** sessions actively producing output right now, keyed by sessionId
    *  (D18: running vs waiting must read at a glance; main is truth) */
@@ -334,6 +335,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     pinnedTabId,
     summaries,
     goalVisuals,
+    attention,
+    attentionRef,
     ready,
     readyRef,
     stateRef,
@@ -384,9 +387,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     resumeTab,
     changeSessionModel,
     pauseProject,
+    resumePreviousRunning,
     resumeAll,
     resumeProject,
   } = useSessionRuntime({
+    attentionRef,
     stateRef,
     sizeRef,
     operations,
@@ -456,7 +461,42 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   // ---- attention focus contract (S1) ----
   const activeSessionId =
     activeTab && isSessionTab(activeTab) ? activeTab.sessionId : null;
-  useAttentionFocus({ activeSessionId, setReentryRecap, setAttention });
+  useAttentionFocus({
+    activeSessionId,
+    activeDurableSessionId:
+      activeTab && isSessionTab(activeTab) ? activeTab.durableSessionId : null,
+    setReentryRecap,
+    setAttention,
+  });
+
+  const markSessionUnread = useCallback(
+    (tab: SessionTab) => {
+      setAttention(previous => {
+        const current = attentionForSession(tab, previous);
+        return current
+          ? {
+              ...previous,
+              [tab.durableSessionId]: { ...current, unread: true },
+            }
+          : previous;
+      });
+      if (tab.sessionId) void window.electron?.pty.markUnread?.(tab.sessionId);
+    },
+    [setAttention]
+  );
+
+  // Compatibility projection for process-facing surfaces; persistence has one
+  // durable owner, and aliases are derived rather than separately mutated.
+  const projectedAttention = useMemo(() => {
+    const projected = { ...attention };
+    for (const tab of projects
+      .flatMap(project => project.tabs)
+      .filter(isSessionTab)) {
+      const value = attentionForSession(tab, attention);
+      if (tab.sessionId && value) projected[tab.sessionId] = value;
+    }
+    return projected;
+  }, [attention, projects]);
 
   return {
     projects,
@@ -466,7 +506,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     lastUsedDir,
     summaries,
     goalVisuals,
-    attention,
+    attention: projectedAttention,
+    markSessionUnread,
     activity,
     delegation,
     engaged,
@@ -498,6 +539,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     changeSessionModel,
     resumeProject,
     pauseProject,
+    resumePreviousRunning,
     resumeAll,
     selectProject,
     selectTab,

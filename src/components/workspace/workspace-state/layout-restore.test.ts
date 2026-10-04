@@ -402,3 +402,46 @@ describe('persisted goals', () => {
     expect(fallback.dataUrl).toBeNull();
   });
 });
+
+it('keeps retained attention while paused but lets fresh live absence resolve it', () => {
+  const retained = {
+    kind: 'blocked' as const,
+    since: 1,
+    unread: false,
+    request: 'blocking' as const,
+  };
+  const restored = {
+    summaries: [],
+    goalVisuals: [],
+    attention: [['durable-a', retained] as const],
+  };
+  const races = {
+    attentionCleared: new Set<string>(),
+    quiet: new Set<string>(),
+    settled: new Set<string>(),
+  };
+  expect(seedSessionStores([], restored, races).attention).toEqual({
+    'durable-a': retained,
+  });
+  expect(
+    seedSessionStores(
+      [
+        ptySessionInfo({
+          durableSessionId: 'durable-a',
+          exited: true,
+          attention: null,
+        }),
+      ],
+      restored,
+      races
+    ).attention
+  ).toEqual({ 'durable-a': retained });
+  expect(
+    seedSessionStores(
+      [ptySessionInfo({ durableSessionId: 'durable-a', attention: null })],
+      restored,
+      races
+    ).attention
+  ).toEqual({});
+  expect(seedSessionStores([], restored, races).activity).toEqual({});
+});

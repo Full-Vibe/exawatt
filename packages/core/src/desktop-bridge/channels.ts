@@ -152,7 +152,10 @@ interface RequestTable {
 
   'app:command-engine': Call<[], CommandEnginePhase>;
   'app:device-power': Call<[], DevicePowerStatus>;
-  'settings:set-keep-awake': Call<[policy: DeviceKeepAwakePolicy], ExawattSettings>;
+  'settings:set-keep-awake': Call<
+    [policy: DeviceKeepAwakePolicy],
+    ExawattSettings
+  >;
   'app:host-power': Call<[], HostPowerSnapshot>;
   'app:get-build-info': Call<[], ExawattBuildInfo>;
   /** `signedIn` is renderer-supplied because the session lives there. */
@@ -291,6 +294,10 @@ interface RequestTable {
   'pty:correct-context': Call<
     [durableSessionId: string, label: string],
     string | null
+  >;
+  'pty:restore-attention': Call<
+    [id: string, attention: PtyAttention],
+    PtyAttention | null
   >;
   'pty:restore-context': Call<
     [durableSessionId: string, subtitle: string],

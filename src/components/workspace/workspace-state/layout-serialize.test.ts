@@ -10,6 +10,7 @@ import {
 } from './layout-serialize';
 import { parsePersisted, type PersistedSessionTab } from './persisted-layout';
 import { restoreLayout } from './layout-restore';
+import { restartRecoveryTabs } from './workspace-model';
 import type {
   Project,
   RemoteAgentTab,
@@ -289,5 +290,111 @@ describe('withLiveHarnessIdentities', () => {
     expect(tabs[0].harnessSessionId).toBe('learned');
     expect(tabs[1].harnessSessionId).toBe('conversation-known');
     expect(next.projects[0].tabs[2]).toEqual(coworker);
+  });
+});
+
+describe('restart recovery contract', () => {
+  it('retains read requests, purpose and position, and admits only the running set', () => {
+    const running = tab('running', { initialTask: 'Make updates safe' });
+    const paused = tab('paused', {
+      sessionId: null,
+      lifecycle: 'stopped-clean',
+      resumeState: 'ended-resumable',
+    });
+    const shell = tab('shell', { harness: 'shell' });
+    const original = workspace([paused, running, shell], {
+      pinnedTabId: paused.id,
+    });
+    original.projects[0].activeTabId = running.id;
+    const attention = {
+      kind: 'blocked' as const,
+      since: 42,
+      unread: false,
+      request: 'blocking' as const,
+      requestId: 'permission-7',
+    };
+    const save = serializeLayout(
+      original,
+      context({
+        cleanShutdown: true,
+        shutdownTargets: shutdownTargets(original.projects),
+        attention: { [running.durableSessionId]: attention },
+        summaries: {
+          [running.durableSessionId]:
+            'Install safely without losing your place',
+        },
+      })
+    );
+    const normalized = parsePersisted(save)!;
+    const restored = restoreLayout(normalized, [], {
+      observedIdentities: new Map(),
+      previousRunInterrupted: false,
+    }).restored!;
+    expect(restored.projects[0].tabs.map(item => item.id)).toEqual(
+      original.projects[0].tabs.map(item => item.id)
+    );
+    expect(restored.projects[0].activeTabId).toBe(running.id);
+    expect(restored.pinnedTabId).toBe(paused.id);
+    expect(
+      restored.projects[0].tabs.every(
+        item => item.kind === 'session' && item.sessionId === null
+      )
+    ).toBe(true);
+    expect(
+      restartRecoveryTabs(restored.projects).map(item => item.durableSessionId)
+    ).toEqual([running.durableSessionId]);
+    const savedRunning = sessionTabs(normalized.projects[0].tabs).find(
+      item => item.id === running.id
+    )!;
+    expect(savedRunning.attention).toEqual(attention);
+    expect(savedRunning.initialTask).toBe(running.initialTask);
+    expect(savedRunning.contextSummary).toBe(
+      'Install safely without losing your place'
+    );
+    // Dismissing the recovery notice or quitting again must not erase eligibility.
+    const second = serializeLayout(
+      restored,
+      context({ attention: { [running.durableSessionId]: attention } })
+    );
+    expect(
+      restartRecoveryTabs(
+        restoreLayout(second, [], {
+          observedIdentities: new Map(),
+          previousRunInterrupted: false,
+        }).restored!.projects
+      ).map(item => item.id)
+    ).toEqual([running.id]);
+  });
+
+  it('does not guess eligibility for legacy clean-paused Sessions', () => {
+    const saved = serializeLayout(
+      workspace([
+        tab('legacy', {
+          lifecycle: 'stopped-clean',
+          sessionId: null,
+          resumeState: 'ended-resumable',
+        }),
+      ]),
+      context()
+    );
+    delete sessionTabs(saved.projects[0].tabs)[0].resumeAfterRestart;
+    const restored = restoreLayout(parsePersisted(saved), [], {
+      observedIdentities: new Map(),
+      previousRunInterrupted: false,
+    }).restored!;
+    expect(restartRecoveryTabs(restored.projects)).toEqual([]);
+  });
+
+  it('recovers interrupted running Sessions without restoring running proof', () => {
+    const saved = serializeLayout(workspace([tab('crashed')]), context());
+    const restored = restoreLayout(saved, [], {
+      observedIdentities: new Map(),
+      previousRunInterrupted: true,
+    }).restored!;
+    expect(restartRecoveryTabs(restored.projects)).toHaveLength(1);
+    expect(restored.projects[0].tabs[0]).toMatchObject({
+      lifecycle: 'interrupted',
+      sessionId: null,
+    });
   });
 });

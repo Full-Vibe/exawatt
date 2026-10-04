@@ -16,3 +16,5 @@ export type * from './connected-sources';
 export type * from './pty';
 export type * from './roadmap';
 export type * from './settings';
+
+export { readPtyAttention } from './attention';

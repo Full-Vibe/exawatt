@@ -6,8 +6,9 @@
  * (the stored JSON, the configured sources) is passed in.
  */
 import { HARNESS_META, isDefaultHarnessTitle } from '../harnesses';
+import { readPtyAttention } from '@exawatt/core/desktop-bridge';
 import type { PtyHarness } from '@exawatt/core';
-import type { GoalVisualRef } from '@exawatt/core/desktop-bridge';
+import type { GoalVisualRef, PtyAttention } from '@exawatt/core/desktop-bridge';
 import {
   isLegacyCatalogTitleLeak,
   type SessionLifecycle,
@@ -45,6 +46,8 @@ export interface PersistedV6 {
     tabs: Array<{
       id: string;
       durableSessionId: string;
+      attention?: PtyAttention;
+      resumeAfterRestart?: boolean;
       harness: PtyHarness;
       title: string;
       titleKind: TabTitleKind;
@@ -332,7 +335,9 @@ export function parsePersisted(raw: unknown): PersistedV7 | null {
                   : isDefaultHarnessTitle(session.harness, session.title)
                     ? 'default'
                     : 'operator',
+              attention: readPtyAttention(session.attention) ?? undefined,
               lifecycle,
+              resumeAfterRestart: session.resumeAfterRestart === true,
               exitCode: session.exitCode ?? null,
               exitSignal: persistedExitSignal(session.exitSignal),
             },

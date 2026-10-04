@@ -72,6 +72,7 @@ import {
 } from './use-workspace-state';
 import { SessionRestorePanel } from './session-restore-panel';
 import { RemoteAgentPane, useRemoteCoworkers } from './remote-agent';
+import { restartRecoveryTabs } from './workspace-state/workspace-model';
 import { ResumeRecoveryBar } from './resume-recovery-bar';
 import { PausedAgentRecord } from './paused-agent-record';
 import {
@@ -410,6 +411,7 @@ export function WorkspaceClient() {
     pauseProject,
     resumeProject,
     resumeAll,
+    resumePreviousRunning,
     selectProject,
     selectTab,
     cycleTab,
@@ -1993,6 +1995,8 @@ export function WorkspaceClient() {
         {stoppedAgentCount > 0 && !resumeNoticeDismissed && (
           <ResumeRecoveryBar
             readyAgents={readyAgents}
+            previouslyRunningCount={restartRecoveryTabs(projects).length}
+            onResumePreviouslyRunning={resumePreviousRunning}
             reconnectableAgentCount={reconnectableAgentCount}
             activeProjectName={activeProject?.name ?? null}
             activeProjectReadyCount={activeProjectReadyCount}

@@ -17,6 +17,7 @@ import {
 } from 'react';
 import type {
   PtySessionRecord,
+  PtyAttention,
   SessionModelChange,
 } from '@exawatt/core/desktop-bridge';
 import { HARNESS_META } from '../harnesses';
@@ -27,6 +28,8 @@ import {
 } from '../agent-sources';
 import {
   REVIVE_FAILED,
+  attentionForSession,
+  restartRecoveryTabs,
   isSessionTab,
   resumableAgentTabsInProject,
   runtimeAdoptionPatch,
@@ -45,6 +48,7 @@ export function useSessionRuntime({
   sizeRef,
   operations,
   summariesRef,
+  attentionRef,
   updateTab,
   setError,
 }: {
@@ -52,6 +56,7 @@ export function useSessionRuntime({
   sizeRef: Latest<(() => { cols: number; rows: number } | null) | undefined>;
   operations: SessionOperations;
   summariesRef: Latest<Record<string, string>>;
+  attentionRef: Latest<Record<string, PtyAttention>>;
   updateTab: (tabId: string, patch: Partial<SessionTab>) => void;
   setError: Dispatch<SetStateAction<string | null>>;
 }) {
@@ -158,6 +163,13 @@ export function useSessionRuntime({
           ...(sizeRef.current?.() ?? {}),
         });
         if (!result.ok) throw new Error(result.error);
+        const retainedAttention = attentionForSession(
+          tab,
+          attentionRef.current
+        );
+        if (retainedAttention && api.restoreAttention) {
+          await api.restoreAttention(result.session.id, retainedAttention);
+        }
         const adopted = await adoptSessionRuntime(
           { ...tab, harnessSessionId: exactId ?? null },
           result.session
@@ -180,6 +192,7 @@ export function useSessionRuntime({
     },
     [
       adoptSessionRuntime,
+      attentionRef,
       operations,
       setError,
       sizeRef,
@@ -238,12 +251,25 @@ export function useSessionRuntime({
           sessionIds,
           confirmedSessionIds !== undefined
         );
+        if (result.kind === 'completed') {
+          for (const paused of result.results) {
+            if (
+              paused.status === 'paused' ||
+              paused.status === 'already-paused'
+            ) {
+              const tab = targets.find(
+                item => item.durableSessionId === paused.durableSessionId
+              );
+              if (tab) updateTab(tab.id, { resumeAfterRestart: false });
+            }
+          }
+        }
         return { ...result, sessionIds };
       } finally {
         targets.forEach(tab => operations.end(tab.id, tab.durableSessionId));
       }
     },
-    [operations, stateRef]
+    [operations, stateRef, updateTab]
   );
 
   const resumeTabs = useCallback(
@@ -286,7 +312,12 @@ export function useSessionRuntime({
     [resumeTabs, stateRef]
   );
 
+  const resumePreviousRunning = useCallback(() => {
+    void resumeTabs(restartRecoveryTabs(stateRef.current.projects));
+  }, [resumeTabs, stateRef]);
+
   return {
+    resumePreviousRunning,
     resumeBatchProgress,
     resumeTab,
     changeSessionModel,

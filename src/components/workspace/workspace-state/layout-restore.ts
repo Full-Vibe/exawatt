@@ -162,6 +162,7 @@ export function seedSessionStores(
   restored: {
     summaries: ReadonlyArray<readonly [string, string | null]>;
     goalVisuals: ReadonlyArray<readonly [string, GoalVisual | null]>;
+    attention?: ReadonlyArray<readonly [string, PtyAttention]>;
   },
   races: SeedRaces
 ): SessionStoreSeeds {
@@ -179,12 +180,17 @@ export function seedSessionStores(
   for (const [durableSessionId, visual] of restored.goalVisuals) {
     if (visual) seeds.goalVisuals[durableSessionId] = visual;
   }
+  for (const [durableSessionId, attention] of restored.attention ?? []) {
+    seeds.attention[durableSessionId] = attention;
+  }
   for (const s of live) {
+    // A current main snapshot, including explicit absence, outranks disk.
+    if (!s.exited) delete seeds.attention[s.durableSessionId];
     if (s.contextSummary)
       seeds.summaries[s.durableSessionId] = s.contextSummary;
     if (s.goalVisual) seeds.goalVisuals[s.durableSessionId] = s.goalVisual;
     if (s.attention && !races.attentionCleared.has(s.id)) {
-      seeds.attention[s.id] = s.attention;
+      seeds.attention[s.durableSessionId] = s.attention;
     }
     if (s.working && !races.quiet.has(s.id)) {
       seeds.activity[s.id] = true;
@@ -358,6 +364,7 @@ export function restoreLayout(
             s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,
           resumeState: 'live' as const,
           lifecycle: 'running' as const,
+          resumeAfterRestart: false,
           exitCode: s.exited ? (s.exitCode ?? 0) : null,
           exitSignal: null,
         };
@@ -391,6 +398,10 @@ export function restoreLayout(
         initialTask,
         harnessSessionId: observedIdentity ?? t.harnessSessionId,
         sessionId: null,
+        resumeAfterRestart:
+          t.resumeAfterRestart === true ||
+          t.lifecycle === 'running' ||
+          t.lifecycle === 'resuming',
         exitCode: t.exitCode,
         lifecycle:
           previousRunInterrupted &&

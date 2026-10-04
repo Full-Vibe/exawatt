@@ -8,10 +8,12 @@
 import { tabIsPinnable } from '../split-layout';
 import type {
   GoalVisual,
+  PtyAttention,
   GoalVisualRef,
   PtySessionRecord,
 } from '@exawatt/core/desktop-bridge';
 import {
+  attentionForSession,
   isRemoteAgentTab,
   isSessionTab,
   tabIsLive,
@@ -38,6 +40,8 @@ export function persistedGoalVisual(
 }
 
 export interface SerializeContext {
+  /** Operator read/request state, keyed by durable Session identity. */
+  attention?: Readonly<Record<string, PtyAttention>>;
   /** the recency record this save writes (already merged with open Projects) */
   recentProjects: RecentProject[];
   /** goal subtitles keyed by durable Session (D21) */
@@ -75,6 +79,7 @@ export function serializeLayout(
     pinnedTabId: pin,
   }: WorkspaceLayout,
   {
+    attention = {},
     recentProjects: recents,
     summaries,
     goalVisuals,
@@ -130,6 +135,12 @@ export function serializeLayout(
             kind: 'session' as const,
             id: tab.id,
             durableSessionId: tab.durableSessionId,
+            attention: attentionForSession(tab, attention),
+            resumeAfterRestart:
+              parked.has(tab.durableSessionId) ||
+              tabIsLive(tab) ||
+              tab.lifecycle === 'resuming' ||
+              tab.resumeAfterRestart === true,
             harness: tab.harness,
             title: tab.title,
             titleKind: tab.titleKind,

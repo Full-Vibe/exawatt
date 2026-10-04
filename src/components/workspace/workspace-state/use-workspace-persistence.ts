@@ -13,7 +13,7 @@
  * re-deriving it from scrollback.
  */
 import { useCallback, useEffect } from 'react';
-import type { GoalVisual } from '@exawatt/core/desktop-bridge';
+import type { GoalVisual, PtyAttention } from '@exawatt/core/desktop-bridge';
 import type { Latest, Project, WorkspaceLayout } from './workspace-model';
 import type { PersistedV7 } from './persisted-layout';
 import {
@@ -30,6 +30,8 @@ export function useWorkspacePersistence({
   pinnedTabId,
   summaries,
   goalVisuals,
+  attention,
+  attentionRef,
   ready,
   readyRef,
   stateRef,
@@ -45,6 +47,8 @@ export function useWorkspacePersistence({
   pinnedTabId: string | null;
   summaries: Record<string, string>;
   goalVisuals: Record<string, GoalVisual>;
+  attention: Record<string, PtyAttention>;
+  attentionRef: Latest<Record<string, PtyAttention>>;
   /** no write of any kind before hydration lands (a failed load is not an
    *  empty workspace) */
   ready: boolean;
@@ -62,6 +66,7 @@ export function useWorkspacePersistence({
     (cleanShutdown = false): PersistedV7 => {
       const layout = stateRef.current;
       return serializeLayout(layout, {
+        attention: attentionRef.current,
         recentProjects: recents.mergeOpen(layout.projects, Date.now()),
         summaries: summariesRef.current,
         goalVisuals: goalVisualsRef.current,
@@ -69,7 +74,14 @@ export function useWorkspacePersistence({
         shutdownTargets: shutdownTargetsRef.current,
       });
     },
-    [goalVisualsRef, recents, shutdownTargetsRef, stateRef, summariesRef]
+    [
+      attentionRef,
+      goalVisualsRef,
+      recents,
+      shutdownTargetsRef,
+      stateRef,
+      summariesRef,
+    ]
   );
 
   // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
@@ -92,6 +104,7 @@ export function useWorkspacePersistence({
     pinnedTabId,
     summaries,
     goalVisuals,
+    attention,
     ready,
     serializeWorkspace,
   ]);

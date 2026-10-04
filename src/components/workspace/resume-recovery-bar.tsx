@@ -54,6 +54,8 @@ function ChordHint({ shortcutId }: { shortcutId: string }) {
 export interface ResumeRecoveryBarProps {
   /** Every Agent a resume scope would start, counted by the lifecycle owner. */
   readyAgents: ResumableAgents;
+  previouslyRunningCount?: number;
+  onResumePreviouslyRunning?: () => void;
   reconnectableAgentCount: number;
   activeProjectName: string | null;
   activeProjectReadyCount: number;
@@ -74,6 +76,8 @@ export interface ResumeRecoveryBarProps {
  */
 export function ResumeRecoveryBar({
   readyAgents,
+  previouslyRunningCount = 0,
+  onResumePreviouslyRunning,
   reconnectableAgentCount,
   activeProjectName,
   activeProjectReadyCount,
@@ -84,6 +88,8 @@ export function ResumeRecoveryBar({
   onResumeAll,
   onDismiss,
 }: ResumeRecoveryBarProps) {
+  const recoveringPrevious =
+    previouslyRunningCount > 0 && !!onResumePreviouslyRunning;
   const disabled = progress !== null;
   const readyAgentCount = readyAgents.count;
   const stoppedAgentCount = readyAgentCount + reconnectableAgentCount;
@@ -99,6 +105,12 @@ export function ResumeRecoveryBar({
   let status: string;
   if (progress) {
     status = resumingAgentsCopy(progress.completed, progress.total);
+  } else if (recoveringPrevious) {
+    status = `${agentsNoun(previouslyRunningCount)} paused after restart`;
+    const otherPaused = readyAgentCount - previouslyRunningCount;
+    if (otherPaused > 0) status += ` · ${otherPaused} previously paused`;
+    if (reconnectableAgentCount > 0)
+      status += ` · ${reconnectAgentsCopy(reconnectableAgentCount)}`;
   } else if (readyAgentCount > 0) {
     status = resumableAgentsCopy(readyAgents);
     if (projectIsUsefulScope && readyAgentCount > activeProjectReadyCount) {
@@ -126,7 +138,24 @@ export function ResumeRecoveryBar({
         {status}
       </span>
 
-      {readyAgentCount > 0 &&
+      {recoveringPrevious && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={onResumePreviouslyRunning}
+          title="Resume the exact conversations that were running before restart. Previously paused Agents stay paused."
+          className="h-7 shrink-0 font-mono"
+        >
+          <PlayIcon className="h-3.5 w-3.5" />
+          {progress
+            ? 'Resuming…'
+            : `Resume previously running (${previouslyRunningCount})`}
+        </Button>
+      )}
+      {!recoveringPrevious &&
+        readyAgentCount > 0 &&
         (projectIsUsefulScope ? (
           <div className="flex shrink-0">
             <Button

@@ -208,3 +208,28 @@ Exit criteria:
 Project doc:
 
 - `docs/engineering/projects/deterministic-session-rehydration.md`
+
+
+### 2026-10-04 — Restart continuity execution (BUG-260; in progress)
+
+**Restart preserves operator context without restarting work.** Implementation is
+isolated in `agent/polish-restart`; attention ownership is coordinated with
+`agent/polish-attention`. The accepted policy is pause first, retain purpose,
+layout order/selection and durable read/request state, then offer one explicit
+exact-conversation action for the previously running set. Previously paused
+Sessions are excluded. Working indicators require current process/source truth.
+
+Diagnosis: workspace v7 retained purpose, identity, order and selection, but its
+serializer had no attention input. Attention was keyed only by ephemeral PTY ID,
+and clean shutdown erased which Sessions it had stopped. The implementation
+moves attention ownership to durable Session identity, derives process aliases
+for existing live consumers, preserves a restart eligibility bit independently
+of lifecycle, and silently restores retained attention on exact resume only
+when fresh source evidence has not superseded it. No new automatic execution.
+
+Remaining before integration: merge the attention owner's read/request contract
+and silent monitor restore; verify migration, repeated restart, mixed paused/live
+recovery and source-race cases; review the recovery action in the existing HUD
+workbench before any material new presentation; run the relevant Electron gates.
+BUG-209 is independently assigned to `agent/polish-unknown-harness`; unknown
+ledger rows remain visible and cannot be consumed or resumed as another harness.
