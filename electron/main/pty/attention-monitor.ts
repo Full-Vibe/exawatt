@@ -148,6 +148,12 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   private manager: PtySessionManager | null = null;
   private attention = new Map<string, PtyAttentionRecord[]>();
   private sourceObserved = new Set<string>();
+  /** Exit retires observation, not the Session's unresolved work. An empty
+   * record list is an authoritative resolved checkpoint, not missing data. */
+  private retainedAttention = new Map<
+    string,
+    { durableSessionId: string; records: PtyAttentionRecord[] }
+  >();
   private lastDataAt = new Map<string, number>();
   private lastResizeAt = new Map<string, number>();
   private burstBytes = new Map<string, number>();
@@ -216,7 +222,24 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   attach(manager: PtySessionManager): void {
     this.manager = manager;
     manager.on('data', (id: string, data: string) => this.onData(id, data));
-    manager.on('exit', (id: string) => this.drop(id));
+    manager.on(
+      'exit',
+      (id: string, _code: number, durableSessionId?: string) => {
+        this.retainedAttention.set(id, {
+          durableSessionId: durableSessionId ?? id,
+          records: (this.attention.get(id) ?? []).map(record => ({
+            ...record,
+          })),
+        });
+        this.drop(id);
+      }
+    );
+    manager.on('session-forgotten', (durableSessionId: string) => {
+      for (const [id, snapshot] of this.retainedAttention) {
+        if (snapshot.durableSessionId === durableSessionId)
+          this.retainedAttention.delete(id);
+      }
+    });
   }
 
   start(): void {
@@ -233,6 +256,20 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
 
   get(id: string): PtyAttention | null {
     return projectSessionAttention(this.attention.get(id) ?? []);
+  }
+
+  /** Source-owned list truth survives process retirement. Never consult a
+   * possibly older renderer checkpoint while the runtime owner still exists. */
+  getForSession(id: string): PtyAttention | null {
+    return projectSessionAttention(
+      this.retainedAttention.get(id)?.records ?? this.attention.get(id) ?? []
+    );
+  }
+
+  private storeRecords(id: string, records: PtyAttentionRecord[]): void {
+    const retained = this.retainedAttention.get(id);
+    if (retained) retained.records = records;
+    else this.attention.set(id, records);
   }
 
   count(): number {
@@ -292,23 +329,24 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
 
   /** Inspection and operator intent never raise a second source alert. */
   markUnread(id: string): void {
-    const snapshot = markAttentionUnread(this.get(id), this.now());
-    this.attention.set(id, attentionRecords(snapshot));
+    const snapshot = markAttentionUnread(this.getForSession(id), this.now());
+    this.storeRecords(id, attentionRecords(snapshot));
     this.emit('attention', id, snapshot);
   }
 
   private setUnread(id: string, unread: boolean): void {
-    const records = this.attention.get(id);
+    const records =
+      this.retainedAttention.get(id)?.records ?? this.attention.get(id);
     if (
       !records ||
       records.every(record => (record.unread !== false) === unread)
     )
       return;
-    this.attention.set(
+    this.storeRecords(
       id,
       records.map(record => ({ ...record, unread }))
     );
-    this.emit('attention', id, this.get(id));
+    this.emit('attention', id, this.getForSession(id));
   }
 
   /** is this session actively producing output right now? */
@@ -772,6 +810,9 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       // revived/new tabs printing their banner then waiting is not news
       if (now - s.startedAt < this.opts.spawnGraceMs) continue;
       this.raise(s.id, 'turn-end');
+    }
+    for (const id of this.retainedAttention.keys()) {
+      if (!live.has(id)) this.retainedAttention.delete(id);
     }
     // sessions killed without an exit event (tab closed) leave no residue
     for (const id of Array.from(this.lastDataAt.keys())) {

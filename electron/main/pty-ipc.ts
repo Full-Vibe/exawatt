@@ -728,7 +728,7 @@ export function registerPtyIPC(
     ...record,
     contextSummary: contextSummarizer.getSummary(record.durableSessionId),
     goalVisual: contextSummarizer.getGoalVisual(record.durableSessionId),
-    attention: attentionMonitor.get(record.id),
+    attention: attentionMonitor.getForSession(record.id),
     engaged: attentionMonitor.isEngaged(record.id),
     working: attentionMonitor.isWorking(record.id),
     // Ride-along so a reload or late attach sees live children immediately

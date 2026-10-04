@@ -551,6 +551,47 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')?.since).toBe(first);
   });
 
+  it('retains exact source facts on exit but never resurrects resolved requests from disk', () => {
+    add('pending');
+    add('resolved');
+    monitor.noteHarnessBlocked('pending', 'working', 'pending-question');
+    monitor.noteHarnessBlocked('resolved', 'blocking', 'old-question');
+    monitor.noteHarnessUnblocked('resolved');
+    manager.emit('exit', 'pending', 0, 'durable-pending');
+    manager.emit('exit', 'resolved', 0, 'durable-resolved');
+    expect(monitor.getForSession('pending')).toMatchObject({
+      kind: 'blocked',
+      requestId: 'pending-question',
+      unread: true,
+    });
+    expect(monitor.getForSession('resolved')).toBeNull();
+    expect(monitor.get('pending')).toBeNull();
+    expect(monitor.count()).toBe(0);
+    const alerts: unknown[] = [];
+    monitor.on('alert', (...args) => alerts.push(args));
+    monitor.setWindowFocused(true);
+    monitor.setFocus('pending');
+    expect(monitor.getForSession('pending')?.unread).toBe(false);
+    monitor.markUnread('pending');
+    expect(monitor.getForSession('pending')).toMatchObject({
+      kind: 'blocked',
+      requestId: 'pending-question',
+      unread: true,
+    });
+    monitor.markUnread('resolved');
+    expect(monitor.getForSession('resolved')).toMatchObject({
+      kind: 'reminder',
+      unread: true,
+    });
+    expect(monitor.count()).toBe(0);
+    expect(alerts).toEqual([]);
+    manager.emit('session-forgotten', 'durable-pending');
+    expect(monitor.getForSession('pending')).toBeNull();
+    manager.sessions = [];
+    monitor.sweepNow();
+    expect(monitor.getForSession('resolved')).toBeNull();
+  });
+
   it('clears on session exit', () => {
     add('a');
     data('a', `ding${BELL}`);
