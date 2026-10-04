@@ -42,6 +42,7 @@ import {
   type SpatialBoardTarget,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
+import { useFleetAttention } from './use-fleet-attention';
 import { SpatialSelectionPanel } from './spatial-selection-panel';
 import { useMinuteClock } from './use-minute-clock';
 import {
@@ -483,6 +484,12 @@ export function SpatialFleetClient() {
     },
     [ascend, clearMultiSelect, fieldZones, multiSelection.size, navigate]
   );
+
+  useFleetAttention({
+    agents: filteredState.agents,
+    selectedAgentId,
+    onSelectAgent: handleSelectAgent,
+  });
 
   const moveAgentSelection = useCallback(
     (agentId: string) => {

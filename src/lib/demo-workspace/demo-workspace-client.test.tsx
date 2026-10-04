@@ -7,6 +7,7 @@ import {
 } from '@/components/workspace/session-jump';
 import { getWorkspaceCommandAvailability } from '@/components/workspace/workspace-command-availability';
 import { demoShellAgents, demoShellProjects } from './model';
+import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { DemoWorkspaceClient } from './demo-workspace-client';
 
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -29,7 +30,9 @@ afterEach(() => {
 function view() {
   return render(
     <TooltipProvider>
-      <DemoWorkspaceClient />
+      <FleetProvider>
+        <DemoWorkspaceClient />
+      </FleetProvider>
     </TooltipProvider>
   );
 }

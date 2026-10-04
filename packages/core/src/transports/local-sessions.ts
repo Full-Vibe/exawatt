@@ -35,7 +35,8 @@ import type {
 import { INITIAL_AGENT_METRICS } from '../types/index';
 import type { FleetManager } from '../state/fleet-manager';
 
-export type LocalSessionAttention = import('../session-attention').SessionAttentionSignal;
+export type LocalSessionAttention =
+  import('../session-attention').SessionAttentionSignal;
 
 export interface LocalSessionSnapshot {
   id: string;
@@ -210,6 +211,7 @@ export function sessionToAgent(
     },
     lastActivityAt,
     blockerInfo: sessionBlocker(session),
+    attention: session.attention ?? null,
     // Present only while children are live: presence IS the signal, so an
     // unreporting source and an empty team read identically as absent. Turn
     // truth is consumed above to keep Fleet and terminal tabs in lockstep,
@@ -341,7 +343,7 @@ export class LocalSessionsTransport {
           `${child.id}\u001f${child.agentType ?? ''}\u001f${child.description ?? ''}`
       )
       .join('\u001e');
-    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${session.attention?.kind ?? ''}:${session.attention?.since ?? ''}:${delegationKey}`;
+    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${JSON.stringify(agent.attention)}:${delegationKey}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

@@ -17,6 +17,7 @@ import {
   INITIAL_AGENT_METRICS,
   LocalSessionsTransport,
   type ExawattAgent,
+  type SessionAttentionCommands,
   type AgentActivity,
   type FleetState,
   type FleetMetrics,
@@ -43,6 +44,7 @@ import type { RemoteAgentView } from '@exawatt/core/desktop-bridge';
 
 interface FleetContextValue {
   manager: FleetManager;
+  attentionCommands: SessionAttentionCommands | null;
   /** the honest Demo Workspace source is driving the fleet (ENG-027 W2) —
    *  either the Demo tenant, or the web's default demo posture */
   isDemo: boolean;
@@ -136,6 +138,10 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const [isDemo, setIsDemo] = useState(false);
   const [isLocal, setIsLocal] = useState(false);
   const [projects, setProjects] = useState<ProjectCatalogEntry[]>([]);
+  const [attentionOwner, setAttentionOwner] = useState<{
+    manager: FleetManager;
+    commands: SessionAttentionCommands;
+  } | null>(null);
   const demoTransportRef = useRef<DemoWorkspaceTransport | null>(null);
   const localTransportRef = useRef<LocalSessionsTransport | null>(null);
 
@@ -160,6 +166,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     let mounted = true;
     let offWorkspaceChanged: (() => void) | undefined;
     let offDelegation: (() => void) | undefined;
+    let offAttention: (() => void) | undefined;
     let offLiveBurn: (() => void) | undefined;
 
     function startDemoWorkspace() {
@@ -178,6 +185,17 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       demoTransportRef.current = demoTransport;
       demoTransport.initialize(manager);
       demoTransport.start();
+      setAttentionOwner({
+        manager,
+        commands: {
+          focus: id => {
+            if (mounted) demoTransport.focus(id);
+          },
+          markUnread: id => {
+            if (mounted) demoTransport.markUnread(id);
+          },
+        },
+      });
     }
 
     async function initializeFleet() {
@@ -235,6 +253,20 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           localTransportRef.current = localTransport;
           localTransport.initialize(manager);
           localTransport.start();
+          offAttention = pty.onAttention?.(() => {
+            if (mounted) void localTransport.refresh();
+          });
+          setAttentionOwner({
+            manager,
+            commands: {
+              focus: id => {
+                if (mounted) return pty.focus(id);
+              },
+              markUnread: id => {
+                if (mounted) return pty.markUnread(id);
+              },
+            },
+          });
           // Delegation truth is push (ENG-023): a child starting or finishing
           // re-lists promptly, so the board's satellites track the harness
           // instead of trailing the next poll tick. Coalesced through one
@@ -297,6 +329,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       mounted = false;
       offWorkspaceChanged?.();
       offDelegation?.();
+      offAttention?.();
       offLiveBurn?.();
       manager.disconnect();
       demoTransportRef.current?.stop();
@@ -362,13 +395,23 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       manager,
+      attentionCommands:
+        attentionOwner?.manager === manager ? attentionOwner.commands : null,
       isDemo,
       isLocal,
       projects,
       connectionStatus,
       demoTenantActive,
     }),
-    [manager, isDemo, isLocal, projects, connectionStatus, demoTenantActive]
+    [
+      manager,
+      attentionOwner,
+      isDemo,
+      isLocal,
+      projects,
+      connectionStatus,
+      demoTenantActive,
+    ]
   );
 
   return (
@@ -393,6 +436,11 @@ function mergeActivities(
   for (const activity of base) byId.set(activity.id, activity);
   for (const activity of incoming) byId.set(activity.id, activity);
   return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/** Commands are owned by the currently mounted source, never by a harness guess. */
+export function useSessionAttentionSource(): SessionAttentionCommands | null {
+  return useFleetContext().attentionCommands;
 }
 
 export function useFleetConnection(): {

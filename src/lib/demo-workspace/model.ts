@@ -20,6 +20,7 @@ import {
   DEMO_TRANSCRIPTS,
   DEMO_WORKSPACE_NOW_MS,
   demoAgentBurn,
+  demoAgentAttention,
   demoFleetAgents,
   demoWorkLog,
   demoProjectRoadmap,
@@ -219,11 +220,8 @@ export function demoShellSummaries(): Record<string, string> {
 export function demoShellAttention(): Record<string, SessionAttentionSignal> {
   const out: Record<string, SessionAttentionSignal> = {};
   for (const agent of demoShellAgents()) {
-    if (agent.status === 'blocked' && agent.blocker) {
-      out[agent.id] = { kind: 'blocked', since: agent.blocker.createdAtMs };
-    } else if (agent.status === 'complete') {
-      out[agent.id] = { kind: 'turn-end', since: agent.lastActivityAtMs };
-    }
+    const attention = demoAgentAttention(agent);
+    if (attention) out[agent.id] = attention;
   }
   return out;
 }

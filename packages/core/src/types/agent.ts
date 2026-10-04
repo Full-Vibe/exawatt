@@ -3,6 +3,7 @@
  * Core data model for agents — independent of OpenClaw types
  */
 
+import type { SessionAttentionSignal } from '../session-attention';
 import type { AgentSourceAdapterId } from '../agent-sources';
 import type { AgentSourcePlacement } from '../agent-projection';
 import type { SourceConnectionState } from '../sources/connected-source';
@@ -184,6 +185,8 @@ export interface ExawattAgent {
   metrics: AgentMetrics;
   lastActivityAt: number; // unix ms
   blockerInfo?: AgentBlocker;
+  /** Source-owned requests and results, independent of execution and read state. */
+  attention?: SessionAttentionSignal | null;
   /** harness-reported delegated children; absent when unreported (ENG-023) */
   delegation?: AgentDelegation | null;
   createdAt: number; // unix ms

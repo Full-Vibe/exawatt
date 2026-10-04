@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FleetManager } from '../state/fleet-manager';
 import {
   DemoWorkspaceTransport,
@@ -10,6 +10,43 @@ import { DEMO_PROJECTS } from '../demo/projects';
 import { demoFleetAgents, demoDelegatedRunCount } from '../demo/scale';
 
 describe('DemoWorkspaceTransport (ENG-027 W2)', () => {
+  it('keeps source-owned read receipts across consumers without resolving requests', () => {
+    const manager = new FleetManager();
+    const transport = new DemoWorkspaceTransport({ tier: 'base' });
+    transport.initialize(manager);
+    transport.start();
+    const request = Object.values(manager.getFleetState().agents).find(
+      agent => agent.attention?.kind === 'blocked'
+    )!;
+    const result = Object.values(manager.getFleetState().agents).find(
+      agent => agent.attention?.kind === 'turn-end'
+    )!;
+    const updated = vi.fn();
+    manager.on('fleet:updated', updated);
+    transport.focus(request.id);
+    expect(manager.getAgent(request.id)?.status).toBe(request.status);
+    expect(manager.getAgent(request.id)?.attention).toMatchObject({
+      unread: false,
+      kind: 'blocked',
+    });
+    transport.focus(request.id);
+    expect(updated).toHaveBeenCalledTimes(1);
+    transport.markUnread(request.id);
+    transport.focus(null);
+    expect(manager.getAgent(request.id)?.attention?.unread).toBe(true);
+    transport.focus(result.id);
+    expect(manager.getAgent(result.id)?.attention).toMatchObject({
+      unread: false,
+      kind: 'turn-end',
+    });
+    expect(manager.getAgent(result.id)?.status).toBe(result.status);
+    transport.stop();
+    updated.mockClear();
+    transport.focus(request.id);
+    transport.markUnread(result.id);
+    expect(updated).not.toHaveBeenCalled();
+  });
+
   it('populates the FleetManager with the full scale tier', () => {
     const manager = new FleetManager();
     const transport = new DemoWorkspaceTransport({ nowMs: Date.now() });
@@ -74,9 +111,9 @@ describe('DemoWorkspaceTransport (ENG-027 W2)', () => {
     const withoutChildren = DEMO_BASE_AGENTS.find(
       a => a.delegated.length === 0
     )!;
-    expect(
-      demoWorkspaceAgent(withChildren).delegation?.children.length
-    ).toBe(withChildren.delegated.length);
+    expect(demoWorkspaceAgent(withChildren).delegation?.children.length).toBe(
+      withChildren.delegated.length
+    );
     expect('delegation' in demoWorkspaceAgent(withoutChildren)).toBe(false);
   });
 

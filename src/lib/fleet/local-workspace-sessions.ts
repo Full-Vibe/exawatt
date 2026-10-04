@@ -1,4 +1,8 @@
-import type { LocalSessionSnapshot, ProjectCatalogEntry } from '@exawatt/core';
+import {
+  readPtyAttention,
+  type LocalSessionSnapshot,
+  type ProjectCatalogEntry,
+} from '@exawatt/core';
 import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
 
 export interface LiveBurnFigures {
@@ -136,6 +140,7 @@ export function mergeLocalWorkspaceSessions(
         lifecycle?: unknown;
         exitCode?: unknown;
         exitSignal?: unknown;
+        attention?: unknown;
       };
       if (
         typeof tab.id !== 'string' ||
@@ -174,6 +179,7 @@ export function mergeLocalWorkspaceSessions(
         exited: true,
         exitCode: failed ? 1 : 0,
         sessionState: 'stopped',
+        attention: readPtyAttention(tab.attention),
       });
     }
   }

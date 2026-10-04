@@ -257,6 +257,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   >([]);
   const workspaceAvailability = useWorkspaceCommandAvailability();
   const onWorkspaceRoute = pathname?.startsWith('/workspace') ?? false;
+  const onSpatialRoute = pathname === '/fleet/spatial';
   // Tenant scope for the live-workspace verb gate (ENG-027). The pre-hydration
   // default is Personal, matching the provider's own hydration-safe default.
   const tenancy = useOptionalWorkspaceTenancy();
@@ -550,7 +551,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
         case 'jump-attention':
           if (
-            onWorkspaceRoute &&
+            (onWorkspaceRoute || onSpatialRoute) &&
             workspaceAvailability.commands['jump-attention'].available
           ) {
             dispatch(JUMP_ATTENTION_EVENT);
@@ -597,6 +598,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     navigateCommandSurface,
     openCommandPalette,
     onWorkspaceRoute,
+    onSpatialRoute,
     personalTenantActive,
     router,
     workspaceAvailability,
@@ -639,11 +641,16 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       // other verb acts on what is on screen, so the route is its gate.
       const scope = LIVE_WORKSPACE_MENU_COMMANDS.has(command)
         ? personalTenantActive
-        : onWorkspaceRoute;
+        : onWorkspaceRoute || (command === 'jump-attention' && onSpatialRoute);
       availability[command] = scope && (commands[key]?.available ?? false);
     }
     void api(availability);
-  }, [onWorkspaceRoute, personalTenantActive, workspaceAvailability]);
+  }, [
+    onWorkspaceRoute,
+    onSpatialRoute,
+    personalTenantActive,
+    workspaceAvailability,
+  ]);
 
   // Determine current contexts based on route
   useEffect(() => {

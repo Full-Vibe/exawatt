@@ -346,6 +346,35 @@ describe('LocalSessionsTransport', () => {
     expect(manager.getAgent('pty-1')?.blockerInfo).toBeUndefined();
   });
 
+  it('publishes read-only and request-identity changes without changing execution', async () => {
+    sessions[0] = {
+      ...sessions[0],
+      attention: {
+        kind: 'blocked',
+        since: 1,
+        request: 'working',
+        requestId: 'one',
+        unread: true,
+      },
+      working: true,
+    };
+    transport.start();
+    await flush();
+    sessions[0] = {
+      ...sessions[0],
+      attention: { ...sessions[0].attention!, unread: false },
+    };
+    await transport.refresh();
+    expect(manager.getAgent('pty-1')?.attention?.unread).toBe(false);
+    expect(manager.getAgent('pty-1')?.status).toBe('working');
+    sessions[0] = {
+      ...sessions[0],
+      attention: { ...sessions[0].attention!, requestId: 'two' },
+    };
+    await transport.refresh();
+    expect(manager.getAgent('pty-1')?.attention?.requestId).toBe('two');
+  });
+
   it('lists sessions into FleetState and decays working -> idle via polling', async () => {
     transport.start();
     await flush();

@@ -20,6 +20,11 @@
  *   maps, it does not edit.
  */
 
+import {
+  withAttentionRead,
+  type SessionAttentionCommands,
+} from '../session-attention';
+import type { PtyAttention } from '../desktop-bridge/pty';
 import type { FleetManager } from '../state/fleet-manager';
 import type {
   AgentActivity,
@@ -100,6 +105,28 @@ function activitiesFor(agent: DemoFleetAgent): AgentActivity[] {
   return out;
 }
 
+/** Authored source facts mapped once for every altitude. */
+export function demoAgentAttention(agent: DemoFleetAgent): PtyAttention | null {
+  if (agent.status === 'blocked' && agent.blocker) {
+    return {
+      kind: 'blocked',
+      since: agent.blocker.createdAtMs,
+      request: 'blocking',
+      requestId: `${agent.id}:blocker`,
+      unread: true,
+    };
+  }
+  if (agent.status === 'complete') {
+    return {
+      kind: 'turn-end',
+      since: agent.lastActivityAtMs,
+      requestId: `${agent.id}:result`,
+      unread: true,
+    };
+  }
+  return null;
+}
+
 /** Map one fixture Agent into the live `ExawattAgent` contract. */
 export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
   const project = DEMO_PROJECTS_BY_KEY.get(agent.projectKey);
@@ -122,6 +149,7 @@ export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
     // session" affordance the live board shows for a dead process.
     sessionState: agent.status === 'error' ? 'stopped' : 'live',
     activities: activitiesFor(agent),
+    attention: demoAgentAttention(agent),
     metrics: {
       ...INITIAL_AGENT_METRICS,
       tokensIn: agent.usage.input,
@@ -149,7 +177,7 @@ export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
   };
 }
 
-export class DemoWorkspaceTransport {
+export class DemoWorkspaceTransport implements SessionAttentionCommands {
   private manager: FleetManager | null = null;
   private readonly tier: DemoFleetTier;
   private readonly nowMs: number;
@@ -173,6 +201,27 @@ export class DemoWorkspaceTransport {
     for (const agent of agents) {
       manager.upsertAgent(demoWorkspaceAgent(agent));
     }
+  }
+
+  focus(id: string | null): void {
+    if (id) this.setUnread(id, false);
+  }
+
+  markUnread(id: string): void {
+    this.setUnread(id, true);
+  }
+
+  private setUnread(id: string, unread: boolean): void {
+    if (!this.upserted.includes(id)) return;
+    const agent = this.manager?.getAgent(id);
+    if (!agent?.attention || agent.attention.unread === unread) return;
+    this.manager?.upsertAgent({
+      ...agent,
+      attention: withAttentionRead(
+        { ...agent.attention, kind: agent.attention.kind ?? 'bell' },
+        unread
+      ),
+    });
   }
 
   /** Remove every demo Agent so a following transport starts from truth —

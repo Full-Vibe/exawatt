@@ -39,6 +39,7 @@ export type { SimulationSpeed, FleetScale } from './transports/mock-fleet';
 export {
   DemoWorkspaceTransport,
   demoWorkspaceAgent,
+  demoAgentAttention,
   demoWorkspaceProjectCatalog,
 } from './transports/demo-workspace';
 export type { DemoWorkspaceTransportOptions } from './transports/demo-workspace';

@@ -85,7 +85,6 @@ import {
   demoShellAgentTypes,
   demoShellInitiatives,
   demoShellConsumption,
-  demoShellAttention,
   demoShellDelegation,
   demoShellEngaged,
   demoShellGoalVisuals,
@@ -97,7 +96,10 @@ import {
 } from './model';
 import { DemoSessionPane } from './demo-session-pane';
 import type { SessionModelChange } from '@exawatt/core/desktop-bridge';
-import { withAttentionRead } from '@exawatt/core';
+import {
+  useFleet,
+  useSessionAttentionSource,
+} from '@/lib/fleet/fleet-provider';
 
 /** The Session a walk-up demo opens first: the hero transcript. */
 const DEFAULT_SESSION_ID = 'vg-home-onboard';
@@ -211,32 +213,29 @@ export function DemoWorkspaceClient() {
       ? DEFAULT_SESSION_ID
       : (agents[0]?.id ?? '');
   });
-  const [unreadOverrides, setUnreadOverrides] = useState<
-    Record<string, boolean>
-  >({});
-  const setActiveId = useCallback((id: string) => {
-    setActiveSessionId(id);
-    setUnreadOverrides(current => ({ ...current, [id]: false }));
-  }, []);
+  const { fleetState } = useFleet();
+  const attentionSource = useSessionAttentionSource();
+  const setActiveId = useCallback((id: string) => setActiveSessionId(id), []);
+  useEffect(() => {
+    void attentionSource?.focus(activeId);
+    return () => {
+      void attentionSource?.focus(null);
+    };
+  }, [activeId, attentionSource]);
+
   const attention = useMemo(
     () =>
       mergeFleetAttention(
         fleetAttention(
           'demo',
           Object.fromEntries(
-            Object.entries(demoShellAttention())
-              .filter(([id]) => !pausedIds.has(id))
-              .map(([id, signal]) => [
-                id,
-                withAttentionRead(
-                  { ...signal, kind: signal.kind ?? 'bell' },
-                  unreadOverrides[id] ?? id !== activeId
-                ),
-              ])
+            Object.values(fleetState.agents)
+              .filter(agent => agent.attention && !pausedIds.has(agent.id))
+              .map(agent => [agent.id, agent.attention!])
           )
         )
       ),
-    [activeId, pausedIds, unreadOverrides]
+    [fleetState.agents, pausedIds]
   );
   const [reorderStatus, setReorderStatus] = useState({
     sequence: 0,
@@ -891,12 +890,7 @@ export function DemoWorkspaceClient() {
               onPauseProject={dir => void projectPause.requestPause(dir)}
               onResumeProject={resumeProject}
               onRenameTab={renameTab}
-              onMarkUnread={tabId =>
-                setUnreadOverrides(current => ({
-                  ...current,
-                  [tabId]: true,
-                }))
-              }
+              onMarkUnread={tabId => void attentionSource?.markUnread(tabId)}
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
               onReorderTab={reorderTabBeside}
