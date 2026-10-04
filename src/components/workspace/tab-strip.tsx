@@ -92,6 +92,7 @@ import {
 } from './session-jump';
 import { tabIsPinnable } from './split-layout';
 import { attentionReadLabel, paintsAttention } from './session-status';
+import { SessionUnreadMarker } from './session-unread-marker';
 import {
   DelegationDots,
   SESSION_GLYPH_COPY,
@@ -183,6 +184,7 @@ export function TabStrip({
   onCloseTab,
   onRenameTab,
   onMarkUnread,
+  showUnreadMarker = false,
   onRenameProject,
   onSetProjectColor,
   feedbackEnabled = false,
@@ -213,6 +215,8 @@ export function TabStrip({
   onCloseTab: (tabId: string) => void;
   onRenameTab: (tabId: string, title: string) => void;
   onMarkUnread?: (tabId: string) => void;
+  /** Gallery review candidate; production remains opt-out until accepted. */
+  showUnreadMarker?: boolean;
   onRenameProject: (dir: string, name: string) => void;
   onSetProjectColor: (dir: string, color: string) => void;
   feedbackEnabled?: boolean;
@@ -1970,6 +1974,13 @@ export function TabStrip({
                         {display.primary}
                       </span>
                     </span>
+                  )}
+                  {showUnreadMarker && session && (
+                    <SessionUnreadMarker
+                      attention={
+                        attention[session.sessionId ?? session.durableSessionId]
+                      }
+                    />
                   )}
                   {session && dead && !isDraft && condensed && (
                     <span

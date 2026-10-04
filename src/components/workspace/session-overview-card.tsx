@@ -11,6 +11,7 @@ import {
 import { HarnessGlyph } from './harness-icons';
 import { HARNESS_META } from './harnesses';
 import { SessionGoalSummary } from './session-goal-summary';
+import { SessionUnreadMarker } from './session-unread-marker';
 import {
   DelegationDots,
   DelegationRail,
@@ -50,6 +51,8 @@ export interface SessionOverviewCardContentProps {
   harness: PtyHarness;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
+  /** Gallery review candidate; production remains opt-out until accepted. */
+  showUnreadMarker?: boolean;
   /** harness-reported delegated work (ENG-023); absent when unreported */
   delegation?: SessionDelegation | null;
   /**
@@ -89,6 +92,7 @@ export function SessionOverviewCardContent({
   harness,
   glyphState,
   attention,
+  showUnreadMarker = false,
   delegation,
   agentType,
   initiative,
@@ -165,6 +169,7 @@ export function SessionOverviewCardContent({
             delegation={delegation}
             fault={fault}
           />
+          {showUnreadMarker && <SessionUnreadMarker attention={attention} />}
         </span>
       </div>
 
@@ -244,68 +249,68 @@ export function SessionOverviewCardContent({
           reports one, consumption when a source reports it. Absent both, no
           footer, and the fixed tile footprint keeps the card's height. */}
       {(next || consumption) && (
-      <div
-        data-session-next
-        className="mt-auto min-w-0 border-t pt-2.5"
-        style={{ borderColor: HUD.divider }}
-      >
-        {next && (
-          <>
-            <span
-              className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
-              style={{ color: HUD.textDim }}
-            >
-              Next
-            </span>
-            <span className="mt-1 flex min-w-0 items-baseline justify-between gap-3">
+        <div
+          data-session-next
+          className="mt-auto min-w-0 border-t pt-2.5"
+          style={{ borderColor: HUD.divider }}
+        >
+          {next && (
+            <>
               <span
-                data-session-next-copy
-                className="min-w-0 truncate font-sans text-sm leading-5"
-                style={{ color: HUD.text }}
+                className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
+                style={{ color: HUD.textDim }}
               >
-                {next}
+                Next
               </span>
-              {nextProgress && (
+              <span className="mt-1 flex min-w-0 items-baseline justify-between gap-3">
                 <span
-                  className="shrink-0 font-mono text-xs tabular-nums"
-                  style={{ color: HUD.textMono }}
+                  data-session-next-copy
+                  className="min-w-0 truncate font-sans text-sm leading-5"
+                  style={{ color: HUD.text }}
                 >
-                  {nextProgress}
+                  {next}
                 </span>
-              )}
-            </span>
-          </>
-        )}
-        {consumption && (
-          <span
-            data-session-consumption
-            className="mt-2 flex items-center justify-between gap-3"
-            title={`${exact(consumption.rawTokens)} tokens this Session, delegated runs included · ${consumption.share < 0.01 ? '<1' : Math.round(consumption.share * 100)}% of the Workspace's normalized burn · bar is relative to the busiest Session`}
-          >
+                {nextProgress && (
+                  <span
+                    className="shrink-0 font-mono text-xs tabular-nums"
+                    style={{ color: HUD.textMono }}
+                  >
+                    {nextProgress}
+                  </span>
+                )}
+              </span>
+            </>
+          )}
+          {consumption && (
             <span
-              className="font-mono text-chrome-meta tabular-nums"
-              style={{ color: consumptionColor }}
-            >
-              {tokens(consumption.rawTokens)} tokens
-            </span>
-            <span
-              aria-hidden="true"
-              className="h-[3px] w-16 shrink-0 overflow-hidden rounded-full"
-              style={{ background: FLUX.track }}
+              data-session-consumption
+              className="mt-2 flex items-center justify-between gap-3"
+              title={`${exact(consumption.rawTokens)} tokens this Session, delegated runs included · ${consumption.share < 0.01 ? '<1' : Math.round(consumption.share * 100)}% of the Workspace's normalized burn · bar is relative to the busiest Session`}
             >
               <span
-                className="block h-full rounded-full"
-                style={{
-                  width: `${Math.max(3, consumption.intensity * 100)}%`,
-                  background: consumptionNotable
-                    ? pressureColor(consumption.intensity * 100)
-                    : withThemeAlpha(HUD.textDim, 0.55),
-                }}
-              />
+                className="font-mono text-chrome-meta tabular-nums"
+                style={{ color: consumptionColor }}
+              >
+                {tokens(consumption.rawTokens)} tokens
+              </span>
+              <span
+                aria-hidden="true"
+                className="h-[3px] w-16 shrink-0 overflow-hidden rounded-full"
+                style={{ background: FLUX.track }}
+              >
+                <span
+                  className="block h-full rounded-full"
+                  style={{
+                    width: `${Math.max(3, consumption.intensity * 100)}%`,
+                    background: consumptionNotable
+                      ? pressureColor(consumption.intensity * 100)
+                      : withThemeAlpha(HUD.textDim, 0.55),
+                  }}
+                />
+              </span>
             </span>
-          </span>
-        )}
-      </div>
+          )}
+        </div>
       )}
     </>
   );

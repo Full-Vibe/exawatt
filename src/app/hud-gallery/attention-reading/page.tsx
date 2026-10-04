@@ -8,7 +8,6 @@ import { TabStrip } from '@/components/workspace/tab-strip';
 import { SessionOverviewCardContent } from '@/components/workspace/session-overview-card';
 import type { SessionTab } from '@/components/workspace/use-workspace-state';
 import {
-  attentionReadLabel,
   fleetAttention,
   mergeFleetAttention,
   nextAttentionTarget,
@@ -20,7 +19,7 @@ import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 const samples = [
   {
     id: 'switching',
-    purpose: 'Make switching agents feel instant',
+    purpose: 'Make agent switching instant',
     current: 'Handoff profiling is ready to review.',
   },
   {
@@ -30,7 +29,7 @@ const samples = [
   },
   {
     id: 'understanding',
-    purpose: 'Help people understand Exawatt',
+    purpose: 'Make Exawatt understandable',
     current: 'Choose which explanation leads the guide.',
   },
 ];
@@ -44,13 +43,29 @@ const initialSignals: Record<string, SessionAttentionSignal> = {
     unread: false,
   },
 };
+const tabs: SessionTab[] = samples.map(sample => ({
+  kind: 'session',
+  id: sample.id,
+  durableSessionId: sample.id,
+  sessionId: sample.id,
+  title: sample.purpose,
+  titleKind: 'operator',
+  harness: 'claude',
+  cwd: '/study',
+  harnessSessionId: null,
+  resumeState: 'live',
+  lifecycle: 'running',
+  exitCode: null,
+  roadmapItemId: null,
+  initialTask: null,
+}));
 const noop = () => undefined;
 
-/** Bounded review proposal. Uses chrome-meta, semantic muted text, p-3/p-4,
- * gap-2/gap-4; no new token, glyph, or production visual treatment. */
+/** Bounded review proposal. Existing neutral text-dim, spacing grid, and
+ * actual production components; the candidate flags are off in production. */
 export default function AttentionReadingStudy() {
   const [signals, setSignals] = useState(initialSignals);
-  const [active, setActive] = useState<string | null>(null);
+  const [active, setActive] = useState<string>('updates');
   const pass = useRef<ReadonlyMap<string, string>>(new Map());
   const attention = mergeFleetAttention(fleetAttention('study', signals));
   const inspect = (id: string) => {
@@ -60,6 +75,11 @@ export default function AttentionReadingStudy() {
       [id]: { ...current[id], unread: false },
     }));
   };
+  const markUnread = (id: string) =>
+    setSignals(current => ({
+      ...current,
+      [id]: { ...current[id], unread: true },
+    }));
   return (
     <TooltipProvider>
       <main className="min-h-screen bg-background p-6 font-ui text-foreground sm:p-8">
@@ -72,13 +92,12 @@ export default function AttentionReadingStudy() {
               HUD gallery
             </Link>
             <h1 className="text-surface-title font-semibold">
-              Reading without losing the purpose
+              Read at a glance
             </h1>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              A neutral read label sits beside the existing state. Reading a
-              result removes it from the next-attention pass; reading a request
-              leaves the request open. The purpose and completion glyph keep
-              their prominence.
+              An unread dot uses neutral chrome beside the existing status.
+              Opening a Session removes the dot; a request keeps its needs-you
+              signal. Purpose, completion and position stay unchanged.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <Button
@@ -87,7 +106,8 @@ export default function AttentionReadingStudy() {
                   const next = nextAttentionTarget(
                     orderedAttentionTargets(attention, null),
                     active,
-                    pass.current
+                    pass.current,
+                    attention
                   );
                   pass.current = next.visited;
                   if (next.target) inspect(next.target);
@@ -99,7 +119,7 @@ export default function AttentionReadingStudy() {
                 variant="ghost"
                 onClick={() => {
                   setSignals(initialSignals);
-                  setActive(null);
+                  setActive('updates');
                   pass.current = new Map();
                 }}
               >
@@ -109,148 +129,96 @@ export default function AttentionReadingStudy() {
                 className="text-chrome-meta text-muted-foreground"
                 aria-live="polite"
               >
-                {active
-                  ? `Opened: ${samples.find(sample => sample.id === active)?.purpose}`
-                  : 'Choose a Session or try the attention pass.'}
+                Opened: {samples.find(sample => sample.id === active)?.purpose}
               </span>
             </div>
           </header>
-          <div className="grid gap-6 xl:grid-cols-3">
-            {samples.map(sample => {
-              const signal = signals[sample.id];
-              const tab: SessionTab = {
-                kind: 'session',
-                id: sample.id,
-                durableSessionId: sample.id,
-                sessionId: sample.id,
-                title: sample.purpose,
-                titleKind: 'operator',
-                harness: 'claude',
-                cwd: '/study',
-                harnessSessionId: null,
-                resumeState: 'live',
-                lifecycle: 'running',
-                exitCode: null,
-                roadmapItemId: null,
-                initialTask: null,
-              };
-              const readLabel = attentionReadLabel(signal);
-              return (
-                <section
-                  key={sample.id}
-                  data-attention-reading-sample={sample.id}
-                  className="flex min-w-0 flex-col gap-4"
-                >
-                  <h2 className="text-chrome-title font-medium">
-                    {sample.purpose}
-                  </h2>
-                  <div className="flex flex-col gap-2">
-                    <span className="text-chrome-meta text-muted-foreground">
-                      Agent tab
-                    </span>
-                    <div
-                      className="rounded border p-3"
-                      style={{
-                        borderColor: HUD.strokeFaint,
-                        background: HUD.bg.deep,
-                      }}
-                    >
-                      <TabStrip
-                        projects={[
-                          {
-                            dir: '/study',
-                            name: 'Polish',
-                            color: HUD.cyan,
-                            activeTabId: sample.id,
-                            tabs: [tab],
-                          },
-                        ]}
-                        activeDir="/study"
-                        pinnedTabId={null}
-                        summaries={{}}
-                        attention={attention}
-                        engaged={{ [sample.id]: true }}
-                        onSelectProject={noop}
-                        onSelectTab={() => inspect(sample.id)}
-                        onCloseTab={noop}
-                        onRenameTab={noop}
-                        onRenameProject={noop}
-                        onSetProjectColor={noop}
-                        onMarkUnread={() =>
-                          setSignals(current => ({
-                            ...current,
-                            [sample.id]: { ...signal, unread: true },
-                          }))
-                        }
-                      />
-                      <p
-                        className="mt-2 text-chrome-meta text-muted-foreground"
-                        data-study-read-label
-                      >
-                        {readLabel}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <span className="text-chrome-meta text-muted-foreground">
-                      Team card
-                    </span>
-                    <div
-                      className="flex flex-col gap-3 rounded-lg border p-4"
-                      style={{
-                        borderColor: HUD.strokeFaint,
-                        background: HUD.bg.panel,
-                      }}
-                    >
-                      <SessionOverviewCardContent
-                        title={sample.purpose}
-                        color={HUD.cyan}
-                        harness="claude"
-                        glyphState={
-                          signal.kind === 'blocked' ? 'blocked' : 'done'
-                        }
-                        attention={signal}
-                        current={sample.current}
-                        next={null}
-                      />
-                      <span
-                        className="text-chrome-meta text-muted-foreground"
-                        data-study-read-label
-                      >
-                        {readLabel}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => inspect(sample.id)}
-                    >
-                      Open Session
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={signal.unread !== false}
-                      onClick={() =>
-                        setSignals(current => ({
-                          ...current,
-                          [sample.id]: { ...signal, unread: true },
-                        }))
+          <section className="flex flex-col gap-3" aria-label="Agent ribbon">
+            <h2 className="text-chrome-title font-medium">Agent</h2>
+            <div
+              className="rounded border p-3"
+              style={{ borderColor: HUD.strokeFaint, background: HUD.bg.deep }}
+            >
+              <TabStrip
+                projects={[
+                  {
+                    dir: '/study',
+                    name: 'Polish',
+                    color: HUD.cyan,
+                    activeTabId: active,
+                    tabs,
+                  },
+                ]}
+                activeDir="/study"
+                pinnedTabId={null}
+                summaries={{}}
+                attention={attention}
+                engaged={Object.fromEntries(
+                  samples.map(sample => [sample.id, true])
+                )}
+                onSelectProject={noop}
+                onSelectTab={(_, id) => inspect(id)}
+                onCloseTab={noop}
+                onRenameTab={noop}
+                onRenameProject={noop}
+                onSetProjectColor={noop}
+                onMarkUnread={markUnread}
+                showUnreadMarker
+              />
+            </div>
+          </section>
+          <section className="flex flex-col gap-3" aria-label="Team cards">
+            <h2 className="text-chrome-title font-medium">Team</h2>
+            <div className="grid gap-4 lg:grid-cols-3">
+              {samples.map(sample => {
+                const signal = signals[sample.id];
+                return (
+                  <button
+                    key={sample.id}
+                    data-attention-reading-sample={sample.id}
+                    onClick={() => inspect(sample.id)}
+                    aria-label={`Open ${sample.purpose}`}
+                    className="flex min-w-0 flex-col gap-3 rounded-lg border p-4 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    style={{
+                      borderColor: HUD.strokeFaint,
+                      background: HUD.bg.panel,
+                    }}
+                  >
+                    <SessionOverviewCardContent
+                      title={sample.purpose}
+                      color={HUD.cyan}
+                      harness="claude"
+                      glyphState={
+                        signal.kind === 'blocked' ? 'blocked' : 'done'
                       }
-                    >
-                      Mark unread
-                    </Button>
-                  </div>
-                </section>
-              );
-            })}
+                      attention={signal}
+                      current={sample.current}
+                      next={null}
+                      showUnreadMarker
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={signals[active].unread !== false}
+              onClick={() => markUnread(active)}
+            >
+              Mark opened Session unread
+            </Button>
+            <p className="text-chrome-label text-muted-foreground">
+              The first result starts unread; the second is read. The read
+              request still needs you.
+            </p>
           </div>
           <p className="max-w-2xl text-chrome-label text-muted-foreground">
-            Review proposal: labels are neutral chrome metadata, separate from
-            the status channel. The unread/read treatment is exploratory. No
-            automatic fading, moving, hiding, or closing is part of this study.
+            Review candidate only. The same marker is embedded in the real
+            ribbon and Team content. Its fixed slot prevents title movement when
+            reading changes; status glyphs and their colors are untouched.
           </p>
         </div>
       </main>
