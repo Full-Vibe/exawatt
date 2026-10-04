@@ -32,11 +32,16 @@ starting work. The operator resumes agents explicitly.
 - Codex discovery reads bounded rollout prefixes, tolerates provider file churn,
   and associates parallel launches by provider launch time while preserving PTY
   input order.
-- Workspace recovery is explicit, sequential, and agents-only. The recovery
-  bar defaults to the selected Project; its one scope menu narrows to the
-  selected Agent or broadens to all Projects. Every action names its count and
+- Workspace recovery is explicit, sequential, and agents-only. After a restart,
+  the recovery bar resumes only the Agents that were running before shutdown;
+  previously paused Agents remain paused. Its scope menu retains selected
+  Agent, selected Project and all-Projects actions. Legacy checkpoints lacking
+  the previously-running record keep their existing Project default. Every action names its count and
   never starts shells.
 - Exact resume never guesses from latest conversation or cwd.
+- Read/request attention belongs to durable Session identity. Opening is a read
+  receipt, not resolution; process exit is not resolution either. Fresh source
+  evidence outranks saved state, and no saved working flag implies execution.
 - Legacy identity-less Sessions repair automatically only through a one-to-one
   exact opening-task match. Ambiguous matches remain operator-selected.
 
@@ -49,8 +54,9 @@ starting work. The operator resumes agents explicitly.
   / Quit and Stop actions. Shell counts appear when relevant.
 - No-process quit has no prompt. Cancel changes nothing.
 - Relaunch has no modal. One contextual recovery notice reports paused and
-  reconnectable Agents. Its split control resumes the selected Project in one
-  click; the attached menu holds the distinct Agent and all-Projects scopes.
+  reconnectable Agents. Its split control resumes the previously running set
+  in one click when that set is known; the attached menu retains explicit
+  Agent, Project and all-Projects scopes.
   Individual panes offer **Resume This Agent**; shells offer **Start New
   Shell**.
 - A stopped pane labels retained terminal output as saved, read-only history.
@@ -233,3 +239,14 @@ recovery and source-race cases; review the recovery action in the existing HUD
 workbench before any material new presentation; run the relevant Electron gates.
 BUG-209 is independently assigned to `agent/polish-unknown-harness`; unknown
 ledger rows remain visible and cannot be consumed or resumed as another harness.
+
+
+Implementation checkpoint: `0512a04c`/`97cfb109` plus attention foundation
+`67409f59` and outage followup `18214176` are committed in the restart worktree.
+The recovery bar uses its existing design-system chrome-label/type/material
+recipe and retains its explicit scope menu. `/hud-gallery/restart-recovery`
+provides the real-component mixed-state fixture for review. Targeted checks:
+125 Session, hydration, persistence, focus and monitor tests passed, then nine
+reader/recovery-action checks passed. Full combined source-truth integration,
+Electron literal scenarios and normal delivery remain outstanding; this is
+implemented/partially verified, not integrated or installed.
