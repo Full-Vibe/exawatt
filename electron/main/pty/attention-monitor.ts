@@ -600,7 +600,17 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // `reclaimStaleReportedTurn` declared a visibly-working turn stale and
     // put a green result on the tab (BUG-008).
     this.lastDataAt.set(id, this.now());
-    const hasReportedSource = this.reportedTurn(id) !== null;
+    const report = this.reportedTurn(id);
+    const hasReportedSource = report !== null;
+    // A terminal nudge cannot overrule a source-owned unfinished/unknown
+    // turn. Structured requests have their own channel and identity.
+    if (
+      bell &&
+      report &&
+      !report.blockedOn &&
+      (report.ownTurn !== 'available' || sessionHasBackgroundWork(report))
+    )
+      return;
     if (!bell && this.settled.has(id) && hasReportedSource) return;
     const sinceResize = this.now() - (this.lastResizeAt.get(id) ?? -Infinity);
     if (bell) {

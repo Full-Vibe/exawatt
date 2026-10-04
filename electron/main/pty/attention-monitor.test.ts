@@ -128,6 +128,23 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')).toBeNull();
   });
 
+  it.each(['generating', 'unknown'] as const)(
+    'does not turn an ambient bell into a request over source-owned %s execution',
+    ownTurn => {
+      add('a');
+      monitor.setReportedTurnSource(() => ({
+        ownTurn,
+        blockedOn: null,
+        children: [],
+      }));
+      const alerts: string[] = [];
+      monitor.on('alert', id => alerts.push(id));
+      data('a', BELL);
+      expect(monitor.get('a')).toBeNull();
+      expect(alerts).toEqual([]);
+    }
+  );
+
   it('never converts explicitly unknown source execution into a finished result', () => {
     add('a');
     monitor.setReportedTurnSource(() => ({
@@ -338,11 +355,9 @@ describe('AttentionMonitor', () => {
     expect(monitor.isWorking('a')).toBe(true);
   });
 
-  it('keeps the quiescence clock running while the latch holds (BUG-008)', () => {
-    // A BEL mid-turn latches the Session, and the latch rightly stops those
-    // bytes from reading as WORK. It must not stop them counting as SPEECH:
-    // the stale-report reclaim asks whether this Session has been silent long
-    // enough that its reported-open turn cannot still be real, and a Session
+  it('keeps source activity and its quiescence clock running across an ambient bell (BUG-008)', () => {
+    // An ambient BEL cannot settle a source-reported open turn. Subsequent
+    // output remains work and keeps the stale-report clock alive: a Session
     // that is streaming has not been silent at all.
     const stale: string[] = [];
     monitor.on('reported-turn-stale', (id: string) => stale.push(id));
@@ -360,8 +375,8 @@ describe('AttentionMonitor', () => {
       clock += 1000;
       monitor.sweepNow();
     }
-    // the latch still holds — these bytes never became "working"
-    expect(monitor.isWorking('a')).toBe(false);
+    // A terminal nudge does not settle a source-reported open turn.
+    expect(monitor.isWorking('a')).toBe(true);
     // but nothing declared a talking Session's open turn stale
     expect(stale).toEqual([]);
   });
