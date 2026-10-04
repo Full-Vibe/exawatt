@@ -2079,3 +2079,28 @@ read ownership, and the visibility-aware focus path, finding no further
 actionable defect. All followthrough code remains on `agent/polish-attention`;
 it must land only after the original coupled stack, with its own declared
 runtime gates and dogfood request. No production marker adoption is included.
+
+### 2026-10-04 — One followthrough delivery owns the shared contracts (verified locally, awaiting queue)
+
+**Attention, Fleet traversal, and source-compatible recovery are one delivery.**
+Root consolidated the independently reviewed followthroughs onto
+`agent/polish-attention`, based on frozen initial-stack checkpoint `6001c321`.
+The Fleet lane's source-owned Demo read state, exact Session handoff and shared
+priority selector are included; the BUG-273 lane retains unsupported saved
+source identity and inert extensions without admitting runtime actions.
+Original contributor branches remain recoverable until verified integration.
+
+Composition exposed a missing baseline dependency: BUG-273 had inherited the
+shared `isPtyHarness` guard from `f2cc99ea`. Only the guard, its contract test,
+IPC reuse and palette import were promoted here; that older commit's restore
+prohibition was not carried forward. Full TypeScript and Electron compilation
+then passed, as did 77 focused recovery/Demo/capability tests. The final direct
+attention-kind audit moved Project pause, model-change admission and switcher urgency onto the same
+operator-gate predicate; 100 monitor/switcher tests passed. Operator reminders
+remain orthogonal to execution, interruption confirmation and source requests.
+
+Delivery is blocked only on sequencing the original stack first, then running
+this exact combined candidate through the normal floor, the union of 28 surface
+gates and a queued dogfood installation. No gate is waived. Final independent
+combined review is requested before queue admission. Purpose and approved
+unread-marker production adoption remain separate from this scope.

@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import {
   sessionHasBackgroundWork,
   attentionRecords,
+  attentionNeedsOperator,
   attentionRecordKey,
   projectSessionAttention,
   markAttentionUnread,
@@ -70,7 +71,7 @@ export interface ReportedTurn {
  * navigable, and they must never disagree about the class of a signal.
  */
 export function attentionIsOperatorGate(kind: PtyAttentionKind): boolean {
-  return kind !== 'turn-end' && kind !== 'reminder';
+  return attentionNeedsOperator({ kind });
 }
 
 /** Why inference reclaimed a reported record (ENG-023 D4/D7): the evidence

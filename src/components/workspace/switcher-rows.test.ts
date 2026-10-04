@@ -34,6 +34,17 @@ const session = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
 });
 
 describe('sessionRowStatus', () => {
+  it('keeps operator reminders separate from source work and input requests', () => {
+    const working = session({
+      working: true,
+      attention: { kind: 'reminder', since: 1, unread: true },
+    });
+    expect(sessionRowStatus(working)).toBe('working');
+    expect(sessionRowStatus({ ...working, working: false })).not.toBe(
+      'needs-you'
+    );
+  });
+
   const NOW = 100_000;
   it('mirrors the approved light projection plus exited lifecycle', () => {
     expect(

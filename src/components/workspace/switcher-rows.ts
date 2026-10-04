@@ -6,6 +6,7 @@
  */
 import { projectColor } from './project-colors';
 import {
+  attentionNeedsOperator,
   sessionDelegationBusy,
   sessionGlyphState,
   sessionReportedBlocked,
@@ -76,7 +77,7 @@ export function sessionRowStatus(
     ownTurn: s.delegation?.ownTurn,
   });
   if (glyph === 'blocked') return 'needs-you';
-  if (s.attention && s.attention.kind !== 'turn-end') return 'needs-you';
+  if (attentionNeedsOperator(s.attention)) return 'needs-you';
   // A ready result, unless something fresher says the Session is still going.
   if (s.attention?.kind === 'turn-end' && glyph !== 'working') return 'done';
   return glyph;

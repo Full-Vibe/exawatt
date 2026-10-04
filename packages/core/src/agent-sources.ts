@@ -54,7 +54,7 @@ export function isAgentHarness(value: unknown): value is AgentHarness {
   return typeof value === 'string' && AGENT_HARNESS_SET.has(value);
 }
 
-/** A local Session source this build can restore or launch. */
+/** A local Session source this build can execute; saved work may use newer sources. */
 export function isPtyHarness(value: unknown): value is PtyHarness {
   return value === 'shell' || isAgentHarness(value);
 }

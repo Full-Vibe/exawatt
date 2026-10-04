@@ -1,3 +1,4 @@
+import { attentionNeedsOperator } from '@exawatt/core';
 import { withInitialSessionAttention } from './pty/initial-attention';
 import { createDevicePowerController } from './device-power';
 import type { HostPowerObserver } from './host-power';
@@ -538,8 +539,7 @@ export function registerPtyIPC(
       attentionMonitor.isWorking(id) ||
       delegationMonitor.isBusy(id) ||
       !!delegationMonitor.get(id)?.blockedOn ||
-      (!!attentionMonitor.get(id) &&
-        attentionMonitor.get(id)?.kind !== 'turn-end'),
+      attentionNeedsOperator(attentionMonitor.get(id)),
     prepare: id => ptySessions.prepareSessionPause(id),
   });
   handleTrusted(
@@ -553,8 +553,7 @@ export function registerPtyIPC(
       !attentionMonitor.isWorking(id) &&
       !delegationMonitor.isBusy(id) &&
       !delegationMonitor.get(id)?.blockedOn &&
-      (!attentionMonitor.get(id) ||
-        attentionMonitor.get(id)?.kind === 'turn-end'),
+      !attentionNeedsOperator(attentionMonitor.get(id)),
     catalog: async session => {
       if (!isAgentHarness(session.harness)) {
         throw new Error('Unsupported Agent Source');
