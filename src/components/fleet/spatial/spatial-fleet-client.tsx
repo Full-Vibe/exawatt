@@ -762,10 +762,10 @@ export function SpatialFleetClient() {
         </div>
         {scene.altitude !== 'fleet' && (
           <span className="hidden text-chrome-meta text-muted-foreground sm:inline">
-            <kbd className="mr-1 font-mono text-chrome-micro text-foreground">
+            Fleet overview
+            <kbd className="ml-1 font-mono text-chrome-micro text-foreground">
               Esc
             </kbd>
-            Fleet overview
           </span>
         )}
 

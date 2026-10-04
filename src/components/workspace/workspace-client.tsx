@@ -245,6 +245,7 @@ export function WorkspaceKeyHint({
   if (!keys) return null;
   return (
     <span className="flex items-center gap-1">
+      {label}
       <kbd
         className="rounded border px-1 leading-4"
         style={{
@@ -254,7 +255,6 @@ export function WorkspaceKeyHint({
       >
         {formatShortcutKeys(keys)}
       </kbd>
-      {label}
     </span>
   );
 }
@@ -1370,7 +1370,7 @@ export function WorkspaceClient() {
       if (outcome.kind === 'closed') {
         if (closeToastTimer.current) clearTimeout(closeToastTimer.current);
         const what = outcome.entry.goal ?? outcome.entry.title;
-        setCloseToast(`Closed "${what}" · kept for 14 days · ⌘⇧T to reopen`);
+        setCloseToast(`Closed "${what}" · kept for 14 days · Reopen ⌘⇧T`);
         closeToastTimer.current = setTimeout(() => setCloseToast(null), 6000);
       }
     },

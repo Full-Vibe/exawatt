@@ -584,17 +584,21 @@ describe('Agent composer · interactions and drafts', () => {
     await settled(() =>
       expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument()
     );
-    const surface = container.textContent ?? '';
-    for (const chord of [
-      '⏎ start',
-      '↓ recent',
-      '⌥↑↓',
-      '⇥ adjust',
-      '⌘⌥T shell',
-      '⌘V image',
-      '⇧⏎ newline',
-    ]) {
-      expect(surface.split(chord).length - 1, chord).toBe(1);
+    const hintOwners = container.querySelectorAll('[data-launcher-hints]');
+    expect(hintOwners).toHaveLength(1);
+    // Count the current owner's chords across the whole composer. Labels and
+    // label/key order can change; a second hint line must still fail this.
+    // Match modifier+key sequences together so ⇧⏎ is distinct from bare ⏎.
+    const chordsIn = (text: string) =>
+      text.match(/[⌘⌥⇧⌃]+(?:[↑↓⏎⇥]+|[A-Z0-9])|[↑↓⏎⇥]+/g) ?? [];
+    const advertised = chordsIn(hintOwners[0].textContent ?? '');
+    expect(advertised.length).toBeGreaterThan(0);
+    const surfaceChords = chordsIn(container.textContent ?? '');
+    for (const chord of new Set(advertised)) {
+      expect(
+        surfaceChords.filter(value => value === chord),
+        chord
+      ).toHaveLength(1);
     }
   });
 });

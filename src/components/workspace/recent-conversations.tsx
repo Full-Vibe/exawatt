@@ -466,7 +466,7 @@ export const RecentConversations = forwardRef<
           className="mt-2 px-0.5 font-mono text-chrome-micro"
           style={{ color: HUD.textDim }}
         >
-          ↑↓ choose · home/end jump · ⏎ continue · esc new task
+          choose ↑↓ · jump home/end · continue ⏎ · new task esc
         </p>
       )}
     </section>

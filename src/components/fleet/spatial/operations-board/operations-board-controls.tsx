@@ -253,18 +253,6 @@ export const ProjectControls = memo(function ProjectControls({
       <>
         <span className="flex items-baseline justify-between gap-2">
           <span className="flex min-w-0 items-baseline gap-1.5">
-            {hotkey && (
-              <kbd
-                aria-hidden="true"
-                className="rounded border px-1 font-mono text-chrome-nano tabular-nums"
-                style={{
-                  color: theme.labelMuted,
-                  borderColor: spatialColorWithAlpha(theme.labelMuted, 0.35),
-                }}
-              >
-                {hotkey}
-              </kbd>
-            )}
             <span
               className={
                 nano
@@ -277,6 +265,18 @@ export const ProjectControls = memo(function ProjectControls({
             >
               {zone.label}
             </span>
+            {hotkey && (
+              <kbd
+                aria-hidden="true"
+                className="shrink-0 rounded border px-1 font-mono text-chrome-nano tabular-nums"
+                style={{
+                  color: theme.labelMuted,
+                  borderColor: spatialColorWithAlpha(theme.labelMuted, 0.35),
+                }}
+              >
+                {hotkey}
+              </kbd>
+            )}
           </span>
           <span className="flex items-baseline gap-2">
             <span

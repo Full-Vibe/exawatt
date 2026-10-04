@@ -1374,7 +1374,7 @@ export function TabStrip({
                         ? `\n${project.tabs.length} Sessions · select to open`
                         : ''
                     }${
-                      sourceOrdinal <= 9 ? ` · ⌘⌥${sourceOrdinal} selects` : ''
+                      sourceOrdinal <= 9 ? ` · Select ⌘⌥${sourceOrdinal}` : ''
                     } · ${PROJECT_RIBBON_SIGNAL_COPY[signal]}`}
                     className="relative flex h-full w-full cursor-pointer items-center gap-1 px-1.5 text-left font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
                     style={{ color: groupActive ? color : HUD.textDim }}
@@ -1843,13 +1843,13 @@ export function TabStrip({
                       ? `${condensed ? `${display.primary}\n` : ''}${
                           remote.projectLabel ? `${remote.projectLabel}\n` : ''
                         }Connected coworker${
-                          ordinal ? `\n⌘${ordinal} selects` : ''
-                        }\n⌘W closes this view; the Agent keeps working`
+                          ordinal ? `\nSelect ⌘${ordinal}` : ''
+                        }\nClose this view ⌘W; the Agent keeps working`
                       : `${condensed ? `${display.primary}\n` : ''}${
                           session?.cwd ?? ''
                         }${summary ? `\n${summary}` : ''}${
                           needsYou
-                            ? '\nneeds your attention (⌘J jumps here)'
+                            ? '\nneeds your attention (Jump here ⌘J)'
                             : ''
                         }${
                           !dead && !needsYou && glyphState
@@ -1859,10 +1859,10 @@ export function TabStrip({
                           dead && lifecycle
                             ? `\n${lifecycle.line ?? lifecycle.word}`
                             : ''
-                        }${ordinal ? `\n⌘${ordinal} selects` : ''}\n${
+                        }${ordinal ? `\nSelect ⌘${ordinal}` : ''}\n${
                           isDraft
-                            ? '⏎ starts · ⌘W discards'
-                            : '⌘W or middle-click closes · kept in Recently closed'
+                            ? 'Start ⏎ · Discard ⌘W'
+                            : 'Close ⌘W or middle-click · kept in Recently closed'
                         }\ndouble-click to rename`
                   }
                   // `text-left` is load-bearing, not decoration: the chrome is
@@ -1896,7 +1896,7 @@ export function TabStrip({
                   {tab.id === pinnedTabId && (
                     <span
                       data-pinned
-                      title="Pinned in split view (⌘D unpins)"
+                      title="Pinned in split view (Unpin ⌘D)"
                       className="text-[10px] leading-none"
                       style={{ color }}
                     >

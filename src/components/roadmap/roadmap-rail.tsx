@@ -1260,8 +1260,8 @@ export function RoadmapRail({
         )}
         <span>
           {permanent
-            ? '↑↓ move · ⏎ open · a start agent · esc to Team'
-            : '↑↓ move · ⏎ open · esc back · ⌘B close'}
+            ? 'move ↑↓ · open ⏎ · start agent a · to Team esc'
+            : 'move ↑↓ · open ⏎ · back esc · close ⌘B'}
         </span>
       </div>
     </div>

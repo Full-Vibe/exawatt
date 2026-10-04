@@ -301,6 +301,12 @@ face (BUG-049; the ⌘W close confirm's `Close ⏎` is the precedent, D27).
   publishes from inside the Radix content, so a closed dialog owns no chord.
 - Chord glyph register: `font-mono text-chrome-micro`, dimmed against the
   button's own foreground. No `kbd` chrome inside a filled button.
+- **Action first, shortcut last** (operator review, 2026-10-04). Buttons,
+  menu rows, tooltips and keyboard legends consistently read `Action ⌘K`.
+  Keep the hint's position stable across hover, focus and state changes. A
+  key-recording field or chord-in-progress indicator represents input itself
+  and is not an action label. Icon-only controls retain an accessible action
+  name; their tooltip uses the same action-then-shortcut order.
 
 ### Comfortable overlays and operation receipts (ENG-025 F6, amended by F7 / ENG-036, 2026-10-04)
 
@@ -378,7 +384,9 @@ focus handoff below; the earlier paragraphs record the shipped baseline.**
 
 **Compact task composers (operator correction, 2026-10-04).** The first F7
 recovery gallery was rejected as bulky and confusing; its visual treatment is
-not accepted. Shared interaction language does not require identical density:
+superseded by the compact refinement. The operator's follow-up requested only
+uniform trailing hints, removal of the redundant heading and optional purpose
+help, and endorsed its height transitions. Shared interaction language does not require identical density:
 Cmd+K needs scannable command rows; feedback needs a small writing surface.
 
 - Size the surface around its primary task. Optional evidence, metadata and
@@ -395,6 +403,11 @@ Cmd+K needs scannable command rows; feedback needs a small writing surface.
 - Gallery simulation controls live outside the specimen. Plain outcome choices
   run a representative interaction automatically; development vocabulary and
   test-only controls must not alter the product's silhouette or tab order.
+- Keep redundant headings out of compact composers while preserving accessible
+  names. Optional purpose/next-step help belongs on a small focusable help
+  affordance, available by hover, focus and activation. Explain why to use the
+  form, where the submission goes and how it informs the product; do not promise
+  a personal reply or a fix. Escape dismisses the topmost help layer first.
 
 Rationale: [Raycast's feedback design](https://www.raycast.com/blog/feedback),
 [progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/),

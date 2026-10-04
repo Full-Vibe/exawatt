@@ -104,9 +104,9 @@ export function ThemePickerCommand({
           </span>
         ) : (
           <>
-            <span>↑↓ Preview</span>
-            <span>Enter Apply</span>
-            <span>Esc Cancel</span>
+            <span>Preview ↑↓</span>
+            <span>Apply Enter</span>
+            <span>Cancel Esc</span>
           </>
         )}
       </div>

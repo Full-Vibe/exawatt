@@ -134,7 +134,8 @@ would amplify misleading success and duplicate reports.
   with Cmd+K while using its own writing density. A visible image is attached,
   with one remove action; optional app details use a conventional checkbox and
   disclosure. Gallery test controls remain outside the specimen. Visual
-  acceptance is still pending; retry/certainty ownership does not change.
+  review retains the compact height motion with trailing hints, no redundant
+  heading and optional purpose help; retry/certainty ownership does not change.
 
 ## Alternatives and consequences
 

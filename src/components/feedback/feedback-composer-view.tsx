@@ -10,7 +10,7 @@ import {
   type QuickCaptureBarProps,
 } from './quick-capture-bar';
 
-export interface FeedbackComposerViewProps extends QuickCaptureBarProps {
+interface FeedbackComposerViewProps extends QuickCaptureBarProps {
   attempt: FeedbackAttempt | null;
   onRetry: (id: string) => void;
   onEdit: (attempt: FeedbackAttempt) => void;

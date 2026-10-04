@@ -66,23 +66,23 @@ export function CommandKeyboardFooter({
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-5 py-3 text-chrome-label text-muted-foreground">
       <span className="flex items-center gap-1">
+        Navigate
         <CommandKey label="Up arrow">
           <ArrowUp aria-hidden="true" className="size-3" />
         </CommandKey>
         <CommandKey label="Down arrow">
           <ArrowDown aria-hidden="true" className="size-3" />
-        </CommandKey>{' '}
-        Navigate
+        </CommandKey>
       </span>
       <span className="flex items-center gap-1">
+        Select
         <CommandKey label="Return">
           <CornerDownLeft aria-hidden="true" className="size-3" />
-        </CommandKey>{' '}
-        Select
+        </CommandKey>
       </span>
       {showClose && (
         <span className="ml-auto flex items-center gap-1">
-          <CommandKey label="Escape">esc</CommandKey> Close
+          Close <CommandKey label="Escape">esc</CommandKey>
         </span>
       )}
     </div>

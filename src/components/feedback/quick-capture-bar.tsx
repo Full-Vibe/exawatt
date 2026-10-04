@@ -8,9 +8,15 @@ import {
   useId,
   type ReactNode,
 } from 'react';
-import { CornerDownLeft, ImagePlus, Loader2, X } from 'lucide-react';
+import { CircleHelp, CornerDownLeft, ImagePlus, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDialogInitialFocus } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { MAX_FEEDBACK_MESSAGE_CHARS } from '@/lib/feedback/contract';
 import {
   FEEDBACK_IMAGE_ACCEPT,
@@ -111,6 +117,7 @@ export function QuickCaptureBar({
   const detailsId = useId();
   const imagePreviewId = useId();
   const [reviewing, setReviewing] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [imageExpanded, setImageExpanded] = useState(false);
   const imageEditingOffered = !!onImageFiles || !!onPickImage;
   const imageLocked = busy || readOnly;
@@ -132,9 +139,12 @@ export function QuickCaptureBar({
   };
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
         return;
       if (event.key === 'Escape') {
+        // A mounted Radix dialog owns nested-layer Escape dismissal.
+        if (!dialogSemantics) return;
         event.preventDefault();
         onDismiss();
         return;
@@ -190,6 +200,7 @@ export function QuickCaptureBar({
       message,
       onSubmit,
       onDismiss,
+      dialogSemantics,
       onKindChange,
       screenshotAction,
       diagnosticsOffered,
@@ -251,9 +262,6 @@ export function QuickCaptureBar({
       )}
       <div data-feedback-scroll-body className="min-h-0 overflow-y-auto">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3 pr-12 pb-2">
-          <label htmlFor={messageId} className="text-sm font-medium">
-            Feedback
-          </label>
           <div
             role="group"
             aria-label="Feedback type"
@@ -288,8 +296,33 @@ export function QuickCaptureBar({
               </Button>
             ))}
           </div>
+          <TooltipProvider delayDuration={250}>
+            <Tooltip open={helpOpen} onOpenChange={setHelpOpen}>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="ml-auto size-8 shrink-0 text-muted-foreground"
+                  aria-label="About sending feedback"
+                  onClick={event => {
+                    event.preventDefault();
+                    setHelpOpen(true);
+                  }}
+                >
+                  <CircleHelp aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end" className="max-w-72 text-sm leading-relaxed">
+                Report a bug or suggest an improvement. Your message and chosen
+                attachments go to this app’s feedback inbox, where reports help
+                guide fixes and improvements.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
         <div className="px-4">
+          <label htmlFor={messageId} className="sr-only">Feedback</label>
           <textarea
             id={messageId}
             ref={node => {
@@ -353,8 +386,7 @@ export function QuickCaptureBar({
           </div>
           {imageEditingOffered && (
             <span className="ml-auto px-1 text-chrome-label text-muted-foreground">
-              <span className="font-mono text-chrome-micro">⌘V</span> Paste
-              image
+              Paste image <span className="font-mono text-chrome-micro">⌘V</span>
             </span>
           )}
         </div>
@@ -517,7 +549,7 @@ export function QuickCaptureBar({
         {submission || (
           <div className="flex min-h-14 items-center gap-2 px-4 py-2">
             <span className="mr-auto text-chrome-label text-muted-foreground">
-              <span className="font-mono text-chrome-micro">⇧↵</span> New line
+              New line <span className="font-mono text-chrome-micro">⇧↵</span>
             </span>
             <Button
               type="button"
