@@ -63,7 +63,7 @@ describe('AttentionMonitor', () => {
     add('a');
     const alerts: string[] = [];
     monitor.on('alert', id => alerts.push(id));
-    monitor.noteHarnessBlocked('a');
+    monitor.noteHarnessBlocked('a', 'working', 'q1');
     monitor.setWindowFocused(true);
     monitor.setFocus('a');
     monitor.noteInput('a');
@@ -71,7 +71,7 @@ describe('AttentionMonitor', () => {
     monitor.noteHarnessTurnStart('a');
     expect(monitor.get('a')).toMatchObject({ kind: 'blocked', unread: false });
     monitor.markUnread('a');
-    monitor.noteHarnessBlocked('a');
+    monitor.noteHarnessBlocked('a', 'working', 'q1');
     expect(monitor.get('a')).toMatchObject({ kind: 'blocked', unread: true });
     expect(alerts).toEqual(['a']);
     monitor.noteHarnessUnblocked('a');
@@ -91,6 +91,19 @@ describe('AttentionMonitor', () => {
     monitor.noteHarnessBlocked('a', 'working', 'source-question-2');
     expect(alerts).toEqual(['source-question-1', 'source-question-2']);
     expect(monitor.get('a')?.unread).toBe(false);
+  });
+
+  it('source turn-start releases a hard gate while preserving independent working questions', () => {
+    add('a');
+    monitor.noteHarnessBlocked('a', 'working', 'async-question');
+    monitor.noteHarnessBlocked('a', 'blocking', 'permission');
+    monitor.noteHarnessTurnStart('a');
+    expect(monitor.get('a')).toMatchObject({
+      kind: 'blocked',
+      request: 'working',
+      requestId: 'async-question',
+    });
+    expect(monitor.isWorking('a')).toBe(true);
   });
 
   it('retains a completed result behind a working question and exposes it after source resolution', () => {
@@ -629,13 +642,14 @@ describe('AttentionMonitor', () => {
       expect(monitor.isWorking('a')).toBe(true);
     });
 
-    it('never retires a real operator gate on a new turn', () => {
-      // A question or a block is not answered by more output arriving.
+    it('source-confirmed work supersedes an uncorrelated terminal nudge', () => {
+      // A positive source turn boundary is stronger evidence than an
+      // uncorrelated terminal nudge; raw subsequent bytes are not.
       add('a', 'claude', clock - 60_000);
       data('a', `needs you${BELL}`);
       expect(monitor.get('a')?.kind).toBe('bell');
       monitor.noteHarnessTurnStart('a');
-      expect(monitor.get('a')?.kind).toBe('bell');
+      expect(monitor.get('a')).toBeNull();
     });
 
     it('ignores a reported turn start for a shell or a dead session', () => {

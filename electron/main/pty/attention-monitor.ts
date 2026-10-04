@@ -519,17 +519,15 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     if (!session || session.exited || session.harness === 'shell') return;
     this.settled.delete(id);
     this.markEngaged(id);
-    // A ready result that new work has already superseded is not a result to
-    // review. `sessionStatusLightState` reads a turn-end signal as `result`
-    // regardless of turn state, so leaving it would light "result ready" on a
-    // Session that is visibly working again. Only the RESULT class is
-    // retired — an unanswered question or block still needs the operator, and
-    // more output does not answer it.
+    // A source-confirmed new turn supersedes its old result and proves a
+    // synchronous gate was released. Asynchronous requests can outlive turns
+    // and are retired only by their own correlated source reply.
     this.clear(
       id,
-      record => record.source === 'harness' && record.kind === 'turn-end'
+      record =>
+        record.source === 'harness' &&
+        (record.kind === 'turn-end' || record.request !== 'working')
     );
-    // A new turn alone does not prove an outstanding question was answered.
     this.lastDataAt.set(id, this.now());
     this.setWorking(id, true);
   }
