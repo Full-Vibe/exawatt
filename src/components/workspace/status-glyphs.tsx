@@ -18,12 +18,17 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import { StatusLight } from '@/components/status-light/status-light';
 import {
+  SessionUnreadMarker,
+  type SessionUnreadTreatment,
+} from './session-unread-marker';
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
   ATTENTION_GLYPH_COPY,
+  attentionReadLabel,
   DELEGATION_DOT_CAP,
   FAULT_GLYPH_COPY,
   delegationCopy,
@@ -293,15 +298,17 @@ export function SessionStatusGlyph({
   attention,
   delegation,
   fault = false,
+  unreadTreatment,
 }: {
   state: SessionGlyphState;
   attention?: SessionAttentionSignal | null;
   /** corrects the tooltip: a delegating Session is quiet, not streaming */
   delegation?: SessionDelegation | null;
   fault?: boolean;
+  unreadTreatment?: SessionUnreadTreatment;
 }) {
   const lightState = sessionStatusLightState({ state, attention, fault });
-  const copy =
+  const stateCopy =
     lightState === 'fault'
       ? FAULT_GLYPH_COPY
       : lightState === 'needs-you'
@@ -312,24 +319,26 @@ export function SessionStatusGlyph({
           : ATTENTION_GLYPH_COPY
         : sessionGlyphCopy(state, delegation);
 
-  if (lightState === 'needs-you') {
-    return (
-      <StatusTooltip copy={copy}>
-        {/* `data-status` rides along rather than being replaced: turn state and
-            attention are separate channels, and a Session that stops reporting
-            its turn state the moment it needs the operator is exactly the blind
-            spot that made this area hard to test and hard to trust. */}
-        <span data-attention data-status={state} className={GLYPH_BOX}>
-          <StatusLight decorative size="compact" state={lightState} />
-        </span>
-      </StatusTooltip>
-    );
-  }
-
+  const readCopy = attentionReadLabel(attention ?? undefined);
+  const copy = unreadTreatment
+    ? `${sessionGlyphCopy(state, delegation)}${readCopy ? ` ${readCopy}.` : ''}`
+    : stateCopy;
   return (
     <StatusTooltip copy={copy}>
-      <span data-status={fault ? 'fault' : state} className={GLYPH_BOX}>
+      <span
+        data-attention={lightState === 'needs-you' || undefined}
+        data-status={fault ? 'fault' : state}
+        className={`${GLYPH_BOX}${unreadTreatment ? ' relative' : ''}`}
+        role={unreadTreatment ? 'img' : undefined}
+        aria-label={unreadTreatment ? copy : undefined}
+      >
         <StatusLight decorative size="compact" state={lightState} />
+        {unreadTreatment && (
+          <SessionUnreadMarker
+            attention={attention}
+            treatment={unreadTreatment}
+          />
+        )}
       </span>
     </StatusTooltip>
   );
@@ -363,11 +372,13 @@ export function SessionStatusReadout({
   attention,
   delegation,
   fault = false,
+  unreadTreatment,
 }: {
   state: SessionGlyphState;
   attention?: SessionAttentionSignal | null;
   delegation?: SessionDelegation | null;
   fault?: boolean;
+  unreadTreatment?: SessionUnreadTreatment;
 }) {
   const word = sessionStateWord({ state, attention, fault });
   return (
@@ -380,6 +391,7 @@ export function SessionStatusReadout({
         attention={attention}
         delegation={delegation}
         fault={fault}
+        unreadTreatment={unreadTreatment}
       />
       {/* chrome-meta is the secondary-metadata rung (design system, D39 type
           scale); `whitespace-nowrap` keeps the widest word — "Result ready" —

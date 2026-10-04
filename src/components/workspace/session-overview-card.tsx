@@ -11,7 +11,7 @@ import {
 import { HarnessGlyph } from './harness-icons';
 import { HARNESS_META } from './harnesses';
 import { SessionGoalSummary } from './session-goal-summary';
-import { SessionUnreadMarker } from './session-unread-marker';
+import type { SessionUnreadTreatment } from './session-unread-marker';
 import {
   DelegationDots,
   DelegationRail,
@@ -51,8 +51,8 @@ export interface SessionOverviewCardContentProps {
   harness: PtyHarness;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
-  /** Gallery review candidate; production remains opt-out until accepted. */
-  showUnreadMarker?: boolean;
+  /** Gallery review candidate; production does not set this prop. */
+  unreadTreatment?: SessionUnreadTreatment;
   /** harness-reported delegated work (ENG-023); absent when unreported */
   delegation?: SessionDelegation | null;
   /**
@@ -92,7 +92,7 @@ export function SessionOverviewCardContent({
   harness,
   glyphState,
   attention,
-  showUnreadMarker = false,
+  unreadTreatment,
   delegation,
   agentType,
   initiative,
@@ -168,8 +168,8 @@ export function SessionOverviewCardContent({
             attention={attention}
             delegation={delegation}
             fault={fault}
+            unreadTreatment={unreadTreatment}
           />
-          {showUnreadMarker && <SessionUnreadMarker attention={attention} />}
         </span>
       </div>
 

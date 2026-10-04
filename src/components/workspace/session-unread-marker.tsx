@@ -1,28 +1,43 @@
-import {
-  attentionReadLabel,
-  type SessionAttentionSignal,
-} from './session-status';
+import type { SessionAttentionSignal } from './session-status';
 
-/** Review candidate: operator inspection uses neutral chrome, independent of
- * D40 execution/attention color. The fixed slot keeps purpose text stationary
- * when the dot disappears. Production callers opt in only after review. */
+export type SessionUnreadTreatment = 'corner-dot' | 'outer-mark';
+
+/** Gallery candidate inside the established 16px status slot. Inspection is
+ * neutral chrome; the underlying D40 glyph, color and geometry remain intact.
+ * Accessibility belongs to the combined status/read explanation on its owner. */
 export function SessionUnreadMarker({
   attention,
+  treatment,
 }: {
-  attention?: SessionAttentionSignal;
+  attention?: SessionAttentionSignal | null;
+  treatment: SessionUnreadTreatment;
 }) {
-  const unread = attention && attention.unread !== false;
-  const label = unread ? attentionReadLabel(attention) : null;
+  const unread = attention?.records
+    ? attention.records.some(record => record.unread !== false)
+    : attention && attention.unread !== false;
+  if (!unread) return null;
+  if (treatment === 'corner-dot') {
+    return (
+      <span
+        aria-hidden
+        data-unread-treatment={treatment}
+        className="pointer-events-none absolute right-0 top-0 h-1 w-1 rounded-full bg-hud-text-dim"
+      />
+    );
+  }
   return (
-    <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center">
-      {label && (
-        <span
-          role="img"
-          aria-label={label}
-          title={label}
-          className="h-1.5 w-1.5 rounded-full bg-hud-text-dim"
-        />
-      )}
-    </span>
+    <svg
+      aria-hidden
+      data-unread-treatment={treatment}
+      className="pointer-events-none absolute inset-0 h-4 w-4 text-hud-text-dim"
+      viewBox="0 0 16 16"
+      fill="none"
+    >
+      <path
+        d="M0.5 8a7.5 7.5 0 0 1 15 0"
+        stroke="currentColor"
+        strokeWidth="1"
+      />
+    </svg>
   );
 }
