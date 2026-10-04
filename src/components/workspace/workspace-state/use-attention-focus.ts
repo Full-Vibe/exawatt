@@ -22,12 +22,14 @@ import type {
 export function useAttentionFocus({
   activeSessionId,
   activeDurableSessionId,
+  sessionVisible = true,
   setReentryRecap,
   setAttention,
 }: {
   /** the live PTY incarnation behind the active tab, or null */
   activeSessionId: string | null;
   activeDurableSessionId?: string | null;
+  sessionVisible?: boolean;
   setReentryRecap: Dispatch<SetStateAction<PtyReentryRecap | null>>;
   setAttention: Dispatch<SetStateAction<Record<string, PtyAttention>>>;
 }): void {
@@ -42,7 +44,7 @@ export function useAttentionFocus({
   // its old attention marker; main then confirmed the clear over IPC.
   useLayoutEffect(() => {
     const acknowledge = () => {
-      if (!document.hasFocus()) return;
+      if (!sessionVisible || !document.hasFocus()) return;
       const id = activeDurableSessionId ?? activeSessionId;
       if (!id) return;
       setAttention(prev => {
@@ -57,15 +59,19 @@ export function useAttentionFocus({
     // a tab hop, even when this process has no current runtime for it.
     window.addEventListener('focus', acknowledge);
     return () => window.removeEventListener('focus', acknowledge);
-  }, [activeSessionId, activeDurableSessionId, setAttention]);
+  }, [activeSessionId, activeDurableSessionId, sessionVisible, setAttention]);
 
   useEffect(() => {
     const api = window.electron?.pty;
     if (!api?.focus) return;
-    void api.focus(activeSessionId ?? activeDurableSessionId ?? null);
+    void api.focus(
+      sessionVisible
+        ? (activeSessionId ?? activeDurableSessionId ?? null)
+        : null
+    );
     // Main remains authoritative for background-window attention and
     // broadcasts the confirmed read state to every renderer on focus.
     // leaving the workspace (unmount) unfocuses — flags accumulate again
     return () => void api.focus(null);
-  }, [activeSessionId, activeDurableSessionId]);
+  }, [activeSessionId, activeDurableSessionId, sessionVisible]);
 }

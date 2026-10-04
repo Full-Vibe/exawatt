@@ -2060,3 +2060,22 @@ monitor/routing/hook proof passed 81 tests. Final integration must also switch
 the restart lane's markSessionUnread callback to the operator-reminder helper
 and consume authoritative exited snapshots during checkpointing; the old
 exited-null guard becomes obsolete only with this custody patch present.
+
+
+### 2026-10-04 — Followthrough composes with the frozen recovery stack (verified locally, not integrated)
+
+**The complete ownership stack compiles cleanly.** Attention followthrough was
+rebased onto the frozen coupled checkpoint `6001c321` in its own worktree,
+followed by `pnpm install`; the full TypeScript check now passes. The remaining
+integration seams are implemented: paused mark-unread creates an operator
+reminder even without an existing fact, hydration/checkpointing trust exact
+ended-source absence, and a selected Session hidden under Team overview is not
+acknowledged until it is actually opened. Demo overview focus parity is owned
+by the Fleet lane (`10ba086a`).
+
+Independent review rechecked current main attribution, token-sensitive cache,
+explicit assignment custody under overlapping saves/commands, retained-runtime
+read ownership, and the visibility-aware focus path, finding no further
+actionable defect. All followthrough code remains on `agent/polish-attention`;
+it must land only after the original coupled stack, with its own declared
+runtime gates and dogfood request. No production marker adoption is included.

@@ -215,9 +215,9 @@ export function withLiveSessionFacts(
         return {
           ...tab,
           harnessSessionId: session.harnessSessionId ?? tab.harnessSessionId,
-          // A stopped runtime has dropped its monitor; that is not source
-          // resolution. A live snapshot actively confirms absence too.
-          ...(!session.exited && session.attention !== undefined
+          // Main retains the exact final snapshot for ended runtimes too;
+          // authoritative absence must clear stale persisted requests.
+          ...(session.attention !== undefined
             ? { attention: session.attention ?? undefined }
             : {}),
         };

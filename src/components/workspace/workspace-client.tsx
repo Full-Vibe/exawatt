@@ -369,6 +369,8 @@ export function WorkspaceClient() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
+  const requestedOverview = searchParams.get('view') === 'sessions';
+  const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
   const { openCommandPalette, openHelpModal } = useShortcuts();
   const { isAuthenticated: feedbackEnabled, submitContextRating } =
     useProductFeedback();
@@ -427,7 +429,7 @@ export function WorkspaceClient() {
     renameTab,
     renameProject,
     setProjectColor,
-  } = useWorkspaceState({ getInitialSize });
+  } = useWorkspaceState({ getInitialSize, sessionVisible: !overviewOpen });
   /**
    * The active tab, told apart by kind.
    *
@@ -1127,8 +1129,6 @@ export function WorkspaceClient() {
     return out;
   }, [projects, roadmapView]);
   // Sessions altitude (S3): ⌃⌘2 — sessions fan out as tiles
-  const requestedOverview = searchParams.get('view') === 'sessions';
-  const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
   const updateOverview = useCallback(
     (open: boolean) => {
       setOverviewOpen(open);

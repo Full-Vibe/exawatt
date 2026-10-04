@@ -403,7 +403,7 @@ describe('persisted goals', () => {
   });
 });
 
-it('keeps retained attention while paused but lets fresh live absence resolve it', () => {
+it('keeps disk attention without a runtime but trusts current and retained main absence', () => {
   const retained = {
     kind: 'blocked' as const,
     since: 1,
@@ -435,7 +435,7 @@ it('keeps retained attention while paused but lets fresh live absence resolve it
       restored,
       races
     ).attention
-  ).toEqual({ 'durable-a': retained });
+  ).toEqual({});
   expect(
     seedSessionStores(
       [ptySessionInfo({ durableSessionId: 'durable-a', attention: null })],

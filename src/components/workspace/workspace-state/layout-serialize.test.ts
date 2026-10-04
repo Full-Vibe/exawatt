@@ -400,7 +400,7 @@ describe('restart recovery contract', () => {
   });
 });
 
-it('checkpoints fresh source resolution but never mistakes process teardown for resolution', () => {
+it('checkpoints exact ended source snapshots, including resolution before exit', () => {
   const attention = { kind: 'blocked' as const, since: 1, unread: false };
   const saved = serializeLayout(
     workspace([tab('a')]),
@@ -412,7 +412,11 @@ it('checkpoints fresh source resolution but never mistakes process teardown for 
   const ended = withLiveSessionFacts(saved, [
     { ...current, exited: true, attention: null },
   ]);
-  expect(sessionTabs(ended.projects[0].tabs)[0].attention).toEqual(attention);
+  expect(sessionTabs(ended.projects[0].tabs)[0].attention).toBeUndefined();
+  const pending = withLiveSessionFacts(saved, [
+    { ...current, exited: true, attention },
+  ]);
+  expect(sessionTabs(pending.projects[0].tabs)[0].attention).toEqual(attention);
 });
 
 it('round-trips independent request receipts and an unread result together', () => {

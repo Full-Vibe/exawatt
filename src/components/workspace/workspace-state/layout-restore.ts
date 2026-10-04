@@ -185,7 +185,7 @@ export function seedSessionStores(
   }
   for (const s of live) {
     // A current main snapshot, including explicit absence, outranks disk.
-    if (!s.exited) delete seeds.attention[s.durableSessionId];
+    delete seeds.attention[s.durableSessionId];
     if (s.contextSummary)
       seeds.summaries[s.durableSessionId] = s.contextSummary;
     if (s.goalVisual) seeds.goalVisuals[s.durableSessionId] = s.goalVisual;

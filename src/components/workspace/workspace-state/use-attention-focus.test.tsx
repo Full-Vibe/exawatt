@@ -44,3 +44,33 @@ it('acknowledges the same paused Session when its blurred window regains focus',
     unread: false,
   });
 });
+
+it('does not read the selected Session under Team overview until that Session is opened', () => {
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  const focus = vi.fn().mockResolvedValue(undefined);
+  installBridgeDouble({ pty: { focus } });
+  const { result, rerender } = renderHook(
+    ({ visible }: { visible: boolean }) => {
+      const [attention, setAttention] = useState<Record<string, PtyAttention>>({
+        durable: { kind: 'reminder', since: 1, unread: true },
+      });
+      const [, setReentryRecap] = useState<PtyReentryRecap | null>(null);
+      useAttentionFocus({
+        activeSessionId: 'runtime',
+        activeDurableSessionId: 'durable',
+        sessionVisible: visible,
+        setAttention,
+        setReentryRecap,
+      });
+      return attention;
+    },
+    { initialProps: { visible: false } }
+  );
+  expect(result.current.durable.unread).toBe(true);
+  expect(focus).toHaveBeenLastCalledWith(null);
+  act(() => window.dispatchEvent(new Event('focus')));
+  expect(result.current.durable.unread).toBe(true);
+  rerender({ visible: true });
+  expect(result.current.durable.unread).toBe(false);
+  expect(focus).toHaveBeenLastCalledWith('runtime');
+});

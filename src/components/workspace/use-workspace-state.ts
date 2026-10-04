@@ -1,6 +1,6 @@
 'use client';
 
-import { withAttentionRead } from '@exawatt/core';
+import { markAttentionUnread } from '@exawatt/core';
 
 /**
  * Workspace state (ENG-002 W0.2): project groups keyed by PROJECT
@@ -101,6 +101,8 @@ export type {
 export type { LaunchOptions } from './workspace-state/use-session-launch';
 
 export interface WorkspaceStateOptions {
+  /** The selected Session is open, rather than underneath Team overview. */
+  sessionVisible?: boolean;
   /**
    * Estimated terminal size for NEW sessions (from the pane container).
    * Passing real dimensions at spawn kills the width race: TUIs read the
@@ -501,6 +503,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const activeSessionId =
     activeTab && isSessionTab(activeTab) ? activeTab.sessionId : null;
   useAttentionFocus({
+    sessionVisible: options.sessionVisible ?? true,
     activeSessionId,
     activeDurableSessionId:
       activeTab && isSessionTab(activeTab) ? activeTab.durableSessionId : null,
@@ -510,16 +513,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const markSessionUnread = useCallback(
     (tab: SessionTab) => {
-      setAttention(previous => {
-        const current = attentionForSession(tab, previous);
-        return current
-          ? {
-              ...previous,
-              [tab.durableSessionId]: withAttentionRead(current, true),
-            }
-          : previous;
-      });
-      if (tab.sessionId) void window.electron?.pty.markUnread?.(tab.sessionId);
+      setAttention(previous => ({
+        ...previous,
+        [tab.durableSessionId]: markAttentionUnread(
+          attentionForSession(tab, previous) ?? null,
+          Date.now()
+        ),
+      }));
+      void window.electron?.pty.markUnread?.(
+        tab.sessionId ?? tab.durableSessionId
+      );
     },
     [setAttention]
   );
