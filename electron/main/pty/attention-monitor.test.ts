@@ -93,6 +93,90 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')?.unread).toBe(false);
   });
 
+  it('retains a completed result behind a working question and exposes it after source resolution', () => {
+    add('a');
+    const alerts: string[] = [];
+    monitor.on('alert', (_id, signal) => alerts.push(signal.kind));
+    monitor.noteHarnessBlocked('a', 'working', 'q1');
+    monitor.setWindowFocused(true);
+    monitor.setFocus('a');
+    monitor.setFocus(null);
+    clock += 100;
+    monitor.noteHarnessTurnEnd('a');
+    const checkpoint = monitor.get('a')!;
+    expect(checkpoint).toMatchObject({ kind: 'blocked', unread: true });
+    expect(checkpoint.records).toMatchObject([
+      { kind: 'blocked', requestId: 'q1', unread: false },
+      { kind: 'turn-end', since: clock, unread: true },
+    ]);
+    const restored = new AttentionMonitor();
+    restored.restore('resumed', checkpoint);
+    restored.noteHarnessUnblocked('resumed');
+    expect(restored.get('resumed')).toMatchObject({
+      kind: 'turn-end',
+      since: clock,
+      unread: true,
+    });
+    monitor.noteHarnessUnblocked('a');
+    expect(monitor.get('a')).toMatchObject({
+      kind: 'turn-end',
+      since: clock,
+      unread: true,
+    });
+    expect(alerts).toEqual(['blocked', 'turn-end']);
+  });
+
+  it('reading both a question and its completed result does not make resolution unread again', () => {
+    add('a');
+    monitor.noteHarnessBlocked('a', 'working', 'q1');
+    monitor.noteHarnessTurnEnd('a');
+    monitor.setWindowFocused(true);
+    monitor.setFocus('a');
+    monitor.noteHarnessUnblocked('a');
+    expect(monitor.get('a')).toMatchObject({ kind: 'turn-end', unread: false });
+  });
+
+  it('restores individual request receipts before partial rediscovery without replaying old alerts', () => {
+    add('a');
+    monitor.restore('a', {
+      kind: 'blocked',
+      since: 1,
+      unread: false,
+      records: [
+        {
+          source: 'harness',
+          kind: 'blocked',
+          request: 'working',
+          requestId: 'q1',
+          since: 1,
+          unread: false,
+        },
+        {
+          source: 'harness',
+          kind: 'blocked',
+          request: 'working',
+          requestId: 'q2',
+          since: 2,
+          unread: false,
+        },
+      ],
+    });
+    const alerts: string[] = [];
+    monitor.on('alert', (_id, signal) => alerts.push(signal.requestId!));
+    monitor.noteHarnessBlocked('a', 'working', 'q2');
+    monitor.noteHarnessBlocked('a', 'working', 'q1');
+    expect(alerts).toEqual([]);
+    monitor.noteHarnessBlocked('a', 'working', 'q3');
+    monitor.noteHarnessUnblocked('a', 'q1');
+    expect(monitor.get('a')?.records?.map(record => record.requestId)).toEqual([
+      'q2',
+      'q3',
+    ]);
+    expect(alerts).toEqual(['q3']);
+    monitor.noteHarnessUnblocked('a', 'q2');
+    expect(monitor.get('a')?.requestId).toBe('q3');
+  });
+
   it('restores silently and refuses a late checkpoint after fresh source evidence', () => {
     add('a');
     add('b');
@@ -123,7 +207,7 @@ describe('AttentionMonitor', () => {
     monitor.noteHarnessTurnEnd('a');
     const result = monitor.get('a');
     monitor.noteHarnessTurnUnknown('a', true);
-    expect(monitor.get('a')).toBe(result);
+    expect(monitor.get('a')).toEqual(result);
     monitor.noteHarnessTurnUnknown('a');
     expect(monitor.get('a')).toBeNull();
   });

@@ -549,6 +549,10 @@ export class PtySessionManager extends EventEmitter {
       ...(statedTask ? { initialTask: statedTask } : {}),
     });
 
+    // Synchronous custody boundary: durable operator state is restored before
+    // any source observer or PTY callback can publish new evidence.
+    this.emit('created', { ...info });
+
     if (options.resumeSessionId && options.harness !== 'shell') {
       this.appendBuffer(
         id,

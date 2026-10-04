@@ -13,6 +13,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
+import { withAttentionRead } from '@exawatt/core';
 import type {
   PtyAttention,
   PtyReentryRecap,
@@ -40,15 +41,22 @@ export function useAttentionFocus({
   // used to leave one rendered frame where the newly active tab still wore
   // its old attention marker; main then confirmed the clear over IPC.
   useLayoutEffect(() => {
-    if (!document.hasFocus()) return;
-    const id = activeDurableSessionId ?? activeSessionId;
-    if (!id) return;
-    setAttention(prev => {
-      const key = prev[id] ? id : activeSessionId;
-      const signal = key ? prev[key] : undefined;
-      if (!key || !signal || signal.unread === false) return prev;
-      return { ...prev, [key]: { ...signal, unread: false } };
-    });
+    const acknowledge = () => {
+      if (!document.hasFocus()) return;
+      const id = activeDurableSessionId ?? activeSessionId;
+      if (!id) return;
+      setAttention(prev => {
+        const key = prev[id] ? id : activeSessionId;
+        const signal = key ? prev[key] : undefined;
+        if (!key || !signal || signal.unread === false) return prev;
+        return { ...prev, [key]: withAttentionRead(signal, false) };
+      });
+    };
+    acknowledge();
+    // Paused Sessions have no main-process focus target. Returning to the app
+    // must still acknowledge the retained record without requiring a tab hop.
+    window.addEventListener('focus', acknowledge);
+    return () => window.removeEventListener('focus', acknowledge);
   }, [activeSessionId, activeDurableSessionId, setAttention]);
 
   useEffect(() => {
@@ -56,7 +64,7 @@ export function useAttentionFocus({
     if (!api?.focus) return;
     void api.focus(activeSessionId);
     // Main remains authoritative for background-window attention and
-    // broadcasts the confirmed clear to every renderer on focus.
+    // broadcasts the confirmed read state to every renderer on focus.
     // leaving the workspace (unmount) unfocuses — flags accumulate again
     return () => void api.focus(null);
   }, [activeSessionId]);

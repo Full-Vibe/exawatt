@@ -1,12 +1,16 @@
 import { EventEmitter } from 'events';
 import {
   sessionHasBackgroundWork,
+  attentionRecords,
+  attentionRecordKey,
+  projectSessionAttention,
   type SessionBackgroundTask,
 } from '@exawatt/core';
 import type { PtySessionManager } from './session-manager';
 import type {
   PtyAttention,
   PtyAttentionKind,
+  PtyAttentionRecord,
 } from '@exawatt/core/desktop-bridge';
 
 /**
@@ -141,7 +145,7 @@ type AttentionMonitorEvents = {
 
 export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   private manager: PtySessionManager | null = null;
-  private attention = new Map<string, PtyAttention>();
+  private attention = new Map<string, PtyAttentionRecord[]>();
   private sourceObserved = new Set<string>();
   private lastDataAt = new Map<string, number>();
   private lastResizeAt = new Map<string, number>();
@@ -227,19 +231,23 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   }
 
   get(id: string): PtyAttention | null {
-    return this.attention.get(id) ?? null;
+    return projectSessionAttention(this.attention.get(id) ?? []);
   }
 
   count(): number {
-    return [...this.attention.values()].filter(att => att.unread !== false)
-      .length;
+    return [...this.attention.values()].filter(records =>
+      records.some(record => record.unread !== false)
+    ).length;
   }
 
   /** Restore operator state only before any fresh source evidence. */
   restore(id: string, snapshot: PtyAttention): void {
     if (this.sourceObserved.has(id) || this.attention.has(id)) return;
-    this.attention.set(id, { ...snapshot });
-    this.emit('attention', id, this.attention.get(id)!);
+    this.attention.set(
+      id,
+      attentionRecords(snapshot).map(record => ({ ...record }))
+    );
+    this.emit('attention', id, this.get(id));
   }
 
   /** Inspection and operator intent never raise a second source alert. */
@@ -248,11 +256,17 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   }
 
   private setUnread(id: string, unread: boolean): void {
-    const existing = this.attention.get(id);
-    if (!existing || (existing.unread !== false) === unread) return;
-    const next = { ...existing, unread };
-    this.attention.set(id, next);
-    this.emit('attention', id, next);
+    const records = this.attention.get(id);
+    if (
+      !records ||
+      records.every(record => (record.unread !== false) === unread)
+    )
+      return;
+    this.attention.set(
+      id,
+      records.map(record => ({ ...record, unread }))
+    );
+    this.emit('attention', id, this.get(id));
   }
 
   /** is this session actively producing output right now? */
@@ -318,8 +332,13 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // A completed blocking turn backstops a lost gate-release event. An
     // asynchronous question can outlive this turn and needs its own reply
     // correlation; completing work does not answer that question.
-    if (this.attention.get(id)?.request !== 'working')
-      this.noteHarnessUnblocked(id);
+    this.clear(
+      id,
+      record =>
+        record.source === 'harness' &&
+        record.kind !== 'turn-end' &&
+        record.request !== 'working'
+    );
     // NO spawn grace here, deliberately. That guard exists because a revived
     // tab printing its banner and going quiet LOOKS like a finished turn to
     // inference; a reported boundary carries no such ambiguity, and honoring
@@ -330,21 +349,37 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     this.raise(id, 'turn-end');
   }
 
+  /** A previously observed completion settles execution without new news. */
+  noteHarnessTurnSettled(id: string): void {
+    this.sourceObserved.add(id);
+    this.settled.add(id);
+    this.setWorking(id, false);
+    this.burstBytes.set(id, 0);
+  }
+
   /** Lack of source visibility is not a finished turn or an operator gate. */
   noteHarnessTurnUnknown(id: string, preserveResult = false): void {
     this.sourceObserved.add(id);
     this.settled.delete(id);
-    const kind = this.attention.get(id)?.kind;
-    if (!preserveResult && (kind === 'bell' || kind === 'turn-end'))
-      this.clear(id);
+    if (!preserveResult)
+      this.clear(
+        id,
+        record =>
+          record.source === 'harness' &&
+          (record.kind === 'bell' || record.kind === 'turn-end')
+      );
   }
 
   /** Source work corrects an inferred bell/result even if its census arrived
    * after the terminal nudge. Explicit operator gates remain independent. */
   noteReportedBackgroundWork(id: string): void {
     if (this.disabled || !this.teamWorkingWithoutGate(id)) return;
-    const kind = this.attention.get(id)?.kind;
-    if (kind === 'bell' || kind === 'turn-end') this.clear(id);
+    this.clear(
+      id,
+      record =>
+        record.source === 'harness' &&
+        (record.kind === 'bell' || record.kind === 'turn-end')
+    );
   }
 
   /**
@@ -490,7 +525,10 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // Session that is visibly working again. Only the RESULT class is
     // retired — an unanswered question or block still needs the operator, and
     // more output does not answer it.
-    if (this.attention.get(id)?.kind === 'turn-end') this.clear(id);
+    this.clear(
+      id,
+      record => record.source === 'harness' && record.kind === 'turn-end'
+    );
     // A new turn alone does not prove an outstanding question was answered.
     this.lastDataAt.set(id, this.now());
     this.setWorking(id, true);
@@ -532,14 +570,16 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   }
 
   /** The gate closed — the operator answered, or the harness withdrew it. */
-  noteHarnessUnblocked(id: string): void {
+  noteHarnessUnblocked(id: string, requestId?: string): void {
     if (this.disabled) return;
     this.sourceObserved.add(id);
-    if (
-      this.attention.get(id)?.kind === 'blocked' ||
-      this.attention.get(id)?.kind === 'bell'
-    )
-      this.clear(id);
+    this.clear(
+      id,
+      record =>
+        record.source === 'harness' &&
+        record.kind !== 'turn-end' &&
+        (requestId === undefined || record.requestId === requestId)
+    );
   }
 
   private markEngaged(id: string): void {
@@ -706,41 +746,58 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     requestId?: string
   ): void {
     this.sourceObserved.add(id);
-    const existing = this.attention.get(id);
-    // Precedence, the same rule `mergeSessionAttentionSignals` applies on the
-    // renderer side — which is exactly why it has to hold here too, or the two
-    // would answer differently for one Session.
-    //
-    //  - within a class: keep the original, so `since` holds queue order;
-    //  - across classes: an operator GATE outranks a ready result, so a result
-    //    that happened to arrive first cannot lock out the question after it.
-    if (existing) {
-      const upgrade =
-        (existing.kind === 'turn-end' && attentionIsOperatorGate(kind)) ||
-        (existing.kind === 'bell' && kind === 'blocked') ||
-        (kind === 'blocked' &&
-          requestId !== undefined &&
-          existing.requestId !== requestId);
-      if (!upgrade) return;
-    }
-    // a turn-end, bell, or gate means a turn happened — the session has started
-    this.markEngaged(id);
-    const att: PtyAttention = {
+    const records = this.attention.get(id) ?? [];
+    const next: PtyAttentionRecord = {
+      source: 'harness',
       kind,
       since: this.now(),
       unread: !this.isWatched(id),
       ...(request ? { request } : {}),
       ...(requestId ? { requestId } : {}),
     };
-    this.attention.set(id, att);
-    this.emit('attention', id, att);
-    if (att.unread || attentionIsOperatorGate(kind))
-      this.emit('alert', id, att);
+    const key = attentionRecordKey(next);
+    const existing = records.find(record => attentionRecordKey(record) === key);
+    if (existing) {
+      const upgrade =
+        (existing.kind === 'bell' && kind === 'blocked') ||
+        (kind === 'blocked' &&
+          requestId !== undefined &&
+          existing.requestId !== requestId);
+      if (!upgrade) return;
+    }
+    this.markEngaged(id);
+    this.attention.set(id, [
+      ...records.filter(
+        record =>
+          attentionRecordKey(record) !== key &&
+          !(
+            kind === 'blocked' &&
+            record.source === 'harness' &&
+            record.kind === 'bell'
+          )
+      ),
+      next,
+    ]);
+    this.emit('attention', id, this.get(id));
+    // Alert the new fact, not the selected compatibility projection: a result
+    // can arrive behind an already-read request and still deserves one alert.
+    if (next.unread || attentionIsOperatorGate(kind)) {
+      const { source: _source, ...signal } = next;
+      this.emit('alert', id, signal);
+    }
   }
 
-  private clear(id: string): void {
-    if (!this.attention.delete(id)) return;
-    this.emit('attention', id, null);
+  private clear(
+    id: string,
+    matches: (record: PtyAttentionRecord) => boolean = () => true
+  ): void {
+    const records = this.attention.get(id);
+    if (!records) return;
+    const next = records.filter(record => !matches(record));
+    if (next.length === records.length) return;
+    if (next.length) this.attention.set(id, next);
+    else this.attention.delete(id);
+    this.emit('attention', id, this.get(id));
   }
 
   private setWorking(id: string, working: boolean): void {

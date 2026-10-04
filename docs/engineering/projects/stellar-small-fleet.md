@@ -1942,3 +1942,37 @@ Execution contract for the next increment, accepted in root coordination:
 Read/unread marker styling remains in `/hud-gallery/attention-reading` for
 operator review. Production purpose text, position, and completion glyphs do
 not change merely because a result was inspected.
+
+### 2026-10-04 — Canonical attention records and atomic resume custody
+
+**A completed result now survives an unanswered working question.** Integration
+review exposed the scalar slot's remaining architectural failure: a result
+arriving behind a request was discarded, then resolving the request erased all
+attention. The accepted correction moves independent facts into canonical
+source records now, rather than adding a provider-specific replay workaround.
+
+`session-attention.ts` is the one typed projector, checkpoint normalizer, and
+read-metadata helper. Records distinguish producer, individual source request
+identity, and result; the compatibility scalar is derived. Reading acknowledges
+all facts currently presented, while new requests/results retain their own
+unread state. Invalid persisted records are rejected independently; conflicting
+compatibility fields never override canonical records. Individual question IDs
+also prevent partial history rediscovery from ringing a previously read
+aggregate request again. A new question still alerts on its first observation.
+
+Exact resume now offers a synchronous `created` custody boundary immediately
+after runtime registration and before PTY callbacks or awaited identity work.
+The scoped `withInitialSessionAttention` helper restores only the matching
+durable Session and provider conversation, then removes its listener even on
+failure. A paused Session can acknowledge its retained record on OS-window
+focus without changing tabs. Source read outages preserve known results;
+positive old completion settles execution silently; ambient terminal bells do
+not override source-reported working or unknown execution.
+
+Evidence before combined integration: 82 focused core/monitor/resume-custody/
+paused-focus tests passed and owned-file lint passed. Cases include question +
+completion + exact resolution, read-before/after-result, checkpoint restoration,
+partial rediscovery of several request identities, new request notification,
+wrong-conversation isolation, and failure cleanup. The integration owner still
+must verify the combined source/restart/renderer tree and declared surface
+gates. Roadmap producer adoption and final marker styling remain pending.

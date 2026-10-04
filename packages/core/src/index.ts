@@ -1,3 +1,4 @@
+export * from './session-attention';
 export * from './types/index';
 export * from './agent-sources';
 export * from './agent-projection';

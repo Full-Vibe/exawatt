@@ -95,10 +95,14 @@ export interface PtySessionRecord {
 /** `blocked` is a reported operator gate (ENG-023 D4): a question, a
  *  permission decision, or an MCP elicitation. Like `bell` and unlike
  *  `turn-end`, it needs the operator. */
-export type PtyAttentionKind = 'bell' | 'turn-end' | 'blocked';
+export type PtyAttentionKind =
+  | 'bell'
+  | 'turn-end'
+  | 'blocked'
+  | 'roadmap-blocked';
 
 /** "This Session needs the operator" (ENG-015 S1). */
-export interface PtyAttention {
+export interface PtyAttentionSignal {
   kind: PtyAttentionKind;
   /** When the attention was raised; the queue orders oldest first. */
   since: number;
@@ -110,6 +114,17 @@ export interface PtyAttention {
   request?: 'blocking' | 'working' | 'unknown';
   /** Source-correlated identity or census key; absent for unreported signals. */
   requestId?: string;
+}
+
+/** Canonical independent source facts. Request and result may coexist. */
+export interface PtyAttentionRecord extends PtyAttentionSignal {
+  source: 'harness' | 'roadmap';
+}
+
+/** Compatibility projection; records, when present, are the canonical snapshot.
+ * Read metadata belongs to each source fact, never to a competing scalar store. */
+export interface PtyAttention extends PtyAttentionSignal {
+  records?: PtyAttentionRecord[];
 }
 
 /** Source-neutral visual identity for one durable Session goal (ENG-015 S4.1). */
@@ -183,6 +198,7 @@ export interface SessionDelegation {
   /** Requests may coexist with ongoing work; absent legacy gates block. */
   request?: 'blocking' | 'working';
   requestId?: string;
+  requestCoverage?: 'complete' | 'partial' | 'unavailable';
   /** Live children, oldest first. */
   children: DelegatedChild[];
   /** Non-Agent work reported by the source; absent on older providers. */
