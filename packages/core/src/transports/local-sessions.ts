@@ -37,6 +37,7 @@ import type { FleetManager } from '../state/fleet-manager';
 export interface LocalSessionAttention {
   kind: string;
   since: number;
+  request?: 'blocking' | 'working' | 'unknown';
 }
 
 export interface LocalSessionSnapshot {
@@ -67,6 +68,7 @@ export interface LocalSessionSnapshot {
         ownTurn?: 'generating' | 'available' | 'unknown';
         backgroundTasks?: SessionBackgroundTask[];
         blockedOn?: string | null;
+        request?: 'blocking' | 'working';
       })
     | null;
   /** Main/source-owned activity truth. Undefined preserves compatibility
@@ -141,9 +143,15 @@ export function sessionStatus(
   // An operator gate outranks delegated work (same precedence as the tab
   // strip); running children outrank quiet bytes AND a stale turn boundary —
   // a Session whose team is working never reads as finished (ENG-023).
-  if (session.attention && session.attention.kind !== 'turn-end')
+  if (
+    session.attention &&
+    session.attention.kind !== 'turn-end' &&
+    session.attention.request !== 'working' &&
+    session.attention.request !== 'unknown'
+  )
     return 'blocked';
-  if (session.delegation?.blockedOn) return 'blocked';
+  if (session.delegation?.blockedOn && session.delegation.request !== 'working')
+    return 'blocked';
   if (sessionHasBackgroundWork(session.delegation)) return 'working';
   if (session.delegation?.ownTurn === 'generating') return 'working';
   if (session.delegation?.ownTurn === 'unknown')

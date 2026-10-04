@@ -77,6 +77,8 @@ export function wireReportedTurnTruth({
   delegation.on('harness-event', (id: string, event: HarnessEvent) => {
     if (
       event.kind === 'turn-start' ||
+      event.kind === 'request-coverage' ||
+      event.kind === 'turn-settled' ||
       event.kind === 'turn-end' ||
       event.kind === 'turn-unknown' ||
       event.kind === 'blocked' ||
@@ -90,6 +92,9 @@ export function wireReportedTurnTruth({
         ownTurn: truth?.ownTurn ?? null,
         blockedOn: truth?.blockedOn ?? null,
         childCount: truth?.children.length ?? 0,
+        ...(truth?.requestCoverage
+          ? { requestCoverage: truth.requestCoverage }
+          : {}),
         backgroundTypes: truth?.backgroundTasks?.map(task => task.type) ?? [],
       });
     }
@@ -106,12 +111,14 @@ export function wireReportedTurnTruth({
     if (event.kind === 'turn-unknown')
       attention.noteHarnessTurnUnknown(id, event.preserveResult);
     if (event.kind === 'turn-end') attention.noteHarnessTurnEnd(id);
+    if (event.kind === 'turn-settled') attention.noteHarnessTurnSettled(id);
     // An Agent waiting on a question, a permission, or an elicitation is
     // neither working nor finished (D4). Reported, because no amount of
     // staring at the byte stream can tell a pause from a gate.
     if (event.kind === 'blocked')
       attention.noteHarnessBlocked(id, event.request, event.requestId);
-    if (event.kind === 'unblocked') attention.noteHarnessUnblocked(id);
+    if (event.kind === 'unblocked')
+      attention.noteHarnessUnblocked(id, event.requestId);
     // The result of a DELEGATING Session arrives when its last child stops,
     // not when its own turn ended — that boundary was deliberately withheld
     // while the team was still working. Without this, a Session that fans out

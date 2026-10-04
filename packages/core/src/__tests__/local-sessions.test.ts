@@ -26,6 +26,34 @@ const snap = (
 });
 
 describe('sessionStatus', () => {
+  it('keeps a working question independent from execution across Fleet projection', () => {
+    const session = snap({
+      working: true,
+      attention: { kind: 'blocked', since: 1, request: 'working' },
+      delegation: {
+        ownTurn: 'generating',
+        blockedOn: 'question',
+        request: 'working',
+        children: [],
+      },
+    });
+    const agent = sessionToAgent(session, 1, 10, 5);
+    expect(agent.status).toBe('working');
+    expect(agent.blockerInfo?.type).toBe('input_needed');
+    expect(
+      sessionStatus(
+        {
+          ...session,
+          working: false,
+          delegation: { ...session.delegation!, ownTurn: 'unknown' },
+        },
+        1,
+        10,
+        5
+      )
+    ).toBeNull();
+  });
+
   it('maps exit codes to complete/error', () => {
     expect(
       sessionStatus({ exited: true, exitCode: 0 }, 0, 10_000, 15_000)

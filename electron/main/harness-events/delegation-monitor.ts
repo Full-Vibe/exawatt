@@ -111,6 +111,7 @@ export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
       before.blockedOn !== after.blockedOn ||
       before.request !== after.request ||
       before.requestId !== after.requestId ||
+      before.requestCoverage !== after.requestCoverage ||
       before.children !== after.children ||
       before.backgroundTasks !== after.backgroundTasks;
     if (visible) {
@@ -180,6 +181,7 @@ export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
       cached.blockedOn === ledger.blockedOn &&
       cached.request === ledger.request &&
       cached.requestId === ledger.requestId &&
+      cached.requestCoverage === ledger.requestCoverage &&
       cached.children === ledger.children &&
       cached.backgroundTasks === ledger.backgroundTasks
     )
@@ -189,6 +191,9 @@ export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
       blockedOn: ledger.blockedOn,
       ...(ledger.request ? { request: ledger.request } : {}),
       ...(ledger.requestId ? { requestId: ledger.requestId } : {}),
+      ...(ledger.requestCoverage
+        ? { requestCoverage: ledger.requestCoverage }
+        : {}),
       children: ledger.children,
       ...(ledger.backgroundTasks
         ? { backgroundTasks: ledger.backgroundTasks }

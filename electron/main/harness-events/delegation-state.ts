@@ -87,6 +87,8 @@ function remember(list: readonly string[], id: string): string[] {
  */
 export interface DelegationLedger extends SessionDelegation {
   pending: PendingChildLabel[];
+  /** Source request identities; execution and each response are independent. */
+  pendingRequestIds: string[];
   /**
    * `tool_use_id`s whose labels were already adopted by a child this turn.
    * Hook delivery is at-least-once: without this, a REDELIVERED spawn label
@@ -109,6 +111,11 @@ export interface DelegationLedger extends SessionDelegation {
 
 export type HarnessEvent =
   | { kind: 'turn-start' }
+  | { kind: 'turn-settled' }
+  | {
+      kind: 'request-coverage';
+      coverage: 'complete' | 'partial' | 'unavailable';
+    }
   | { kind: 'turn-unknown'; preserveResult?: boolean }
   /** A boundary may carry the source's census of what is still running
    *  (Claude Code's `background_tasks`, ENG-023 D7); it is applied after the
@@ -121,7 +128,7 @@ export type HarnessEvent =
       requestId?: string;
     }
   /** Releases only a gate of this reason; omit to release whatever is open. */
-  | { kind: 'unblocked'; reason?: SessionBlockedReason }
+  | { kind: 'unblocked'; reason?: SessionBlockedReason; requestId?: string }
   /** A spawn label from the parent, ahead of its child's start (D3a). */
   | {
       kind: 'child-label';
@@ -152,6 +159,7 @@ export const EMPTY_DELEGATION: SessionDelegation = {
 export const EMPTY_LEDGER: DelegationLedger = {
   ...EMPTY_DELEGATION,
   pending: [],
+  pendingRequestIds: [],
   adoptedLabelIds: [],
   endedChildIds: [],
 };
@@ -175,7 +183,9 @@ export function delegationIsLive(
     (sessionHasBackgroundWork(delegation) ||
       delegation.ownTurn === 'generating' ||
       delegation.ownTurn === 'unknown' ||
-      !!delegation.blockedOn)
+      !!delegation.blockedOn ||
+      delegation.requestCoverage === 'partial' ||
+      delegation.requestCoverage === 'unavailable')
   );
 }
 
@@ -275,6 +285,8 @@ export function applyHarnessEvent(
     // census, so a subscriber reading the record after this event sees the
     // turn closed AND the children the source still vouches for — never a
     // turn-end withheld against children the same payload said were gone.
+    case 'turn-settled':
+      return closeTurn(state);
     case 'turn-end':
       return event.census
         ? reconcileCensus(closeTurn(state), event.census)
@@ -331,7 +343,10 @@ function endChild(state: DelegationLedger, childId: string): DelegationLedger {
 
 function applyDelta(
   state: DelegationLedger,
-  event: Exclude<HarnessEvent, { kind: 'turn-end' | 'child-end' | 'census' }>
+  event: Exclude<
+    HarnessEvent,
+    { kind: 'turn-end' | 'turn-settled' | 'child-end' | 'census' }
+  >
 ): DelegationLedger {
   switch (event.kind) {
     // Turn boundaries backstop blocking gates. Asynchronous questions are
@@ -346,6 +361,10 @@ function applyDelta(
     // ended-child tombstones clear only at turn-START — children routinely
     // outlive the parent's turn-end (the measured 74s case), so their
     // duplicate-absorbing memory must too.
+    case 'request-coverage':
+      return state.requestCoverage === event.coverage
+        ? state
+        : { ...state, requestCoverage: event.coverage };
     case 'turn-unknown':
       return state.ownTurn === 'unknown'
         ? state
@@ -377,15 +396,26 @@ function applyDelta(
     // report set. One wait is one gate, however many times it is announced.
     case 'blocked':
       if (
+        event.requestId &&
+        (state.pendingRequestIds.includes(event.requestId) ||
+          state.pendingRequestIds.length >= 256)
+      )
+        return state;
+      if (
         state.blockedOn &&
-        (!event.requestId || state.requestId === event.requestId)
+        (!event.requestId || state.blockedOn !== event.reason)
       )
         return state;
       return {
         ...state,
         blockedOn: event.reason,
         ...(event.request ? { request: event.request } : {}),
-        ...(event.requestId ? { requestId: event.requestId } : {}),
+        ...(event.requestId
+          ? {
+              requestId: event.requestId,
+              pendingRequestIds: [...state.pendingRequestIds, event.requestId],
+            }
+          : {}),
       };
 
     // Releases are reason-SCOPED so a release that belongs to one gate can
@@ -396,11 +426,24 @@ function applyDelta(
     case 'unblocked':
       if (!state.blockedOn) return state;
       if (event.reason && state.blockedOn !== event.reason) return state;
+      if (event.requestId) {
+        if (!state.pendingRequestIds.includes(event.requestId)) return state;
+        const pendingRequestIds = state.pendingRequestIds.filter(
+          id => id !== event.requestId
+        );
+        if (pendingRequestIds.length)
+          return {
+            ...state,
+            pendingRequestIds,
+            requestId: pendingRequestIds[0],
+          };
+      }
       return {
         ...state,
         blockedOn: null,
         request: undefined,
         requestId: undefined,
+        pendingRequestIds: [],
       };
 
     // Stage a spawn label until its child starts (D3a). Deduped by

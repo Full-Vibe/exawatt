@@ -573,6 +573,71 @@ describe('permanent verdicts about the installed app-server (BUG-146)', () => {
   });
 });
 
+describe('Codex root history coverage', () => {
+  it('continues older pages across polls and catches a gap beyond the fresh page', async () => {
+    let phase = 0;
+    const itemReads: string[] = [];
+    const row = (id: string, extra = {}) => ({
+      item: { id, type: 'reasoning', ...extra },
+    });
+    const process = fakeAppServerAnswering((method, params) => {
+      if (method === 'initialize')
+        return { userAgent: 'exawatt-delegation/0.160.0 (fixture)' };
+      if (method === 'thread/turns/list')
+        return {
+          data: [{ id: 'turn', status: 'interrupted', completedAt: null }],
+        };
+      if (method === 'thread/items/list') {
+        const cursor =
+          typeof params.cursor === 'string' ? params.cursor : 'latest';
+        itemReads.push(cursor);
+        if (cursor === 'latest')
+          return phase === 0
+            ? { data: [row('a')], nextCursor: 'older' }
+            : { data: [row('c')], nextCursor: 'gap' };
+        if (cursor === 'older')
+          return { data: [row('old')], nextCursor: 'oldest' };
+        if (cursor === 'oldest')
+          return { data: [row('first')], nextCursor: null };
+        if (cursor === 'gap')
+          return {
+            data: [
+              row('question', {
+                type: 'agentMessage',
+                delivery: 'async',
+                questions: [{ title: 'Choose' }],
+              }),
+              row('a'),
+            ],
+            nextCursor: 'older',
+          };
+      }
+      return { data: [], nextCursor: null };
+    });
+    const client = new CodexAppServerClient(async () => process);
+    try {
+      await client.connect();
+      expect((await client.rootObservation(ROOT)).coverage).toBe('partial');
+      expect(itemReads).toEqual(['latest', 'older']);
+      expect((await client.rootObservation(ROOT)).coverage).toBe('complete');
+      phase = 1;
+      const gap = await client.rootObservation(ROOT);
+      expect(gap.questions).toContain('question:0');
+      expect(gap.coverage).toBe('complete');
+      expect(itemReads).toEqual([
+        'latest',
+        'older',
+        'latest',
+        'oldest',
+        'latest',
+        'gap',
+      ]);
+    } finally {
+      client.close();
+    }
+  });
+});
+
 describe('CodexDelegationObserver', () => {
   const observers: CodexDelegationObserver[] = [];
 
@@ -604,6 +669,34 @@ describe('CodexDelegationObserver', () => {
     observer.observe(session());
     return { protocol, monitor, lifecycle, observer, observations };
   }
+
+  it('publishes newly discovered live children before a positive root completion', async () => {
+    const h = harness();
+    let status = 'interrupted';
+    Object.assign(h.protocol, {
+      rootObservation: async () => ({
+        turn: {
+          id: 'root-turn',
+          status,
+          completedAt: status === 'completed' ? 10 : null,
+        },
+        questions: [],
+        answered: [],
+      }),
+    });
+    await h.observer.pollNow();
+    status = 'completed';
+    h.protocol.descendants = [child('new-child', 10)];
+    h.protocol.turns.set('new-child', running());
+    h.protocol.activity.set('new-child', 'started');
+    const busyAtCompletion: boolean[] = [];
+    h.monitor.on('harness-event', (_id, event) => {
+      if (event.kind === 'turn-end')
+        busyAtCompletion.push(h.monitor.isBusy('pty-codex'));
+    });
+    await h.observer.pollNow();
+    expect(busyAtCompletion).toEqual([true]);
+  });
 
   it('reads root lifecycle independently of child discovery and retains queued questions', async () => {
     const h = harness();

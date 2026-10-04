@@ -18,6 +18,7 @@ import * as path from 'path';
 import { promisify } from 'util';
 import { defaultShell } from '../pty/session-manager';
 import { planLoginShell, shellQuote } from '../pty/login-shell';
+import type { HarnessEvent } from './delegation-state';
 import type { DelegationReportSink } from './delegation-monitor';
 import {
   delegationObservations,
@@ -81,6 +82,7 @@ export interface CodexDelegationProtocol {
   listDescendants(ancestorThreadId: string): Promise<CodexChildThread[]>;
   latestTurn(threadId: string): Promise<CodexTurnSummary | null>;
   rootObservation?(threadId: string): Promise<CodexRootObservation>;
+  forgetRoot?(threadId: string): void;
   latestSubagentActivity(
     parentThreadId: string,
     childThreadIds: readonly string[]
@@ -430,6 +432,14 @@ function fingerprintCodexBinary(binaryPath: string): string | null {
 
 /** JSON-RPC client for the installed Codex app-server. */
 export class CodexAppServerClient implements CodexDelegationProtocol {
+  private readonly rootScans = new Map<
+    string,
+    {
+      watermark: string | null;
+      pending: Array<{ cursor: string; stopAt: string | null }>;
+    }
+  >();
+
   private process: ChildProcessWithoutNullStreams | null = null;
   private nextRequestId = 1;
   private pending = new Map<number, PendingRequest>();
@@ -557,15 +567,74 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     throw sessionDataError('thread/list exceeded the bounded descendant pages');
   }
 
+  forgetRoot(threadId: string): void {
+    this.rootScans.delete(threadId);
+  }
+
   async rootObservation(threadId: string): Promise<CodexRootObservation> {
     // Read items BEFORE the latest turn: a turn completed before a newer item
     // read must never settle work begun in the meantime. The final lifecycle
     // read owns the boundary. Both reads are bounded and source-owned.
-    const items = await this.request('thread/items/list', {
+    const latest = await this.request('thread/items/list', {
       threadId,
       limit: ACTIVITY_WINDOW,
       sortDirection: 'desc',
     });
+    const page = object(latest);
+    if (!page || !Array.isArray(page.data))
+      throw sessionDataError('root item page has no rows');
+    const ids = page.data.map(row => object(object(row)?.item)?.id);
+    const scan = this.rootScans.get(threadId) ?? {
+      watermark: null,
+      pending: [],
+    };
+    const cursor = typeof page.nextCursor === 'string' ? page.nextCursor : null;
+    if (cursor && (!scan.watermark || !ids.includes(scan.watermark))) {
+      // Descending pages stop at the last observed item, not elapsed time.
+      // Initial hydration continues through history, one older page per poll.
+      if (scan.pending.length >= 64) {
+        // Coalesce adjacent unread spans rather than dropping one or
+        // permanently refusing a backlog that cannot then drain.
+        scan.pending[0] = { cursor, stopAt: scan.pending[0].stopAt };
+      } else scan.pending.unshift({ cursor, stopAt: scan.watermark });
+    }
+    scan.watermark = typeof ids[0] === 'string' ? ids[0] : scan.watermark;
+    this.rootScans.set(threadId, scan);
+    // Defensive bound for a dropped root whose first read was in flight.
+    while (this.rootScans.size > 256)
+      this.rootScans.delete(this.rootScans.keys().next().value!);
+    const rows = [...page.data];
+    const pending = scan.pending[0];
+    if (pending) {
+      try {
+        const older = object(
+          await this.request('thread/items/list', {
+            threadId,
+            limit: ACTIVITY_WINDOW,
+            sortDirection: 'desc',
+            cursor: pending.cursor,
+          })
+        );
+        if (!older || !Array.isArray(older.data))
+          throw sessionDataError('root continuation has no rows');
+        const stop = pending.stopAt
+          ? older.data.findIndex(
+              row => object(object(row)?.item)?.id === pending.stopAt
+            )
+          : -1;
+        rows.push(...(stop >= 0 ? older.data.slice(0, stop) : older.data));
+        if (stop >= 0 || !older.nextCursor) scan.pending.shift();
+        else if (typeof older.nextCursor === 'string')
+          pending.cursor = older.nextCursor;
+      } catch {
+        // Keep its cursor for the next poll; fresh questions/lifecycle still
+        // publish while historical coverage is partial.
+      }
+    }
+    const items = {
+      data: rows,
+      nextCursor: scan.pending.length ? 'pending' : null,
+    };
     const turns = await this.request('thread/turns/list', {
       threadId,
       limit: 1,
@@ -959,7 +1028,10 @@ export class CodexDelegationObserver {
     }
     const existing = this.roots.get(session.id);
     if (existing?.threadId === session.harnessSessionId) return;
-    if (existing) this.withdraw(session.id);
+    if (existing) {
+      this.withdraw(session.id);
+      this.client?.forgetRoot?.(existing.threadId);
+    }
     this.observations.drop(session.id);
     this.roots.set(session.id, {
       threadId: session.harnessSessionId,
@@ -970,6 +1042,8 @@ export class CodexDelegationObserver {
   }
 
   drop(sessionId: string): void {
+    const root = this.roots.get(sessionId);
+    if (root) this.client?.forgetRoot?.(root.threadId);
     this.rootTruth.delete(sessionId);
     if (this.roots.delete(sessionId)) this.rootsGeneration += 1;
     this.observations.drop(sessionId);
@@ -998,6 +1072,7 @@ export class CodexDelegationObserver {
     const client = this.client ?? this.clientFactory();
     this.client = client;
     const roots = [...this.roots.entries()];
+    const rootEvents = new Map<ObservedRoot, HarnessEvent[]>();
     // Three kinds of failure, three scopes (BUG-183). A verdict about the
     // binary stops every Session; a failure of one Session's data withdraws
     // that Session alone and leaves the connection up; anything else is the
@@ -1011,7 +1086,10 @@ export class CodexDelegationObserver {
         MAX_ROOT_READS,
         async ([sessionId, root]) => {
           if (client.rootObservation)
-            await this.readRootTruth(client, sessionId, root);
+            rootEvents.set(
+              root,
+              await this.readRootTruth(client, sessionId, root)
+            );
           return this.snapshot(client, root);
         }
       );
@@ -1022,6 +1100,13 @@ export class CodexDelegationObserver {
         // Object identity represents the observation generation, not its name.
         if (this.roots.get(sessionId) !== root) continue;
         const snapshot = snapshots[index];
+        const events = rootEvents.get(root) ?? [];
+        // Reopening/uncertainty and requests are current before any child
+        // boundary can offer a result; completion follows the fresh census.
+        for (const event of events) {
+          if (event.kind !== 'turn-end' && event.kind !== 'turn-settled')
+            this.sink?.report(sessionId, event);
+        }
         if (snapshot.status === 'fulfilled') {
           this.publish(sessionId, snapshot.value.children);
           this.observations.report(
@@ -1034,6 +1119,12 @@ export class CodexDelegationObserver {
         } else {
           this.withdraw(sessionId, snapshot.reason, client.version);
           if (!isSessionDataError(snapshot.reason)) failed = true;
+        }
+        // Publish the latest child census before its parent's boundary: a
+        // just-discovered live child must withhold that result atomically.
+        for (const event of events) {
+          if (event.kind === 'turn-end' || event.kind === 'turn-settled')
+            this.sink?.report(sessionId, event);
         }
       }
     } catch (error) {
@@ -1167,21 +1258,21 @@ export class CodexDelegationObserver {
     client: CodexDelegationProtocol,
     sessionId: string,
     root: ObservedRoot
-  ): Promise<void> {
-    if (!client.rootObservation) return;
+  ): Promise<HarnessEvent[]> {
+    if (!client.rootObservation) return [];
     const truth = this.rootTruth.get(sessionId);
-    if (!truth) return;
+    if (!truth) return [];
     try {
       const observation = await this.dataRead(`root:${root.threadId}`, () =>
         client.rootObservation!(root.threadId)
       );
-      if (this.roots.get(sessionId) !== root || this.client !== client) return;
-      for (const event of truth.accept(observation))
-        this.sink?.report(sessionId, event);
+      if (this.roots.get(sessionId) !== root || this.client !== client)
+        return [];
+      return truth.accept(observation);
     } catch {
-      if (this.roots.get(sessionId) !== root || this.client !== client) return;
-      for (const event of truth.unavailable())
-        this.sink?.report(sessionId, event);
+      if (this.roots.get(sessionId) !== root || this.client !== client)
+        return [];
+      return truth.unavailable();
     }
   }
 

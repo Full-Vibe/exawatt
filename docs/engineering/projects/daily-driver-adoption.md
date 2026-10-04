@@ -7800,7 +7800,7 @@ and a `questions` array. The installed protocol and actual reply items exposed
 stable per-question IDs in `send_user_message_question_reply` envelopes. The
 adapter correlates those exact IDs; arbitrary reply prose cannot resolve a
 question. Partial answers leave the remaining questions outstanding, new
-questions create a new bounded hashed revision, repeated snapshots do not
+questions retain stable individual source IDs, repeated snapshots do not
 re-alert, and execution completion does not resolve an asynchronous question.
 Observation and tombstone sets are bounded; missing items do not mean answered.
 The shared ledger carries `request: working` separately from own execution.
@@ -7828,3 +7828,38 @@ read failure/recovery, repeated snapshots, and source identity changes in flight
 The real Electron turn-truth gate now checks reading versus resolution and manual
 unread intent through the production bridge. Combined owner must run that gate,
 required floor/gates and dogfood delivery before advancing this checkpoint.
+
+Review followup (same execution lane, 2026-10-04): the newest-item window now
+has bounded continuation rather than abandoning older evidence. Each root reads
+one fresh page and at most one older page per poll; gaps stop at the previous
+source item watermark, initial hydration continues toward the history end, and
+failed older reads retain their cursor while fresh lifecycle/questions continue.
+`requestCoverage` is explicit (`partial`, `complete`, `unavailable`) in the shared
+source snapshot and diagnostic trail. Partial or absent rows never resolve a
+request. Reply tombstones are not evicted while old pages may revisit them; at
+the 4,096-reply or 256-pending-request capacity limit, new admissions fail closed with unavailable
+coverage, while exact replies may still resolve already-known requests. This
+capacity limit is an explicit remaining coverage bound, not “no questions.”
+Runtime presentation of partial request coverage remains a later UX detail;
+the source snapshot and diagnostic evidence carry it now.
+
+The same review caught two cross-layer gaps: read recovery now silently restores
+known availability through `turn-settled` without re-announcing an old result,
+and Fleet's local Session transport preserves a working question independently
+from execution in both its attention and delegation guards. Fleet retains the
+request's blocker detail while showing working/unknown execution honestly.
+Protocol tests prove historical continuation, a question beyond the fresh page,
+known-watermark stopping, silent completed recovery, and tombstone saturation;
+core transport tests prove the working-request projection. Shared independent
+request/result storage and atomic restored-attention custody are owned by the
+attention lane and must be in the combined landing.
+
+Review evidence is now **126 focused tests passing**, plus Electron compilation
+and owned-file lint. Root events are buffered across child reads: reopen,
+unknown and individual request events precede the reconciled census; positive
+completion follows it. A fresh live child therefore cannot arrive just after a
+false result alert. Individual question IDs replace the preliminary aggregate
+revision so partial rediscovery after resume cannot alert an already-read
+request; replies resolve exact restored IDs even when the new process never
+observed their earlier question. Full floor and native gate evidence remain
+with the combined integration owner.

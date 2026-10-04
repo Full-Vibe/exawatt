@@ -30,64 +30,117 @@ const reply = (index: number, id = 'call') => ({
 const snapshot = (t = turn(), items: unknown[] = []) =>
   parseCodexRootObservation({ data: [t] }, { data: items });
 
+const accept = (
+  truth: CodexRootTruth,
+  observation: ReturnType<typeof snapshot>
+) =>
+  truth.accept(observation).filter(event => event.kind !== 'request-coverage');
+
 describe('Codex TUI root observations', () => {
   it('never treats interrupted/null, compaction, child work or silence as completion', () => {
     const truth = new CodexRootTruth();
-    expect(truth.accept(snapshot())).toEqual([{ kind: 'turn-unknown' }]);
+    expect(accept(truth, snapshot())).toEqual([{ kind: 'turn-unknown' }]);
     expect(
-      truth.accept(
+      accept(
+        truth,
         snapshot(turn(), [
           { item: { type: 'contextCompaction' } },
           { item: { type: 'subAgentActivity', kind: 'started' } },
         ])
       )
     ).toEqual([]);
-    expect(truth.accept(snapshot(turn('completed', 12)))).toEqual([
+    expect(accept(truth, snapshot(turn('completed', 12)))).toEqual([
       { kind: 'turn-end' },
     ]);
-    expect(truth.accept(snapshot(turn('completed', 12)))).toEqual([]);
-    expect(truth.accept(snapshot(turn('interrupted', null, 'next')))).toEqual([
+    expect(accept(truth, snapshot(turn('completed', 12)))).toEqual([]);
+    expect(accept(truth, snapshot(turn('interrupted', null, 'next')))).toEqual([
       { kind: 'turn-unknown' },
     ]);
   });
   it('does not replay old completion on attach, read failure or recovery', () => {
     const truth = new CodexRootTruth();
-    expect(truth.accept(snapshot(turn('completed', 1)))).toEqual([]);
-    expect(truth.unavailable()).toEqual([
-      { kind: 'turn-unknown', preserveResult: true },
+    expect(accept(truth, snapshot(turn('completed', 1)))).toEqual([
+      { kind: 'turn-settled' },
     ]);
-    expect(truth.unavailable()).toEqual([]);
-    expect(truth.accept(snapshot(turn('completed', 1)))).toEqual([]);
+    expect(
+      truth.unavailable().filter(event => event.kind !== 'request-coverage')
+    ).toEqual([{ kind: 'turn-unknown', preserveResult: true }]);
+    expect(
+      truth.unavailable().filter(event => event.kind !== 'request-coverage')
+    ).toEqual([]);
+    expect(accept(truth, snapshot(turn('completed', 1)))).toEqual([
+      { kind: 'turn-settled' },
+    ]);
   });
   it('questions coexist with work and resolve individually by source identity', () => {
     const truth = new CodexRootTruth();
-    expect(truth.accept(snapshot(turn('inProgress'), [question()]))).toEqual([
+    expect(accept(truth, snapshot(turn('inProgress'), [question()]))).toEqual([
       { kind: 'turn-start' },
       {
         kind: 'blocked',
         reason: 'question',
         request: 'working',
-        requestId: expect.any(String),
+        requestId: 'call:0',
+      },
+      {
+        kind: 'blocked',
+        reason: 'question',
+        request: 'working',
+        requestId: 'call:1',
       },
     ]);
     expect(
-      truth.accept(snapshot(turn('inProgress'), [reply(0), question()]))
-    ).toEqual([]);
+      accept(truth, snapshot(turn('inProgress'), [reply(0), question()]))
+    ).toEqual([{ kind: 'unblocked', reason: 'question', requestId: 'call:0' }]);
     expect(
-      truth.accept(snapshot(turn('completed', 2), [reply(0), question()]))
+      accept(truth, snapshot(turn('completed', 2), [reply(0), question()]))
     ).toEqual([{ kind: 'turn-end' }]);
     expect(
-      truth.accept(snapshot(turn('completed', 2), [reply(1), question()]))
-    ).toEqual([{ kind: 'unblocked', reason: 'question' }]);
-    expect(truth.accept(snapshot(turn('completed', 2), [question()]))).toEqual(
+      accept(truth, snapshot(turn('completed', 2), [reply(1), question()]))
+    ).toEqual([{ kind: 'unblocked', reason: 'question', requestId: 'call:1' }]);
+    expect(accept(truth, snapshot(turn('completed', 2), [question()]))).toEqual(
       []
     );
   });
+  it('keeps coverage partial until older pages arrive and never evicts reply evidence', () => {
+    const truth = new CodexRootTruth();
+    const newest = {
+      ...snapshot(),
+      coverage: 'partial' as const,
+      answered: Array.from({ length: 4097 }, (_, i) => `old:${i}`),
+    };
+    expect(truth.accept(newest)).toContainEqual({
+      kind: 'request-coverage',
+      coverage: 'unavailable',
+    });
+    expect(
+      accept(truth, { ...snapshot(), questions: ['old:0', 'old:4096'] })
+    ).toEqual([]);
+  });
+
+  it('resolves an exact restored request even if its question predates this process', () => {
+    const truth = new CodexRootTruth();
+    expect(accept(truth, snapshot(turn(), [reply(1)]))).toContainEqual({
+      kind: 'unblocked',
+      reason: 'question',
+      requestId: 'call:1',
+    });
+    expect(accept(truth, snapshot(turn(), [question()]))).toEqual([
+      {
+        kind: 'blocked',
+        reason: 'question',
+        request: 'working',
+        requestId: 'call:0',
+      },
+    ]);
+  });
+
   it('does not mistake arbitrary user text for an answer, or hide a fresh question', () => {
     const truth = new CodexRootTruth();
-    truth.accept(snapshot(turn(), [question('first', 1)]));
+    accept(truth, snapshot(turn(), [question('first', 1)]));
     expect(
-      truth.accept(
+      accept(
+        truth,
         snapshot(turn(), [
           {
             item: {
@@ -103,7 +156,7 @@ describe('Codex TUI root observations', () => {
         kind: 'blocked',
         reason: 'question',
         request: 'working',
-        requestId: expect.any(String),
+        requestId: 'second:0',
       },
     ]);
   });

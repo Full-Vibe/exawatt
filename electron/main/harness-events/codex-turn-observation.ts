@@ -2,13 +2,13 @@
  * A separate app-server calls a TUI-owned open turn interrupted/null. That is
  * unknown, never evidence of completion (BUG-257). No terminal prose is read.
  */
-import { createHash } from 'crypto';
 import type { HarnessEvent } from './delegation-state';
 
 export interface CodexRootObservation {
   turn: { id: string; status: string; completedAt: number | null } | null;
   questions: string[];
   answered: string[];
+  coverage?: 'complete' | 'partial';
 }
 
 type RecordValue = Record<string, unknown>;
@@ -92,7 +92,12 @@ export function parseCodexRootObservation(
     if (item.type === 'userMessage')
       answered.push(...answeredQuestions(item.content));
   }
-  return { turn, questions, answered };
+  return {
+    turn,
+    questions,
+    answered,
+    coverage: record(items)?.nextCursor ? 'partial' : 'complete',
+  };
 }
 
 /** Per-launch bounded ledger. A repeated snapshot is not a new boundary;
@@ -103,11 +108,19 @@ export class CodexRootTruth {
   private pending = new Set<string>();
   private answered = new Set<string>();
   private unknown = false;
+  private coverage: 'complete' | 'partial' | 'unavailable' | null = null;
+  private saturated = false;
 
   unavailable(): HarnessEvent[] {
-    if (this.unknown) return [];
+    const events: HarnessEvent[] = [];
+    if (this.coverage !== 'unavailable') {
+      this.coverage = 'unavailable';
+      events.push({ kind: 'request-coverage', coverage: 'unavailable' });
+    }
+    if (!this.unknown)
+      events.push({ kind: 'turn-unknown', preserveResult: true });
     this.unknown = true;
-    return [{ kind: 'turn-unknown', preserveResult: true }];
+    return events;
   }
 
   accept(observation: CodexRootObservation): HarnessEvent[] {
@@ -116,13 +129,15 @@ export class CodexRootTruth {
     const key = turn ? `${turn.id}:${turn.status}:${turn.completedAt}` : 'none';
     if (
       key !== this.turnKey ||
-      (this.unknown && turn?.status === 'inProgress')
+      (this.unknown &&
+        (turn?.status === 'inProgress' || turn?.status === 'completed'))
     ) {
       const completed =
         turn?.status === 'completed' && turn.completedAt !== null;
       // Initial old completed history is a baseline, not a fresh result.
       if (completed && this.initialized && key !== this.turnKey)
         events.push({ kind: 'turn-end' });
+      else if (completed) events.push({ kind: 'turn-settled' });
       else if (!completed)
         events.push({
           kind: turn?.status === 'inProgress' ? 'turn-start' : 'turn-unknown',
@@ -131,36 +146,41 @@ export class CodexRootTruth {
       this.unknown = !completed && turn?.status !== 'inProgress';
     }
     this.initialized = true;
-    const hadRequest = this.pending.size > 0;
     for (const id of observation.answered) {
-      this.answered.add(id);
-      this.pending.delete(id);
+      const known = this.answered.has(id);
+      if (this.answered.size < 4096 || known) this.answered.add(id);
+      else this.saturated = true;
+      const wasPending = this.pending.delete(id);
+      // Restored attention may hold a request this process has never seen.
+      // Exact source replies resolve it without requiring prior observation.
+      if (!known || wasPending)
+        events.push({ kind: 'unblocked', reason: 'question', requestId: id });
     }
-    let newQuestion = false;
     for (const id of observation.questions) {
-      if (
-        !this.answered.has(id) &&
-        !this.pending.has(id) &&
-        this.pending.size < 4096
-      ) {
+      if (!this.saturated && !this.answered.has(id) && !this.pending.has(id)) {
+        if (this.pending.size >= 256) {
+          this.saturated = true;
+          break;
+        }
         this.pending.add(id);
-        newQuestion = true;
+        events.push({
+          kind: 'blocked',
+          reason: 'question',
+          request: 'working',
+          requestId: id,
+        });
       }
     }
-    // Bounded by the protocol observation window, never by elapsed time.
-    while (this.answered.size > 4096)
-      this.answered.delete(this.answered.values().next().value!);
-    if (this.pending.size && newQuestion)
-      events.push({
-        kind: 'blocked',
-        reason: 'question',
-        request: 'working',
-        requestId: createHash('sha256')
-          .update([...this.pending].sort().join('|'))
-          .digest('hex'),
-      });
-    if (!this.pending.size && hadRequest)
-      events.push({ kind: 'unblocked', reason: 'question' });
+    // Never evict a reply tombstone while older pages can still arrive. At
+    // the explicit capacity limit, fail closed instead of resurrecting an
+    // answered request. Existing requests can still resolve.
+    const coverage = this.saturated
+      ? 'unavailable'
+      : (observation.coverage ?? 'complete');
+    if (this.coverage !== coverage) {
+      this.coverage = coverage;
+      events.push({ kind: 'request-coverage', coverage });
+    }
     return events;
   }
 }
