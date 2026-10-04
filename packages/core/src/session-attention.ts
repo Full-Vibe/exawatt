@@ -137,3 +137,114 @@ export function readPtyAttention(value: unknown): PtyAttention | null {
   }
   return projectSessionAttention([...unique.values()]);
 }
+
+export interface SessionAttentionSignal {
+  kind?: PtyAttentionSignal['kind'];
+  since: number;
+  /** Missing on legacy producers, which remain unread until acknowledged. */
+  unread?: boolean;
+  request?: 'blocking' | 'working' | 'unknown';
+  requestId?: string;
+  /** Independent source facts; when present these own read metadata. */
+  records?: PtyAttentionRecord[];
+}
+
+/** Turn completion is a ready result, not an operator gate. Presence-only
+ *  legacy signals remain conservative needs-you state. Every consumer that
+ *  exposes or navigates attention must use this same predicate. */
+export function attentionNeedsOperator(
+  attention?: Pick<SessionAttentionSignal, 'kind'> | null
+): boolean {
+  return Boolean(
+    attention &&
+    (attention.kind === undefined ||
+      ['bell', 'blocked', 'roadmap-blocked'].includes(attention.kind))
+  );
+}
+
+/** A result stays a result: unread makes it worth visiting, not blocked. */
+export function attentionIsJumpTarget(
+  signal?: SessionAttentionSignal | null
+): boolean {
+  return Boolean(
+    signal && (attentionNeedsOperator(signal) || signal.unread !== false)
+  );
+}
+
+function attentionPriority(signal: SessionAttentionSignal): number {
+  if (!attentionNeedsOperator(signal)) return 2;
+  return signal.request === 'working' || signal.request === 'unknown' ? 1 : 0;
+}
+
+/** Hard blockers, working questions, unread results; oldest within each class.
+ * Identity breaks timestamp ties independently of producer insertion order. */
+export function orderedAttentionTargets(
+  attention: Readonly<Record<string, SessionAttentionSignal>>,
+  activeSessionId: string | null
+): string[] {
+  return Object.entries(attention)
+    .filter(
+      ([sessionId, signal]) =>
+        sessionId !== activeSessionId && attentionIsJumpTarget(signal)
+    )
+    .sort(
+      (a, b) =>
+        attentionPriority(a[1]) - attentionPriority(b[1]) ||
+        a[1].since - b[1].since ||
+        a[0].localeCompare(b[0])
+    )
+    .map(([sessionId]) => sessionId);
+}
+
+/** One pass visits every eligible Session once, even when reading cannot
+ * resolve its request. New arrivals join the remaining priority order; an
+ * exhausted pass starts again. Current focus counts as visited, including a
+ * manual selection. The caller retains this state across source updates. */
+export function nextAttentionTarget(
+  orderedTargets: readonly string[],
+  activeSessionId: string | null,
+  previouslyVisited: ReadonlyMap<string, string>,
+  signals: Readonly<Record<string, SessionAttentionSignal>> = {}
+): { target: string | null; visited: ReadonlyMap<string, string> } {
+  const identity = (id: string) => {
+    const signal = signals[id];
+    // Reading changes no source identity. A fresh request on an already
+    // visited Session is new work and may preempt the remaining pass.
+    if (!signal) return '';
+    const records = signal.records ?? [signal];
+    return JSON.stringify(
+      records
+        .map(record =>
+          JSON.stringify([
+            'source' in record ? record.source : 'harness',
+            record.kind,
+            record.request ?? '',
+            record.requestId ?? record.since,
+          ])
+        )
+        .sort()
+    );
+  };
+  const eligible = new Set(orderedTargets);
+  const visited = new Map(
+    [...previouslyVisited].filter(
+      ([id, value]) => eligible.has(id) && identity(id) === value
+    )
+  );
+  if (activeSessionId) visited.set(activeSessionId, identity(activeSessionId));
+  let target = orderedTargets.find(id => !visited.has(id));
+  if (!target) {
+    visited.clear();
+    if (activeSessionId)
+      visited.set(activeSessionId, identity(activeSessionId));
+    target = orderedTargets.find(id => !visited.has(id));
+  }
+  if (target) visited.set(target, identity(target));
+  return { target: target ?? null, visited };
+}
+
+/** The inspection commands shared by local and authored Demo Session sources. */
+export interface SessionAttentionCommands {
+  focus(id: string | null): void | Promise<void>;
+  markUnread(id: string): void | Promise<void>;
+}
