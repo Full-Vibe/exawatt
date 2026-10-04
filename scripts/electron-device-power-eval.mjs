@@ -215,25 +215,11 @@ try {
         const row = (await window.electron.pty.list()).find(
           item => item.id === id
         );
-        // A source with nothing live reports `delegation: null`, never an
-        // empty list (`PtySessionRecord`), so either reads as cleared.
-        return row && (row.delegation?.children.length ?? 0) === 0;
-      },
-      codex.id
-    );
-    await waitPower({ assertion: 'inactive', supportedWorkingSessions: 0 });
-    await assertNative(0);
-    // BEL is the real PTY operator-attention boundary for a source without a
-    // more specific question event; no private monitor state is injected.
-    await page.evaluate(() => window.electron.pty.focus(null));
-    await send(codex.id, 'bell');
-    await waitForPageCondition(
-      page,
-      async id => {
-        const row = (await window.electron.pty.list()).find(
-          item => item.id === id
+        // Finished children do not resolve an unobservable root turn.
+        return (
+          row?.delegation?.ownTurn === 'unknown' &&
+          row.delegation.children.length === 0
         );
-        return row?.attention?.kind === 'bell';
       },
       codex.id
     );
@@ -268,6 +254,33 @@ try {
       exited: false,
     });
     await waitPower({ assertion: 'inactive', supportedWorkingSessions: 0 });
+    assert.equal(
+      await page.evaluate(
+        async id =>
+          (await window.electron.pty.list()).find(row => row.id === id)
+            ?.delegation,
+        idle.id
+      ),
+      null
+    );
+    // This Session has no structured source observation. BEL remains its
+    // inferred operator-attention boundary; reported unknown root truth above
+    // must never be overridden by terminal inference.
+    await page.evaluate(() => window.electron.pty.focus(null));
+    await send(idle.id, 'bell');
+    await waitForPageCondition(
+      page,
+      async id => {
+        const row = (await window.electron.pty.list()).find(
+          item => item.id === id
+        );
+        return row?.attention?.kind === 'bell';
+      },
+      idle.id
+    );
+    await waitPower({ assertion: 'inactive', supportedWorkingSessions: 0 });
+    await assertNative(0);
+
     const shell = await launch('shell');
     await send(shell.id, 'printf shell-output');
     await waitPower({ assertion: 'inactive', supportedWorkingSessions: 0 });
