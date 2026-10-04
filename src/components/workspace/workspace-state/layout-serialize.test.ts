@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { projectSessionAttention } from '@exawatt/core';
 import type { GoalVisual } from '@exawatt/core/desktop-bridge';
 import { ptySessionRecord } from '@/test-support/desktop-bridge-double';
 import {
@@ -412,4 +413,32 @@ it('checkpoints fresh source resolution but never mistakes process teardown for 
     { ...current, exited: true, attention: null },
   ]);
   expect(sessionTabs(ended.projects[0].tabs)[0].attention).toEqual(attention);
+});
+
+it('round-trips independent request receipts and an unread result together', () => {
+  const attention = projectSessionAttention([
+    {
+      source: 'harness',
+      kind: 'blocked',
+      request: 'working',
+      requestId: 'question-a',
+      since: 1,
+      unread: false,
+    },
+    {
+      source: 'harness',
+      kind: 'blocked',
+      request: 'working',
+      requestId: 'question-b',
+      since: 2,
+      unread: false,
+    },
+    { source: 'harness', kind: 'turn-end', since: 3, unread: true },
+  ])!;
+  const saved = serializeLayout(
+    workspace([tab('a')]),
+    context({ attention: { 'durable-a': attention } })
+  );
+  const decoded = parsePersisted(JSON.parse(JSON.stringify(saved)))!;
+  expect(sessionTabs(decoded.projects[0].tabs)[0].attention).toEqual(attention);
 });

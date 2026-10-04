@@ -1,5 +1,7 @@
 'use client';
 
+import { withAttentionRead } from '@exawatt/core';
+
 /**
  * Workspace state (ENG-002 W0.2): project groups keyed by PROJECT
  * DIRECTORY, tabs within them, persistence, and exact-ID resume.
@@ -476,7 +478,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return current
           ? {
               ...previous,
-              [tab.durableSessionId]: { ...current, unread: true },
+              [tab.durableSessionId]: withAttentionRead(current, true),
             }
           : previous;
       });
