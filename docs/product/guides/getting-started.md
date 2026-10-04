@@ -162,6 +162,9 @@ redraw cannot change the check back to working. Typing the next instruction
 opens the next turn. The dashed circle means a new Agent has not received work
 yet; a plain hollow circle is a quiet shell.
 
+<!-- Authoring note: decision 0046 accepts a future attention/read-state and
+priority-order change. Keep the instructions below on shipped behavior until
+its implementation lands; then update this and the Agent-state reference. -->
 **⌘J** jumps to the oldest Session with a visible needs-you marker. If no
 Session needs you, it leaves the current Terminal in place. Commands that need
 a Project, Session, split target, or recovery entry are hidden from the passive

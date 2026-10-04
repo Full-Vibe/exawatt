@@ -314,7 +314,18 @@ The product discipline of routing scarce human cognition to the highest-leverage
 
 Attention Scheduling is not a literal neural graph or a decorative visualization motif. It is the operating model that decides when work can continue unattended, when a human should inspect state, and when a blocker, approval, credential, taste call, risk tradeoff, or priority conflict deserves operator focus.
 
-Why it exists: operators reliably max out around five or six concurrent agent contexts. This is a working-memory limit, not a tooling gap — more monitors and more tabs do not raise it. Fleet scale beyond that ceiling must come from the interface and orchestration absorbing context on the operator's behalf, not from asking the human to scan more surfaces.
+Why it exists: tracking concurrent work and recovering interrupted context costs human attention. Exawatt should absorb bookkeeping rather than require the operator to remember every Session. Partner observations motivate this problem; they do not establish a universal five-or-six-context cognitive limit.
+
+Accepted direction, implementation planned (2026-10-04, decision
+[0046](../engineering/decisions/0046-reading-does-not-resolve-attention.md)):
+read/unread is distinct from an unresolved needs-you request and from execution
+state. Looking acknowledges the request; it does not resolve it. Cmd+J will
+prioritize hard blockers, then questions while working, then unread finished
+results, oldest within each class. Current behavior remains described in the
+Agent-state reference until implementation lands. Restart restores context
+paused, with an explicit resume action for the previously running set; already
+paused Agents remain excluded. Automatic resume is future scope, and saved
+attention never proves a process is running.
 
 Prioritization is leverage-aware, not first-in-first-out. The surface scores each call for attention by how much it unblocks — the blocker type (a missing credential or a required approval usually gates more downstream work than a single clarifying question), how long it has waited, and how much related work is stalled around it — then lifts one hero moment, groups the secondary ones, and keeps routine activity quiet. Each surfaced item carries a short reason so the operator sees _why_ it matters before spending attention on it.
 

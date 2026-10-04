@@ -288,3 +288,120 @@ cross-surface visual changes still require `/hud-gallery` operator review before
 adoption; neither this log nor the retired Oct2 study claims acceptance of the
 new retained-dialog flow. No additional permission request is made during
 shaping. Demo/Live and existing cmdk/Radix owners remain shared boundaries.
+
+
+### 2026-10-04 — Everyday-use polish shaping and research basis
+
+**Make active use excellent through coherent journeys and shared ownership.**
+Operator-confirmed direction: daily use leads; a newcomer must still discover
+and understand the same affordances. A dedicated newcomer on-ramp is a later
+prioritization regime. Layout and flow changes are welcome when they demonstrate
+an improvement. Significant new features are outside this polish pass.
+Research and shaping are authorized. Read versus unresolved attention and
+priority ordering are accepted in decision `0046`; restart restores paused
+with an explicit resume action. This section is execution detail for ENG-036 with existing owners,
+not a new roadmap or an instruction to start implementation.
+
+#### Research ledger and application hypotheses
+
+Keep three things distinct: what a source establishes, what Exawatt infers from
+it, and what the implemented product demonstrates. The following sources were
+reviewed on 2026-10-04; none studied Exawatt or establishes a productivity uplift
+for agent-fleet operation.
+
+| Source and evidence type | Finding or guidance | Application to investigate |
+| --- | --- | --- |
+| [Budiu, Recognition and Recall, NN/g, 2024](https://www.nngroup.com/articles/recognition-and-recall/) — usability synthesis | Visible choices and contextual cues support recognition rather than unaided recall. | Keep useful Session purpose, state meanings and available actions recognizable at each altitude; improve existing context cues before adding explanatory chrome. |
+| [Czerwinski, Horvitz and Wilhite, CHI 2004](https://research.microsoft.com/en-us/um/people/horvitz/taskdiary.pdf) — week-long diary study | Information workers interleave tasks and encounter difficulty recovering complex work; the authors propose support for task switching and recovery. | Preserve Project/Session identity, position and attention across interruptions; evaluate re-entry as a whole journey. This observational study does not prove our layout. |
+| [Mark, Gudith and Klocke, CHI 2008](https://www.ics.uci.edu/~gmark/chi08-mark.pdf) — controlled experiment, 48 participants | Participants compensated for interruptions with faster work but reported greater stress, frustration, time pressure and effort. | Evaluate disruption and effort alongside task speed. Do not equate more notifications or faster clicks with a better experience. |
+| [Leroy and Glomb, Organization Science, 2018](https://doi.org/10.1287/orsc.2017.1184) — four studies | Briefly planning a return reduced attention residue and supported performance on the interrupting task under the studied conditions. | Investigate existing re-entry cues and a reliable return queue. An automatic summary is not the study's user-authored intervention; no mandatory note-taking feature follows. |
+| [Apple feedback guidance](https://developer.apple.com/design/human-interface-guidelines/feedback) and [W3C status messages](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html) — design guidance and accessibility standard | Integrate feedback appropriately; status can be communicated without moving focus. | Shared action/progress/recovery states must preserve the current task and expose outcomes accessibly. F7 owns the feedback implementation. |
+
+#### Existing code and changed evidence
+
+- `workspace-state/use-attention-focus.ts` currently clears renderer attention
+  on focused selection and tells main to focus the Session. This is an explicit
+  S1 interaction contract, not evidence that every outstanding request resolved.
+- `session-status.ts` orders eligible operator gates oldest first and excludes
+  turn-end results from that jump selection. Including finished results or
+  severity ordering would change the contract; neither is silently approved.
+- `workspace-state/layout-serialize.ts` persists arrangement, identity, touched
+  drafts and selected context cues but accepts no attention/read-state input.
+  Restart work must separate durable operator intent from volatile execution
+  facts. Never restore an old working badge as proof of a running process.
+- Existing turn-truth, Session lifecycle, navigation, desktop-bridge and
+  workspace-state owners are the starting point. ENG-039 already extracted
+  several of these seams; do not build a second global state engine.
+- F6's October 2 deployment is not sufficient evidence of successful reporting.
+  October 4's BUG-272/F7 and incident 0032 supersede its production-delivery
+  implication and close-on-send interaction. Preserve F7 ownership and acceptance.
+- The feedback triage read found zero operator and zero suggestion rows; no
+  new inbox promotion was required. This review is source/research evidence,
+  not a fresh runtime reproduction of the remaining bugs.
+
+#### Candidate work packages and ownership boundaries
+
+These packages consolidate existing scope. The order is provisional while detailed traversal and source resolution
+evidence are being shaped; no new ENG item or competing plan is needed.
+
+| Journey / owning items | Existing work covered | Shared responsibility and exit proof |
+| --- | --- | --- |
+| Trust what needs me — ENG-015 / ENG-016, Fleet consumer ENG-004 | BUG-257/258/264/265/163 | Source adapters supply explicit turn/request evidence. Shared projections distinguish execution, an unresolved request, unread results and operator reminders. The glyph, jump target and notification derive from accepted transitions; settings may mute sound. Replay compaction, child work, completion and working-with-question sequences without fabricated certainty or duplicate alerts. |
+| Leave and return safely — ENG-016 / ENG-015 | BUG-260/259/209 and BUG-117's remaining recheck | Persist operator state by durable Session identity through the existing checkpoint/restore owner. Verify mixed running/paused/needs-you/unread tabs, order, selection and exact conversation identity across update/relaunch. Unsupported harnesses remain visible with an honest recovery action. Restore paused and offer explicit resume for the previously running set; automatic execution stays future scope. |
+| Find and enter the right work — ENG-004 / ENG-023 | BUG-262/263/268/134, with BUG-113 reproduction if still present | Navigation owns selected identity; the source-neutral population/query owns membership; rendering owns resolution and motion. Preserve selection through filtering and altitude changes, explain lifecycle separately from turn state, and measure packaged transition work before optimization. Census expansion stays with D6, not a hidden prerequisite for every visual fix. |
+| Understand actions and recover — ENG-036 / ENG-025 | F7/BUG-272, remaining G2 component/IA work, BUG-061/138 review | F7 retains feedback delivery ownership. Shared Dialog/Button/command contracts cover focus, actual activation, stable action placement, progress and recoverable failure. Reconcile gallery specimens with production consumers rather than restyling all surfaces. |
+
+Necessary refactors ship with their journey: identify the authoritative owner,
+move sibling consumers onto its contract, remove superseded paths, then verify
+the whole scenario. Repository-wide module migration, dependency-major sweeps,
+new harnesses, managed hosting, extra themes and celebration features are not
+prerequisites. Existing time-bound demo commitments remain recorded; this
+shaping session does not silently cancel them or authorize their feature work.
+
+#### Demonstrating better before adoption
+
+Use the same tasks, data and starting state for current and proposed flows:
+several Projects with 10 Sessions, and a crowded approximately 30-Session case;
+include active work, completed results, a hard blocker, a question while working,
+a paused Session, and unavailable source evidence. Exercise finding the next
+request, inspecting without answering, returning later, changing altitude,
+restarting, and recovering a failed action.
+
+Record wrong targets, missed requests, lost context/input, accidental actions,
+focus loss, repeated scanning/backtracking and the operator's reported effort.
+Time is supporting usability/performance evidence, not a flaky unit-test oracle.
+An operator walkthrough judges daily-use improvement; an unaided newcomer
+comprehension check asks what is happening and what action is available, without
+building an onboarding flow. If a newcomer is unavailable, report that gap.
+
+Material cross-surface changes go through the existing paired gallery review,
+including DOM/R3F siblings where relevant. Preserve shortcut reachability,
+Demo/Live boundaries, exact identity, theme legibility, large type and reduced
+motion. Accept against recorded before/after evidence; reject a design that
+looks cleaner but hides unresolved work or adds steps to routine operation.
+Test behavior and state contracts, not today's wording or layout constants.
+
+#### Accepted operator steering and remaining detail
+
+- Accepted: inspection clears unread but retains unresolved needs-you. The
+  operator compared this to read mail still in the inbox awaiting reply/triage.
+- Accepted: Cmd+J prioritizes hard blockers, then working questions, then unread
+  finished results, oldest within each class. Dependability should carry the
+  rule; whether any explicit explanation is needed remains a design judgment.
+  Candidate: a short hint on the existing command, without permanent chrome.
+  Shape pass traversal so persistent blockers do not trap navigation in a loop.
+- Accepted: after an update, restore context paused and offer one resume action
+  for previously running Agents. Previously paused Agents stay paused and out
+  of that resume set. The operator chose lower complexity and risk. A future
+  explicit restart-and-resume option may belong to restart or quit confirmation;
+  its placement and implementation remain deferred. Restoring context never
+  claims computation continued through a process restart.
+
+Decision [0046](../decisions/0046-reading-does-not-resolve-attention.md) records
+the accepted semantic changes and their implementation boundary.
+
+The accepted semantics are recorded in decision 0046, concepts and reference
+authoring notes; current guide instructions remain accurate to shipped code.
+Update architecture and its manifest when implementation changes ownership. Research-backed explanations feed ENG-042/ENG-031 through
+Marketing Canon's research-informed design story; public claims follow the
+specific evidence available for each shipped interaction.

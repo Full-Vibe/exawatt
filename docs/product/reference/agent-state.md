@@ -160,6 +160,11 @@ primary conversation; background activity never silently retargets that role.
 
 ## Attention navigation uses visible state
 
+The following describes current behavior. The accepted, not-yet-implemented
+[attention change](../../engineering/decisions/0046-reading-does-not-resolve-attention.md)
+separates reading from resolving and prioritizes blockers, working questions,
+then unread results. Update this reference when that implementation lands.
+
 The needs-you projection is also the navigation contract. `⌘J` walks the
 oldest visible needs-you Session and repeated presses continue through that
 queue. With no visible target, the command is unavailable and navigation stays
