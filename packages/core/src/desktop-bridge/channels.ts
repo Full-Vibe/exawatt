@@ -290,6 +290,7 @@ interface RequestTable {
   >;
   'pty:rename': Call<[id: string, title: string], void>;
   'pty:focus': Call<[id: string | null], void>;
+  'pty:mark-unread': Call<[id: string], void>;
   'pty:set-context-auth': Call<[accessToken: string | null], void>;
   'pty:correct-context': Call<
     [durableSessionId: string, label: string],
@@ -490,7 +491,12 @@ interface PushTable {
    *  the first-party primer now rather than let the system prompt appear. */
   'permissions:primer-requested': PermissionPrimerRequest;
   'pty:activity': { id: string; working: boolean };
-  'pty:attention': { id: string; attention: PtyAttention | null };
+  'pty:attention': {
+    id: string;
+    durableSessionId?: string;
+    runtimeEnded?: boolean;
+    attention: PtyAttention | null;
+  };
   /** Main-owned ledger cardinality after archive, reopen, or reap. */
   'pty:closed-sessions-changed': number;
   'pty:context': { durableSessionId: string; summary: string };

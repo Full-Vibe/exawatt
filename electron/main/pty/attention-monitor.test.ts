@@ -59,10 +59,82 @@ describe('AttentionMonitor', () => {
     );
   });
 
+  it('keeps a read request open until source resolution and never re-alerts inspection', () => {
+    add('a');
+    const alerts: string[] = [];
+    monitor.on('alert', id => alerts.push(id));
+    monitor.noteHarnessBlocked('a');
+    monitor.setWindowFocused(true);
+    monitor.setFocus('a');
+    monitor.noteInput('a');
+    monitor.noteEngaged('a');
+    monitor.noteHarnessTurnStart('a');
+    expect(monitor.get('a')).toMatchObject({ kind: 'blocked', unread: false });
+    monitor.markUnread('a');
+    monitor.noteHarnessBlocked('a');
+    expect(monitor.get('a')).toMatchObject({ kind: 'blocked', unread: true });
+    expect(alerts).toEqual(['a']);
+    monitor.noteHarnessUnblocked('a');
+    expect(monitor.get('a')).toBeNull();
+  });
+
+  it('alerts a new correlated request while watched, but never its duplicate', () => {
+    add('a');
+    monitor.setWindowFocused(true);
+    monitor.setFocus('a');
+    const alerts: string[] = [];
+    monitor.on('alert', (_id, signal) => alerts.push(signal.requestId!));
+    monitor.noteHarnessBlocked('a', 'working', 'source-question-1');
+    monitor.noteHarnessBlocked('a', 'working', 'source-question-1');
+    monitor.noteHarnessTurnEnd('a');
+    expect(monitor.get('a')?.requestId).toBe('source-question-1');
+    monitor.noteHarnessBlocked('a', 'working', 'source-question-2');
+    expect(alerts).toEqual(['source-question-1', 'source-question-2']);
+    expect(monitor.get('a')?.unread).toBe(false);
+  });
+
+  it('restores silently and refuses a late checkpoint after fresh source evidence', () => {
+    add('a');
+    add('b');
+    const alerts: string[] = [];
+    monitor.on('alert', id => alerts.push(id));
+    const checkpoint = { kind: 'blocked' as const, since: 10, unread: false };
+    monitor.restore('a', checkpoint);
+    expect(monitor.get('a')).toEqual(checkpoint);
+    monitor.noteHarnessUnblocked('b');
+    monitor.restore('b', checkpoint);
+    expect(monitor.get('b')).toBeNull();
+    expect(alerts).toEqual([]);
+  });
+
+  it('preserves working execution when the source asks an asynchronous question', () => {
+    add('a');
+    monitor.noteHarnessTurnStart('a');
+    monitor.noteHarnessBlocked('a', 'working');
+    expect(monitor.isWorking('a')).toBe(true);
+    expect(monitor.get('a')).toMatchObject({
+      kind: 'blocked',
+      request: 'working',
+    });
+  });
+
+  it('never converts explicitly unknown source execution into a finished result', () => {
+    add('a');
+    monitor.setReportedTurnSource(() => ({
+      ownTurn: 'unknown',
+      blockedOn: null,
+      children: [],
+    }));
+    data('a', 'x'.repeat(500));
+    clock += 60_000;
+    monitor.sweepNow();
+    expect(monitor.get('a')).toBeNull();
+  });
+
   it('raises on a raw bell in an unfocused session', () => {
     add('a');
     data('a', `output${BELL}more`);
-    expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+    expect(monitor.get('a')).toMatchObject({ kind: 'bell', since: clock });
     expect(monitor.count()).toBe(1);
   });
 
@@ -110,12 +182,12 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')?.kind).toBe('bell');
   });
 
-  it('suppresses bells on the watched session (focused tab + focused window)', () => {
+  it('records watched bells as read without resolving their request', () => {
     add('a');
     monitor.setWindowFocused(true);
     monitor.setFocus('a');
     data('a', `ding${BELL}`);
-    expect(monitor.get('a')).toBeNull();
+    expect(monitor.get('a')).toMatchObject({ unread: false });
   });
 
   it('flags the ACTIVE tab when the app window is in the background', () => {
@@ -128,7 +200,7 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')?.kind).toBe('bell');
     // coming back to the app = looking at the active tab -> clears
     monitor.setWindowFocused(true);
-    expect(monitor.get('a')).toBeNull();
+    expect(monitor.get('a')).toMatchObject({ unread: false });
   });
 
   it('raises turn-end after a work burst goes quiet (harness only)', () => {
@@ -163,7 +235,7 @@ describe('AttentionMonitor', () => {
     monitor.setFocus(null); // ...and looks away again
     clock += 5000;
     monitor.sweepNow(); // burst already consumed: nothing new to flag
-    expect(monitor.get('a')).toBeNull();
+    expect(monitor.get('a')).toMatchObject({ unread: false });
   });
 
   it('respects the spawn grace period', () => {
@@ -174,14 +246,14 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')).toBeNull(); // within spawnGraceMs
   });
 
-  it('never turn-ends the watched session', () => {
+  it('records watched turn results as already read', () => {
     add('a', 'claude', clock - 60_000);
     monitor.setWindowFocused(true);
     monitor.setFocus('a');
     data('a', 'x'.repeat(500));
     clock += 5000;
     monitor.sweepNow();
-    expect(monitor.get('a')).toBeNull();
+    expect(monitor.get('a')).toMatchObject({ unread: false });
   });
 
   it('turn-ends the active tab when the window is unfocused', () => {
@@ -195,20 +267,21 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')?.kind).toBe('turn-end');
   });
 
-  it('clears on focus (in a focused window) and emits null', () => {
+  it('marks read on focus without deleting the source signal', () => {
     add('a');
     data('a', `ding${BELL}`);
     expect(monitor.count()).toBe(1);
     monitor.setWindowFocused(true);
     monitor.setFocus('a');
-    expect(monitor.get('a')).toBeNull();
-    expect(events).toEqual([
-      { id: 'a', att: { kind: 'bell', since: clock } },
-      { id: 'a', att: null },
+    expect(monitor.get('a')).toMatchObject({ unread: false });
+    expect(events).toMatchObject([
+      { id: 'a', att: { kind: 'bell', since: clock, unread: true } },
+      { id: 'a', att: { kind: 'bell', since: clock, unread: false } },
     ]);
+    expect(monitor.count()).toBe(0);
   });
 
-  it('input clears ONLY the watched session (xterm auto-replies must not)', () => {
+  it('input acknowledges ONLY the watched session without resolving it', () => {
     add('a');
     add('b');
     data('a', `ding${BELL}`);
@@ -220,9 +293,9 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')?.kind).toBe('bell');
     // real typing into the watched session clears it
     data('b', `ding-again${BELL}`); // b unflagged (watched) — stays null
-    expect(monitor.get('b')).toBeNull();
+    expect(monitor.get('b')).toMatchObject({ unread: false });
     monitor.setFocus('a');
-    expect(monitor.get('a')).toBeNull(); // focusing cleared it
+    expect(monitor.get('a')).toMatchObject({ unread: false }); // focusing cleared it
   });
 
   it('keeps a finished turn stable until explicit operator engagement, for a reported source', () => {
@@ -251,7 +324,7 @@ describe('AttentionMonitor', () => {
     monitor.setFocus('a');
     monitor.noteEngaged('a');
     data('a', 'real next-turn output');
-    expect(monitor.get('a')).toBeNull();
+    expect(monitor.get('a')).toMatchObject({ unread: false });
     expect(monitor.isWorking('a')).toBe(true);
   });
 
@@ -351,7 +424,10 @@ describe('AttentionMonitor', () => {
     it('raises turn-end when nothing was delegated', () => {
       add('a');
       goQuietAfterWork('a');
-      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        since: clock,
+      });
     });
 
     it('withholds turn-end while children are still running', () => {
@@ -374,7 +450,10 @@ describe('AttentionMonitor', () => {
       // a returning child reopens the turn, the parent works, then settles
       monitor.noteHarnessTurnStart('a');
       goQuietAfterWork('a');
-      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        since: clock,
+      });
     });
 
     it('only withholds for the delegating Session', () => {
@@ -386,7 +465,10 @@ describe('AttentionMonitor', () => {
       clock += 5000;
       monitor.sweepNow();
       expect(monitor.get('a')).toBeNull();
-      expect(monitor.get('b')).toEqual({ kind: 'turn-end', since: clock });
+      expect(monitor.get('b')).toMatchObject({
+        kind: 'turn-end',
+        since: clock,
+      });
     });
 
     it('reopens a settled turn on a reported turn start', () => {
@@ -447,7 +529,10 @@ describe('AttentionMonitor', () => {
       expect(monitor.isWorking('a')).toBe(true);
       monitor.noteHarnessTurnEnd('a');
       expect(monitor.isWorking('a')).toBe(false);
-      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        since: clock,
+      });
     });
 
     it('leaves inference running as a backstop for an unreported end', () => {
@@ -457,7 +542,10 @@ describe('AttentionMonitor', () => {
       data('a', 'x'.repeat(500));
       clock += 5000;
       monitor.sweepNow();
-      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        since: clock,
+      });
     });
 
     it('does not double-raise when both paths observe the same turn', () => {
@@ -468,7 +556,10 @@ describe('AttentionMonitor', () => {
       clock += 5000;
       monitor.sweepNow();
       // the ORIGINAL signal is retained, so the attention queue stays ordered
-      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: reportedAt });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        since: reportedAt,
+      });
       expect(events.filter(e => e.id === 'a' && e.att)).toHaveLength(1);
     });
 
@@ -481,16 +572,16 @@ describe('AttentionMonitor', () => {
       monitor.setFocus(null);
       clock += 5000;
       monitor.sweepNow();
-      expect(monitor.get('a')).toBeNull();
+      expect(monitor.get('a')).toMatchObject({ unread: false });
     });
 
-    it('never raises a reported end on the watched Session', () => {
+    it('records a watched reported end without unread attention', () => {
       add('a', 'claude', clock - 60_000);
       monitor.setWindowFocused(true);
       monitor.setFocus('a');
       data('a', 'x'.repeat(500));
       monitor.noteHarnessTurnEnd('a');
-      expect(monitor.get('a')).toBeNull();
+      expect(monitor.get('a')).toMatchObject({ unread: false });
       // but it still settles, so an idle repaint cannot resurrect "working"
       expect(monitor.isWorking('a')).toBe(false);
     });
@@ -512,7 +603,10 @@ describe('AttentionMonitor', () => {
       add('a', 'claude', clock); // just spawned
       data('a', 'x'.repeat(500));
       monitor.noteHarnessTurnEnd('a');
-      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        since: clock,
+      });
       // inference still respects it
       add('b', 'claude', clock);
       data('b', 'x'.repeat(500));
@@ -547,7 +641,7 @@ describe('AttentionMonitor', () => {
         monitor.setFocus('a');
         monitor.setFocus(null);
         monitor.setWindowFocused(false);
-        expect(monitor.get('a')).toBeNull();
+        expect(monitor.get('a')).toMatchObject({ unread: false });
         clock += 1000;
       }
     });
@@ -566,7 +660,10 @@ describe('AttentionMonitor', () => {
 
       busy.clear();
       monitor.noteHarnessTurnEnd('a'); // what the last child-end triggers
-      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        since: clock,
+      });
     });
 
     /**
@@ -667,7 +764,10 @@ describe('AttentionMonitor', () => {
       // monitor must behave exactly as it did before ENG-023.
       add('a');
       goQuietAfterWork('a');
-      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        since: clock,
+      });
     });
 
     /**
@@ -707,7 +807,7 @@ describe('AttentionMonitor', () => {
         monitor.noteHarnessTurnEnd('a');
         clock += 60_000;
         data('a', BELL);
-        expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+        expect(monitor.get('a')).toMatchObject({ kind: 'bell', since: clock });
       });
 
       it('still raises needs-you for a gate held while children run', () => {
@@ -721,7 +821,7 @@ describe('AttentionMonitor', () => {
         data('a', 'x'.repeat(500));
         clock += 60_000;
         data('a', BELL);
-        expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+        expect(monitor.get('a')).toMatchObject({ kind: 'bell', since: clock });
       });
 
       it('raises the reported gate itself while children run', () => {
@@ -732,7 +832,10 @@ describe('AttentionMonitor', () => {
         add('a');
         gate.blockedOn = 'question';
         monitor.noteHarnessBlocked('a');
-        expect(monitor.get('a')).toEqual({ kind: 'blocked', since: clock });
+        expect(monitor.get('a')).toMatchObject({
+          kind: 'blocked',
+          since: clock,
+        });
       });
 
       it('returns to ordinary bell behavior once the team finishes', () => {
@@ -748,12 +851,15 @@ describe('AttentionMonitor', () => {
         // the last child ends: the withheld result raises as it always did …
         team.children = 0;
         monitor.noteHarnessTurnEnd('a');
-        expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+        expect(monitor.get('a')).toMatchObject({
+          kind: 'turn-end',
+          since: clock,
+        });
 
         // … and the next bell upgrades that result to a human gate again
         clock += 60_000;
         data('a', BELL);
-        expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+        expect(monitor.get('a')).toMatchObject({ kind: 'bell', since: clock });
       });
 
       /**
@@ -771,7 +877,7 @@ describe('AttentionMonitor', () => {
         data('a', 'x'.repeat(500));
         clock += 60_000;
         data('a', BELL);
-        expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+        expect(monitor.get('a')).toMatchObject({ kind: 'bell', since: clock });
       });
     });
   });
@@ -935,7 +1041,7 @@ describe('AttentionMonitor activity truth (D18)', () => {
     expect(monitor.isWorking('a')).toBe(true);
     clock += 5000;
     monitor.sweepNow();
-    expect(monitor.get('a')).toBeNull();
+    expect(monitor.get('a')).toMatchObject({ unread: false });
   });
 
   it('drops the working state when the session exits', () => {

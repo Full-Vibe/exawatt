@@ -182,6 +182,7 @@ const bridge = {
       invoke('pty:reopen-session', durableSessionId),
     rename: (id, title) => invoke('pty:rename', id, title),
     focus: id => invoke('pty:focus', id),
+    markUnread: id => invoke('pty:mark-unread', id),
     setContextAuth: accessToken => invoke('pty:set-context-auth', accessToken),
     correctContext: (durableSessionId, label) =>
       invoke('pty:correct-context', durableSessionId, label),

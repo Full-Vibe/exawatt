@@ -651,7 +651,6 @@ Implementation record (landed 2026-07-10):
 - 2026-09-28 (pre-0.1.14 review, BUG-237 to BUG-240): **Exawatt's own stop
   is a clean stop, a closed starting tab cancels its start, and neither a
   cancelled quit nor an interrupted first load breaks the app.**
-
   - **Pause read as a fault (BUG-237, release blocker).** BUG-186 made main
     keep the signal a process died by. `stopProcessGroups` ends a Session
     with SIGHUP (SIGKILL after 1.5 s), and the login shell reports that
@@ -703,7 +702,6 @@ Implementation record (landed 2026-07-10):
   sets of Agents, and a killed Agent read as cleanly paused; resumability
   and the word are now one derivation, and the exit record keeps its
   signal.**
-
   - **Two tests, one word (BUG-185).** The tab chose its word in the owner
     from lifecycle and exit code. Every "paused" count (recovery bar, ⌘K),
     every resume verb's availability, the resume batch and the chord's
@@ -739,7 +737,7 @@ Implementation record (landed 2026-07-10):
   - **The signal (BUG-186), verified real.** node-pty's `pty.cc` sets
     `exit_code` only under `WIFEXITED` and `signal_code` only under
     `WIFSIGNALED`, so a signalled death arrives as `{ exitCode: 0, signal
-    }`; `session-manager.ts` kept the code. Probed with node-pty inside this
+}`; `session-manager.ts` kept the code. Probed with node-pty inside this
     worktree's Electron, using `planLoginShell`'s argv: zsh and bash exec the
     harness, so `kill -9` of the Agent reports `0 + 9`; fish does not exec,
     so a killed child reports 137 through fish and a killed fish reports
@@ -750,7 +748,7 @@ Implementation record (landed 2026-07-10):
     `os.constants.signals`), `pty:exit` carries it, the layout persists it,
     and the owner reads **Exited · Ended by SIGKILL · conversation kept**,
     amber, with Resume still offered; the terminal marker reads `[session
-    ended by SIGKILL]`. The switcher row and Fleet status treat a signal as
+ended by SIGKILL]`. The switcher row and Fleet status treat a signal as
     a fault like a nonzero code.
   - **Absence is not clean.** `exitSignal` is added to the persisted tab
     without a schema bump, and `parsePersisted` keeps an absent or
@@ -778,7 +776,7 @@ Implementation record (landed 2026-07-10):
   - **Evidence.** Before/after captures on the baseline (`origin/master`)
     and this tree's dev Electron, at 1400×820 for the seeded crash and clean
     quit and 1200×760 for the real `kill -9`; `pnpm type-check`, `pnpm
-    lint`, `pnpm test:run` green. Gates green: `eval:workspace:chrome`,
+lint`, `pnpm test:run` green. Gates green: `eval:workspace:chrome`,
     `eval:workspace:split`, `eval:workspace:team`, `eval:workspace:paused`,
     `eval:navigation:spine`, `eval:electron:idempotency`,
     `eval:electron:connected-fleet`. `eval:electron:lifecycle` passed every
@@ -814,7 +812,6 @@ Implementation record (landed 2026-07-10):
 - 2026-09-23 (S6.4, landed; closes BUG-046 under decision `0042`): **one
   paused Agent spoke four vocabularies and two resume verbs at once, and the
   cure was one owner, not four edits.**
-
   - **What the operator saw.** On a workspace with one clean-paused Agent
     (fixture: `lifecycle: stopped-clean`, `exitCode: 0`, identity recorded),
     the tab chip read "Stopped", the recovery bar read "2 agents paused · 1
@@ -835,12 +832,12 @@ Implementation record (landed 2026-07-10):
     "Exited" with the code in the line; a shell is "Closed"; `interrupted`,
     `failed` and `resuming` keep their own words. The line always adds a
     fact beyond the word (`Stopped cleanly · conversation kept`, `Ended
-    without a clean shutdown · conversation not recorded`) and the module's
+without a clean shutdown · conversation not recorded`) and the module's
     own test refuses a line that merely repeats the word. The verb is
     `resume`, `reconnect`, or `new-shell` from the identity and the harness,
     labelled once (`Resume this Agent`, `Reconnect conversation`, `Start new
-    shell`); the recovery bar's scoped verbs and its counts (`3 Agents
-    paused`, `1 Agent needs reconnection`, `Resuming 1 of 2 Agents…`) come
+shell`); the recovery bar's scoped verbs and its counts (`3 Agents
+paused`, `1 Agent needs reconnection`, `Resuming 1 of 2 Agents…`) come
     from the same file. Tone maps to colour in one renderer helper
     (`session-lifecycle-tone.ts`), so an amber word is amber everywhere.
   - **Deleted, not shimmed.** `TILE_STATE_LABEL` in `expose-overlay.tsx`,
@@ -895,7 +892,6 @@ Implementation record (landed 2026-07-10):
   was taken against a tree that predated the fix): **a gate reported red on
   "unmodified origin/master" was measured on a checkout ~18 minutes older
   than the fix that repaired it.**
-
   - **The claim.** BUG-026 (`f234e06`) landed with `eval:workspace:team`
     waived, reporting the glide gate red on unmodified `origin/master`, three
     runs at load 17-160, reduced motion ruled out. Read against S6.1.1, which
@@ -945,7 +941,7 @@ Implementation record (landed 2026-07-10):
     each agent its own branch, index and working tree, so it is natural to
     assume the stash is private too — it is not. There is ONE stash stack
     under the common Git directory, shared by every worktree. `git stash
-    pop` takes `stash@{0}`, whoever pushed it last, so with two dozen live
+pop` takes `stash@{0}`, whoever pushed it last, so with two dozen live
     worktrees it can drop another session's half-finished work into your
     tree, and into `master` if you resolve the conflicts and commit; `drop`
     and `clear` destroy it outright. Another agent hit exactly that on
@@ -956,7 +952,7 @@ Implementation record (landed 2026-07-10):
     chose.** `stash@{0}`, like `-A`, means "whatever happens to be there".
     The safe substitutes are a throwaway detached worktree for reading a
     baseline (`git worktree add ../exawatt-baseline-<slug> --detach
-    origin/master`) and a commit on your own `agent/*` branch for setting
+origin/master`) and a commit on your own `agent/*` branch for setting
     work aside — which is what the delivery queue wants regardless.
 
   - **This session's stash audit.** Two `git stash` uses happened here
@@ -969,11 +965,9 @@ Implementation record (landed 2026-07-10):
     unconsumed. No harm done, and the near miss is why the rule is written
     down rather than remembered.
 
-
 - 2026-08-16 (S6.1.1, landed — FIX-002 closed a second time): **the geometry
   was never wrong. The selection was taken back after the arrow key set it,
   by a mouse event nobody moved.**
-
   - **What the evidence ruled out first.** Before changing anything, two
     sweeps established that the reported cause could not be the cause.
     160,000 randomised reading-order layouts — variable Projects, variable
@@ -1043,7 +1037,7 @@ Implementation record (landed 2026-07-10):
     reading the expected target off the RENDERED rects rather than a
     hard-coded id, and failing if the fixture stops crossing a boundary or
     stops scrolling. Confirmed red on the pre-fix tree (`a pointer that came
-    to rest took the selection (exa-1 → exa-5)`) and green after. A
+to rest took the selection (exa-1 → exa-5)`) and green after. A
     keyboard-only browser test could not have caught this, and neither could
     a unit test; the missing ingredient was a pointer that does nothing.
 
@@ -1062,7 +1056,7 @@ Implementation record (landed 2026-07-10):
     therefore empty at the start of every layout effect, every tile looked
     like a tile that had just arrived, and the re-sort snapped in silence.
     Instrumenting the hook showed it directly: `{orderChanged:true,
-    animate:true, nodes:10, rects:0}`, ten `detach` calls between every pair
+animate:true, nodes:10, rects:0}`, ten `detach` calls between every pair
     of renders. The cache is no longer dropped on detach (the rect and timer
     cleanup stay, so a tile that really left re-enters with its entrance).
     Pinned by `use-flip-tiles.test.tsx`, which asserts callback identity
@@ -1089,7 +1083,6 @@ Implementation record (landed 2026-07-10):
 - 2026-08-13 (S1, landed — feedback row `7d814294` closed): **the amber was
   Claude Code's 60-second idle bell, and the BEL was the one raise path that
   never consulted the reported record.**
-
   - **What actually raised it.** Not inference. Every inferred path already
     defers to ENG-023's delegation truth — `noteHarnessTurnEnd` returns on
     `delegatedBusy`, and both the quiescence sweep and D4's stale-report
@@ -1162,7 +1155,7 @@ Implementation record (landed 2026-07-10):
     D49's "All engines and models" catalog — the shape that repaired the shell
     openers — does not work, because a source only appears in that catalog
     when it publishes a live model catalog (`if (!catalog?.effectiveModel)
-    continue`), and the fixture Codex answers only `--version` and `login`.
+continue`), and the fixture Codex answers only `--version` and `login`.
     The repair needs the setup-card contract or a fixture that answers the
     model probe, which is exactly the warning BUG-014 already carries.
 
@@ -1200,7 +1193,6 @@ Implementation record (landed 2026-07-10):
 - 2026-08-07 (S6.3 review pass, landed): a thorough read of the shipped
   ordering found three real defects, all mine, plus one piece of my own
   defensive code that turned out to be dead.
-
   - **The live sort stole the keyboard (regression, operator-visible).**
     Making `items` derive from the view order made it rebuild whenever
     `activity` or `attention` changed identity — and `setActivity` changes
@@ -1261,7 +1253,6 @@ Implementation record (landed 2026-07-10):
   → newest attention signal → Started order), which refines cleanly if
   per-tab activity timestamps are ever plumbed. The stored pre-rename value
   migrates.
-
   - **Engine.** `team-order.ts` shrank to two sorts. Start time is both the
     default order and the tiebreak inside every Activity band, which is what
     makes live re-sorting calm by construction: a deterministic total order
@@ -1299,7 +1290,6 @@ Implementation record (landed 2026-07-10):
     optimization.
 
 - 2026-08-07 (S6.2, landed): the FIX-008 design pass is staged, not decided.
-
   - **The bench runs the real surface.** `/hud-gallery/team-order` mounts
     `ExposeOverlay` itself over a ten-agent fixture fleet whose working /
     needs-you / idle / stopped Agents are deliberately NOT at the front of
@@ -1339,7 +1329,6 @@ Implementation record (landed 2026-07-10):
 
   **FIX-002 and FIX-006 are one defect, confirmed by reading before the pass
   starts.** Both live in `expose-overlay.tsx`'s `onKeyDown`:
-
   - Movement is `±1` over a flat `items` array, so Up/Down and Left/Right all
     step through one list. The tile layout is a 2-D grid and promises rows and
     columns; the keyboard delivers a sequence. That is FIX-002 exactly, and
@@ -1869,3 +1858,43 @@ super robust coupled state. Anytime there is an amber icon, that should
 correspond with a notification." The rule this evidence asks for is that the
 amber marker and the notification are one state produced by one transition.
 Both queued as roadmap backlog items BUG-259 and BUG-265.
+
+### 2026-10-04 — Attention execution: inspection and requests separated (in progress)
+
+**Reading now acknowledges a request without resolving its work.** The
+`agent/polish-attention` worktree owns the decision-0046 attention monitor,
+typed bridge, shared queue, and existing Session-menu return-to-unread action.
+The restart lane owns durable Session checkpointing; the source-truth lane owns
+provider request identities and positive resolution evidence. These are one
+contract across the existing owners, not a second attention engine.
+
+- Attention carries an independent `unread` bit and source request class
+  (`blocking`, `working`, or explicitly `unknown`); legacy missing read bits
+  remain unread. Source-correlated request identities distinguish a new
+  question from duplicate delivery. No UUID is invented for source evidence.
+- Focus and arbitrary terminal input acknowledge inspection only. Source
+  release retires a request. A completed blocking turn can backstop its lost
+  release; a working question survives the parent's completion until its
+  correlated reply arrives.
+- The monitor emits source alerts separately from state updates. Read/unread
+  edits and checkpoint import cannot replay a notification. The existing
+  opt-in attention bell drives one system sound from that transition,
+  independent of native popup permission/focus; native popups stay silent and
+  background-only to avoid double sound.
+- Checkpoint import cannot overwrite source evidence observed during spawn.
+  Process exit is carried separately from source resolution so persistence
+  retains outstanding attention after the runtime ends.
+- Queue work uses shared priority ordering and a visited pass so persistent
+  requests do not trap repeated Cmd+J between the first two Sessions. No
+  Project or tab arrangement is rewritten. Mark unread uses the existing
+  Session context menu, with no new shortcut collision or permanent chrome.
+- Verification in progress: 70 monitor/notification policy tests passed before
+  adding the final correlated-question regression. Source-truth's explicit
+  unknown execution union requires its companion adapter/consumer changes
+  before integrated compilation. No app installation or integration claimed.
+
+Remaining acceptance: combine source and restart changes, run related renderer
+contracts and declared Electron/browser surface gates, inspect the read/unread
+presentation through the shared gallery review, then queue integration with
+`--dogfood`. Exact read/unread styling remains review work; no automatic
+purpose dimming, closing, folding, or rearrangement is authorized.

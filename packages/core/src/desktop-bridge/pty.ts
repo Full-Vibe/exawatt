@@ -100,6 +100,14 @@ export interface PtyAttention {
   kind: PtyAttentionKind;
   /** When the attention was raised; the queue orders oldest first. */
   since: number;
+  /** Operator inspection, independent of unresolved work. Absent legacy values
+   * are unread. Reading never resolves a request. */
+  unread?: boolean;
+  /** Source evidence about whether this request stops execution. A terminal
+   * bell without source evidence is unknown, never a fabricated hard block. */
+  request?: 'blocking' | 'working' | 'unknown';
+  /** Source-correlated identity or census key; absent for unreported signals. */
+  requestId?: string;
 }
 
 /** Source-neutral visual identity for one durable Session goal (ENG-015 S4.1). */
@@ -166,10 +174,13 @@ export type SessionBlockedReason = 'question' | 'permission' | 'elicitation';
  * Agent does nothing but wait for an answer.
  */
 export interface SessionDelegation {
-  ownTurn: 'generating' | 'available';
+  ownTurn: 'generating' | 'available' | 'unknown';
   /** The operator gate the Agent is sitting behind, or null when it is not
    *  waiting on a human. Independent of `ownTurn` on purpose. */
   blockedOn: SessionBlockedReason | null;
+  /** Requests may coexist with ongoing work; absent legacy gates block. */
+  request?: 'blocking' | 'working';
+  requestId?: string;
   /** Live children, oldest first. */
   children: DelegatedChild[];
   /** Non-Agent work reported by the source; absent on older providers. */

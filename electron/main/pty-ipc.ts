@@ -377,17 +377,32 @@ export function registerPtyIPC(
     broadcast('pty:engaged', { id });
   });
   attentionMonitor.on('attention', (id, attention) => {
-    broadcast('pty:attention', { id, attention });
+    const session = ptySessions.list().find(record => record.id === id);
+    broadcast('pty:attention', {
+      id,
+      durableSessionId: session?.durableSessionId,
+      runtimeEnded: session?.exited,
+      attention,
+    });
     const count = attentionMonitor.count();
     if (app.dock) {
       // ambient OS-level signals are opt-in (D18): an unexplained dock
       // number with no in-app way to clear it reads as noise, not truth
       const dockBadge = loadSettings().notifications?.dockBadge ?? false;
       app.dock.setBadge(dockBadge && count > 0 ? String(count) : '');
-      if (dockBadge && attention && BrowserWindow.getFocusedWindow() === null) {
-        app.dock.bounce('informational');
-      }
     }
+    if (!attention || attention.unread === false) {
+      nativeNotifications.get(id)?.close();
+      nativeNotifications.delete(id);
+    }
+  });
+  attentionMonitor.on('alert', (id, attention) => {
+    const settings = loadSettings().notifications;
+    const focused = BrowserWindow.getFocusedWindow() !== null;
+    if (settings?.dockBadge && !focused) app.dock?.bounce('informational');
+    // The existing bell preference applies to every new attention transition,
+    // including another Session while the app is frontmost.
+    if (settings?.attention) shell.beep();
     nativeNotifications.get(id)?.close();
     nativeNotifications.delete(id);
     // A notice that waited on the permission registry must not post once this
@@ -591,6 +606,9 @@ export function registerPtyIPC(
   handleBounded('pty:correct-context', (_event, durableSessionId, label) =>
     contextSummarizer.correct(durableSessionId, label)
   );
+  handleTrusted('pty:mark-unread', (_event, id: string) => {
+    attentionMonitor.markUnread(id);
+  });
   handleTrusted('pty:focus', (_event, id: string | null) => {
     attentionMonitor.setFocus(id);
     contextSummarizer.setFocus(id);

@@ -2,8 +2,8 @@
 
 /**
  * The attention focus contract (S1): tell main which Session the operator is
- * looking at. The focused Session never flags, and focusing clears. The
- * local record clears optimistically; main confirms via `pty:attention`.
+ * looking at. Focus acknowledges inspection without resolving outstanding requests. The
+ * local read bit updates optimistically; main confirms via `pty:attention`.
  * A re-entry recap belongs to the Session it was raised for and goes when
  * the operator looks elsewhere.
  */
@@ -20,11 +20,13 @@ import type {
 
 export function useAttentionFocus({
   activeSessionId,
+  activeDurableSessionId,
   setReentryRecap,
   setAttention,
 }: {
   /** the live PTY incarnation behind the active tab, or null */
   activeSessionId: string | null;
+  activeDurableSessionId?: string | null;
   setReentryRecap: Dispatch<SetStateAction<PtyReentryRecap | null>>;
   setAttention: Dispatch<SetStateAction<Record<string, PtyAttention>>>;
 }): void {
@@ -38,15 +40,16 @@ export function useAttentionFocus({
   // used to leave one rendered frame where the newly active tab still wore
   // its old attention marker; main then confirmed the clear over IPC.
   useLayoutEffect(() => {
-    if (activeSessionId && document.hasFocus()) {
-      setAttention(prev => {
-        if (!(activeSessionId in prev)) return prev;
-        const next = { ...prev };
-        delete next[activeSessionId];
-        return next;
-      });
-    }
-  }, [activeSessionId, setAttention]);
+    if (!document.hasFocus()) return;
+    const id = activeDurableSessionId ?? activeSessionId;
+    if (!id) return;
+    setAttention(prev => {
+      const key = prev[id] ? id : activeSessionId;
+      const signal = key ? prev[key] : undefined;
+      if (!key || !signal || signal.unread === false) return prev;
+      return { ...prev, [key]: { ...signal, unread: false } };
+    });
+  }, [activeSessionId, activeDurableSessionId, setAttention]);
 
   useEffect(() => {
     const api = window.electron?.pty;

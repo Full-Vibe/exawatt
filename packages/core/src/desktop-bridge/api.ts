@@ -153,6 +153,8 @@ interface DesktopPtyApi {
   rename: BridgeInvoke<'pty:rename'>;
   /** The operator is looking at this Session (null: none focused). */
   focus: BridgeInvoke<'pty:focus'>;
+  /** Restore operator unread intent without repeating a source notification. */
+  markUnread: BridgeInvoke<'pty:mark-unread'>;
   /** Syncs the signed-in token to main, which never exposes it back and uses
    *  it only for hosted context-label requests. */
   setContextAuth: BridgeInvoke<'pty:set-context-auth'>;

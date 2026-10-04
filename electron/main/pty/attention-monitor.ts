@@ -28,8 +28,8 @@ import type {
  *
  * "Looked at" means the session's tab is active AND the app window has OS
  * focus — an active tab behind another app still flags (that's the single-
- * tab case this system exists for). Attention clears when the operator
- * looks (focus) or answers (input while looking). Once a turn crosses a
+ * tab case this system exists for). Inspection marks attention read; only source evidence resolves requests.
+ * Input while looking acknowledges inspection without proving resolution. Once a turn crosses a
  * finished boundary, passive provider output cannot silently reopen it; a
  * guaranteed-human engagement begins the next turn. That guarantee holds
  * unconditionally only for a source with its own reported-turn channel
@@ -49,8 +49,9 @@ import type {
 /** What the harness itself reported about a Session, when it reports at all.
  *  Structurally the delegation record; named for what it is used for here. */
 export interface ReportedTurn {
-  ownTurn: 'generating' | 'available';
+  ownTurn: 'generating' | 'available' | 'unknown';
   blockedOn: string | null;
+  request?: 'blocking' | 'working';
   children: readonly unknown[];
   backgroundTasks?: readonly SessionBackgroundTask[];
 }
@@ -74,7 +75,7 @@ export interface StaleReportEvidence {
   quietMs: number;
   /** the bound that silence crossed */
   staleMs: number;
-  ownTurn: 'generating' | 'available';
+  ownTurn: 'generating' | 'available' | 'unknown';
   /** reported children outstanding at the moment of reclaim */
   children: number;
 }
@@ -132,6 +133,8 @@ const REPORTED_TURN_STALE_FACTOR = 3;
 type AttentionMonitorEvents = {
   activity: [id: string, working: boolean];
   attention: [id: string, attention: PtyAttention | null];
+  /** A new source transition, never a read/unread edit or restoration. */
+  alert: [id: string, attention: PtyAttention];
   engaged: [id: string];
   'reported-turn-stale': [id: string, evidence: StaleReportEvidence];
 };
@@ -139,6 +142,7 @@ type AttentionMonitorEvents = {
 export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   private manager: PtySessionManager | null = null;
   private attention = new Map<string, PtyAttention>();
+  private sourceObserved = new Set<string>();
   private lastDataAt = new Map<string, number>();
   private lastResizeAt = new Map<string, number>();
   private burstBytes = new Map<string, number>();
@@ -227,7 +231,28 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   }
 
   count(): number {
-    return this.attention.size;
+    return [...this.attention.values()].filter(att => att.unread !== false)
+      .length;
+  }
+
+  /** Restore operator state only before any fresh source evidence. */
+  restore(id: string, snapshot: PtyAttention): void {
+    if (this.sourceObserved.has(id) || this.attention.has(id)) return;
+    this.attention.set(id, { ...snapshot });
+    this.emit('attention', id, this.attention.get(id)!);
+  }
+
+  /** Inspection and operator intent never raise a second source alert. */
+  markUnread(id: string): void {
+    this.setUnread(id, true);
+  }
+
+  private setUnread(id: string, unread: boolean): void {
+    const existing = this.attention.get(id);
+    if (!existing || (existing.unread !== false) === unread) return;
+    const next = { ...existing, unread };
+    this.attention.set(id, next);
+    this.emit('attention', id, next);
   }
 
   /** is this session actively producing output right now? */
@@ -282,6 +307,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    */
   noteHarnessTurnEnd(id: string): void {
     if (this.disabled) return;
+    this.sourceObserved.add(id);
     const session = this.manager?.list().find(item => item.id === id);
     if (!session || session.exited || session.harness === 'shell') return;
     this.settled.add(id);
@@ -289,12 +315,11 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // Consume the burst: the boundary is accounted for, and leaving it would
     // let the next quiescence sweep re-raise the same finished turn.
     this.burstBytes.set(id, 0);
-    // A turn cannot end while a gate is open, so the gate is gone whether or
-    // not its own release arrived. The reported record clears itself here
-    // (`applyHarnessEvent`); the queue must clear with it or a dropped
-    // release would leave a Session flagged "needs you" forever.
-    this.noteHarnessUnblocked(id);
-    if (this.isWatched(id)) return;
+    // A completed blocking turn backstops a lost gate-release event. An
+    // asynchronous question can outlive this turn and needs its own reply
+    // correlation; completing work does not answer that question.
+    if (this.attention.get(id)?.request !== 'working')
+      this.noteHarnessUnblocked(id);
     // NO spawn grace here, deliberately. That guard exists because a revived
     // tab printing its banner and going quiet LOOKS like a finished turn to
     // inference; a reported boundary carries no such ambiguity, and honoring
@@ -303,6 +328,14 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // The Session's own turn ended, but its team has not (ENG-023).
     if (this.delegatedBusy(id)) return;
     this.raise(id, 'turn-end');
+  }
+
+  /** Lack of source visibility is not a finished turn or an operator gate. */
+  noteHarnessTurnUnknown(id: string): void {
+    this.sourceObserved.add(id);
+    this.settled.delete(id);
+    const kind = this.attention.get(id)?.kind;
+    if (kind === 'bell' || kind === 'turn-end') this.clear(id);
   }
 
   /** Source work corrects an inferred bell/result even if its census arrived
@@ -334,6 +367,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     if (!report) return false;
     return (
       report.ownTurn === 'generating' ||
+      report.ownTurn === 'unknown' ||
       !!report.blockedOn ||
       sessionHasBackgroundWork(report)
     );
@@ -413,7 +447,12 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     const report = this.reportedTurn(id);
     // A monitor or background tool may be legitimately silent indefinitely.
     // Only the source census or process exit can withdraw that evidence.
-    if (!report || report.blockedOn || report.backgroundTasks?.length)
+    if (
+      !report ||
+      report.ownTurn === 'unknown' ||
+      report.blockedOn ||
+      report.backgroundTasks?.length
+    )
       return false;
     if (report.ownTurn !== 'generating' && report.children.length === 0)
       return false;
@@ -439,6 +478,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    */
   noteHarnessTurnStart(id: string): void {
     if (this.disabled) return;
+    this.sourceObserved.add(id);
     const session = this.manager?.list().find(item => item.id === id);
     if (!session || session.exited || session.harness === 'shell') return;
     this.settled.delete(id);
@@ -450,8 +490,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // retired — an unanswered question or block still needs the operator, and
     // more output does not answer it.
     if (this.attention.get(id)?.kind === 'turn-end') this.clear(id);
-    // A new prompt is an answered question by definition (D4).
-    this.noteHarnessUnblocked(id);
+    // A new turn alone does not prove an outstanding question was answered.
     this.lastDataAt.set(id, this.now());
     this.setWorking(id, true);
   }
@@ -467,30 +506,39 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    * nobody had answered. A gate is neither working nor finished, and now it
    * says so.
    *
-   * Unlike a bell, this is raised even while WATCHED. The queue entry is
-   * suppressed for a watched Session the same way every other signal is — but
-   * the gate is a CONDITION, not an unseen event, and `⌘J`'s queue is not the
-   * only reader: the strip's light must keep saying "needs you" while the
-   * question is still on screen in front of the operator.
+   * A request remains present while WATCHED: inspection only changes its
+   * read bit. A new request alerts once even while on screen; duplicate
+   * source reports and operator read edits never raise another alert.
    */
-  noteHarnessBlocked(id: string): void {
+  noteHarnessBlocked(
+    id: string,
+    request: 'blocking' | 'working' = 'blocking',
+    requestId?: string
+  ): void {
     if (this.disabled) return;
     const session = this.manager?.list().find(item => item.id === id);
     if (!session || session.exited || session.harness === 'shell') return;
-    this.settled.add(id);
-    this.setWorking(id, false);
+    this.sourceObserved.add(id);
+    if (request === 'blocking') {
+      this.settled.add(id);
+      this.setWorking(id, false);
+    }
     // The gate accounts for the burst; leaving it would let the next
     // quiescence sweep re-raise the same pause as a finished turn.
     this.burstBytes.set(id, 0);
     this.markEngaged(id);
-    if (this.isWatched(id)) return;
-    this.raise(id, 'blocked');
+    this.raise(id, 'blocked', request, requestId);
   }
 
   /** The gate closed — the operator answered, or the harness withdrew it. */
   noteHarnessUnblocked(id: string): void {
     if (this.disabled) return;
-    if (this.attention.get(id)?.kind === 'blocked') this.clear(id);
+    this.sourceObserved.add(id);
+    if (
+      this.attention.get(id)?.kind === 'blocked' ||
+      this.attention.get(id)?.kind === 'bell'
+    )
+      this.clear(id);
   }
 
   private markEngaged(id: string): void {
@@ -507,14 +555,14 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   /** which session's tab is active (null = none) */
   setFocus(id: string | null): void {
     this.focusedId = id;
-    if (id && this.windowFocused) this.clear(id);
+    if (id && this.windowFocused) this.setUnread(id, false);
   }
 
   /** OS focus of the app window — regaining it means the operator is now
    *  looking at whatever tab is active */
   setWindowFocused(focused: boolean): void {
     this.windowFocused = focused;
-    if (focused && this.focusedId) this.clear(this.focusedId);
+    if (focused && this.focusedId) this.setUnread(this.focusedId, false);
   }
 
   /** truly looked at = active tab in a focused window */
@@ -529,7 +577,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    * backlog replay on reload), which must never clear a flag nobody saw.
    */
   noteInput(id: string): void {
-    if (this.isWatched(id)) this.clear(id);
+    if (this.isWatched(id)) this.setUnread(id, false);
   }
 
   private onData(id: string, data: string): void {
@@ -570,8 +618,8 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // signal survives and the renderer decides which one is navigable, and the
     // one time this liveness rule was written on both sides of the IPC it
     // drifted within a milestone (S1.1's post-landing review).
-    if (bell && !this.isWatched(id) && !this.teamWorkingWithoutGate(id)) {
-      this.raise(id, 'bell');
+    if (bell && !this.teamWorkingWithoutGate(id)) {
+      this.raise(id, 'bell', 'unknown');
     }
   }
 
@@ -632,7 +680,6 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       if (burst < this.opts.minBurstBytes) continue;
       // revived/new tabs printing their banner then waiting is not news
       if (now - s.startedAt < this.opts.spawnGraceMs) continue;
-      if (this.isWatched(s.id)) continue;
       this.raise(s.id, 'turn-end');
     }
     // sessions killed without an exit event (tab closed) leave no residue
@@ -641,7 +688,13 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     }
   }
 
-  private raise(id: string, kind: PtyAttentionKind): void {
+  private raise(
+    id: string,
+    kind: PtyAttentionKind,
+    request?: PtyAttention['request'],
+    requestId?: string
+  ): void {
+    this.sourceObserved.add(id);
     const existing = this.attention.get(id);
     // Precedence, the same rule `mergeSessionAttentionSignals` applies on the
     // renderer side — which is exactly why it has to hold here too, or the two
@@ -652,14 +705,26 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     //    that happened to arrive first cannot lock out the question after it.
     if (existing) {
       const upgrade =
-        existing.kind === 'turn-end' && attentionIsOperatorGate(kind);
+        (existing.kind === 'turn-end' && attentionIsOperatorGate(kind)) ||
+        (existing.kind === 'bell' && kind === 'blocked') ||
+        (kind === 'blocked' &&
+          requestId !== undefined &&
+          existing.requestId !== requestId);
       if (!upgrade) return;
     }
     // a turn-end, bell, or gate means a turn happened — the session has started
     this.markEngaged(id);
-    const att = { kind, since: this.now() };
+    const att: PtyAttention = {
+      kind,
+      since: this.now(),
+      unread: !this.isWatched(id),
+      ...(request ? { request } : {}),
+      ...(requestId ? { requestId } : {}),
+    };
     this.attention.set(id, att);
     this.emit('attention', id, att);
+    if (att.unread || attentionIsOperatorGate(kind))
+      this.emit('alert', id, att);
   }
 
   private clear(id: string): void {
@@ -683,6 +748,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   }
 
   private drop(id: string): void {
+    this.sourceObserved.delete(id);
     this.lastDataAt.delete(id);
     this.lastResizeAt.delete(id);
     this.burstBytes.delete(id);
