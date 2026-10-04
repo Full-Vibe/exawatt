@@ -39,7 +39,7 @@ function renderBar(overrides: Partial<QuickCaptureBarProps> = {}) {
     message: 'The tab strip flickers on restore',
     onMessageChange: vi.fn(),
     screenshot: SHOT,
-    attachScreenshot: false,
+    attachScreenshot: true,
     onAttachScreenshotChange: vi.fn(),
     diagnostics: null,
     attachDiagnostics: false,
@@ -98,11 +98,9 @@ describe('QuickCaptureBar', () => {
     expect(props.onCaptureImage).toHaveBeenCalledTimes(2);
   });
 
-  it('hides the screenshot toggle when capture was unavailable', () => {
+  it('does not advertise or invoke window capture when unavailable', () => {
     const props = renderBar({ screenshot: null });
-    expect(
-      screen.queryByRole('button', { name: 'Attach screenshot' })
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Screenshot' })).toBeNull();
     fireEvent.keyDown(screen.getByLabelText('Feedback'), {
       key: 's',
       metaKey: true,
@@ -118,18 +116,20 @@ describe('QuickCaptureBar', () => {
     );
   });
 
-  it('names the toggle anonymized on a Bug', () => {
-    renderBar({ kind: 'bug', diagnostics: REPORT });
-    expect(
-      screen.getByLabelText('Attach anonymized diagnostics')
-    ).toBeInTheDocument();
-    expect(screen.getByText('Anonymized diagnostics')).toBeInTheDocument();
+  it('exposes diagnostics consent as a native checkbox', () => {
+    const props = renderBar({ kind: 'bug', diagnostics: REPORT });
+    const consent = screen.getByRole('checkbox', {
+      name: 'Include app details',
+    });
+    expect(consent).not.toBeChecked();
+    fireEvent.click(consent);
+    expect(props.onAttachDiagnosticsChange).toHaveBeenCalledWith(true);
   });
 
   it('does not offer diagnostics on a non-Bug kind', () => {
     renderBar({ kind: 'general', diagnostics: REPORT });
     expect(
-      screen.queryByRole('button', { name: 'Attach anonymized diagnostics' })
+      screen.queryByRole('checkbox', { name: 'Include app details' })
     ).not.toBeInTheDocument();
   });
 
@@ -154,28 +154,36 @@ describe('QuickCaptureBar', () => {
   it('reveals the exact collected diagnostics payload on review', () => {
     renderBar({ kind: 'bug', diagnostics: REPORT, attachDiagnostics: true });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     // the review shows the payload itself, not a description of it
     const payload = document.querySelector('pre');
     expect(payload).toBeInTheDocument();
     expect(JSON.parse(payload!.textContent!)).toEqual(REPORT);
   });
 
-  it('hides the summary until diagnostics are actually attached', () => {
+  it('allows reviewing collected data before consenting to attach it', () => {
     renderBar({ kind: 'bug', diagnostics: REPORT, attachDiagnostics: false });
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    const payload = document.querySelector('pre');
+    expect(payload).toBeInTheDocument();
+    expect(JSON.parse(payload!.textContent!)).toEqual(REPORT);
     expect(
-      screen.queryByRole('button', { name: 'Review' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('checkbox', { name: 'Include app details' })
+    ).not.toBeChecked();
   });
 
-  it('keeps Enter on focused controls available for their native activation', () => {
+  it('keeps Enter and Space on focused controls available for native activation', () => {
     const props = renderBar({
       kind: 'bug',
       diagnostics: REPORT,
       attachDiagnostics: true,
     });
-    for (const button of screen.getAllByRole('button')) {
-      expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
+    for (const control of [
+      ...screen.getAllByRole('button'),
+      screen.getByRole('checkbox', { name: 'Include app details' }),
+    ]) {
+      expect(fireEvent.keyDown(control, { key: 'Enter' })).toBe(true);
+      expect(fireEvent.keyDown(control, { key: ' ' })).toBe(true);
     }
     expect(props.onSubmit).not.toHaveBeenCalled();
   });
@@ -290,6 +298,30 @@ describe('QuickCaptureBar', () => {
       screen.getByRole('button', { name: 'Remove attached image' })
     );
     expect(onRemoveImage).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Feedback')).toHaveFocus();
+  });
+
+  it('never presents an excluded image as an attachment', () => {
+    renderBar({ screenshot: SHOT, attachScreenshot: false });
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Remove attached image' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('allows inspecting attached evidence after the report is frozen without submitting again', () => {
+    const props = renderBar({ readOnly: true });
+    const preview = screen.getByRole('button', {
+      name: 'View attached image',
+    });
+    expect(preview).toBeEnabled();
+    fireEvent.click(preview);
+    expect(preview).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('img', { name: 'Attached image' })).toHaveAttribute(
+      'src',
+      SHOT
+    );
+    expect(props.onSubmit).not.toHaveBeenCalled();
   });
 
   it('blocks delivery and image replacement during preparation without blocking text editing', () => {

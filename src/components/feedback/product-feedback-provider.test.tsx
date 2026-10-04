@@ -504,11 +504,75 @@ describe('unified feedback composer continuity', () => {
     );
     expect(composerImage()).toHaveAttribute('src', SHOT);
     expect(
-      screen.getByRole('button', { name: 'Remove anonymized diagnostics' })
-    ).toHaveAttribute('aria-pressed', 'true');
+      screen.getByRole('checkbox', { name: 'Include app details' })
+    ).toBeChecked();
     expect(capture).toHaveBeenCalledOnce();
     expect(diagnostics).toHaveBeenCalledOnce();
   });
+
+  it.each([true, false])(
+    'diagnostics consent controls the submitted payload when checked is %s',
+    async includeDetails => {
+      installBridgeDouble({
+        feedback: { setAuthenticated: vi.fn() },
+        app: { getDiagnosticsReport: vi.fn(async () => REPORT) },
+      });
+      const fetchSpy = vi.fn<typeof fetch>(async () => feedbackResponse());
+      vi.stubGlobal('fetch', fetchSpy);
+      await renderSignedIn();
+      await act(async () => feedback!.openQuickCapture('bug'));
+      const consent = screen.getByRole('checkbox', {
+        name: 'Include app details',
+      });
+      expect(consent).toBeEnabled();
+      if ((consent as HTMLInputElement).checked !== includeDetails) {
+        fireEvent.click(consent);
+      }
+      fireEvent.change(composerField(), {
+        target: { value: 'Respect the app-details choice' },
+      });
+      fireEvent.keyDown(composerField(), { key: 'Enter' });
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
+      const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+      expect(body.context?.diagnostics).toEqual(
+        includeDetails ? REPORT : undefined
+      );
+    }
+  );
+
+  it.each([false, true])(
+    'the visible attachment and submitted image agree when removed is %s',
+    async removeImage => {
+      installBridgeDouble({
+        feedback: {
+          setAuthenticated: vi.fn(),
+          captureScreenshot: vi.fn(async () => SHOT),
+        },
+      });
+      const fetchSpy = vi.fn<typeof fetch>(async () =>
+        feedbackResponse(!removeImage)
+      );
+      vi.stubGlobal('fetch', fetchSpy);
+      await renderSignedIn();
+      await act(async () => feedback!.openQuickCapture('bug'));
+      expect(composerImage()).toHaveAttribute('src', SHOT);
+      if (removeImage) {
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Remove attached image' })
+        );
+        expect(screen.queryByRole('img')).not.toBeInTheDocument();
+        expect(composerField()).toHaveFocus();
+      }
+      fireEvent.change(composerField(), {
+        target: { value: 'Send exactly the evidence shown' },
+      });
+      fireEvent.keyDown(composerField(), { key: 'Enter' });
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
+      const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+      if (removeImage) expect(body.attachment).toBeNull();
+      else expect(body.attachment).toMatchObject({ dataUrl: SHOT });
+    }
+  );
 
   it('repeated invocation during initial capture cannot expose the capture overlay or begin another capture', async () => {
     const screenshot = deferred<string>();
@@ -721,7 +785,9 @@ describe('unified feedback composer continuity', () => {
     expect(composerField()).toHaveValue('First report');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: 'New feedback' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await act(async () => feedback!.openFeedback());
     expect(composerField()).toHaveValue('');
     expect(composerField()).not.toHaveAttribute('readonly');
     expect(composerField()).toHaveFocus();
@@ -803,7 +869,7 @@ describe('unified feedback composer continuity', () => {
     const attemptId = document.querySelector<HTMLElement>(
       '[data-feedback-attempt]'
     )!.dataset.feedbackAttempt;
-    fireEvent.click(within(receiptRegion()).getByRole('button', { name: 'Close' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(invoker).toHaveFocus());
     await act(async () => feedback!.openFeedback());
     expect(composerField()).toHaveValue('Recover this report');
@@ -840,7 +906,7 @@ describe('unified feedback composer continuity', () => {
         document.querySelector('[data-feedback-state="error"]')
       ).toBeInTheDocument()
     );
-    fireEvent.click(within(receiptRegion()).getByRole('button', { name: 'Close' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
     const listener =
       clientState.current!.auth.onAuthStateChange.mock.calls[0][0];
     act(() => listener('SIGNED_OUT', null));

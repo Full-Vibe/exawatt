@@ -1,6 +1,7 @@
 'use client';
 
 import { Check, AlertCircle, LoaderCircle } from 'lucide-react';
+import motion from './feedback-motion.module.css';
 import { Button } from '@/components/ui/button';
 import type { FeedbackAttempt } from '@/lib/feedback/attempt-store';
 import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
@@ -15,7 +16,6 @@ export interface FeedbackComposerViewProps extends QuickCaptureBarProps {
   onEdit: (attempt: FeedbackAttempt) => void;
   onFinishWithoutImage: (id: string) => void;
   onDone: () => void;
-  onNewFeedback: () => void;
 }
 
 /** The real report, progress and outcome share one DialogContent subtree.
@@ -26,7 +26,6 @@ export function FeedbackComposerView({
   onEdit,
   onFinishWithoutImage,
   onDone,
-  onNewFeedback,
   ...props
 }: FeedbackComposerViewProps) {
   const savedText = !!attempt?.receipt;
@@ -43,7 +42,7 @@ export function FeedbackComposerView({
           ? 'Feedback saved'
           : attempt.failureOutcome === 'not_accepted'
             ? 'Feedback not sent'
-            : 'We couldn’t confirm it was saved';
+            : 'Couldn’t confirm your feedback was sent.';
   const description = !attempt
     ? null
     : attempt.status === 'sent'
@@ -51,13 +50,13 @@ export function FeedbackComposerView({
         ? 'Sent without the image.'
         : null
       : partial
-        ? 'The image hasn’t been confirmed. Try again, or finish without it.'
+        ? 'Your image wasn’t confirmed. Retry, or finish without it.'
         : attempt.status === 'error'
           ? attempt.failureOutcome === 'not_accepted'
             ? attempt.error
             : attempt.retryable
-              ? 'Your feedback is kept here. Try again to send it safely without creating a duplicate.'
-              : 'Your feedback is kept here. We can’t safely send it again right now.'
+              ? 'Your text is kept here. Try again.'
+              : 'Your text is kept here.'
           : null;
   const Icon =
     attempt?.status === 'sending'
@@ -108,85 +107,113 @@ export function FeedbackComposerView({
           <section
             data-feedback-attempt={attempt.id}
             data-feedback-state={attempt.status}
-            className="px-5 py-4"
           >
-            <div className="flex items-start gap-3">
-              <Icon
-                aria-hidden
-                className={`mt-0.5 size-5 shrink-0 text-muted-foreground ${attempt.status === 'sending' ? 'motion-safe:animate-spin' : ''}`}
-              />
+            <div className="flex min-h-14 items-center gap-3 px-4 py-2">
               <div
                 role="status"
                 aria-live="polite"
                 aria-atomic="true"
-                className="min-w-0 flex-1"
+                className="flex min-w-0 flex-1 items-center gap-2 text-sm"
               >
-                <p className="text-sm font-medium">{title}</p>
-                <p className="mt-1 min-h-10 text-sm text-muted-foreground">
-                  {description}
-                </p>
+                {attempt.status === 'sending' ? (
+                  <span className="sr-only">{title}</span>
+                ) : (
+                  <>
+                    <Icon
+                      aria-hidden
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
+                    <span>{title}</span>
+                  </>
+                )}
               </div>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-              {attempt.status === 'sent' ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={onNewFeedback}
-                  >
-                    New feedback
-                  </Button>
-                  <Button type="button" size="sm" onClick={onDone}>
-                    Done
-                  </Button>
-                </>
+              {attempt.status === 'sending' ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled
+                  className="min-w-40 text-sm"
+                >
+                  <LoaderCircle
+                    aria-hidden
+                    className="motion-safe:animate-spin"
+                  />
+                  Sending…
+                </Button>
+              ) : attempt.status === 'sent' ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={onDone}
+                  className="min-w-40 text-sm"
+                >
+                  Done
+                </Button>
+              ) : attempt.retryable ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => onRetry(attempt.id)}
+                  className="min-w-40 text-sm"
+                >
+                  Retry
+                </Button>
               ) : (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={props.onDismiss}
-                  >
-                    Close
-                  </Button>
-                  {attempt.status === 'error' &&
-                    !savedText &&
-                    attempt.failureOutcome === 'not_accepted' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onEdit(attempt)}
-                      >
-                        Edit feedback
-                      </Button>
-                    )}
-                  {partial &&
-                    attempt.request.attachment &&
-                    attempt.receipt?.attachmentStored === false && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onFinishWithoutImage(attempt.id)}
-                      >
-                        Finish without image
-                      </Button>
-                    )}
-                  {attempt.status !== 'sending' && attempt.retryable && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => onRetry(attempt.id)}
-                    >
-                      Try again
-                    </Button>
-                  )}
-                </>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={props.onDismiss}
+                  className="min-w-40 text-sm"
+                >
+                  Close
+                </Button>
               )}
+            </div>
+            <div className={motion.expansion} data-expanded={!!description}>
+              <div className="min-h-0 overflow-hidden">
+                {description && (
+                  <div className="px-4 pb-3">
+                    <p className="text-sm text-muted-foreground">
+                      {description}
+                    </p>
+                    {(attempt.status === 'error' &&
+                      !savedText &&
+                      attempt.failureOutcome === 'not_accepted') ||
+                    (partial &&
+                      attempt.request.attachment &&
+                      attempt.receipt?.attachmentStored === false) ? (
+                      <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
+                        {attempt.status === 'error' &&
+                          !savedText &&
+                          attempt.failureOutcome === 'not_accepted' && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onEdit(attempt)}
+                              className="text-sm"
+                            >
+                              Edit feedback
+                            </Button>
+                          )}
+                        {partial &&
+                          attempt.request.attachment &&
+                          attempt.receipt?.attachmentStored === false && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onFinishWithoutImage(attempt.id)}
+                              className="text-sm"
+                            >
+                              Finish without image
+                            </Button>
+                          )}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         ) : undefined

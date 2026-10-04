@@ -290,6 +290,17 @@ new retained-dialog flow. No additional permission request is made during
 shaping. Demo/Live and existing cmdk/Radix owners remain shared boundaries.
 
 
+### 2026-10-04 — Compact feedback refinement after operator rejection
+
+F7's first recovery gallery was subsequently rejected as bulky, with ambiguous
+Included and Review transport controls. The [compact refinement](feedback-reinflation.md#2026-10-04--recovery-gallery-rejected-compact-composer-refinement)
+records source research, independent task critiques and the executable response.
+The system now distinguishes shared interaction rules from shared density:
+compact writing, conventional optional controls, attachment presence and one
+local status/action area replace a stacked report builder. Preview machinery
+lives outside the specimen. This is an amendment to the feedback presentation,
+not acceptance of a new visual treatment or a replacement for the journeys below.
+
 ### 2026-10-04 — Everyday-use polish shaping and research basis
 
 **Make active use excellent through coherent journeys and shared ownership.**

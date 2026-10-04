@@ -8,14 +8,7 @@ import {
   useId,
   type ReactNode,
 } from 'react';
-import {
-  Check,
-  CornerDownLeft,
-  ImagePlus,
-  Loader2,
-  ShieldCheck,
-  X,
-} from 'lucide-react';
+import { CornerDownLeft, ImagePlus, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDialogInitialFocus } from '@/components/ui/dialog';
 import { MAX_FEEDBACK_MESSAGE_CHARS } from '@/lib/feedback/contract';
@@ -114,7 +107,11 @@ export function QuickCaptureBar({
   useDialogInitialFocus(textareaRef);
   const imagePickerRef = useRef<HTMLInputElement | null>(null);
   const messageId = useId();
+  const diagnosticsId = useId();
+  const detailsId = useId();
+  const imagePreviewId = useId();
   const [reviewing, setReviewing] = useState(false);
+  const [imageExpanded, setImageExpanded] = useState(false);
   const imageEditingOffered = !!onImageFiles || !!onPickImage;
   const imageLocked = busy || readOnly;
   const screenshotAction = useMemo(
@@ -128,8 +125,7 @@ export function QuickCaptureBar({
     }),
     [onCaptureImage, imageLocked]
   );
-  const diagnosticsOffered =
-    kind === 'bug' && (!!diagnostics || diagnosticsPreparing || readOnly);
+  const diagnosticsOffered = kind === 'bug';
   const pickImage = () => {
     if (onPickImage) onPickImage();
     else imagePickerRef.current?.click();
@@ -233,7 +229,7 @@ export function QuickCaptureBar({
       }}
       onKeyDown={onKeyDown}
       className={cn(
-        'flex min-h-0 flex-1 flex-col overflow-hidden w-[min(34rem,calc(100vw-2rem))] rounded-lg border border-border bg-background',
+        'flex min-h-0 flex-1 flex-col overflow-hidden w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-border bg-background',
         className
       )}
     >
@@ -254,13 +250,46 @@ export function QuickCaptureBar({
         />
       )}
       <div data-feedback-scroll-body className="min-h-0 overflow-y-auto">
-        <div className="px-5 pt-5 pb-3">
-          <label
-            htmlFor={messageId}
-            className="mb-2 block text-chrome-label text-muted-foreground"
-          >
-            {readOnly ? 'Your feedback' : 'Feedback'}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3 pr-12 pb-2">
+          <label htmlFor={messageId} className="text-sm font-medium">
+            Feedback
           </label>
+          <div
+            role="group"
+            aria-label="Feedback type"
+            data-feedback-kind-row
+            data-capture-chip-row
+            className="flex items-center gap-1"
+          >
+            {KINDS.map(entry => (
+              <Button
+                key={entry.kind}
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={readOnly}
+                aria-pressed={entry.kind === kind}
+                onClick={() => {
+                  onKindChange(entry.kind);
+                  textareaRef.current?.focus();
+                }}
+                className={cn(
+                  'gap-1.5 px-2 text-sm',
+                  entry.kind === kind && 'bg-accent text-accent-foreground'
+                )}
+              >
+                {entry.label}
+                <span
+                  aria-hidden
+                  className="font-mono text-chrome-micro opacity-70"
+                >
+                  {entry.hint}
+                </span>
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="px-4">
           <textarea
             id={messageId}
             ref={node => {
@@ -279,180 +308,78 @@ export function QuickCaptureBar({
           />
         </div>
         <div
-          data-feedback-kind-row
-          data-capture-chip-row
-          className="flex items-center gap-1 px-5 pb-3"
-        >
-          {KINDS.map(entry => (
-            <Button
-              key={entry.kind}
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={readOnly}
-              aria-pressed={entry.kind === kind}
-              onClick={() => {
-                onKindChange(entry.kind);
-                textareaRef.current?.focus();
-              }}
-              className={cn(
-                'min-w-0 flex-1 gap-1.5 px-2',
-                entry.kind === kind && 'bg-accent text-accent-foreground'
-              )}
-            >
-              {entry.label}
-              <span
-                aria-hidden
-                className="font-mono text-chrome-micro opacity-70"
-              >
-                {entry.hint}
-              </span>
-            </Button>
-          ))}
-        </div>
-        <div
           role="group"
           aria-label="Feedback actions"
           data-feedback-toolbar
-          className="grid grid-cols-2 items-start gap-2 px-5 pb-3"
+          className="flex flex-wrap items-center gap-x-2 gap-y-0 px-3 py-1"
         >
-          {imageEditingOffered && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={imageLocked}
-              onClick={pickImage}
-              className="w-full min-w-0"
-            >
-              <ImagePlus aria-hidden />
-              Attach image
-            </Button>
-          )}
-          {screenshotAction.offered && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!screenshotAction.enabled}
-              aria-label={screenshotAction.label}
-              aria-keyshortcuts={formatShortcutKeysAria(screenshotAction.keys)}
-              title={screenshotAction.description}
-              onClick={screenshotAction.run}
-              className="w-full min-w-0 justify-between"
-            >
-              {screenshotAction.label}
-              <span
-                aria-hidden
-                className="font-mono text-chrome-micro opacity-70"
+          <div className="flex items-center gap-1">
+            {imageEditingOffered && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={imageLocked}
+                onClick={pickImage}
+                className="gap-1.5 px-2 text-sm"
               >
-                {formatKeyBinding(screenshotAction.keys)}
-              </span>
-            </Button>
-          )}
-          {imageEditingOffered && (
-            <p className="col-span-2 text-chrome-label text-muted-foreground">
-              <span className="font-mono text-chrome-micro">⌘V</span> to paste
-              an image
-            </p>
-          )}
-        </div>
-        <div
-          className={motion.expansion}
-          data-expanded={diagnosticsOffered}
-          aria-hidden={!diagnosticsOffered}
-          inert={!diagnosticsOffered}
-        >
-          <div className="min-h-0 overflow-hidden">
-            <div className="mx-5 mb-3 border-t border-border pt-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={readOnly || !diagnostics}
-                  aria-pressed={attachDiagnostics}
-                  aria-label={
-                    attachDiagnostics
-                      ? 'Remove anonymized diagnostics'
-                      : 'Attach anonymized diagnostics'
-                  }
-                  onClick={() => onAttachDiagnosticsChange(!attachDiagnostics)}
-                  className="px-2"
-                >
-                  <ShieldCheck aria-hidden />
-                  Anonymized diagnostics
-                  <span
-                    aria-hidden
-                    className="font-mono text-chrome-micro opacity-70"
-                  >
-                    ⌘D
-                  </span>
-                  {attachDiagnostics && <Check aria-hidden />}
-                </Button>
-                {attachDiagnostics && diagnostics && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setReviewing(value => !value)}
-                    aria-expanded={reviewing}
-                  >
-                    {reviewing ? 'Hide' : 'Review'}
-                  </Button>
+                <ImagePlus aria-hidden />
+                Attach image
+              </Button>
+            )}
+            {screenshotAction.offered && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={!screenshotAction.enabled}
+                aria-label={screenshotAction.label}
+                aria-keyshortcuts={formatShortcutKeysAria(
+                  screenshotAction.keys
                 )}
-              </div>
-              <p
-                className="mt-1 min-h-5 text-chrome-label text-muted-foreground"
-                role={diagnosticsPreparing ? 'status' : undefined}
+                title={screenshotAction.description}
+                onClick={screenshotAction.run}
+                className="gap-1.5 px-2 text-sm"
               >
-                {diagnosticsPreparing ? (
-                  'Preparing optional diagnostics…'
-                ) : diagnostics && attachDiagnostics ? (
-                  <>
-                    Exawatt {diagnostics.app.version} ·{' '}
-                    {diagnostics.session.signedIn ? 'signed in' : 'signed out'}
-                  </>
-                ) : readOnly ? (
-                  'Not included'
-                ) : null}
-              </p>
-              {reviewing && attachDiagnostics && diagnostics && (
-                <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-muted p-3 text-sm whitespace-pre-wrap">
-                  {JSON.stringify(diagnostics, null, 2)}
-                </pre>
-              )}
-            </div>
-          </div>
-        </div>
-        {screenshot && (
-          <div className="mx-5 mb-3 overflow-hidden rounded-md border border-border">
-            <div
-              className={cn('h-32 bg-muted', !attachScreenshot && 'opacity-50')}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={screenshot}
-                alt="Feedback attachment preview"
-                className="h-full w-full object-contain"
-              />
-            </div>
-            <div className="flex min-h-12 items-center gap-2 px-3 py-2 text-chrome-label text-muted-foreground">
-              <span className="min-w-0 flex-1 truncate">
-                {attachmentName || 'Window screenshot'}
-              </span>
-              {!readOnly && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={imageLocked}
-                  aria-pressed={attachScreenshot}
-                  onClick={() => onAttachScreenshotChange(!attachScreenshot)}
+                {screenshotAction.label}
+                <span
+                  aria-hidden
+                  className="font-mono text-chrome-micro opacity-70"
                 >
-                  {attachScreenshot ? 'Included' : 'Include'}
-                </Button>
-              )}
+                  {formatKeyBinding(screenshotAction.keys)}
+                </span>
+              </Button>
+            )}
+          </div>
+          {imageEditingOffered && (
+            <span className="ml-auto px-1 text-chrome-label text-muted-foreground">
+              <span className="font-mono text-chrome-micro">⌘V</span> Paste
+              image
+            </span>
+          )}
+        </div>
+        {screenshot && attachScreenshot && (
+          <div className="mx-4 mb-2 overflow-hidden rounded-md border border-border">
+            <div className="flex items-center gap-3 p-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="View attached image"
+                aria-expanded={imageExpanded}
+                aria-controls={imagePreviewId}
+                onClick={() => setImageExpanded(value => !value)}
+                className="h-14 w-20 shrink-0 overflow-hidden rounded-sm bg-muted p-0"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={screenshot}
+                  alt="Feedback attachment preview"
+                  className="h-full w-full object-contain"
+                />
+              </Button>
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {attachmentName || 'Screenshot'}
+              </span>
               {!readOnly && (
                 <Button
                   type="button"
@@ -461,10 +388,11 @@ export function QuickCaptureBar({
                   disabled={imageLocked}
                   aria-label="Remove attached image"
                   title="Remove attached image"
-                  className="size-8"
+                  className="size-8 shrink-0"
                   onClick={() => {
                     if (onRemoveImage) onRemoveImage();
                     else onAttachScreenshotChange(false);
+                    setImageExpanded(false);
                     textareaRef.current?.focus();
                   }}
                 >
@@ -472,40 +400,141 @@ export function QuickCaptureBar({
                 </Button>
               )}
             </div>
+            <div className={motion.expansion} data-expanded={imageExpanded}>
+              <div className="min-h-0 overflow-hidden">
+                <div
+                  id={imagePreviewId}
+                  aria-hidden={!imageExpanded}
+                  inert={!imageExpanded}
+                  className="px-1.5 pb-1.5"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={screenshot}
+                    alt="Attached image"
+                    className="max-h-64 w-full rounded-sm bg-muted object-contain"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         )}
+        <div
+          className={motion.expansion}
+          data-expanded={diagnosticsOffered}
+          aria-hidden={!diagnosticsOffered}
+          inert={!diagnosticsOffered}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="px-4 pb-2">
+              <div className="flex flex-wrap items-center gap-x-2">
+                <label
+                  htmlFor={diagnosticsId}
+                  className="flex min-h-8 cursor-pointer items-center gap-2 text-sm has-[:disabled]:cursor-default has-[:disabled]:text-muted-foreground"
+                >
+                  <input
+                    id={diagnosticsId}
+                    type="checkbox"
+                    checked={attachDiagnostics}
+                    disabled={readOnly || !diagnostics}
+                    aria-keyshortcuts="Meta+D"
+                    onChange={event =>
+                      onAttachDiagnosticsChange(event.target.checked)
+                    }
+                    className="size-4 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  />
+                  Include app details
+                  {!readOnly && (
+                    <span
+                      aria-hidden
+                      className="font-mono text-chrome-micro text-muted-foreground"
+                    >
+                      ⌘D
+                    </span>
+                  )}
+                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setReviewing(value => !value)}
+                  aria-expanded={reviewing}
+                  aria-controls={detailsId}
+                  className="ml-auto px-2 text-sm text-muted-foreground"
+                >
+                  {reviewing ? 'Hide details' : 'View details'}
+                </Button>
+              </div>
+              <div className={motion.expansion} data-expanded={reviewing}>
+                <div className="min-h-0 overflow-hidden">
+                  <div
+                    id={detailsId}
+                    aria-hidden={!reviewing}
+                    inert={!reviewing}
+                    className="pt-1 pb-2 text-sm text-muted-foreground"
+                  >
+                    <p>
+                      App version, system information and recent app logs help
+                      us investigate bugs. Your conversations and project files
+                      are excluded.
+                    </p>
+                    {diagnosticsPreparing ? (
+                      <p role="status" className="mt-2">
+                        Collecting app details… You can send feedback now.
+                      </p>
+                    ) : diagnostics ? (
+                      <>
+                        <p className="mt-2">
+                          Exawatt {diagnostics.app.version} ·{' '}
+                          {diagnostics.system.platform}{' '}
+                          {diagnostics.system.arch}
+                        </p>
+                        <details className="mt-2">
+                          <summary className="cursor-pointer py-1 text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+                            Show collected data
+                          </summary>
+                          <pre className="mt-1 max-h-40 overflow-auto rounded-md bg-muted p-2 text-chrome-label whitespace-pre-wrap">
+                            {JSON.stringify(diagnostics, null, 2)}
+                          </pre>
+                        </details>
+                      </>
+                    ) : (
+                      <p className="mt-2">No app details collected.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         {error && (
-          <p role="alert" className="px-5 pb-3 text-sm text-foreground">
+          <p role="alert" className="px-4 pb-2 text-sm text-foreground">
             {error}
           </p>
         )}
       </div>
       <div className="shrink-0 border-t border-border">
-        <div className="min-h-16">
-          <div className={motion.expansion} data-expanded={!!submission}>
-            <div className="min-h-0 overflow-hidden">{submission}</div>
+        {submission || (
+          <div className="flex min-h-14 items-center gap-2 px-4 py-2">
+            <span className="mr-auto text-chrome-label text-muted-foreground">
+              <span className="font-mono text-chrome-micro">⇧↵</span> New line
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              disabled={readOnly || busy || sendDisabled || !message.trim()}
+              onClick={onSubmit}
+              aria-keyshortcuts="Enter"
+              className="min-w-40 text-sm"
+            >
+              {busy && (
+                <Loader2 aria-hidden className="motion-safe:animate-spin" />
+              )}
+              Send feedback
+              <CornerDownLeft aria-hidden />
+            </Button>
           </div>
-          {!submission && (
-            <div className="flex items-center gap-2 px-5 py-4">
-              <span className="mr-auto text-chrome-label text-muted-foreground">
-                <span className="font-mono text-chrome-micro">⇧↵</span> New line
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                disabled={readOnly || busy || sendDisabled || !message.trim()}
-                onClick={onSubmit}
-                aria-keyshortcuts="Enter"
-              >
-                {busy && (
-                  <Loader2 aria-hidden className="motion-safe:animate-spin" />
-                )}
-                Send feedback
-                <CornerDownLeft aria-hidden />
-              </Button>
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );

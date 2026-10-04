@@ -566,41 +566,6 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     }
   }, [preparing, store, imageReads, patch, activeAttemptId]);
 
-  const newFeedback = useCallback(() => {
-    const previous = store
-      .getSnapshot()
-      .attempts.find(value => value.id === activeAttemptId);
-    if (!previous || previous.status !== 'sent') return;
-    invalidateReads();
-    store.dismissAttempt(previous.id);
-    const kind =
-      previous.request.kind === 'context_label'
-        ? 'general'
-        : previous.request.kind;
-    const next = store.newDraft('composer', kind);
-    store.updateDraft('composer', {
-      context: currentContext(),
-      surface: window.location.pathname || 'unknown',
-    });
-    setActiveAttemptId(null);
-    setError(null);
-    setPreparing({ capture: false, image: false, diagnostics: true });
-    const ticket = captureReads.begin();
-    void Promise.resolve(window.electron?.app?.getDiagnosticsReport?.(true))
-      .catch(() => null)
-      .then(report => {
-        if (!ticket.current || !tokenRef.current) return;
-        setPreparing(value => ({ ...value, diagnostics: false }));
-        const current = store.getSnapshot().drafts.composer;
-        if (current.id === next.id)
-          store.updateDraft('composer', {
-            diagnostics: report ?? null,
-            attachDiagnostics: current.kind === 'bug' && !!report,
-          });
-      });
-    inputRef.current?.focus({ preventScroll: true });
-  }, [activeAttemptId, store, invalidateReads, captureReads]);
-
   const submitContextRating = useCallback(
     async (rating: ContextRating) => {
       if (!feedbackAvailable || !tokenRef.current) return false;
@@ -687,7 +652,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         <DialogContent
           ref={editorRef}
           motion={temporaryCapture ? 'none' : 'auto'}
-          className={`${COMFORTABLE_OVERLAY_CONTENT_CLASS} sm:max-w-xl`}
+          className={`${COMFORTABLE_OVERLAY_CONTENT_CLASS} sm:max-w-lg`}
           showCloseButton
           // The close affordance has a reserved input-space footprint.
           primaryAction={{
@@ -711,13 +676,12 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             dialogSemantics={false}
             autoFocus={false}
             inputRef={assignInput}
-            className="w-full border-0 bg-transparent shadow-none [&_label]:pr-8"
+            className="w-full border-0 bg-transparent shadow-none"
             attempt={activeAttempt}
             onRetry={retry}
             onEdit={editAttempt}
             onFinishWithoutImage={id => store.finishWithoutImage(id)}
             onDone={closeEditor}
-            onNewFeedback={newFeedback}
             kind={draft.kind}
             onKindChange={kind => patch({ kind })}
             message={draft.message}

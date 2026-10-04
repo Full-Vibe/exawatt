@@ -352,12 +352,13 @@ export async function evaluateFeedbackReporting({
     (await field().inputValue()) === report && await field().evaluate(element => element.readOnly));
   pending.release();
   await waitForState(page, firstId, 'sent');
-  const next = attempt(page, firstId).getByRole('button', { name: 'New feedback', exact: true });
   const beforeNewFeedback = transport.payloads.length;
-  await next.focus();
+  await attempt(page, firstId).getByRole('button', { name: 'Done', exact: true }).focus();
   await page.keyboard.press('Enter');
+  await composer.waitFor({ state: 'hidden' });
+  await openComposerShortcut();
   await waitForEditingFocus();
-  check('New feedback begins a fresh focused draft without another delivery',
+  check('finishing and reopening begins a fresh focused draft without another delivery',
     (await field().inputValue()) === '' && transport.payloads.length === beforeNewFeedback);
 
   await page.keyboard.type('Retry the same image after partial delivery');
@@ -396,7 +397,7 @@ export async function evaluateFeedbackReporting({
     (await field().inputValue()) === failedMessage && await field().evaluate(element => element.readOnly) &&
     !(await failed.getByRole('button', { name: 'Edit feedback', exact: true }).count()) &&
     !(await failed.getByRole('button', { name: 'New feedback', exact: true }).count()));
-  await failed.getByRole('button', { name: 'Close', exact: true }).click();
+  await composer.getByRole('button', { name: 'Close', exact: true }).click();
   await composer.waitFor({ state: 'hidden' });
   await openComposerShortcut();
   await waitForState(page, failedId, 'error');

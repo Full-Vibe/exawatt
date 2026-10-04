@@ -11,11 +11,8 @@ export default function FeedbackRecoveryPage() {
               HUD gallery / Feedback
             </p>
             <h1 className="mt-2 text-surface-title font-semibold">
-              Feedback continuity
+              Feedback
             </h1>
-            <p className="mt-2 text-chrome-label text-muted-foreground">
-              Review candidate · Representative data · No reports are sent
-            </p>
           </div>
           <Link
             href="/hud-gallery"

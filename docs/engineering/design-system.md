@@ -361,18 +361,45 @@ focus handoff below; the earlier paragraphs record the shipped baseline.**
   second send. A disabled action advertises no executable shortcut; Return from
   a focused control invokes that control, and IME composition never sends.
   Shared recipes retain an accessible name, visible focus and real Tab order.
-- Keep the evidence toolbar and primary-action slot stable as controls become
-  selected, disabled or busy. Hide unavailable actions without shifting adjacent
-  targets; keep reading order and usable layout at large interface scales.
+- Keep action placement predictable as controls become selected, disabled or
+  busy. Stability does not mean reserving blank paragraphs or retaining every
+  disabled editing control in a result. Reveal only content the current task
+  needs; keep reading order and usable layout at large interface scales.
 - User-authored text is content, not muted system metadata. Preserve its reading
   contrast and semantic grouping. Status explains the operation in a separate
   polite live region; recovery buttons sit outside that announcement. Do not
   repeatedly announce the entire form or use Agent attention colors as a receipt.
 - Failure copy says what is known and the next useful action in plain language.
-  A confirmed refusal can say the report was not saved. An unknown outcome says
-  we could not confirm delivery and Retry checks the same report. Saved feedback
-  with an unconfirmed image says both. Service failures do not mark valid user
-  text invalid, blame the user or expose idempotency/database jargon.
+  A confirmed refusal can say feedback was not sent. An unknown outcome says
+  we could not confirm the feedback was sent and offers Try again. The immutable
+  retry key is an implementation guarantee, not a concept the user must learn.
+  Saved feedback with an unconfirmed image says both. Service failures do not
+  mark valid user text invalid, blame the user or expose transport/database jargon.
+
+**Compact task composers (operator correction, 2026-10-04).** The first F7
+recovery gallery was rejected as bulky and confusing; its visual treatment is
+not accepted. Shared interaction language does not require identical density:
+Cmd+K needs scannable command rows; feedback needs a small writing surface.
+
+- Size the surface around its primary task. Optional evidence, metadata and
+  explanations must not dominate writing. Reduce decisions and redundant rows
+  before reducing readable text or native hit targets.
+- A visible attachment means it will be sent. One accessible close control
+  removes it. Do not offer both remove and a hidden include/exclude mode.
+- Buttons name actions; status text states facts. An optional submitted setting
+  uses a conventionally labeled checkbox, such as Include app details, with a
+  separate disclosure for its contents. Never make Included a mystery action.
+- Progress occupies the action's existing location. Success uses a brief
+  acknowledgement; errors add only the explanation and recovery needed now.
+  Keep the same dialog and user content without adding a second receipt panel.
+- Gallery simulation controls live outside the specimen. Plain outcome choices
+  run a representative interaction automatically; development vocabulary and
+  test-only controls must not alter the product's silhouette or tab order.
+
+Rationale: [Raycast's feedback design](https://www.raycast.com/blog/feedback),
+[progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/),
+and [conventional checkbox semantics](https://design-system.service.gov.uk/components/checkboxes/).
+These are principles applied to Exawatt, not claims of identical current layouts.
 
 These shared rules apply to Cmd+K, feedback and notices according to each
 surface's modality and action contract. A materially changed cross-surface

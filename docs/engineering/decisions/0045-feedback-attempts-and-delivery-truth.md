@@ -128,6 +128,13 @@ would amplify misleading success and duplicate reports.
 - F7 / BUG-272 owns executable scope and evidence. Material cross-surface visual
   adoption still needs the design-system gallery review; the Oct2 retired study
   is no longer acceptance for the changed retained-dialog flow.
+- The operator rejected F7's first gallery as bulky. Retained continuity means
+  the same report and modal, not a large receipt panel or permanently reserved
+  explanation space. The compact refinement shares action/focus/material rules
+  with Cmd+K while using its own writing density. A visible image is attached,
+  with one remove action; optional app details use a conventional checkbox and
+  disclosure. Gallery test controls remain outside the specimen. Visual
+  acceptance is still pending; retry/certainty ownership does not change.
 
 ## Alternatives and consequences
 
