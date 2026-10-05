@@ -51,6 +51,11 @@ vi.mock('./consumption/codex-plan-account', () => ({
     dispose = () => void world.log.push('dispose:codex-plan-account');
   },
 }));
+vi.mock('./consumption/google-plan-account', () => ({
+  GooglePlanAccountService: class {
+    dispose = () => void world.log.push('dispose:google-plan-account');
+  },
+}));
 vi.mock('./consumption/usage-alert-service', () => ({
   UsageAlertService: class {
     start = () => void world.log.push('start:usage-alerts');
@@ -70,6 +75,7 @@ vi.mock('./settings-store', () => ({
   loadSettings: () => ({}),
   isClaudePlanWindowsEnabled: () => true,
   isCodexPlanWindowsEnabled: () => true,
+  isGooglePlanWindowsEnabled: () => true,
   usageAlertPreferences: () => ({ enabled: true, leadMinutes: 60 }),
 }));
 vi.mock('./installed-build', () => ({
@@ -288,6 +294,8 @@ describe('bootstrapCommandSurface', () => {
     runtime.disposeServices();
     expect(world.log).toContain('dispose:scanner');
     expect(world.log).toContain('dispose:plan-account');
+    expect(world.log).toContain('dispose:codex-plan-account');
+    expect(world.log).toContain('dispose:google-plan-account');
     expect(world.log).toContain('dispose:connected-sources');
   });
 

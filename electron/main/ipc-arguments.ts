@@ -1,7 +1,7 @@
 import { readPtyAttention } from '@exawatt/core/desktop-bridge';
 import {
   USAGE_ALERT_POLICY,
-  isConsumptionSourceId,
+  isPlanAccountSourceId,
   isAgentHarness,
   isAgentPermissionMode,
   isPtyHarness,
@@ -226,7 +226,7 @@ export const ARGUMENT_BOUNDARIES = {
   },
   'consumption:use-reset': {
     read([source]) {
-      if (!isConsumptionSourceId(source)) {
+      if (!isPlanAccountSourceId(source)) {
         throw new Error('Invalid usage account');
       }
       return [source];
@@ -379,6 +379,9 @@ export const ARGUMENT_BOUNDARIES = {
   ),
   'settings:set-codex-plan-windows': switchSetting(
     'Invalid Codex plan usage setting'
+  ),
+  'settings:set-google-plan-windows': switchSetting(
+    'Invalid Google plan usage setting'
   ),
   // Only a declared control can be set: an unknown id from the renderer is
   // refused, never stored as a switch nothing enforces.

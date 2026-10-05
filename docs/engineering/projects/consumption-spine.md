@@ -1902,6 +1902,70 @@ sections that show the facts").
   popover and the meter's accessible label state facts from the binding
   window.
 
+### E16 — Live burn and the Google account (landed 2026-10-05)
+
+**Brief.** Demo arc G4 for the Google workshop: a live burn line above the
+account cards (tokens per minute and dollars per hour now, per vendor, from
+the sample log, modelled dollars labelled) and a Google account card read from
+Antigravity's `agy -p "/usage" --output-format json`, under the E12/E15
+honesty rules.
+
+**The burn line.** `usageOverview` gains `burn`: for every account with a
+local ledger and a card, raw tokens per minute and modelled dollars per hour
+over the trailing ten minutes, computed from the same `samples` the cards'
+token counts come from, so the glance is a projection of the detail and never
+a second total. The window was chosen from the data's cadence: the harnesses
+record a sample per assistant message or token-count event, 1.5 seconds apart
+at the median (p90 4.4 s) while an Agent works on this machine, and the
+scanner's `fs.watch` path pushes appended tails within about ten seconds; ten
+minutes holds several turns, moves within a minute of work starting, and
+falls to a true zero within minutes of it stopping. The window is stated on
+screen ("last 10 min"). Dollars are the existing one-rate list model
+(`modelledDollars`, workhorse input list price over weighted tokens) scaled to
+an hour and labelled "dollars modelled at list price"; no vendor reports a
+rate, so there is no vendor figure to prefer. Zero IS a true reading here and
+is printed as one ("0 tokens/min", one entry per vendor), but a log nobody is
+reading is not: the page passes `burnRead` from the tenant seam (false while a
+live pull is still pending or the command engine stopped; `TenantConsumption`
+gained `pending`), and the line then prints "Not read from this machine yet."
+with no number. An account without a ledger (Google) has no entry: unmeasured
+is not zero.
+
+**The Google card.** The mechanism, units, states and evidence are in
+`provider-consumption-accounts.md` §Slice 4. What this item owns is the page:
+the card is named for the account ("Google"), states no plan tier because the
+report has none, draws one row per model group ("Gemini this week", "Claude
+and GPT this week") with the vendor's reset instants, and when a group is
+spent its row says "Out until reset" beside the reset instant and binds the
+chrome glyph (E17 retired the prose headline the same day, so the fact lives
+on the row). On the operator's machine on demo week that is the literal
+state: the Gemini group read 0.1% remaining on Monday morning and 0% by noon,
+refreshing Thursday evening. That is the "what runs out first" the page
+exists for, and it is now answered across three vendors.
+
+**One projection rule amended.** `isWorthACard` showed an unreadable account
+only when a read had once succeeded (`asOfMs !== null`) or local tokens earned
+the card. A ledgerless account whose first read fails had neither, so its
+malfunction could not reach the page. The rule now also shows a card whose
+read ran and NAMED its failure; a read nothing has attempted still earns
+nothing, and the composite does not carry a Google account on a machine
+without Antigravity at all.
+
+**Measured on this machine (2026-10-05).** `agy` 1.2.17 answered in 5.1 s with
+`num_turns: 0`, wrote no conversation, printed no stderr; its log shows an
+update check at most every fifteen minutes on any invocation, which the read
+inherits and the manifest discloses. Sample cadence from the live log's last
+400 samples: span 5 min 17 s, median gap 1.5 s, p90 4.4 s.
+
+**Evidence.** Unit and component suites (`accounts.test.ts`,
+`honesty.test.tsx`, `google-plan-account.test.ts`, `live-source.test.ts`,
+`command-surface.test.ts`) green; `pnpm eval:usage:scenarios` 33 shots green
+against this worktree's dev server with the two new Google scenarios and a
+Google card in the default one. Live evidence: a hidden development Electron
+launch of this worktree against its own dev server in the community data
+namespace (never the installed app's), with the real Claude, Codex and Google
+reads, screenshots recorded in the landing report.
+
 ## 9. Open questions for the operator
 
 1. **Cold-scan cost** (§5) — RESOLVED 2026-08-10 by the E5 scanner: the first

@@ -14,7 +14,7 @@ import type {
   LiveConsumptionSnapshotRequest,
   PlanResetOutcome,
 } from '../consumption/live-snapshot';
-import type { ConsumptionSourceId } from '../consumption/types';
+import type { PlanAccountSourceId } from '../consumption/types';
 import type { AgentLaunchConfigurationInput } from '../launch-configurations';
 import type { OperatorStatsPublicationPlan } from '../operator-stats/publication';
 import type { OperatorStatsSyncEvent } from '../operator-stats/sync-state';
@@ -390,7 +390,7 @@ interface RequestTable {
   >;
   'settings:set-dock-badge': Call<[enabled: boolean], ExawattSettings>;
   'settings:set-usage-alerts': Call<[enabled: boolean], ExawattSettings>;
-  'consumption:use-reset': Call<[source: ConsumptionSourceId], PlanResetOutcome>;
+  'consumption:use-reset': Call<[source: PlanAccountSourceId], PlanResetOutcome>;
   'settings:set-usage-alert-lead': Call<
     [minutes: number | null],
     ExawattSettings
@@ -411,6 +411,7 @@ interface RequestTable {
   'settings:set-reentry-recap': Call<[enabled: boolean], ExawattSettings>;
   'settings:set-claude-plan-windows': Call<[enabled: boolean], ExawattSettings>;
   'settings:set-codex-plan-windows': Call<[enabled: boolean], ExawattSettings>;
+  'settings:set-google-plan-windows': Call<[enabled: boolean], ExawattSettings>;
   'settings:set-safety-control': Call<
     [control: SafetyControlId, enabled: boolean],
     ExawattSettings

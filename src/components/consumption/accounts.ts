@@ -24,29 +24,38 @@
  *   sentences (`planReadState`), never one.
  * - Absent is never zero: an account whose source cannot report resets or
  *   credits carries `null`, not an empty count.
+ * - The burn line (ENG-008 E16) is a projection of the same samples the cards
+ *   count, over a short trailing window, per account with a local ledger. An
+ *   account read without a ledger (Google) has no burn entry: unmeasured is
+ *   not zero. Dollars are modelled at one stated list basis and say so.
  *
  * Pure data and pure functions: no React, no DOM. Wall-clock phrasing takes
  * an optional IANA time zone so tests and the simulator are deterministic.
  */
 import {
   CONSUMPTION_ACCOUNT_NAME,
-  CONSUMPTION_SOURCE_IDS,
+  PLAN_ACCOUNT_SOURCE_IDS,
+  isConsumptionSourceId,
   planWhenPhrase,
+  resolveModelWeight,
+  weightUsage,
   type ConsumptionSample,
   type PlanAccountFailureCause,
   type PlanOutlook,
   type PlanPhraseOptions,
 } from '@exawatt/core';
 import {
+  ACCOUNT_APP,
   planReadState,
   windowFreshness,
   type AccountReadView,
+  type AccountSource,
   type AccountSpendView,
   type CapacityWindowView,
   type ConsumptionSourceView,
-  type Harness,
 } from './model';
 import { bitesFirst, readWindowPace, type MeterReading } from './meter/meter-model';
+import { modelledDollars } from './units';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -105,7 +114,7 @@ interface AccountResets {
 
 export interface UsageAccount {
   key: string;
-  harness: Harness;
+  harness: AccountSource;
   /** The account as the operator names it: "Claude", "Codex". */
   name: string;
   /** The plan tier, e.g. "Max 20x", "Pro". null when not reported. */
@@ -128,6 +137,40 @@ export interface UsageAccount {
   observedTokens: number;
 }
 
+/**
+ * The trailing span the burn line reads. The harnesses record a sample per
+ * assistant message or token-count event, one to five seconds apart while an
+ * Agent works, and the scanner pushes appended tails within about ten
+ * seconds; ten minutes holds several turns of that cadence, moves within a
+ * minute of work starting, and falls to a true zero within minutes of it
+ * stopping. Stated on screen as `BURN_WINDOW_LABEL`.
+ */
+export const BURN_WINDOW_MS = 10 * MIN;
+export const BURN_WINDOW_LABEL = 'last 10 min';
+
+interface VendorBurn {
+  accountKey: string;
+  name: string;
+  /** Raw tokens per minute over the window. 0 is a true reading. */
+  tokensPerMinute: number;
+  /** Modelled dollars per hour at `modelledDollars`' stated list basis; no
+   *  vendor reports a rate, so this is never a vendor figure. */
+  dollarsPerHour: number;
+}
+
+export interface UsageBurn {
+  windowMs: number;
+  windowLabel: string;
+  /** One entry per account with a local ledger and a card, in account order.
+   *  An account without a ledger has no entry: unmeasured, never 0. */
+  vendors: VendorBurn[];
+  /** The vendors' sum: the glance is a projection of the detail. */
+  tokensPerMinute: number;
+  dollarsPerHour: number;
+  /** Raw tokens the window held across the vendors listed. */
+  tokens: number;
+}
+
 export interface UsageOverview {
   nowMs: number;
   /** The span `observedTokens` covers, in words ("seven days"). */
@@ -135,6 +178,8 @@ export interface UsageOverview {
   accounts: UsageAccount[];
   /** The meter the chrome glyph shows: the live one that bites first. */
   binding: { accountKey: string; meter: AccountMeter } | null;
+  /** What this machine is drawing right now, from the same samples. */
+  burn: UsageBurn;
 }
 
 /** The parts of a consumption view this projection reads. */
@@ -151,7 +196,7 @@ export type PhraseOptions = PlanPhraseOptions;
 /* the projection                                                      */
 /* ------------------------------------------------------------------ */
 
-const ACCOUNT_ORDER: readonly Harness[] = CONSUMPTION_SOURCE_IDS;
+const ACCOUNT_ORDER: readonly AccountSource[] = PLAN_ACCOUNT_SOURCE_IDS;
 
 export function usageOverview(input: UsageOverviewInput): UsageOverview {
   const { nowMs } = input;
@@ -190,6 +235,61 @@ export function usageOverview(input: UsageOverviewInput): UsageOverview {
     windowLabel: input.windowLabel,
     accounts,
     binding,
+    burn: burnOf(input.samples, accounts, nowMs),
+  };
+}
+
+/**
+ * The burn line: raw tokens per minute and modelled dollars per hour over the
+ * trailing `BURN_WINDOW_MS`, per account that keeps a local ledger. Reads the
+ * samples the cards already count, so it can never disagree with them.
+ */
+function burnOf(
+  samples: readonly ConsumptionSample[],
+  accounts: readonly UsageAccount[],
+  nowMs: number
+): UsageBurn {
+  const from = nowMs - BURN_WINDOW_MS;
+  const raw = new Map<string, number>();
+  const weighted = new Map<string, number>();
+  for (const s of samples) {
+    if (Date.parse(s.at) <= from) continue;
+    const u = s.usage;
+    raw.set(
+      s.source,
+      (raw.get(s.source) ?? 0) +
+        u.inputTokens +
+        u.cacheReadTokens +
+        u.cacheWriteTokens +
+        u.outputTokens
+    );
+    weighted.set(
+      s.source,
+      (weighted.get(s.source) ?? 0) +
+        weightUsage(u, resolveModelWeight(s.model).weight)
+    );
+  }
+  const minutes = BURN_WINDOW_MS / MIN;
+  const perHour = HOUR / BURN_WINDOW_MS;
+  const vendors: VendorBurn[] = accounts
+    .filter(a => isConsumptionSourceId(a.harness))
+    .map(a => ({
+      accountKey: a.key,
+      name: a.name,
+      tokensPerMinute: (raw.get(a.harness) ?? 0) / minutes,
+      dollarsPerHour: modelledDollars(weighted.get(a.harness) ?? 0) * perHour,
+    }));
+  const tokens = vendors.reduce(
+    (n, v) => n + (raw.get(v.accountKey) ?? 0),
+    0
+  );
+  return {
+    windowMs: BURN_WINDOW_MS,
+    windowLabel: BURN_WINDOW_LABEL,
+    vendors,
+    tokensPerMinute: vendors.reduce((n, v) => n + v.tokensPerMinute, 0),
+    dollarsPerHour: vendors.reduce((n, v) => n + v.dollarsPerHour, 0),
+    tokens,
   };
 }
 
@@ -263,7 +363,14 @@ function isWorthACard(account: UsageAccount): boolean {
   if (account.meters.length > 0) return true;
   if (account.spend || account.resets || account.credits) return true;
   if (account.observedTokens > 0) return true;
-  return account.health === 'unreadable' && account.asOfMs !== null;
+  // A read that has ever succeeded, or one that ran and named why it failed,
+  // is news; a read nothing has ever attempted is not. A ledgerless account
+  // (Google) has no tokens to earn a card with, so its named failure is the
+  // only way its malfunction can reach the page.
+  return (
+    account.health === 'unreadable' &&
+    (account.asOfMs !== null || account.failure !== null)
+  );
 }
 
 function meterOrder(a: CapacityWindowView, b: CapacityWindowView): number {
@@ -400,7 +507,7 @@ function failureSentence(cause: PlanAccountFailureCause, app: string): string {
 
 /** Why a card has no bars, as one short product sentence. */
 export function healthLine(account: UsageAccount, nowMs: number): string | null {
-  const app = account.harness === 'claude-code' ? 'Claude Code' : account.name;
+  const app = ACCOUNT_APP[account.harness];
   const cause = account.failure ? failureSentence(account.failure, app) : null;
   switch (account.health) {
     case 'reporting':

@@ -45,7 +45,7 @@
  *   corpus and every surface must say so rather than presenting a low total
  *   as truth.
  */
-import type { ConsumptionSourceId } from './types';
+import type { ConsumptionSourceId, PlanAccountSourceId } from './types';
 import type {
   ConsumptionDiagnostics,
   ConsumptionSample,
@@ -58,8 +58,8 @@ import { emptyDiagnostics } from './types';
  *
  * This is the OTHER source class beside the local parse: a read-only ask of
  * the vendor's own account state, made through the operator's own harness
- * binary and sign-in (Claude: `claude -p "/usage"`; Codex: its app-server), so
- * Exawatt holds no credential. Its windows enter
+ * binary and sign-in (Claude: `claude -p "/usage"`; Codex: its app-server;
+ * Google: `agy -p "/usage"`), so Exawatt holds no credential. Its windows enter
  * `LiveConsumptionSnapshot.planWindows` with `origin: 'provider-account'`
  * and flow through the same freshness rules; this record carries the
  * account-level facts that are not windows.
@@ -144,7 +144,9 @@ export interface PlanCreditBalance {
 }
 
 export interface ProviderPlanAccountState {
-  source: ConsumptionSourceId;
+  /** The account: a ledgered source, or a vendor account read without a
+   *  local ledger (ENG-038 slice 4, `PlanAccountSourceId`). */
+  source: PlanAccountSourceId;
   status: ProviderPlanAccountStatus;
   /** Why the latest read failed. Absent while reads succeed and when the
    *  source cannot say. Never persisted: the next read decides it afresh. */
@@ -247,7 +249,7 @@ export interface LiveSessionIdentityLink {
  * because one limitId carries both a primary and a secondary window.
  */
 export interface PlanWindowObservation {
-  source: ConsumptionSourceId;
+  source: PlanAccountSourceId;
   limitId: string | null;
   scope: 'primary' | 'secondary';
   windowMinutes: number;

@@ -1361,6 +1361,20 @@ Built:
   decide usage alerts (`usage-alerts.ts`, pure; `UsageAlertService`, main)
   from the same derivation the page renders. Account services gain an
   optional `spendReset`, surfaced as `consumption:use-reset`.
+- ENG-038 slice 4 and ENG-008 E16 (2026-10-05): the Google account, read from
+  Antigravity's own `agy -p "/usage" --output-format json` through the same
+  service and a shared login-shell runner (`harness-command-run.ts`, which the
+  Claude read now uses too). It is the first account with no local ledger, so
+  the contract gains `PlanAccountSourceId` (a ledgered `ConsumptionSourceId`
+  or the ledgerless `antigravity`); plan windows, observations and account
+  state widen to it while samples, Sessions and the scanner stay keyed by the
+  ledger registry. The service states Antigravity's presence (`installed()`)
+  because the corpus cannot, and the composite neither asks nor carries the
+  account where it is absent. `usageOverview` gains the burn line: raw tokens
+  per minute and modelled dollars per hour over the trailing ten minutes, per
+  ledgered account, as a projection of the samples the cards count; the page
+  prints "not read" in place of a zero while a live pull is pending or the
+  engine is stopped.
 
 Implemented:
 

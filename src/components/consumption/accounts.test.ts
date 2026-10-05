@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  localLogAssurance,
+  resolveModelWeight,
+  weightUsage,
+  type ConsumptionSample,
+  type ConsumptionSourceId,
+} from '@exawatt/core';
+import {
+  BURN_WINDOW_LABEL,
+  BURN_WINDOW_MS,
+  forecastLine,
   healthLine,
   planLabel,
   usageOverview,
   type UsageOverview,
 } from './accounts';
+import { buildLiveConsumption } from './live-source';
+import { modelledDollars } from './units';
 import {
   SCENARIO_NOW_MS,
   USAGE_SCENARIOS,
@@ -153,7 +165,7 @@ describe('losing a read never makes a card calmer', () => {
         .map(m => `${a.key}|${m.key}`)
     );
   for (const scenario of USAGE_SCENARIOS) {
-    for (const source of ['claude-code', 'codex'] as const) {
+    for (const source of ['claude-code', 'codex', 'antigravity'] as const) {
       it(`${scenario.id}: failing the ${source} read keeps every run-out forecast`, () => {
         const before = alarms(scenarioOverview(scenario));
         const after = alarms(scenarioOverview(withFailedRead(scenario, source)));
@@ -248,3 +260,178 @@ describe('a Codex card is stale only when its figures are the failed read', () =
   });
 });
 
+
+/* ------------------------------------------------------------------ */
+/* ENG-038 slice 4 — the Google account, read without a ledger          */
+/* ------------------------------------------------------------------ */
+
+describe('the Google account', () => {
+  it('shows the spent Gemini group as out until its reset, and binds the glyph to it', () => {
+    const o = scenarioOverview(usageScenario('google-limit-reached'));
+    const google = account(o, 'antigravity')!;
+    expect(google.name).toBe('Google');
+    // `agy` states no plan tier: absent, never a guessed "Pro".
+    expect(google.plan).toBeNull();
+    // The shared meter order: same-length scoped limits read alphabetically.
+    expect(google.meters.map(m => m.label)).toEqual([
+      'Claude and GPT this week',
+      'Gemini this week',
+    ]);
+    const gemini = google.meters.find(m => m.scope === 'Gemini')!;
+    expect(gemini.forecast?.kind).toBe('spent');
+    expect(forecastLine(gemini, SCENARIO_NOW_MS)).toBe('Out until reset');
+    expect(o.binding?.accountKey).toBe('antigravity');
+    expect(o.binding?.meter.key).toBe(gemini.key);
+  });
+
+  it('keeps a card whose read ran and failed, with the cause and no figure', () => {
+    const google = account(scenarioOverview(usageScenario('google-not-readable')), 'antigravity')!;
+    expect(google.health).toBe('unreadable');
+    expect(google.failure).toBe('exited');
+    expect(google.meters).toEqual([]);
+    expect(google.observedTokens).toBe(0);
+    expect(healthLine(google, SCENARIO_NOW_MS)).toBe(
+      "Couldn't read plan limits. Antigravity stopped with an error."
+    );
+  });
+
+  it('orders the account after the ledgered sources', () => {
+    const o = scenarioOverview(usageScenario('google-limit-reached'));
+    expect(o.accounts.map(a => a.key)).toEqual(['claude-code', 'codex', 'antigravity']);
+  });
+
+  it('has no burn entry: nothing local measures it, and unmeasured is not zero', () => {
+    const o = scenarioOverview(usageScenario('runs-out-before-reset'));
+    expect(account(o, 'antigravity')).toBeDefined();
+    expect(o.burn.vendors.map(v => v.accountKey)).toEqual(['claude-code', 'codex']);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-008 E16 — the burn line                                          */
+/* ------------------------------------------------------------------ */
+
+describe('the burn line', () => {
+  const NOW = SCENARIO_NOW_MS;
+  const MIN = 60_000;
+
+  function sample(
+    source: ConsumptionSourceId,
+    atMs: number,
+    model: string | null,
+    inputTokens: number,
+    outputTokens = 0
+  ): ConsumptionSample {
+    return {
+      at: new Date(atMs).toISOString(),
+      source,
+      model,
+      effort: null,
+      providerSessionId: `${source}-session`,
+      cwd: null,
+      gitBranch: null,
+      usage: {
+        inputTokens,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens,
+        reasoningTokens: 0,
+        webSearches: 0,
+        webFetches: 0,
+      },
+      assurance: localLogAssurance(source),
+      idempotencyKey: `${source}:${atMs}:${inputTokens}`,
+      contextWindow: null,
+      sourceFile: null,
+      delegation: null,
+      entrypoint: 'cli',
+    };
+  }
+
+  /** The production path: the scenario's accounts over these samples. */
+  function overviewOver(samples: ConsumptionSample[]): UsageOverview {
+    const scenario = usageScenario('runs-out-before-reset');
+    return usageOverview(
+      buildLiveConsumption({
+        nowMs: NOW,
+        samples,
+        planWindows: scenario.planWindows,
+        windowRates: scenario.windowRates,
+        identities: [],
+        projects: [],
+        providerPlanAccounts: scenario.accounts,
+      })
+    );
+  }
+
+  it('states its window on the overview', () => {
+    const o = overviewOver([]);
+    expect(o.burn.windowMs).toBe(BURN_WINDOW_MS);
+    expect(o.burn.windowLabel).toBe(BURN_WINDOW_LABEL);
+    expect(BURN_WINDOW_MS).toBe(10 * MIN);
+  });
+
+  it('reads tokens per minute and modelled dollars per hour per vendor from the trailing window', () => {
+    const claudeModel = 'claude-fable-5-1';
+    const o = overviewOver([
+      // Inside the window: three Claude turns and one Codex turn.
+      sample('claude-code', NOW - 1 * MIN, claudeModel, 400_000),
+      sample('claude-code', NOW - 5 * MIN, claudeModel, 300_000, 10_000),
+      sample('claude-code', NOW - 9 * MIN - 59_000, claudeModel, 290_000),
+      sample('codex', NOW - 2 * MIN, 'gpt-5.3-codex', 120_000),
+      // On the window's edge and beyond it: not "now".
+      sample('claude-code', NOW - BURN_WINDOW_MS, claudeModel, 5_000_000),
+      sample('codex', NOW - 11 * MIN, 'gpt-5.3-codex', 5_000_000),
+    ]);
+    const claude = o.burn.vendors.find(v => v.accountKey === 'claude-code')!;
+    const codex = o.burn.vendors.find(v => v.accountKey === 'codex')!;
+    // 1,000,000 raw tokens over ten minutes.
+    expect(claude.tokensPerMinute).toBe(100_000);
+    expect(codex.tokensPerMinute).toBe(12_000);
+    // Dollars are the stated model over the same weighted tokens, per hour.
+    const weight = resolveModelWeight(claudeModel).weight;
+    const weighted =
+      weightUsage(sample('claude-code', NOW, claudeModel, 400_000).usage, weight) +
+      weightUsage(sample('claude-code', NOW, claudeModel, 300_000, 10_000).usage, weight) +
+      weightUsage(sample('claude-code', NOW, claudeModel, 290_000).usage, weight);
+    expect(claude.dollarsPerHour).toBeCloseTo(modelledDollars(weighted) * 6, 6);
+    expect(claude.dollarsPerHour).toBeGreaterThan(0);
+  });
+
+  it('is a projection of its vendors, never a second total', () => {
+    const o = overviewOver([
+      sample('claude-code', NOW - 1 * MIN, null, 600_000),
+      sample('codex', NOW - 1 * MIN, null, 60_000),
+      // Grok's burn earns it a card, and so an entry: the line lists exactly
+      // the ledgered accounts below it, in their order.
+      sample('grok', NOW - 1 * MIN, null, 7_000_000),
+    ]);
+    const vendors = o.burn.vendors;
+    expect(vendors.map(v => v.accountKey)).toEqual(
+      o.accounts.filter(a => a.harness !== 'antigravity').map(a => a.key)
+    );
+    expect(vendors.map(v => v.accountKey)).toEqual(['claude-code', 'codex', 'grok']);
+    expect(o.burn.tokensPerMinute).toBeCloseTo(
+      vendors.reduce((n, v) => n + v.tokensPerMinute, 0),
+      9
+    );
+    expect(o.burn.dollarsPerHour).toBeCloseTo(
+      vendors.reduce((n, v) => n + v.dollarsPerHour, 0),
+      9
+    );
+    expect(o.burn.tokens).toBe(7_660_000);
+  });
+
+  it('reads a true zero when nothing has run in the window', () => {
+    const o = overviewOver([sample('claude-code', NOW - 3 * 60 * MIN, null, 9_000_000)]);
+    expect(o.burn.tokens).toBe(0);
+    expect(o.burn.tokensPerMinute).toBe(0);
+    expect(o.burn.dollarsPerHour).toBe(0);
+    for (const v of o.burn.vendors) {
+      expect(v.tokensPerMinute).toBe(0);
+      expect(v.dollarsPerHour).toBe(0);
+    }
+    // Still one entry per ledgered account: a zero is stated, not hidden.
+    expect(o.burn.vendors.map(v => v.accountKey)).toEqual(['claude-code', 'codex']);
+  });
+});

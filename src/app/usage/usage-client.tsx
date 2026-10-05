@@ -24,10 +24,16 @@ import { UsageShell } from './usage-shell';
 export function UsageClient() {
   const tenant = useTenantConsumption();
   const overview = useMemo(() => usageOverview(tenant.view), [tenant.view]);
+  // The burn line is a projection of the samples on screen. A demo corpus is
+  // authored, so it reads; a live view reads only once a pull has applied
+  // and while the engine is up, because a zero computed from samples nobody
+  // is reading any more is not a reading (E16).
+  const burnRead = !tenant.live || !(tenant.pending || tenant.stopped);
   return (
     <UsageShell tab="overview" tenant={tenant}>
       <UsageOverviewBody
         overview={overview}
+        burnRead={burnRead}
         // Only a live read of this machine can spend a reset; the demo and
         // a paused engine show resets as facts.
         onUseReset={

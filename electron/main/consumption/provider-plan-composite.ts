@@ -18,7 +18,10 @@
  * - A snapshot pull or rescan nudges each account's `maybeRefresh()`, fire
  *   and forget and cadence-throttled in the service, so pulls never block on
  *   a read. An account whose harness left no local files at all is not read:
- *   a machine without Codex never starts a Codex app-server.
+ *   a machine without Codex never starts a Codex app-server. An account with
+ *   no local ledger (Google, ENG-038 slice 4) states its harness's presence
+ *   itself (`installed()`); absent, it is neither read nor carried on the
+ *   snapshot, so the renderer sees no account at all rather than a failure.
  */
 import type {
   ConsumptionScanState,
@@ -48,9 +51,23 @@ export class ProviderPlanCompositeSource implements ConsumptionScannerLike {
   private refreshAccounts(): void {
     if (!this.lastScanState?.firstScanComplete) return;
     for (const account of this.accounts) {
-      if (this.emptySources.includes(account.source)) continue;
+      if (!this.applicable(account)) continue;
       account.maybeRefresh();
     }
+  }
+
+  /** Whether this machine has the harness the account is read through. */
+  private applicable(account: PlanAccountSource): boolean {
+    if ((this.emptySources as readonly string[]).includes(account.source)) {
+      return false;
+    }
+    return account.installed?.() !== false;
+  }
+
+  /** Accounts carried on the snapshot: every ledgered one (the renderer
+   *  judges its state), and a ledgerless one only where its harness is. */
+  private carried(): PlanAccountSource[] {
+    return this.accounts.filter(account => account.installed?.() !== false);
   }
 
   private accountRevision(): number {
@@ -64,9 +81,10 @@ export class ProviderPlanCompositeSource implements ConsumptionScannerLike {
     this.lastScanState = snapshot.scanState;
     this.emptySources = snapshot.emptySources;
     this.refreshAccounts();
-    const views = this.accounts.map(account => account.view());
-    const revision =
-      snapshot.scanState.revision + views.reduce((n, v) => n + v.revision, 0);
+    const views = this.carried().map(account => account.view());
+    // Every account's revision, carried or not, so the sum stays monotonic
+    // when a harness appears mid-launch.
+    const revision = snapshot.scanState.revision + this.accountRevision();
     const windowObservations = [
       ...snapshot.windowObservations,
       ...views.flatMap(v => v.observations),

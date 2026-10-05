@@ -45,6 +45,7 @@ import {
   capacityWindowFromPlan,
   interventionStats,
   type AccountReadView,
+  type AccountSource,
   type ConsumptionSourceView,
   type Harness,
   type InterventionRow,
@@ -917,10 +918,31 @@ export function demoPlanWindows(): PlanWindow[] {
 export function demoAccountReads(nowMs: number): {
   planWindows: PlanWindow[];
   burnRates: Record<string, number>;
-  accountReads: Partial<Record<ConsumptionSourceId, AccountReadView>>;
+  accountReads: Partial<Record<AccountSource, AccountReadView>>;
 } {
   const observedAt = iso(nowMs - 2 * MIN);
   const weekResets = iso(nowMs + 3 * DAY + 11 * HOUR);
+  // Google's Antigravity read (ENG-038 slice 4): weekly limits per model
+  // group, as `agy -p "/usage"` reports them, no plan tier, no ledger.
+  const googleObservedAt = iso(nowMs - 3 * MIN);
+  const google = (
+    limitId: string,
+    limitName: string,
+    usedPercent: number,
+    resetsAt: string
+  ): PlanWindow => ({
+    source: 'antigravity',
+    limitId,
+    limitName,
+    scope: 'primary',
+    usedPercent,
+    windowMinutes: 10_080,
+    resetsAt,
+    planType: null,
+    observedAt: googleObservedAt,
+    providerSessionId: '',
+    origin: 'provider-account',
+  });
   const claude = (
     limitId: string,
     limitName: string | null,
@@ -944,6 +966,8 @@ export function demoAccountReads(nowMs: number): {
     claude('claude-session', null, 300, 34, iso(nowMs + 2 * HOUR + 25 * MIN)),
     claude('claude-weekly-all', null, 10_080, 52, weekResets),
     claude('claude-weekly-fable', 'Fable', 10_080, 38, weekResets),
+    google('gemini-weekly', 'Gemini', 61, iso(nowMs + 2 * DAY + 20 * HOUR)),
+    google('3p-weekly', 'Claude and GPT', 9, iso(nowMs + 5 * DAY + 3 * HOUR)),
   ];
   return {
     planWindows,
@@ -951,6 +975,8 @@ export function demoAccountReads(nowMs: number): {
       [planWindowKey(planWindows[0])]: 11,
       [planWindowKey(planWindows[1])]: 0.62,
       [planWindowKey(planWindows[2])]: 0.3,
+      [planWindowKey(planWindows[3])]: 0.5,
+      [planWindowKey(planWindows[4])]: 0.1,
     },
     accountReads: {
       'claude-code': {
@@ -979,6 +1005,13 @@ export function demoAccountReads(nowMs: number): {
             { title: 'Full reset', expiresAtMs: nowMs + 23 * DAY },
           ],
         },
+      },
+      antigravity: {
+        status: 'ok',
+        observedAtMs: nowMs - 3 * MIN,
+        // `agy -p "/usage"` states no plan tier: absent, never guessed.
+        planType: null,
+        spend: null,
       },
     },
   };
@@ -1099,7 +1132,7 @@ export interface DemoConsumptionInputs {
    * source; a present entry is what lets `/usage` tell a failed read apart
    * from a source that simply keeps no plan record.
    */
-  accountReads?: Partial<Record<ConsumptionSourceId, AccountReadView>>;
+  accountReads?: Partial<Record<AccountSource, AccountReadView>>;
 }
 
 export function buildDemoConsumption(
@@ -1346,7 +1379,7 @@ function buildSources(
   const recent = operator.filter(s => s.at >= fiveHoursAgo);
 
   const build = (
-    source: ConsumptionSourceId,
+    source: AccountSource,
     label: string,
     burn: number[],
     burnRates: Record<string, number>,
@@ -1400,14 +1433,15 @@ function buildSources(
       observedTokens5h,
       observedSessions: new Set(mine.map(s => s.providerSessionId)).size,
       observedDelegatedShare:
-        source === 'codex' || source === 'grok'
-          ? // Neither writes a delegation record a usage sample can carry:
-            // unavailable, not zero. Grok's subagents live in their own
-            // session directories, outside the ledger's parent/child shape.
-            null
-          : observedTokens5h > 0
+        source === 'claude-code'
+          ? observedTokens5h > 0
             ? delegatedTokens / observedTokens5h
-            : 0,
+            : 0
+          : // Codex and Grok write no delegation record a usage sample can
+            // carry (Grok's subagents live in their own session directories,
+            // outside the ledger's parent/child shape), and a ledgerless
+            // account has no samples at all: unavailable, not zero.
+            null,
       burn,
       unreportedReason,
       // ENG-038: present only where a vendor account read is configured.
@@ -1436,5 +1470,9 @@ function buildSources(
     // A missing row would read as "Exawatt does not know about Grok Build";
     // an empty one reads as "Grok Build reported nothing", which is the fact.
     build('grok', 'Grok Build', inputs.burn.grok, inputs.burnRates, GROK_PLAN_NOTE),
+    // Google (ENG-038 slice 4): an account with no local ledger. Its windows
+    // arrive only through the Antigravity account read, so with no read
+    // configured the view is empty and earns no card; it is never a zero.
+    build('antigravity', 'Antigravity', [], inputs.burnRates),
   ];
 }

@@ -26,10 +26,14 @@
  * five minutes riding snapshot pulls, the last good value kept at its true
  * `observedAt`.
  */
-import { spawn } from 'node:child_process';
 import type { PlanAccountFailureCause, PlanWindow } from '@exawatt/core';
-import { defaultShell } from '../pty/session-manager';
-import { planLoginShell, shellQuote } from '../pty/login-shell';
+import {
+  COMMAND_NOT_FOUND,
+  createLoginShellCommandRunner,
+  lastJsonObject,
+  type HarnessCommandRun,
+  type HarnessCommandRunner,
+} from './harness-command-run';
 import {
   PlanAccountService,
   type PlanAccountRead,
@@ -43,7 +47,6 @@ const STATE_FILE = 'claude-plan.json';
  * of CPU on a 316-session machine, so the wait has to be generous.
  */
 const DEFAULT_TIMEOUT_MS = 45_000;
-const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 /** The exact invocation. Pinned by a test; every flag matters. */
 export const CLAUDE_USAGE_ARGS = [
@@ -338,21 +341,7 @@ export function parseClaudeUsageOutput(
   stdout: string,
   nowMs: number
 ): ClaudeUsageOutputParse {
-  let envelope: Record<string, unknown> | null = null;
-  const lines = stdout.split(/\r?\n/);
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const line = lines[i].trim();
-    if (!line.startsWith('{')) continue;
-    try {
-      const parsed: unknown = JSON.parse(line);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        envelope = parsed as Record<string, unknown>;
-        break;
-      }
-    } catch {
-      // Not the envelope; keep looking upward.
-    }
-  }
+  const envelope = lastJsonObject(stdout);
   if (!envelope) {
     return {
       kind: 'failure',
@@ -407,16 +396,9 @@ export function migratePersistedLimitName(window: PlanWindow): PlanWindow {
 /* ------------------------------------------------------------------ */
 
 /** What one run of the command produced. Nothing here is a credential. */
-export type ClaudeUsageRun =
-  | { kind: 'finished'; exitCode: number; stdout: string; stderr: string }
-  | { kind: 'timed-out' }
-  | { kind: 'spawn-failed' };
+export type ClaudeUsageRun = HarnessCommandRun;
 
-export type ClaudeUsageRunner = (timeoutMs: number) => Promise<ClaudeUsageRun>;
-
-/** A shell that cannot find the command says so in one of these ways. */
-const COMMAND_NOT_FOUND =
-  /command not found|unknown command|is not recognized/i;
+export type ClaudeUsageRunner = HarnessCommandRunner;
 
 /**
  * Runs the operator's own `claude` through their login shell, so it is found
@@ -427,56 +409,12 @@ const COMMAND_NOT_FOUND =
 export function createClaudeUsageRunner(
   options: { resolveShell?: () => Promise<string> } = {}
 ): ClaudeUsageRunner {
-  const resolveShell = options.resolveShell ?? defaultShell;
-  return async timeoutMs => {
-    const shell = await resolveShell();
-    const plan = planLoginShell(shell, {
-      command: `claude ${CLAUDE_USAGE_ARGS.map(shellQuote).join(' ')}`,
-    });
-    return new Promise<ClaudeUsageRun>(resolve => {
-      let settled = false;
-      const settle = (run: ClaudeUsageRun) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(run);
-      };
-      let child: ReturnType<typeof spawn>;
-      try {
-        child = spawn(shell, plan.args, {
-          cwd: plan.cwd,
-          env: { ...process.env, SHELL: shell, DISABLE_AUTOUPDATER: '1' },
-          stdio: ['ignore', 'pipe', 'pipe'],
-          detached: true,
-        });
-      } catch {
-        resolve({ kind: 'spawn-failed' });
-        return;
-      }
-      const timer = setTimeout(() => {
-        if (child.pid) {
-          try {
-            process.kill(-child.pid, 'SIGKILL');
-          } catch {
-            child.kill('SIGKILL');
-          }
-        }
-        settle({ kind: 'timed-out' });
-      }, timeoutMs);
-      let stdout = '';
-      let stderr = '';
-      child.stdout?.on('data', (data: Buffer) => {
-        if (stdout.length < MAX_OUTPUT_BYTES) stdout += data.toString();
-      });
-      child.stderr?.on('data', (data: Buffer) => {
-        if (stderr.length < 64 * 1024) stderr += data.toString();
-      });
-      child.on('error', () => settle({ kind: 'spawn-failed' }));
-      child.on('close', code =>
-        settle({ kind: 'finished', exitCode: code ?? -1, stdout, stderr })
-      );
-    });
-  };
+  return createLoginShellCommandRunner({
+    command: 'claude',
+    args: CLAUDE_USAGE_ARGS,
+    env: { DISABLE_AUTOUPDATER: '1' },
+    resolveShell: options.resolveShell,
+  });
 }
 
 const runClaudeUsage: ClaudeUsageRunner = createClaudeUsageRunner();

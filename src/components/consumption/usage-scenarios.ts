@@ -26,6 +26,7 @@ import {
   planWindowKey,
   type ConsumptionSample,
   type ConsumptionSourceId,
+  type PlanAccountSourceId,
   type PlanWindow,
   type ProviderPlanAccountState,
 } from '@exawatt/core';
@@ -62,7 +63,7 @@ export interface UsageScenario {
 const iso = (ms: number) => new Date(ms).toISOString();
 
 interface WindowSpec {
-  source: ConsumptionSourceId;
+  source: PlanAccountSourceId;
   limitId: string;
   scope?: string | null;
   minutes: number;
@@ -71,7 +72,8 @@ interface WindowSpec {
   observedAtMs: number;
   /** %/hour. */
   rate: number;
-  planType: string;
+  /** The vendor's plan identity; null where the read states none (Google). */
+  planType: string | null;
   origin?: PlanWindow['origin'];
 }
 
@@ -100,6 +102,10 @@ const at = (hoursFromNow: number) => SCENARIO_NOW_MS + hoursFromNow * HOUR;
 
 /** Claude's fixed weekly anchor: Monday 5 October, 2:00 AM Pacific. */
 const CLAUDE_WEEK_RESET = Date.parse('2026-10-05T09:00:00.000Z');
+/** Google's weekly groups refresh a week after first use, like Codex's; the
+ *  Gemini group on the operator's machine read "3 days, 5 hours" to go. */
+const GOOGLE_GEMINI_RESET = at(3 * 24 + 5);
+const GOOGLE_3P_RESET = at(6 * 24 + 18);
 /** Codex's rolling week, started at first use after the last reset. */
 const CODEX_WEEK_RESET = Date.parse('2026-10-05T01:57:06.000Z');
 const CODEX_WEEK_AFTER_RESET = Date.parse('2026-10-07T04:22:51.000Z');
@@ -204,6 +210,53 @@ function codexWeek(used: number, rate: number, resetsAtMs = CODEX_WEEK_RESET, ob
   };
 }
 
+/**
+ * The Google account Antigravity draws on (ENG-038 slice 4), in the shape
+ * `agy -p "/usage"` reported on 2026-10-05: one weekly limit per model group,
+ * named for the group, no plan tier. `gemini` is percent used.
+ */
+function googleWindows(gemini = 38, geminiRate = 0.4, observedAtMs = at(-3 / 60)) {
+  return [
+    {
+      source: 'antigravity' as const,
+      limitId: 'gemini-weekly',
+      scope: 'Gemini',
+      minutes: WEEK_MIN,
+      used: gemini,
+      resetsAtMs: GOOGLE_GEMINI_RESET,
+      observedAtMs,
+      rate: geminiRate,
+      planType: null,
+      origin: 'provider-account' as const,
+    },
+    {
+      source: 'antigravity' as const,
+      limitId: '3p-weekly',
+      scope: 'Claude and GPT',
+      minutes: WEEK_MIN,
+      used: 0,
+      resetsAtMs: GOOGLE_3P_RESET,
+      observedAtMs,
+      rate: 0,
+      planType: null,
+      origin: 'provider-account' as const,
+    },
+  ];
+}
+
+function googleAccount(
+  overrides: Partial<ProviderPlanAccountState> = {}
+): ProviderPlanAccountState {
+  return {
+    source: 'antigravity',
+    status: 'ok',
+    observedAt: iso(at(-3 / 60)),
+    planType: null,
+    spend: null,
+    ...overrides,
+  };
+}
+
 const HEAVY_TOKENS = { 'claude-code': 1_840_000_000, codex: 612_000_000 };
 
 /* ------------------------------------------------------------------ */
@@ -216,8 +269,8 @@ export const USAGE_SCENARIOS: readonly UsageScenario[] = [
     title: 'Runs out before reset',
     shows: 'Codex is on course to run out tomorrow morning, days before its Sunday reset, with four banked resets.',
     nowMs: SCENARIO_NOW_MS,
-    ...windows([...claudeWindows(), codexWeek(78, 1.635)]),
-    accounts: [claudeAccount(), codexAccount()],
+    ...windows([...claudeWindows(), codexWeek(78, 1.635), ...googleWindows()]),
+    accounts: [claudeAccount(), codexAccount(), googleAccount()],
     tokens: HEAVY_TOKENS,
   },
   {
@@ -313,6 +366,38 @@ export const USAGE_SCENARIOS: readonly UsageScenario[] = [
     tokens: { ...HEAVY_TOKENS, grok: 48_200_000 },
   },
   {
+    id: 'google-limit-reached',
+    title: 'Google Gemini limit reached',
+    shows:
+      "Antigravity's Gemini models are spent until Thursday evening while its Claude and GPT group is untouched; Google states no plan tier, so none is shown.",
+    nowMs: SCENARIO_NOW_MS,
+    ...windows([
+      ...claudeWindows(at(-2 / 60), 30, 0.4),
+      codexWeek(30, 0.4),
+      ...googleWindows(100, 0),
+    ]),
+    accounts: [
+      claudeAccount(),
+      codexAccount({ resets: { available: 0, credits: [] } }),
+      googleAccount(),
+    ],
+    tokens: HEAVY_TOKENS,
+  },
+  {
+    id: 'google-not-readable',
+    title: 'Google not readable',
+    shows:
+      'Antigravity is on this machine but its usage report could not be read: the card says so, draws no bar, and never reads zero.',
+    nowMs: SCENARIO_NOW_MS,
+    ...windows([...claudeWindows(at(-2 / 60), 30, 0.4), codexWeek(30, 0.4)]),
+    accounts: [
+      claudeAccount(),
+      codexAccount({ resets: { available: 0, credits: [] } }),
+      googleAccount({ status: 'unavailable', failure: 'exited', observedAt: null }),
+    ],
+    tokens: HEAVY_TOKENS,
+  },
+  {
     id: 'first-run',
     title: 'First run',
     shows: 'No Agent has run yet.',
@@ -345,7 +430,7 @@ export function advanceScenario(
 ): UsageScenario {
   if (hours <= 0 && burn === 1) return scenario;
   const nowMs = scenario.nowMs + hours * HOUR;
-  const readable = (source: ConsumptionSourceId) => {
+  const readable = (source: PlanAccountSourceId) => {
     const account = scenario.accounts.find(a => a.source === source);
     return !account || account.status === 'ok';
   };

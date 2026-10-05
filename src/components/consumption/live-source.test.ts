@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  PLAN_ACCOUNT_SOURCE_IDS,
   localLogAssurance,
   observedAverageRate,
   planWindowKey,
@@ -426,12 +427,11 @@ describe('the empty corpus — a fresh machine, absent-never-zero', () => {
     expect(gridRows(view)).toHaveLength(0);
     expect(usageOverview(view).accounts).toHaveLength(0);
     expect(usageOverview(view).binding).toBeNull();
-    // every declared source exists as an absent channel, never a 0% window
-    expect(view.sources.map(s => s.harness).sort()).toEqual([
-      'claude-code',
-      'codex',
-      'grok',
-    ]);
+    // every declared source, and every ledgerless account, exists as an
+    // absent channel, never a 0% window
+    expect(view.sources.map(s => s.harness).sort()).toEqual(
+      [...PLAN_ACCOUNT_SOURCE_IDS].sort()
+    );
     for (const s of view.sources) expect(s.windows).toHaveLength(0);
   });
 });

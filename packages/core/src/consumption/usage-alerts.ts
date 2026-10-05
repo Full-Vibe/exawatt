@@ -28,7 +28,7 @@ import {
   type PlanPhraseOptions,
 } from './plan-forecast';
 import type { ProviderPlanAccountState } from './live-snapshot';
-import type { ConsumptionSourceId, PlanWindow } from './types';
+import type { PlanAccountSourceId, PlanWindow } from './types';
 
 const MIN = 60_000;
 
@@ -54,7 +54,8 @@ export type UsageAlertStage = 'on-course' | 'soon' | 'spent';
 const STAGE_ORDER: readonly UsageAlertStage[] = ['on-course', 'soon', 'spent'];
 
 export interface UsageAlert {
-  source: ConsumptionSourceId;
+  /** The account the window belongs to; a ledgerless one (Google) alerts too. */
+  source: PlanAccountSourceId;
   stage: UsageAlertStage;
   title: string;
   body: string;

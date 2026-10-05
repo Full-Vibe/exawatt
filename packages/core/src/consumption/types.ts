@@ -62,6 +62,38 @@ export function consumptionSourceForHarness(
 }
 
 /**
+ * Vendor accounts Exawatt reads WITHOUT a local ledger (ENG-038 slice 4).
+ *
+ * `CONSUMPTION_SOURCE_HARNESS` lists the harnesses whose local records the
+ * scanner parses. A plan account is a different thing: the vendor's own
+ * meter, asked through the operator's own harness binary, and it exists for
+ * vendors whose harness writes no usage record Exawatt reads. Google's
+ * Antigravity is the first: its weekly limits come from `agy -p "/usage"`
+ * and its conversation history is never read. The account is keyed by the
+ * harness id the Agent Source declares, so the account can later join the
+ * ledger registry without renaming its windows or losing its pace history.
+ */
+const LEDGERLESS_ACCOUNT_SOURCES = ['antigravity'] as const;
+
+type LedgerlessAccountSource = (typeof LEDGERLESS_ACCOUNT_SOURCES)[number];
+
+/** Every vendor account a plan read can describe, in display order. */
+export type PlanAccountSourceId = ConsumptionSourceId | LedgerlessAccountSource;
+
+export const PLAN_ACCOUNT_SOURCE_IDS: readonly PlanAccountSourceId[] =
+  Object.freeze([...CONSUMPTION_SOURCE_IDS, ...LEDGERLESS_ACCOUNT_SOURCES]);
+
+export function isPlanAccountSourceId(
+  value: unknown
+): value is PlanAccountSourceId {
+  return (
+    isConsumptionSourceId(value) ||
+    (typeof value === 'string' &&
+      (LEDGERLESS_ACCOUNT_SOURCES as readonly string[]).includes(value))
+  );
+}
+
+/**
  * Raw, provider-normalized token counts for one unit of work.
  *
  * Normalization rules — these matter, because the two harnesses disagree about
@@ -326,7 +358,9 @@ export type PlanWindowOrigin = 'local-log' | 'provider-account';
  * in the local parse gains a credential or a network call.
  */
 export interface PlanWindow {
-  source: ConsumptionSourceId;
+  /** The account the window belongs to: a ledgered source, or a vendor
+   *  account read without one (`PlanAccountSourceId`). */
+  source: PlanAccountSourceId;
   /** Provider's identifier for the limit bucket, e.g. `codex`. */
   limitId: string | null;
   /**

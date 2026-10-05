@@ -8,6 +8,7 @@ import type { ElectronAuthCoordinator } from './auth-coordinator';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { ClaudePlanAccountService } from './consumption/claude-plan-account';
 import { CodexPlanAccountService } from './consumption/codex-plan-account';
+import { GooglePlanAccountService } from './consumption/google-plan-account';
 import { ProviderPlanCompositeSource } from './consumption/provider-plan-composite';
 import { sampleRetentionPolicy } from './consumption/retention-policy';
 import { UsageAlertService } from './consumption/usage-alert-service';
@@ -24,6 +25,7 @@ import type { RunStateStore } from './run-state';
 import {
   isClaudePlanWindowsEnabled,
   isCodexPlanWindowsEnabled,
+  isGooglePlanWindowsEnabled,
   loadSettings,
   usageAlertPreferences,
 } from './settings-store';
@@ -54,6 +56,7 @@ export class CommandRuntime {
   consumptionScanner: ConsumptionScannerService | null = null;
   claudePlanAccount: ClaudePlanAccountService | null = null;
   codexPlanAccount: CodexPlanAccountService | null = null;
+  googlePlanAccount: GooglePlanAccountService | null = null;
   usageAlerts: UsageAlertService | null = null;
   runStateStore: RunStateStore | null = null;
   authCoordinator: ElectronAuthCoordinator | null = null;
@@ -94,6 +97,7 @@ export class CommandRuntime {
     void this.consumptionScanner?.dispose();
     this.claudePlanAccount?.dispose();
     this.codexPlanAccount?.dispose();
+    this.googlePlanAccount?.dispose();
     this.usageAlerts?.dispose();
     void this.disposeConnectedSources().catch(error =>
       console.error('[shutdown] connected sources did not close', error)
@@ -393,9 +397,19 @@ export async function bootstrapCommandSurface(
           allowed: !deps.isTest,
         });
         runtime.codexPlanAccount = codexPlanAccount;
+        // ENG-038 slice 4: the Google account, asked of the operator's own
+        // `agy` (`/usage`) under its own sign-in. No local ledger: the
+        // service states Antigravity's presence itself, so a machine without
+        // it is never asked and carries no Google account.
+        const googlePlanAccount = new GooglePlanAccountService({
+          stateDir: path.join(userDataPath(), 'consumption-plan'),
+          enabled: isGooglePlanWindowsEnabled(loadSettings()),
+          allowed: !deps.isTest,
+        });
+        runtime.googlePlanAccount = googlePlanAccount;
         const composite = new ProviderPlanCompositeSource(
           runtime.consumptionScanner!,
-          [claudePlanAccount, codexPlanAccount]
+          [claudePlanAccount, codexPlanAccount, googlePlanAccount]
         );
         // ENG-008 E17: usage alerts decide in main, from the same composed
         // snapshot, so they keep watching while the window is in the
@@ -414,7 +428,11 @@ export async function bootstrapCommandSurface(
         registerConsumptionIPC(
           () => deps.electron.BrowserWindow.getAllWindows(),
           composite,
-          { claude: claudePlanAccount, codex: codexPlanAccount },
+          {
+            claude: claudePlanAccount,
+            codex: codexPlanAccount,
+            google: googlePlanAccount,
+          },
           usageAlerts
         );
         usageAlerts.start();

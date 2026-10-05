@@ -108,3 +108,61 @@ describe('the glance and the page say the same thing', () => {
     );
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* ENG-008 E16 — the burn line is a reading or says it is not one        */
+/* ------------------------------------------------------------------ */
+
+describe('the burn line', () => {
+  it('prints a true zero with its window and the modelled basis when nothing runs', () => {
+    const { view } = renderScenario(usageScenario('runs-out-before-reset'));
+    const line = view.container.querySelector('[data-usage-burn]');
+    expect(line?.getAttribute('data-usage-burn')).toBe('idle');
+    expect(line?.querySelector('[data-usage-burn-total]')?.textContent).toBe('0 tokens/min');
+    expect(line?.textContent).toContain('last 10 min');
+    expect(line?.textContent).toContain('modelled');
+    // One entry per ledgered account; none for Google, which has no ledger.
+    const vendors = [...line!.querySelectorAll('[data-usage-burn-vendor]')].map(v =>
+      v.getAttribute('data-usage-burn-vendor')
+    );
+    expect(vendors).toEqual(['claude-code', 'codex']);
+  });
+
+  it('never prints a zero for samples nobody is reading', () => {
+    const overview = scenarioOverview(usageScenario('runs-out-before-reset'));
+    const view = render(
+      <UsageOverviewBody overview={overview} phrase={phrase} burnRead={false} />
+    );
+    const line = view.container.querySelector('[data-usage-burn]');
+    expect(line?.getAttribute('data-usage-burn')).toBe('unread');
+    expect(line?.querySelector('[data-usage-burn-total]')).toBeNull();
+    expect(line?.textContent).not.toMatch(/\d tokens\/min/u);
+    expect(line?.textContent).toContain('Not read');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-038 slice 4 — the Google card                                     */
+/* ------------------------------------------------------------------ */
+
+describe('the Google card', () => {
+  it('is named for the account, states no tier, and draws the vendor’s groups', () => {
+    const { view } = renderScenario(usageScenario('google-limit-reached'));
+    const card = view.container.querySelector<HTMLElement>('[data-usage-account="antigravity"]')!;
+    expect(within(card).getByRole('heading').textContent).toBe('Google');
+    expect(card.querySelectorAll('[data-usage-bar]').length).toBe(2);
+    // The spent group says so on its own row; E17 retired the prose headline.
+    expect(card.querySelector('[data-usage-forecast="spent"]')?.textContent).toBe(
+      'Out until reset'
+    );
+  });
+
+  it('says why it cannot be read, through the app it is read with, and draws nothing', () => {
+    const { view } = renderScenario(usageScenario('google-not-readable'));
+    const card = view.container.querySelector<HTMLElement>('[data-usage-account="antigravity"]')!;
+    expect(card.getAttribute('data-usage-health')).toBe('unreadable');
+    expect(card.querySelector('[data-usage-bar]')).toBeNull();
+    expect(card.textContent).not.toMatch(/% used/u);
+    expect(card.querySelector('[data-usage-health-note]')?.textContent).toContain('Antigravity');
+  });
+});

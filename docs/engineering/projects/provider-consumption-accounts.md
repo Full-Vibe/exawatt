@@ -379,3 +379,99 @@ real on master after slice 3 and are repaired together:
   that never succeeded report normally; and projections run from now again,
   because a Codex window is only written while Codex runs and aging an old
   reading forward announced run-outs that never happened.
+
+### Slice 4 — the Google account through Antigravity's own `/usage` (2026-10-05)
+
+Shaped and built with ENG-008 E16 for the Google workshop demo arc (G4).
+
+**Mechanism.** `GooglePlanAccountService` supplies a reader that runs the
+operator's own `agy -p "/usage" --output-format json` through their login
+shell from Exawatt's scratch directory with a 30 second limit, via the shared
+`createLoginShellCommandRunner` in `harness-command-run.ts` (the Claude read
+moved onto the same runner; its pinned argv, `DISABLE_AUTOUPDATER`, cwd and
+timeout behaviour are unchanged). Custody is source-owned: Antigravity makes
+the request under its own sign-in, Exawatt reads no credential and never reads
+`~/.gemini/antigravity-cli/history.jsonl` or anything else inside that
+directory. Verified 2026-10-05 on Antigravity CLI 1.2.17: the answer costs no
+agent turn (`num_turns: 0`, `conversation_id: ""`), writes no conversation
+(the `conversations/` directory's entry count and mtime were unchanged across
+a run), prints nothing to stderr, and took about five seconds.
+
+**Real output, captured 2026-10-05**, pinned in `agy-usage.fixtures.ts`: two
+groups, "Gemini Models" and "Claude and GPT models", each with one bucket
+(`id`, `window: 'weekly'`, `remaining_fraction`, `reset_time` ISO). The first
+capture read the Gemini group at 0.0010104 remaining; a later one read it at 0,
+with the bucket's `description` rewording itself ("You have hit your weekly
+limit"). No plan tier appears anywhere in the report; `agy --help` offers no
+usage flag beyond the slash command.
+
+**Units.** The vendor states what is LEFT; the meter model states what is
+used, so the fraction is inverted once in the parser
+(`usedPercent = round((1 - remaining) × 1000) / 10`). `window` maps
+`weekly`/`daily`/`monthly` to minutes and anything else is unrecognized
+(absence over a guessed denominator). The group name less a trailing
+"models" is the limit's model scope ("Gemini", "Claude and GPT"), so the
+card's rows read "Gemini this week" and, when the group is spent, "Out until
+reset" beside the vendor's reset instant. The bucket id is the
+`limitId` (`antigravity|gemini-weekly|primary|10080`) so pace history
+continues across reads.
+
+**The ledgerless account.** Antigravity writes no usage record Exawatt reads,
+so the account is not a `ConsumptionSourceId` (that registry means "local
+records the scanner parses" and drives adapters, capabilities and state
+repairs). `@exawatt/core` gains `PlanAccountSourceId` (a ledgered source or the
+ledgerless `antigravity`), `PLAN_ACCOUNT_SOURCE_IDS` and
+`isPlanAccountSourceId`; `PlanWindow.source`, `PlanWindowObservation.source`
+and `ProviderPlanAccountState.source` widen to it, as do the renderer's
+`ConsumptionSourceView.harness`, `ACCOUNT_NAME` (`antigravity: 'Google'`), the
+account order and `buildSources`, which builds an Antigravity view with no
+samples. Samples, Sessions, `HARNESS_LABEL` and the analytics grid stay keyed
+by `Harness`. The id is the one ENG-003 S5.3 declares for the Agent Source, so
+the account joins the ledger registry later without renaming its windows.
+
+**Presence.** The composite learns a ledgered harness's presence from the
+corpus and never starts a Codex app-server on a machine without Codex; a
+ledgerless account cannot be learned that way, so `PlanAccountSource` gains an
+optional `installed()` that the Google service answers with a stat of
+`~/.gemini/antigravity-cli` (sticky once true). The composite neither nudges
+nor carries an account whose `installed()` is false, so a machine without
+Antigravity shows no Google account at all rather than a failure.
+
+**States.** Failures ride `PlanAccountFailureCause` exactly as slice 3's do:
+`not-installed` (exit 127 or the shell's "command not found"), `timed-out`,
+`exited` (non-zero exit, a non-`SUCCESS` status, or a process that would not
+start), `unrecognized` (no envelope, no handled `usage` command, an unknown
+window name, a fraction outside 0..1, an unparsable reset, a bucket with no
+id, two buckets with one id, or no buckets). A non-`SUCCESS` status whose text
+asks to sign in reads `no-plan`; that shape is a guess recorded as one, since
+a signed-out `agy` has not been captured. The card says "Couldn't read plan
+limits." plus the cause through `ACCOUNT_APP` ("Antigravity isn't installed on
+this machine."). One projection rule changed for it: a card whose read ran
+and NAMED its failure is shown even with no tokens to earn it, because a
+ledgerless account has no tokens and its malfunction would otherwise be
+invisible; a read nothing has attempted still earns no card.
+
+**Switch and disclosure.** Own-account privacy switch `googlePlanWindows`
+(default on) through the same path as the Claude and Codex switches
+(settings store, IPC argument validator, preload, bridge types, Privacy row,
+`OUTBOUND_CONTROLS`), disclosed as section 7's fourth own-account path in
+`outbound-data.md`.
+
+**Evidence.** `google-plan-account.test.ts`: the parser against both real
+captures, every unreadable shape as a named cause with no window, a lost read
+keeping the last good windows at their true observed instant, a later good
+read replacing the stale figure, the runner's pinned argv and scratch cwd, the
+presence stat, and the composite skipping and omitting an absent Antigravity.
+`accounts.test.ts` and `honesty.test.tsx` pin the card, the spent Gemini
+group's forecast and glyph binding, the account order, and that losing the
+Google read never makes a card calmer. `pnpm eval:usage:scenarios` gained two scenarios (Google
+Gemini limit reached; Google not readable) and a Google card in the default
+one; 33 shots green. The dev-tree Electron launch with the real account reads
+is recorded in `consumption-spine.md` §E16.
+
+**Known.** Antigravity exposes no switch for its own update check and runs one
+at most every fifteen minutes on any invocation, so a read can let the
+operator's `agy` check for its update exactly as their own use does; the
+signed-out report shape is not captured; the meter order within the card is
+the shared alphabetical rule for same-length scoped limits, so "Claude and GPT
+this week" sits above "Gemini this week".

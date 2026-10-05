@@ -38,6 +38,7 @@ import {
   type ConsumptionRollup,
   type ConsumptionSourceId,
   type PlanAccountFailureCause,
+  type PlanAccountSourceId,
   type PlanWindow,
   type RawUsage as CoreRawUsage,
 } from '@exawatt/core';
@@ -46,6 +47,14 @@ const HOUR_MS = 3_600_000;
 
 export type Harness = ConsumptionSourceId;
 
+/**
+ * A vendor account as the usage surfaces key it (ENG-038 slice 4): a
+ * ledgered source, or an account read without a local ledger (Google, through
+ * Antigravity). Samples and Sessions stay keyed by `Harness`; only the
+ * account-level views widen.
+ */
+export type AccountSource = PlanAccountSourceId;
+
 /** A Consumption source's display name: its Agent Source's declared label. */
 export const HARNESS_LABEL = Object.fromEntries(
   Object.entries(CONSUMPTION_SOURCE_HARNESS).map(([source, harness]) => [
@@ -53,6 +62,17 @@ export const HARNESS_LABEL = Object.fromEntries(
     agentSourceDeclaration(harness).label,
   ])
 ) as Record<Harness, string>;
+
+/**
+ * The app an account is read THROUGH, for the sentence that names what failed
+ * ("Antigravity isn't installed on this machine."). Ledgered sources use their
+ * Agent Source's declared label; Antigravity's declaration belongs to ENG-003
+ * S5.3, so until it lands the name is stated here.
+ */
+export const ACCOUNT_APP: Record<AccountSource, string> = {
+  ...HARNESS_LABEL,
+  antigravity: 'Antigravity',
+};
 
 /** Stated once on the page that shows account figures (ENG-038). */
 export const ACCOUNT_SCOPE_NOTE =
@@ -230,7 +250,8 @@ export interface AccountReadView {
  */
 export interface ConsumptionSourceView {
   key: string;
-  harness: Harness;
+  /** The account this view describes; a ledgerless one has no samples. */
+  harness: AccountSource;
   label: string;
   /** Codex reports plan_type; Claude Code reports nothing. */
   planType: string | null;

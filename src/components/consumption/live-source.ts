@@ -38,6 +38,7 @@ import {
   weightUsage,
   type ConsumptionSample,
   type ConsumptionSourceId,
+  type PlanAccountSourceId,
   type PlanWindow,
   type ProviderPlanAccountState,
 } from '@exawatt/core';
@@ -160,8 +161,8 @@ function msOrNull(iso: string | null): number | null {
 /** Snapshot account state → the view-model's account read, one per source. */
 export function accountReads(
   accounts: readonly ProviderPlanAccountState[] | undefined
-): Partial<Record<ConsumptionSourceId, AccountReadView>> {
-  const out: Partial<Record<ConsumptionSourceId, AccountReadView>> = {};
+): Partial<Record<PlanAccountSourceId, AccountReadView>> {
+  const out: Partial<Record<PlanAccountSourceId, AccountReadView>> = {};
   for (const account of accounts ?? []) {
     const observedAtMs = account.observedAt
       ? Date.parse(account.observedAt)

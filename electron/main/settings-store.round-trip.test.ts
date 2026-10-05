@@ -76,6 +76,7 @@ const FIXTURES: {
   reentryRecap: { enabled: false },
   claudePlanWindows: { enabled: false },
   codexPlanWindows: { enabled: false },
+  googlePlanWindows: { enabled: false },
   safety: { processKillGuard: true },
   operatorProfile: {
     autoPublish: true,

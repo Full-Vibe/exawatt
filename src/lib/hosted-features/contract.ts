@@ -50,6 +50,7 @@ export const OWN_ACCOUNT_FEATURE_IDS = [
   'reentryRecap',
   'claudePlanWindows',
   'codexPlanWindows',
+  'googlePlanWindows',
 ] as const;
 
 export type OwnAccountFeatureId = (typeof OWN_ACCOUNT_FEATURE_IDS)[number];
@@ -213,6 +214,23 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     // Exawatt's signature, so no distribution declaration gates it.
     requiresDistributionCapability: null,
   },
+  googlePlanWindows: {
+    id: 'googlePlanWindows',
+    // ENG-038 slice 4: the Google account Antigravity draws on. "Weekly
+    // limits" per model group is Antigravity's own vocabulary.
+    label: 'Google plan usage',
+    purpose:
+      'Shows your Google weekly limits for Gemini and for Claude and GPT models in the Usage meter and page.',
+    sends:
+      'Nothing from Exawatt. Your own Antigravity app asks your Google account for its usage, under the sign-in Antigravity already keeps. Exawatt never reads that sign-in or your Antigravity conversations.',
+    destination:
+      'Google, through your own Antigravity sign-in, never Exawatt',
+    cost: 'Google shows no plan limits here.',
+    defaultEnabled: true,
+    // Genuinely null, like the Claude and Codex reads: the request is made
+    // by the operator's own `agy` binary under its own firewall identity.
+    requiresDistributionCapability: null,
+  },
   operatorProfile: {
     id: 'operatorProfile',
     // "Publishing" is the word the leaderboard panel's switch carries; this
@@ -251,6 +269,7 @@ export interface HostedFeaturePreferences {
   reentryRecap?: { enabled: boolean };
   claudePlanWindows?: { enabled: boolean };
   codexPlanWindows?: { enabled: boolean };
+  googlePlanWindows?: { enabled: boolean };
   operatorProfile?: { autoPublish: boolean };
 }
 
@@ -288,6 +307,13 @@ export function isCodexPlanWindowsEnabled(
 ): boolean {
   if (!preferences) return OUTBOUND_CONTROLS.codexPlanWindows.defaultEnabled;
   return preferences.codexPlanWindows?.enabled !== false;
+}
+
+export function isGooglePlanWindowsEnabled(
+  preferences: HostedFeaturePreferences | null | undefined
+): boolean {
+  if (!preferences) return OUTBOUND_CONTROLS.googlePlanWindows.defaultEnabled;
+  return preferences.googlePlanWindows?.enabled !== false;
 }
 
 /**

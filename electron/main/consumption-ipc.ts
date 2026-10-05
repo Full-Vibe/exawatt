@@ -21,6 +21,7 @@ import { handleTrusted } from './ipc-security';
 import {
   setClaudePlanWindowsEnabled,
   setCodexPlanWindowsEnabled,
+  setGooglePlanWindowsEnabled,
   setUsageAlertLeadMinutes,
   setUsageAlerts,
 } from './settings-store';
@@ -63,7 +64,11 @@ interface SwitchableAccount {
 export function registerConsumptionIPC(
   windows: () => readonly BrowserWindow[],
   scanner: ConsumptionScannerLike = new StubConsumptionScanner(),
-  accounts: { claude?: SwitchableAccount; codex?: SwitchableAccount } = {},
+  accounts: {
+    claude?: SwitchableAccount;
+    codex?: SwitchableAccount;
+    google?: SwitchableAccount;
+  } = {},
   usageAlerts?: { check(): Promise<void> }
 ): () => void {
   if (usageAlerts) {
@@ -86,9 +91,27 @@ export function registerConsumptionIPC(
   // ENG-008 E17: spend a banked reset, only from the confirm on its card.
   handleBounded('consumption:use-reset', async (_event, source) => {
     const account =
-      source === 'claude-code' ? accounts.claude : source === 'codex' ? accounts.codex : undefined;
+      source === 'claude-code'
+        ? accounts.claude
+        : source === 'codex'
+          ? accounts.codex
+          : source === 'antigravity'
+            ? accounts.google
+            : undefined;
     return account ? account.useReset() : 'failed';
   });
+  if (accounts.google) {
+    const google = accounts.google;
+    // ENG-038 slice 4: the same contract for the Google account read through
+    // Antigravity. Off is applied before it is announced, so no `agy` starts
+    // after it.
+    handleBounded('settings:set-google-plan-windows', (_event, enabled) => {
+      google.setEnabled(enabled);
+      const settings = setGooglePlanWindowsEnabled(enabled);
+      broadcastToWindows(windows(), 'settings:changed', settings);
+      return settings;
+    });
+  }
   if (accounts.codex) {
     const codex = accounts.codex;
     // ENG-038 slice 2: the same contract for the Codex account read. Off is

@@ -52,7 +52,7 @@ import {
   type LiveSessionIdentity,
 } from './live-source';
 import type {
-  ConsumptionSourceId,
+  PlanAccountSourceId,
   PlanResetOutcome,
   PtyHarness,
 } from '@exawatt/core';
@@ -561,7 +561,7 @@ function stopped(): LiveConsumptionState {
  * the revision bump it causes pulls the restored figures into this store.
  */
 export async function spendAccountReset(
-  source: ConsumptionSourceId
+  source: PlanAccountSourceId
 ): Promise<PlanResetOutcome> {
   const api = bridge();
   if (!api?.useReset) return 'failed';

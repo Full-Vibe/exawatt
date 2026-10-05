@@ -720,7 +720,7 @@ export const architectureManifest = {
           id: 'consumption-spine',
           label: 'Consumption Spine',
           summary:
-            'Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split. Structurally separate plan-account reads share one service (throttle, last-known state, pace history, off switch) with a per-vendor reader: Claude through the signed Chromium network boundary under Claude Code\'s own sign-in, Codex through its own app-server; routine development and tests keep both closed.',
+            'Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split. Structurally separate plan-account reads share one service (throttle, last-known state, pace history, off switch) with a per-vendor reader through the operator\'s own binary and sign-in: Claude and Google (Antigravity, an account with no local ledger) through their CLIs\' own /usage, Codex through its own app-server; automated test launches keep all three closed.',
           layer: 'coordination',
           status: 'implemented',
           x: 645,

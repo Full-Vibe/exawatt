@@ -42,6 +42,9 @@ export interface TenantConsumption {
   voltaic: boolean;
   /** The Personal tenant's live local read is on screen (E5). */
   live: boolean;
+  /** The bridge exists and its first pull has not answered yet: the view is
+   *  an honest empty one, and nothing on it is a reading. */
+  pending: boolean;
   /** Scan state for the live read; null on demo corpora. */
   scan: LiveScanView | null;
   /**
@@ -68,6 +71,7 @@ export function useTenantConsumption(): TenantConsumption {
   // the honest answer where no local filesystem exists, never a substitute for
   // one that could not be read. The page says so instead of showing numbers.
   const stopped = live && liveState.status === 'paused';
+  const pending = live && liveState.status === 'pending';
   const view = useMemo(
     () =>
       voltaic
@@ -77,5 +81,12 @@ export function useTenantConsumption(): TenantConsumption {
           : demoConsumption(),
     [voltaic, live, liveState.view]
   );
-  return { view, voltaic, live, stopped, scan: live ? liveState.scan : null };
+  return {
+    view,
+    voltaic,
+    live,
+    pending,
+    stopped,
+    scan: live ? liveState.scan : null,
+  };
 }

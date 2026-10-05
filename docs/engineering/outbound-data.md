@@ -440,6 +440,38 @@ declaration gates it.
 - **Cadence**: at most one read per ~5 minutes, only while a consumption
   surface is alive.
 
+A fourth own-account path exists since 2026-10-05 (ENG-038 slice 4): **Google
+plan usage** (`electron/main/consumption/google-plan-account.ts`). Electron
+main runs the operator's own Antigravity CLI as
+`agy -p "/usage" --output-format json` through their login shell and parses the
+structured report it prints without an agent turn. Antigravity makes the
+request to Google under its own sign-in; Exawatt never reads
+`~/.gemini/oauth_creds.json`, `google_accounts.json`, or any token, never reads
+Antigravity's conversation history, and no request leaves through Exawatt's
+network identity, so no distribution declaration gates it.
+
+- **Sent**: nothing from Exawatt. The CLI is started with a fixed argument
+  list and reads nothing from Exawatt.
+- **Received and kept**: one weekly limit per model group ("Gemini Models";
+  "Claude and GPT models") as a remaining fraction and an ISO reset instant,
+  inverted to percent used and cached locally under
+  `userData/consumption-plan/google-plan.json`. The report states no plan
+  tier, so none is kept or shown. A failed or unrecognized read is never shown
+  as 0% or as fresh: the last good value stays at its true observed time and
+  the card names the cause.
+- **Purpose**: the Google card in the Usage meter and `/usage` page, the
+  "what runs out first" answer across a third vendor.
+- **Default**: on. Automated test launches never run it, and a machine with no
+  Antigravity state directory (`~/.gemini/antigravity-cli`, whose presence is
+  the only thing read there) is never asked and carries no Google account.
+- **Off**: Settings → Privacy → **Google plan usage**
+  (`googlePlanWindows.enabled`): off starts no process and serves no account
+  read.
+- **Cadence**: at most one read per ~5 minutes, only while a consumption
+  surface is alive. Antigravity exposes no switch for its own update check
+  and runs one at most every fifteen minutes on any invocation, so a read can
+  let the operator's `agy` check for its update exactly as their own use does.
+
 Everything else is local. The retired `/api/oc/token` route returns `410` and
 never reads config, account state, or credentials. In Electron, main owns the
 Agent Source config read, token/device identity, endpoint selection, and
@@ -481,6 +513,12 @@ or event.
 - Codex plan usage: `pnpm vitest run
   electron/main/consumption/codex-plan-account.test.ts`, pinned to a recorded
   answer from a real Pro account.
+- Google plan usage: `pnpm vitest run
+  electron/main/consumption/google-plan-account.test.ts`, pinned to two real
+  `agy -p "/usage"` reports (the Gemini group nearly spent, then spent). It
+  covers every unrecognized shape degrading to "couldn't read" with its cause,
+  a lost read keeping the last good windows at their true observed instant,
+  and the composite never asking a machine without Antigravity.
 - End to end: run a production build with the network inspector open, or watch
   the app's outbound connections in a firewall tool. The desktop app should
   show `exawatt.ai`, — when signed in and using hosted features — the Supabase

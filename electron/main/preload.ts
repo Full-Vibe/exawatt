@@ -285,6 +285,8 @@ const bridge = {
       invoke('settings:set-claude-plan-windows', enabled),
     setCodexPlanWindows: enabled =>
       invoke('settings:set-codex-plan-windows', enabled),
+    setGooglePlanWindows: enabled =>
+      invoke('settings:set-google-plan-windows', enabled),
     setSafetyControl: (control, enabled) =>
       invoke('settings:set-safety-control', control, enabled),
     setOperatorAutoPublish: enabled =>

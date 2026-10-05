@@ -109,6 +109,12 @@ export interface ExawattSettings<ThemeId extends string = string> {
      *  Defaults on; off starts no app-server and serves no account read. */
     enabled: boolean;
   };
+  googlePlanWindows?: {
+    /** ENG-038 slice 4: the Google account's weekly limits per model group,
+     *  asked of the operator's own `agy` (`/usage`) under its own sign-in.
+     *  Defaults on; off starts no process and serves no account read. */
+    enabled: boolean;
+  };
   /** ENG-044 safety controls, declared in `SAFETY_CONTROLS`. Every control
    *  defaults OFF: only an explicit true applies a limit to an agent. */
   safety?: SafetyControlSettings;

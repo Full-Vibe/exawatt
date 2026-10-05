@@ -5,9 +5,10 @@
  * throttled fetch that never blocks a snapshot, a last-known state persisted
  * for warm launches, a bounded history of observations so pace is
  * observable, and an operator off switch. This class is
- * that life; a vendor supplies only its `read` (Claude: the usage endpoint
- * through the operator's own `claude` binary; Codex: its own app-server). A
- * future Agent Source plugin adds an account the same way.
+ * that life; a vendor supplies only its `read` (Claude: `/usage` through the
+ * operator's own `claude` binary; Codex: its own app-server; Google: `/usage`
+ * through the operator's own `agy`). A future Agent Source plugin adds an
+ * account the same way.
  *
  * Failure semantics: never zero, never fresh. A failed read leaves the last
  * successful observation in place with its TRUE `observedAt` (the renderer's
@@ -22,8 +23,8 @@ import type { ConfigFileUnreadableCause } from '@exawatt/core/server';
 import {
   WindowObservationAccumulator,
   derivePlanWindowRates,
-  type ConsumptionSourceId,
   type PlanAccountFailureCause,
+  type PlanAccountSourceId,
   type PlanCreditBalance,
   type PlanResetOutcome,
   type PlanResets,
@@ -76,17 +77,26 @@ export interface PlanAccountView {
 
 /** What the plan composite needs from any account read. */
 export interface PlanAccountSource {
-  /** Which harness's account this reads. Cheap; never builds a view. */
-  readonly source: ConsumptionSourceId;
+  /** Which account this reads: a ledgered source, or a vendor account read
+   *  without one (ENG-038 slice 4). Cheap; never builds a view. */
+  readonly source: PlanAccountSourceId;
   /** Monotonic within a launch. Cheap; never builds a view. */
   readonly revision: number;
   view(): PlanAccountView;
   maybeRefresh(): Promise<void>;
   onUpdated(listener: () => void): () => void;
+  /**
+   * Whether the harness this account is read through is present on this
+   * machine. The composite learns a LEDGERED harness's presence from the
+   * corpus; an account with no ledger states it here, so a machine without
+   * that harness is never asked and never carries the account. Absent means
+   * the corpus decides.
+   */
+  installed?(): boolean;
 }
 
 interface PlanAccountServiceOptions {
-  source: ConsumptionSourceId;
+  source: PlanAccountSourceId;
   /** Directory this service may write. Its ONLY write path. */
   stateDir: string;
   stateFileName: string;
@@ -173,7 +183,7 @@ const PLAN_STATE_FILE = jsonStateGrammar<PersistedPlanState>(value => {
 });
 
 export class PlanAccountService implements PlanAccountSource {
-  readonly source: ConsumptionSourceId;
+  readonly source: PlanAccountSourceId;
   private readonly allowed: boolean;
   private readonly stateDir: string;
   private readonly stateFileName: string;

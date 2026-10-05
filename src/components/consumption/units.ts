@@ -54,6 +54,23 @@ export function modelledDollars(weightedTokens: number): number {
 }
 
 /**
+ * A modelled hourly rate as the burn line prints it: "$12/hour", "$0.40/hour"
+ * (ENG-008 E16). Cents only under ten dollars; the figure is a model at the
+ * list basis above, never a bill, so more precision would overstate it.
+ */
+export function modelledHourly(dollarsPerHour: number): string {
+  const value = Math.max(0, dollarsPerHour);
+  const digits = value > 0 && value < 10 ? 2 : 0;
+  const money = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value);
+  return `${money}/hour`;
+}
+
+/**
  * A vendor's own plan-credit figure, in its own currency (ENG-038).
  *
  * MEASURED, not modelled — the vendor reported it — which is exactly why it

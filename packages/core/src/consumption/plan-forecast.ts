@@ -11,7 +11,7 @@
  * Pure: no clock, no IO. Wall-clock phrasing takes an optional IANA zone so
  * tests, the scenario workbench and main all phrase deterministically.
  */
-import type { ConsumptionSourceId, PlanWindow } from './types';
+import type { PlanAccountSourceId, PlanWindow } from './types';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -126,12 +126,14 @@ export function observedAverageRate(window: PlanWindow): number {
 /**
  * The vendor ACCOUNT a harness draws on, named the way the operator names it.
  * A plan window meters the whole account (claude.ai chat included), so
- * account surfaces say "Claude", never the tool sharing its sign-in.
+ * account surfaces say "Claude", never the tool sharing its sign-in. Keyed by
+ * every account a plan read can describe, ledgered or not (ENG-038 slice 4).
  */
-export const CONSUMPTION_ACCOUNT_NAME: Record<ConsumptionSourceId, string> = {
+export const CONSUMPTION_ACCOUNT_NAME: Record<PlanAccountSourceId, string> = {
   'claude-code': 'Claude',
   codex: 'Codex',
   grok: 'Grok',
+  antigravity: 'Google',
 };
 
 /**

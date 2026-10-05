@@ -280,6 +280,12 @@ integrated affordances, both still provisional until the Friday checkpoint.
   a failed Google read shows the account as unreadable, not as zero.
 - **May start:** the Google read probe now; the card after G3 step 0 confirms
   the installed `agy` version.
+- **Landed 2026-10-05** (ENG-008 E16, ENG-038 slice 4): the burn line reads
+  the trailing ten minutes per ledgered vendor with modelled dollars labelled;
+  the Google card reads `agy` 1.2.17's structured `/usage` report (weekly
+  limits per model group, no plan tier) through the shared account service,
+  keyed `antigravity` as G3 declares it, with no change to G3's files. The
+  Demo workspace shows three vendors. Narrative in `consumption-spine.md` §E16.
 
 ### G5 · Landings inside the roadmap lens
 

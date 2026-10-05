@@ -389,6 +389,10 @@ const SETTINGS_SCHEMA: {
     const enabled = explicitBoolean(raw, 'enabled');
     return enabled === undefined ? undefined : { enabled };
   },
+  googlePlanWindows: raw => {
+    const enabled = explicitBoolean(raw, 'enabled');
+    return enabled === undefined ? undefined : { enabled };
+  },
   // Opposite polarity from every switch above: absent means OFF (decision
   // `0029` — publishing is opt-in), so a malformed key falls back to not
   // publishing rather than silently opting the operator in.
@@ -579,6 +583,7 @@ function validStoredSettings(value: unknown): boolean {
     reentryRecap: ['enabled'],
     claudePlanWindows: ['enabled'],
     codexPlanWindows: ['enabled'],
+    googlePlanWindows: ['enabled'],
     safety: SAFETY_CONTROLS.map(control => control.id),
     operatorProfile: [
       'autoPublish',
@@ -679,6 +684,7 @@ function recoverySettings(): StoredSettings {
     reentryRecap: { enabled: false },
     claudePlanWindows: { enabled: false },
     codexPlanWindows: { enabled: false },
+    googlePlanWindows: { enabled: false },
     operatorProfile: { autoPublish: false },
   };
 }
@@ -940,6 +946,13 @@ export function setCodexPlanWindowsEnabled(enabled: boolean): StoredSettings {
   return settings;
 }
 
+export function setGooglePlanWindowsEnabled(enabled: boolean): StoredSettings {
+  const settings = loadSettings();
+  settings.googlePlanWindows = { enabled };
+  writeSettings(settings);
+  return settings;
+}
+
 export function setSafetyControl(
   control: SafetyControlId,
   enabled: boolean
@@ -958,6 +971,11 @@ export function isClaudePlanWindowsEnabled(settings: StoredSettings): boolean {
 /** Default ON, same convention (ENG-038 slice 2). */
 export function isCodexPlanWindowsEnabled(settings: StoredSettings): boolean {
   return settings.codexPlanWindows?.enabled !== false;
+}
+
+/** Default ON, same convention (ENG-038 slice 4). */
+export function isGooglePlanWindowsEnabled(settings: StoredSettings): boolean {
+  return settings.googlePlanWindows?.enabled !== false;
 }
 
 function normalizedTimestamp(value: unknown): string | null {
