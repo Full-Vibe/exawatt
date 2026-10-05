@@ -61,6 +61,38 @@ describe('HookSettingsStore', () => {
     ).toEqual([]);
   });
 
+  it('writes a per-launch directory for sources that scan one, owner-only', async () => {
+    const directory = await store.writeDirectory(
+      'pty-7',
+      '.agents/hooks.json',
+      '{"exawatt-stop":{}}'
+    );
+    expect(directory).toBe(path.join(root, 'harness-events', 'pty-7'));
+    const file = path.join(directory!, '.agents', 'hooks.json');
+    expect(await fs.promises.readFile(file, 'utf8')).toBe('{"exawatt-stop":{}}');
+    expect((await fs.promises.stat(file)).mode & 0o777).toBe(0o600);
+    expect((await fs.promises.stat(directory!)).mode & 0o777).toBe(0o700);
+    // remove takes the whole directory, and a sweep on the next run does too
+    await store.remove('pty-7');
+    expect(fs.existsSync(directory!)).toBe(false);
+    await store.writeDirectory('pty-8', '.agents/hooks.json', '{}');
+    const next = new HookSettingsStore(path.join(root, 'harness-events'));
+    await next.initialize();
+    expect(
+      await fs.promises.readdir(path.join(root, 'harness-events'))
+    ).toEqual([]);
+  });
+
+  it('refuses a relative file that would leave the launch directory', async () => {
+    expect(
+      await store.writeDirectory('pty-7', '../escape.json', '{}')
+    ).toBeNull();
+    expect(await store.writeDirectory('../up', '.agents/hooks.json', '{}')).toBeNull();
+    expect(
+      await fs.promises.readdir(path.join(root, 'harness-events'))
+    ).toEqual([]);
+  });
+
   it('refuses a session id that could escape the directory', async () => {
     expect(await store.write('../escape', '{}')).toBeNull();
     expect(await store.write('a/b', '{}')).toBeNull();

@@ -9,6 +9,7 @@ export const AGENT_HARNESSES = [
   'opencode',
   'grok',
   'qwen',
+  'antigravity',
 ] as const;
 
 /** Every declared Agent Source, in contract order. */
@@ -18,6 +19,7 @@ export const AGENT_SOURCE_ADAPTER_IDS = [
   'opencode',
   'grok',
   'qwen',
+  'antigravity',
   'openclaw',
   'demo',
 ] as const;
@@ -29,6 +31,7 @@ export const AGENT_SOURCE_CATALOG_IDS = [
   'opencode',
   'grok',
   'qwen',
+  'antigravity',
   'openclaw',
   'demo',
   'custom',

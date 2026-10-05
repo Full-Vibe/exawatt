@@ -208,6 +208,14 @@ describe('processKillGuardVerdict', () => {
     );
   });
 
+  it('protects Antigravity, whose native binary is named agy', async () => {
+    const box = machine(
+      world({ 61: { ppid: 1, exe: '/Users/op/.local/bin/agy', args: 'agy -i fix' } }),
+      { '-x agy': [61] }
+    );
+    expect(await refusal('pkill -x agy', box)).toContain('agy');
+  });
+
   it('refuses a pattern broad enough to be nobody’s own work, counting what pgrep matched', async () => {
     const pids = Array.from({ length: MAX_MATCHES + 1 }, (_, i) => 500 + i);
     // The table lists none of them: the count is the dry run's, not ps's.

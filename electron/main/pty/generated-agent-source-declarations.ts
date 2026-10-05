@@ -107,6 +107,27 @@ export const AGENT_SOURCE_DECLARATIONS = [
     },
   },
   {
+    adapterId: 'antigravity',
+    harness: 'antigravity',
+    label: 'Antigravity',
+    connectionName: 'Local CLI',
+    color: '#7FB7FF',
+    installationGuideUrl: 'https://antigravity.google/docs/cli',
+    description:
+      'Use the locally installed Antigravity CLI from Google. Exawatt sees when it works and finishes; it does not yet report when it needs you.',
+    capabilities: {
+      interactiveLaunch: true,
+      initialTask: true,
+      exactResume: true,
+      modelSelection: 'live-catalog',
+      effortSelection: 'source-owned',
+      permissionModes: ['prompt', 'auto', 'unrestricted'],
+      delegationObservation:
+        'Antigravity reports a delegation start and no completion, so delegated work is not shown',
+      enforcementOwner: 'Antigravity',
+    },
+  },
+  {
     adapterId: 'openclaw',
     harness: null,
     label: 'OpenClaw',

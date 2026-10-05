@@ -21,6 +21,12 @@ import {
   readQwenUserSettings,
   type QwenSettingsRead,
 } from './qwen-source';
+import {
+  parseAntigravityModelRows,
+  readAntigravityConfiguredModel,
+  readAntigravitySettings,
+  type AntigravitySettingsRead,
+} from './antigravity-source';
 import type {
   AgentEffortOption,
   AgentModelCatalog,
@@ -748,6 +754,92 @@ export function qwenModelCatalog(read: QwenSettingsRead): AgentModelCatalog {
   };
 }
 
+/**
+ * Antigravity publishes its catalog through `agy models`, a network call that
+ * needs the account's sign-in, one `<id><TAB><label>` row per model (ENG-003
+ * S5.3). Its settings record the model its own picker chose as a LABEL, so
+ * the catalog pins the row that label names and pins nothing when no row
+ * matches. With no rows the source chooses and Exawatt pins nothing: the
+ * launch runs on the account's default, as a terminal `agy` would. Quota is
+ * not part of this catalog; a model whose quota is spent is still a model the
+ * account can name, and the turn's own error is what reports the wall.
+ */
+export function antigravityModelCatalog(
+  output: string,
+  settings: AntigravitySettingsRead
+): AgentModelCatalog {
+  const models: AgentModelOption[] = parseAntigravityModelRows(output)
+    .filter(row => isValidAgentModel(row.id))
+    .map(row => ({
+      id: row.id,
+      label: row.label,
+      description: 'Reported by the installed Antigravity CLI.',
+      defaultEffort: null,
+      efforts: [],
+    }));
+  const unreadable = settings.status === 'unreadable';
+  const configured = unreadable
+    ? null
+    : readAntigravityConfiguredModel(
+        settings.status === 'ok' ? settings.value : null
+      );
+  const effective = configured
+    ? (models.find(
+        model => model.id === configured || model.label === configured
+      ) ?? null)
+    : null;
+  return {
+    harness: 'antigravity',
+    effectiveModel: effective?.id ?? null,
+    effectiveModelLabel:
+      effective?.label ?? (unreadable ? 'Unknown' : 'Account default'),
+    effectiveModelSource: effective
+      ? 'config'
+      : unreadable
+        ? 'unavailable'
+        : 'account-default',
+    effectiveEffort: null,
+    effectiveEffortLabel: 'Source default',
+    effectiveEffortSource: 'unavailable',
+    effortLocked: false,
+    models,
+    catalogMode: models.length > 0 ? 'live-catalog' : 'source-owned',
+    catalogProvenance:
+      models.length > 0
+        ? 'Installed Antigravity CLI · agy models'
+        : 'Antigravity chooses the model; agy models listed none',
+    ...(unreadable ? { configurationUnreadable: true } : {}),
+    observedAt: Date.now(),
+    selectionAction: null,
+  };
+}
+
+/**
+ * `agy models` fetches the catalog from the account, so it gets the deadline
+ * the other network catalogs do. Measured at about 1 s signed in on 1.2.17.
+ */
+export async function readAntigravityModelCatalog(
+  cwd: string,
+  shell: string
+): Promise<AgentModelCatalog> {
+  let stdout = '';
+  try {
+    const executable = testHarnessExecutable('agy');
+    const catalogCommand = executable
+      ? `${shellQuote(executable)} models`
+      : 'agy models';
+    const result = await execWithDeadline(shell, catalogCommand, {
+      cwd,
+      timeout: 20_000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    stdout = result.stdout;
+  } catch {
+    // A failed probe leaves the catalog source-owned: no row is invented.
+  }
+  return antigravityModelCatalog(stdout, readAntigravitySettings());
+}
+
 interface ClaudeSettings {
   model?: unknown;
   effortLevel?: unknown;
@@ -1429,6 +1521,7 @@ const MODEL_CATALOG_READERS: Record<
     listOpencodeModels(cwd, shell, environment, refresh),
   grok: ({ cwd, shell }) => readGrokModelCatalog(cwd, shell),
   qwen: async () => qwenModelCatalog(readQwenUserSettings()),
+  antigravity: ({ cwd, shell }) => readAntigravityModelCatalog(cwd, shell),
 };
 
 async function probeAgentModels(

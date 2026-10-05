@@ -463,6 +463,7 @@ Examples:
 - OpenCode
 - Grok Build
 - Qwen Code
+- Antigravity
 - custom harness
 - Demo Scenario Source
 

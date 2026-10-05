@@ -786,4 +786,113 @@ describe('buildHarnessCommand', () => {
       expect(source.authSessionCommand).toBe('/auth');
     });
   });
+  describe('Antigravity CLI (ENG-003 S5.3)', () => {
+    const CONVERSATION = '68e001df-1f10-47c3-b5a1-5e0ce3fd8525';
+
+    it('launches without allocating identity and resumes the exact conversation', () => {
+      // No flag allocates a conversation id; the first hook payload names it.
+      expect(harnessDescriptor('antigravity').allocatesFreshSessionId).toBe(
+        false
+      );
+      expect(buildHarnessCommand('antigravity', null, false)).toBe(
+        'agy --dangerously-skip-permissions'
+      );
+      expect(buildHarnessCommand('antigravity', CONVERSATION, true)).toBe(
+        `agy --dangerously-skip-permissions --conversation=${CONVERSATION}`
+      );
+    });
+
+    it('keeps an initial task interactive with -i', () => {
+      // `-p` runs one turn and exits (measured on 1.2.17).
+      expect(
+        buildHarnessCommand(
+          'antigravity',
+          null,
+          false,
+          undefined,
+          'fix the build'
+        )
+      ).toBe(`agy --dangerously-skip-permissions -i 'fix the build'`);
+    });
+
+    it('maps every permission mode onto a real Antigravity mode', () => {
+      const descriptor = harnessDescriptor('antigravity');
+      // Review is the default and needs no flag.
+      expect(descriptor.permissionFlags('prompt')).toBe('');
+      expect(descriptor.permissionFlags('auto')).toBe('--mode accept-edits');
+      expect(descriptor.permissionFlags('unrestricted')).toBe(
+        '--dangerously-skip-permissions'
+      );
+      expect(
+        buildHarnessCommand(
+          'antigravity',
+          null,
+          false,
+          undefined,
+          undefined,
+          'prompt'
+        )
+      ).toBe('agy');
+    });
+
+    it('pins a model and never invents an effort flag', () => {
+      expect(
+        buildHarnessCommand(
+          'antigravity',
+          null,
+          false,
+          undefined,
+          undefined,
+          'auto',
+          'claude-sonnet-4-6',
+          'high'
+        )
+      ).toBe(`agy --mode accept-edits --model 'claude-sonnet-4-6'`);
+    });
+
+    it('subscribes through an added workspace directory, never the user config', () => {
+      const { eventChannel } = harnessDescriptor('antigravity');
+      expect(eventChannel?.document).toEqual({
+        kind: 'directory',
+        file: '.agents/hooks.json',
+      });
+      expect(eventChannel?.learnsSessionId).toBe(true);
+      expect(
+        buildHarnessCommand(
+          'antigravity',
+          null,
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { eventChannelSettingsPath: '/tmp/exawatt hooks/pty-1' }
+        )
+      ).toBe(
+        `agy --dangerously-skip-permissions --add-dir '/tmp/exawatt hooks/pty-1'`
+      );
+    });
+
+    it('never passes the flags that rewrite the operator’s environment', () => {
+      const command = buildHarnessCommand(
+        'antigravity',
+        CONVERSATION,
+        true,
+        undefined,
+        undefined,
+        'unrestricted',
+        'gpt-oss-120b-medium',
+        undefined,
+        { eventChannelSettingsPath: '/tmp/hooks/pty-1', cwd: '/work/app' }
+      );
+      for (const forbidden of ['--gemini_dir', 'install', '--continue', ' -c ']) {
+        expect(command).not.toContain(forbidden);
+      }
+      const { source } = harnessDescriptor('antigravity');
+      expect(source.executable).toBe('agy');
+      expect(source.authLoginArgs).toEqual([]);
+      expect(source.authStatusArgs).toEqual(['models']);
+    });
+  });
 });

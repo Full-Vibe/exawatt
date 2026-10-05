@@ -122,6 +122,7 @@ export const FIXTURE_CODEX_CATALOG_JSON = JSON.stringify({
 const FIXTURE_OPENCODE_VERSION = '1.3.4';
 const FIXTURE_GROK_VERSION = 'grok 1.0.3 (evalbuild)';
 const FIXTURE_QWEN_VERSION = '0.24.4';
+const FIXTURE_ANTIGRAVITY_VERSION = '1.2.17';
 const FIXTURE_OPENCLAW_VERSION = 'OpenClaw 2026.8.0-eval';
 
 /** The first line after the shebang of every fake harness this module writes.
@@ -202,6 +203,20 @@ const PROBES = Object.freeze({
   qwen: {
     version: { argv: ['--version'], answer: FIXTURE_QWEN_VERSION },
   },
+  // Antigravity's binary is `agy`; the product resolves the fixture by that
+  // name for its probes and by the harness name for a launch, so an eval
+  // writes this fixture once and copies it to both names.
+  antigravity: {
+    version: { argv: ['--version'], answer: FIXTURE_ANTIGRAVITY_VERSION },
+    models: {
+      argv: ['models'],
+      answer: [
+        'Fetching available models...',
+        'fixture-flash-medium\tFixture Flash (Medium)',
+        'fixture-sonnet\tFixture Sonnet (Thinking)',
+      ],
+    },
+  },
   openclaw: {
     version: { argv: ['--version'], answer: FIXTURE_OPENCLAW_VERSION },
   },
@@ -210,6 +225,20 @@ const PROBES = Object.freeze({
 /** Every harness a fixture can stand in for. The boundary test holds this to
  *  every local CLI in `contracts/agent-sources.json`. */
 export const FAKE_HARNESSES = Object.freeze(Object.keys(PROBES));
+
+/** A harness whose binary is not named after it. The product resolves every
+ *  source by its binary (`harnessDescriptor(...).source.executable`), so the
+ *  fixture is written under that name. */
+const EXECUTABLES = Object.freeze({ antigravity: 'agy' });
+
+/** The file name a fake `harness` is written as. */
+export function fakeHarnessExecutable(harness) {
+  return EXECUTABLES[harness] ?? harness;
+}
+
+const HARNESS_BY_EXECUTABLE = new Map(
+  FAKE_HARNESSES.map(harness => [fakeHarnessExecutable(harness), harness])
+);
 
 const shQuote = value => `'${String(value).replace(/'/g, `'"'"'`)}'`;
 
@@ -321,7 +350,7 @@ export function writeFakeHarness(
   } else {
     throw new Error(`Unknown fake harness runtime "${runtime}"`);
   }
-  const executable = join(bin, harness);
+  const executable = join(bin, fakeHarnessExecutable(harness));
   writeFileSync(executable, source);
   chmodSync(executable, 0o755);
   return executable;
@@ -349,9 +378,10 @@ export function assertFixtureHarnesses(env = {}) {
   for (const directory of directories) {
     if (!existsSync(directory)) continue;
     for (const name of readdirSync(directory)) {
-      if (!FAKE_HARNESSES.includes(name)) continue;
+      const harness = HARNESS_BY_EXECUTABLE.get(name);
+      if (!harness) continue;
       const head = readFileSync(join(directory, name), 'utf8').slice(0, 256);
-      if (!head.split('\n')[1]?.includes(`${FAKE_HARNESS_MARKER} ${name}`)) {
+      if (!head.split('\n')[1]?.includes(`${FAKE_HARNESS_MARKER} ${harness}`)) {
         throw new Error(
           `${join(directory, name)} is a fake ${name} that writeFakeHarness ` +
             'did not write, so nothing guarantees it answers the questions the ' +

@@ -138,6 +138,10 @@ const SOURCE_MARKS = {
   // Not drawn: Qwen's terms forbid displaying its marks without Alibaba's
   // prior written consent. See LICENSES/brand/harness-marks.md.
   qwen: null,
+  // Not drawn: Google permits only Google-approved artwork, unaltered, and
+  // every mark here is recoloured to the surrounding ink. See
+  // LICENSES/brand/harness-marks.md.
+  antigravity: null,
   openclaw: OpenClawIcon,
   demo: null,
 } as const satisfies Record<AgentSourceAdapterId, SourceMarkComponent | null>;

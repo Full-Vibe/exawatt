@@ -207,6 +207,32 @@ Every URL below was fetched on **2026-08-18**.
 
 ---
 
+## Antigravity, no mark shipped
+
+- **Vendor / product:** Google LLC. Antigravity, and the Antigravity CLI
+  (`agy`) harness.
+- **Why no mark:** Google's trademark guidelines for proper usage
+  (`https://partnermarketinghub.withgoogle.com/brands/google/trademarks-and-terms/trademark-guidelines-for-proper-usage/`,
+  the page `https://about.google/brand-resource-center/rules/` redirects to,
+  read on 2026-10-05) state: "DO Use only Google-approved artwork when using
+  Google's logos." and "Don't remove, distort, or alter any element of a
+  Google Brand Feature." The Brand Resource Center's permissions guidance
+  (`https://about.google/brand-resource-center/guidance/`, read the same day)
+  requires a request first for most uses of Google brand elements, permits
+  referencing Google "in plain text in books, articles, websites, etc., as
+  long as you follow our Trademark Rules", and forbids imitating "Google's
+  logo or visual identity (distinctive color combinations, graphic designs,
+  product icons, or imagery associated with Google)". Every mark in this
+  registry is recoloured to the surrounding ink, which is an alteration, and
+  no Google-approved artwork was obtained.
+- **What ships instead:** `SOURCE_MARKS.antigravity` is `null`, so every
+  surface draws its own fallback beside the plain-text product name, which
+  the guidelines permit, and the source's identity colour does the rest.
+- **Remedy:** obtain Google-approved artwork and permission through the Brand
+  Resource Center, then add the mark with its provenance here.
+
+---
+
 ## If a vendor objects
 
 Delete the component and fall back to the text label beside it. Nothing in the UI depends on a

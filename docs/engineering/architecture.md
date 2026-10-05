@@ -799,7 +799,7 @@ configured values or an account-default sentinel and source-owned selection
 action. Product code never promotes fixture aliases into source truth.
 
 Every harness configuration or credential file (Claude layered settings,
-Codex `config.toml`, Qwen settings, OpenClaw `openclaw.json` and its secret
+Codex `config.toml`, Qwen and Antigravity settings, OpenClaw `openclaw.json` and its secret
 files) is read through one boundary, `readConfigFile` in
 `@exawatt/core/server`, with the owning program's own grammar: Claude's
 strict JSON with a byte-order mark skipped and a blank file empty, Codex's
@@ -965,7 +965,7 @@ Provider/runtime boundaries:
 - Agent Source / Harness adapters
 - local OpenClaw gateway
 - customer-hosted and Exawatt-hosted OpenClaw gateways
-- Codex / Claude Code / OpenCode / Grok Build / Qwen Code adapters
+- Codex / Claude Code / OpenCode / Grok Build / Qwen Code / Antigravity adapters
 - Demo Harness / Demo Scenario Source
 - custom harnesses
 - local machine
@@ -1123,6 +1123,21 @@ Built:
   normalizer, because the event names match Claude Code's but their meanings
   do not, and a per-launch session filter drops posts from any other Qwen
   session that inherits the launch environment.
+  Antigravity CLI (`agy`) lists its catalog through `agy models`, a network
+  call that doubles as the sign-in evidence, and records its picker's choice
+  as a label that the catalog matches to an id. Its hooks are commands only,
+  carry no event name, and load from `.agents/hooks.json` in any workspace
+  directory, so Exawatt writes one owner-only directory per launch and adds
+  it with `--add-dir`; each subscribed event gets its own command, which
+  wraps the payload in an envelope naming the event before posting it. The
+  CLI has no flag to allocate a conversation id, so the first payload's
+  `conversationId` becomes the Session's identity (`--conversation=<id>`
+  resumes it), and posts naming another conversation are dropped. It reports
+  no permission or question event, so "needs you" is declared absent, and
+  `invoke_subagent` has no completion event, so delegation is declared
+  unobservable. Its native history is the SQLite index
+  `conversation_summaries.db`, read read-only through `node:sqlite`; the
+  prompt-bearing `history.jsonl` and `preview` column are never read.
   Environment-owned effort constraints remain visible and non-editable because
   they outrank session flags. Successful launches alone train a Project-ranked
   app-wide Launch Configuration pool; Project pins, All/Customize, exact

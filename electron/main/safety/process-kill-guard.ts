@@ -58,6 +58,8 @@ const HARNESS_NAMES = new Set([
   'gemini',
   'qwen',
   'grok',
+  // Antigravity CLI ships as one native binary named `agy`.
+  'agy',
 ]);
 /** npm-installed harnesses run as `node <script>`; the script names them. */
 const HARNESS_PACKAGE =

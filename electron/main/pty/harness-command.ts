@@ -77,7 +77,11 @@ export function buildHarnessCommand(
     throw new Error('Event channel settings path must be absolute');
   }
   const descriptor = harnessDescriptor(harness);
-  const command = executable ? shellQuote(executable) : descriptor.id;
+  // The source's binary, not its id: Antigravity's harness is `antigravity`
+  // and its executable is `agy`.
+  const command = executable
+    ? shellQuote(executable)
+    : descriptor.source.executable;
   const power = wiring.powerControl;
   const sleepControl = descriptor.sleepControl;
   if (

@@ -32,6 +32,10 @@ import {
   qwenRuntimeRoot,
   type QwenTranscriptHead,
 } from './qwen-source';
+import {
+  antigravitySummariesFile,
+  readAntigravityConversationSummaries,
+} from './antigravity-source';
 import { planLoginShell, shellQuote } from './login-shell';
 import type {
   ClosedSessionEntry,
@@ -1365,6 +1369,62 @@ export class QwenConversationAdapter implements ConversationCatalogAdapter {
   }
 }
 
+/**
+ * Antigravity's retained history (ENG-003 S5.3): its own SQLite index of
+ * every conversation, `conversation_summaries.db`, read read-only. Each row
+ * names its workspace directories, so a conversation belongs to a Project
+ * when one of them is inside it; Exawatt's own per-launch hooks directory is
+ * also a workspace path and never matches. Titles are the ones Antigravity
+ * generated; the first prompt (`preview`) is never read.
+ */
+export class AntigravityConversationAdapter implements ConversationCatalogAdapter {
+  readonly harnesses = ['antigravity'] as const;
+
+  constructor(
+    private readonly summariesFile?: string,
+    private readonly maxSessions = 200
+  ) {}
+
+  async list(projectDir: string): Promise<ConversationDraft[]> {
+    const summaries = readAntigravityConversationSummaries(
+      this.summariesFile ?? antigravitySummariesFile(),
+      this.maxSessions
+    );
+    const scope = await ProjectDirectoryScope.create(projectDir);
+    const rows: ConversationDraft[] = [];
+    for (const summary of summaries) {
+      let launchDirectory: string | null = null;
+      for (const workspace of summary.workspacePaths) {
+        launchDirectory = await scope.launchDirectory(workspace);
+        if (launchDirectory) break;
+      }
+      if (!launchDirectory) continue;
+      rows.push({
+        id: summary.id,
+        harness: 'antigravity',
+        cwd: launchDirectory,
+        startedAt: summary.startedAt,
+        updatedAt: summary.updatedAt,
+        title: summary.title
+          ? truncate(summary.title, MAX_TITLE_CHARS)
+          : 'Antigravity conversation',
+        description: null,
+        titleSource: summary.title ? 'native' : 'fallback',
+        needsSummary: false,
+        providerSessionId: summary.id,
+        continuation: { kind: 'provider' },
+        fingerprint: `antigravity:${summary.updatedAt}`,
+        summaryInput: [],
+        providerIdentity: summary.id,
+        correlationKey: null,
+      });
+    }
+    return rows.sort(
+      (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
+    );
+  }
+}
+
 interface RecentFile {
   file: string;
   mtimeMs: number;
@@ -1454,6 +1514,7 @@ const NATIVE_HISTORY_ADAPTERS: Record<
     new OpenCodeConversationAdapter(openCodeShell),
   grok: () => new GrokConversationAdapter(),
   qwen: () => new QwenConversationAdapter(),
+  antigravity: () => new AntigravityConversationAdapter(),
 };
 
 export function nativeHistoryAdapter(

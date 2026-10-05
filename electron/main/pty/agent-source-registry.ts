@@ -36,6 +36,10 @@ import {
   readQwenSignIn,
   readQwenUserSettings,
 } from './qwen-source';
+import {
+  parseAntigravityModelRows,
+  parseAntigravityVersion,
+} from './antigravity-source';
 import { planLoginShell, shellQuote } from './login-shell';
 import {
   parseGrokAuthBanner,
@@ -1863,6 +1867,175 @@ async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
 }
 
 /**
+ * Antigravity CLI (ENG-003 S5.3). It has no sign-in status command and no
+ * login subcommand: `agy models` is the one non-interactive command that
+ * needs the account's sign-in without a model call, so a listed catalog is
+ * the sign-in evidence and the catalog at once. An empty or failed listing
+ * is NOT read as signed out: the same shape comes from a lost network, so
+ * the fact stays unknown and the launch itself is the better probe.
+ */
+async function inspectAntigravity(shell: string): Promise<AgentSourceSnapshot> {
+  const observedAt = Date.now();
+  const source = harnessDescriptor('antigravity').source;
+  const declaration = agentSourceDeclaration('antigravity');
+  const commandEvidence = provenance(
+    'source-command',
+    'Antigravity CLI',
+    observedAt
+  );
+  const declarationEvidence = provenance(
+    'adapter-declaration',
+    'Built-in adapter declaration',
+    0
+  );
+  const compatibilityDetail =
+    'The adapter contract was verified against Antigravity CLI 1.2.17.';
+  const installation = await resolveExecutable(shell, source.executable);
+  if (!installation.answered) {
+    return unobservedSourceSnapshot({
+      adapterId: 'antigravity',
+      id: 'antigravity-local',
+      label: 'Antigravity',
+      observedAt,
+    });
+  }
+  const executablePath = installation.path;
+  if (!executablePath) {
+    return notInstalledSourceSnapshot({
+      adapterId: 'antigravity',
+      label: 'Antigravity',
+      executable: source.executable,
+      compatibilityDetail,
+      observedAt,
+    });
+  }
+  const versionResult = await loginShellCommand(
+    shell,
+    sourceCommand(executablePath, source.versionArgs),
+    8_000
+  );
+  const modelsResult = await loginShellCommand(
+    shell,
+    sourceCommand(executablePath, source.authStatusArgs),
+    20_000
+  );
+  const version = parseAntigravityVersion(
+    `${versionResult.stdout}\n${versionResult.stderr}`
+  );
+  const modelCount = parseAntigravityModelRows(modelsResult.stdout).length;
+  const versionProbe = probeOutcome(versionResult);
+  const listed = modelsResult.answered && modelCount > 0;
+  const modelsNote =
+    `${modelsResult.stderr}\n${modelsResult.stdout}`
+      .split('\n')
+      .map(line => line.trim())
+      .find(line => line && !/^Fetching available models/i.test(line)) ??
+    'agy models printed nothing.';
+  const state: AgentSourceState =
+    versionProbe === 'unanswered'
+      ? 'unknown'
+      : versionProbe === 'failed' || !version
+        ? 'degraded'
+        : !version.compatible
+          ? 'incompatible'
+          : listed
+            ? 'ready'
+            : 'unknown';
+  const unobservedProbes: AgentSourceProbeName[] = [];
+  if (versionProbe === 'unanswered') unobservedProbes.push('version');
+  if (!modelsResult.answered) {
+    unobservedProbes.push('authentication', 'model catalog');
+  }
+  return {
+    ...declaration,
+    id: 'antigravity-local',
+    configured: true,
+    launchable: launchableAgentSourceState(state),
+    state,
+    stateLabel: stateLabel(state),
+    summary:
+      state === 'ready'
+        ? 'Exawatt starts and resumes local Antigravity Agents and sees when they work and finish. Antigravity does not yet tell Exawatt when it needs you.'
+        : state === 'incompatible'
+          ? 'This Antigravity CLI version predates the adapter contract verified by Exawatt.'
+          : state === 'unknown'
+            ? 'Antigravity status is not known yet.'
+            : 'Antigravity CLI is installed, but its checks did not pass.',
+    observedAt,
+    unobservedProbes,
+    observation: LIVE_OBSERVATION,
+    facts: {
+      installation: fact(
+        'ready',
+        version?.version || versionResult.stdout || 'Installed',
+        `Detected at ${executablePath}.`,
+        commandEvidence
+      ),
+      reachability: fact(
+        versionProbe === 'responded'
+          ? 'ready'
+          : versionProbe === 'failed'
+            ? 'degraded'
+            : 'unknown',
+        versionProbe === 'responded'
+          ? 'Local CLI responds'
+          : versionProbe === 'failed'
+            ? 'Version check failed'
+            : 'Unknown',
+        versionProbe === 'responded'
+          ? 'Observed through agy --version.'
+          : versionProbe === 'failed'
+            ? 'The executable exists, and its version command returned an error.'
+            : 'The version command did not return before its deadline.',
+        commandEvidence
+      ),
+      authentication: fact(
+        listed ? 'ready' : 'unknown',
+        listed ? `Managed by ${source.authOwner}` : 'Not verified',
+        listed
+          ? 'agy models listed the account’s models, which needs a working Google sign-in. Exawatt does not receive or store the credential.'
+          : modelsResult.answered
+            ? `agy models listed no models (${modelsNote}). A lost network looks the same as a missing sign-in, so neither is claimed; starting an Agent is the better check.`
+            : 'agy models did not return before its deadline.',
+        commandEvidence
+      ),
+      identity: fact(
+        'unknown',
+        'Unknown',
+        'Antigravity does not expose the signed-in account outside its session.',
+        commandEvidence
+      ),
+      compatibility: fact(
+        version ? (version.compatible ? 'ready' : 'incompatible') : 'unknown',
+        version
+          ? version.compatible
+            ? 'Compatible'
+            : 'Upgrade required'
+          : 'Unknown',
+        compatibilityDetail,
+        version ? commandEvidence : declarationEvidence
+      ),
+      modelDiscovery: fact(
+        listed ? 'ready' : 'unknown',
+        listed ? `${modelCount} models reported` : 'Not listed',
+        listed
+          ? 'Observed from agy models. Reasoning effort is not enumerated per model and stays with the source.'
+          : modelsResult.answered
+            ? `agy models returned no model rows (${modelsNote}).`
+            : 'agy models did not return before its deadline.',
+        commandEvidence
+      ),
+    },
+    actions: {
+      recheck: true,
+      authenticate: false,
+      chooseModel: false,
+      installGuide: true,
+    },
+  };
+}
+
+/**
  * How Exawatt observes each local harness. Exhaustive on purpose: a new
  * harness fails type-check here until it names the probe that reports its
  * installation, version, and sign-in as the six independent facts.
@@ -1876,6 +2049,7 @@ const LOCAL_HARNESS_INSPECTORS: Record<
   opencode: inspectOpencode,
   grok: inspectGrok,
   qwen: inspectQwen,
+  antigravity: inspectAntigravity,
 };
 
 async function discoverAgentSources(

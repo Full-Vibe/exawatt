@@ -12,6 +12,7 @@ Examples:
 - OpenCode
 - Grok Build
 - Qwen Code
+- Antigravity
 - custom harnesses
 - Demo Scenario Source
 
@@ -313,6 +314,7 @@ than optimistically enabled.
 | OpenCode    | live, per Project          | live, exact per-model variants | not through its PTY          | no local record      |
 | Grok Build  | live (`grok models`)       | source-owned — see below       | not through its PTY          | no local record      |
 | Qwen Code   | configured in its settings | source-owned (no effort flag)  | yes, through lifecycle hooks | no local record      |
+| Antigravity | live (`agy models`)        | source-owned — see below       | no (start event only)        | no local record      |
 
 Two Grok Build facts are worth stating plainly because both are absences with
 reasons, not gaps waiting to be filled:
@@ -348,6 +350,34 @@ Three Qwen Code facts, for the same reason:
 - **Posts from any other Qwen session are ignored.** The subscription travels
   in the launch environment, so a `qwen` the Agent runs inside its own shell
   would inherit it; only posts naming the Session's own id are read.
+
+Four Antigravity facts, verified on Antigravity CLI 1.2.17 (2026-10-05):
+
+- **Working and finished are reported; needs you is not.** Antigravity runs
+  the hooks in `.agents/hooks.json` of any workspace directory, including one
+  Exawatt adds per launch with `--add-dir`, so `PreInvocation` opens the turn
+  and `Stop` with `fullyIdle` closes it without touching
+  `~/.gemini/config/hooks.json`, which the Antigravity IDE shares. There is
+  no permission or question event, so a tab never turns amber for an
+  Antigravity Agent that is waiting on you; the terminal is where that shows.
+  The source's summary in Settings says so.
+- **Identity is learned, not allocated.** Antigravity has no flag that names
+  a new conversation. The first hook payload carries the `conversationId`,
+  which Exawatt remembers as the Session's identity; `--conversation=<id>`
+  resumes exactly that one. A payload naming any other conversation (a
+  delegated child runs as its own) is ignored.
+- **Sign-in and the catalog are one read.** `agy models` lists the account's
+  models and needs a working Google sign-in to do it, so a listed catalog is
+  the sign-in evidence. A failed or empty listing is reported as unknown,
+  never as signed out: a lost network looks the same. Antigravity's own picker
+  stores its choice as a label, and Exawatt pins the matching id; an unmatched
+  label pins nothing and the account decides. Quota is not part of the
+  catalog: a model whose weekly quota is spent still lists, and the turn's own
+  error is what reports the wall.
+- **Reasoning effort and delegation stay with the source.** `--effort` exists
+  but nothing a launch can read says which models accept which, so no effort
+  control is offered. `invoke_subagent` fires a start event and no completion
+  event, so delegated work is declared unreported rather than shown half-way.
 
 Grok-the-model has been launchable through OpenCode since that source landed;
 Grok Build is the native harness — its own TUI, plan mode, subagents, and

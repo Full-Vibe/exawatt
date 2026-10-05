@@ -17,6 +17,7 @@ import {
   withElectronApp,
 } from './lib/electron-eval.mjs';
 import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
+import { DatabaseSync } from 'node:sqlite';
 
 /**
  * Grok Build's `sessions/<dir>` component, reproduced here rather than
@@ -109,6 +110,16 @@ writeFileSync(
     model: { name: 'eval-qwen-coder' },
   })
 );
+/** Antigravity keeps its picker's model as a LABEL in its own settings and
+ *  indexes conversations in a SQLite file (ENG-003 S5.3). The label names one
+ *  of the fixture's rows, so the composer pins that id. */
+const antigravityHome = join(fakeHome, '.gemini', 'antigravity-cli');
+mkdirSync(antigravityHome, { recursive: true });
+writeFileSync(
+  join(antigravityHome, 'settings.json'),
+  JSON.stringify({ model: 'Fixture Sonnet (Thinking)' })
+);
+const ANTIGRAVITY_CONVERSATION = 'c0ffee00-ea11-4000-8000-000000000001';
 writeFileSync(
   join(fakeHome, '.openclaw', 'openclaw.json'),
   JSON.stringify({
@@ -240,6 +251,49 @@ if [ -n "$QWEN_CODE_SYSTEM_DEFAULTS_PATH" ] && [ -f "$QWEN_CODE_SYSTEM_DEFAULTS_
   printf 'FAKE_QWEN_HOOK_URLS:%s\\n' "$(grep -c '127.0.0.1' "$QWEN_CODE_SYSTEM_DEFAULTS_PATH")"
 fi
 while IFS= read -r input; do printf 'FAKE_QWEN_INPUT:%s\\n' "$input"; done`,
+});
+// Mirrors Antigravity CLI 1.2.17: `agy` answers `--version` and `models`, and
+// an interactive launch reads `.agents/hooks.json` from the directory Exawatt
+// adds with `--add-dir` and runs its hook COMMANDS exactly as written, with the
+// payload shapes the real CLI posted on 2026-10-05. Identity is learned from
+// the first payload's conversationId, as on the real CLI, which has no
+// session-id flag; a resume carries the same id back.
+writeFakeHarness(fakeBin, 'antigravity', {
+  runtime: 'node',
+  launch: `{
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { execSync } = require('node:child_process');
+  const argv = process.argv.slice(2);
+  const out = text => fs.writeSync(1, text);
+  out('FAKE_AGY_ARGS:' + argv.map(arg => ' <' + arg + '>').join('') + '\\n');
+  const addDir = argv.includes('--add-dir') ? argv[argv.indexOf('--add-dir') + 1] : null;
+  const hooksFile = addDir ? path.join(addDir, '.agents', 'hooks.json') : null;
+  const resumed = (argv.find(arg => arg.startsWith('--conversation=')) ?? '').slice('--conversation='.length);
+  const conversationId = resumed || ${JSON.stringify(ANTIGRAVITY_CONVERSATION)};
+  if (hooksFile && fs.existsSync(hooksFile)) {
+    const hooks = JSON.parse(fs.readFileSync(hooksFile, 'utf8'));
+    out('FAKE_AGY_HOOKS:' + Object.keys(hooks).length + '\\n');
+    const payload = {
+      artifactDirectoryPath: path.join(process.env.HOME, '.gemini', 'antigravity-cli', 'brain', conversationId),
+      conversationId,
+      modelName: 'fixture-sonnet',
+      transcriptPath: 'unused',
+      workspacePaths: [addDir, process.cwd()],
+    };
+    const run = (name, event, extra) => {
+      const command = hooks[name]?.[event]?.[0]?.command;
+      if (!command) return;
+      execSync(command, { input: JSON.stringify({ ...payload, ...extra }), stdio: ['pipe', 'ignore', 'ignore'] });
+    };
+    run('exawatt-preinvocation', 'PreInvocation', { initialNumSteps: 1, invocationNum: 0 });
+    run('exawatt-stop', 'Stop', { executionNum: 0, fullyIdle: true, terminationReason: 'COMPLETED' });
+    out('FAKE_AGY_HOOKS_FIRED:' + conversationId + '\\n');
+  } else {
+    out('FAKE_AGY_HOOKS:0\\n');
+  }
+  process.stdin.on('data', data => out('FAKE_AGY_INPUT:' + data));
+}`,
 });
 // Mirrors the real `grok 1.0.3` surfaces Exawatt reads: the version string,
 // the `grok models` banner + listing, and an interactive launch that echoes
@@ -536,6 +590,29 @@ try {
         'Qwen Code is ready from its own settings, claiming a configured credential only',
         qwenReady,
         qwenReady ? '' : JSON.stringify(qwen)
+      );
+      const antigravity = registry?.sources.find(
+        source => source.adapterId === 'antigravity'
+      );
+      const antigravityReady =
+        antigravity?.state === 'ready' &&
+        antigravity?.facts.authentication.state === 'ready' &&
+        antigravity?.facts.modelDiscovery.value === '2 models reported' &&
+        antigravity?.facts.identity.state === 'unknown';
+      check(
+        'Antigravity is ready from agy models, with the account identity left unknown',
+        antigravityReady,
+        antigravityReady ? '' : JSON.stringify(antigravity)
+      );
+      check(
+        'Antigravity declares what it cannot report: needs-you and delegation',
+        antigravity?.summary.includes('does not yet tell Exawatt when it needs you') ===
+          true &&
+          antigravity?.capabilities.delegationObservation.includes(
+            'no completion'
+          ) === true &&
+          antigravity?.capabilities.effortSelection === 'source-owned',
+        JSON.stringify(antigravity?.capabilities)
       );
       check(
         'configured unreachable OpenClaw is degraded, not disconnected/absent',
@@ -1104,6 +1181,160 @@ try {
         qwenResumed?.buffer ?? 'No resumed Qwen session'
       );
 
+      // ---- Antigravity CLI (ENG-003 S5.3) ----------------------------------
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send(
+          'menu:command',
+          'launch-antigravity'
+        );
+      });
+      await waitForSelectedEngine(page, 'Antigravity');
+      await openSetupDrawer(page);
+      check(
+        'the model Antigravity’s own picker chose is pinned by its label, and no effort control is offered',
+        (await launcherAxis(page, 'model').innerText()).includes(
+          'Fixture Sonnet (Thinking)'
+        ) && (await launcherAxis(page, 'thinking').isDisabled()),
+        await launcherAxis(page, 'model').innerText()
+      );
+      await page
+        .getByLabel('Initial task for the new Agent')
+        .fill('Verify the Antigravity launch adapter');
+      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      const antigravityLaunched = await page.evaluate(async () => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          const sessions = await window.electron?.pty?.list();
+          const session = sessions?.find(
+            item => item.harness === 'antigravity'
+          );
+          const buffer = session
+            ? await window.electron?.pty?.buffer(session.id)
+            : '';
+          // Identity arrives from the first hook, after the fixture has
+          // posted it; the argv line alone is too early.
+          if (
+            session?.harnessSessionId &&
+            buffer.includes('FAKE_AGY_HOOKS_FIRED:')
+          )
+            return { session, buffer };
+          await new Promise(resolveWait => setTimeout(resolveWait, 100));
+        }
+        return null;
+      });
+      const antigravityBuffer = antigravityLaunched?.buffer ?? '';
+      check(
+        'Exawatt launches agy interactively with the pinned model and allocates no identity of its own',
+        antigravityBuffer.includes(
+          '<-i> <Verify the Antigravity launch adapter>'
+        ) &&
+          antigravityBuffer.includes('<--model> <fixture-sonnet>') &&
+          antigravityBuffer.includes('<--dangerously-skip-permissions>') &&
+          !antigravityBuffer.includes('<--session-id>') &&
+          !antigravityBuffer.includes('<--gemini_dir>'),
+        antigravityBuffer
+      );
+      check(
+        'Antigravity hooks ride an added workspace directory and fire as written',
+        antigravityBuffer.includes('<--add-dir>') &&
+          /FAKE_AGY_HOOKS:2\b/.test(antigravityBuffer) &&
+          antigravityBuffer.includes(
+            `FAKE_AGY_HOOKS_FIRED:${ANTIGRAVITY_CONVERSATION}`
+          ),
+        antigravityBuffer
+      );
+      check(
+        'the Session learns its identity from the first hook payload',
+        antigravityLaunched?.session.harnessSessionId ===
+          ANTIGRAVITY_CONVERSATION,
+        JSON.stringify(antigravityLaunched?.session ?? null)
+      );
+
+      // Antigravity indexes its own conversations; the recent row must come
+      // from that index and resume only its exact identity.
+      const summaries = new DatabaseSync(
+        join(antigravityHome, 'conversation_summaries.db')
+      );
+      summaries.exec(
+        'CREATE TABLE conversation_summaries (conversation_id text, title text NOT NULL DEFAULT "", preview text NOT NULL DEFAULT "", step_count integer NOT NULL DEFAULT 0, last_modified_time datetime NOT NULL, workspace_uris text NOT NULL, parent_conversation_id text NOT NULL DEFAULT "", last_user_input_time datetime NOT NULL, PRIMARY KEY (conversation_id))'
+      );
+      const stamp = new Date()
+        .toISOString()
+        .replace('T', ' ')
+        .replace('Z', '+00:00');
+      summaries
+        .prepare(
+          'INSERT INTO conversation_summaries (conversation_id, title, preview, step_count, last_modified_time, workspace_uris, parent_conversation_id, last_user_input_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        )
+        .run(
+          ANTIGRAVITY_CONVERSATION,
+          'Antigravity launch eval',
+          'never shown',
+          2,
+          stamp,
+          JSON.stringify([`file://${projectDir}`]),
+          '',
+          stamp
+        );
+      summaries.close();
+      await page.waitForTimeout(10_500);
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send(
+          'menu:command',
+          'launch-antigravity'
+        );
+      });
+      const recentAntigravity = page.locator(
+        `[data-conversation-id="${ANTIGRAVITY_CONVERSATION}"]`
+      );
+      await recentAntigravity.waitFor();
+      check(
+        'the Antigravity conversation appears as a native provider conversation with its own title',
+        (await recentAntigravity.getAttribute('data-continuation')) ===
+          'provider' &&
+          (await recentAntigravity.getAttribute('data-title-source')) ===
+            'native' &&
+          (await recentAntigravity.innerText()).includes(
+            'Antigravity launch eval'
+          ) &&
+          !(await recentAntigravity.innerText()).includes('never shown')
+      );
+      await recentAntigravity.locator('button').first().click();
+      const antigravityResumed = await page.evaluate(
+        async originalSessionId => {
+          const deadline = Date.now() + 20_000;
+          while (Date.now() < deadline) {
+            const sessions = await window.electron?.pty?.list();
+            const session = sessions?.find(
+              item =>
+                item.harness === 'antigravity' && item.id !== originalSessionId
+            );
+            const buffer = session
+              ? await window.electron?.pty?.buffer(session.id)
+              : '';
+            if (
+              session?.harnessSessionId &&
+              buffer.includes('FAKE_AGY_HOOKS_FIRED:')
+            )
+              return { session, buffer };
+            await new Promise(resolveWait => setTimeout(resolveWait, 100));
+          }
+          return null;
+        },
+        antigravityLaunched?.session.id ?? ''
+      );
+      check(
+        'the Antigravity recent row resumes only its exact conversation',
+        antigravityResumed?.session.harnessSessionId ===
+          ANTIGRAVITY_CONVERSATION &&
+          antigravityResumed.buffer.includes(
+            `<--conversation=${ANTIGRAVITY_CONVERSATION}>`
+          ) &&
+          !antigravityResumed.buffer.includes('<--continue>') &&
+          !antigravityResumed.buffer.includes('<-c>'),
+        antigravityResumed?.buffer ?? 'No resumed Antigravity session'
+      );
+
       check(
         'renderer emitted no uncaught page errors',
         pageErrors.length === 0,
@@ -1112,7 +1343,7 @@ try {
     },
     // Each launchable source's launch-and-resume section costs about 15s,
     // most of it the recent-conversation refresh; the budget scales with them.
-    { maxMs: 180_000 }
+    { maxMs: 200_000 }
   );
 } finally {
   rmSync(root, { recursive: true, force: true });

@@ -325,12 +325,46 @@ const QWEN_MODEL_CATALOG: AgentModelCatalog = {
   selectionAction: null,
 };
 
+/** The shape `antigravityModelCatalog` returns for a signed-in `agy models`
+ *  whose settings label matches one row. */
+const ANTIGRAVITY_MODEL_CATALOG: AgentModelCatalog = {
+  harness: 'antigravity',
+  effectiveModel: 'claude-sonnet-4-6',
+  effectiveModelLabel: 'Claude Sonnet 4.6 (Thinking)',
+  effectiveModelSource: 'config',
+  effectiveEffort: null,
+  effectiveEffortLabel: 'Source default',
+  effectiveEffortSource: 'unavailable',
+  effortLocked: false,
+  models: [
+    {
+      id: 'gemini-3.8-flash-medium',
+      label: 'Gemini 3.8 Flash (Medium)',
+      description: 'Reported by the installed Antigravity CLI.',
+      defaultEffort: null,
+      efforts: [],
+    },
+    {
+      id: 'claude-sonnet-4-6',
+      label: 'Claude Sonnet 4.6 (Thinking)',
+      description: 'Reported by the installed Antigravity CLI.',
+      defaultEffort: null,
+      efforts: [],
+    },
+  ],
+  catalogMode: 'live-catalog',
+  catalogProvenance: 'Installed Antigravity CLI · agy models',
+  observedAt: 1,
+  selectionAction: null,
+};
+
 const MODEL_CATALOGS: Record<AgentSourceId, AgentModelCatalog> = {
   claude: CLAUDE_MODEL_CATALOG,
   codex: CODEX_MODEL_CATALOG,
   opencode: OPENCODE_MODEL_CATALOG,
   grok: GROK_MODEL_CATALOG,
   qwen: QWEN_MODEL_CATALOG,
+  antigravity: ANTIGRAVITY_MODEL_CATALOG,
 };
 
 export function installComposerTestHarness() {

@@ -14,6 +14,12 @@ import {
   qwenHookSessionId,
   qwenHookSettings,
 } from '../harness-events/qwen-hooks';
+import {
+  ANTIGRAVITY_HOOKS_FILE,
+  antigravityHookConversationId,
+  antigravityHookEvent,
+  antigravityHookSettings,
+} from '../harness-events/antigravity-hooks';
 import { readQwenAdminDefaults } from './qwen-source';
 
 /**
@@ -44,6 +50,19 @@ export interface HarnessEventChannelBinding {
    * status. When present, a payload from any other session is dropped.
    */
   sessionIdOf?: (payload: unknown) => string | null;
+  /**
+   * How the document reaches the harness. By default the path handed to
+   * `invocation` is the file itself. `directory`: the harness scans a
+   * workspace directory for `file`, so Exawatt writes one directory per
+   * launch and hands that directory over.
+   */
+  document?: { kind: 'directory'; file: string };
+  /**
+   * The source allocates identity itself and names it in every payload, and
+   * has no flag Exawatt could allocate it with. The first payload binds the
+   * Session's harness identity; needs `sessionIdOf`.
+   */
+  learnsSessionId?: boolean;
 }
 
 /** A uniquely named source agent carrying one launch's model and policy. */
@@ -385,6 +404,65 @@ const descriptors = {
       `${invocation} --resume ${sessionId}`,
     freshInvocation: (invocation, sessionId) =>
       sessionId ? `${invocation} --session-id ${sessionId}` : invocation,
+  },
+  antigravity: {
+    id: 'antigravity',
+    source: {
+      ...agentSourceDeclaration('antigravity'),
+      executable: 'agy',
+      versionArgs: ['--version'],
+      // `agy models` is the one non-interactive command that needs a working
+      // Google sign-in and makes no model call; a listed catalog is the
+      // sign-in evidence. There is no login subcommand: sign-in happens
+      // inside Antigravity itself.
+      authStatusArgs: ['models'],
+      authLoginArgs: [],
+      authOwner: 'Antigravity',
+    },
+    // No flag allocates a conversation id (upstream issue #7 is open), so
+    // identity is learned from the first hook payload's `conversationId`.
+    allocatesFreshSessionId: false,
+    // `invoke_subagent` fires a start event and no completion event; half a
+    // lifecycle would invent children that never finish.
+    delegation: {
+      observable: false,
+      reason:
+        'Antigravity reports a delegation start and no completion, so delegated work is not shown',
+    },
+    eventChannel: {
+      settings: antigravityHookSettings,
+      // Verified 2026-10-05 on 1.2.17: an added directory's
+      // `.agents/hooks.json` loads alongside the launch directory's own, so
+      // the operator's hooks keep firing and nothing under ~/.gemini is
+      // written.
+      invocation: (invocation, directory) =>
+        `${invocation} --add-dir ${shellQuote(directory)}`,
+      normalize: antigravityHookEvent,
+      sessionIdOf: antigravityHookConversationId,
+      document: { kind: 'directory', file: ANTIGRAVITY_HOOKS_FILE },
+      learnsSessionId: true,
+    },
+    // Review (the default) asks before every tool; `accept-edits` lets file
+    // edits through and still asks before commands, the closest reading of
+    // auto-review; the skip flag is YOLO.
+    permissionFlags: mode =>
+      mode === 'prompt'
+        ? ''
+        : mode === 'auto'
+          ? '--mode accept-edits'
+          : '--dangerously-skip-permissions',
+    modelInvocation: (invocation, quotedModel) =>
+      `${invocation} --model ${quotedModel}`,
+    // `--effort low|medium|high|xhigh|max` exists, but no interface a PTY
+    // launch can read says which models accept which; the declaration keeps
+    // effort source-owned rather than inventing a per-model set.
+    effortInvocation: invocation => invocation,
+    // `-i` keeps the session interactive; `-p` would run one turn and exit.
+    initialTaskInvocation: (invocation, quotedTask) =>
+      `${invocation} -i ${quotedTask}`,
+    resumeInvocation: (invocation, sessionId) =>
+      `${invocation} --conversation=${sessionId}`,
+    freshInvocation: invocation => invocation,
   },
 } satisfies Record<AgentHarness, HarnessLaunchDescriptor>;
 

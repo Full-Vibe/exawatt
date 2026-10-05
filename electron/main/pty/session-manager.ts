@@ -236,11 +236,19 @@ export class PtySessionManager extends EventEmitter {
     const { normalize, sessionIdOf } = channel;
     const registration = harnessEventChannel.register(
       id,
-      sessionIdOf && harnessSessionId
-        ? (payload, at) =>
-            sessionIdOf(payload) === harnessSessionId
-              ? normalize(payload, at)
-              : null
+      sessionIdOf && (harnessSessionId || channel.learnsSessionId)
+        ? (payload, at) => {
+            const reported = sessionIdOf(payload);
+            // The Session's identity as of THIS payload: known before spawn
+            // for a resume or an allocated id, or learned from the first
+            // payload of a source that names its own.
+            const own =
+              this.sessions.get(id)?.info.harnessSessionId ?? harnessSessionId;
+            if (own) return reported === own ? normalize(payload, at) : null;
+            if (!reported || !channel.learnsSessionId) return null;
+            this.learnHarnessIdentity(id, reported);
+            return normalize(payload, at);
+          }
         : normalize
     );
     if (!registration) return {};
@@ -262,12 +270,39 @@ export class PtySessionManager extends EventEmitter {
       harnessEventChannel.release(id);
       return {};
     }
-    const settingsPath = await this.hookSettings.write(id, document);
+    const settingsPath =
+      channel.document?.kind === 'directory'
+        ? await this.hookSettings.writeDirectory(
+            id,
+            channel.document.file,
+            document
+          )
+        : await this.hookSettings.write(id, document);
     if (!settingsPath) {
       harnessEventChannel.release(id);
       return {};
     }
     return { eventChannelSettingsPath: settingsPath };
+  }
+
+  /**
+   * Bind the identity a source reported in its first hook payload (Antigravity
+   * names its conversation in every payload and offers no flag to allocate
+   * one). Exact resume depends on it, so it is remembered the moment it is
+   * known. A malformed id is dropped: a resume argv is built from this value.
+   */
+  private learnHarnessIdentity(id: string, harnessSessionId: string): void {
+    const session = this.sessions.get(id);
+    if (!session || session.info.exited || session.info.harnessSessionId)
+      return;
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(harnessSessionId)) return;
+    const info = session.info;
+    info.harnessSessionId = harnessSessionId;
+    void this.rememberIdentity(info).then(() => {
+      if (!this.sessions.has(id)) return;
+      this.emit('identity', info.id, info.durableSessionId, harnessSessionId);
+      this.emit('session', { ...info });
+    });
   }
 
   /** Drop one Session's ephemeral event configuration files. */
@@ -405,7 +440,14 @@ export class PtySessionManager extends EventEmitter {
       process.env.EXAWATT_TEST === '1' &&
       process.env.EXAWATT_TEST_HARNESS_BIN &&
       path.isAbsolute(process.env.EXAWATT_TEST_HARNESS_BIN)
-        ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, options.harness)
+        ? path.join(
+            process.env.EXAWATT_TEST_HARNESS_BIN,
+            // The fixture bin is keyed by the source's binary name, as the
+            // registry's own lookup is (`agy` for Antigravity).
+            options.harness === 'shell'
+              ? options.harness
+              : harnessDescriptor(options.harness).source.executable
+          )
         : undefined;
 
     const launchEnvironment = {
