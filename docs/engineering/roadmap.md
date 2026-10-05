@@ -3683,7 +3683,10 @@ public request and ordinary sign-in on the signed installed app, then rerun
 `eval:electron:feedback-live` with row/image read-back and verified QA cleanup.
 [Incident 0035](incidents/0035-installed-chromium-requests-stall-before-authentication.md)
 retains controls and ruled-out hypotheses. F7 UI/source/artifact evidence remains
-valid; new-artifact actual submission is explicitly unverified.
+valid. The 2026-10-04 evening recheck on installed `8265ec1c` passes public
+networking, ordinary sign-in and real feedback POST/row/image proof with cleanup.
+The stall no longer reproduces; keep the intermittent issue open until its cause
+or durable resolution is established.
 
 ## Amendment chain
 
