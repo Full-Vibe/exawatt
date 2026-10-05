@@ -57,12 +57,15 @@ function fmtTokens(n: number): string {
 export function DemoSessionPane({
   agent,
   title,
+  nowMs = demoShellNowMs(),
 }: {
   agent: DemoFleetAgent;
   /** Operator rename from the ribbon; the authored name otherwise. */
   title?: string;
+  /** The clock relative times read against: the tick's frame clock when the
+   *  fleet is alive (ENG-027 W14), the shell's one load-time now otherwise. */
+  nowMs?: number;
 }) {
-  const nowMs = demoShellNowMs();
   const project = demoProjectFor(agent);
   const content = demoPaneContent(agent);
   const lightState = statusLightStateForAgentStatus(agent.status);

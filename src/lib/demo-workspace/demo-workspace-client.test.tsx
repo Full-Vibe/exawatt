@@ -12,6 +12,7 @@ import { getWorkspaceCommandAvailability } from '@/components/workspace/workspac
 import { demoShellAgents, demoShellProjects } from './model';
 import {
   FleetProvider,
+  useDemoFleetFrame,
   useFleet,
   useSessionAttentionSource,
 } from '@/lib/fleet/fleet-provider';
@@ -41,7 +42,7 @@ afterEach(() => {
 function view() {
   return render(
     <TooltipProvider>
-      <FleetProvider>
+      <FleetProvider demoSimulationTickMs={0}>
         <DemoWorkspaceClient />
       </FleetProvider>
     </TooltipProvider>
@@ -54,6 +55,42 @@ function projectOrder(container: HTMLElement): string[] {
     container.querySelectorAll<HTMLElement>('[data-project]')
   ).map(element => element.dataset.project!);
 }
+
+describe('Demo workspace reads the tick frame (ENG-027 W14)', () => {
+  it('projects the Demo transport frame where it used to read the still fixture', async () => {
+    function FrameProbe() {
+      const frame = useDemoFleetFrame();
+      return (
+        <output
+          data-frame-agents={frame ? String(frame.agents.length) : 'none'}
+          data-frame-elapsed={frame ? String(frame.elapsedMs) : 'none'}
+        />
+      );
+    }
+    const { container } = render(
+      <TooltipProvider>
+        <FleetProvider demoSimulationTickMs={0}>
+          <DemoWorkspaceClient />
+          <FrameProbe />
+        </FleetProvider>
+      </TooltipProvider>
+    );
+    const probe = () => container.querySelector('[data-frame-agents]');
+    // frozen tick: frame zero IS the fixture the shell always rendered
+    await waitFor(() =>
+      expect(probe()?.getAttribute('data-frame-agents')).toBe(
+        String(demoShellAgents().length + 146)
+      )
+    );
+    expect(probe()?.getAttribute('data-frame-elapsed')).toBe('0');
+    // every ribbon tab is one of the frame's base-tier Agents
+    const tabIds = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-tab-id]')
+    ).map(element => element.dataset.tabId);
+    const base = new Set(demoShellAgents().map(agent => agent.id));
+    for (const id of tabIds) expect(base.has(id!)).toBe(true);
+  });
+});
 
 describe('Demo workspace on the real ribbon (W6)', () => {
   it('acknowledges only actual foreground inspection and acknowledges again on window return', async () => {
@@ -83,7 +120,7 @@ describe('Demo workspace on the real ribbon (W6)', () => {
     requestSessionJump(target.id);
     const { container } = render(
       <TooltipProvider>
-        <FleetProvider>
+        <FleetProvider demoSimulationTickMs={0}>
           <DemoWorkspaceClient />
           <ReadProbe />
         </FleetProvider>
@@ -121,7 +158,7 @@ describe('Demo workspace on the real ribbon (W6)', () => {
     const contents = () => (
       <TooltipProvider>
         <GoalVisualPreferenceProvider>
-          <FleetProvider>
+          <FleetProvider demoSimulationTickMs={0}>
             <DemoWorkspaceClient />
             <ReadProbe />
           </FleetProvider>
@@ -151,7 +188,7 @@ describe('Demo workspace on the real ribbon (W6)', () => {
     const { container } = render(
       <StrictMode>
         <TooltipProvider>
-          <FleetProvider>
+          <FleetProvider demoSimulationTickMs={0}>
             <DemoWorkspaceClient />
           </FleetProvider>
         </TooltipProvider>

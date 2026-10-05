@@ -52,7 +52,7 @@ describe('attention source ownership', () => {
       return null;
     }
     const tree = () => (
-      <FleetProvider>
+      <FleetProvider demoSimulationTickMs={0}>
         <Probe />
       </FleetProvider>
     );

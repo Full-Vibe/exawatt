@@ -86,6 +86,7 @@ import {
 import {
   demoProjectFor,
   demoInitiativeFor,
+  demoLandedMilestones,
   demoRoadmapRead,
   demoShellActivity,
   demoShellAgents,
@@ -96,14 +97,18 @@ import {
   demoShellEngaged,
   demoShellGoalVisuals,
   demoShellFleetAgentById,
+  demoShellNowMs,
   demoShellProjects,
   demoShellRoadmapByTab,
   demoShellSummaries,
   demoTab,
+  demoTabLifecycle,
 } from './model';
 import { DemoSessionPane } from './demo-session-pane';
+import type { DemoFleetAgent } from '@exawatt/core';
 import type { SessionModelChange } from '@exawatt/core/desktop-bridge';
 import {
+  useDemoFleetFrame,
   useFleet,
   useSessionAttentionSource,
 } from '@/lib/fleet/fleet-provider';
@@ -160,13 +165,28 @@ export function DemoWorkspaceClient() {
     []
   );
 
-  const agents = useMemo(() => demoShellAgents(), []);
+  // The tick's latest frame (ENG-027 W14): the shell projects the SAME
+  // fixture Agents the Fleet board shows now — status, team, turns, landed
+  // milestones — where it used to read the still fixture. Before the first
+  // frame (and in a frozen-tick test) it reads the fixture itself.
+  const frame = useDemoFleetFrame();
+  const agents = useMemo(() => demoShellAgents(frame?.agents), [frame]);
+  const frameAgentById = useCallback(
+    (id: string): DemoFleetAgent | undefined =>
+      frame?.agents.find(agent => agent.id === id) ??
+      demoShellFleetAgentById(id),
+    [frame]
+  );
+  const landed = useMemo(
+    () => demoLandedMilestones(frame?.landings),
+    [frame?.landings]
+  );
   const [modelChoices, setModelChoices] = useState<
     Record<string, SessionModelChange>
   >({});
   const [projects, setProjects] = useState(() => demoShellProjects());
   const [closedTabs, setClosedTabs] = useState<ClosedDemoTab[]>([]);
-  const summaries = useMemo(() => demoShellSummaries(), []);
+  const summaries = useMemo(() => demoShellSummaries(agents), [agents]);
   // Demo Mode's attention channel covers the whole demo fleet, exactly as
   // main's PTY channel covers the real one; it says so for the same reason.
   const [pausedIds, setPausedIds] = useState<ReadonlySet<string>>(
@@ -175,32 +195,53 @@ export function DemoWorkspaceClient() {
   const activity = useMemo(
     () =>
       Object.fromEntries(
-        Object.entries(demoShellActivity()).filter(([id]) => !pausedIds.has(id))
+        Object.entries(demoShellActivity(agents)).filter(
+          ([id]) => !pausedIds.has(id)
+        )
       ),
-    [pausedIds]
+    [agents, pausedIds]
   );
   const { mode: teamOrderMode } = useTeamOrderPreference();
   const engaged = useMemo(
     () =>
       Object.fromEntries(
-        Object.entries(demoShellEngaged()).filter(([id]) => !pausedIds.has(id))
+        Object.entries(demoShellEngaged(agents)).filter(
+          ([id]) => !pausedIds.has(id)
+        )
       ),
-    [pausedIds]
+    [agents, pausedIds]
   );
   const delegation = useMemo(
     () =>
       Object.fromEntries(
-        Object.entries(demoShellDelegation()).filter(
+        Object.entries(demoShellDelegation(agents)).filter(
           ([id]) => !pausedIds.has(id)
         )
       ),
-    [pausedIds]
+    [agents, pausedIds]
   );
-  const roadmapByTab = useMemo(() => demoShellRoadmapByTab(), []);
-  const agentTypeByTab = useMemo(() => demoShellAgentTypes(), []);
-  const initiativeByTab = useMemo(() => demoShellInitiatives(), []);
-  const goalVisuals = useMemo(() => demoShellGoalVisuals(), []);
-  const consumptionByTab = useMemo(() => demoShellConsumption(), []);
+  const roadmapByTab = useMemo(
+    () => demoShellRoadmapByTab(agents, landed),
+    [agents, landed]
+  );
+  const agentTypeByTab = useMemo(() => demoShellAgentTypes(agents), [agents]);
+  const initiativeByTab = useMemo(
+    () => demoShellInitiatives(agents),
+    [agents]
+  );
+  const goalVisuals = useMemo(() => demoShellGoalVisuals(agents), [agents]);
+  const consumptionByTab = useMemo(
+    () => demoShellConsumption(agents),
+    [agents]
+  );
+  // The lens re-reads a fixture source only when its identity changes
+  // (`useProjectRoadmap`): a new function exactly when a landing landed, so
+  // the Project roadmap shows the flipped milestone and nothing re-parses on
+  // every tick.
+  const roadmapRead = useMemo(
+    () => (projectDir: string) => demoRoadmapRead(projectDir, landed),
+    [landed]
+  );
   const sessionPaneRef = useRef<HTMLElement>(null);
   const [closeConfirm, setCloseConfirm] = useState<{
     tabId: string;
@@ -223,13 +264,13 @@ export function DemoWorkspaceClient() {
     initialSelectionResolved.current = true;
     const pending = consumePendingSessionJump();
     setActiveSessionId(
-      pending && demoShellFleetAgentById(pending)
+      pending && frameAgentById(pending)
         ? pending
         : agents.some(agent => agent.id === DEFAULT_SESSION_ID)
           ? DEFAULT_SESSION_ID
           : (agents[0]?.id ?? '')
     );
-  }, [agents]);
+  }, [agents, frameAgentById]);
   const { fleetState } = useFleet();
   const attentionSource = useSessionAttentionSource();
   const setActiveId = useCallback((id: string) => setActiveSessionId(id), []);
@@ -383,7 +424,7 @@ export function DemoWorkspaceClient() {
   useEffect(() => {
     const onJump = (event: Event) => {
       const id = (event as CustomEvent<string>).detail;
-      if (demoShellFleetAgentById(id)) {
+      if (frameAgentById(id)) {
         consumePendingSessionJump();
         setActiveId(id);
         if (overviewOpen) router.replace('/workspace', { scroll: false });
@@ -391,7 +432,7 @@ export function DemoWorkspaceClient() {
     };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
     return () => window.removeEventListener(SESSION_JUMP_EVENT, onJump);
-  }, [overviewOpen, router, setActiveId]);
+  }, [frameAgentById, overviewOpen, router, setActiveId]);
 
   const allTabs = useMemo(
     () => projects.flatMap(project => project.tabs),
@@ -400,7 +441,7 @@ export function DemoWorkspaceClient() {
   const activeTab = allTabs.find(tab => tab.id === activeId) ?? null;
   const activeAgent =
     agents.find(agent => agent.id === activeId) ??
-    demoShellFleetAgentById(activeId) ??
+    frameAgentById(activeId) ??
     null;
   const activeInitiative = activeAgent ? demoInitiativeFor(activeAgent) : null;
   /** A scale-tier Session opened from the Fleet board: not a base-tier tab,
@@ -418,10 +459,24 @@ export function DemoWorkspaceClient() {
       : undefined);
 
   /** What the ribbon renders: state Projects with the active tab marked, and
-   *  the transient scale-tier Session spliced into its Project while open. */
+   *  the transient scale-tier Session spliced into its Project while open.
+   *  Each owned tab's lifecycle follows the tick (W14): an Agent that stops
+   *  on a fault reads failed, one that restarts reads live, while renames,
+   *  reorders and pauses stay exactly where the operator put them. */
+  const statusById = useMemo(
+    () => new Map(agents.map(agent => [agent.id, agent.status])),
+    [agents]
+  );
   const ribbonProjects = useMemo(() => {
     return projects.map(project => {
-      let tabs = project.tabs;
+      let tabs = project.tabs.map(tab => {
+        const status = tab.sessionId !== null ? statusById.get(tab.id) : null;
+        if (!status) return tab;
+        const lifecycle = demoTabLifecycle(status);
+        return tab.lifecycle === lifecycle.lifecycle
+          ? tab
+          : { ...tab, ...lifecycle };
+      });
       if (
         transientAgent &&
         transientProject &&
@@ -434,7 +489,7 @@ export function DemoWorkspaceClient() {
         : (project.activeTabId ?? tabs[0]?.id ?? null);
       return { ...project, tabs, activeTabId };
     });
-  }, [projects, transientAgent, transientProject, activeId]);
+  }, [projects, statusById, transientAgent, transientProject, activeId]);
   const teamDisplayedProjects = useMemo(
     () =>
       teamViewProjects(ribbonProjects, teamOrderMode, {
@@ -1050,6 +1105,7 @@ export function DemoWorkspaceClient() {
                   <DemoSessionPane
                     agent={activeAgent}
                     title={activeTab?.title}
+                    nowMs={frame?.nowMs ?? demoShellNowMs()}
                   />
                 ) : (
                   <div
@@ -1097,7 +1153,7 @@ export function DemoWorkspaceClient() {
           activeTabId={activeAgent?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
           navigationSelection={teamSelection}
-          roadmapRead={demoRoadmapRead}
+          roadmapRead={roadmapRead}
           onSelectionChange={publishTeamSelection}
           onPick={(_dir, tabId) => {
             setActiveId(tabId);

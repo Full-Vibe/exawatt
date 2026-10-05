@@ -16,6 +16,7 @@ import {
   demoWorkspaceProjectCatalog,
   INITIAL_AGENT_METRICS,
   LocalSessionsTransport,
+  type DemoFleetFrame,
   type ExawattAgent,
   type SessionAttentionCommands,
   type AgentActivity,
@@ -59,6 +60,14 @@ interface FleetContextValue {
 }
 
 const FleetContext = createContext<FleetContextValue | null>(null);
+
+/**
+ * The Demo tick's latest frame (ENG-027 W14): the fixture Agents and the
+ * landings as the Demo transport last published them. Its own context, so
+ * only the Demo shell re-renders on a tick; every other fleet consumer keeps
+ * reading the FleetManager it already subscribes to. Null outside Demo.
+ */
+const DemoFleetFrameContext = createContext<DemoFleetFrame | null>(null);
 
 /**
  * A projected remote coworker, shaped exactly like a local one (ENG-010 C2).
@@ -131,11 +140,20 @@ function sameProjectCatalog(
 
 // --- Provider ---
 
-export function FleetProvider({ children }: { children: ReactNode }) {
+export function FleetProvider({
+  children,
+  demoSimulationTickMs,
+}: {
+  children: ReactNode;
+  /** Demo tick period override; `0` freezes the Demo fleet (tests that
+   *  assert over a still fixture). Production takes the transport default. */
+  demoSimulationTickMs?: number;
+}) {
   const [connectionStatus, setConnectionStatus] = useState<
     OCConnectionStatus | 'initializing'
   >('initializing');
   const [isDemo, setIsDemo] = useState(false);
+  const [demoFrame, setDemoFrame] = useState<DemoFleetFrame | null>(null);
   const [isLocal, setIsLocal] = useState(false);
   const [projects, setProjects] = useState<ProjectCatalogEntry[]>([]);
   const [attentionOwner, setAttentionOwner] = useState<{
@@ -168,6 +186,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     let offDelegation: (() => void) | undefined;
     let offAttention: (() => void) | undefined;
     let offLiveBurn: (() => void) | undefined;
+    let offDemoFrame: (() => void) | undefined;
 
     function startDemoWorkspace() {
       if (!mounted) return;
@@ -181,10 +200,20 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       const demoTransport = new DemoWorkspaceTransport({
         tier: 'scale',
         nowMs: Date.now(),
+        ...(demoSimulationTickMs === undefined
+          ? {}
+          : { tickMs: demoSimulationTickMs }),
       });
       demoTransportRef.current = demoTransport;
       demoTransport.initialize(manager);
       demoTransport.start();
+      // The tick (W14) publishes a frame whenever the fleet moved; the Demo
+      // shell reads it through `useDemoFleetFrame` where it used to read the
+      // frozen fixture.
+      setDemoFrame(demoTransport.frame());
+      offDemoFrame = demoTransport.onFrame(frame => {
+        if (mounted) setDemoFrame(frame);
+      });
       setAttentionOwner({
         manager,
         commands: {
@@ -220,6 +249,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           console.log('[Exawatt] Local sessions mode (desktop) active');
           if (!mounted) return;
           setIsDemo(false);
+          setDemoFrame(null);
           setIsLocal(true);
           setConnectionStatus('connected');
 
@@ -331,13 +361,14 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       offDelegation?.();
       offAttention?.();
       offLiveBurn?.();
+      offDemoFrame?.();
       manager.disconnect();
       demoTransportRef.current?.stop();
       demoTransportRef.current = null;
       localTransportRef.current?.stop();
       localTransportRef.current = null;
     };
-  }, [manager, tenancyHydrated, demoTenantActive]);
+  }, [manager, tenancyHydrated, demoTenantActive, demoSimulationTickMs]);
 
   // ENG-010 C2: configured Agent Sources contribute coworkers ALONGSIDE the
   // local fleet, never instead of it. The manager is keyed by source id, so
@@ -415,7 +446,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <FleetContext.Provider value={value}>{children}</FleetContext.Provider>
+    <FleetContext.Provider value={value}>
+      <DemoFleetFrameContext.Provider value={demoFrame}>
+        {children}
+      </DemoFleetFrameContext.Provider>
+    </FleetContext.Provider>
   );
 }
 
@@ -441,6 +476,12 @@ function mergeActivities(
 /** Commands are owned by the currently mounted source, never by a harness guess. */
 export function useSessionAttentionSource(): SessionAttentionCommands | null {
   return useFleetContext().attentionCommands;
+}
+
+/** The Demo tick's latest frame (ENG-027 W14), or null when the fleet source
+ *  is not the Demo Workspace. Fixture Agents plus landings, as published. */
+export function useDemoFleetFrame(): DemoFleetFrame | null {
+  return useContext(DemoFleetFrameContext);
 }
 
 export function useFleetConnection(): {

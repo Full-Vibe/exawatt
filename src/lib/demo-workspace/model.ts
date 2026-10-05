@@ -24,8 +24,12 @@ import {
   demoFleetAgents,
   demoWorkLog,
   demoProjectRoadmap,
+  demoRoadmapMarkdownWithLandings,
+  parseRoadmap,
   type DemoFleetAgent,
   type DemoInitiative,
+  type DemoLandedMilestone,
+  type DemoLandingView,
   type DemoTranscriptLine,
   type DemoWorkspaceProject,
   type RoadmapDoc,
@@ -53,8 +57,13 @@ export function demoShellNowMs(): number {
 }
 
 /** Base tier only — the hand-authored 27 Agents an operator reads up close.
- *  The scale tier belongs to the Fleet altitude via the fleet transport. */
-export function demoShellAgents(): DemoFleetAgent[] {
+ *  The scale tier belongs to the Fleet altitude via the fleet transport.
+ *  Given the tick's latest frame (ENG-027 W14) the shell reads the SAME 27
+ *  Agents as the Fleet board shows them now; without one, the still fixture. */
+export function demoShellAgents(
+  frameAgents?: readonly DemoFleetAgent[]
+): DemoFleetAgent[] {
+  if (frameAgents) return frameAgents.filter(agent => agent.tier === 'base');
   return demoFleetAgents('base', { nowMs: DEMO_SHELL_NOW_MS });
 }
 
@@ -112,7 +121,6 @@ export function demoTab(
   agent: DemoFleetAgent,
   project: DemoWorkspaceProject
 ): SessionTab {
-  const failed = agent.status === 'error';
   return {
     kind: 'session',
     id: agent.id,
@@ -123,11 +131,7 @@ export function demoTab(
     cwd: project.dir,
     sessionId: agent.id,
     harnessSessionId: null,
-    // A failed demo Session reads as failed (dimmed, fault-labeled) exactly
-    // like a live one; everything else is a live, owned Session.
-    resumeState: failed ? 'failed' : 'live',
-    lifecycle: failed ? 'failed' : 'running',
-    exitCode: failed ? 1 : null,
+    ...demoTabLifecycle(agent.status),
     roadmapItemId: agent.roadmapItemId,
     initialTask: agent.goal,
   };
@@ -157,9 +161,11 @@ export function demoShellProjects(): DemoShellProject[] {
 /** tabId → authored Agent Type name (ENG-028 T1): the Demo Workspace is a
  *  source that DECLARES Types, so its Team tiles name the worker on the
  *  announced Type chip instead of showing the empty slot. */
-export function demoShellAgentTypes(): Record<string, string> {
+export function demoShellAgentTypes(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const agent of demoShellAgents()) {
+  for (const agent of agents) {
     const type = demoProjectFor(agent)?.agentType;
     if (type) out[agent.id] = type;
   }
@@ -167,9 +173,11 @@ export function demoShellAgentTypes(): Record<string, string> {
 }
 
 /** tabId → durable Initiative for the Team comparison surface. */
-export function demoShellInitiatives(): Record<string, DemoInitiative> {
+export function demoShellInitiatives(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, DemoInitiative> {
   const out: Record<string, DemoInitiative> = {};
-  for (const agent of demoShellAgents()) {
+  for (const agent of agents) {
     out[agent.id] = demoInitiativeFor(agent);
   }
   return out;
@@ -181,9 +189,11 @@ export function demoShellInitiatives(): Record<string, DemoInitiative> {
  * its deterministic Project-tinted fallback until a raster fixture is added.
  * Agents advancing one Initiative intentionally share one work-world.
  */
-export function demoShellGoalVisuals(): Record<string, GoalVisualReadout> {
+export function demoShellGoalVisuals(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, GoalVisualReadout> {
   const out: Record<string, GoalVisualReadout> = {};
-  for (const agent of demoShellAgents()) {
+  for (const agent of agents) {
     const initiative = demoInitiativeFor(agent);
     out[agent.id] = {
       identityKey: `demo:${initiative.id}`,
@@ -201,8 +211,9 @@ export function demoShellGoalVisuals(): Record<string, GoalVisualReadout> {
  * burn lens reads — no tile-private math. Base tier only, matching the
  * exposé's scope; delegated runs ride inside each Session total.
  */
-export function demoShellConsumption(): Record<string, AgentBurnEntry> {
-  const agents = demoShellAgents();
+export function demoShellConsumption(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, AgentBurnEntry> {
   const view = computeAgentBurn(
     agents.map(agent => ({ id: agent.id, ...demoAgentBurn(agent) }))
   );
@@ -212,15 +223,19 @@ export function demoShellConsumption(): Record<string, AgentBurnEntry> {
 }
 
 /** durableSessionId → six-word context label (the D33 subtitle channel). */
-export function demoShellSummaries(): Record<string, string> {
+export function demoShellSummaries(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const agent of demoShellAgents()) out[agent.id] = agent.contextLabel;
+  for (const agent of agents) out[agent.id] = agent.contextLabel;
   return out;
 }
 
-export function demoShellAttention(): Record<string, SessionAttentionSignal> {
+export function demoShellAttention(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, SessionAttentionSignal> {
   const out: Record<string, SessionAttentionSignal> = {};
-  for (const agent of demoShellAgents()) {
+  for (const agent of agents) {
     const attention = demoAgentAttention(agent);
     if (attention) out[agent.id] = attention;
   }
@@ -228,24 +243,30 @@ export function demoShellAttention(): Record<string, SessionAttentionSignal> {
 }
 
 /** sessionId → actively producing output (working/reviewing). */
-export function demoShellActivity(): Record<string, boolean> {
+export function demoShellActivity(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, boolean> {
   const out: Record<string, boolean> = {};
-  for (const agent of demoShellAgents()) {
+  for (const agent of agents) {
     out[agent.id] = agent.status === 'working' || agent.status === 'reviewing';
   }
   return out;
 }
 
 /** Every demo Agent has been given work — the fixtures author real goals. */
-export function demoShellEngaged(): Record<string, boolean> {
+export function demoShellEngaged(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, boolean> {
   const out: Record<string, boolean> = {};
-  for (const agent of demoShellAgents()) out[agent.id] = true;
+  for (const agent of agents) out[agent.id] = true;
   return out;
 }
 
-export function demoShellDelegation(): Record<string, SessionDelegation> {
+export function demoShellDelegation(
+  agents: readonly DemoFleetAgent[] = demoShellAgents()
+): Record<string, SessionDelegation> {
   const out: Record<string, SessionDelegation> = {};
-  for (const agent of demoShellAgents()) {
+  for (const agent of agents) {
     if (agent.delegated.length === 0) continue;
     out[agent.id] = {
       ownTurn: agent.status === 'working' ? 'generating' : 'available',
@@ -261,8 +282,12 @@ export function demoShellDelegation(): Record<string, SessionDelegation> {
   return out;
 }
 
-/** tabId → what that Agent is executing, from the Project's OWN roadmap. */
-export function demoShellRoadmapByTab(): Record<
+/** tabId → what that Agent is executing, from the Project's OWN roadmap,
+ *  with the tick's landed milestones counted (ENG-027 W14). */
+export function demoShellRoadmapByTab(
+  agents: readonly DemoFleetAgent[] = demoShellAgents(),
+  landed: readonly DemoLandedMilestone[] = []
+): Record<
   string,
   { label: string; fraction: string | null; inferred: boolean }
 > {
@@ -270,9 +295,9 @@ export function demoShellRoadmapByTab(): Record<
     string,
     { label: string; fraction: string | null; inferred: boolean }
   > = {};
-  for (const agent of demoShellAgents()) {
+  for (const agent of agents) {
     if (!agent.roadmapItemId) continue;
-    const doc = demoRoadmapDoc(agent.projectKey);
+    const doc = demoRoadmapDoc(agent.projectKey, landed);
     const item = doc?.items.find(i => i.declaredId === agent.roadmapItemId);
     const done = item?.milestones.filter(m => m.done).length ?? 0;
     const total = item?.milestones.length ?? 0;
@@ -381,23 +406,91 @@ export type DemoRoadmapReadResult =
   | { status: 'ok'; text: string; file: string; mtimeMs: number }
   | { status: 'none'; checked: string[] };
 
-/** Parsed fixture roadmap, or null for a key without one (never throws). */
-export function demoRoadmapDoc(projectKey: string): RoadmapDoc | null {
+/** The tick's landed milestones (ENG-027 W14) as the roadmap text records
+ *  them; in-flight landings are not yet in the text. */
+export function demoLandedMilestones(
+  landings: readonly DemoLandingView[] | undefined
+): DemoLandedMilestone[] {
+  if (!landings) return [];
+  const out: DemoLandedMilestone[] = [];
+  for (const landing of landings) {
+    if (landing.state !== 'landed' || landing.landedAt === null) continue;
+    out.push({
+      roadmapItemId: landing.roadmapItemId,
+      milestoneId: landing.milestoneId,
+      milestoneTitle: landing.milestoneTitle,
+      landedAtMs: landing.landedAt,
+      sha: landing.sha,
+    });
+  }
+  return out;
+}
+
+function landedForProject(
+  projectKey: string,
+  landed: readonly DemoLandedMilestone[]
+): DemoLandedMilestone[] {
+  if (landed.length === 0) return [];
+  const itemIds = demoProjectRoadmap(projectKey).items.map(
+    item => item.declaredId
+  );
+  return landed.filter(entry => itemIds.includes(entry.roadmapItemId));
+}
+
+/** Parsed fixture roadmap with the tick's landings written in, or null for
+ *  a key without one (never throws). Static and cached when nothing landed. */
+export function demoRoadmapDoc(
+  projectKey: string,
+  landed: readonly DemoLandedMilestone[] = []
+): RoadmapDoc | null {
   if (!DEMO_ROADMAP_MARKDOWN[projectKey]) return null;
-  return demoProjectRoadmap(projectKey);
+  const mine = landedForProject(projectKey, landed);
+  if (mine.length === 0) return demoProjectRoadmap(projectKey);
+  const project = DEMO_PROJECTS_BY_KEY.get(projectKey)!;
+  return parseRoadmap(demoRoadmapMarkdownWithLandings(projectKey, mine), {
+    projectDir: project.dir,
+    file: 'ROADMAP.md',
+    now: () => 0,
+  });
 }
 
 /** `roadmap:read`-shaped source over the fixture markdown, so the SAME lens
  *  hook (`useProjectRoadmap`) renders Voltaic roadmaps through the real
- *  parser without touching the filesystem. */
-export function demoRoadmapRead(projectDir: string): DemoRoadmapReadResult {
+ *  parser without touching the filesystem. With the tick's landed milestones
+ *  (ENG-027 W14) the text carries each one as a convention-conformant landed
+ *  bullet, so the lens shows the landing where a real roadmap would. */
+export function demoRoadmapRead(
+  projectDir: string,
+  landed: readonly DemoLandedMilestone[] = []
+): DemoRoadmapReadResult {
   const project = DEMO_PROJECTS.find(p => p.dir === projectDir);
   const markdown = project ? DEMO_ROADMAP_MARKDOWN[project.key] : undefined;
   if (!project || !markdown) return { status: 'none', checked: [projectDir] };
+  const mine = landedForProject(project.key, landed);
   return {
     status: 'ok',
-    text: markdown,
+    text:
+      mine.length === 0
+        ? markdown
+        : demoRoadmapMarkdownWithLandings(project.key, mine),
     file: `${project.dir}/ROADMAP.md`,
-    mtimeMs: DEMO_SHELL_NOW_MS,
+    mtimeMs: mine.reduce(
+      (latest, entry) => Math.max(latest, entry.landedAtMs),
+      DEMO_SHELL_NOW_MS
+    ),
+  };
+}
+
+/** Tab lifecycle fields for a Session's current status: a failed Agent reads
+ *  failed (dimmed, fault-labeled) exactly like a live one; everything else is
+ *  a live, owned Session. Shared by `demoTab` and the tick's ribbon update. */
+export function demoTabLifecycle(
+  status: DemoFleetAgent['status']
+): Pick<SessionTab, 'resumeState' | 'lifecycle' | 'exitCode'> {
+  const failed = status === 'error';
+  return {
+    resumeState: failed ? 'failed' : 'live',
+    lifecycle: failed ? 'failed' : 'running',
+    exitCode: failed ? 1 : null,
   };
 }

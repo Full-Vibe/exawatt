@@ -17,6 +17,7 @@ Demo Mode lets investors, collaborators, and users experience Exawatt without li
 **The Demo Workspace (ENG-027, landed 2026-08-02) is the demo implementation.** Demo is a real tenant in the account-menu and ⌘K Workspace switchers. Selecting it runs the authored Voltaic Grid Systems fixtures (`@exawatt/core` demo module) through the production surfaces:
 
 - the Fleet altitude renders the honest ~209-entity fleet through `DemoWorkspaceTransport` — the same `FleetManager`/UI-model contracts the live local transport feeds
+- the fleet is alive (ENG-027 W14, 2026-10-05): a seeded, deterministic tick advances work state — statuses on plausible cadences, delegated children spawning and finishing, landings that flip a Project's roadmap milestone with a sha, token totals — as a pure function of the seed and the elapsed time, so a reload lands on the same fleet and every machine shows the same demo; it simulates no conversation and launches nothing
 - the Agent and Team altitudes render the demo shell behind `WorkspaceScopeGate`: Sessions open a **pane content source** — authored hero transcripts or the honest session record — never a live PTY, never a simulated stream, never a blank pane
 - every demo Agent names one of four authored Initiatives; the active Agent context bar and Team cards project that source truth without inventing it for sources that do not report Initiatives
 - ⌘K lists the demo Sessions through the same row shapes; every verb that could reach a PTY or Personal truth is absent in the Demo tenant
@@ -39,7 +40,7 @@ schedule capability. Browsers never receive a token-returning fallback route.
 
 ### Retired to eval-only: the mock fleet simulation
 
-The simulation engine (`MockFleetTransport`, with its speed/scale `DemoControls` UI) demoted from the product surface to eval-only when the Demo Workspace landed, per the recorded ENG-027 W2 disposition: the simulated and honest demo sources must never coexist in a demo. The class remains in `@exawatt/core` for eval harnesses; its synthetic 1k/10k tiers serve rendering-headroom measurement only (`/eval/t10-board-scale`) and are always presented as synthetic, never as "the fleet".
+The simulation engine (`MockFleetTransport`, with its speed/scale `DemoControls` UI) demoted from the product surface to eval-only when the Demo Workspace landed, per the recorded ENG-027 W2 disposition: the simulated and honest demo sources must never coexist in a demo. The class remains in `@exawatt/core` for eval harnesses; its synthetic 1k/10k tiers serve rendering-headroom measurement only (`/eval/t10-board-scale`) and are always presented as synthetic, never as "the fleet". The W14 tick is not this engine returning: it advances the AUTHORED fleet deterministically and adds no Agent, where the mock invented a fleet from random rolls.
 
 ### Retired: the legacy demo trio
 

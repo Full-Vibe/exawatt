@@ -1030,7 +1030,7 @@ Built:
 - Electron shell
 - Supabase auth/data
 - legacy Supabase demo task flow
-- `@exawatt/core` OpenClaw JSON-RPC client, Electron-main credential/capability broker, adapters, FleetManager, and the Demo Workspace fixture transport (`DemoWorkspaceTransport`; the simulated `MockFleetTransport` is eval-only since ENG-027 W2)
+- `@exawatt/core` OpenClaw JSON-RPC client, Electron-main credential/capability broker, adapters, FleetManager, and the Demo Workspace fixture transport (`DemoWorkspaceTransport`, alive since ENG-027 W14 through the seeded, deterministic `DemoFleetSimulation` tick over the authored fixture; the simulated `MockFleetTransport` is eval-only since ENG-027 W2)
 - connected customer-hosted OpenClaw (ENG-010 C0-C5, ENG-033 H2):
   the source-qualified projection kernel, saved SSH-forwarded sources,
   OS-protected scoped device credentials, continuous authoritative observation,

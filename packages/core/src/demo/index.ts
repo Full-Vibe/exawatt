@@ -25,6 +25,9 @@ export {
   DEMO_ROADMAP_MARKDOWN,
   demoProjectRoadmap,
   demoRoadmapItemIds,
+  demoOpenMilestones,
+  demoRoadmapMarkdownWithLandings,
+  type DemoLandedMilestone,
 } from './roadmaps';
 export { DEMO_BASE_AGENTS } from './agents';
 export { DEMO_TRANSCRIPTS } from './transcripts';
@@ -36,6 +39,19 @@ export {
   type DemoFleetOptions,
 } from './scale';
 export { demoAgentBurn, type DemoAgentBurn } from './burn';
+export {
+  DEMO_SIMULATION_SEED,
+  DEMO_TICK_CADENCE_MS,
+  DEMO_LANDING_CADENCE_MS,
+  INITIAL_ATTENTION_HOLD_MS,
+  DemoFleetSimulation,
+  demoLandingStateAt,
+  type DemoFleetFrame,
+  type DemoFleetSimulationOptions,
+  type DemoLanding,
+  type DemoLandingState,
+  type DemoLandingView,
+} from './simulation';
 export {
   DEMO_CONSUMPTION_WINDOW_DAYS,
   demoWorkspaceConsumption,

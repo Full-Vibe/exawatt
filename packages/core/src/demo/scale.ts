@@ -468,7 +468,9 @@ const CHILD_TASK_STEMS: Record<
   support: { explore: 'Ticket sample pull', general: 'Macro tone audit' },
 };
 
-function childStemsFor(fn: DemoProjectFunction) {
+/** Child-task stems per business function — shared with the W14 tick so a
+ *  child spawned at demo time reads like one authored at fixture time. */
+export function demoChildTaskStems(fn: DemoProjectFunction) {
   if (isCodingFunction(fn)) return CHILD_TASK_STEMS.coding;
   return CHILD_TASK_STEMS[fn as 'research' | 'marketing' | 'support'];
 }
@@ -494,7 +496,7 @@ function delegatedFor(
   if (status !== 'working' && status !== 'reviewing') return [];
   const roll = unit(`${id}:delegate`);
   if (roll > 0.45) return [];
-  const stems = childStemsFor(projectFunction);
+  const stems = demoChildTaskStems(projectFunction);
   const children: DemoDelegatedRun[] = [
     {
       agentId: `agent-${Math.floor(unit(`${id}:child0`) * 0xffff)
@@ -532,7 +534,9 @@ function delegatedFor(
   return children;
 }
 
-const FAULT_STEMS = [
+/** Fault notes a stopped run can carry; the W14 tick draws from the same
+ *  pool so a fault raised at demo time matches one authored at fixture time. */
+export const DEMO_FAULT_STEMS: readonly string[] = [
   'Verification run exited non-zero on the final check; the failure reproduces and needs a human read.',
   'Dependency of this task changed underneath the run; rebase produced conflicts the agent will not resolve unattended.',
   'Environment prerequisite is missing on this runner; the task cannot proceed without provisioning.',
@@ -581,8 +585,9 @@ const HARNESS_BY_LEDGER: Record<
   grok: ['grok'],
 };
 
-/** Harnesses that can report a delegated run, per the source contract. */
-const DELEGATION_OBSERVING: readonly AgentSourceAdapterId[] = [
+/** Harnesses that can report a delegated run, per the source contract. The
+ *  W14 tick lets only these parents spawn children at demo time. */
+export const DEMO_DELEGATION_OBSERVING_HARNESSES: readonly AgentSourceAdapterId[] = [
   'claude',
   'codex',
   'openclaw',
@@ -594,7 +599,7 @@ function harnessFor(
   delegates: boolean
 ): AgentSourceAdapterId {
   const candidates = HARNESS_BY_LEDGER[ledger].filter(
-    adapter => !delegates || DELEGATION_OBSERVING.includes(adapter)
+    adapter => !delegates || DEMO_DELEGATION_OBSERVING_HARNESSES.includes(adapter)
   );
   const pool = candidates.length > 0 ? candidates : HARNESS_BY_LEDGER[ledger];
   return pool[Math.floor(unit(`${id}:harness`) * pool.length)] ?? pool[0]!;
@@ -710,7 +715,7 @@ function synthesizeAgent(
   }
   if (status === 'error') {
     agent.faultNote =
-      FAULT_STEMS[Math.floor(unit(`${id}:fault`) * FAULT_STEMS.length)];
+      DEMO_FAULT_STEMS[Math.floor(unit(`${id}:fault`) * DEMO_FAULT_STEMS.length)];
   }
   return agent;
 }

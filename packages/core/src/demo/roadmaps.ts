@@ -14,7 +14,7 @@
  */
 
 import { parseRoadmap } from '../roadmap/parse';
-import type { RoadmapDoc } from '../roadmap/types';
+import type { RoadmapDoc, RoadmapMilestone } from '../roadmap/types';
 import { DEMO_PROJECTS_BY_KEY } from './projects';
 
 const DISPATCH_ENGINE = `---
@@ -636,4 +636,91 @@ export function demoRoadmapItemIds(projectKey: string): Set<string> {
       .items.map(item => item.declaredId)
       .filter((id): id is string => id !== null)
   );
+}
+
+/** Milestones of one item still owed: neither done nor retired. */
+export function demoOpenMilestones(
+  projectKey: string,
+  itemId: string
+): RoadmapMilestone[] {
+  if (!DEMO_ROADMAP_MARKDOWN[projectKey]) return [];
+  const item = demoProjectRoadmap(projectKey).items.find(
+    candidate => candidate.declaredId === itemId
+  );
+  return item
+    ? item.milestones.filter(milestone => !milestone.done && !milestone.retired)
+    : [];
+}
+
+/** One milestone the W14 tick landed, as the roadmap text records it. */
+export interface DemoLandedMilestone {
+  roadmapItemId: string;
+  milestoneId: string | null;
+  milestoneTitle: string;
+  landedAtMs: number;
+  sha: string;
+}
+
+const LANDED_ITEM_HEADING = /^###\s+([A-Z][A-Z0-9]*-\d+)\b/;
+const LANDED_MILESTONES_LABEL = /^Milestones:\s*$/i;
+const LANDED_LABEL_LINE = /^(Scope|Exit criteria|Milestones|Project doc):\s*$/i;
+const LANDED_OPEN_BULLET = /^([-*])\s+\[ \]\s+(.+?)\s*$/;
+const LANDED_MILESTONE_ID = /^([A-Z]{1,4}\d+(?:\.\d+)*)\b[\s:]*/;
+
+/**
+ * A Project's roadmap with the tick's landings written in (ENG-027 W14).
+ *
+ * Each landed milestone's open checkbox becomes the convention's done form,
+ * `- F3 Ten-day shadow bidding run (landed 2026-10-05, 3f9c2ab)`, the same
+ * shape the fixture already uses for `(landed 2026-07-28)`, so the lens
+ * parses it through the real parser with zero warnings and the milestone
+ * fraction moves. Text outside the landed bullets is byte-identical.
+ */
+export function demoRoadmapMarkdownWithLandings(
+  projectKey: string,
+  landed: readonly DemoLandedMilestone[]
+): string {
+  const markdown = DEMO_ROADMAP_MARKDOWN[projectKey];
+  if (!markdown) throw new Error(`no demo roadmap for project key "${projectKey}"`);
+  if (landed.length === 0) return markdown;
+  let itemId: string | null = null;
+  let inMilestones = false;
+  return markdown
+    .split('\n')
+    .map(line => {
+      const heading = LANDED_ITEM_HEADING.exec(line);
+      if (heading) {
+        itemId = heading[1];
+        inMilestones = false;
+        return line;
+      }
+      if (LANDED_MILESTONES_LABEL.test(line)) {
+        inMilestones = true;
+        return line;
+      }
+      if (!inMilestones || itemId === null) return line;
+      if (line.trim() === '') return line;
+      const bullet = LANDED_OPEN_BULLET.exec(line);
+      if (!bullet) {
+        if (LANDED_LABEL_LINE.test(line) || !/^[-*]\s+/.test(line)) {
+          inMilestones = false;
+        }
+        return line;
+      }
+      const rest = bullet[2];
+      const idMatch = LANDED_MILESTONE_ID.exec(rest);
+      const milestoneId = idMatch ? idMatch[1] : null;
+      const title = (idMatch ? rest.slice(idMatch[0].length) : rest).trim();
+      const hit = landed.find(
+        entry =>
+          entry.roadmapItemId === itemId &&
+          (milestoneId !== null
+            ? entry.milestoneId === milestoneId
+            : entry.milestoneTitle === title)
+      );
+      if (!hit) return line;
+      const date = new Date(hit.landedAtMs).toISOString().slice(0, 10);
+      return `${bullet[1]} ${milestoneId ? `${milestoneId} ` : ''}${title} (landed ${date}, ${hit.sha})`;
+    })
+    .join('\n');
 }
