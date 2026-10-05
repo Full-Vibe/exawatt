@@ -145,6 +145,8 @@ Rules for the arc: the daily-driver arc's correctness wins any surface
 conflict (unchanged); visual evidence before landing; no landing to the
 dogfood build after the Tuesday freeze except a demo blocker.
 
+Freeze (G7, stated 2026-10-05): no landing to the dogfood build after Tue 2026-10-06 12:00 PT except a demo blocker, named as such in its commit subject; the installed sha equals `origin/master` at the freeze until after the workshop; docs landings do not touch the installed build and stay open. G7's script rewrite and recording plan landed 2026-10-05.
+
 ## Execution front (2026-08-03)
 
 The 2026-08-02 demo arc **landed in one day**: ENG-036 G0/G1, ENG-026 N0–N5, ENG-027 W1–W4, ENG-004 V3.0/V3.1, ENG-008 E4→E8, ENG-032 T0, the `0023` rename with the legacy trio retired, and ENG-023 D3a/D3b/D4. The explanatory picture is now on screen. The 2026-08-02 front below is kept for its reasoning; the ordered work is now this:

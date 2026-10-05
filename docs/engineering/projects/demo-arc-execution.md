@@ -332,6 +332,19 @@ integrated affordances, both still provisional until the Friday checkpoint.
   dogfood freeze Tuesday 2026-10-06 12:00 PT with only demo blockers landing
   after; rehearsal Tuesday afternoon on the frozen build.
 - **May start:** Monday 2026-10-05, after the packets above land.
+- **Landed 2026-10-05 (script and plan):** `docs/product/demo-script.md`
+  rewritten for this arc against `origin/master` `42f708ab` (G1 to G6 landed,
+  G3 included): thesis, Tuesday-evening and Wednesday-08:00 checklists, ten
+  beats with screen, sentence, keys, expected truth, fallback and budget
+  (12:45 total), the honest failure state per surface, the do-not-show list.
+  Recording plan (three clips, `screencapture -v` of the running installed
+  build, hand-driven because Apple-events automation is not authorized from
+  the agent shell) in the session scratchpad; recordings are Tuesday
+  afternoon, never tonight (queued dogfood installs). Freeze stated in the
+  script and the roadmap. Still to verify on the installed build Tuesday:
+  Demo landing marks in the lens and Antigravity rows in the Demo fleet
+  (G2.1, in flight at landing), the Codex queued-question reproduction, and
+  the Antigravity path (Claude model, or a Gemini row if overages are on).
 
 ### Day sequence
 
