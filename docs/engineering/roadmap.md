@@ -2000,6 +2000,13 @@ The existing _Push to cloud_ announced affordance remains a promise, not the
 label for attaching an existing remote Agent. It becomes actionable only at H4,
 when Exawatt can state what moves.
 
+2026-10-05 (demo arc G6, PROVISIONAL, operator review owed): `/cloud` names two
+Push to cloud destinations beside the local card, Exawatt-hosted (Not active)
+and a Gemini managed environment (Google's Gemini API managed agents, public
+preview, agent `antigravity-preview-09-2026`; Not connected), each with what
+Push will do there once wired; the tab-menu and Demo pane Push to cloud
+tooltips name both. Nothing is wired; H3 and H4 are unchanged.
+
 **The homepage carries this promise publicly from 2026-08-19** (ENG-031 W12,
 operator: "add a section about the ... feature to push an agent up to the cloud
 to manage long-horizon agents / long-horizon work"). The `cloud` band at `/v2`
@@ -2502,6 +2509,15 @@ fail-closed for managed policy; an exportable audit of `safety.denied`; the
 next controls (destructive git, credential reads, network egress, allowed
 harnesses and models); and how it meets ENG-006 Approvals and ENG-023
 visibility. Guides are owed under ENG-031.
+
+2026-10-05 (demo arc G6, PROVISIONAL, operator review owed): Settings ▸ Safety
+shows the four shaped next controls (destructive git operations, credential
+reads, network egress, allowed harnesses and models) as a Policy preview group
+under the live control: declared in `SAFETY_POLICY_PREVIEWS` beside
+`SAFETY_CONTROLS` with `enforcement: 'preview'`, an id type that is not a
+`SafetyControlId` (so neither the settings store, the IPC write, nor
+enforcement can take one), and an announced chip in place of a switch. The live
+control is unchanged.
 
 Direction (operator, 2026-09-28), for Agents running on remote machines:
 the guard policy is "configurable and clear and visually evident when it's

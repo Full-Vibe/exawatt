@@ -11,14 +11,25 @@
  * the canon asks each limit to say which system enforces it. None of these
  * invents a second enforcement regime: each one runs inside its Agent Source's
  * own boundary (for Claude Code, a `PreToolUse` hook) and states that it does.
+ *
+ * A policy preview (`SAFETY_POLICY_PREVIEWS`) is a control that is shaped and
+ * not built. It is declared beside the enforced controls so Settings shows
+ * where it will live, and it is a different type on purpose: its id is not a
+ * `SafetyControlId`, so it cannot be stored, written over IPC, or read by
+ * enforcement, and it carries no `enforcedBy` or `takesEffect`, because
+ * nothing enforces it and nothing takes effect.
  */
 export type SafetyControlId = 'processKillGuard';
 
-export interface SafetyControl {
-  id: SafetyControlId;
+interface SafetyDeclaration {
   label: string;
   /** What it stops, in the operator's words. */
   purpose: string;
+}
+
+export interface SafetyControl extends SafetyDeclaration {
+  id: SafetyControlId;
+  enforcement: 'enforced';
   /** The agents it reaches today. */
   appliesTo: string;
   /** The system that stops the action. */
@@ -30,12 +41,55 @@ export interface SafetyControl {
 export const SAFETY_CONTROLS: readonly SafetyControl[] = [
   {
     id: 'processKillGuard',
+    enforcement: 'enforced',
     label: 'Block broad process kills',
     purpose:
       'Stops a pkill, killall or kill that would also end other apps, system processes, other agents or Exawatt itself. The agent is told what it would have hit and how to stop only what it started.',
     appliesTo: 'Claude Code agents started in Exawatt',
     enforcedBy: 'Claude Code, before the command runs',
     takesEffect: 'Agents started or resumed after it is turned on',
+  },
+];
+
+/** The next controls ENG-044 has shaped. None is built. */
+export type SafetyPolicyPreviewId =
+  | 'destructiveGitGuard'
+  | 'credentialReadGuard'
+  | 'networkEgressLimit'
+  | 'allowedHarnessesAndModels';
+
+interface SafetyPolicyPreview extends SafetyDeclaration {
+  id: SafetyPolicyPreviewId;
+  /** Nothing enforces a preview, so it has no enforcer and no switch. */
+  enforcement: 'preview';
+}
+
+export const SAFETY_POLICY_PREVIEWS: readonly SafetyPolicyPreview[] = [
+  {
+    id: 'destructiveGitGuard',
+    enforcement: 'preview',
+    label: 'Block destructive git operations',
+    purpose:
+      'Stops a force push, a branch deletion or a history rewrite that would discard work.',
+  },
+  {
+    id: 'credentialReadGuard',
+    enforcement: 'preview',
+    label: 'Block credential reads',
+    purpose:
+      'Stops reads of keychains, .env files, SSH keys and tokens the agent was not given.',
+  },
+  {
+    id: 'networkEgressLimit',
+    enforcement: 'preview',
+    label: 'Limit network egress',
+    purpose: 'Allows connections only to the hosts you list.',
+  },
+  {
+    id: 'allowedHarnessesAndModels',
+    enforcement: 'preview',
+    label: 'Allow only listed harnesses and models',
+    purpose: 'Starts agents only on the harnesses and models you list.',
   },
 ];
 

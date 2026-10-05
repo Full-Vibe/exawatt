@@ -3,12 +3,14 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   SAFETY_CONTROLS,
+  SAFETY_POLICY_PREVIEWS,
   isSafetyControlEnabled,
   type SafetyControl,
   type SafetyControlId,
   type SafetyControlSettings,
 } from '@exawatt/core';
 import type { DesktopSettingsApi } from '@exawatt/core/desktop-bridge';
+import { AnnouncedChip } from '@/components/readiness';
 import { Button } from '@/components/ui/button';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
@@ -16,9 +18,14 @@ import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
 /**
  * ENG-044 — limits the operator sets on what the agents Exawatt starts may do.
  *
- * Every row is rendered from `SAFETY_CONTROLS`, the same declaration Electron
- * main enforces from, so a control cannot appear here without its enforcement
- * or be enforced without appearing here. Each one is off until turned on.
+ * Every row with a switch is rendered from `SAFETY_CONTROLS`, the same
+ * declaration Electron main enforces from, so a control cannot appear here
+ * without its enforcement or be enforced without appearing here. Each one is
+ * off until turned on. The policy preview below it renders
+ * `SAFETY_POLICY_PREVIEWS`: the shaped next controls, drawn where they will
+ * live with the readiness grammar's announced chip in place of a switch. A
+ * preview's id is not a `SafetyControlId`, so nothing here can store or send
+ * one.
  */
 
 function ControlFacts({ control }: { control: SafetyControl }) {
@@ -191,6 +198,25 @@ export function SafetySettings() {
               That change didn&apos;t save. Try again.
             </p>
           )}
+        </SettingsGroup>
+
+        <SettingsGroup
+          title="Policy preview"
+          description="Not enforced yet. Each one will be off until you turn it on."
+          dataAttribute="data-safety-policy-preview"
+        >
+          {SAFETY_POLICY_PREVIEWS.map(preview => (
+            <div key={preview.id} data-safety-preview={preview.id}>
+              <SettingRow title={preview.label} description={preview.purpose}>
+                <AnnouncedChip
+                  coming="enforcement of this control"
+                  className="shrink-0"
+                >
+                  Off
+                </AnnouncedChip>
+              </SettingRow>
+            </div>
+          ))}
         </SettingsGroup>
       </div>
     </section>

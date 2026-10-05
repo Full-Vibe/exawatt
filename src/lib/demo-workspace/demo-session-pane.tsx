@@ -95,7 +95,10 @@ export function DemoSessionPane({
           {STATUS_LIGHT_META[lightState].label}
         </span>
         {agent.roadmapItemId && (
-          <span className="font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
+          <span
+            className="font-mono text-chrome-meta"
+            style={{ color: HUD.textDim }}
+          >
             {agent.roadmapItemId}
             {agent.link ? ` · ${agent.link}` : ''}
           </span>
@@ -114,7 +117,7 @@ export function DemoSessionPane({
             show the direction without a live tab. */}
         <AnnouncedChip
           size="micro"
-          coming="run this Agent on an Exawatt-hosted plan (Cloud)"
+          coming="run this Agent on an Exawatt-hosted machine or a Gemini managed environment (Cloud)"
         >
           <CloudUpload aria-hidden className="h-3 w-3" />
           Push to cloud
@@ -130,10 +133,16 @@ export function DemoSessionPane({
 
       {/* Goal line — the launch sentence, then the six-word subtitle */}
       <div className="shrink-0 border-b border-white/5 px-4 py-2.5">
-        <p className="text-chrome-title leading-relaxed" style={{ color: HUD.text }}>
+        <p
+          className="text-chrome-title leading-relaxed"
+          style={{ color: HUD.text }}
+        >
           {agent.goal}
         </p>
-        <p className="mt-0.5 font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
+        <p
+          className="mt-0.5 font-mono text-chrome-meta"
+          style={{ color: HUD.textDim }}
+        >
           {project?.name ?? agent.projectKey} · started{' '}
           {relativeTime(nowMs, agent.startedAtMs)} · last activity{' '}
           {relativeTime(nowMs, agent.lastActivityAtMs)}
@@ -186,7 +195,10 @@ export function DemoSessionPane({
         {/* Delegated team (ENG-023) */}
         {agent.delegated.length > 0 && (
           <section className="mb-4">
-            <p className="mb-1.5 font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
+            <p
+              className="mb-1.5 font-mono text-chrome-meta"
+              style={{ color: HUD.textDim }}
+            >
               {agent.delegated.length} delegated{' '}
               {agent.delegated.length === 1 ? 'agent' : 'agents'}
             </p>
@@ -211,7 +223,10 @@ export function DemoSessionPane({
           <section data-demo-transcript className="flex flex-col gap-3 pb-4">
             {content.lines.map((line, index) => (
               <div key={index} className="flex flex-col gap-0.5">
-                <p className="font-mono text-chrome-micro" style={{ color: HUD.textDim }}>
+                <p
+                  className="font-mono text-chrome-micro"
+                  style={{ color: HUD.textDim }}
+                >
                   {ROLE_LABEL[line.role]} · {relativeTime(nowMs, line.atMs)}
                 </p>
                 <p
@@ -226,7 +241,10 @@ export function DemoSessionPane({
                 </p>
               </div>
             ))}
-            <p className="mt-2 font-mono text-chrome-micro" style={{ color: HUD.textDim }}>
+            <p
+              className="mt-2 font-mono text-chrome-micro"
+              style={{ color: HUD.textDim }}
+            >
               End of recorded transcript.
             </p>
           </section>

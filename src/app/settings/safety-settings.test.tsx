@@ -6,7 +6,11 @@ import {
   screen,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SAFETY_CONTROLS, type SafetyControlId } from '@exawatt/core';
+import {
+  SAFETY_CONTROLS,
+  SAFETY_POLICY_PREVIEWS,
+  type SafetyControlId,
+} from '@exawatt/core';
 import type {
   DesktopSettingsApi,
   ExawattSettings,
@@ -144,5 +148,21 @@ describe('SafetySettings', () => {
     expect(document.querySelectorAll('[data-safety-control]')).toHaveLength(
       SAFETY_CONTROLS.length
     );
+  });
+
+  it('draws each policy preview announced, with no switch, and leaves every live switch in place', async () => {
+    installSettings();
+    await renderSafety();
+
+    const previews = document.querySelectorAll<HTMLElement>(
+      '[data-safety-preview]'
+    );
+    expect(previews).toHaveLength(SAFETY_POLICY_PREVIEWS.length);
+    for (const row of previews) {
+      expect(row.querySelector('[role="switch"]')).toBeNull();
+      expect(row.querySelector('[data-readiness="announced"]')).not.toBeNull();
+    }
+    // The only switches on the page belong to enforced controls.
+    expect(screen.getAllByRole('switch')).toHaveLength(SAFETY_CONTROLS.length);
   });
 });

@@ -1706,7 +1706,7 @@ export function TabStrip({
                               id: 'push-to-cloud',
                               label: 'Push to cloud',
                               announcedComing:
-                                'run this Agent on an Exawatt-hosted plan (Cloud)',
+                                'run this Agent on an Exawatt-hosted machine or a Gemini managed environment (Cloud)',
                             },
                             {
                               id: 'cloud',

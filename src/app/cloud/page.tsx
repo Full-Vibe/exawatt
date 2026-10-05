@@ -7,7 +7,11 @@ import {
 } from '@/components/readiness';
 import { withAlpha } from '@/components/hud/tokens';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
-import { demoCloudHero } from './model';
+import {
+  CLOUD_DESTINATIONS,
+  demoCloudHero,
+  type CloudDestination,
+} from './model';
 
 // Preview surface (ENG-026 N3, previewing ENG-033). noindex for the same
 // stealth reason as /usage: reachable by URL for demos, not
@@ -17,31 +21,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-function HeroCard({
-  where,
-  detail,
-  hosted = false,
-}: {
-  where: string;
-  detail: string;
-  hosted?: boolean;
-}) {
+/** The local card is solid truth: the Agent as it runs today. */
+function LocalCard() {
   const { agent, project } = demoCloudHero();
   return (
-    <div
-      className={`flex w-full min-w-0 flex-col gap-2 rounded-lg bg-card p-4 sm:max-w-[320px] ${
-        hosted ? '' : 'border border-border'
-      }`}
-      style={
-        // The hosted card is the drawing of the thing, not the thing: it
-        // carries the readiness family's dashed stroke (design kernel —
-        // dashes mean designed, not built). The local card is solid truth.
-        hosted
-          ? { border: `1px dashed ${withAlpha(READINESS_NEUTRAL, 0.55)}` }
-          : undefined
-      }
-      data-readiness={hosted ? 'announced' : undefined}
-    >
+    <div className="flex w-full min-w-0 flex-col gap-2 rounded-lg border border-border bg-card p-4 sm:max-w-[300px]">
       <div className="flex items-center gap-2">
         <span
           aria-hidden
@@ -58,16 +42,52 @@ function HeroCard({
         </span>
       </div>
       <div className="mt-1 border-t border-border pt-2">
-        <span
-          className="block font-mono text-chrome-micro"
-          style={hosted ? { color: READINESS_NEUTRAL } : undefined}
-        >
-          {where}
+        <span className="block font-mono text-chrome-micro">
+          Local · this machine
         </span>
         <span className="mt-0.5 block text-chrome-meta text-muted-foreground">
-          {detail}
+          Runs while this machine is awake.
         </span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A destination card is the drawing of the thing, not the thing: it carries
+ * the readiness family's dashed stroke (design kernel: dashes mean designed,
+ * not built) and its state word, and nothing on it operates.
+ */
+function DestinationCard({ destination }: { destination: CloudDestination }) {
+  return (
+    <div
+      className="flex w-full min-w-0 flex-col gap-1.5 rounded-lg bg-card p-4"
+      style={{ border: `1px dashed ${withAlpha(READINESS_NEUTRAL, 0.55)}` }}
+      data-readiness="announced"
+      data-cloud-destination={destination.id}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span
+          className="font-mono text-chrome-micro"
+          style={{ color: READINESS_NEUTRAL }}
+        >
+          {destination.name}
+        </span>
+        <span className="shrink-0 font-mono text-chrome-micro text-muted-foreground">
+          {destination.state}
+        </span>
+      </div>
+      <span className="text-chrome-meta text-muted-foreground">
+        {destination.runs}
+      </span>
+      <span className="text-chrome-meta text-muted-foreground">
+        {destination.then}
+      </span>
+      {destination.reference && (
+        <span className="mt-0.5 font-mono text-chrome-micro text-muted-foreground">
+          {destination.reference}
+        </span>
+      )}
     </div>
   );
 }
@@ -97,16 +117,13 @@ export default function CloudPage() {
       owner="ENG-033"
       today="Connect to Agents on servers you run. Managed placement, transfer, and billing are not active. The Session shown is Voltaic demo content."
     >
-      {/* A future placement specimen; neither side is an active transition. */}
+      {/* A future placement specimen; no side of it is an active transition. */}
       <section
         aria-label="Future managed placement concept"
         className="rounded-lg border border-border bg-card/50 p-4"
       >
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center">
-          <HeroCard
-            where="Local · this machine"
-            detail="Runs while this machine is awake."
-          />
+          <LocalCard />
           <div className="flex shrink-0 flex-col items-center gap-1.5 self-center px-1">
             <AnnouncedChip coming="managed placement and explicit transfer (ENG-033 H3/H4)">
               <CloudUpload aria-hidden className="h-3.5 w-3.5" />
@@ -117,11 +134,16 @@ export default function CloudPage() {
               className="hidden h-3.5 w-3.5 text-muted-foreground sm:block"
             />
           </div>
-          <HeroCard
-            hosted
-            where="Managed placement"
-            detail="Provisioning is not active."
-          />
+          <ul
+            aria-label="Destinations"
+            className="flex w-full flex-col gap-3 sm:max-w-[400px]"
+          >
+            {CLOUD_DESTINATIONS.map(destination => (
+              <li key={destination.id}>
+                <DestinationCard destination={destination} />
+              </li>
+            ))}
+          </ul>
         </div>
         <p className="mt-3 text-chrome-meta text-muted-foreground">
           Session, Project, identity, and tab continuity are not promised.
