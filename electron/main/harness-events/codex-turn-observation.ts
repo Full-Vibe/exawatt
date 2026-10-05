@@ -15,7 +15,7 @@
  */
 import type { HarnessEvent } from './delegation-state';
 
-export interface CodexRootQuestion {
+interface CodexRootQuestion {
   /** `<agentMessage id>:<question index>`, the TUI's own reply key */
   id: string;
   /** the turn the item row belongs to; null when the protocol omits it */
