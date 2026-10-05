@@ -3792,6 +3792,24 @@ reviewed material cross-surface visuals, and exact deployed/installed evidence.
 [decision 0045](decisions/0045-feedback-attempts-and-delivery-truth.md).
 [Delivery evidence](projects/feedback-reinflation.md#2026-10-04--f7-delivery-verified) separates the proven production feedback repair from the final new-artifact probe that stopped at password sign-in.
 
+### BUG-280 The hero board renders frames while parked
+
+Status: bug · ENG-031 · found by the G2.1 landing floor, 2026-10-05 21:04.
+
+`pnpm eval:hero-board`'s `frozen` check (`?force=frozen` must render zero
+frames after its first paint) reads `parkedFrames: 2` on `origin/master` at
+`280f3dfe` and on every tree measured since; every pixel budget (at rest,
+highlighted, no-turn, no-changes, still, reduced-motion poster) passes. The
+gate was green at 03:27 on `08465d51`, the honeycomb capture regeneration. It
+is not the capture: swapping master's `capture.ts` into the failing tree
+reproduces `parkedFrames: 2` exactly. Bracket `08465d51..280f3dfe`; the only
+commits in it touching what the hero scene shares are BUG-263 (`2f661eb2`,
+frameloop invalidation while working marks exist) and the shared status slot
+(`f369aca4`) through `src/components/status-light/inspection.ts`; unproven.
+Exit: name the invalidation that fires on a frozen board and stop it, then
+`eval:hero-board` green on `origin/master`. Until then landings that touch the
+hero board waive the gate naming this id (G2.1 did, 2026-10-05).
+
 ### BUG-279 Sent feedback looks editable and waits for Done
 
 Status: done · ENG-025 · operator report 2026-10-05.
