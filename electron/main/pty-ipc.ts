@@ -1,6 +1,7 @@
 import type { PtyAttentionRecord } from '@exawatt/core/desktop-bridge';
 import { attentionNeedsOperator } from '@exawatt/core';
 import { withInitialSessionAttention } from './pty/initial-attention';
+import { observeNativeWindowFocus } from './native-window-focus';
 import { createDevicePowerController } from './device-power';
 import type { HostPowerObserver } from './host-power';
 import { createSessionPauser } from './pty/session-pause';
@@ -354,30 +355,32 @@ export function registerPtyIPC(
   attentionMonitor.start();
   // "looked at" requires OS window focus too — the active tab behind
   // another app is exactly the single-tab case attention exists for
-  app.on('browser-window-focus', () => {
-    attentionMonitor.setWindowFocused(true);
-    contextSummarizer.setWindowFocused(true);
-    // Settings may have been edited while Exawatt was in the background.
-    // Main owns authoritative OS focus, so refresh existing panes from here.
-    const settings = loadSettings();
-    const appearance = applyNativeAppearancePreference(
-      settings.appearance,
-      nativeTheme,
-      {
-        safeTheme: process.argv.includes('--safe-theme'),
+  const stopWindowFocus = observeNativeWindowFocus(
+    app,
+    () => BrowserWindow.getFocusedWindow() !== null,
+    focused => {
+      attentionMonitor.setWindowFocused(focused);
+      contextSummarizer.setWindowFocused(focused);
+      if (!focused) return;
+      // Settings may have been edited while Exawatt was in the background.
+      // Main owns authoritative OS focus, so refresh existing panes from here.
+      const settings = loadSettings();
+      const appearance = applyNativeAppearancePreference(
+        settings.appearance,
+        nativeTheme,
+        {
+          safeTheme: process.argv.includes('--safe-theme'),
+        }
+      );
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed())
+          win.setBackgroundColor(appearance.bootstrap.background);
       }
-    );
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed())
-        win.setBackgroundColor(appearance.bootstrap.background);
+      refreshDevicePower();
+      broadcast('settings:changed', settings);
     }
-    refreshDevicePower();
-    broadcast('settings:changed', settings);
-  });
-  app.on('browser-window-blur', () => {
-    attentionMonitor.setWindowFocused(false);
-    contextSummarizer.setWindowFocused(false);
-  });
+  );
+  app.once('will-quit', stopWindowFocus);
   // working/quiet transitions (D18): the tab strip's live status glyphs
   attentionMonitor.on('activity', (id, working) => {
     broadcast('pty:activity', { id, working });

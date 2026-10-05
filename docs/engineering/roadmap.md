@@ -2734,7 +2734,7 @@ Richer mixed-state presentation remains deferred. [Evidence and acceptance](proj
 
 Status: bug · ENG-004 · operator product-feedback `1f51081a-6983-41a3-b713-57fc9969741f`, 2026-09-24.
 
-Add a Fleet keyboard path that selects/follows an attention Agent with ⌘J, then opens that Session in Agent view on Enter. Reuse existing attention eligibility and Session handoff. [Report and execution notes](projects/spatial-operations-board.md#2026-09-24--spatial-attention-keyboard-request-bug-163).
+Add a Fleet keyboard path that selects/follows an attention Agent with ⌘J, then opens that Session in Agent view on Enter. [Startup inspection diagnosis](incidents/0036-native-focus-predates-attention-subscription.md). Reuse existing attention eligibility and Session handoff. [Report and execution notes](projects/spatial-operations-board.md#2026-09-24--spatial-attention-keyboard-request-bug-163).
 
 ### BUG-195 Docs pushed straight to master skipped every landing check
 

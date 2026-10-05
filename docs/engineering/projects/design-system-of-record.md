@@ -450,6 +450,14 @@ verification evidence; no queue admission, integration or installation is claime
 Independent review approved `ff6b06ab` with no remaining scoped P1/P2. The
 required gate union is now 31, including the upstream permissions gate.
 
+The resumed normal floor on `5d937b0b` passed 3,474 related tests (10 existing
+skips), build, community runtime and all ten R3F scenes at 100/100, then exposed
+a native startup focus-subscription race. The instrumented failure had native
+focus true and monitor focus false throughout exact Session handoff, distinct
+from the earlier locked-host failure. [Incident 0036](../incidents/0036-native-focus-predates-attention-subscription.md)
+records the control, falsified hypotheses and subscribe-then-snapshot correction.
+No ticket was admitted; native proof and the full normal floor must rerun.
+
 The earlier locked-host checkpoint below remains historical evidence:
 Candidate behavior and fixture checkpoint: `8a2bcd4816141a7a245ddef86fd556a0852dab40`
 on `agent/polish-attention` in `../exawatt-polish-attention`. This documentation
