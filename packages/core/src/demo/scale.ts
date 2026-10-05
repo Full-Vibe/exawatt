@@ -575,6 +575,8 @@ export const DEMO_FAULT_STEMS: readonly string[] = [
  *
  * Weights are the operator mix the consumption corpus cites, unchanged: the
  * two native CLIs stay the majority and the other three are the long tail.
+ * Antigravity (ENG-003 S5.3) is drawn BEFORE this pool, see
+ * `ANTIGRAVITY_SHARE`, so these relative weights never moved when it joined.
  */
 const HARNESS_BY_LEDGER: Record<
   DemoFleetAgent['source'],
@@ -593,11 +595,34 @@ export const DEMO_DELEGATION_OBSERVING_HARNESSES: readonly AgentSourceAdapterId[
   'openclaw',
 ];
 
+/**
+ * Antigravity's share of the Claude ledger's non-delegating synthetic Agents
+ * (ENG-027 W14, demo arc G2.1; nine Agents across seven Projects today). It
+ * is taken uniformly off the top, BEFORE the pool draw, so no existing pick
+ * moves and every other harness keeps its relative share.
+ *
+ * Claude ledger only, on purpose. Antigravity owns no consumption ledger
+ * (`LEDGERLESS_ACCOUNT_SOURCES`) and its catalog runs Claude models beside
+ * Gemini (ENG-003 S5.3), so a Claude-model session through it reports into
+ * the Claude ledger under the fixture's stated simplification
+ * (`DemoFleetAgent.harness`), and the ledger mix, every model and every
+ * usage figure stay byte-identical: no spend story moves. It never parents
+ * a run, because the source declares delegation unobservable.
+ */
+const ANTIGRAVITY_SHARE = 0.25;
+
 function harnessFor(
   id: string,
   ledger: DemoFleetAgent['source'],
   delegates: boolean
 ): AgentSourceAdapterId {
+  if (
+    ledger === 'claude-code' &&
+    !delegates &&
+    unit(`${id}:antigravity`) < ANTIGRAVITY_SHARE
+  ) {
+    return 'antigravity';
+  }
   const candidates = HARNESS_BY_LEDGER[ledger].filter(
     adapter => !delegates || DEMO_DELEGATION_OBSERVING_HARNESSES.includes(adapter)
   );

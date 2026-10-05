@@ -1170,7 +1170,20 @@ own conversations with a `parent_conversation_id` in the summaries index,
 which a later pass could use for a real child census. `Stop` without
 `fullyIdle` has not been observed to carry a meaning Exawatt can state.
 
-### 2026-09-24 — S5.1 and S5.2 progress
+### 2026-10-05 — Antigravity rows in the Demo fleet (demo arc G2.1)
+
+Landed the same day the declaration did, as ENG-027 W14's follow-up (the
+record is in `workspace-tenancy-and-demo.md`). The synthetic tier's
+`harnessFor` draws Antigravity before the harness pool, a quarter of the
+Claude ledger's non-delegating Agents (nine today), so no existing pick moves
+and the ledger mix stays byte-identical: Antigravity owns no ledger and its
+catalog runs Claude models, so its Demo rows are Claude-model sessions
+reporting into the Claude ledger under the fixture's stated simplification.
+They never parent a run, matching this source's `delegationObservation`. The
+hero capture's source-lens legend now lists Antigravity, drawn with the
+neutral mark per `LICENSES/brand/harness-marks.md` (Google permits only
+approved artwork). The in-app Fleet canvas has no vendor layer, so the third
+vendor shows on the marketing boards and in the data, not on the canvas.
 
 - S5.1 and S5.2 landed together on 2026-09-24 as `7caf4240`, one queue pass
   instead of four, with every declared gate green (agent sources, delegation,

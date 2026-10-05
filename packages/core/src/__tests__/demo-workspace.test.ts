@@ -260,9 +260,31 @@ describe('five-signal status protocol coverage (W3, ENG-016 D40)', () => {
       'opencode',
       'grok',
       'openclaw',
+      'antigravity',
     ] as const) {
       expect(harnesses, adapterId).toContain(adapterId);
     }
+  });
+
+  it('Antigravity rows: a share of the Claude ledger, Claude models, never a parent', () => {
+    // ENG-003 S5.3 declared it; ENG-027 W14 (G2.1) gave it rows. It owns no
+    // ledger and its catalog runs Claude models, so it reports into the
+    // Claude ledger and moves no spend figure; it reports no delegation
+    // completion, so it never parents a run.
+    const fleet = demoFleetAgents('scale');
+    const antigravity = fleet.filter(agent => agent.harness === 'antigravity');
+    expect(antigravity.length).toBeGreaterThan(0);
+    for (const agent of antigravity) {
+      expect(agent.source, agent.id).toBe('claude-code');
+      expect(agent.model, agent.id).toMatch(/^claude-/);
+      expect(agent.delegated, agent.id).toEqual([]);
+      expect(agent.tier, agent.id).toBe('scale');
+    }
+    // the native CLI stays the majority of its own ledger
+    const claude = fleet.filter(
+      agent => agent.source === 'claude-code' && agent.harness === 'claude'
+    );
+    expect(antigravity.length).toBeLessThan(claude.length);
   });
 
   it('only a harness that observes delegation ever parents a run', () => {
