@@ -1067,6 +1067,109 @@ Operator hygiene finding: `~/.gemini/antigravity-cli/history.jsonl` stores
 prompts verbatim, including API keys pasted into prompts. Exawatt must never
 surface that file's contents.
 
+### 2026-10-05 — S5.3 Antigravity CLI landed: hooks seam verified, needs-you declared absent
+
+Demo arc packet G3. Step 0 ran on the operator's account the same day: the
+installed 1.0.4 self-updated to 1.2.17 through `agy update`, the keychain
+sign-in held with no browser step, and `agy -p "/usage" --output-format json`
+answered without an agent turn. Then the adapter, in the S5 shape, one
+landing.
+
+**Seam verdict (2026-10-05 12:20 PT, `agy` 1.2.17).** Headless
+`agy -p … --output-format json --model gpt-oss-120b-medium --add-dir <dir>`
+from an untrusted scratch directory: hooks declared in BOTH the launch
+directory's `.agents/hooks.json` AND the added directory's fired
+`PreInvocation` and `Stop`; no trust prompt appeared; the model call itself
+failed with a 503 and the hooks still fired. The schema is not Claude-shaped:
+hook NAMES at the top level, each mapping event names to handler arrays
+(`{"exawatt-stop":{"Stop":[{"type":"command","command":"…","timeout":3}]}}`);
+`PreToolUse`/`PostToolUse` entries carry a `matcher` regex and a nested
+`hooks` list; `timeout` is seconds (default 30); `enabled: false` is per
+name. Payloads arrive as one JSON object on stdin with NO event-name field,
+carrying `conversationId`, `workspacePaths`, `transcriptPath`,
+`artifactDirectoryPath`, `modelName`; `PreInvocation` adds `invocationNum`
+and `initialNumSteps`, `Stop` adds `executionNum`, `fullyIdle`,
+`terminationReason` (`ERROR` with an `error` string on the 503) and
+`PreToolUse` adds `toolCall {name, args}` and `stepIdx`. Every headless run
+writes a conversation under `~/.gemini/antigravity-cli/conversations` and
+`brain/`, and the first run created `~/.gemini/config/projects/
+default-cli-project.json`; expected, and the operator's real home was not
+cleaned.
+
+**What shipped.**
+
+| Contract | Antigravity CLI 1.2.17, as shipped |
+| --- | --- |
+| Launch | `agy -i "<task>"` in a real terminal; `--model <id>`; review mode needs no flag, `--mode accept-edits` is auto-review, `--dangerously-skip-permissions` is YOLO. `--effort` exists but the declaration keeps effort source-owned: nothing a launch can read says which models accept which. |
+| Identity | Learned: the first hook payload's `conversationId` becomes the Session's harness identity and is remembered at once; a payload naming another conversation (a delegated child runs as its own) is dropped. The event-channel binding declares `learnsSessionId`. |
+| Resume | `--conversation=<id>`, exact. |
+| Hooks | Per launch, Exawatt writes an owner-only directory under its own state (`harness-events/<session>/.agents/hooks.json`) and adds it with `--add-dir`, together with the launch directory: measured on 1.2.17, an interactive `--add-dir` REPLACES the workspace rather than extending it, so with the hooks directory alone the Agent's workspace was Exawatt's hooks directory (a relative `notes.txt` resolved there) and Antigravity's index named no project; the CLI sorts the added directories, so argv order does not matter. `~/.gemini/config/hooks.json`, shared with the IDE, is never written. Each subscribed event has its own command, which wraps the stdin payload in an envelope naming the event and posts it to the channel with curl, printing nothing (a hook's stdout is a decision document) and always exiting 0. `PreInvocation` opens the turn; `Stop` with `fullyIdle: true` closes it; a `Stop` without it is dropped rather than guessed. |
+| Needs you | Not reported, declared absent in the source summary and description. Verified the same day with raw hooks on a review-mode launch that had to write a file: `PreInvocation`, then `PreToolUse[write_to_file]`, then nothing for the whole wait. A permission wait is indistinguishable from a long tool call, so no event is invented. |
+| Delegation | Declared unobservable: `invoke_subagent` has a start event and no completion event. |
+| Sign-in check | `agy models` is the one non-interactive command that needs a working Google sign-in without a model call, so a listed catalog is the sign-in evidence. A failed or empty listing reads as unknown, never as signed out (a lost network looks the same), and never blocks the launch. No login subcommand exists and `authenticate` is off. |
+| Catalog | `agy models` text, one `<id><TAB><label>` row per model (`--output-format json` is not accepted there); parsed defensively. Antigravity's own picker stores its choice as a LABEL in `settings.json`; the catalog pins the matching id and pins nothing when no row matches (the operator's settings named a model the catalog no longer lists). No rows: source-owned, account default. |
+| History | Antigravity's own SQLite index `conversation_summaries.db`, read read-only through `node:sqlite`: id, generated title, workspace URIs, step count and times; children and step-less rows are skipped; a conversation belongs to a Project when one workspace path is inside it. The prompt-bearing `history.jsonl` and `preview` column are never read. |
+| Usage | Not read here. `agy -p "/usage" --output-format json` is packet G4's account card. The catalog carries no quota: a model whose quota is spent still lists, and the turn's own error reports the wall. |
+| Kill guard | `agy` joins the protected harness names. |
+| Mark | None. Google permits only approved, unaltered artwork; every mark in the registry is recoloured. Provenance in `LICENSES/brand/harness-marks.md`. |
+
+**One general defect, found by adding the source.** `buildHarnessCommand`
+named the executable by the harness id, and the test-bin lookups in the
+session manager and the model catalog did the same, which held only because
+every earlier binary was named after its id. All three now use the
+descriptor's `source.executable`; the fixture module writes a fake under its
+binary name (`agy`) and checks its marker by harness.
+
+**Quota finding.** On 2026-10-05 the operator's Gemini weekly quota read
+0.1% (`remaining_fraction: 0.00101`, reset 2026-10-09T00:56Z) while the
+Claude and GPT group read 100%. A Gemini launch before the reset hits the
+quota wall inside the turn; the hooks still fire (`PreInvocation`, then
+`Stop` with `fullyIdle` and `terminationReason: ERROR`), so the tab reads
+done, not working, and the terminal shows the error. The demo launches a
+Claude model; the composer's model axis lists all of them from `agy models`.
+During the probe `gpt-oss-120b-medium` answered a 503 capacity error, so the
+Claude Sonnet row is the demo's model.
+
+**Live verification.** Through the repository's Electron harness against this worktree's dev
+server, with the real `agy` 1.2.17 on the operator's account and Claude
+Sonnet 4.6 (Thinking) chosen because the Gemini group was exhausted
+(2026-10-05 13:08 PT): ⌘T listed Antigravity with the account's full catalog
+from `agy models` (eleven Gemini rows, two Claude, one GPT-OSS); Start ran
+`agy -i` in a real terminal in a scratch project; the Session learned its
+identity from the first hook (`conversationId`); `PreInvocation` opened the
+turn at 20:08:07Z and `Stop` with `fullyIdle` closed it at 20:08:13Z, 38 s
+after Start including the model's own thinking; the Agent read the project's
+`notes.txt` (`alpha beta gamma`), proving the workspace fix; Team showed
+"Result ready · Turn complete" and Fleet "Result ready 1" on the one Agent;
+closing the tab recorded the learned identity in Recently closed; Continue
+recent listed the conversation from Antigravity's own index (the index row
+names the project once the launch directory is added); the row relaunched
+`agy --conversation=<id>` and the resumed terminal replayed the prior turn.
+Screenshots in the landing report. Two facts learned on the way, both
+recorded rather than changed: the first launch in a folder Antigravity has
+never seen asks for trust in the terminal before any hook fires (the
+operator presses Enter, Antigravity persists it in its own
+`trustedWorkspaces`, and the operator's real projects are already trusted),
+and a resume carries no model, so Antigravity resumes on its own configured
+picker label, which on this account resolves to the Gemini group (its own
+warning names the switch); the Session header's Model control changes it.
+The resumed terminal also printed Antigravity's plan notice: third-party
+(Claude, GPT-OSS) model access on the operator's current plan ends on
+2026-11-02, after the demo.
+
+**Left open.** A resume passes no model, for every harness, because the
+provider is expected to remember it; Antigravity does not, and falls back to
+the label in its own settings (today an exhausted Gemini row on this
+account). Carrying the launch model through the Recently-closed ledger would
+fix it at the class; until then the header Model control is the path.
+Antigravity's `PreToolUse` returns a `decision` document
+(`allow|deny|ask|force_ask|deny_unless_prior_grant`), so the process-kill
+guard (ENG-044) can reach Antigravity through the same guard path once its
+decision shape is adapted; not done here. Delegated children run as their
+own conversations with a `parent_conversation_id` in the summaries index,
+which a later pass could use for a real child census. `Stop` without
+`fullyIdle` has not been observed to carry a meaning Exawatt can state.
+
 ### 2026-09-24 — S5.1 and S5.2 progress
 
 - S5.1 and S5.2 landed together on 2026-09-24 as `7caf4240`, one queue pass
