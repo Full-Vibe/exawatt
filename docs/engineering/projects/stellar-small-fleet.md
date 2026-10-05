@@ -4,7 +4,17 @@ Roadmap item: ENG-015
 
 ## Current execution handoff — 2026-10-04
 
-**Awaiting an unlocked Mac; implementation is committed and recoverable.**
+**Delivery resumed on an unlocked Mac; final verification is in progress.**
+The 2026-10-04 resumed read-only native session check confirms an unlocked,
+on-console desktop, with Exawatt frontmost. The combined branch was rebased
+onto `8265ec1c` and dependencies reinstalled. The ENG-045 notification-permission
+join keeps posting and sound source-owned: intervening read/resolution invalidates
+an asynchronous native authorization read, and its completion rechecks the exact
+unread source fact, live runtime, native focus and preference. Electron compilation,
+Electron test types, scoped lint and 98 focused tests pass. This is implemented
+verification evidence; no queue admission, integration or installation is claimed.
+
+The earlier locked-host checkpoint below remains historical evidence:
 Candidate behavior and fixture checkpoint: `8a2bcd4816141a7a245ddef86fd556a0852dab40`
 on `agent/polish-attention` in `../exawatt-polish-attention`. This documentation
 checkpoint follows that immutable candidate. No queue ticket was admitted;
@@ -20,9 +30,9 @@ none of this combined transaction is integrated or installed yet.
   only. At `8a2bcd48`, all five passed their reruns, plus exact-resume passed
   again after its selector audit. Repeated restart retained the same Session
   identities and cumulative history across three generations.
-- **Remaining environment requirement:** unlock the macOS desktop so the eval's
-  real `BrowserWindow` can receive native focus. CDP `document.hasFocus()` is
-  insufficient. Final read-only IOKit check still reports
+- **Previous environment blocker (now unlocked):** the eval's
+  real `BrowserWindow` could not receive native focus. CDP `document.hasFocus()` is
+  insufficient. The earlier read-only IOKit check reported
   `CGSSessionScreenIsLocked=Yes`; main correctly retained unread while its
   native window was unfocused. Do not weaken that guard or waive the gate.
 - Separate machine-readable evidence is retained in
@@ -31,7 +41,7 @@ none of this combined transaction is integrated or installed yet.
   file is original-candidate evidence, not proof of the corrected fixtures.
   All 29 non-foreground gates now have passing evidence across these exact
   checkpoints. Full normal admission must still run on the final candidate.
-- The owned QA server is stopped for this pending-input handoff.
+- The owned QA server was stopped for the earlier pending-input handoff.
   Contributor branches/worktrees remain clean recovery inputs. Verify actual
   unlock even if no text reply arrives, start this worktree's own dev server
   with `pnpm dev -p 4317`, and rerun

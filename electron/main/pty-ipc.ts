@@ -1,3 +1,4 @@
+import type { PtyAttentionRecord } from '@exawatt/core/desktop-bridge';
 import { attentionNeedsOperator } from '@exawatt/core';
 import { withInitialSessionAttention } from './pty/initial-attention';
 import { createDevicePowerController } from './device-power';
@@ -85,6 +86,7 @@ import fs from 'fs';
 import os from 'os';
 import {
   nativeNotificationCopy,
+  isCurrentAttentionAlert,
   shouldDeliverNativeNotification,
 } from './notification-policy';
 import { broadcastToWindows, pushToRenderer } from './window-broadcast';
@@ -385,6 +387,9 @@ export function registerPtyIPC(
     broadcast('pty:engaged', { id });
   });
   attentionMonitor.on('attention', (id, attention) => {
+    // Inspection, resolution and manual unread intent invalidate an older
+    // asynchronous permission read without becoming a new source alert.
+    attentionGeneration.set(id, (attentionGeneration.get(id) ?? 0) + 1);
     const session = ptySessions.list().find(record => record.id === id);
     broadcast('pty:attention', {
       id,
@@ -404,7 +409,7 @@ export function registerPtyIPC(
       nativeNotifications.delete(id);
     }
   });
-  attentionMonitor.on('alert', (id, attention) => {
+  attentionMonitor.on('alert', (id, attention: PtyAttentionRecord) => {
     const settings = loadSettings().notifications;
     const focused = BrowserWindow.getFocusedWindow() !== null;
     if (settings?.dockBadge && !focused) app.dock?.bounce('informational');
@@ -432,7 +437,21 @@ export function registerPtyIPC(
     void postNativeNotification({
       reason: 'An agent needed you while Exawatt was in the background.',
       options: { ...nativeNotificationCopy(session), silent: true },
-      isCurrent: () => attentionGeneration.get(id) === generation,
+      isCurrent: () => {
+        const current = attentionMonitor.get(id);
+        const live = ptySessions.list().find(record => record.id === id);
+        return (
+          attentionGeneration.get(id) === generation &&
+          !!live &&
+          !live.exited &&
+          isCurrentAttentionAlert(current, attention) &&
+          shouldDeliverNativeNotification(
+            loadSettings().notifications?.attention ?? false,
+            BrowserWindow.getFocusedWindow() !== null,
+            current
+          )
+        );
+      },
       onClick: () => {
         const win = BrowserWindow.getAllWindows()[0];
         if (!win || win.isDestroyed()) return;

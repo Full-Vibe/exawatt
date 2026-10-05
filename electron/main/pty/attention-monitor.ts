@@ -140,7 +140,7 @@ type AttentionMonitorEvents = {
   activity: [id: string, working: boolean];
   attention: [id: string, attention: PtyAttention | null];
   /** A new source transition, never a read/unread edit or restoration. */
-  alert: [id: string, attention: PtyAttention];
+  alert: [id: string, attention: PtyAttentionRecord];
   engaged: [id: string];
   'reported-turn-stale': [id: string, evidence: StaleReportEvidence];
 };
@@ -877,8 +877,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // Alert the new fact, not the selected compatibility projection: a result
     // can arrive behind an already-read request and still deserves one alert.
     if (record.unread || attentionIsOperatorGate(record.kind)) {
-      const { source: _source, ...signal } = record;
-      this.emit('alert', id, signal);
+      this.emit('alert', id, record);
     }
   }
 

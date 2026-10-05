@@ -1,3 +1,12 @@
+import { projectSessionAttention, withAttentionRead } from '@exawatt/core';
+import type {
+  PtyAttention,
+  PtyAttentionRecord,
+} from '@exawatt/core/desktop-bridge';
+import {
+  isCurrentAttentionAlert,
+  shouldDeliverNativeNotification,
+} from '../notification-policy';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createNativeNotifier,
@@ -75,6 +84,41 @@ describe('the one notification path', () => {
     expect(await post({ ...REQUEST, isCurrent: () => false })).toBeNull();
     expect(create).not.toHaveBeenCalled();
   });
+
+  it.each(['read', 'resolved', 'focused', 'disabled'] as const)(
+    'drops a source notice when %s changes during the native status read',
+    async change => {
+      let grant!: (allowed: boolean) => void;
+      const pendingGrant = new Promise<boolean>(resolve => {
+        grant = resolve;
+      });
+      const { post, create } = harness(pendingGrant);
+      const fact: PtyAttentionRecord = {
+        source: 'harness',
+        kind: 'blocked',
+        request: 'working',
+        requestId: 'question',
+        since: 1,
+        unread: true,
+      };
+      let snapshot: PtyAttention | null = projectSessionAttention([fact]);
+      let focused = false;
+      let enabled = true;
+      const pending = post({
+        ...REQUEST,
+        isCurrent: () =>
+          isCurrentAttentionAlert(snapshot, fact) &&
+          shouldDeliverNativeNotification(enabled, focused, snapshot),
+      });
+      if (change === 'read') snapshot = withAttentionRead(snapshot!, false);
+      if (change === 'resolved') snapshot = null;
+      if (change === 'focused') focused = true;
+      if (change === 'disabled') enabled = false;
+      grant(true);
+      expect(await pending).toBeNull();
+      expect(create).not.toHaveBeenCalled();
+    }
+  );
 
   it('forwards a click and a close to the caller', async () => {
     const { post, handles } = harness(true);
