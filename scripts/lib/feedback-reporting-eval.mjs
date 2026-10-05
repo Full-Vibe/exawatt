@@ -163,12 +163,6 @@ async function waitForState(page, id, state) {
     .waitFor();
 }
 
-async function dismissReceipt(page, id) {
-  await attempt(page, id)
-    .getByRole('button', { name: 'Done', exact: true })
-    .click();
-}
-
 /** Reporting-only native scenes. Service persistence has its own deliberate live
  * probe; these deterministic scenes own interaction, evidence and retry truth. */
 export async function evaluateFeedbackReporting({
@@ -203,10 +197,8 @@ export async function evaluateFeedbackReporting({
       throw new Error(`Feedback editor did not acquire focus: ${JSON.stringify(state)}`, { cause });
     }
   };
-  const done = async id => {
-    await dismissReceipt(page, id);
-    await composer.waitFor({ state: 'hidden' });
-  };
+  // A confirmed send acknowledges itself and closes; it asks for no decision.
+  const done = () => composer.waitFor({ state: 'hidden' });
   const settlePanel = () => composer.evaluate(async element => {
     // Await the actual finite presentation effects, not a guessed duration.
     await Promise.all(element.getAnimations({ subtree: true })
@@ -303,7 +295,7 @@ export async function evaluateFeedbackReporting({
     helpRequest.payload.context?.durableSessionId === originSessionId &&
     helpRequest.payload.attachment?.dataUrl?.startsWith('data:image/jpeg;base64,'));
   await page.screenshot({ path: join(screenshotDir, 'feedback-saved.png') });
-  await done(helpId);
+  await done();
 
   const focusTarget = page.locator('[data-command-altitude-level="terminal"]');
   await focusTarget.focus();
@@ -353,12 +345,15 @@ export async function evaluateFeedbackReporting({
   pending.release();
   await waitForState(page, firstId, 'sent');
   const beforeNewFeedback = transport.payloads.length;
-  await attempt(page, firstId).getByRole('button', { name: 'Done', exact: true }).focus();
-  await page.keyboard.press('Enter');
-  await composer.waitFor({ state: 'hidden' });
+  check('a confirmed send offers nothing to click',
+    !(await attempt(page, firstId).getByRole('button').count()));
+  await done();
+  await page.waitForFunction(element => document.activeElement === element, await focusTarget.elementHandle());
+  check('a confirmed send closes itself and restores its work invoker',
+    await focusTarget.evaluate(element => document.activeElement === element));
   await openComposerShortcut();
   await waitForEditingFocus();
-  check('finishing and reopening begins a fresh focused draft without another delivery',
+  check('reopening after a confirmed send begins a fresh focused draft without another delivery',
     (await field().inputValue()) === '' && transport.payloads.length === beforeNewFeedback);
 
   await page.keyboard.type('Retry the same image after partial delivery');
@@ -380,7 +375,7 @@ export async function evaluateFeedbackReporting({
   check('partial retry reuses the complete frozen payload and identity', JSON.stringify(retry.payload) === JSON.stringify(partialPayload));
   retryResponse.release();
   await waitForState(page, partialId, 'sent');
-  await done(partialId);
+  await done();
 
   await openComposerShortcut();
   await waitForEditingFocus();
@@ -410,7 +405,7 @@ export async function evaluateFeedbackReporting({
   check('failure retry preserves its frozen attempt after closing and reopening', JSON.stringify(failedRetry.payload) === JSON.stringify(failedPayload));
   failedRetryResponse.release();
   await waitForState(page, failedId, 'sent');
-  await done(failedId);
+  await done();
 
   await openComposerShortcut();
   await waitForEditingFocus();
@@ -424,7 +419,7 @@ export async function evaluateFeedbackReporting({
   await partial.getByRole('button', { name: 'Finish without image', exact: true }).click();
   await waitForState(page, finishId, 'sent');
   check('finishing without image sends no replacement report', transport.payloads.length === beforeFinish);
-  await done(finishId);
+  await done();
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openComposerShortcut();

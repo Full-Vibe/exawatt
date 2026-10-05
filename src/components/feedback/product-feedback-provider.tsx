@@ -81,6 +81,8 @@ interface FeedbackContextValue {
   submitContextRating: (rating: ContextRating) => Promise<boolean>;
 }
 const ProductFeedbackContext = createContext<FeedbackContextValue | null>(null);
+/** A confirmed send needs no decision: acknowledge it, then get out of the way. */
+const SENT_ACKNOWLEDGEMENT_MS = 1000;
 const SUBMIT_FEEDBACK_MENU_COMMAND =
   commandVerbMenuCommandId('submit-feedback');
 export const FEEDBACK_MENU_COMMAND_IDS: ReadonlySet<string> = new Set([
@@ -286,8 +288,16 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         return;
       rememberInvoker();
       const state = store.getSnapshot();
+      const active = state.attempts.find(
+        attempt => attempt.id === activeAttemptId
+      );
+      // A send confirmed while closed is finished; reopening starts the next report.
+      if (active?.status === 'sent') {
+        store.dismissAttempt(active.id);
+        setActiveAttemptId(null);
+      }
       const existing =
-        state.attempts.find(attempt => attempt.id === activeAttemptId) ??
+        (active?.status === 'sent' ? undefined : active) ??
         state.attempts.find(
           attempt =>
             attempt.status !== 'sent' &&
@@ -640,6 +650,13 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   );
   const activeAttempt =
     snapshot.attempts.find(attempt => attempt.id === activeAttemptId) ?? null;
+  const acknowledgedAttemptId =
+    open && activeAttempt?.status === 'sent' ? activeAttempt.id : null;
+  useEffect(() => {
+    if (!acknowledgedAttemptId) return;
+    const timer = window.setTimeout(closeEditor, SENT_ACKNOWLEDGEMENT_MS);
+    return () => window.clearTimeout(timer);
+  }, [acknowledgedAttemptId, closeEditor]);
   return (
     <ProductFeedbackContext.Provider value={contextValue}>
       {children}
@@ -681,7 +698,6 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             onRetry={retry}
             onEdit={editAttempt}
             onFinishWithoutImage={id => store.finishWithoutImage(id)}
-            onDone={closeEditor}
             kind={draft.kind}
             onKindChange={kind => patch({ kind })}
             message={draft.message}

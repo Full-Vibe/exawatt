@@ -421,6 +421,12 @@ Cmd+K needs scannable command rows; feedback needs a small writing surface.
 - Progress occupies the action's existing location. Success uses a brief
   acknowledgement; errors add only the explanation and recovery needed now.
   Keep the same dialog and user content without adding a second receipt panel.
+- A submitted report must not look editable (operator report, 2026-10-05,
+  BUG-279). Once sent, the user's text keeps reading contrast but drops input
+  chrome (border, caret, focus ring) and editing-only tools collapse until
+  editing resumes. Confirmed success asks for no decision: it shows the
+  acknowledgement for one second, then closes itself and restores focus. Only
+  failure and partial outcomes keep the dialog open for recovery.
 - Gallery simulation controls live outside the specimen. Plain outcome choices
   run a representative interaction automatically; development vocabulary and
   test-only controls must not alter the product's silhouette or tab order.

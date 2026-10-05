@@ -107,6 +107,10 @@ would amplify misleading success and duplicate reports.
   text/evidence and render progress/recovery in place. Sending does not restore
   background focus; explicit dismissal does. The user can close while pending,
   retain the frozen attempt and reopen without losing its state.
+  **Amended 2026-10-05 (BUG-279):** a confirmed send is the one terminal result
+  that dismisses itself, one second after its acknowledgement, restoring focus
+  like any dismissal. A send confirmed while closed is finished, so reopening
+  starts the next report. Failure and partial results still stay for recovery.
 - Shared Dialog owns truthful modal focus and release on logical dismissal;
   nonblocking notices cannot retain a focus trap or inert background. A native
   Button/action model derives labels, keyboard cues, accessibility and dispatch

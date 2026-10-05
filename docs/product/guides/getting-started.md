@@ -249,7 +249,8 @@ reopened.
 
 Sending keeps your feedback in the same dialog and shows progress there.
 You can close it while sending and reopen it to see that same feedback.
-**Feedback sent** confirms the text and any requested image were saved.
+**Feedback sent** confirms the text and any requested image were saved, and the
+dialog closes itself a moment later. Open feedback again to start another.
 If only the text is confirmed, **Try again** retries the same image, or choose
 **Finish without image**. Finishing stops image recovery;
 it does not remove an image or prove that an earlier retry failed to store it.
@@ -257,8 +258,7 @@ If the app cannot confirm your feedback was saved, it keeps your text and image
 here. **Try again** uses the same report identity to avoid duplicates. A lost
 response does not mean nothing was saved. Editing is offered when the service
 has explicitly refused the report, rather than creating a second report from
-an uncertain result. **Done** closes a successful report; **New feedback**
-starts another.
+an uncertain result.
 
 ## Modes
 

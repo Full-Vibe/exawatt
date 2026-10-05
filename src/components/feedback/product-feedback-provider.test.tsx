@@ -259,6 +259,7 @@ afterEach(() => {
   window.history.replaceState(null, '', INITIAL_HREF);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('unified feedback composer continuity', () => {
@@ -645,7 +646,7 @@ describe('unified feedback composer continuity', () => {
     expect(String(fetchSpy.mock.calls[0][1]?.body)).toBe(frozen);
     expect(fetchSpy).toHaveBeenCalledOnce();
     await act(async () => delivery.resolve(feedbackResponse(true)));
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.keyDown(composerField(), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await act(async () => feedback!.openFeedback());
     expect(composerField()).toHaveValue('');
@@ -756,7 +757,7 @@ describe('unified feedback composer continuity', () => {
     expect(retried.attachment).toMatchObject({ dataUrl: SHOT });
   });
 
-  it('reopening while pending resumes the same report and only explicit completion starts a new draft', async () => {
+  it('reopening while pending resumes the same report and only a confirmed send starts a new draft', async () => {
     const delivery = deferred<Response>();
     const fetchSpy = vi.fn<typeof fetch>(() => delivery.promise);
     vi.stubGlobal('fetch', fetchSpy);
@@ -785,7 +786,7 @@ describe('unified feedback composer continuity', () => {
     expect(composerField()).toHaveValue('First report');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.keyDown(composerField(), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await act(async () => feedback!.openFeedback());
     expect(composerField()).toHaveValue('');
@@ -1059,7 +1060,7 @@ describe('unified feedback composer continuity', () => {
     expect(composerField()).toBeEnabled();
   });
 
-  it('keeps one focused dialog through pending and outcome, restoring work focus only after Done', async () => {
+  it('keeps one focused dialog through pending and outcome, then closes itself and restores work focus', async () => {
     const delivery = deferred<Response>();
     vi.stubGlobal(
       'fetch',
@@ -1086,14 +1087,50 @@ describe('unified feedback composer continuity', () => {
     expect(
       document.querySelector('[data-feedback-state="sending"]')
     ).toBeInTheDocument();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     await act(async () => delivery.resolve(feedbackResponse()));
     expect(screen.getByRole('dialog')).toBe(dialog);
     expect(composerField()).toBe(field);
     expect(field).toHaveFocus();
     expect(field).toHaveValue('Return me to work');
     expect(within(dialog).getByRole('status')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(invoker).toHaveFocus());
+    // Success asks for no decision: nothing to click, and it dismisses itself.
+    expect(
+      within(document.querySelector<HTMLElement>('[data-feedback-attempt]')!)
+        .queryAllByRole('button')
+    ).toHaveLength(0);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    vi.useRealTimers();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(invoker).toHaveFocus();
+    await act(async () => feedback!.openFeedback());
+    expect(composerField()).toHaveValue('');
+    expect(composerField()).not.toHaveAttribute('readonly');
+  });
+
+  it('a send confirmed after closing never reopens as a finished receipt', async () => {
+    const delivery = deferred<Response>();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(() => delivery.promise)
+    );
+    await renderSignedIn();
+    await act(async () => feedback!.openQuickCapture());
+    fireEvent.change(composerField(), {
+      target: { value: 'Closed while sending' },
+    });
+    fireEvent.keyDown(composerField(), { key: 'Enter' });
+    fireEvent.keyDown(composerField(), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await act(async () => delivery.resolve(feedbackResponse()));
+    await act(async () => feedback!.openFeedback());
+    expect(composerField()).toHaveValue('');
+    expect(composerField()).not.toHaveAttribute('readonly');
+    expect(
+      document.querySelector('[data-feedback-attempt]')
+    ).not.toBeInTheDocument();
   });
 });
 

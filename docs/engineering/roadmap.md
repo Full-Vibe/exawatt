@@ -914,6 +914,7 @@ Milestones:
 - F5.1 Shared log redaction (2026-08-14, architecture): `auth-diagnostics.ts` sanitizes bearer tokens, JWTs, and long opaque values; `diagnostics-log.ts` states in its own header that it is a sibling of that module but only clips to 400 chars, so `summarizer.jsonl` and `updater.jsonl` have always been written unredacted. Extract the sanitizer into `diagnostics-redaction.ts`, have both writers use it, and add home-directory anonymization so a path reads `~/...`. This is a correctness fix independent of F5: it is why F5 can attach a log tail without a bespoke scrubbing pass at send time.
 - F6 Reporting artifacts (integrated, deployed and dogfood-installed 2026-10-02; delivery acceptance reopened by F7): one composer, same-attempt recovery and shared overlays; decision 0045, BUG-261/266/269/270.
 - F7 Reliable recovery (delivered, 2026-10-04): accepted compact workflow, permission repair, native recovery gates and exact deployed/installed `7254223b`; BUG-272 / incident 0032. [Evidence and new-artifact live-probe limit](projects/feedback-reinflation.md#2026-10-04--f7-delivery-verified).
+- F7.1 Snappy success (BUG-279, 2026-10-05): a confirmed send locks visibly and closes itself after one second; no Done button. [Log](projects/feedback-reinflation.md#2026-10-05--a-confirmed-send-closes-itself-bug-279).
 
 Non-goal, stated on purpose: **no anonymous network intake.** The obvious
 completion of F5 is a signed-out send endpoint, and it is deliberately not
@@ -3681,6 +3682,19 @@ reviewed material cross-surface visuals, and exact deployed/installed evidence.
 [decision 0045](decisions/0045-feedback-attempts-and-delivery-truth.md).
 [Delivery evidence](projects/feedback-reinflation.md#2026-10-04--f7-delivery-verified) separates the proven production feedback repair from the final new-artifact probe that stopped at password sign-in.
 
+### BUG-279 Sent feedback looks editable and waits for Done
+
+Status: done · ENG-025 · operator report 2026-10-05.
+
+After a confirmed send, the report kept its input border, caret and focus ring,
+the image tools stayed on screen, and the dialog waited for **Done**. The
+operator read it as "nothing happened". Resolved: submitted text keeps reading
+contrast without input chrome, editing tools collapse while a report is
+submitted, and a confirmed send closes itself one second after its
+acknowledgement with focus restored. Failure and partial outcomes still stay
+for recovery. A send confirmed while closed no longer reopens as a finished
+receipt. [Log](projects/feedback-reinflation.md#2026-10-05--a-confirmed-send-closes-itself-bug-279).
+
 ### BUG-278 Installed Chromium requests stall before authentication
 
 Status: bug · ENG-030 · final F7 live verification, 2026-10-04; ENG-022 diagnostic tooling.
@@ -3735,6 +3749,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | ENG-015 S1 focus-clears-attention and age-only Cmd+J with results excluded | Decision 0046, operator UX steering, 2026-10-04 | Accepted future contract: inspection clears unread but preserves unresolved requests; visit hard blockers, then working questions, then unread results, oldest within class. Execution, request and read state remain separate. Restart restores context paused with explicit resume for the previously running set; automatic resume is future scope. Implementation is active in the coordinated polish stack; no delivery claim follows from this decision. |
 | ENG-042 limited to publishing existing investigations; feature-led next-work selection for this polish pass | Operator steering, 2026-10-04 | Add cited research-informed design explanations; prioritize active-user journeys and shared owners, with newcomer discoverability and demonstrated improvement. Decision 0046 accepts attention semantics and pause-first restart with explicit resume; implementation is active. Existing workshop commitments are not cancelled; major feature work is not a prerequisite or newly authorized. |
 | ENG-025 F6.4 close-on-send and F6 production-delivery acceptance; ENG-036 paired overlay follow-through | ENG-025 F7 / BUG-272, operator recovery 2026-10-04 | One dialog retains input, pending and terminal recovery. Shared Dialog/Button/action owners enforce truthful modality and native accessible shortcuts. Repair the missing fingerprint INSERT grant and inline image/wire budgets. Oct2 source/install/READY remain artifact history, not proof of authenticated delivery. Immutable key/certainty contracts remain; material cross-surface visuals require renewed gallery review. |
+| ENG-025 F7 terminal success retained in the dialog until **Done** | BUG-279, operator report 2026-10-05 | A confirmed send drops input chrome and editing tools, then closes itself one second after its acknowledgement and restores focus. Failure and partial results still retain the dialog for recovery; a send confirmed while closed reopens as a fresh draft. |
 | ENG-025 F7 first recovery gallery's stacked form and in-modal simulation controls | ENG-025 F7 compact refinement and final operator review, 2026-10-04 | Preserve delivery/focus/retry contracts; use compact writing, attachment presence with one remove action, conventional optional app details, and in-place status. Final review retains height motion, removes the heading, adds optional purpose help and standardizes trailing action hints. Shared language does not require Cmd+K density. Retire the gallery on adoption. |
 | ENG-025 F6 separate quick/full composers and first gallery motion candidate | Operator review, 2026-10-02 | One shared composer replaces both forms. Keyboard hints sit beside owned actions; redundant image controls are removed. Elaborate state morphing is rejected: receipts update immediately with a pending-only spinner; real Radix presence owns panel entry/exit and reduced motion. The operator authorized production adoption; verified source is integrated and the combined UI deployed and exact-SHA dogfood installed; execution detail stays in F6 and decision 0045. |
 | ENG-025 F1 invisible optimistic send dismissal; BUG-261 adoption ordering | ENG-025 F6 / ENG-036 G2 paired-flow plan, operator 2026-10-02 | App-wide review informs Cmd+K/feedback together; paired gallery study precedes shared visual adoption. Compact sending/result receipt returns focus, retries retain immutable identity, and success confirms requested evidence. Reporting adopts first, then hint/update presentation with distinct lifetimes. Running-session drafts only; restart persistence and shared notice destination deferred. The accepted simplified implementation is verified, integrated, deployed and dogfood-installed. |

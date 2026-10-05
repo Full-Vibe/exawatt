@@ -15,7 +15,6 @@ interface FeedbackComposerViewProps extends QuickCaptureBarProps {
   onRetry: (id: string) => void;
   onEdit: (attempt: FeedbackAttempt) => void;
   onFinishWithoutImage: (id: string) => void;
-  onDone: () => void;
 }
 
 /** The real report, progress and outcome share one DialogContent subtree.
@@ -25,7 +24,6 @@ export function FeedbackComposerView({
   onRetry,
   onEdit,
   onFinishWithoutImage,
-  onDone,
   ...props
 }: FeedbackComposerViewProps) {
   const savedText = !!attempt?.receipt;
@@ -140,16 +138,7 @@ export function FeedbackComposerView({
                   />
                   Sending…
                 </Button>
-              ) : attempt.status === 'sent' ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={onDone}
-                  className="min-w-40 text-sm"
-                >
-                  Done
-                </Button>
-              ) : attempt.retryable ? (
+              ) : attempt.status === 'sent' ? null : attempt.retryable ? (
                 <Button
                   type="button"
                   size="sm"

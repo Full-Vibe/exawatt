@@ -337,58 +337,74 @@ export function QuickCaptureBar({
             placeholder={PLACEHOLDERS[kind]}
             aria-label="Feedback"
             onChange={event => onMessageChange(event.target.value)}
-            className="max-h-48 min-h-24 w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring [field-sizing:content]"
+            // Submitted text stays readable content but drops every input cue.
+            className="max-h-48 min-h-24 w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring read-only:border-transparent read-only:bg-muted/50 read-only:caret-transparent read-only:focus-visible:ring-0 [field-sizing:content]"
           />
         </div>
+        {/* Editing tools leave a submitted report; they return with editing. */}
         <div
-          role="group"
-          aria-label="Feedback actions"
-          data-feedback-toolbar
-          className="flex flex-wrap items-center gap-x-2 gap-y-0 px-3 py-1"
+          className={motion.expansion}
+          data-expanded={!readOnly}
+          aria-hidden={readOnly}
+          inert={readOnly}
         >
-          <div className="flex items-center gap-1">
-            {imageEditingOffered && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={imageLocked}
-                onClick={pickImage}
-                className="gap-1.5 px-2 text-sm"
-              >
-                <ImagePlus aria-hidden />
-                Attach image
-              </Button>
-            )}
-            {screenshotAction.offered && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={!screenshotAction.enabled}
-                aria-label={screenshotAction.label}
-                aria-keyshortcuts={formatShortcutKeysAria(
-                  screenshotAction.keys
+          <div className="min-h-0 overflow-hidden">
+            <div
+              role="group"
+              aria-label="Feedback actions"
+              data-feedback-toolbar
+              className="flex flex-wrap items-center gap-x-2 gap-y-0 px-3 py-1"
+            >
+              <div className="flex items-center gap-1">
+                {imageEditingOffered && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={imageLocked}
+                    onClick={pickImage}
+                    className="gap-1.5 px-2 text-sm"
+                  >
+                    <ImagePlus aria-hidden />
+                    Attach image
+                  </Button>
                 )}
-                title={screenshotAction.description}
-                onClick={screenshotAction.run}
-                className="gap-1.5 px-2 text-sm"
-              >
-                {screenshotAction.label}
+                {screenshotAction.offered && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={!screenshotAction.enabled}
+                    aria-label={screenshotAction.label}
+                    aria-keyshortcuts={formatShortcutKeysAria(
+                      screenshotAction.keys
+                    )}
+                    title={screenshotAction.description}
+                    onClick={screenshotAction.run}
+                    className="gap-1.5 px-2 text-sm"
+                  >
+                    {screenshotAction.label}
+                    <span
+                      aria-hidden
+                      className="font-mono text-chrome-micro opacity-70"
+                    >
+                      {formatKeyBinding(screenshotAction.keys)}
+                    </span>
+                  </Button>
+                )}
+              </div>
+              {imageEditingOffered && (
                 <span
-                  aria-hidden
-                  className="font-mono text-chrome-micro opacity-70"
+                  className={cn(
+                    'ml-auto px-1 text-chrome-label text-muted-foreground',
+                    imageLocked && 'opacity-50'
+                  )}
                 >
-                  {formatKeyBinding(screenshotAction.keys)}
+                  Paste image <span className="font-mono text-chrome-micro">⌘V</span>
                 </span>
-              </Button>
-            )}
+              )}
+            </div>
           </div>
-          {imageEditingOffered && (
-            <span className="ml-auto px-1 text-chrome-label text-muted-foreground">
-              Paste image <span className="font-mono text-chrome-micro">⌘V</span>
-            </span>
-          )}
         </div>
         {screenshot && attachScreenshot && (
           <div className="mx-4 mb-2 overflow-hidden rounded-md border border-border">
