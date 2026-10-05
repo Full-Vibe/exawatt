@@ -4,7 +4,17 @@ Roadmap item: ENG-015
 
 ## Current execution handoff — 2026-10-04
 
-**Delivery resumed on an unlocked Mac; final verification is in progress.**
+**Final normal delivery is running on the reviewed, rebased candidate.**
+Latest reviewed product checkpoint: `d83693ffc79b14261fcd3826ca3cd262b790bce9`,
+rebased without conflicts onto `22700bc6`; `pnpm install` completed. The owned
+4317 server and freshly compiled Electron main identify this checkout and HEAD.
+Both the unchanged native Fleet attention gate and the corrected turn-truth
+gate passed. The sole final landing declares all 31 required gates and dogfood,
+under a temporary process-scoped `caffeinate -d -i` assertion. No waiver, native
+focus bypass, permanent power setting change or second installer is used.
+Integration, actual installed SHA and final documentation receipt remain pending.
+
+Earlier resumed evidence:
 The 2026-10-04 resumed read-only native session check confirms an unlocked,
 on-console desktop, with Exawatt frontmost. The combined branch was rebased
 onto `8265ec1c` and dependencies reinstalled. The ENG-045 notification-permission
