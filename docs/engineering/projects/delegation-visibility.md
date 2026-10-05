@@ -1908,3 +1908,44 @@ Foundation verification also repaired two old DOM test selectors that embedded
 opaque unit identities directly into CSS. Tests now compare data-attribute values
 without treating source-derived identity as selector syntax. The behavior
 assertions (overflow visible at both altitudes) remain unchanged.
+
+### 2026-10-05 — D7 amended: silence is not evidence about a background child (BUG-258), and a default is not a report (BUG-257)
+
+D7's coverage argument ("a parent with a live child is never byte-silent") was
+measured on 2.1.270 with foreground children. On the operator's 2.1.289,
+delegated work runs in the background and the parent PTY is silent while it
+runs: every census expiry recorded since the line existed (154 children,
+2026-09-23 to 2026-10-05) had withdrawn a child whose transcript under
+`~/.claude/projects` shows it still running, for 12 s to 17 min of silence.
+The expiry therefore painted the green result D7 existed to prevent, and the
+next boundary census undid it, which the operator reported as the finished tab
+that keeps spinning (BUG-258).
+
+The contract from here: **a reported child is the source's claim, retired only
+by the source.** Coverage is the harness census on every boundary (unchanged:
+a lost `SubagentStop` cannot outlive the parent's next boundary) and process
+exit. Inference reclaims only the parent's own abandoned `generating` turn
+after the stale bound with no gate open (D4), leaving the children as the
+source listed them; the result follows when the source retires the last one.
+`AttentionMonitor.reclaimStaleReportedTurn` no longer considers children,
+`DelegationMonitor.reclaimStaleTurn` applies a bare `turn-end`, and the
+evidence line is `delegation.turn-reclaimed` (Session, harness, reclaimed turn,
+children left standing, silence). The known limit is BUG-081's: children a
+`/tasks` kill or an ESC path ends without a `SubagentStop` stand until the
+parent's next boundary. That is the safe direction; the operator's next prompt
+heals it.
+
+A second rule closes BUG-257's class for every adapter: the ledger's
+`ownTurn` default is not a report. `ownTurnKnown` records whether a source
+boundary or a reclaim established the own turn, and the wiring delivers a
+withheld result on `child-end` only through `reportedOwnTurn`. A census-only
+record (Codex before the 2026-10-04 root observer; any protocol fake without
+`rootObservation`) can therefore never finish a tab. The Codex adapter also
+accepts the 0.160.1 `subAgentActivity` kind `completed` as a child's end.
+
+Codex queued questions (BUG-264) are scoped to the turn that asked them, per
+the 0.160.1 TUI's own lifecycle: outstanding while that turn is live, released
+on completion or a newer turn, never raised from history. `CodexRootObservation`
+questions now carry the row's `turnId`. Real-shape replay lives in
+`codex-real-shapes.test.ts`; the earlier fixture's `started`/`interrupted`-only
+activity stream is the "fakes more capable than reality" case it replaces.

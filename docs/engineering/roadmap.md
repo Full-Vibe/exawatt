@@ -3476,7 +3476,7 @@ own workflow; its Release stays published and the feed moves at 0.1.18.
 
 ### BUG-257 A Codex tab shows the finished glyph while its agent is still working
 
-Status: bug · ENG-016 · product-feedback 5630707d 2026-09-25, f1013635
+Status: done · ENG-016 · product-feedback 5630707d 2026-09-25, f1013635
 2026-09-29, 6d54b4ab 2026-09-30 (three rows, one signal; screenshots on all
 three). The tab wears the green check while the Codex pane reads "Working
 (4m 44s · esc to interrupt)"; in the third capture the pane reads "Compacting
@@ -3488,9 +3488,31 @@ latched turn-end on; compaction and subagent fan-out are mid-turn states, and
 the latch must release only on a positive turn-end from the source, never on
 quiescence while children or compaction are live. Never widen a timeout.
 
+Resolved 2026-10-05. Root cause: the tab latched turn-end on the last child's
+`child-end` while the parent's own turn carried the ledger DEFAULT `available`,
+which nothing had reported. Until 2026-10-04 the Codex adapter observed children
+but never the root turn, so once any census populated the ledger the D7 wiring
+("no live children and `ownTurn === 'available'` delivers the withheld result")
+fired every time Codex's last live child finished a step mid-turn, and the
+settled latch then ignored every byte of "Working (4m 44s)" and "Compacting
+context" because a reported source now existed. Fix: a default is not a report.
+The ledger records whether the own turn was ever established (`ownTurnKnown`),
+and a child's end or a reclaim delivers a result only through
+`DelegationMonitor.reportedOwnTurn`, so a census-only record can never finish a
+tab for any adapter. The root observer landed 2026-10-04 supplies the positive
+boundary: a TUI-owned turn reads interrupted/null (unknown) and only `completed`
+with a timestamp ends it. The adapter also accepts the 0.160.1
+`subAgentActivity` kind `completed`, which the 0.147-era parser refused as an
+invalid shape and so dropped the live siblings of a finished child. Replayed
+from the real 0.160.1 frames (fan-out, child steps, compaction, completion)
+through the production pipeline in
+`electron/main/harness-events/codex-real-shapes.test.ts`; the old fixture only
+ever emitted `started` and `interrupted`. Evidence in
+[daily-driver-adoption](projects/daily-driver-adoption.md#2026-10-05--a-default-is-not-a-report-and-silence-is-not-evidence-about-a-background-child-bug-257--bug-258--bug-264).
+
 ### BUG-258 A finished Claude Code tab keeps spinning after its turn ended
 
-Status: bug · ENG-016 · product-feedback 2c0f6f65 2026-09-29 (and the aside in
+Status: done · ENG-016 · product-feedback 2c0f6f65 2026-09-29 (and the aside in
 f60d6cda: "they look blue and spinning, that's a bug"). Screenshot: an Opus 5.5
 tab shows the blue spinner while its pane reads "Sautéed for 11s · done
 6:59 PM" above an empty prompt. The inverse of BUG-257 and the shape of BUG-081
@@ -3498,6 +3520,25 @@ tab shows the blue spinner while its pane reads "Sautéed for 11s · done
 whether `Stop` arrived and the turn state was reclaimed, and whether the hook
 listener died, because the channel's fail-open ("no delegation reported") must
 never keep a spinner alive.
+
+Resolved 2026-10-05. Established from `logs/main.jsonl` and the children's own
+transcripts: `Stop` HAD arrived (the record read `available`), the listener was
+alive, and the spinner was Claude Code's own census of two running background
+subagents. D7's silence expiry then withdrew them after 27 s of parent-PTY
+silence (`delegation.census-expired` at 01:59:45Z, the screenshot's minute) and
+painted a green result while both agents were still running, their transcripts
+continuing 12 and 31 minutes past the expiry; the next boundary census brought
+the dots back, and the same two ids were expired again at 15 s and 102 s of
+silence. The flicker is the report. Across the whole log, 154 of 154
+silence-expired children were alive, every one spawned in the background: D7's
+measured premise (a parent with a live child redraws its footer every second)
+does not hold for background subagents on Claude Code 2.1.289. Fix: silence
+never expires a reported child. Inference reclaims only the parent's own
+abandoned turn (D4, unchanged) and leaves the census to the source; a child
+retires on the harness's next boundary census or process exit, and a lost
+`SubagentStop` still cannot outlive the parent's next boundary.
+`delegation.census-expired` is gone; `delegation.turn-reclaimed` records a turn
+reclaim with the children it left standing. Decision `0018` amended.
 
 ### BUG-259 There is no way to mark a tab unread
 
@@ -3590,7 +3631,7 @@ Resolved 2026-10-05. Root cause, one cause for both symptoms: the 2026-09-25 BUG
 
 ### BUG-264 A Codex queued question is not a needs-you
 
-Status: bug · ENG-016 · product-feedback b23a3cbe 2026-09-30, screenshot
+Status: done · ENG-016 · product-feedback b23a3cbe 2026-09-30, screenshot
 attached. Codex now accepts follow-up questions while it keeps working: the
 pane shows "Queued follow-up inputs · ? 1 question · shift+← to answer" under a
 live "Working (4m 59s)". Operator: "I want Exawatt to be able to detect this if
@@ -3600,6 +3641,24 @@ app-server item stream before falling back to the PTY cue, and mark the
 Session needs-you without ending its turn: a new blocker shape,
 waiting-while-working, which the attention lane should rank below a hard
 block.
+
+Resolved 2026-10-05. The producer landed 2026-10-04: the `agentMessage` with
+`delivery: 'async'` is read from the app-server item stream and raised as
+`blocked` with `request: 'working'`, so the tab stays working, turns amber and
+rings through the shared attention path (one transition, one alert). What
+remained was the request's lifetime: the adapter held every unanswered question
+in the thread's history, so at app start on 2026-10-05 three Codex tabs lit
+amber for days-old questions the TUI had long dropped (2 of 5 questions on the
+2026-09-30 thread and 2 of 9 on a 2026-10-04 thread were never answered in the
+typed envelope; the operator had simply moved on). The 0.160.1 TUI source
+(`bottom_pane/async_questions/state.rs`, `chatwidget/turn_runtime.rs`,
+`chatwidget/input_submission.rs`) clears pending questions when the live turn
+completes and when the operator submits a new prompt. The adapter now scopes a
+question to the turn its item row names: outstanding only while that turn is
+the live one, released on the turn's completion or a newer turn, reply or no
+reply, and history pages never raise. Replayed from the real frames in
+`codex-real-shapes.test.ts`: amber plus one alert while working, cleared by the
+typed reply, released at turn end, nothing at hydration.
 
 ### BUG-265 The bell does not sound when an agent needs you
 

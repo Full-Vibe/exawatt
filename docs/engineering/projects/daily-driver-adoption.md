@@ -7875,3 +7875,75 @@ root execution authority as well as children, preventing stale reported working
 from later becoming inferred completion. Targeted regression tests cover each
 sequence; these are correctness repairs to the source boundary, not timeout
 adjustments.
+
+### 2026-10-05 — A default is not a report, and silence is not evidence about a background child (BUG-257 / BUG-258 / BUG-264)
+
+Execution lane `agent/g1b-turn-truth` (demo-arc packet G1b). Three defects,
+one evidence pass over the operator's own machine: `logs/main.jsonl`, the
+Claude Code subagent transcripts under `~/.claude/projects`, and read-only
+probes of the installed Codex 0.160.1 app-server against the real threads
+behind the screenshots. No timeout was widened; nothing reads terminal prose.
+
+**BUG-258's spinner was true, and the green that interrupted it was the lie.**
+The screenshot's minute (01:59Z on 2026-09-30) is in the log:
+`delegation.census-expired` for the Session, `ownTurn: available` (so `Stop`
+had arrived and the listener was alive), two `general-purpose` children, 27.6 s
+of silence. The two child ids resolve to transcripts under the parent's
+project directory: both `requestShape: "background"`, both still writing for
+12 and 31 minutes after the expiry. The same two ids were expired again at
+14.9 s and 101.9 s of silence as each subsequent boundary census re-listed
+them. Checking every expiry in the log the same way: **154 of 154 withdrawn
+children were alive**, all background, after silences from 12 s to 17 min.
+D7's premise (a parent with a live child redraws its task footer every second,
+measured on 2.1.270 with foreground children) does not hold for background
+subagents on 2.1.289. Fix: silence never expires a reported child; inference
+reclaims only the parent's own abandoned turn (the D4 arm, unchanged) and
+leaves the census to the source's next boundary or process exit. The lost-stop
+case keeps D7's harness-side half: a census on every boundary retires a child
+whose stop was lost. `delegation.census-expired` is retired;
+`delegation.turn-reclaimed` records the reclaim with the children left standing.
+
+**BUG-257's latch was the ledger default read as a report.** Through 0.1.13
+and 0.1.14 (the builds behind all three captures) Codex reported children but
+never its own turn, so once a census populated the ledger, `ownTurn` was
+`EMPTY_LEDGER`'s `available`, and the D7 wiring delivered a "withheld result"
+on `child-end` whenever Codex's last live child finished a step mid-turn. The
+settled latch then dropped every byte of "Working (4m 44s)" and "Compacting
+context" because a reported source now existed (the 2026-08-04 BUG-001 arm
+excluded it). The 2026-10-04 root observer supplies the positive boundary; this
+pass closes the class: the ledger carries `ownTurnKnown`, and
+`DelegationMonitor.reportedOwnTurn` is the only way a child's end or a reclaim
+may deliver a result. A probe of the real fan-out threads also found the
+installed app-server emitting `subAgentActivity` kind `completed`, which the
+0.147-era parser refused as an invalid shape, dropping the live siblings of a
+finished child (observation `partial`, dots gone); it is accepted now and
+counts as the child's end.
+
+**BUG-264's producer was right; its lifetime was not.** The operator's live
+threads carry questions from finished turns that were never answered in the
+typed envelope (2 of 5 on the 2026-09-30 thread, 2 of 9 on a 2026-10-04
+thread), and the 2026-10-04 adapter held each as outstanding: at 12:07 PT
+today three Codex tabs lit amber at app start for days-old questions. The
+0.160.1 TUI source clears pending questions when the live turn completes
+(`chatwidget/turn_runtime.rs`) and when the operator submits a new prompt
+(`chatwidget/input_submission.rs`), and tombstones answered or skipped ids. The
+adapter now reads each question's turn from its item row and keeps it
+outstanding only while that turn is the live one; a completion or a newer turn
+releases it, reply or no reply, and history pages never raise. Coverage limit:
+the TUI's 30 s auto-resolution of an unexpanded question leaves no item, so a
+question it dropped that way reads outstanding until the turn ends.
+
+Verification: `codex-real-shapes.test.ts` replays frames shaped exactly as
+0.160.1 answered the probe (row-level `turnId`, `completed` activity,
+`contextCompaction`, the async `agentMessage`, the typed reply envelope) through
+the real client, observer, monitors, wiring and render derivation: no result
+during fan-out, child steps, compaction or a 30 s think; result only on
+`completed`; a queued question is amber plus one alert while working, cleared
+by its reply, released at turn end; nothing raised at hydration. Pipeline,
+wiring, monitor and reducer suites rewritten to the new contract (291 focused
+tests, 3149 across `electron`, `packages/core` and `src/components/workspace`;
+the two `supabase-release-publisher` failures are a missing
+`EXAWATT_RELEASE_TAG` in this environment, unrelated). Gates
+`eval:electron:delegation` (census section rewritten: an abandoned turn is
+reclaimed with its children standing; the harness census retires them) and
+`eval:electron:turn-truth` run at landing.
