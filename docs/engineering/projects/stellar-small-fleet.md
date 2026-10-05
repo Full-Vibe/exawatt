@@ -13,6 +13,8 @@ an asynchronous native authorization read, and its completion rechecks the exact
 unread source fact, live runtime, native focus and preference. Electron compilation,
 Electron test types, scoped lint and 98 focused tests pass. This is implemented
 verification evidence; no queue admission, integration or installation is claimed.
+Independent review approved `ff6b06ab` with no remaining scoped P1/P2. The
+required gate union is now 31, including the upstream permissions gate.
 
 The earlier locked-host checkpoint below remains historical evidence:
 Candidate behavior and fixture checkpoint: `8a2bcd4816141a7a245ddef86fd556a0852dab40`
@@ -46,13 +48,14 @@ none of this combined transaction is integrated or installed yet.
   unlock even if no text reply arrives, start this worktree's own dev server
   with `pnpm dev -p 4317`, and rerun
   `EXA_BASE=http://localhost:4317 pnpm eval:spatial:attention`. If it passes,
-  resume the sole normal delivery path below (all 30 gates, no waivers).
+  resume the sole normal delivery path below (all 31 gates, no waivers).
 
 ```sh
 EXA_BASE=http://localhost:4317 pnpm agent:land -- \
   --verify eval:spatial:attention \
   --verify eval:electron:source-compatibility \
   --verify eval:electron:device-power \
+  --verify eval:electron:permissions \
   --verify eval:electron:source-power \
   --verify eval:electron:project-pause \
   --verify eval:electron:clone-context \
