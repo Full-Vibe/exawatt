@@ -3703,7 +3703,7 @@ or durable resolution is established.
 
 ### BUG-273 Saved open Sessions fail when their source is unsupported
 
-Status: done · ENG-016 · continuity audit, 2026-10-04; active follow-through with ENG-018.
+Status: done · ENG-016 · continuity audit, 2026-10-04; delivered with ENG-018.
 
 Known-version saved layouts assume every source string has current runtime
 metadata. Legacy migration can throw; current records with explicit title
@@ -3716,6 +3716,8 @@ unsupported legacy/current layouts load; purpose/history and source/draft
 identity survive save; unsupported runtime actions stay unavailable; known
 exact resume remains correct. Arbitrary future schema versions are outside
 this compatibility slice. [Execution contract](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
+
+Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full floor and all 31 declared gates passed. Mixed saved sources preserve raw identity, purpose, history, opaque JSON and draft choice; unsupported runtime actions stay unavailable and known exact resume remains correct. [Final receipt](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
 
 ## Amendment chain
 
@@ -3942,8 +3944,6 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | BUG-195's docs push guard, which let a docs push reach `master` once `docs:check` passed, and AGENTS.md's in-place docs path that pushed directly | BUG-200, 2026-09-24 | Only `agent:land` moves `master`. The pre-push hook refuses every other push to it, and documentation lands through `pnpm agent:land -- --docs`: no worktree, the docs checks only, a queue ticket like any other. |
 | ENG-030's latch policy as applied by `agent:land`: a latched publication failed the queue head, after its rebase and re-check | BUG-201, 2026-09-24 | The head checks publication before rebasing and holds, bounded and visible, instead of failing; a transient latch is retried, a deterministic one waits for the operator's recovery. Private `master` still never moves past unpublished work. |
 | BUG-162's rule that a failed roadmap read keeps the last good parse "as a fact with an age" | BUG-236, 2026-09-28 | Nothing aged it, so an unblocked Agent read blocked for as long as the file was unreadable. A failed read now declares the producer blind to that Project's Agents (unknown, never quiet or blocked); the block's `since` pin is held across the gap. |
-
-Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full floor and all 31 declared gates passed. Mixed saved sources preserve raw identity, purpose, history, opaque JSON and draft choice; unsupported runtime actions stay unavailable and known exact resume remains correct. [Final receipt](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
 
 ### BUG-274 Agents on the local network raise an unexplained macOS prompt
 
