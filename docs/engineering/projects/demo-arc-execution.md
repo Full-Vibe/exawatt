@@ -209,7 +209,8 @@ integrated affordances, both still provisional until the Friday checkpoint.
   frozen and blurry render (frameloop invalidation while working marks exist,
   the `dpr`/resize path after a display change), the Fleet to Agent
   transition (measure first, then fix the mount and teardown overlap), ⌘J from
-  Fleet, and the close pack plus focus field look as the proposed default.
+  Fleet, and the close pack plus focus field look (operator-confirmed and
+  landed 2026-10-04).
   **G1b truth:** the Codex finished glyph during compaction and sub-agent
   fan-out, the Claude spinner after `Stop`, the Codex queued question raised as
   needs-you without ending the turn, and one transition that produces both the

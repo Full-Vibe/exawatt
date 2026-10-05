@@ -2467,6 +2467,9 @@ an explicit packing/emphasis choice. Only then does its shared policy become the
 production default; the bench option is retired as a proposal while the real
 renderer bench remains standing.
 
+**Decided 2026-10-04 (operator): close pack plus focus field.** See the
+2026-10-04 log entry for what landed.
+
 ### V4.0 Fleet excellence pass (2026-09-13 to 2026-09-14)
 
 **Brief (operator, verbatim in spirit):** the Fleet view should feel slick,
@@ -3016,3 +3019,35 @@ is verified; the reported frozen branch remains distinct from intentional
 battery/reduced-motion behavior and requires contemporaneous host/source facts
 if it recurs. Next action: run the declared landing floor and gates, integrate
 with dogfood queued, then remove this worktree and local branch.
+
+### 2026-10-04 — V3.9 decided: close pack plus focus field
+
+The operator chose the recommended pair from the comparison page: Projects pack
+as a honeycomb, and a selected Project keeps its contrast while its peers
+recede. It is now the only treatment, not a default beside alternatives:
+
+- **Packing.** `fleetZoneRect` always staggers alternate rows by a quarter of
+  the column pitch in opposing directions, and rows sit 24 apart
+  (`BOARD.fleetPitchY`, was 28 for the straight lattice). Slot order and
+  ownership are unchanged, so a Project keeps its address and its 1 to 9
+  hotkey, and adding Projects still moves none. `SpatialBoardProjectPacking`,
+  the `projectPacking` option and the layout field are gone.
+- **Emphasis.** While a Project is selected, peer edges mix 0.42 toward the
+  board and peer plates take 0.32 of the focus recession, and the selected
+  Project wears a quiet outline at 0.72 opacity. The outline and lift variants
+  and the plate-lift animation were deleted.
+- **Agent candidate.** Pointer hover and keyboard focus draw the solid padded
+  hex at Project altitude, and press contracts it, in production now. Keyboard
+  focus shows as that in-world outline rather than a DOM ring. The candidate
+  goes through the hover store, which the agent layer already subscribed to,
+  so a hover rerenders that layer and not the board.
+- **Removed:** `operations-board-presentation.ts` (the review seam and its
+  test), the surface's `presentation` prop and its data attributes, and the
+  bench's Direction switcher. The bench stays as the standing board tool.
+
+Sparse fleets read wider than the straight lattice (four Projects are two rows
+of two shifted half a cell, 51.5 by 38 units), and the compactness tests now
+state the honeycomb's own bounds. Screens checked: Voltaic at Fleet altitude in
+the classic and Air themes, the crowded fixture, Project altitude with an Agent
+hovered and pressed, and the product Fleet route.
+
