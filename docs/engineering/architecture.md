@@ -1335,7 +1335,9 @@ Built:
   directory: the newest tickets and the metrics tail, never writing) on the
   same activity read, and the ui-model matches each ticket to the item its
   first commit subject names; an unreadable queue is `unavailable` and
-  renders nothing, never an empty queue
+  renders nothing, never an empty queue. The Demo tenant feeds the same lens
+  input from its tick's landings through the injected-source seam the Demo
+  roadmap text already uses (ENG-027 W14, 2026-10-05), never from a repository
 - ENG-021 E1 Session-context inference: operator-submission-triggered evidence,
   authenticated server-owned structured labeling, durable last-good failure
   behavior, immediate correction, a repository gold corpus, and a reusable

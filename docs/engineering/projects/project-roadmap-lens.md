@@ -644,8 +644,9 @@ directory; this slice reads it and draws it on the rows it is about.
   says so. Torn ticket files are counted, never dropped silently; a failed
   landing is shown with its reason rather than disappearing; every relative
   time on the surface is computed from one rail clock.
-- **Not built.** No Demo rows yet (G2 owns the Demo tick; the lens input is
-  generic so Demo can feed `landings` through the same hook), no watch on the
+- **Not built.** ~~No Demo rows yet~~ (landed 2026-10-05, demo arc G2.1: the
+  Demo shell feeds `landings` through `useProjectRoadmap`'s injected
+  `landingsSource`, see `workspace-tenancy-and-demo.md`), no watch on the
   queue directory (polling the existing read was enough and adds no owner),
   and the dogfood install state is not projected.
 

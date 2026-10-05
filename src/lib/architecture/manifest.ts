@@ -768,7 +768,7 @@ export const architectureManifest = {
           id: 'demo-harness',
           label: 'Demo Source',
           summary:
-            'The Demo tenant source (ENG-027): authored Voltaic Grid Systems fixtures, including Initiative assignments for every Agent, behind the same transport and rollup contracts the live paths use, advanced by a seeded, deterministic tick (W14) that moves work state and landings without inventing an Agent or a conversation. The organization identity is separate from the tenant identity; the mock simulation engine is eval-only.',
+            'The Demo tenant source (ENG-027): authored Voltaic Grid Systems fixtures, including Initiative assignments for every Agent, behind the same transport and rollup contracts the live paths use, advanced by a seeded, deterministic tick (W14) that moves work state and landings without inventing an Agent or a conversation, and whose landings feed the landing marks of the roadmap lens through the same injected-source seam as the Demo roadmap text. The organization identity is separate from the tenant identity; the mock simulation engine is eval-only.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 535,

@@ -42,7 +42,11 @@ export interface RoadmapDeliveryTicket {
   id: string;
   number: number;
   status: 'queued' | 'integrating' | 'integrated' | 'failed';
-  branch: string;
+  /** The real queue always records a branch (`agent:land` requires one).
+   *  null only when the source did not record one, which the Demo tick's
+   *  landings by unbranched fixture Agents are (ENG-027 W14): shown as
+   *  absent, never invented. */
+  branch: string | null;
   lane: string;
   /** Subject of the oldest commit in the ticket's range; the first commit
    *  names the owning roadmap item. null when git could not resolve it. */

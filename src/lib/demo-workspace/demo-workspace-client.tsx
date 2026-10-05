@@ -86,6 +86,7 @@ import {
 import {
   demoProjectFor,
   demoInitiativeFor,
+  demoDeliveryRead,
   demoLandedMilestones,
   demoRoadmapRead,
   demoShellActivity,
@@ -225,10 +226,7 @@ export function DemoWorkspaceClient() {
     [agents, landed]
   );
   const agentTypeByTab = useMemo(() => demoShellAgentTypes(agents), [agents]);
-  const initiativeByTab = useMemo(
-    () => demoShellInitiatives(agents),
-    [agents]
-  );
+  const initiativeByTab = useMemo(() => demoShellInitiatives(agents), [agents]);
   const goalVisuals = useMemo(() => demoShellGoalVisuals(agents), [agents]);
   const consumptionByTab = useMemo(
     () => demoShellConsumption(agents),
@@ -241,6 +239,14 @@ export function DemoWorkspaceClient() {
   const roadmapRead = useMemo(
     () => (projectDir: string) => demoRoadmapRead(projectDir, landed),
     [landed]
+  );
+  // The tick's landings reach the lens through the same injected-source seam
+  // (ENG-017 S16 marks over Demo rows): one source per frame, because every
+  // tick can move a landing's state or queue position, and the lens projects
+  // it without re-reading or re-parsing the roadmap text.
+  const roadmapLandings = useMemo(
+    () => (projectDir: string) => demoDeliveryRead(projectDir, frame),
+    [frame]
   );
   const sessionPaneRef = useRef<HTMLElement>(null);
   const [closeConfirm, setCloseConfirm] = useState<{
@@ -1154,6 +1160,7 @@ export function DemoWorkspaceClient() {
           activeProjectDir={activeProject?.dir ?? null}
           navigationSelection={teamSelection}
           roadmapRead={roadmapRead}
+          roadmapLandings={roadmapLandings}
           onSelectionChange={publishTeamSelection}
           onPick={(_dir, tabId) => {
             setActiveId(tabId);

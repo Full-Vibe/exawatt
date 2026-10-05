@@ -19,6 +19,7 @@ import {
   DEMO_ROADMAP_MARKDOWN,
   DEMO_TRANSCRIPTS,
   DEMO_WORKSPACE_NOW_MS,
+  DEMO_LANDING_CADENCE_MS,
   demoAgentBurn,
   demoAgentAttention,
   demoFleetAgents,
@@ -27,8 +28,10 @@ import {
   demoRoadmapMarkdownWithLandings,
   parseRoadmap,
   type DemoFleetAgent,
+  type DemoFleetFrame,
   type DemoInitiative,
   type DemoLandedMilestone,
+  type DemoLandingState,
   type DemoLandingView,
   type DemoTranscriptLine,
   type DemoWorkspaceProject,
@@ -46,7 +49,11 @@ import type {
 } from '@/components/workspace/switcher-rows';
 import { computeAgentBurn, type AgentBurnEntry } from '@exawatt/ui-model';
 import type { PtyHarness } from '@exawatt/core';
-import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
+import type {
+  RoadmapDeliveryRead,
+  RoadmapDeliveryTicket,
+  SessionDelegation,
+} from '@exawatt/core/desktop-bridge';
 import { sessionDisplayCopy } from '@exawatt/ui-model';
 
 /** One stable "now" per app load: the whole demo tenant reads one clock. */
@@ -424,6 +431,109 @@ export function demoLandedMilestones(
     });
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Delivery queue source (the lens's landing input, ENG-017 S16)       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The tick's landings for one Project, in the shape main resolves on
+ * `roadmap:activity` for a live repository, so the SAME lens draws the same
+ * marks (`checking`, `queued · 2nd`, `integrating`, `landed <sha>`) and the
+ * same header line over Demo rows without a Demo branch anywhere in it.
+ *
+ * Each Demo Project is its own repository with its own queue, as the live
+ * reader reads one: a landing appears only on the lens of the Project whose
+ * roadmap it names, and positions count that Project's queue (the frame's
+ * `queuePosition` is the fleet-wide place). States map one to one: `queued`
+ * is an admitted ticket waiting; `checking` is the head re-running its floor
+ * (an `integrating` ticket with `checking`), since a Demo landing has already
+ * been queued by then; `integrating` is the head pushing; `landed` is an
+ * `integrated` ticket carrying the seed-derived sha. Nothing fails in Demo.
+ *
+ * Honesty: null when there is no frame or this Project's queue has never seen
+ * a landing, which the lens renders as no landing UI at all, exactly as the
+ * Demo lens looked before the tick; "queue clear" is said only once the frame
+ * has landed something here. A branch is the Agent's authored one or absent,
+ * never invented.
+ */
+export function demoDeliveryRead(
+  projectDir: string,
+  frame: DemoFleetFrame | null
+): RoadmapDeliveryRead | null {
+  if (!frame) return null;
+  const project = DEMO_PROJECTS.find(p => p.dir === projectDir);
+  if (!project) return null;
+  let branches: Map<string, string | null> | null = null;
+  const tickets: RoadmapDeliveryTicket[] = [];
+  frame.landings.forEach((landing, index) => {
+    if (landing.projectKey !== project.key) return;
+    if (!branches) {
+      branches = new Map(
+        frame.agents.map(agent => [agent.id, agent.gitBranch] as const)
+      );
+    }
+    tickets.push(
+      demoDeliveryTicket(
+        landing,
+        index + 1,
+        branches.get(landing.agentId) ?? null
+      )
+    );
+  });
+  if (tickets.length === 0) return null;
+  return {
+    status: 'ok',
+    readAt: frame.nowMs,
+    tickets,
+    candidates: [],
+    unreadableTickets: 0,
+    metricsAt: frame.nowMs,
+  };
+}
+
+const DEMO_TICKET_STATUS: Record<
+  DemoLandingState,
+  RoadmapDeliveryTicket['status']
+> = {
+  queued: 'queued',
+  checking: 'integrating',
+  integrating: 'integrating',
+  landed: 'integrated',
+};
+
+/** One landing as the ticket the queue would hold for it. `number` is the
+ *  landing's fleet-wide ordinal (oldest first), which keeps a Project's
+ *  tickets in queue order with the gaps a shared counter leaves. */
+function demoDeliveryTicket(
+  landing: DemoLandingView,
+  number: number,
+  branch: string | null
+): RoadmapDeliveryTicket {
+  return {
+    id: landing.id,
+    number,
+    status: DEMO_TICKET_STATUS[landing.state],
+    branch,
+    lane: 'worktree',
+    // The first commit names the item, as this repository's own landings do
+    // (`feat(ENG-008 E15): …`); the lens matches on that subject.
+    subject: `feat(${landing.roadmapItemId}${
+      landing.milestoneId ? ` ${landing.milestoneId}` : ''
+    }): ${landing.milestoneTitle}`,
+    admittedAt: landing.queuedAt,
+    // The head is reached when the floor starts running on it.
+    headAt:
+      landing.state === 'queued'
+        ? null
+        : landing.queuedAt + DEMO_LANDING_CADENCE_MS.checking,
+    terminalAt: landing.landedAt,
+    integratedSha: landing.state === 'landed' ? landing.sha : null,
+    failureReason: null,
+    checking: landing.state === 'checking',
+    held: false,
+  };
 }
 
 function landedForProject(

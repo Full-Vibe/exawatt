@@ -88,6 +88,7 @@ import {
 } from '@/components/roadmap/roadmap-rail';
 import {
   useProjectRoadmap,
+  type RoadmapLandingsSource,
   type RoadmapReadSource,
   type RoadmapSessionDescriptor,
 } from '@/components/roadmap/use-project-roadmap';
@@ -191,6 +192,7 @@ export function ExposeOverlay({
   navigationSelection = null,
   remoteCoworkers = EMPTY_COWORKERS,
   roadmapRead,
+  roadmapLandings,
   onPick,
   onOpenRemoteAgent,
   onPickProject = () => {},
@@ -248,6 +250,10 @@ export function ExposeOverlay({
   /** tenant roadmap source override (ENG-027 W2): the Demo Workspace lens
    *  reads fixture markdown instead of the `roadmap:read` IPC */
   roadmapRead?: RoadmapReadSource;
+  /** tenant delivery-queue source override (ENG-027 W14): the Demo Workspace
+   *  lens draws its tick's landings instead of the `roadmap:activity` read;
+   *  honoured only beside `roadmapRead` */
+  roadmapLandings?: RoadmapLandingsSource;
   onPick: (dir: string, tabId: string) => void;
   /** Open a coworker's conversation. The same gesture as opening a Session,
    *  and it reaches the source for nothing but a read. */
@@ -547,7 +553,8 @@ export function ExposeOverlay({
     railVisible ? selectedRootPath : null,
     roadmapSessions,
     declaredLinks,
-    roadmapRead
+    roadmapRead,
+    roadmapLandings
   );
   const exitRailFocus = useCallback(() => {
     if (!railDocks) setRailSummoned(false);

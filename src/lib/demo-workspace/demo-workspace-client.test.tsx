@@ -17,16 +17,34 @@ import {
   useSessionAttentionSource,
 } from '@/lib/fleet/fleet-provider';
 import { DemoWorkspaceClient } from './demo-workspace-client';
+import {
+  DEMO_LANDING_CADENCE_MS,
+  DemoFleetSimulation,
+  demoFleetAgents,
+  type DemoFleetFrame,
+} from '@exawatt/core';
 
-const { replace, route } = vi.hoisted(() => ({
+const { replace, route, frameOverride } = vi.hoisted(() => ({
   replace: vi.fn(),
   route: { query: '' },
+  /** A frame the shell reads in place of the transport's (a test that needs
+   *  the tick to have advanced, without racing a wall clock). */
+  frameOverride: { frame: null as DemoFleetFrame | null },
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace, push: vi.fn() }),
   useSearchParams: () => new URLSearchParams(route.query),
 }));
+
+vi.mock('@/lib/fleet/fleet-provider', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('@/lib/fleet/fleet-provider')>();
+  return {
+    ...actual,
+    useDemoFleetFrame: () => frameOverride.frame ?? actual.useDemoFleetFrame(),
+  };
+});
 
 vi.mock('./demo-session-pane', () => ({
   DemoSessionPane: ({ agent }: { agent: { id: string } }) => (
@@ -37,6 +55,7 @@ vi.mock('./demo-session-pane', () => ({
 afterEach(() => {
   replace.mockClear();
   route.query = '';
+  frameOverride.frame = null;
 });
 
 function view() {
@@ -360,5 +379,66 @@ describe('Demo workspace on the real ribbon (W6)', () => {
     // reopen restores the chip where it lived
     fireEvent(window, new CustomEvent(REOPEN_LAST_CLOSED_EVENT));
     expect(liveChipFor(quiet.id)).toBeInTheDocument();
+  });
+});
+
+describe('Demo landings reach the roadmap lens (ENG-027 W14 → ENG-017 S16)', () => {
+  const START_MS = 1_800_000_000_000;
+  /** The Team altitude needs the exposé's providers. */
+  function teamView() {
+    return render(
+      <TooltipProvider>
+        <GoalVisualPreferenceProvider>
+          <FleetProvider demoSimulationTickMs={0}>
+            <DemoWorkspaceClient />
+          </FleetProvider>
+        </GoalVisualPreferenceProvider>
+      </TooltipProvider>
+    );
+  }
+  function advancedFrame() {
+    const sim = new DemoFleetSimulation(
+      demoFleetAgents('scale', { nowMs: START_MS }),
+      { startedAtMs: START_MS }
+    );
+    const first = sim.frameAt(30 * 60_000).landings[0];
+    if (!first) throw new Error('the seed queued no landing in thirty minutes');
+    const frame = sim.frameAt(
+      first.queuedAtMs + DEMO_LANDING_CADENCE_MS.checking
+    );
+    return { frame, landing: frame.landings.find(l => l.id === first.id)! };
+  }
+
+  it("draws the frame's landing on the Team altitude lens of the Project it names", async () => {
+    const { frame, landing } = advancedFrame();
+    frameOverride.frame = frame;
+    // open the Team altitude from a Session of that Project
+    const tab = demoShellAgents(frame.agents).find(
+      agent => agent.projectKey === landing.projectKey
+    );
+    if (!tab) throw new Error(`${landing.projectKey} has no base-tier Session`);
+    requestSessionJump(tab.id);
+    route.query = 'view=sessions';
+    const { container } = teamView();
+    const header = () => container.querySelector('[data-roadmap-landings]');
+    await waitFor(() => expect(header()).not.toBeNull());
+    expect(header()?.textContent).toContain(landing.roadmapItemId);
+    const mark = container.querySelector(
+      `[data-roadmap-rail] [data-roadmap-landing="${landing.state}"]`
+    );
+    expect(mark).not.toBeNull();
+  });
+
+  it('shows the lens exactly as before when the frame has landed nothing in that Project', async () => {
+    route.query = 'view=sessions';
+    const { container } = teamView();
+    await waitFor(() =>
+      expect(container.querySelector('[data-roadmap-rail]')).not.toBeNull()
+    );
+    await waitFor(() =>
+      expect(container.querySelector('[data-roadmap-readiness]')).not.toBeNull()
+    );
+    expect(container.querySelector('[data-roadmap-landings]')).toBeNull();
+    expect(container.querySelector('[data-roadmap-landing]')).toBeNull();
   });
 });

@@ -146,3 +146,105 @@ describe('useProjectRoadmap activity scope', () => {
     });
   });
 });
+
+describe('useProjectRoadmap injected landings source (ENG-027 W14)', () => {
+  afterEach(() => {
+    removeBridgeDouble();
+  });
+
+  const ticket = (
+    status: 'queued' | 'integrating',
+    subject = 'feat(ACME-001): the current slice'
+  ) => ({
+    id: `0000001-${status}`,
+    number: 1,
+    status,
+    branch: null,
+    lane: 'worktree',
+    subject,
+    admittedAt: 900_000,
+    headAt: status === 'integrating' ? 950_000 : null,
+    terminalAt: null,
+    integratedSha: null,
+    failureReason: null,
+    checking: false,
+    held: false,
+  });
+  const readOf = (status: 'queued' | 'integrating') => ({
+    status: 'ok' as const,
+    readAt: 1_000_000,
+    tickets: [ticket(status)],
+    candidates: [],
+    unreadableTickets: 0,
+    metricsAt: 999_000,
+  });
+  const fixtureRead = () => ({
+    status: 'ok' as const,
+    text: ROADMAP,
+    file: 'ROADMAP.md',
+    mtimeMs: 0,
+  });
+
+  it('draws an injected queue beside an injected roadmap without touching the activity IPC', async () => {
+    const activity = vi.fn();
+    installBridgeDouble({
+      platform: 'darwin',
+      roadmap: {
+        read: vi.fn(),
+        activity,
+        watch: vi.fn().mockResolvedValue(undefined),
+        unwatch: vi.fn().mockResolvedValue(undefined),
+        onFileChanged: vi.fn().mockReturnValue(() => {}),
+      },
+    });
+    const landings = vi.fn((dir: string) =>
+      dir === '/demo/a' ? readOf('integrating') : null
+    );
+    const { result } = renderHook(() =>
+      useProjectRoadmap('/demo/a', [], [], fixtureRead, landings)
+    );
+    await waitFor(() =>
+      expect(result.current.view.now[0]?.landing?.state).toBe('integrating')
+    );
+    expect(result.current.view.landings).toMatchObject({
+      inQueue: 1,
+      head: { ticketNumber: 1, declaredId: 'ACME-001' },
+    });
+    expect(landings).toHaveBeenCalledWith('/demo/a');
+    // the Demo tenant never reads the live repository's queue
+    expect(activity).not.toHaveBeenCalled();
+    expect(window.electron?.roadmap?.read).not.toHaveBeenCalled();
+  });
+
+  it('is null for a Project the source has nothing for, which is no queue, not an empty one', async () => {
+    const { result } = renderHook(() =>
+      useProjectRoadmap('/demo/b', [], [], fixtureRead, () => null)
+    );
+    await waitFor(() => expect(result.current.view.status).toBe('ok'));
+    expect(result.current.view.landings).toBeNull();
+    expect(result.current.view.now[0]?.landing).toBeNull();
+  });
+
+  it("is ignored on a live Project: the repository's own queue is what the lens shows", async () => {
+    installBridgeDouble({
+      platform: 'darwin',
+      roadmap: {
+        read: vi.fn().mockResolvedValue(fixtureRead()),
+        activity: vi
+          .fn()
+          .mockResolvedValue({ changes: [], landings: readOf('queued') }),
+        watch: vi.fn().mockResolvedValue(undefined),
+        unwatch: vi.fn().mockResolvedValue(undefined),
+        onFileChanged: vi.fn().mockReturnValue(() => {}),
+      },
+    });
+    const injected = vi.fn(() => readOf('integrating'));
+    const { result } = renderHook(() =>
+      useProjectRoadmap('/a', [], [], undefined, injected)
+    );
+    await waitFor(() =>
+      expect(result.current.view.now[0]?.landing?.state).toBe('queued')
+    );
+    expect(injected).not.toHaveBeenCalled();
+  });
+});

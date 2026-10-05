@@ -76,12 +76,24 @@ export type RoadmapReadSource = (
   projectDir: string
 ) => RoadmapReadResult | Promise<RoadmapReadResult>;
 
+/**
+ * Injected delivery-queue source (ENG-027 W14): the Demo Workspace draws its
+ * tick's landings through the SAME lens instead of the `roadmap:activity`
+ * IPC. Synchronous, because it projects a frame already in memory; null is
+ * no readable queue, which the lens renders as nothing. Honoured only beside
+ * an injected `readSource`: a live Project never reads an injected queue.
+ */
+export type RoadmapLandingsSource = (
+  projectDir: string
+) => RoadmapDeliveryRead | null;
+
 export function useProjectRoadmap(
   projectDir: string | null,
   sessions: RoadmapSessionDescriptor[] = [],
   /** declared-at-launch links (S4); they override inference in the lens */
   declaredLinks: SessionLink[] = [],
-  readSource?: RoadmapReadSource
+  readSource?: RoadmapReadSource,
+  landingsSource?: RoadmapLandingsSource
 ): ProjectRoadmap {
   const [read, setRead] = useState<RoadmapLensRead>({ status: 'loading' });
   const [evidence, setEvidence] = useState<
@@ -261,14 +273,31 @@ export function useProjectRoadmap(
         ),
       ];
     }
+    // An injected source is not a repository: its landings come from the
+    // same injection (the Demo tick), never from the activity read, and a
+    // live Project never reads an injected queue.
+    const landings = readSource
+      ? projectDir
+        ? (landingsSource?.(projectDir) ?? null)
+        : null
+      : activity.landings;
     return buildRoadmapLens({
       read,
       sessions: inputs,
       links,
       recentChanges: activity.changes,
-      landings: activity.landings,
+      landings,
     });
-  }, [read, sessions, declaredLinks, evidence, projectDir, activity]);
+  }, [
+    read,
+    sessions,
+    declaredLinks,
+    evidence,
+    projectDir,
+    activity,
+    readSource,
+    landingsSource,
+  ]);
 
   const write = useCallback(
     async (
