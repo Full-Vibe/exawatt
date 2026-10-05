@@ -438,7 +438,26 @@ specific evidence available for each shipped interaction.
 
 ### 2026-10-04 — Everyday-use execution checkpoint
 
-**Final normal delivery is running on the reviewed, rebased candidate.**
+**Final delivery is resubmitting after a reviewed upstream Fleet join.**
+The full normal floor on `d94cf97b3b0d2a0b6e1ef92d2f9aa23ef5c8d28d`
+passed 713 delivery tests, 3,485 related tests (10 existing skips), build,
+37 community-runtime checks, all ten R3F scenes at 100/100, roadmap contracts
+and all 31 declared gates. Ticket 576 then failed its automatic queue-head
+rebase onto `08465d51` before integration; its immutable attempt remains
+recoverable. This is verified candidate evidence, not an integration receipt.
+
+Resolved checkpoint `9a4771677fd5cdf7a30df3f4af67ef966e8d82c3` preserves
+upstream honeycomb packing and candidate focus behavior alongside the shared
+unread status marks. The product conflict was only the obsolete presentation
+type import; the spatial milestone log retains both prior integration evidence
+and V3.9. Dependencies were reinstalled; 80 focused tests, scoped lint and both
+type checks pass. Independent read review approved the exact join. The required
+union remains 31 gates; normal resubmission reruns its full exact-tree floor
+under the owned temporary display-awake assertion. No waiver or installation
+claim. Logs: `/tmp/exawatt-final-combined-land.log` (ticket 576) and
+`/tmp/exawatt-final-rebased-land.log` (current resubmission).
+
+Earlier reviewed checkpoint:
 Latest reviewed product checkpoint: `d83693ffc79b14261fcd3826ca3cd262b790bce9`,
 rebased without conflicts onto `22700bc6`; `pnpm install` completed. The owned
 4317 server and freshly compiled Electron main identify this checkout and HEAD.
