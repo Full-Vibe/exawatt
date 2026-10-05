@@ -212,7 +212,7 @@
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^5.1.1",
     "ajv": "^8.20.0",
-    "electron": "^43.1.0",
+    "electron": "^43.5.0",
     "electron-builder": "^26.15.3",
     "electron-builder-squirrel-windows": "^26.15.3",
     "eslint": "^9.39.1",
