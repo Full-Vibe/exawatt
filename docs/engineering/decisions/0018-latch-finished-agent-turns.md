@@ -159,3 +159,19 @@ harness render a running team silently, the failure is bounded to the stale
 bound and self-corrects when a child's return reopens the turn, and the
 `delegation.census-expired` line in `logs/main.jsonl` names the children and
 the silence that expired them so the next report is a file read.
+
+**Amended 2026-10-05 (BUG-258).** The future harness arrived: on Claude Code
+2.1.289 a background subagent renders nothing in its parent's PTY, and every
+one of the 154 census expiries the line above recorded between 2026-09-23 and
+2026-10-05 had withdrawn a child whose own transcript shows it still running,
+after silences of 12 s to 17 min. The failure was not bounded to the stale
+bound either: each expiry painted a green result over a working team until the
+harness's next boundary census re-listed the children, and the operator read
+the return of the dots as a spinner that would not land. Silence is therefore
+not evidence about a reported child. The census now expires only by the
+source: the harness's next boundary census, or process exit. Inference still
+reclaims the parent's own abandoned `generating` turn on the same silence (the
+2026-08-02 D4 arm, unchanged) and leaves the children standing; the result
+follows when the source retires the last of them. The evidence line is
+`delegation.turn-reclaimed`, naming the reclaimed turn, the children left
+standing and the silence that closed it.

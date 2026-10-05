@@ -107,6 +107,16 @@ export interface DelegationLedger extends SessionDelegation {
    * reappearing id is treated as the duplicate it almost certainly is.
    */
   endedChildIds: string[];
+  /**
+   * Whether `ownTurn` was ever ESTABLISHED: by the source's own boundary
+   * (`turn-start`, `turn-end`, `turn-settled`) or by inference reclaiming an
+   * abandoned turn. False while it is still `EMPTY_LEDGER`'s default. A census
+   * alone creates a ledger whose `ownTurn` nobody reported, and reading that
+   * default as "the parent already finished" is how the last child's end came
+   * to deliver a green result for a Codex parent still mid-turn (BUG-257): the
+   * source had never said anything about its own turn at all.
+   */
+  ownTurnKnown: boolean;
 }
 
 export type HarnessEvent =
@@ -162,6 +172,7 @@ export const EMPTY_LEDGER: DelegationLedger = {
   pendingRequestIds: [],
   adoptedLabelIds: [],
   endedChildIds: [],
+  ownTurnKnown: false,
 };
 
 /**
@@ -303,6 +314,7 @@ export function applyHarnessEvent(
 function closeTurn(state: DelegationLedger): DelegationLedger {
   if (
     state.ownTurn === 'available' &&
+    state.ownTurnKnown &&
     !state.blockedOn &&
     state.pending.length === 0 &&
     state.adoptedLabelIds.length === 0
@@ -311,6 +323,7 @@ function closeTurn(state: DelegationLedger): DelegationLedger {
   return {
     ...state,
     ownTurn: 'available',
+    ownTurnKnown: true,
     blockedOn: state.request === 'working' ? state.blockedOn : null,
     pending: [],
     adoptedLabelIds: [],
@@ -372,6 +385,7 @@ function applyDelta(
     case 'turn-start':
       if (
         state.ownTurn === 'generating' &&
+        state.ownTurnKnown &&
         !state.blockedOn &&
         state.pending.length === 0 &&
         state.adoptedLabelIds.length === 0 &&
@@ -381,6 +395,7 @@ function applyDelta(
       return {
         ...state,
         ownTurn: 'generating',
+        ownTurnKnown: true,
         blockedOn: state.request === 'working' ? state.blockedOn : null,
         pending: [],
         adoptedLabelIds: [],

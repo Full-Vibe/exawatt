@@ -210,21 +210,26 @@ try {
       );
       check('a child report body never reaches a surface', !leaked);
 
-      // --- the census is a claim with coverage, not a latch (D7, BUG-081) --
-      // Three scenarios measured on Claude Code 2.1.270 (2026-09-13). The
-      // quiescence window is 1200ms here, so the stale bound is 3.6s.
-      const expiries = () => {
+      // --- a reported child is the source's claim, retired only by the source
+      //     (D7 as amended 2026-10-05, BUG-258) ----------------------------
+      // The quiescence window is 1200ms here, so the stale bound is 3.6s.
+      const reclaims = () => {
         const log = join(fixture.userData, 'logs', 'main.jsonl');
         if (!existsSync(log)) return [];
         return readFileSync(log, 'utf8')
           .split('\n')
           .filter(Boolean)
           .map(line => JSON.parse(line))
-          .filter(entry => entry.event === 'delegation.census-expired');
+          .filter(entry => entry.event === 'delegation.turn-reclaimed');
       };
 
-      // (1) An interrupted parent: ESC kills the children and the harness
-      // posts nothing — not Stop, not SubagentStop. The operator's exact tab.
+      // (1) An interrupted parent: ESC, and the harness posts nothing — not
+      // Stop, not SubagentStop. Inference closes the parent's own turn after
+      // the stale bound and leaves the two children standing: on Claude Code
+      // 2.1.289 a background child renders nothing in its parent's PTY, so
+      // silence is not evidence about it (every silence expiry in the
+      // operator's log had withdrawn a child that was still running). The
+      // children retire when the harness itself says so.
       await send('turn');
       await send('spawn b1');
       await send('spawn b2');
@@ -233,31 +238,43 @@ try {
         'two children before the interrupt'
       );
       await send('halt');
-      await until(
-        async () => (await dots.count()) === 0,
-        'an interrupted census to expire',
+      const abandoned = await until(
+        async () =>
+          reclaims().find(
+            entry =>
+              entry.sessionId === claude.id &&
+              entry.ownTurn === 'generating' &&
+              entry.childCount === 2
+          ) ?? null,
+        'the abandoned turn to be reclaimed',
         15_000
       );
-      check('children the harness never closed do not spin the tab forever', true);
+      check(
+        'main.jsonl names the reclaimed turn and the silence that closed it',
+        !!abandoned &&
+          abandoned.harness === 'claude' &&
+          typeof abandoned.quietMs === 'number' &&
+          abandoned.quietMs >= abandoned.staleMs
+      );
+      // Two more stale bounds of silence: the children stand, the tab works.
+      await page.waitForTimeout(8_000);
+      check(
+        'silence never retires a reported child, and the tab keeps working',
+        (await dots.getAttribute('data-delegation')) === '2' &&
+          (await statusOf()) === 'working'
+      );
+      // The harness's own census retires them: this SubagentStop names no one.
+      await send('done b1');
+      await until(
+        async () => (await dots.count()) === 0,
+        'the harness census to retire the children'
+      );
       await until(
         async () => (await statusOf()) === 'done',
         'the interrupted Session to land'
       );
-      check('the interrupted Session lands as a result', true);
-      const interrupted = expiries().find(
-        entry =>
-          Array.isArray(entry.childIds) &&
-          entry.childIds.includes('b1') &&
-          entry.childIds.includes('b2')
-      );
-      check(
-        'main.jsonl names the expired children and the silence that expired them',
-        !!interrupted &&
-          interrupted.sessionId === claude.id &&
-          interrupted.harness === 'claude' &&
-          typeof interrupted.quietMs === 'number' &&
-          interrupted.quietMs >= interrupted.staleMs
-      );
+      check('the Session lands when the harness retires its children', true);
+      const reclaimsAfterInterrupt = reclaims().length;
 
       // (2) The premature-green guard: a live child keeps the footer ticking,
       // and no amount of that may read as a result.
@@ -276,7 +293,7 @@ try {
         (await dots.getAttribute('data-delegation')) === '1' &&
           (await statusOf()) === 'working' &&
           covered?.attention?.kind !== 'turn-end' &&
-          !expiries().some(entry => entry.childIds?.includes('c1'))
+          reclaims().length === reclaimsAfterInterrupt
       );
       await send('done c1');
       await until(
@@ -305,7 +322,7 @@ try {
       );
       check(
         "a lost SubagentStop cannot outlive the parent's next boundary",
-        !expiries().some(entry => entry.childIds?.includes('d2'))
+        reclaims().length === reclaimsAfterInterrupt
       );
       await until(
         async () => (await statusOf()) === 'done',

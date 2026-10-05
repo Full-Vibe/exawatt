@@ -872,14 +872,14 @@ describe('AttentionMonitor', () => {
     });
 
     /**
-     * A reported child is a claim with coverage, not a latch (ENG-023 D7,
-     * BUG-081). Between the harness's own censuses, coverage is the PTY:
-     * measured on Claude Code 2.1.270, a parent with a live child is never
-     * byte-silent (87 B/s at the quietest second) and an idle prompt with
-     * none is 0 B/s. Silence past the stale bound therefore expires the
-     * census, on the same instant a bare turn is reclaimed.
+     * A reported child is the source's claim, retired only by the source
+     * (ENG-023 D7 as amended 2026-10-05, BUG-258). Silence is not evidence
+     * about it: on Claude Code 2.1.289 a background subagent renders nothing
+     * in its parent's PTY, and every silence expiry in the operator's log
+     * had withdrawn a child that was still running. Only the parent's own
+     * abandoned turn is reclaimed by silence (D4).
      */
-    describe('census coverage', () => {
+    describe('reported children', () => {
       const stale: Array<{ id: string; evidence: unknown }> = [];
       const report = (state: {
         ownTurn?: 'generating' | 'available';
@@ -898,8 +898,23 @@ describe('AttentionMonitor', () => {
         );
       });
 
-      it('expires a silent census after the stale bound, with the evidence', () => {
+      it('never expires reported children by silence, however long (BUG-258)', () => {
         monitor.setReportedTurnSource(() => report({ children: 2 }));
+        add('a', 'claude', clock - 60_000);
+        data('a', 'x'.repeat(500));
+        for (let minute = 0; minute < 20; minute += 1) {
+          clock += 60_000;
+          monitor.sweepNow();
+        }
+        expect(stale).toEqual([]);
+        // and no inferred result either: the team is still reported working
+        expect(monitor.get('a')).toBeNull();
+      });
+
+      it('reclaims an abandoned turn under reported children, keeping them as evidence', () => {
+        monitor.setReportedTurnSource(() =>
+          report({ ownTurn: 'generating', children: 1 })
+        );
         add('a', 'claude', clock - 60_000);
         data('a', 'x'.repeat(500));
         clock += 11_000;
@@ -913,22 +928,13 @@ describe('AttentionMonitor', () => {
             evidence: {
               quietMs: 12_000,
               staleMs: 12_000,
-              ownTurn: 'available',
-              children: 2,
+              ownTurn: 'generating',
+              children: 1,
             },
           },
         ]);
-      });
-
-      it('expires children under a reported-open turn on the same instant', () => {
-        monitor.setReportedTurnSource(() =>
-          report({ ownTurn: 'generating', children: 1 })
-        );
-        add('a', 'claude', clock - 60_000);
-        data('a', 'x'.repeat(500));
-        clock += 12_000;
-        monitor.sweepNow();
-        expect(stale.map(entry => entry.id)).toEqual(['a']);
+        // The children the record still reports withhold the inferred result.
+        expect(monitor.get('a')).toBeNull();
       });
 
       it('keeps a census the harness keeps rendering, for as long as it does', () => {
@@ -943,9 +949,9 @@ describe('AttentionMonitor', () => {
         expect(monitor.get('a')).toBeNull();
       });
 
-      it('never expires a census behind an open gate', () => {
+      it('never reclaims a turn behind an open gate', () => {
         monitor.setReportedTurnSource(() =>
-          report({ children: 1, blockedOn: 'question' })
+          report({ ownTurn: 'generating', children: 1, blockedOn: 'question' })
         );
         add('a', 'claude', clock - 60_000);
         data('a', 'x'.repeat(500));
@@ -954,7 +960,7 @@ describe('AttentionMonitor', () => {
         expect(stale).toEqual([]);
       });
 
-      it('has nothing to expire when nothing is reported', () => {
+      it('has nothing to reclaim when nothing is reported open', () => {
         monitor.setReportedTurnSource(() => report({ children: 0 }));
         add('a', 'claude', clock - 60_000);
         data('a', 'x'.repeat(500));

@@ -669,12 +669,13 @@ ordering prevents completion from racing newly observed children, while silent
 recovery restores known truth without re-alerting an old result. One `census` event owns that reconciliation for every adapter:
 Claude Code's `Stop` and `SubagentStop` carry the harness's own `background_tasks`
 census and the adapter applies it on every boundary, so a lost start or stop
-cannot outlive the next one. A reported child is a claim with coverage and an
-expiry, not a latch (ENG-023 D7): between boundaries the parent PTY's
-continuous task-footer rendering is the coverage, and silence past the stale
-bound with no operator gate open withdraws the census, never completes it, on
-the same instant a bare reported turn is reclaimed, leaving a
-`delegation.census-expired` line in `logs/main.jsonl`.
+cannot outlive the next one. A reported child is the source's claim, retired
+only by the source (ENG-023 D7 as amended 2026-10-05, BUG-258): silence is not
+evidence about a background child, so the census stands until the harness's
+next boundary census or process exit. Inference reclaims only the parent's own
+abandoned turn after the stale bound with no gate open, leaving a
+`delegation.turn-reclaimed` line in `logs/main.jsonl`; a ledger's default
+`ownTurn` is never read as a report (`ownTurnKnown`, BUG-257).
 
 Non-Agent background work is an independent fact (BUG-145): the same source
 census retains running/pending monitors, shells, workflows and future task kinds

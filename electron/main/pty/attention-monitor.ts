@@ -544,43 +544,39 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    * Without this the tab an operator interrupts spins "working" until their
    * next prompt.
    *
-   * Reported CHILDREN were once exempt here — "a running child ends with an
-   * event the harness guarantees, so it explains silence indefinitely" — and
-   * that exemption is BUG-081: a `SubagentStop` the harness never sends (a
-   * child killed with its parent's turn), or one the loopback lost, held two
-   * dots and a spinner on a finished tab for the life of the Session. A
-   * reported child is a claim with coverage, not a latch. Its coverage is the
-   * harness's own census on every boundary it emits, and BETWEEN boundaries
-   * the PTY: a Claude Code parent with live children renders their progress
-   * continuously — measured on 2.1.270, never a silent second while a child
-   * runs (87–5218 B/s, mid-turn and idle at the prompt alike, through an
-   * interrupt) against 0 B/s at an idle prompt with none. Silence past the
-   * stale bound with children reported therefore means nothing is running,
-   * and the census expires on the same instant a bare turn is reclaimed:
-   * withdrawn, never completed.
+   * Reported CHILDREN are never reclaimed here. D7 (2026-09-16, BUG-081)
+   * expired them on this same silence, on a measured premise: a Claude Code
+   * parent with a live child redrew its task footer every second (2.1.270),
+   * so silence meant nothing was running. On 2.1.289 that premise is false
+   * for background subagents, which is what every delegating Session now
+   * runs: all 154 census expiries in the operator's diagnostics log between
+   * 2026-09-23 and 2026-10-05 withdrew a child whose own transcript shows it
+   * still running, after silences of 12 s to 17 min. Each one painted a green
+   * result over a team that was working, and the harness's next boundary
+   * census brought the dots back — BUG-258's "finished tab that keeps
+   * spinning" is that flicker. Silence is not evidence about a background
+   * child. Its coverage is the source's census on every boundary it emits
+   * (a lost stop outlives nothing past the parent's next boundary) and
+   * process exit; a reported child stays until the source retires it.
    *
    * An open operator gate stays exempt: its release is guaranteed, turn
    * boundaries backstop a lost one, and a question is silent for exactly as
-   * long as the operator takes.
+   * long as the operator takes. Source-reported background work (a monitor,
+   * a shell) is exempt the same way (BUG-145): it may be silent indefinitely.
    *
    * Emitting rather than mutating keeps the monitor pure Node and keeps the
    * delegation record owned by exactly one module: the correction lands as an
-   * ordinary `turn-end` carrying an empty census, so every surface sees one
-   * fact change once.
+   * ordinary `turn-end`, so every surface sees one fact change once.
    */
   private reclaimStaleReportedTurn(id: string, quietFor: number): boolean {
     if (quietFor < this.reportedTurnStaleMs) return false;
     const report = this.reportedTurn(id);
-    // A monitor or background tool may be legitimately silent indefinitely.
-    // Only the source census or process exit can withdraw that evidence.
     if (
       !report ||
-      report.ownTurn === 'unknown' ||
+      report.ownTurn !== 'generating' ||
       report.blockedOn ||
       report.backgroundTasks?.length
     )
-      return false;
-    if (report.ownTurn !== 'generating' && report.children.length === 0)
       return false;
     const evidence: StaleReportEvidence = {
       quietMs: quietFor,
@@ -803,16 +799,23 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       // a question it asked the operator, are both silent and neither has
       // produced a result. The harness knows; the byte stream cannot (D1/D4).
       //
-      // Gated on the SAME condition as the reclaim above, deliberately: if the
+      // Gated on the SAME record as the reclaim above, deliberately: if the
       // queue could call a turn finished before the reported record agreed,
       // `⌘J` would offer a "ready result" while the light still read working.
-      // One condition means one instant, and the two can never disagree.
+      // One condition means one instant, and the two can never disagree. A
+      // reclaim closes only the parent's own turn: children it still reports
+      // keep withholding the inferred result (their own end delivers it), and
+      // a bare reclaimed turn falls through to raise from its own burst.
       //
       // This runs BEFORE the burst is consumed. Deferring to a live report is
       // not the same as deciding this turn produced nothing worth flagging:
       // consuming the evidence here would leave the eventual reclaim with
       // nothing to raise, and an aborted turn would settle silently.
-      if (!reclaimed && this.reportedTurnOpen(s.id)) continue;
+      if (
+        this.reportedTurnOpen(s.id) &&
+        (!reclaimed || this.delegatedBusy(s.id))
+      )
+        continue;
       // decision time: the burst is consumed whether or not it flags
       const burst = this.burstBytes.get(s.id) ?? 0;
       this.burstBytes.set(s.id, 0);

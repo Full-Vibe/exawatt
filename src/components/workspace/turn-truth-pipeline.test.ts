@@ -20,7 +20,7 @@ import { DelegationMonitor } from '../../../electron/main/harness-events/delegat
 import { claudeHookEvent } from '../../../electron/main/harness-events/claude-hooks';
 import type { HarnessEvent } from '../../../electron/main/harness-events/delegation-state';
 import {
-  CENSUS_EXPIRED_EVENT,
+  TURN_RECLAIMED_EVENT,
   wireReportedTurnTruth,
 } from '../../../electron/main/harness-events/turn-truth';
 import type { StatusLightState } from '@/components/status-light/protocol';
@@ -56,14 +56,14 @@ function harness() {
     now: () => clock,
   });
   attention.attach(manager as unknown as PtySessionManager);
-  /** Census expiry evidence from `logs/main.jsonl`, excluding other diagnostics. */
-  const expiries: Array<Record<string, unknown>> = [];
+  /** Turn reclaim evidence from `logs/main.jsonl`, excluding other diagnostics. */
+  const reclaims: Array<Record<string, unknown>> = [];
   wireReportedTurnTruth({
     attention,
     delegation,
     now: () => clock,
     record: (event, fields) => {
-      if (event === CENSUS_EXPIRED_EVENT) expiries.push({ event, ...fields });
+      if (event === TURN_RECLAIMED_EVENT) reclaims.push({ event, ...fields });
     },
     harnessOf: () => 'claude',
   });
@@ -98,7 +98,7 @@ function harness() {
   return {
     attention,
     delegation,
-    expiries,
+    reclaims,
     manager,
     hook,
     light,
@@ -279,7 +279,7 @@ describe('turn truth: what the operator sees', () => {
         'c1',
       ]);
     }
-    expect(h.expiries).toEqual([]);
+    expect(h.reclaims).toEqual([]);
 
     h.hook(childStop('c1'));
     expect(h.attention.get(SESSION)?.kind).toBe('turn-end');
@@ -291,62 +291,100 @@ describe('turn truth: what the operator sees', () => {
     });
   });
 
-  it('a child whose end the harness never reports cannot spin the tab forever (BUG-081)', () => {
-    // The operator's tab: "looks pretty finished; yet the tab shows as blue
-    // spinning with two subagent dots." An interrupted parent emits no
-    // boundary, and a child that dies with it emits no `SubagentStop`. Before
-    // this contract those two dots were trusted until the process exited.
+  it('a child the harness still lists keeps the tab working through any silence (BUG-258)', () => {
+    // The operator's tab on 2026-09-29: pane "done 6:59 PM", two background
+    // children listed by the Stop's own census, parent PTY silent. D7 expired
+    // that census after 12 s of silence and painted a green result over two
+    // agents whose transcripts show them running for another 12 and 31
+    // minutes; the next boundary census brought the dots back. Every one of
+    // the 154 expired children in the log had been alive. Silence is not
+    // evidence about a background child: the census stands until the source
+    // retires it.
     const h = harness();
     h.hook(submit);
     h.stream(2000);
     h.hook(spawn('c1'));
     h.hook(spawn('c2'));
+    h.hook(stopWith('c1', 'c2'));
     expect(h.light()).toBe('active');
-
-    // Inside the stale bound the report is still honored.
-    h.advance(5000);
+    for (let minute = 0; minute < 17; minute += 1) {
+      h.advance(60_000);
+      expect(h.light()).toBe('active');
+      expect(h.attention.get(SESSION)).toBeNull();
+      expect(h.delegation.get(SESSION)?.children.map(c => c.id)).toEqual([
+        'c1',
+        'c2',
+      ]);
+    }
+    expect(h.reclaims).toEqual([]);
+    h.hook(childStop('c1', 'c2'));
     expect(h.light()).toBe('active');
-    expect(h.delegation.get(SESSION)?.children).toHaveLength(2);
-
-    // Past it, with no gate and no bytes, nothing vouches for the census.
-    h.advance(9000);
-    expect(h.delegation.get(SESSION)?.children).toEqual([]);
-    expect(h.delegation.get(SESSION)?.ownTurn).toBe('available');
+    h.hook(childStop('c2'));
     const before = h.light();
     h.focus();
     expect({ before, after: h.light() }).toEqual({
       before: 'result',
       after: 'result',
     });
-    // ...and the next report is a file read: which children, and why.
-    expect(h.expiries).toEqual([
-      expect.objectContaining({
-        event: CENSUS_EXPIRED_EVENT,
-        sessionId: SESSION,
-        harness: 'claude',
-        childIds: ['c1', 'c2'],
-        ownTurn: 'generating',
-        staleMs: 12_000,
-      }),
-    ]);
-    expect(h.expiries[0].quietMs).toBeGreaterThanOrEqual(12_000);
   });
 
-  it('withdrawing an expired census delivers the result the parent already reported', () => {
-    // The parent's Stop was real; only the children held its result back.
+  it('an abandoned turn is reclaimed without touching the children it reported', () => {
+    // ESC: no boundary at all (measured 2.1.220, 2.1.270). Inference closes
+    // the parent's own turn after the stale bound and leaves the census to
+    // the source; the last child's own end then delivers the result.
     const h = harness();
     h.hook(submit);
     h.stream(2000);
     h.hook(spawn('c1'));
-    h.hook(stopWith('c1'));
+    h.hook(spawn('c2'));
+    expect(h.light()).toBe('active');
+    h.advance(5000);
+    expect(h.delegation.get(SESSION)?.ownTurn).toBe('generating');
+    h.advance(9000);
+    expect(h.delegation.get(SESSION)?.ownTurn).toBe('available');
+    expect(h.delegation.get(SESSION)?.children).toHaveLength(2);
+    expect(h.light()).toBe('active');
     expect(h.attention.get(SESSION)).toBeNull();
-    h.advance(13_000);
-    expect(h.attention.get(SESSION)?.kind).toBe('turn-end');
-    expect(h.light()).toBe('result');
-    expect(h.expiries[0]).toMatchObject({
-      childIds: ['c1'],
-      ownTurn: 'available',
+    expect(h.reclaims).toEqual([
+      expect.objectContaining({
+        event: TURN_RECLAIMED_EVENT,
+        sessionId: SESSION,
+        harness: 'claude',
+        ownTurn: 'generating',
+        childCount: 2,
+        staleMs: 12_000,
+      }),
+    ]);
+    expect(h.reclaims[0].quietMs).toBeGreaterThanOrEqual(12_000);
+    h.hook(childStop('c1', 'c2'));
+    expect(h.light()).toBe('active');
+    h.hook(childStop('c2'));
+    const before = h.light();
+    h.focus();
+    expect({ before, after: h.light() }).toEqual({
+      before: 'result',
+      after: 'result',
     });
+  });
+
+  it("children killed without a stop retire at the parent's next boundary, not by silence (BUG-081)", () => {
+    // The BUG-081 tab: an interrupted parent whose children died with it and
+    // reported nothing. The dots now stand until the harness re-proves its
+    // census — the operator's next prompt ends in a Stop that names no one.
+    const h = harness();
+    h.hook(submit);
+    h.stream(2000);
+    h.hook(spawn('c1'));
+    h.hook(spawn('c2'));
+    h.advance(20_000);
+    expect(h.light()).toBe('active');
+    expect(h.delegation.get(SESSION)?.children).toHaveLength(2);
+    h.hook(submit);
+    h.stream(1500);
+    h.hook(stopWith());
+    expect(h.delegation.get(SESSION)?.children).toEqual([]);
+    expect(h.light()).toBe('result');
+    expect(h.attention.get(SESSION)?.kind).toBe('turn-end');
   });
 
   it("a lost SubagentStop cannot outlive the parent's next boundary", () => {
@@ -371,7 +409,7 @@ describe('turn truth: what the operator sees', () => {
     expect(h.delegation.get(SESSION)?.children).toEqual([]);
     expect(h.light()).toBe('result');
     expect(h.attention.get(SESSION)?.kind).toBe('turn-end');
-    expect(h.expiries).toEqual([]);
+    expect(h.reclaims).toEqual([]);
   });
 
   it('a census admits a child whose start was lost', () => {
@@ -411,7 +449,7 @@ describe('turn truth: what the operator sees', () => {
     // ESC: no boundary. The team is genuinely still working, and says so.
     h.render(70);
     expect(h.light()).toBe('active');
-    expect(h.expiries).toEqual([]);
+    expect(h.reclaims).toEqual([]);
     h.hook(childStop('c2', 'c1'));
     h.hook(submit);
     h.stream(1500);
@@ -424,7 +462,7 @@ describe('turn truth: what the operator sees', () => {
     h.hook(stopWith());
     expect(h.light()).toBe('result');
     expect(h.attention.get(SESSION)?.kind).toBe('turn-end');
-    expect(h.expiries).toEqual([]);
+    expect(h.reclaims).toEqual([]);
   });
 
   it('the queue and the light never disagree about a finished turn', () => {
@@ -657,7 +695,7 @@ describe('source-reported background work (BUG-145)', () => {
     h.hook({ hook_event_name: 'Stop', background_tasks: [] });
     expect(h.light()).toBe('result');
     expect(h.delegation.getLive(SESSION)).toBeNull();
-    expect(h.expiries).toEqual([]);
+    expect(h.reclaims).toEqual([]);
   });
 
   it('keeps actual questions visible while a background monitor runs', () => {

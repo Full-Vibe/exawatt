@@ -22,12 +22,12 @@ import type {
   SessionDelegation,
 } from '@exawatt/core/desktop-bridge';
 
-/** What inference withdrew when a reported record lost coverage (D7). */
-interface StaleReportReclaim {
-  /** the parent's reported turn at the moment of reclaim; null if unreported */
+/** What inference found when it closed a turn the source left open (D4). */
+interface StaleTurnReclaim {
+  /** the parent's own turn before the reclaim; null if nothing established it */
   ownTurn: SessionDelegation['ownTurn'] | null;
-  /** children withdrawn — never completed — because nothing vouched for them */
-  withdrawn: DelegatedChild[];
+  /** reported children still outstanding; the reclaim leaves them to the source */
+  children: number;
 }
 
 function censusOf(event: HarnessEvent): ReportedChildCensus | null {
@@ -209,6 +209,17 @@ export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
   }
 
   /**
+   * The parent's own turn as something ESTABLISHED it: the source's boundary
+   * or an inference reclaim. Null while the ledger holds only the default
+   * nobody set (a census-only record), which must never read as "the parent
+   * already finished" (BUG-257).
+   */
+  reportedOwnTurn(sessionId: string): SessionDelegation['ownTurn'] | null {
+    const ledger = this.state.get(sessionId);
+    return ledger?.ownTurnKnown ? ledger.ownTurn : null;
+  }
+
+  /**
    * What SURFACES may see. A settled record is published as null so every
    * surface returns to inference together instead of one of them holding a
    * stale reported answer.
@@ -249,23 +260,21 @@ export class DelegationMonitor extends EventEmitter<DelegationMonitorEvents> {
   }
 
   /**
-   * Inference reclaimed a reported record whose coverage lapsed (ENG-023 D7):
-   * silence past the stale bound with no gate open, which on a harness that
-   * renders its running team continuously means nothing is running. Closes
-   * the turn and withdraws — never completes — every reported child, as ONE
-   * visible change, so every surface sees the same fact at the same instant.
-   * Returns what was withdrawn so the caller can leave evidence of it.
+   * Inference closed a turn the source left open (ENG-023 D4): silence past
+   * the stale bound with no gate open, after an abort the harness never
+   * reported. Closes the parent's OWN turn and nothing else. Reported children
+   * stay exactly as the source last listed them: silence is not evidence
+   * about a background child (BUG-258), and only the source's next census or
+   * process exit may withdraw one. Returns what the record held so the caller
+   * can leave evidence of the reclaim.
    */
-  reclaimStaleReport(sessionId: string, at: number): StaleReportReclaim {
+  reclaimStaleTurn(sessionId: string): StaleTurnReclaim {
     const before = this.state.get(sessionId);
-    const reclaim: StaleReportReclaim = {
-      ownTurn: before?.ownTurn ?? null,
-      withdrawn: before?.children ?? [],
+    const reclaim: StaleTurnReclaim = {
+      ownTurn: before?.ownTurnKnown ? before.ownTurn : null,
+      children: before?.children.length ?? 0,
     };
-    this.apply(sessionId, {
-      kind: 'turn-end',
-      census: { live: [], completed: [], at },
-    });
+    if (before) this.apply(sessionId, { kind: 'turn-end' });
     return reclaim;
   }
 

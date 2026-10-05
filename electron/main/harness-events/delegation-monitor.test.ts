@@ -198,7 +198,9 @@ describe('DelegationMonitor publication', () => {
  * withdraws through it too.
  */
 describe('DelegationMonitor census', () => {
-  it('reclaims a stale report as ONE publication: turn closed, children withdrawn, nothing completed', () => {
+  it('reclaims an abandoned turn as ONE publication: turn closed, children kept, nothing completed', () => {
+    // Silence is not evidence about a background child (BUG-258): the reclaim
+    // closes the parent's own turn and leaves the source's census standing.
     const { monitor, published, send } = harness();
     const lifecycle: HarnessEvent[] = [];
     monitor.on('harness-event', (_id: string, event: HarnessEvent) =>
@@ -208,25 +210,43 @@ describe('DelegationMonitor census', () => {
     send({ kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 1 });
     send({ kind: 'child-start', childId: 'c2', agentType: null, at: 2 });
     const broadcasts = published.length;
-    const reclaimed = monitor.reclaimStaleReport('pty-1', 9_000);
-    expect(reclaimed.ownTurn).toBe('generating');
-    expect(reclaimed.withdrawn.map(child => child.id)).toEqual(['c1', 'c2']);
-    expect(published.length).toBe(broadcasts + 1);
-    expect(published[published.length - 1]).toBeNull();
-    expect(monitor.get('pty-1')).toMatchObject({
-      ownTurn: 'available',
-      children: [],
+    expect(monitor.reclaimStaleTurn('pty-1')).toEqual({
+      ownTurn: 'generating',
+      children: 2,
     });
+    expect(published.length).toBe(broadcasts + 1);
+    expect(published[published.length - 1]).toMatchObject({
+      ownTurn: 'available',
+      children: [{ id: 'c1' }, { id: 'c2' }],
+    });
+    expect(monitor.reportedOwnTurn('pty-1')).toBe('available');
     expect(lifecycle.filter(event => event.kind === 'child-end')).toEqual([]);
   });
 
   it('reclaiming an unreported Session is inert', () => {
     const { monitor, published } = harness();
-    expect(monitor.reclaimStaleReport('pty-1', 1)).toEqual({
+    expect(monitor.reclaimStaleTurn('pty-1')).toEqual({
       ownTurn: null,
-      withdrawn: [],
+      children: 0,
     });
     expect(published).toEqual([]);
+    expect(monitor.get('pty-1')).toBeNull();
+  });
+
+  it('a census-only record has no established own turn (BUG-257)', () => {
+    // A Codex parent whose children were observed before anything reported
+    // its own turn holds the ledger default. The default is not a report, so
+    // nothing may read it as "the parent already finished".
+    const { monitor } = harness();
+    monitor.reconcileReportedChildren('pty-1', [
+      { id: 'c1', agentType: 'Codex', description: null, startedAt: 1 },
+    ]);
+    expect(monitor.get('pty-1')?.ownTurn).toBe('available');
+    expect(monitor.reportedOwnTurn('pty-1')).toBeNull();
+    monitor.report('pty-1', { kind: 'turn-unknown' });
+    expect(monitor.reportedOwnTurn('pty-1')).toBeNull();
+    monitor.report('pty-1', { kind: 'turn-end' });
+    expect(monitor.reportedOwnTurn('pty-1')).toBe('available');
   });
 
   it('applies a boundary census before the boundary reaches subscribers', () => {

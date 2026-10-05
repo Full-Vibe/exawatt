@@ -17,12 +17,16 @@
  *                         lights needs-you; the last child's end delivers the
  *                         result that was withheld while the team worked.
  *   inferred → reported   silence past the stale bound with no gate open
- *                         reclaims the record: the turn closes and the census
- *                         is withdrawn — never completed — as one change.
- *   evidence              a census that expired by inference rather than by
- *                         the harness's own boundary is written to the main
- *                         diagnostics log with the child ids and the silence
- *                         that expired it, bounded like the stall trace.
+ *                         reclaims a turn the harness left open — an aborted
+ *                         Claude Code turn emits no boundary — and closes the
+ *                         parent's own turn only. Reported children are never
+ *                         withdrawn by silence (BUG-258): a background child
+ *                         renders nothing in its parent's PTY, so only the
+ *                         source's next census or process exit retires one.
+ *   evidence              a turn closed by inference rather than by the
+ *                         harness's own boundary is written to the main
+ *                         diagnostics log with the silence that closed it,
+ *                         bounded like the stall trace.
  */
 import type { AttentionMonitor } from '../pty/attention-monitor';
 import type { StaleReportEvidence } from '../pty/attention-monitor';
@@ -33,17 +37,17 @@ import {
 import type { DelegationMonitor } from './delegation-monitor';
 import type { HarnessEvent } from './delegation-state';
 
-/** Written to `logs/main.jsonl` when inference, not the harness, ended a
- *  reported child. The next BUG-081 report is a file read, not a hunt. */
-export const CENSUS_EXPIRED_EVENT = 'delegation.census-expired';
+/** Written to `logs/main.jsonl` when inference, not the harness, closed a
+ *  reported turn. The next aborted-turn report is a file read, not a hunt. */
+export const TURN_RECLAIMED_EVENT = 'delegation.turn-reclaimed';
 
-const CENSUS_EXPIRY_LOG_BOUNDS = { perMinute: 30, perRun: 500 };
+const TURN_RECLAIM_LOG_BOUNDS = { perMinute: 30, perRun: 500 };
 
 interface TurnTruthWiringOptions {
   attention: AttentionMonitor;
   delegation: DelegationMonitor;
   now?: () => number;
-  /** Diagnostics sink for census expiries; absent means no evidence kept. */
+  /** Diagnostics sink for reclaims and boundaries; absent means no evidence kept. */
   record?: DiagnosticRecorder;
   /** Names the harness for the evidence line; absent reads as unknown. */
   harnessOf?: (sessionId: string) => string | null;
@@ -56,8 +60,8 @@ export function wireReportedTurnTruth({
   record,
   harnessOf = () => null,
 }: TurnTruthWiringOptions): void {
-  const expired = record
-    ? boundDiagnosticRecorder(record, { ...CENSUS_EXPIRY_LOG_BOUNDS, now })
+  const reclaimed = record
+    ? boundDiagnosticRecorder(record, { ...TURN_RECLAIM_LOG_BOUNDS, now })
     : null;
 
   // One reported-truth source for every inference guard. The monitor
@@ -124,41 +128,44 @@ export function wireReportedTurnTruth({
     // the Session most likely to be worth returning to. The delegation monitor
     // applies the event (and any census it carries) before emitting it, so
     // its record is already current here.
+    //
+    // "Ended" means something ESTABLISHED it: the source's own boundary or an
+    // inference reclaim. A ledger that holds only children (a census-only
+    // record) carries the default `available` nobody reported, and treating
+    // that as a withheld result is how a Codex parent wore the green check
+    // mid-turn every time its last live child finished a step (BUG-257).
     if (
       event.kind === 'child-end' &&
       !delegation.isBusy(id) &&
-      delegation.get(id)?.ownTurn === 'available'
+      delegation.reportedOwnTurn(id) === 'available'
     ) {
       attention.noteHarnessTurnEnd(id);
     }
   });
 
-  // Inference reclaiming a report nothing will ever close (D4/D7). An aborted
-  // Claude Code turn emits no boundary at all, and a child killed with it
-  // emits no `SubagentStop`; silence past the stale bound with no gate open is
-  // the evidence the harness itself has stopped rendering anything. Applied
-  // as one `turn-end` carrying an empty census so the delegation record stays
-  // owned by one module and every surface changes once, together.
+  // Inference reclaiming a turn nothing will ever close (D4). An aborted
+  // Claude Code turn emits no boundary at all; silence past the stale bound
+  // with no gate open is the evidence the harness itself has stopped
+  // generating. Applied as one `turn-end` so the delegation record stays
+  // owned by one module. The children the source listed stay listed: silence
+  // says nothing about a background child (BUG-258), so the result follows
+  // the ordinary path from here — the reclaiming sweep raises it from the
+  // turn's own burst unless children still withhold it, and then the last
+  // child's own end delivers it.
   attention.on(
     'reported-turn-stale',
     (id: string, evidence: StaleReportEvidence) => {
-      const reclaimed = delegation.reclaimStaleReport(id, now());
-      if (reclaimed.withdrawn.length === 0) return;
-      expired?.(CENSUS_EXPIRED_EVENT, {
+      const before = delegation.reclaimStaleTurn(id);
+      if (before.ownTurn === null) return;
+      reclaimed?.(TURN_RECLAIMED_EVENT, {
         sessionId: id,
         harness: harnessOf(id),
-        childIds: reclaimed.withdrawn.map(child => child.id),
-        agentTypes: reclaimed.withdrawn.map(child => child.agentType),
-        ownTurn: reclaimed.ownTurn,
+        ownTurn: before.ownTurn,
+        childCount: before.children,
         quietMs: evidence.quietMs,
         staleMs: evidence.staleMs,
         evidence: 'pty-silence-past-stale-bound-with-no-gate',
       });
-      // The parent's own boundary WAS reported; its result was withheld only
-      // for children nothing now vouches for. Deliver it. (A parent still
-      // reported generating is reclaimed the ordinary way: the sweep raises
-      // the inferred boundary from the turn's own burst.)
-      if (reclaimed.ownTurn === 'available') attention.noteHarnessTurnEnd(id);
     }
   );
 }
