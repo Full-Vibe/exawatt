@@ -442,6 +442,16 @@ const descriptors = {
       document: { kind: 'directory', file: ANTIGRAVITY_HOOKS_FILE },
       learnsSessionId: true,
     },
+    // Measured 2026-10-05 on 1.2.17: in an interactive launch `--add-dir`
+    // REPLACES the workspace rather than adding to the launch directory, so
+    // with the hooks directory alone the Agent's whole workspace was
+    // Exawatt's hooks directory and a relative `notes.txt` resolved there.
+    // Adding the launch directory as well puts both in the workspace (the
+    // CLI sorts them; argv order does not matter), and Antigravity's own
+    // index then names the project, which is what the recent-conversation
+    // row is keyed on.
+    cwdInvocation: (invocation, cwd) =>
+      `${invocation} --add-dir ${shellQuote(cwd)}`,
     // Review (the default) asks before every tool; `accept-edits` lets file
     // edits through and still asks before commands, the closest reading of
     // auto-review; the skip flag is YOLO.

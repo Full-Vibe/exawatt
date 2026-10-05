@@ -267,7 +267,10 @@ writeFakeHarness(fakeBin, 'antigravity', {
   const argv = process.argv.slice(2);
   const out = text => fs.writeSync(1, text);
   out('FAKE_AGY_ARGS:' + argv.map(arg => ' <' + arg + '>').join('') + '\\n');
-  const addDir = argv.includes('--add-dir') ? argv[argv.indexOf('--add-dir') + 1] : null;
+  // Every --add-dir is a workspace directory; the hooks directory is the one
+  // carrying Exawatt's document, the launch directory is the other.
+  const addDirs = argv.flatMap((arg, index) => (arg === '--add-dir' ? [argv[index + 1]] : []));
+  const addDir = addDirs.find(dir => fs.existsSync(path.join(dir, '.agents', 'hooks.json'))) ?? null;
   const hooksFile = addDir ? path.join(addDir, '.agents', 'hooks.json') : null;
   const resumed = (argv.find(arg => arg.startsWith('--conversation=')) ?? '').slice('--conversation='.length);
   const conversationId = resumed || ${JSON.stringify(ANTIGRAVITY_CONVERSATION)};
@@ -279,7 +282,7 @@ writeFakeHarness(fakeBin, 'antigravity', {
       conversationId,
       modelName: 'fixture-sonnet',
       transcriptPath: 'unused',
-      workspacePaths: [addDir, process.cwd()],
+      workspacePaths: addDirs.slice().sort(),
     };
     const run = (name, event, extra) => {
       const command = hooks[name]?.[event]?.[0]?.command;
@@ -1241,6 +1244,12 @@ try {
           antigravityBuffer.includes(
             `FAKE_AGY_HOOKS_FIRED:${ANTIGRAVITY_CONVERSATION}`
           ),
+        antigravityBuffer
+      );
+      check(
+        'the launch directory is added to the workspace too, so the Agent works in the Project',
+        (antigravityBuffer.match(/<--add-dir>/g) ?? []).length === 2 &&
+          antigravityBuffer.includes(`<--add-dir> <${projectDir}>`),
         antigravityBuffer
       );
       check(

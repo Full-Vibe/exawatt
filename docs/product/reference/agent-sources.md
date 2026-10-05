@@ -357,7 +357,9 @@ Four Antigravity facts, verified on Antigravity CLI 1.2.17 (2026-10-05):
   the hooks in `.agents/hooks.json` of any workspace directory, including one
   Exawatt adds per launch with `--add-dir`, so `PreInvocation` opens the turn
   and `Stop` with `fullyIdle` closes it without touching
-  `~/.gemini/config/hooks.json`, which the Antigravity IDE shares. There is
+  `~/.gemini/config/hooks.json`, which the Antigravity IDE shares. In an
+  interactive launch `--add-dir` replaces the workspace, so the launch
+  directory is added the same way and both are in the workspace. There is
   no permission or question event, so a tab never turns amber for an
   Antigravity Agent that is waiting on you; the terminal is where that shows.
   The source's summary in Settings says so.

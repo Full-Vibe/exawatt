@@ -1128,7 +1128,9 @@ Built:
   as a label that the catalog matches to an id. Its hooks are commands only,
   carry no event name, and load from `.agents/hooks.json` in any workspace
   directory, so Exawatt writes one owner-only directory per launch and adds
-  it with `--add-dir`; each subscribed event gets its own command, which
+  it with `--add-dir`, together with the launch directory, because an
+  interactive `--add-dir` replaces the workspace rather than extending it;
+  each subscribed event gets its own command, which
   wraps the payload in an envelope naming the event before posting it. The
   CLI has no flag to allocate a conversation id, so the first payload's
   `conversationId` becomes the Session's identity (`--conversation=<id>`

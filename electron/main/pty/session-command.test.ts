@@ -874,6 +874,41 @@ describe('buildHarnessCommand', () => {
       );
     });
 
+    it('adds the launch directory to the workspace beside the hooks directory', () => {
+      // In an interactive launch `--add-dir` replaces the workspace, so the
+      // launch directory must be added too or the Agent works inside
+      // Exawatt's hooks directory (measured on 1.2.17).
+      expect(
+        buildHarnessCommand(
+          'antigravity',
+          null,
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { eventChannelSettingsPath: '/tmp/hooks/pty-1', cwd: '/work/app' }
+        )
+      ).toBe(
+        `agy --dangerously-skip-permissions --add-dir '/tmp/hooks/pty-1' --add-dir '/work/app'`
+      );
+      // Unsubscribed, the launch directory is still the workspace.
+      expect(
+        buildHarnessCommand(
+          'antigravity',
+          null,
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { cwd: '/work/app' }
+        )
+      ).toBe(`agy --dangerously-skip-permissions --add-dir '/work/app'`);
+    });
+
     it('never passes the flags that rewrite the operator’s environment', () => {
       const command = buildHarnessCommand(
         'antigravity',
