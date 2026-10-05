@@ -6,9 +6,13 @@ import type { HostPowerSnapshot } from '@exawatt/core/desktop-bridge';
 
 /** Rendering facts are independent of the Agent source. Demo and Live on
  * the same Electron host therefore conserve the same battery. A hosted
- * browser has no host bridge and retains its ordinary visibility policy. */
-export function useHostRenderPolicy(hardwareLowPower: boolean): {
-  lowPower: boolean;
+ * browser has no host bridge and retains its ordinary visibility policy.
+ *
+ * Battery is reported as its own fact. It is a cadence input for ambient
+ * motion, not the weak-hardware low-power mode: it must never lower the
+ * board's resolution or freeze a Working mark (BUG-263). */
+export function useHostRenderPolicy(): {
+  onBattery: boolean;
   visible: boolean;
 } {
   const reads = useLatestRequest();
@@ -46,7 +50,7 @@ export function useHostRenderPolicy(hardwareLowPower: boolean): {
     };
   }, [reads]);
   return {
-    lowPower: hardwareLowPower || host?.powerSource === 'battery',
+    onBattery: host?.powerSource === 'battery',
     visible:
       pageVisible &&
       host?.screenLock !== 'locked' &&

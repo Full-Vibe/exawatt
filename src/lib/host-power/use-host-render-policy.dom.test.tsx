@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe('host rendering policy', () => {
-  it('stops ambient visibility while locked and reduces power when unplugged', async () => {
+  it('stops ambient visibility while locked and reports battery as its own fact', async () => {
     let push: (snapshot: HostPowerSnapshot) => void = () => {};
     const unsubscribe = vi.fn();
     installBridgeDouble({
@@ -32,17 +32,19 @@ describe('host rendering policy', () => {
         },
       },
     });
-    const { result, unmount } = renderHook(() => useHostRenderPolicy(false));
+    const { result, unmount } = renderHook(() => useHostRenderPolicy());
     await act(async () => {});
-    expect(result.current).toEqual({ lowPower: false, visible: true });
+    expect(result.current).toEqual({ onBattery: false, visible: true });
     act(() => push({ ...initial, revision: 1, screenLock: 'locked' }));
     expect(result.current.visible).toBe(false);
+    // Battery leaves the board visible: it changes the ambient cadence, not
+    // whether the board renders or at what resolution (BUG-263).
     act(() => push({ ...initial, revision: 2, powerSource: 'battery' }));
-    expect(result.current).toEqual({ lowPower: true, visible: true });
+    expect(result.current).toEqual({ onBattery: true, visible: true });
     act(() => push({ ...initial, revision: 3, systemSleep: 'suspended' }));
     expect(result.current.visible).toBe(false);
     act(() => push({ ...initial, revision: 4 }));
-    expect(result.current).toEqual({ lowPower: false, visible: true });
+    expect(result.current).toEqual({ onBattery: false, visible: true });
     unmount();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
@@ -62,7 +64,7 @@ describe('host rendering policy', () => {
         },
       },
     });
-    const { result } = renderHook(() => useHostRenderPolicy(false));
+    const { result } = renderHook(() => useHostRenderPolicy());
     act(() =>
       push({
         ...initial,
@@ -75,12 +77,12 @@ describe('host rendering policy', () => {
       resolveRead(initial);
       await read;
     });
-    expect(result.current).toEqual({ lowPower: true, visible: false });
+    expect(result.current).toEqual({ onBattery: true, visible: false });
   });
 
-  it('preserves the hosted browser and hardware low-power fallback', () => {
-    const { result } = renderHook(() => useHostRenderPolicy(true));
-    expect(result.current).toEqual({ lowPower: true, visible: true });
+  it('preserves the hosted browser visibility policy without a host bridge', () => {
+    const { result } = renderHook(() => useHostRenderPolicy());
+    expect(result.current).toEqual({ onBattery: false, visible: true });
     act(() => {
       Object.defineProperty(document, 'visibilityState', {
         configurable: true,

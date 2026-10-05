@@ -22,6 +22,51 @@ async function renderPasses(page, count) {
   }, count);
 }
 
+/** A refresh this fast can show the economy bound; a starved host's rAF is
+ * already slower than the economy timer. */
+const HEALTHY_TICK_MS = 30;
+
+/** Painted refreshes, rotor motion and the renderer's resolution over `count`
+ * refreshes, so one sample answers both halves of BUG-263. Refreshes that
+ * painted are counted, not `render()` calls: a bloom frame makes several. */
+async function ambientSample(page, count) {
+  return page.evaluate(async ticks => {
+    const gl = window.__EVAL_GL__;
+    const before = new Map();
+    window.__EVAL_SCENE__.traverse(node => {
+      if (
+        node.name.startsWith('mark:') &&
+        node.parent?.geometry?.parameters?.thetaLength === Math.PI
+      )
+        before.set(node, node.rotation.z);
+    });
+    const frameStart = gl.info.render.frame;
+    const times = [];
+    let painted = 0;
+    for (let tick = 0; tick < ticks; tick++) {
+      const renders = gl.info.render.frame;
+      times.push(await new Promise(resolve => requestAnimationFrame(resolve)));
+      if (gl.info.render.frame !== renders) painted += 1;
+    }
+    const intervals = times
+      .slice(1)
+      .map((time, index) => time - times[index])
+      .sort((a, b) => a - b);
+    let moving = 0;
+    for (const [node, angle] of before)
+      if (node.rotation.z !== angle) moving += 1;
+    return {
+      renders: gl.info.render.frame - frameStart,
+      painted,
+      ticks: times.length,
+      tickMs: intervals[Math.floor(intervals.length / 2)] ?? null,
+      rotors: before.size,
+      moving,
+      dpr: gl.getPixelRatio(),
+    };
+  }, count);
+}
+
 async function event(app, name) {
   await app.evaluate(
     ({ powerMonitor }, eventName) => powerMonitor.emit(eventName),
@@ -77,10 +122,16 @@ try {
       );
       await event(app, 'on-ac');
       await event(app, 'unlock-screen');
-      const activeStart = await renderPasses(page, 90);
-      const activeEnd = await renderPasses(page, 20);
+      await renderPasses(page, 90);
+      const ac = await ambientSample(page, 30);
+      assert(ac.rotors > 0, 'fixture has no working rotors');
+      assert.equal(
+        ac.moving,
+        ac.rotors,
+        'AC/unlocked board must turn every working rotor'
+      );
       assert(
-        activeEnd > activeStart,
+        ac.painted > 0,
         'AC/unlocked board must animate active Agent marks'
       );
       await event(app, 'lock-screen');
@@ -93,10 +144,29 @@ try {
         (await renderPasses(page, 20)) > unlockedStart,
         'unlock must resume ambient rendering'
       );
+      // BUG-263: battery is a cadence, never a freeze or a resolution drop.
+      // The 2026-09-25 parking reused the weak-hardware path, which also
+      // capped dpr at 1.25: the board went soft and every rotor stopped.
       await event(app, 'on-battery');
-      const batteryStart = await renderPasses(page, 90);
-      const batteryEnd = await renderPasses(page, 30);
-      assert.equal(batteryEnd, batteryStart, 'battery board must park');
+      await renderPasses(page, 90);
+      const battery = await ambientSample(page, 30);
+      assert.equal(
+        battery.moving,
+        battery.rotors,
+        'battery must keep every working rotor turning'
+      );
+      assert(battery.painted > 0, 'battery board must still paint');
+      if (battery.tickMs !== null && battery.tickMs < HEALTHY_TICK_MS) {
+        assert(
+          battery.painted < battery.ticks,
+          `battery painted ${battery.painted} of ${battery.ticks} refreshes; economy cadence must bound ambient frames`
+        );
+      }
+      assert.equal(
+        battery.dpr,
+        ac.dpr,
+        'battery must not change the board resolution'
+      );
       await page.screenshot({ path: join(artifacts, 'battery-board.png') });
       await event(app, 'on-ac');
       const acStart = await renderPasses(page, 10);
@@ -130,9 +200,9 @@ try {
         JSON.stringify({
           result: 'pass',
           initial,
-          activeRenderPasses: activeEnd - activeStart,
+          ac,
           lockedRenderPasses: lockedEnd - lockedStart,
-          batteryRenderPasses: batteryEnd - batteryStart,
+          battery,
           evidence:
             'real initial native read; synthetic powerMonitor events through main/preload to real Fleet canvas',
           artifacts,

@@ -13,6 +13,10 @@ import {
 import type { SpatialThemeSnapshot } from '../spatial-theme';
 import { boardWorldPosition } from './operations-board-camera';
 import {
+  AMBIENT_FRAME_DELTA_CAP_S,
+  type AmbientMotion,
+} from './operations-board-ambient';
+import {
   STATUS_MARK_GEOMETRY,
   pieceLensColor,
 } from './operations-board-materials';
@@ -21,13 +25,14 @@ import {
  * static layer on the same anchors, scales, and emergence clock. */
 export function StatusMarkLayer({
   pieces,
-  active,
+  ambient,
   lens,
   theme,
   emergenceScale,
 }: {
   pieces: SpatialBoardPiece[];
-  active: boolean;
+  /** How often the Active rotors may paint; `parked` rests them at zero. */
+  ambient: AmbientMotion;
   lens: SpatialBoardLens;
   theme: SpatialThemeSnapshot;
   /** Per-frame scale for a piece's marks (V3.7 emergence); 1 when settled. */
@@ -89,17 +94,19 @@ export function StatusMarkLayer({
       if (emerging) state.invalidate();
     }
     if (rotorRefs.current.size === 0) return;
-    if (!active) {
+    if (ambient.cadence === 'parked') {
       for (const rotor of rotorRefs.current.values()) rotor.rotation.z = 0;
       return;
     }
     const step =
-      (Math.min(delta, 0.05) * Math.PI * 2) /
+      (Math.min(delta, AMBIENT_FRAME_DELTA_CAP_S) * Math.PI * 2) /
       STATUS_LIGHT_ACTIVE_ROTATION_SECONDS;
     for (const rotor of rotorRefs.current.values()) {
       rotor.rotation.z = (rotor.rotation.z - step) % (Math.PI * 2);
     }
-    state.invalidate();
+    // Power is a cadence, never a freeze: the shared scheduler paints every
+    // refresh on AC and on a bounded timer on battery or weak hardware.
+    ambient.requestFrame(state.invalidate);
   });
 
   const instance = (piece: SpatialBoardPiece) => ({

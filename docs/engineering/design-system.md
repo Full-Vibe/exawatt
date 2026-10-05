@@ -233,7 +233,7 @@ in protocol/HUD helpers are compatibility metadata, not universal colors.
 
 Standing rules, all operator-reviewed:
 
-- **Only Active moves**: the half-fill turns once per **2.4s** (`STATUS_LIGHT_ACTIVE_ROTATION_SECONDS`) identically in DOM and R3F; reduced-motion and low-power render the same static mark. Human gates and faults **never pulse** (D33 calm attention: the attention mark is a static amber dot-in-circle with an explicit hover tooltip).
+- **Only Active moves**: the half-fill turns once per **2.4s** (`STATUS_LIGHT_ACTIVE_ROTATION_SECONDS`) identically in DOM and R3F; reduced motion renders the static mark. Power never freezes it (BUG-263, 2026-10-05): on battery or weak hardware the R3F rotor keeps its speed on a bounded economy cadence of about 20 fps (`operations-board-ambient.ts`), matching the DOM mark, which has no power gate, and battery never lowers the board's resolution. Human gates and faults **never pulse** (D33 calm attention: the attention mark is a static amber dot-in-circle with an explicit hover tooltip).
 - **Redundant channels (D30, per Carbon)**: every state carries at least three of shape / icon / color / text — hue never carries the signal alone.
 - **Constant footprint**: glyphs render in a fixed box so state changes never nudge a row.
 - Delegated-child dots breathe at 2600ms, staggered, capped at `DELEGATION_DOT_CAP` — context for the light, never a competing signal (ENG-023).

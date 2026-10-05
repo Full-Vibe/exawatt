@@ -26,6 +26,10 @@ import {
   type SpatialBoardPiece,
 } from '@exawatt/ui-model';
 import {
+  AMBIENT_FRAME_DELTA_CAP_S,
+  type AmbientMotion,
+} from './operations-board-ambient';
+import {
   createEmergenceTracker,
   type EmergenceTracker,
 } from './operations-board-emergence';
@@ -64,12 +68,12 @@ import { StatusMarkLayer } from './operations-board-status-marks';
  *  piece so a selection change replays the ease-in. */
 function SelectionRing({
   piece,
-  active,
+  ambient,
   reduced,
   theme,
 }: {
   piece: SpatialBoardPiece;
-  active: boolean;
+  ambient: AmbientMotion;
   reduced: boolean;
   theme: SpatialThemeSnapshot;
 }) {
@@ -87,19 +91,19 @@ function SelectionRing({
   useFrame((state, delta) => {
     const target = group.current;
     if (!target) return;
-    const clamped = Math.min(delta, 0.05);
-    let animating = false;
-    if (entrance.current < 1) {
+    const clamped = Math.min(delta, AMBIENT_FRAME_DELTA_CAP_S);
+    const entering = entrance.current < 1;
+    if (entering) {
       entrance.current = Math.min(1, entrance.current + clamped * 5);
-      animating = true;
     }
     const scale = piece.size * (1.25 - 0.25 * entrance.current);
     target.scale.setScalar(scale);
-    if (active) {
-      target.rotation.z += clamped * 0.5;
-      animating = true;
-    }
-    if (animating) state.invalidate();
+    const rotating = ambient.cadence !== 'parked';
+    if (rotating) target.rotation.z += clamped * 0.5;
+    // The ease-in is a transition and paints every refresh; the slow turn
+    // after it is ambient and follows the shared power cadence.
+    if (entering) state.invalidate();
+    else if (rotating) ambient.requestFrame(state.invalidate);
   });
   return (
     <group ref={group} position={boardWorldPosition(piece, 0.78)}>
@@ -213,7 +217,7 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   altitude: SpatialBoardLayout['altitude'];
   focusedProjectId: string | null;
   reduced: boolean;
-  ambient: boolean;
+  ambient: AmbientMotion;
   lens: SpatialBoardLens;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
@@ -504,7 +508,7 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
       </Instances>
       <StatusMarkLayer
         pieces={statusSubjects}
-        active={ambient}
+        ambient={ambient}
         lens={lens}
         theme={theme}
         emergenceScale={emergenceScale}
@@ -520,7 +524,7 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
         <SelectionRing
           key={selected.id}
           piece={selected}
-          active={ambient}
+          ambient={ambient}
           reduced={reduced}
           theme={theme}
         />

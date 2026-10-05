@@ -217,6 +217,17 @@ contrast-corrected against the resolved ground.
 12. **Reduced motion:** gate continuous motion on `useReducedMotion()`. Reduced
     motion kills MOTION, not bloom — a static glow is fine; a pulsing one isn't.
     For damp transitions, SNAP to target when reduced.
+12b. **Power is a cadence, not a state** (BUG-263). Battery and weak hardware
+   slow the ambient paint through `operations-board-ambient.ts` (`display` /
+   `economy` / `parked`; one shared timer per canvas, requested from inside
+   `useFrame` in place of `state.invalidate()`); they never freeze a Working
+   mark and never lower `dpr`. Only reduced motion or an unseen board (hidden,
+   locked, suspended) parks the loop, and a cadence change requests one frame
+   so leaving `parked` does not wait for an unrelated paint. Transitions
+   (entrance, camera flights) still paint every refresh; an eval that measures
+   the economy bound waits for the first unpainted refresh first. The
+   2026-09-25 battery fix reused the weak-hardware `lowPower` gate (dpr 1.25,
+   no bloom, rotors at rest) and shipped a soft, frozen board five days later.
 13. **Input feel is velocity, not key-repeat or tap kicks.** Held camera input
    damps current velocity toward a target and decays after release. Do not add an
    immediate distance/angle kick before the rAF loop, and do not claim

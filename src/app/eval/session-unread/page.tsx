@@ -20,6 +20,7 @@ import {
   mergeFleetAttention,
 } from '@/components/workspace/session-status';
 import { StatusMarkLayer } from '@/components/fleet/spatial/operations-board/operations-board-status-marks';
+import { PARKED_AMBIENT } from '@/components/fleet/spatial/operations-board/operations-board-ambient';
 import { spatialThemeFromResolvedAppearance } from '@/components/fleet/spatial/spatial-theme';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 
@@ -183,10 +184,16 @@ export default function SessionUnreadEval() {
             </Button>
           </div>
           <div className="flex gap-3">
-            <Button variant="ghost" onClick={() => previewTheme('exawatt-air-light')}>
+            <Button
+              variant="ghost"
+              onClick={() => previewTheme('exawatt-air-light')}
+            >
               Air
             </Button>
-            <Button variant="ghost" onClick={() => previewTheme('exawatt-night-dark')}>
+            <Button
+              variant="ghost"
+              onClick={() => previewTheme('exawatt-night-dark')}
+            >
               Night
             </Button>
           </div>
@@ -276,7 +283,7 @@ export default function SessionUnreadEval() {
                 <color attach="background" args={[theme.canvas]} />
                 <StatusMarkLayer
                   pieces={pieces}
-                  active={false}
+                  ambient={PARKED_AMBIENT}
                   lens="status"
                   theme={theme}
                 />

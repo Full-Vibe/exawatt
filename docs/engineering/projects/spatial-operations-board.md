@@ -3054,3 +3054,61 @@ state the honeycomb's own bounds. Screens checked: Voltaic at Fleet altitude in
 the classic and Air themes, the crowded fixture, Project altitude with an Agent
 hovered and pressed, and the product Fleet route.
 
+### 2026-10-05 — BUG-263 root cause: battery reused the weak-hardware path
+
+**One cause, both symptoms; power is now a cadence, never a state or a resolution.**
+Execution owner: `agent/g1a-fleet-board`, sibling `exawatt-g1a-board`, Wave 3
+packet G1a of the Google workshop demo arc.
+
+- **What the operator saw (2026-09-30, dogfood).** Five Project rings, Working
+  3, the working marks static and every mark and label soft. Both halves had
+  one cause. The 2026-09-25 BUG-227 landing (`288ee6d5`, "park Fleet ambient
+  rendering on battery and lock") fed the host's battery fact into the board's
+  pre-existing weak-hardware `lowPower` gate (July's `hardwareConcurrency <= 4`
+  heuristic). That gate caps `dpr` at 1.25, drops bloom and rests every rotor
+  at zero. A MacBook on battery at its 2x display therefore painted the board
+  at 62% of native resolution and froze the Working marks in the same instant.
+  Decision 0044 never asked for a resolution drop; the resolution loss was
+  collateral from reusing the gate, and incident 0029 says Fleet's share of the
+  discharge was unproven.
+- **Falsified first.** `invalidate` ownership was sound: the rotors
+  self-invalidate from `useFrame` while active, and `6cbf83e1d5af` (2026-10-04)
+  had already repaired the ResizeObserver-blind density change. The remaining
+  freeze was not a scheduling defect but a policy branch.
+- **Reproduction.** The 30-Agent, five-Project rig at `deviceScaleFactor` 2
+  with the real preload shape (`hostPower()` and `onHostPowerChanged()`)
+  reporting battery: renderer DPR 1.25, an 1800 by 1125 drawing buffer for a
+  1440 by 900 CSS canvas, 0 of 10 rotors turning, 0 render passes in 60
+  refreshes. The same board on AC: DPR 2, 2880 by 1800, 10 of 10 turning, 60
+  passes. Crops of one Project ring show the soft hex edges and glyphs and
+  every rotor at the same 0 degrees.
+- **Fix.** `operations-board-ambient.ts` resolves the ambient cadence:
+  `display` on AC, `economy` on battery or weak hardware, `parked` only for
+  reduced motion or an unseen board (hidden tab, locked screen, suspended host).
+  Economy frames arrive through one shared 40 ms timer per canvas, requested
+  from inside `useFrame` in place of `state.invalidate()`, so the rotors and
+  the selection ring together paint about 20 times a second (a clean one paint
+  per three refreshes at 60 Hz) and a 2.4 s rotor keeps its speed (the
+  per-frame delta cap rose from 0.05 to 0.1 s to admit an economy frame whole).
+  `ResumeAmbientMotion` requests one frame on every cadence change so leaving
+  `parked` never waits for an unrelated paint. `useHostRenderPolicy` reports
+  `onBattery` as its own fact; the DPR cap and bloom follow weak hardware
+  alone. After: battery at DPR 2, 10 of 10 turning, 19 passes per 60 refreshes.
+  Weak hardware moved to the same rule (it was a park; it is now economy at its
+  capped resolution) so the board has one explainable power behaviour.
+- **Regression contract.** `eval:spatial`: every working rotor turns at Fleet
+  altitude on the live route (vacuous only when nothing works) and on the
+  density rig in normal and low power; low power leaves refreshes unpainted
+  when the host's refresh is healthy (median tick under 30 ms, otherwise the
+  bound is unobservable and only motion is asserted), measured after the first
+  unpainted refresh because the entrance choreography paints every refresh for
+  about 1.4 s, and counted as painted refreshes rather than `render()` calls
+  because a bloom frame makes several of those (the first Electron run read
+  108 render calls in 30 refreshes: 11 economy paints under bloom, not 30);
+  reduced motion still parks at zero idle frames. `eval:electron:host-power`: the real bridge's `on-battery` keeps
+  every rotor turning, paints at a bounded cadence and leaves
+  `getPixelRatio()` unchanged; lock and suspend still park.
+- **Canon amended.** Roadmap BUG-227's Fleet sentence and the amendment chain,
+  the design-system Active rung, and R3F guide rule 12b. Evidence retained
+  outside the worktree under the session scratchpad `evidence/` (before and
+  after full and crop captures) and `scripts/r3f-eval/spatial-report/`.

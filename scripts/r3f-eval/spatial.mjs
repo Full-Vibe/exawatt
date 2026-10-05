@@ -37,6 +37,70 @@ function check(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+/** A refresh this fast can show the economy bound; a starved host's rAF is
+ * already slower than the economy timer, so the bound is unobservable. */
+const HEALTHY_TICK_MS = 30;
+
+/** Economy cadence (battery or weak hardware, BUG-263): the working rotors
+ * keep painting, on a bounded timer rather than every display refresh.
+ * `painted` counts refreshes that painted, not `render()` calls: a bloom
+ * frame makes several of those and would hide the bound. */
+function checkEconomyCadence({ painted, ticks, tickMs, rotors }, label) {
+  if (rotors === 0) {
+    check(
+      painted === 0,
+      `${label} board with nothing working must park; painted ${painted} refreshes`
+    );
+    return;
+  }
+  check(
+    painted > 0,
+    `${label} froze the working rotors; economy must still paint`
+  );
+  if (tickMs !== null && tickMs < HEALTHY_TICK_MS) {
+    check(
+      painted < ticks,
+      `${label} painted ${painted} of ${ticks} refreshes; economy must bound ambient frames`
+    );
+  }
+}
+
+/** Working rotors in the live scene: the half-disc geometry marks them. */
+function sampleRotorsInPage() {
+  const before = new Map();
+  window.__EVAL_SCENE__.traverse(node => {
+    if (
+      node.name.startsWith('mark:') &&
+      node.parent?.geometry?.parameters?.thetaLength === Math.PI
+    )
+      before.set(node, node.rotation.z);
+  });
+  return before;
+}
+
+/** Every working rotor turns while its Agent works, at any power (BUG-263);
+ * only reduced motion rests them. Vacuous when nothing on the board works. */
+async function checkWorkingMotion(page, { expectMotion }) {
+  const sample = await page.evaluate(async source => {
+    const sampleRotors = new Function(`return (${source})()`);
+    const before = sampleRotors();
+    for (let frame = 0; frame < 20; frame++)
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    let moving = 0;
+    for (const [node, angle] of before)
+      if (node.rotation.z !== angle) moving += 1;
+    return { rotors: before.size, moving };
+  }, sampleRotorsInPage.toString());
+  if (sample.rotors === 0) return sample;
+  check(
+    expectMotion ? sample.moving === sample.rotors : sample.moving === 0,
+    expectMotion
+      ? `${sample.rotors - sample.moving} of ${sample.rotors} working rotors are frozen`
+      : `Reduced motion must rest the rotors; ${sample.moving} turned`
+  );
+  return sample;
+}
+
 async function installRenderProbe(page) {
   await page.evaluate(() => {
     const gl = window.__EVAL_GL__;
@@ -542,7 +606,9 @@ async function checkMarkStackDrawOrder(page) {
 
 /** A display can change pixel density while its CSS viewport stays put.
  * Also prove every working rotor moves, rather than counting frames emitted
- * by an unrelated animation. The fixed 30-Agent fixture has quiet peers. */
+ * by an unrelated animation. The fixed 30-Agent fixture has quiet peers.
+ * Weak hardware keeps its resolution cap but still turns the rotors, on the
+ * bounded economy cadence (BUG-263). */
 async function checkDisplayResolution(browser, lowPower = false) {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 900 },
@@ -599,15 +665,37 @@ async function checkDisplayResolution(browser, lowPower = false) {
         expected,
         { timeout: 2000 }
       );
-      const sample = await page.evaluate(async () => {
+      const sample = await page.evaluate(async economy => {
         const gl = window.__EVAL_GL__;
         const canvas = gl.domElement;
+        // The entrance choreography paints every refresh for about 1.4 s.
+        // Under economy the ambient loop then leaves refreshes unpainted, so
+        // wait for the first quiet refresh (the effect, not a duration); the
+        // display cadence never produces one, which the deadline reports.
+        let settled = !economy;
+        for (let tick = 0; tick < 240 && !settled; tick++) {
+          const painted = gl.info.render.frame;
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          settled = gl.info.render.frame === painted;
+        }
         const before = new Map();
         window.__EVAL_SCENE__.traverse(node => {
           if (node.name.startsWith('mark:')) before.set(node, node.rotation.z);
         });
-        for (let frame = 0; frame < 20; frame++)
-          await new Promise(resolve => requestAnimationFrame(resolve));
+        const frameStart = gl.info.render.frame;
+        const times = [];
+        let painted = 0;
+        for (let frame = 0; frame < 20; frame++) {
+          const renders = gl.info.render.frame;
+          times.push(
+            await new Promise(resolve => requestAnimationFrame(resolve))
+          );
+          if (gl.info.render.frame !== renders) painted += 1;
+        }
+        const intervals = times
+          .slice(1)
+          .map((time, index) => time - times[index])
+          .sort((a, b) => a - b);
         const rotors = [];
         const quiet = [];
         for (const [node, angle] of before) {
@@ -626,8 +714,17 @@ async function checkDisplayResolution(browser, lowPower = false) {
           rotors: rotors.length,
           moving: rotors.filter(Boolean).length,
           quietMoved: quiet.some(Boolean),
+          renders: gl.info.render.frame - frameStart,
+          painted,
+          ticks: times.length,
+          tickMs: intervals[Math.floor(intervals.length / 2)] ?? null,
+          settled,
         };
-      });
+      }, lowPower);
+      check(
+        sample.settled,
+        'Low power painted every refresh for 240 ticks; economy must bound ambient frames'
+      );
       check(sample.retained, 'Display change replaced the canvas or camera');
       check(
         sample.width === Math.floor(sample.cssWidth * expected),
@@ -635,10 +732,13 @@ async function checkDisplayResolution(browser, lowPower = false) {
       );
       check(sample.rotors > 0, 'Fixture has no working rotors');
       check(
-        sample.moving === (lowPower ? 0 : sample.rotors),
-        'Working rotor motion disagrees with the power policy'
+        sample.moving === sample.rotors,
+        `${sample.rotors - sample.moving} of ${sample.rotors} working rotors froze under the ${lowPower ? 'low-power' : 'normal'} policy`
       );
       check(!sample.quietMoved, 'A quiet status mark rotates');
+      if (lowPower) checkEconomyCadence(sample, 'Low power');
+      else
+        check(sample.painted > 0, 'Working rotors stopped requesting frames');
       samples.push(sample);
     }
     await page.screenshot({ path: join(REPORT_DIR, `${result.name}.png`) });
@@ -662,14 +762,45 @@ async function openAgent(page, units) {
   return unitCount;
 }
 
+/** One second of the settled scene: renders against display refreshes, and
+ * how many working rotors were there to keep the loop alive. */
 async function measureIdleFrames(page) {
   await installRenderProbe(page);
   await page.waitForTimeout(4_000);
-  await page.evaluate(() => {
-    window.__EVAL_GL__.__spatialRenderCount = 0;
-  });
-  await page.waitForTimeout(1_000);
-  return page.evaluate(() => window.__EVAL_GL__.__spatialRenderCount);
+  return page.evaluate(
+    source =>
+      new Promise(resolve => {
+        const gl = window.__EVAL_GL__;
+        gl.__spatialRenderCount = 0;
+        const rotors = new Function(`return (${source})()`)().size;
+        const times = [];
+        const start = performance.now();
+        let painted = 0;
+        let renders = gl.info.render.frame;
+        const tick = timestamp => {
+          times.push(timestamp);
+          if (gl.info.render.frame !== renders) painted += 1;
+          renders = gl.info.render.frame;
+          if (timestamp - start < 1_000) {
+            requestAnimationFrame(tick);
+            return;
+          }
+          const intervals = times
+            .slice(1)
+            .map((time, index) => time - times[index])
+            .sort((a, b) => a - b);
+          resolve({
+            renders: gl.__spatialRenderCount,
+            painted,
+            ticks: times.length,
+            tickMs: intervals[Math.floor(intervals.length / 2)] ?? null,
+            rotors,
+          });
+        };
+        requestAnimationFrame(tick);
+      }),
+    sampleRotorsInPage.toString()
+  );
 }
 
 async function runScenario(browser, scenario) {
@@ -728,6 +859,9 @@ async function runScenario(browser, scenario) {
     result.board = board;
     await pauseDemo(page, scenario.mobile);
     result.markStack = await checkMarkStackDrawOrder(page);
+    result.workingMotion = await checkWorkingMotion(page, {
+      expectMotion: !scenario.reduced,
+    });
     result.pixelRatio = await page.evaluate(() =>
       window.__EVAL_GL__.getPixelRatio()
     );
@@ -763,7 +897,9 @@ async function runScenario(browser, scenario) {
     });
     result.unitCount = await openAgent(page, units);
     if (scenario.tools) await checkAgentProjectionPersistence(page);
-    result.idleFrames = await measureIdleFrames(page);
+    const idle = await measureIdleFrames(page);
+    result.idleFrames = idle.renders;
+    result.idle = idle;
 
     if (scenario.mobile) {
       result.scrollable = await page.evaluate(() => {
@@ -786,15 +922,22 @@ async function runScenario(browser, scenario) {
           .isVisible(),
         'Mobile Agent inspector is not visible'
       );
-    } else if (scenario.reduced || scenario.lowPower) {
+    }
+    if (scenario.reduced) {
       // V2.4 gate amendment: ambient status motion (breathing halos,
       // selection rotation) deliberately keeps the VISIBLE scene alive, so
-      // the park-at-rest assertion moves to the contexts that must park —
-      // reduced motion and low power (hidden tabs park too, untestable here).
+      // the park-at-rest assertion belongs to the context that must park:
+      // reduced motion (hidden tabs park too, untestable here).
       check(
-        result.idleFrames === 0,
-        `Reduced/low-power scene must park; drew ${result.idleFrames} idle frames`
+        idle.renders === 0,
+        `Reduced-motion scene must park; drew ${idle.renders} idle frames`
       );
+    } else if (scenario.lowPower) {
+      // BUG-263: power is a cadence, not a freeze. Weak hardware keeps the
+      // working rotors turning on the bounded economy timer.
+      checkEconomyCadence(idle, 'Low power');
+    } else if (idle.rotors > 0) {
+      check(idle.painted > 0, 'Working rotors stopped requesting frames');
     }
 
     await page.screenshot({

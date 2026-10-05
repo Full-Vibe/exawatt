@@ -33,6 +33,12 @@ import {
 
 export type { OperationsBoardViewport } from './operations-board-camera';
 import { useLowPowerMode, useReducedMotion } from './operations-board-env';
+import {
+  createAmbientFrameScheduler,
+  resolveAmbientCadence,
+  type AmbientCadence,
+  type AmbientMotion,
+} from './operations-board-ambient';
 import { useHostRenderPolicy } from '@/lib/host-power/use-host-render-policy';
 import { BoardCameraRig } from './operations-board-camera-rig';
 import { BoardGrid, ZoneLayer } from './operations-board-zone-layer';
@@ -59,6 +65,17 @@ const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 function InvalidateOnSpatialTheme({ theme }: { theme: SpatialThemeSnapshot }) {
   const invalidate = useThree(state => state.invalidate);
   useEffect(() => invalidate(), [invalidate, theme]);
+  return null;
+}
+
+/** A cadence change requests one frame; from there the rotors keep the loop
+ * alive themselves. Without this, leaving `parked` (plugging in, unlocking,
+ * returning to the tab) would wait for an unrelated paint. */
+function ResumeAmbientMotion({ ambient }: { ambient: AmbientMotion }) {
+  const invalidate = useThree(state => state.invalidate);
+  useEffect(() => {
+    if (ambient.cadence !== 'parked') invalidate();
+  }, [ambient, invalidate]);
   return null;
 }
 
@@ -138,10 +155,25 @@ export function OperationsBoardCanvas({
   theme: SpatialThemeSnapshot;
 }) {
   const reduced = useReducedMotion();
-  const hardwareLowPower = useLowPowerMode();
-  const { lowPower, visible: pageVisible } =
-    useHostRenderPolicy(hardwareLowPower);
-  const ambient = !reduced && !lowPower && pageVisible;
+  // Weak hardware alone trades resolution and bloom. Battery is a cadence
+  // input below and never reaches `dpr` (BUG-263).
+  const lowPower = useLowPowerMode();
+  const { onBattery, visible: pageVisible } = useHostRenderPolicy();
+  const cadence: AmbientCadence = resolveAmbientCadence({
+    reduced,
+    visible: pageVisible,
+    lowPower,
+    onBattery,
+  });
+  const [ambientScheduler] = useState(() => createAmbientFrameScheduler());
+  useEffect(() => () => ambientScheduler.dispose(), [ambientScheduler]);
+  const ambient = useMemo<AmbientMotion>(
+    () => ({
+      cadence,
+      requestFrame: invalidate => ambientScheduler.request(cadence, invalidate),
+    }),
+    [ambientScheduler, cadence]
+  );
   // During a Team→Fleet handoff the lazy postprocessing chunk's shader
   // compile is the single biggest main-thread stall — landing it mid
   // crossfade cuts the flight short. Defer the bloom mount until the entry
@@ -230,6 +262,7 @@ export function OperationsBoardCanvas({
           theme color without spending a draw call on a full-screen plane. */}
       <color attach="background" args={[theme.zone]} />
       <InvalidateOnSpatialTheme theme={theme} />
+      <ResumeAmbientMotion ambient={ambient} />
       <BoardDisplayResolution lowPower={lowPower} />
       {/* Soft key + fill: gives zone plates and piece bodies a readable
           top/side split in the fixed-angle projection. */}
