@@ -1,12 +1,30 @@
 /** Root lifecycle and queued questions, read from Codex's paginated protocol.
  * A separate app-server calls a TUI-owned open turn interrupted/null. That is
  * unknown, never evidence of completion (BUG-257). No terminal prose is read.
+ *
+ * A queued question belongs to the turn that asked it (BUG-264). Read from
+ * the installed 0.160.1 TUI's own source (`bottom_pane/async_questions/
+ * state.rs`, `chatwidget/turn_runtime.rs`, `chatwidget/input_submission.rs`):
+ * pending questions are cleared when the live turn completes and when the
+ * operator submits a new prompt, and an answered or skipped id can never
+ * reopen. So a question is outstanding only while its turn is the live one.
+ * The operator's real threads hold questions from finished turns that were
+ * never answered in the typed envelope (2 of 5 on 2026-09-30, 2 of 9 on
+ * 2026-10-04); raising those at hydration lit three Codex tabs amber for
+ * days-old questions the TUI had long dropped.
  */
 import type { HarnessEvent } from './delegation-state';
 
+export interface CodexRootQuestion {
+  /** `<agentMessage id>:<question index>`, the TUI's own reply key */
+  id: string;
+  /** the turn the item row belongs to; null when the protocol omits it */
+  turnId: string | null;
+}
+
 export interface CodexRootObservation {
   turn: { id: string; status: string; completedAt: number | null } | null;
-  questions: string[];
+  questions: CodexRootQuestion[];
   answered: string[];
   coverage?: 'complete' | 'partial';
 }
@@ -74,10 +92,11 @@ export function parseCodexRootObservation(
       throw new Error('Codex root observation has invalid turn identity');
     turn = { id: raw.id, status: raw.status, completedAt: raw.completedAt };
   }
-  const questions: string[] = [];
+  const questions: CodexRootQuestion[] = [];
   const answered: string[] = [];
-  for (const row of itemRows) {
-    const item = record(record(row)?.item);
+  for (const rowValue of itemRows) {
+    const row = record(rowValue);
+    const item = record(row?.item);
     if (!item) continue;
     if (
       item.type === 'agentMessage' &&
@@ -85,8 +104,10 @@ export function parseCodexRootObservation(
       typeof item.id === 'string' &&
       Array.isArray(item.questions)
     ) {
+      // The row, not the item, names the turn (0.160.1 `thread/items/list`).
+      const turnId = typeof row?.turnId === 'string' ? row.turnId : null;
       item.questions.forEach((_, index) =>
-        questions.push(`${item.id}:${index}`)
+        questions.push({ id: `${item.id}:${index}`, turnId })
       );
     }
     if (item.type === 'userMessage')
@@ -100,12 +121,24 @@ export function parseCodexRootObservation(
   };
 }
 
+/** The turn the TUI is still holding questions for: one the source has not
+ *  closed. A separate app-server reads the TUI's own open turn as
+ *  interrupted/null; a timestamped interruption, a failure or a completion
+ *  is a turn whose queue the TUI has already cleared. */
+function liveTurnId(turn: CodexRootObservation['turn']): string | null {
+  if (!turn || turn.completedAt !== null) return null;
+  return turn.status === 'inProgress' || turn.status === 'interrupted'
+    ? turn.id
+    : null;
+}
+
 /** Per-launch bounded ledger. A repeated snapshot is not a new boundary;
  * replies are tombstoned so overlapping pages cannot resurrect a question. */
 export class CodexRootTruth {
   private turnKey: string | null = null;
   private initialized = false;
-  private pending = new Set<string>();
+  /** outstanding question → the live turn it was asked in */
+  private pending = new Map<string, string>();
   private answered = new Set<string>();
   private unknown = false;
   private coverage: 'complete' | 'partial' | 'unavailable' | null = null;
@@ -156,20 +189,34 @@ export class CodexRootTruth {
       if (!known || wasPending)
         events.push({ kind: 'unblocked', reason: 'question', requestId: id });
     }
-    for (const id of observation.questions) {
-      if (!this.saturated && !this.answered.has(id) && !this.pending.has(id)) {
-        if (this.pending.size >= 256) {
-          this.saturated = true;
-          break;
-        }
-        this.pending.add(id);
-        events.push({
-          kind: 'blocked',
-          reason: 'question',
-          request: 'working',
-          requestId: id,
-        });
+    // The TUI drops its queue when the turn that asked ends or the operator
+    // moves on to a new prompt; a question whose turn is no longer the live
+    // one is released here on the same evidence, reply or no reply.
+    const live = liveTurnId(turn);
+    for (const [id, askedIn] of [...this.pending]) {
+      if (live !== null && askedIn === live) continue;
+      this.pending.delete(id);
+      events.push({ kind: 'unblocked', reason: 'question', requestId: id });
+    }
+    // Only the live turn's questions are outstanding. History pages carry
+    // questions from finished turns; they are hydration, never a needs-you.
+    for (const question of observation.questions) {
+      if (live === null) break;
+      if (question.turnId !== null && question.turnId !== live) continue;
+      const id = question.id;
+      if (this.saturated || this.answered.has(id) || this.pending.has(id))
+        continue;
+      if (this.pending.size >= 256) {
+        this.saturated = true;
+        break;
       }
+      this.pending.set(id, live);
+      events.push({
+        kind: 'blocked',
+        reason: 'question',
+        request: 'working',
+        requestId: id,
+      });
     }
     // Never evict a reply tombstone while older pages can still arrive. At
     // the explicit capacity limit, fail closed instead of resurrecting an

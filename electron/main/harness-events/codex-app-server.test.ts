@@ -194,6 +194,43 @@ describe('Codex 0.147 protocol shape', () => {
     });
     expect(activity.get('child-1')).toBe('interacted');
   });
+
+  it("accepts the parent's completed activity, as the installed 0.160.1 emits it", () => {
+    // Measured 2026-10-05 on the operator's real fan-out threads: the newest
+    // `subAgentActivity` for a finished child is `completed`, a kind the
+    // 0.147 schema never produced. Refusing it dropped every unresolved
+    // sibling of a finished child from the census.
+    const activity = parseCodexSubagentActivity({
+      data: [
+        {
+          turnId: '01a109f0-4d20-70e0-af32-1673b0545c68',
+          item: {
+            type: 'subAgentActivity',
+            id: 'subagent-completed-01a109f0-b7b5-7760-a773-6d2f19710ffb',
+            kind: 'completed',
+            agentThreadId: '01a0f393-7921-7ac3-82ef-a0500d33b075',
+            agentPath: '/root/email_recovery',
+          },
+        },
+        {
+          turnId: '01a109f0-4d20-70e0-af32-1673b0545c68',
+          item: {
+            type: 'subAgentActivity',
+            id: 'call_EnQrp75q1pIHzhQlvDGGb8Xd',
+            kind: 'interacted',
+            agentThreadId: '01a0f3b3-2741-70b2-b955-3375544a445e',
+            agentPath: '/root/review_auth',
+          },
+        },
+      ],
+    });
+    expect(activity.get('01a0f393-7921-7ac3-82ef-a0500d33b075')).toBe(
+      'completed'
+    );
+    expect(activity.get('01a0f3b3-2741-70b2-b955-3375544a445e')).toBe(
+      'interacted'
+    );
+  });
 });
 
 function fakeAppServer() {
@@ -618,9 +655,10 @@ describe('Codex root history coverage', () => {
         'invalid turn identity'
       );
       badTurn = false;
-      expect((await client.rootObservation(ROOT)).questions).toContain(
-        'question:0'
-      );
+      expect((await client.rootObservation(ROOT)).questions).toContainEqual({
+        id: 'question:0',
+        turnId: null,
+      });
       expect(cursors).toEqual(['latest', 'older', 'latest', 'older']);
     } finally {
       client.close();
@@ -675,7 +713,7 @@ describe('Codex root history coverage', () => {
       expect((await client.rootObservation(ROOT)).coverage).toBe('complete');
       phase = 1;
       const gap = await client.rootObservation(ROOT);
-      expect(gap.questions).toContain('question:0');
+      expect(gap.questions).toContainEqual({ id: 'question:0', turnId: null });
       expect(gap.coverage).toBe('complete');
       expect(itemReads).toEqual([
         'latest',
@@ -772,10 +810,10 @@ describe('CodexDelegationObserver', () => {
     expect(busyAtCompletion).toEqual([true]);
   });
 
-  it('reads root lifecycle independently of child discovery and retains queued questions', async () => {
+  it('reads root lifecycle independently of child discovery and keeps a queued question through its turn', async () => {
     const h = harness();
     let status = 'interrupted';
-    let questions = ['question:0'];
+    const questions = [{ id: 'question:0', turnId: 'root-turn' }];
     let answered: string[] = [];
     Object.assign(h.protocol, {
       rootObservation: async () => ({
@@ -794,14 +832,20 @@ describe('CodexDelegationObserver', () => {
       blockedOn: 'question',
       request: 'working',
     });
-    status = 'completed';
+    // A repeated snapshot is not a second request.
+    await h.observer.pollNow();
+    expect(
+      h.lifecycle.filter(
+        event => (event as { kind: string }).kind === 'blocked'
+      )
+    ).toHaveLength(1);
+    answered = ['question:0'];
     await h.observer.pollNow();
     expect(h.monitor.getLive('pty-codex')).toMatchObject({
-      ownTurn: 'available',
-      blockedOn: 'question',
+      ownTurn: 'unknown',
+      blockedOn: null,
     });
-    questions = [];
-    answered = ['question:0'];
+    status = 'completed';
     await h.observer.pollNow();
     expect(h.monitor.getLive('pty-codex')).toBeNull();
     expect(
@@ -809,6 +853,48 @@ describe('CodexDelegationObserver', () => {
         event => (event as { kind: string }).kind === 'turn-end'
       )
     ).toHaveLength(1);
+  });
+
+  it('releases a queued question with the turn that asked it, reply or no reply (BUG-264)', async () => {
+    // The TUI clears its pending questions when the live turn completes
+    // (`chatwidget/turn_runtime.rs`); holding one past that lit tabs amber for
+    // questions Codex itself had dropped.
+    const h = harness();
+    let status = 'interrupted';
+    Object.assign(h.protocol, {
+      rootObservation: async () => ({
+        turn: {
+          id: 'root-turn',
+          status,
+          completedAt: status === 'completed' ? 10 : null,
+        },
+        questions: [{ id: 'question:0', turnId: 'root-turn' }],
+        answered: [],
+      }),
+    });
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')).toMatchObject({
+      blockedOn: 'question',
+      request: 'working',
+    });
+    status = 'completed';
+    await h.observer.pollNow();
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
+    expect(h.lifecycle).toContainEqual({
+      kind: 'unblocked',
+      reason: 'question',
+      requestId: 'question:0',
+    });
+  });
+
+  it('a child the parent reports completed is a finished child, not a live one', async () => {
+    const h = harness();
+    h.protocol.descendants = [child('email_recovery', 10)];
+    h.protocol.turns.set('email_recovery', running());
+    h.protocol.activity.set('email_recovery', 'completed');
+    await h.observer.pollNow();
+    expect(h.monitor.isBusy('pty-codex')).toBe(false);
+    expect(h.monitor.getLive('pty-codex')).toBeNull();
   });
 
   it('never applies root truth after the source identity changes during its read', async () => {
@@ -832,7 +918,11 @@ describe('CodexDelegationObserver', () => {
     const poll = h.observer.pollNow();
     await reading;
     h.observer.observe(session({ harnessSessionId: 'other-root' }));
-    resolve({ turn: null, questions: ['wrong-question:0'], answered: [] });
+    resolve({
+      turn: null,
+      questions: [{ id: 'wrong-question:0', turnId: null }],
+      answered: [],
+    });
     await poll;
     expect(h.monitor.getLive('pty-codex')).toBeNull();
   });

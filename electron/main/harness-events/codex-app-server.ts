@@ -73,7 +73,17 @@ export interface CodexTurnSummary {
   completedAt: number | null;
 }
 
-export type CodexSubagentActivity = 'started' | 'interacted' | 'interrupted';
+/** The parent's own account of a child, as `subAgentActivity` items spell it.
+ *  Measured on the installed 0.160.1 app-server (2026-10-05): a parent whose
+ *  child finished a step carries `completed`, which the 0.147 schema this
+ *  adapter was written against never emitted; refusing it as an invalid shape
+ *  dropped every unresolved sibling of a finished child (observation
+ *  `partial`, dots gone) on the operator's real fan-out threads. */
+export type CodexSubagentActivity =
+  | 'started'
+  | 'interacted'
+  | 'interrupted'
+  | 'completed';
 
 export interface CodexDelegationProtocol {
   readonly version?: string | null;
@@ -340,7 +350,10 @@ export function parseCodexSubagentActivity(
     const kind = item.kind;
     if (
       !childId ||
-      (kind !== 'started' && kind !== 'interacted' && kind !== 'interrupted')
+      (kind !== 'started' &&
+        kind !== 'interacted' &&
+        kind !== 'interrupted' &&
+        kind !== 'completed')
     ) {
       throw sessionDataError('subAgentActivity item has an invalid shape');
     }
@@ -1340,6 +1353,8 @@ export class CodexDelegationObserver {
 
     // TUI-owned turns can look interrupted/null. Only the immediate parent's
     // source-owned activity can disambiguate; a missing activity is NOT idle.
+    // The parent's `completed` is the child's end as the source reports it
+    // (0.160.1), so it may offer a result exactly as a completed child turn.
     const byParent = new Map<string, typeof unresolved>();
     for (const item of unresolved) {
       const siblings = byParent.get(item.thread.parentThreadId) ?? [];
@@ -1371,6 +1386,7 @@ export class CodexDelegationObserver {
           continue;
         }
         observed.live = kind === 'started' || kind === 'interacted';
+        observed.completed = kind === 'completed';
         children.set(thread.id, observed);
       }
     }
