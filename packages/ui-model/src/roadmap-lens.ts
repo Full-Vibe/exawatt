@@ -9,6 +9,11 @@ import type {
   SessionLinkEvidence,
   SessionLinkMethod,
 } from '@exawatt/core';
+import type {
+  RoadmapDeliveryCandidate,
+  RoadmapDeliveryRead,
+  RoadmapDeliveryTicket,
+} from '@exawatt/core/desktop-bridge';
 
 /**
  * Roadmap lens view model (ENG-017). Pure and geometry-free: the workspace
@@ -58,6 +63,63 @@ export interface RoadmapRecentChange {
   committedAt: number;
 }
 
+/**
+ * Landing state on an item (S16): where the ticket that names this item is in
+ * the Project repository's delivery queue. `checking` before admission is a
+ * floor running on a candidate commit; `checking` at the head is the floor
+ * running again on a rebased tree.
+ */
+export type RoadmapLandingState =
+  | 'checking'
+  | 'queued'
+  | 'integrating'
+  | 'landed'
+  | 'failed';
+
+export interface RoadmapItemLanding {
+  state: RoadmapLandingState;
+  /** 1-based place in the queue for queued and integrating; the head is 1. */
+  position: number | null;
+  /** Short integrated sha once landed. */
+  shortSha: string | null;
+  /** null for a pre-admission candidate, which has no ticket yet. */
+  ticketNumber: number | null;
+  branch: string | null;
+  subject: string | null;
+  /** When this state began, Unix epoch milliseconds. */
+  at: number;
+  /** The landing's own failure reason, when it failed. */
+  reason: string | null;
+}
+
+/** The queue as one header line: how many wait, who is at the head, and the
+ *  last thing that reached master. null when the queue is not readable, which
+ *  the lens renders as nothing at all, never as an empty queue. */
+export interface RoadmapLensLandings {
+  /** Tickets queued or integrating. */
+  inQueue: number;
+  /** Pre-admission floors running. */
+  checking: number;
+  head: {
+    ticketNumber: number;
+    declaredId: string | null;
+    state: RoadmapLandingState;
+  } | null;
+  /** In-flight tickets and candidates whose subject names no item. */
+  unmatched: number;
+  lastLanded: {
+    shortSha: string;
+    at: number;
+    declaredId: string | null;
+  } | null;
+  unreadableTickets: number;
+  /** When the queue was read. */
+  readAt: number;
+}
+
+/** How long a landed or failed ticket stays on its item. */
+export const RECENT_LANDING_MS = 2 * 60 * 60_000;
+
 export interface RoadmapItemView {
   id: string;
   declaredId: string | null;
@@ -88,6 +150,7 @@ export interface RoadmapItemView {
   canMoveDown: boolean;
   chips: RoadmapSessionChip[];
   recentChanges: RoadmapRecentChange[];
+  landing: RoadmapItemLanding | null;
 }
 
 export interface RoadmapLensTrust {
@@ -122,6 +185,7 @@ export interface RoadmapLensView {
   /** Live sessions with no link to any item; visible, never guessed. */
   unmappedSessions: RoadmapLensSessionInput[];
   trust: RoadmapLensTrust | null;
+  landings: RoadmapLensLandings | null;
 }
 
 export type RoadmapLensRead =
@@ -136,6 +200,9 @@ export interface RoadmapLensInput {
   /** Session→item links, declared and inferred, already merged (S3/S4). */
   links?: SessionLink[];
   recentChanges?: RoadmapRecentChange[];
+  /** The Project repository's delivery queue (S16); absent or unavailable
+   *  means the lens shows no landing state. */
+  landings?: RoadmapDeliveryRead | null;
 }
 
 const DISPLAY_STATUS: Record<RoadmapItemStatus, RoadmapDisplayStatus> = {
@@ -163,6 +230,7 @@ function emptyView(status: RoadmapLensStatus): RoadmapLensView {
     queueEmpty: false,
     unmappedSessions: [],
     trust: null,
+    landings: null,
   };
 }
 
@@ -188,7 +256,13 @@ export function findRoadmapSessionChip(
 }
 
 export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
-  const { read, sessions = [], links = [], recentChanges = [] } = input;
+  const {
+    read,
+    sessions = [],
+    links = [],
+    recentChanges = [],
+    landings = null,
+  } = input;
   if (read.status === 'loading') return emptyView('loading');
   if (read.status === 'none') {
     return {
@@ -257,8 +331,7 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
 
   const changesFor = (declaredId: string | null): RoadmapRecentChange[] => {
     if (!declaredId) return [];
-    const escaped = declaredId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const boundary = new RegExp(`(^|[^A-Z0-9])${escaped}(?![A-Z0-9])`, 'i');
+    const boundary = idBoundary(declaredId);
     return recentChanges
       .filter(change => boundary.test(change.subject))
       .slice(0, 3);
@@ -300,6 +373,7 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
     canMoveDown: false,
     chips: chipsByItem.get(item.id) ?? [],
     recentChanges: changesFor(item.declaredId),
+    landing: null,
   }));
 
   const reorderableStatuses = new Set<RoadmapItemStatus>([
@@ -325,6 +399,8 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
     views[index].canMoveUp = canSwap(views[index], views[index - 1]);
     views[index].canMoveDown = canSwap(views[index], views[index + 1]);
   }
+
+  const lensLandings = projectLandings(landings, views);
 
   const byStatus = (status: RoadmapItemStatus) =>
     views.filter(v => v.status === status);
@@ -358,5 +434,206 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
       unparsedLineCount: doc.unparsedLineCount,
       diagnostics: doc.diagnostics.map(diagnostic => diagnostic.message),
     },
+    landings: lensLandings,
+  };
+}
+
+/** An item id matched as a whole token: `ENG-01` never matches `ENG-017`. */
+function idBoundary(declaredId: string): RegExp {
+  const escaped = declaredId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^A-Z0-9])${escaped}(?![A-Z0-9])`, 'i');
+}
+
+/**
+ * The matching rule (S16): a landing belongs to the item whose declared id
+ * appears FIRST in its first commit's subject (`feat(ENG-008 E15): …`,
+ * `fix(BUG-256): …`). Ids that resolve to more than one item are skipped, so
+ * ambiguity reads as unmatched rather than guessed, as session links do (S3).
+ */
+export function landingOwner(
+  subject: string | null,
+  items: readonly RoadmapItemView[]
+): RoadmapItemView | null {
+  if (!subject) return null;
+  let owner: RoadmapItemView | null = null;
+  let ownerIndex = Number.POSITIVE_INFINITY;
+  for (const item of items) {
+    if (!item.declaredId || !item.hasUniqueDeclaredId) continue;
+    const match = idBoundary(item.declaredId).exec(subject);
+    if (!match) continue;
+    const index = match.index + match[1].length;
+    if (index < ownerIndex) {
+      owner = item;
+      ownerIndex = index;
+    }
+  }
+  return owner;
+}
+
+const IN_FLIGHT = new Set<RoadmapDeliveryTicket['status']>([
+  'queued',
+  'integrating',
+]);
+
+function ticketLanding(
+  ticket: RoadmapDeliveryTicket,
+  position: number | null
+): RoadmapItemLanding {
+  const base = {
+    position,
+    shortSha: null,
+    ticketNumber: ticket.number,
+    branch: ticket.branch,
+    subject: ticket.subject,
+    reason: null,
+  };
+  switch (ticket.status) {
+    case 'queued':
+      return { ...base, state: 'queued', at: ticket.admittedAt };
+    case 'integrating':
+      return {
+        ...base,
+        state: ticket.checking ? 'checking' : 'integrating',
+        at: ticket.headAt ?? ticket.admittedAt,
+      };
+    case 'integrated':
+      return {
+        ...base,
+        state: 'landed',
+        position: null,
+        shortSha: ticket.integratedSha?.slice(0, 7) ?? null,
+        at: ticket.terminalAt ?? ticket.admittedAt,
+      };
+    case 'failed':
+      return {
+        ...base,
+        state: 'failed',
+        position: null,
+        at: ticket.terminalAt ?? ticket.admittedAt,
+        reason: ticket.failureReason,
+      };
+  }
+}
+
+function candidateLanding(
+  candidate: RoadmapDeliveryCandidate
+): RoadmapItemLanding {
+  return {
+    state: 'checking',
+    position: null,
+    shortSha: null,
+    ticketNumber: null,
+    branch: null,
+    subject: candidate.subject,
+    at: candidate.at,
+    reason: null,
+  };
+}
+
+/**
+ * Assign the queue to items (mutating `landing` on the views) and summarize
+ * it for the header. One landing per item: an in-flight ticket wins over a
+ * pre-admission candidate, which wins over a recent terminal ticket; among
+ * tickets the lowest number (closest to the head) or the newest terminal one.
+ */
+function projectLandings(
+  read: RoadmapDeliveryRead | null,
+  views: RoadmapItemView[]
+): RoadmapLensLandings | null {
+  if (!read || read.status !== 'ok') return null;
+  const inFlight = read.tickets
+    .filter(ticket => IN_FLIGHT.has(ticket.status))
+    .sort((left, right) => left.number - right.number);
+  const position = new Map(
+    inFlight.map((ticket, index) => [ticket.id, index + 1])
+  );
+
+  type Ranked = { landing: RoadmapItemLanding; rank: number; order: number };
+  const chosen = new Map<string, Ranked>();
+  const offer = (item: RoadmapItemView, candidate: Ranked) => {
+    const current = chosen.get(item.id);
+    if (
+      !current ||
+      candidate.rank < current.rank ||
+      (candidate.rank === current.rank && candidate.order < current.order)
+    ) {
+      chosen.set(item.id, candidate);
+    }
+  };
+
+  let unmatched = 0;
+  for (const ticket of inFlight) {
+    const owner = landingOwner(ticket.subject, views);
+    if (!owner) {
+      unmatched += 1;
+      continue;
+    }
+    offer(owner, {
+      landing: ticketLanding(ticket, position.get(ticket.id) ?? null),
+      rank: 0,
+      order: ticket.number,
+    });
+  }
+  for (const candidate of read.candidates) {
+    const owner = landingOwner(candidate.subject, views);
+    if (!owner) {
+      unmatched += 1;
+      continue;
+    }
+    offer(owner, {
+      landing: candidateLanding(candidate),
+      rank: 1,
+      order: -candidate.at,
+    });
+  }
+  for (const ticket of read.tickets) {
+    if (IN_FLIGHT.has(ticket.status)) continue;
+    if (
+      ticket.terminalAt === null ||
+      read.readAt - ticket.terminalAt > RECENT_LANDING_MS
+    )
+      continue;
+    const owner = landingOwner(ticket.subject, views);
+    if (!owner) continue;
+    offer(owner, {
+      landing: ticketLanding(ticket, null),
+      rank: 2,
+      order: -ticket.terminalAt,
+    });
+  }
+  for (const item of views) {
+    item.landing = chosen.get(item.id)?.landing ?? null;
+  }
+
+  const headTicket = inFlight[0] ?? null;
+  const head = headTicket
+    ? {
+        ticketNumber: headTicket.number,
+        declaredId: landingOwner(headTicket.subject, views)?.declaredId ?? null,
+        state: ticketLanding(headTicket, 1).state,
+      }
+    : null;
+
+  let newest: RoadmapDeliveryTicket | null = null;
+  for (const ticket of read.tickets) {
+    if (ticket.status !== 'integrated' || !ticket.integratedSha) continue;
+    if (!newest || ticket.number > newest.number) newest = ticket;
+  }
+  const lastLanded = newest
+    ? {
+        shortSha: newest.integratedSha!.slice(0, 7),
+        at: newest.terminalAt ?? newest.admittedAt,
+        declaredId: landingOwner(newest.subject, views)?.declaredId ?? null,
+      }
+    : null;
+
+  return {
+    inQueue: inFlight.length,
+    checking: read.candidates.length,
+    head,
+    unmatched,
+    lastLanded,
+    unreadableTickets: read.unreadableTickets,
+    readAt: read.readAt,
   };
 }

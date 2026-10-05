@@ -100,7 +100,7 @@ import type {
   WorktreeResult,
 } from './pty';
 import type {
-  RoadmapProjectChange,
+  RoadmapProjectActivity,
   RoadmapReadResult,
   RoadmapAttentionObservation,
   RoadmapSessionEvidence,
@@ -369,7 +369,7 @@ interface RequestTable {
   >;
   'roadmap:read': Call<[projectDir: string], RoadmapReadResult>;
   'roadmap:session-evidence': Call<[cwd: string], RoadmapSessionEvidence>;
-  'roadmap:activity': Call<[projectDir: string], RoadmapProjectChange[]>;
+  'roadmap:activity': Call<[projectDir: string], RoadmapProjectActivity>;
   'roadmap:write-state': Call<
     [request: RoadmapWriteRequest],
     RoadmapWriteResult

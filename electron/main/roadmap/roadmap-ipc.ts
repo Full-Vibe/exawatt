@@ -9,6 +9,7 @@ import { handleTrusted } from '../ipc-security';
 import { readRoadmap } from './roadmap-reader';
 import { readSessionEvidence } from './roadmap-evidence';
 import { readRoadmapActivity } from './roadmap-activity';
+import { readRoadmapLandings } from './roadmap-landings';
 import { undoRoadmapState, writeRoadmapState } from './roadmap-writer';
 import { unwatchRoadmap, watchRoadmap } from './roadmap-watcher';
 
@@ -72,9 +73,15 @@ export function registerRoadmapIPC(): void {
   handleTrusted('roadmap:session-evidence', (_event, cwd: string) =>
     readSessionEvidence(cwd)
   );
-  handleTrusted('roadmap:activity', (_event, projectDir: string) =>
-    readRoadmapActivity(projectDir)
-  );
+  // S16: the repository's recent commits and its delivery queue travel on
+  // one read; the lens shows a landing state per item from the second.
+  handleTrusted('roadmap:activity', async (_event, projectDir: string) => {
+    const [changes, landings] = await Promise.all([
+      readRoadmapActivity(projectDir),
+      readRoadmapLandings(projectDir),
+    ]);
+    return { changes, landings };
+  });
   handleTrusted('roadmap:write-state', (_event, request: unknown) =>
     writeRoadmapState(request)
   );

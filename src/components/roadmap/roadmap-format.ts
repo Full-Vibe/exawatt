@@ -19,3 +19,29 @@ export function statusNoteProse(note: string | null): string | null {
   const prose = note.replace(/^[\w✅-]+\s*[—:-]*\s*/, '').replace(/[.\s]+$/, '');
   return prose.length > 0 ? prose : null;
 }
+
+/** "2nd", "11th", "23rd": a queue place as the operator says it. */
+export function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+/** "just now", "4m ago", "3h ago", "2d ago". */
+export function relativeTime(timestamp: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}

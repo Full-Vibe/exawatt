@@ -25,11 +25,16 @@ import {
   type RoadmapLensView,
 } from '@exawatt/ui-model';
 import type {
+  RoadmapDeliveryRead,
   RoadmapSessionEvidence,
   RoadmapUndoResult,
   RoadmapWriteAction,
   RoadmapWriteResult,
 } from '@exawatt/core/desktop-bridge';
+
+/** A landing crosses the queue head in about ten seconds; the trail polls
+ *  on that scale so the lens moves while the operator watches. */
+const ACTIVITY_POLL_MS = 10_000;
 
 /** What the workspace knows about a live session in the focused Project. */
 export interface RoadmapSessionDescriptor {
@@ -82,7 +87,13 @@ export function useProjectRoadmap(
   const [evidence, setEvidence] = useState<
     Record<string, RoadmapSessionEvidence>
   >({});
-  const [recentChanges, setRecentChanges] = useState<RoadmapRecentChange[]>([]);
+  // The repository's activity (S13.4 commits, S16 delivery queue) arrives on
+  // one read. A failed read leaves the queue null, which renders as nothing:
+  // an unreadable queue is never shown as an empty one.
+  const [activity, setActivity] = useState<{
+    changes: RoadmapRecentChange[];
+    landings: RoadmapDeliveryRead | null;
+  }>({ changes: [], landings: null });
   // Two channels: a refresh of the document must not be overwritten by an
   // older document read, and likewise for the activity trail.
   const documentReads = useLatestRequest();
@@ -129,16 +140,17 @@ export function useProjectRoadmap(
     const api = window.electron?.roadmap;
     const ticket = activityReads.begin();
     if (readSource || !projectDir || !api?.activity) {
-      setRecentChanges([]);
+      setActivity({ changes: [], landings: null });
       return;
     }
     void api
       .activity(projectDir)
-      .then(changes => {
-        if (ticket.current) setRecentChanges(changes);
+      .then(result => {
+        if (ticket.current)
+          setActivity({ changes: result.changes, landings: result.landings });
       })
       .catch(() => {
-        if (ticket.current) setRecentChanges([]);
+        if (ticket.current) setActivity({ changes: [], landings: null });
       });
   }, [activityReads, projectDir, readSource]);
 
@@ -149,12 +161,13 @@ export function useProjectRoadmap(
     loadActivity();
   }, [load, loadActivity]);
 
-  // Commits do not necessarily touch the roadmap file. Keep the bounded
-  // recent-change trail live while the Project lens exists without adding a
-  // second watcher or treating git as project state.
+  // Commits do not necessarily touch the roadmap file, and a landing moves
+  // through the queue in seconds. Keep the bounded activity trail live while
+  // the Project lens exists without adding a second watcher or treating git
+  // as project state.
   useEffect(() => {
     if (readSource || !projectDir) return;
-    const timer = window.setInterval(loadActivity, 30_000);
+    const timer = window.setInterval(loadActivity, ACTIVITY_POLL_MS);
     return () => window.clearInterval(timer);
   }, [loadActivity, projectDir, readSource]);
 
@@ -248,8 +261,14 @@ export function useProjectRoadmap(
         ),
       ];
     }
-    return buildRoadmapLens({ read, sessions: inputs, links, recentChanges });
-  }, [read, sessions, declaredLinks, evidence, projectDir, recentChanges]);
+    return buildRoadmapLens({
+      read,
+      sessions: inputs,
+      links,
+      recentChanges: activity.changes,
+      landings: activity.landings,
+    });
+  }, [read, sessions, declaredLinks, evidence, projectDir, activity]);
 
   const write = useCallback(
     async (

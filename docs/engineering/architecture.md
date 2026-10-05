@@ -1312,7 +1312,12 @@ Built:
   producer (BUG-026): every open Project's roadmap is read and watched by one
   owner, blocked Sessions are linked without per-Session git, and the result
   joins PTY attention through a merge where each source declares whether it
-  covers the whole fleet
+  covers the whole fleet. Landings (S16, 2026-10-05): main also reads the
+  Project repository's delivery queue (ENG-022 state under the common Git
+  directory: the newest tickets and the metrics tail, never writing) on the
+  same activity read, and the ui-model matches each ticket to the item its
+  first commit subject names; an unreadable queue is `unavailable` and
+  renders nothing, never an empty queue
 - ENG-021 E1 Session-context inference: operator-submission-triggered evidence,
   authenticated server-owned structured labeling, durable last-good failure
   behavior, immediate correction, a repository gold corpus, and a reusable

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { parseRoadmap, type SessionLink } from '@exawatt/core';
-import { buildRoadmapLens, type RoadmapLensSessionInput } from './roadmap-lens';
+import type {
+  RoadmapDeliveryCandidate,
+  RoadmapDeliveryRead,
+  RoadmapDeliveryTicket,
+} from '@exawatt/core/desktop-bridge';
+import {
+  RECENT_LANDING_MS,
+  buildRoadmapLens,
+  landingOwner,
+  type RoadmapLensSessionInput,
+} from './roadmap-lens';
 
 const SAMPLE = `## Now
 
@@ -137,5 +147,245 @@ describe('buildRoadmapLens', () => {
     });
     expect(view.now[0].hasWarnings).toBe(true);
     expect(view.trust?.warningCount).toBe(1);
+  });
+});
+
+describe('landings in the lens (S16)', () => {
+  const READ_AT = 10_000_000;
+  const ticket = (
+    over: Partial<RoadmapDeliveryTicket> &
+      Pick<RoadmapDeliveryTicket, 'number' | 'status' | 'subject'>
+  ): RoadmapDeliveryTicket => ({
+    id: `${String(over.number).padStart(8, '0')}-fixture`,
+    branch: `agent/t${over.number}`,
+    lane: 'worktree',
+    admittedAt: READ_AT - 120_000,
+    headAt: null,
+    terminalAt: null,
+    integratedSha: null,
+    failureReason: null,
+    checking: false,
+    held: false,
+    ...over,
+  });
+  const queue = (
+    tickets: RoadmapDeliveryTicket[],
+    candidates: RoadmapDeliveryCandidate[] = [],
+    unreadableTickets = 0
+  ): Extract<RoadmapDeliveryRead, { status: 'ok' }> => ({
+    status: 'ok',
+    readAt: READ_AT,
+    tickets,
+    candidates,
+    unreadableTickets,
+    metricsAt: READ_AT,
+  });
+  const lensWith = (landings: RoadmapDeliveryRead | null) =>
+    buildRoadmapLens({ read: { status: 'ok', doc, mtimeMs: 0 }, landings });
+  const landingOf = (view: ReturnType<typeof lensWith>, id: string) =>
+    [...view.now, ...view.next, ...view.later, ...view.shipped].find(
+      item => item.declaredId === id
+    )?.landing ?? null;
+
+  it('names the owning item by the first id in the first commit subject', () => {
+    const items = lensWith(null);
+    const all = [...items.now, ...items.next, ...items.later, ...items.shipped];
+    expect(landingOwner('feat(ENG-017 S16): landings', all)?.declaredId).toBe(
+      'ENG-017'
+    );
+    expect(
+      landingOwner('fix(ENG-018, ENG-016 D9): both', all)?.declaredId
+    ).toBe('ENG-018');
+    expect(landingOwner('docs: tidy the roadmap', all)).toBeNull();
+    expect(landingOwner(null, all)).toBeNull();
+    // whole-token only: ENG-01 names nothing, and ENG-0160 is not ENG-016
+    expect(landingOwner('fix(ENG-01): x', all)).toBeNull();
+    expect(landingOwner('fix(ENG-0160): x', all)).toBeNull();
+  });
+
+  it('skips an id that resolves to more than one item', () => {
+    const dup = parseRoadmap(
+      `## Now\n\n### ENG-001 One\n\n### ENG-001 Two\n\n## Next\n\n### ENG-002 Clear\n`,
+      { projectDir: '/repo', file: 'ROADMAP.md', now: () => 0 }
+    );
+    const view = buildRoadmapLens({
+      read: { status: 'ok', doc: dup, mtimeMs: 0 },
+      landings: queue([
+        ticket({
+          number: 1,
+          status: 'queued',
+          subject: 'feat(ENG-001): ambiguous',
+        }),
+        ticket({
+          number: 2,
+          status: 'queued',
+          subject: 'feat(ENG-002): clear',
+        }),
+      ]),
+    });
+    expect(view.now.map(item => item.landing)).toEqual([null, null]);
+    expect(view.next[0].landing).toMatchObject({
+      state: 'queued',
+      position: 2,
+    });
+    expect(view.landings).toMatchObject({ inQueue: 2, unmatched: 1 });
+  });
+
+  it('projects queue positions, head state, and the header summary', () => {
+    const view = lensWith(
+      queue(
+        [
+          ticket({
+            number: 580,
+            status: 'integrating',
+            subject: 'feat(ENG-016 D9): head',
+            headAt: READ_AT - 20_000,
+            checking: true,
+          }),
+          ticket({
+            number: 581,
+            status: 'queued',
+            subject: 'fix(ENG-018): second',
+          }),
+          ticket({
+            number: 582,
+            status: 'queued',
+            subject: 'docs: unmatched third',
+          }),
+        ],
+        [
+          {
+            candidateSha: 'c'.repeat(40),
+            subject: 'feat(ENG-004): early',
+            at: READ_AT - 5_000,
+            checksPassed: 2,
+          },
+        ]
+      )
+    );
+    expect(landingOf(view, 'ENG-016')).toMatchObject({
+      state: 'checking',
+      position: 1,
+      ticketNumber: 580,
+      at: READ_AT - 20_000,
+    });
+    expect(landingOf(view, 'ENG-018')).toMatchObject({
+      state: 'queued',
+      position: 2,
+    });
+    expect(landingOf(view, 'ENG-004')).toMatchObject({
+      state: 'checking',
+      position: null,
+      ticketNumber: null,
+      branch: null,
+    });
+    expect(view.landings).toEqual({
+      inQueue: 3,
+      checking: 1,
+      head: { ticketNumber: 580, declaredId: 'ENG-016', state: 'checking' },
+      unmatched: 1,
+      lastLanded: null,
+      unreadableTickets: 0,
+      readAt: READ_AT,
+    });
+  });
+
+  it('shows landed with the short sha and failed with its reason, then lets them age out', () => {
+    const landedAt = READ_AT - 60_000;
+    const read = queue([
+      ticket({
+        number: 570,
+        status: 'integrated',
+        subject: 'feat(ENG-017): landed',
+        terminalAt: landedAt,
+        integratedSha: 'fe255b13b1d97fccd37aef311555d003b9d96b8f',
+      }),
+      ticket({
+        number: 571,
+        status: 'failed',
+        subject: 'feat(ENG-018): failed',
+        terminalAt: READ_AT - 30_000,
+        failureReason: 'Automatic queue-head rebase conflicted',
+      }),
+    ]);
+    const view = lensWith(read);
+    expect(landingOf(view, 'ENG-017')).toMatchObject({
+      state: 'landed',
+      shortSha: 'fe255b1',
+      at: landedAt,
+    });
+    expect(landingOf(view, 'ENG-018')).toMatchObject({
+      state: 'failed',
+      reason: 'Automatic queue-head rebase conflicted',
+    });
+    expect(view.landings?.lastLanded).toEqual({
+      shortSha: 'fe255b1',
+      at: landedAt,
+      declaredId: 'ENG-017',
+    });
+
+    const later = lensWith({
+      ...read,
+      readAt: READ_AT + RECENT_LANDING_MS + 1,
+    });
+    expect(landingOf(later, 'ENG-017')).toBeNull();
+    expect(landingOf(later, 'ENG-018')).toBeNull();
+    // the header still says what last landed, with its own time
+    expect(later.landings?.lastLanded?.shortSha).toBe('fe255b1');
+  });
+
+  it('prefers the in-flight ticket over a candidate over a recent landing on one item', () => {
+    const view = lensWith(
+      queue(
+        [
+          ticket({
+            number: 560,
+            status: 'integrated',
+            subject: 'feat(ENG-017): first slice',
+            terminalAt: READ_AT - 10_000,
+            integratedSha: 'a'.repeat(40),
+          }),
+          ticket({
+            number: 561,
+            status: 'queued',
+            subject: 'feat(ENG-017): second slice',
+          }),
+        ],
+        [
+          {
+            candidateSha: 'b'.repeat(40),
+            subject: 'feat(ENG-017): third',
+            at: READ_AT,
+            checksPassed: 1,
+          },
+        ]
+      )
+    );
+    expect(landingOf(view, 'ENG-017')).toMatchObject({
+      state: 'queued',
+      ticketNumber: 561,
+    });
+  });
+
+  it('shows nothing, not an empty queue, when the queue is unavailable or absent', () => {
+    const unavailable = lensWith({ status: 'unavailable', reason: 'no queue' });
+    expect(unavailable.landings).toBeNull();
+    expect(
+      [...unavailable.now, ...unavailable.next].every(
+        item => item.landing === null
+      )
+    ).toBe(true);
+    expect(lensWith(null).landings).toBeNull();
+
+    const empty = lensWith(queue([], [], 2));
+    expect(empty.landings).toEqual({
+      inQueue: 0,
+      checking: 0,
+      head: null,
+      unmatched: 0,
+      lastLanded: null,
+      unreadableTickets: 2,
+      readAt: READ_AT,
+    });
   });
 });

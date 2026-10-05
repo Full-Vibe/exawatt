@@ -8,6 +8,10 @@
  */
 import { parseRoadmap } from '@exawatt/core';
 import type { SessionLink } from '@exawatt/core';
+import type {
+  RoadmapDeliveryRead,
+  RoadmapDeliveryTicket,
+} from '@exawatt/core/desktop-bridge';
 import {
   buildRoadmapLens,
   type RoadmapLensSessionInput,
@@ -76,7 +80,8 @@ function lens(
   markdown: string,
   sessions: RoadmapLensSessionInput[] = [],
   links: SessionLink[] = [],
-  declared = true
+  declared = true,
+  landings: RoadmapDeliveryRead | null = null
 ): RoadmapLensView {
   const source = declared
     ? `---\nexawatt-roadmap: v2\n---\n\n${markdown}`
@@ -86,8 +91,93 @@ function lens(
     read: { status: 'ok', doc, mtimeMs: Date.now() - 4 * 60_000 },
     sessions,
     links,
+    landings,
   });
 }
+
+/** A delivery-queue ticket in the shape main reads from `queue/` (S16). */
+function ticket(
+  over: Partial<RoadmapDeliveryTicket> &
+    Pick<RoadmapDeliveryTicket, 'number' | 'status' | 'subject' | 'branch'>
+): RoadmapDeliveryTicket {
+  return {
+    id: `${String(over.number).padStart(8, '0')}-lab`,
+    lane: 'worktree',
+    admittedAt: Date.now() - 3 * 60_000,
+    headAt: null,
+    terminalAt: null,
+    integratedSha: null,
+    failureReason: null,
+    checking: false,
+    held: false,
+    ...over,
+  };
+}
+
+/** Every landing state at once: a re-checking head, a queued backlog fix, an
+ *  unmatched docs ticket (header count only), a pre-admission candidate, a
+ *  recent landing with its sha, and a failed rebase. */
+const LANDING_QUEUE: RoadmapDeliveryRead = {
+  status: 'ok',
+  readAt: Date.now(),
+  tickets: [
+    ticket({
+      number: 578,
+      status: 'failed',
+      branch: 'agent/decision-parse',
+      subject: 'fix(APP-006): parse decisions with no owner',
+      admittedAt: Date.now() - 44 * 60_000,
+      headAt: Date.now() - 41 * 60_000,
+      terminalAt: Date.now() - 40 * 60_000,
+      failureReason:
+        'Automatic queue-head rebase conflicted: packages/core/src/roadmap/parse.ts',
+    }),
+    ticket({
+      number: 579,
+      status: 'integrated',
+      branch: 'agent/initiative-first-slice',
+      subject: 'feat(APP-005): initiative primitive, first slice',
+      admittedAt: Date.now() - 27 * 60_000,
+      headAt: Date.now() - 26 * 60_000,
+      terminalAt: Date.now() - 25 * 60_000,
+      integratedSha: 'fe255b13b1d97fccd37aef311555d003b9d96b8f',
+    }),
+    ticket({
+      number: 580,
+      status: 'integrating',
+      branch: 'agent/harness-resume',
+      subject: 'feat(APP-018 D4): harness-aware resume after death',
+      admittedAt: Date.now() - 6 * 60_000,
+      headAt: Date.now() - 2 * 60_000,
+      checking: true,
+    }),
+    ticket({
+      number: 581,
+      status: 'queued',
+      branch: 'agent/codex-finish-truth',
+      subject: 'fix(APP-091): finish only when the agent does',
+      admittedAt: Date.now() - 4 * 60_000,
+    }),
+    ticket({
+      number: 582,
+      status: 'queued',
+      lane: 'docs',
+      branch: 'docs/agent/project-doc',
+      subject: 'docs: record the resume review',
+      admittedAt: Date.now() - 60_000,
+    }),
+  ],
+  candidates: [
+    {
+      candidateSha: '3b8282377020991b0dedee3554d40e4d14fece1e',
+      subject: 'feat(APP-003 A2): Claude Code adapter',
+      at: Date.now() - 30_000,
+      checksPassed: 3,
+    },
+  ],
+  unreadableTickets: 0,
+  metricsAt: Date.now() - 30_000,
+};
 
 const item = (id: string, title: string, status: string, body = '') =>
   `### ${id} ${title}\n\nStatus: ${status}\n${body}\n`;
@@ -296,6 +386,22 @@ export const ROADMAP_LAB_STATES: RoadmapLabState[] = [
         link(2, 'APP-018', 'inferred', 'medium'),
         link(3, 'APP-003', 'inferred', 'high'),
       ]
+    ),
+  },
+  {
+    key: 'landing',
+    label: 'Landing',
+    blurb:
+      'the delivery queue on the items it names: checking, queued, landed, failed',
+    view: lens(
+      MID_FLIGHT,
+      [
+        session(1, 'Claude Code — session host'),
+        session(2, 'Codex — adapter boundary', 'codex'),
+      ],
+      [link(1, 'APP-018'), link(2, 'APP-003', 'inferred', 'high')],
+      true,
+      LANDING_QUEUE
     ),
   },
   {

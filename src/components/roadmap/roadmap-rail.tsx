@@ -36,6 +36,7 @@ import type {
 import { Button } from '@/components/ui/button';
 import { buildRoadmapStrip } from '@exawatt/ui-model';
 import { RoadmapItemCard } from './roadmap-item-card';
+import { landingsHeaderLine } from './roadmap-landing-mark';
 import { RoadmapSessionChipButton } from './roadmap-session-chip';
 import { RoadmapItemDetail } from './roadmap-item-detail';
 import {
@@ -388,6 +389,12 @@ export function RoadmapRail({
   // milestone roving inside the drill (S7, the deferred R2 level)
   const [msel, setMsel] = useState(0);
   const [focused, setFocused] = useState(false);
+  // one clock for every relative time on the rail (landing marks, header)
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [writeState, setWriteState] = useState<
     | { phase: 'idle' }
     | { phase: 'pending'; action: RoadmapWriteAction }
@@ -929,6 +936,33 @@ export function RoadmapRail({
             )}
           </div>
         )}
+        {/* S16: the delivery queue in one line; absent when it is not readable */}
+        {view.status === 'ok' && view.landings && (
+          <div
+            data-roadmap-landings
+            className="flex items-center gap-1.5 font-mono text-chrome-micro"
+            style={{ color: HUD.textDim }}
+            title={
+              view.landings.unmatched > 0
+                ? `${view.landings.unmatched} in flight without a roadmap item`
+                : undefined
+            }
+          >
+            <span
+              aria-hidden
+              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{
+                background:
+                  view.landings.inQueue + view.landings.checking > 0
+                    ? HUD.cyan2
+                    : HUD.idle,
+              }}
+            />
+            <span className="min-w-0 truncate">
+              {landingsHeaderLine(view.landings, now)}
+            </span>
+          </div>
+        )}
         {view.status === 'ok' && view.trust && (
           <div className="flex items-center gap-1.5">
             <span
@@ -1210,6 +1244,7 @@ export function RoadmapRail({
                       item={row.item}
                       variant={row.variant}
                       selected={i === sel}
+                      now={now}
                       onDrill={() => setDrillId(itemViewKey(row.item))}
                       onHover={() => setSel(i)}
                     />

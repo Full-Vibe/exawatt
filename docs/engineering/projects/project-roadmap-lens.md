@@ -599,6 +599,56 @@ nine live Exawatt Sessions; density and type scale make the roadmap lose that
 competition for attention. Treat this as evidence for the already-shaped S13
 human-consumable roadmap, not as approval of a particular search mechanism.
 
+### 2026-10-05 — S16 landings inside the lens (demo arc G5)
+
+The operator's brief was one sentence: minimal, "should basically feel like
+the same feature / view". The queue that answers "how do twenty agents not
+collide" already existed as ENG-022's state under the repository's common Git
+directory; this slice reads it and draws it on the rows it is about.
+
+- **Reader (main, read-only).** `electron/main/roadmap/roadmap-landings.ts`
+  resolves the Project's common Git directory, reads the newest 64 files of
+  `exawatt-delivery/queue/` and the last 256 KiB of `metrics.jsonl`, and
+  resolves each ticket's first commit subject with one cached `git log` over
+  its own range. It rides the existing `roadmap:activity` read, which now
+  resolves `{ changes, landings }`; no new channel, and the hook polls that
+  read every ten seconds while the lens is mounted because a head crosses the
+  queue in about that long. `checking` is derived honestly: before admission
+  from candidate-phase `floor_check` events for a commit no ticket names
+  (dropped on a failed check, a conflict probe, admission, or ten quiet
+  minutes); at the head from rebase-phase `floor_check` events the ticket has
+  not recorded on itself yet. Its tests run over real tickets and metrics
+  lines captured from this machine's queue on 2026-10-05
+  (`delivery-queue.fixtures.ts`).
+- **Matching rule (ui-model).** A landing belongs to the item whose declared
+  id appears first in its first commit's subject (`feat(ENG-008 E15): …`,
+  `fix(BUG-256): …`); ids that resolve to more than one item are skipped, so
+  ambiguity reads as unmatched exactly as session links do (S3). Unmatched
+  tickets count only in the header. One landing per item: an in-flight ticket
+  wins over a pre-admission candidate, which wins over a terminal ticket;
+  landed and failed stay on their item for two hours, and the header keeps
+  naming the last landing with its age after that.
+- **Lens.** The mark is the session chip's own idiom, a D40 status light
+  beside `font-mono text-chrome-micro` text (`checking`, `queued · 2nd`,
+  `integrating`, `landed fe255b1`, `failed`): active while it moves, result
+  once on master, fault when it failed; text color stays on the lens's two
+  existing states, shipped green and blocked red. Rows carry it before the
+  chip count, the hero carries it as a `text-chrome-meta` "Landing" line
+  above "Next up", and the item detail carries a Landing section (ticket,
+  branch, age, failure reason) above Milestones. The header gains one
+  `text-chrome-micro` mono line under the file line: `3 in queue · head
+  ENG-017 · 1 checking`, or `queue clear · landed fe255b1 14m ago`, plus
+  `N tickets unreadable` when files did not parse.
+- **Honesty.** An unreadable or missing queue is `unavailable`, which the
+  lens renders as no landing UI at all; a readable queue with nothing in it
+  says so. Torn ticket files are counted, never dropped silently; a failed
+  landing is shown with its reason rather than disappearing; every relative
+  time on the surface is computed from one rail clock.
+- **Not built.** No Demo rows yet (G2 owns the Demo tick; the lens input is
+  generic so Demo can feed `landings` through the same hook), no watch on the
+  queue directory (polling the existing read was enough and adds no owner),
+  and the dogfood install state is not projected.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —

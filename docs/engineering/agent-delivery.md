@@ -819,6 +819,12 @@ verification, or a live owner's ticket.
 - `scripts/lib/delivery-policy.mjs`: changed-path floor and check evidence.
 - `scripts/lib/delivery-state.mjs`: common-dir paths, atomic JSON, metrics, and
   rollup calculations.
+- `electron/main/roadmap/roadmap-landings.ts` (ENG-017 S16): the roadmap
+  lens's read-only consumer of this state. It reads the newest `queue/` files
+  and the tail of `metrics.jsonl` for the Project's repository and never
+  writes; a change to the ticket or event shape fails its fixture tests
+  (`delivery-queue.fixtures.ts`, captured from the live queue) before it
+  reaches the lens.
 - `scripts/lib/delivery-lock.mjs`: final integration and app-target directory
   locks.
 - `scripts/lib/ci-batch.mjs` and `scripts/ci-batch-worker.mjs`:

@@ -22,6 +22,7 @@ import {
   milestoneFractionSentence,
   statusNoteProse,
 } from './roadmap-format';
+import { RoadmapLandingMark } from './roadmap-landing-mark';
 
 export type RoadmapCardVariant = 'hero' | 'row' | 'compact';
 
@@ -56,12 +57,15 @@ export function RoadmapItemCard({
   item,
   variant,
   selected,
+  now,
   onDrill,
   onHover,
 }: {
   item: RoadmapItemView;
   variant: RoadmapCardVariant;
   selected: boolean;
+  /** clock for relative times on the landing mark; the rail ticks it */
+  now: number;
   onDrill: () => void;
   onHover?: () => void;
 }) {
@@ -148,6 +152,12 @@ export function RoadmapItemCard({
                   background: item.blocked ? HUD.amber : HUD.green,
                 }}
               />
+            </div>
+          )}
+          {item.landing && (
+            <div className="flex items-center gap-1.5 font-ui text-chrome-meta">
+              <span style={{ color: HUD.textDim }}>Landing</span>
+              <RoadmapLandingMark landing={item.landing} now={now} />
             </div>
           )}
           {/* the blocker is more actionable than the next milestone */}
@@ -239,6 +249,9 @@ export function RoadmapItemCard({
         >
           !
         </span>
+      )}
+      {item.landing && (
+        <RoadmapLandingMark landing={item.landing} now={now} dim={compact} />
       )}
       {item.chips.length > 0 && (
         <span

@@ -504,7 +504,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Agent + Team Workspace',
           summary:
-            'Single-row Project/Initiative ribbon, lightweight task + Launch Configuration ribbon + Start, exact source/model/effort selection, direct Shell, exact-Session model/effort apply-and-resume, active-Project icon collapse, fresh-Session Clone, independent request/result/read/reminder records with shared priority traversal and main-owned roadmap attention, keyboard-complete Session control, and a convention-v2 roadmap lens. Shared command offers, current-context Clone and capability-gated Project pause preserve exact recovery. Terminal renderers attach on first visibility and retain their incarnation; main owns hidden process output. Purpose-first Session identity is shared with Team, Fleet and the palette.',
+            'Single-row Project/Initiative ribbon, lightweight task + Launch Configuration ribbon + Start, exact source/model/effort selection, direct Shell, exact-Session model/effort apply-and-resume, active-Project icon collapse, fresh-Session Clone, independent request/result/read/reminder records with shared priority traversal and main-owned roadmap attention, keyboard-complete Session control, and a convention-v2 roadmap lens that also draws delivery-queue landing state on each item from a read-only main-process queue read. Shared command offers, current-context Clone and capability-gated Project pause preserve exact recovery. Terminal renderers attach on first visibility and retain their incarnation; main owns hidden process output. Purpose-first Session identity is shared with Team, Fleet and the palette.',
           layer: 'ui',
           status: 'implemented',
           x: 205,

@@ -25,8 +25,10 @@ import { RoadmapSessionChipButton } from './roadmap-session-chip';
 import {
   cleanMilestoneTitle,
   milestoneFractionSentence,
+  relativeTime,
   statusNoteProse,
 } from './roadmap-format';
+import { RoadmapLandingMark } from './roadmap-landing-mark';
 import type {
   RoadmapWritableStatus,
   RoadmapWriteAction,
@@ -67,15 +69,6 @@ function BulletList({ lines }: { lines: string[] }) {
       ))}
     </ul>
   );
-}
-
-function relativeTime(timestamp: number, now: number): string {
-  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 }
 
 const WRITABLE_STATUSES: Array<{
@@ -342,6 +335,40 @@ export function RoadmapItemDetail({
         </div>
       )}
 
+      {item.landing && (
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel>Landing</SectionLabel>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5">
+            <RoadmapLandingMark landing={item.landing} now={now} />
+            {item.landing.ticketNumber !== null && (
+              <span className="font-mono" style={{ color: HUD.textDim }}>
+                ticket {item.landing.ticketNumber}
+              </span>
+            )}
+            {item.landing.branch && (
+              <span
+                className="min-w-0 truncate font-mono"
+                style={{ color: HUD.textMono }}
+                title={item.landing.branch}
+              >
+                {item.landing.branch}
+              </span>
+            )}
+            <span className="font-mono" style={{ color: HUD.textDim }}>
+              {relativeTime(item.landing.at, now)}
+            </span>
+          </div>
+          {item.landing.reason && (
+            <p
+              className="line-clamp-3 text-xs leading-5"
+              style={{ color: HUD.amber }}
+              title={item.landing.reason}
+            >
+              {item.landing.reason}
+            </p>
+          )}
+        </div>
+      )}
       {item.milestones.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <SectionLabel>{`Milestones · ${milestoneFractionSentence(item.milestonesDone, item.milestonesTotal)}`}</SectionLabel>

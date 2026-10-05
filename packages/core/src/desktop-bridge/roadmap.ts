@@ -33,6 +33,72 @@ export interface RoadmapProjectChange {
   committedAt: number;
 }
 
+/**
+ * One ticket of the Project repository's delivery queue (ENG-022), as the
+ * roadmap lens reads it (ENG-017 S16). Main reads `queue/<ticket>.json` under
+ * the repository's common Git directory and never writes there.
+ */
+export interface RoadmapDeliveryTicket {
+  id: string;
+  number: number;
+  status: 'queued' | 'integrating' | 'integrated' | 'failed';
+  branch: string;
+  lane: string;
+  /** Subject of the oldest commit in the ticket's range; the first commit
+   *  names the owning roadmap item. null when git could not resolve it. */
+  subject: string | null;
+  /** Unix epoch milliseconds. */
+  admittedAt: number;
+  headAt: number | null;
+  terminalAt: number | null;
+  integratedSha: string | null;
+  failureReason: string | null;
+  /** The head is re-running its floor on a rebased tree: rebase-phase check
+   *  events exist in the metrics tail that the ticket has not recorded yet. */
+  checking: boolean;
+  /** The head is held on the public-projection latch. */
+  held: boolean;
+}
+
+/**
+ * A landing whose floor is running before admission: check events in the
+ * metrics tail name a candidate commit that has no ticket yet.
+ */
+export interface RoadmapDeliveryCandidate {
+  candidateSha: string;
+  subject: string | null;
+  /** Newest check event, Unix epoch milliseconds. */
+  at: number;
+  checksPassed: number;
+}
+
+/**
+ * The delivery queue as read for one Project. `unavailable` is the honest
+ * answer when the repository has no readable queue: the lens shows no landing
+ * state at all, never "nothing queued".
+ */
+export type RoadmapDeliveryRead =
+  | { status: 'unavailable'; reason: string }
+  | {
+      status: 'ok';
+      /** Unix epoch milliseconds of this read. */
+      readAt: number;
+      tickets: RoadmapDeliveryTicket[];
+      candidates: RoadmapDeliveryCandidate[];
+      /** Ticket files that did not parse; counted, never hidden. */
+      unreadableTickets: number;
+      /** Newest metrics event, or null when `metrics.jsonl` was unreadable
+       *  (then no `checking` state can be derived). */
+      metricsAt: number | null;
+    };
+
+/** What `roadmap:activity` resolves to: the repository's recent commits and
+ *  its delivery queue, read together. */
+export interface RoadmapProjectActivity {
+  changes: RoadmapProjectChange[];
+  landings: RoadmapDeliveryRead;
+}
+
 export type RoadmapWritableStatus = 'now' | 'next' | 'later' | 'parked';
 
 export type RoadmapWriteAction =
