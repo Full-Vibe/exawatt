@@ -270,3 +270,48 @@ describe('usageOverview input', () => {
     expect(usageOverview(view)).toEqual(usageOverview(view));
   });
 });
+
+describe('every meter that runs out has a sentence above it', () => {
+  it('speaks for a week that runs out even when a younger session binds the glyph', () => {
+    const base = usageScenario('runs-out-before-reset');
+    // A Claude session five minutes old, burning fast: it bites first on pace
+    // but is too young to forecast.
+    const young: UsageScenario = {
+      ...base,
+      planWindows: base.planWindows.map(w =>
+        w.limitId === 'claude-session'
+          ? { ...w, usedPercent: 4, resetsAt: new Date(SCENARIO_NOW_MS + 295 * 60_000).toISOString() }
+          : w
+      ),
+      windowRates: Object.fromEntries(
+        Object.entries(base.windowRates).map(([k, v]) => [k, k.includes('claude-session') ? 60 : v])
+      ),
+    };
+    const o = scenarioOverview(young);
+    expect(o.binding?.meter.forecast).toBeNull();
+    expect(o.headline?.tone).toBe('hot');
+    expect(o.headline?.meterKey).not.toBe(o.binding?.meter.key);
+  });
+});
+
+describe('a Codex card is stale only when its figures are the failed read', () => {
+  const base = usageScenario('runs-out-before-reset');
+  const withCodexRead = (observedAt: string | null): UsageScenario => ({
+    ...base,
+    accounts: base.accounts.map(a =>
+      a.source === 'codex' ? { ...a, status: 'unavailable' as const, observedAt } : a
+    ),
+  });
+
+  it('reports fresh log windows when the account read never succeeded', () => {
+    const codex = account(scenarioOverview(withCodexRead(null)), 'codex')!;
+    expect(codex.health).toBe('reporting');
+  });
+
+  it('marks the card stale when nothing is fresher than the failed read', () => {
+    const later = new Date(SCENARIO_NOW_MS).toISOString();
+    const codex = account(scenarioOverview(withCodexRead(later)), 'codex')!;
+    expect(codex.health).toBe('stale');
+  });
+});
+

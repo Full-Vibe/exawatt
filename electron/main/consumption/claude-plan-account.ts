@@ -527,6 +527,8 @@ export interface ClaudePlanAccountOptions {
   stateDir: string;
   /** Seeded from settings; `setEnabled` applies the toggle live. */
   enabled: boolean;
+  /** False in automated test launches: no Settings write can start it. */
+  allowed?: boolean;
   /** The process run; injectable so tests replay recorded output. */
   run?: ClaudeUsageRunner;
   now?: () => number;
@@ -544,6 +546,7 @@ export class ClaudePlanAccountService extends PlanAccountService {
       stateFileName: STATE_FILE,
       stateLabel: 'Claude plan history',
       enabled: options.enabled,
+      allowed: options.allowed,
       read: claudePlanReader({
         run: options.run ?? runClaudeUsage,
         now,

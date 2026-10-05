@@ -184,31 +184,29 @@ export function windowFreshness(
 }
 
 /**
- * Projected window position if the observed pace holds. The projection runs
- * from the OBSERVATION instant, not from now: a Codex window last written
- * three hours ago has been burning for those three hours at the same pace, so
- * projecting from now would place its exhaustion three hours late.
+ * Projected window position if the observed pace holds, from NOW. The
+ * vendor's figure stands as of its observation and is not aged forward: a
+ * Codex window is written only while Codex runs, so a reading hours old
+ * usually means hours of no burn, and projecting the old pace across them
+ * would announce a run-out that never happened ("runs out in 1 min" on a
+ * quiet machine). An account read refreshes every few minutes anyway.
  */
 export function projectWindow(w: CapacityWindowView, nowMs: number) {
   const msToReset = Math.max(0, w.resetsAtMs - nowMs);
   const hoursToReset = msToReset / HOUR_MS;
-  const fromMs = Math.min(nowMs, w.observedAtMs ?? nowMs);
-  const hoursObservedToReset = Math.max(0, w.resetsAtMs - fromMs) / HOUR_MS;
-  const projectedPercent =
-    w.usedPercent + w.burnPercentPerHour * hoursObservedToReset;
-  const exhaustAtMs =
+  const projectedPercent = w.usedPercent + w.burnPercentPerHour * hoursToReset;
+  const hoursToExhaust =
     w.usedPercent >= 100
-      ? fromMs
+      ? 0
       : w.burnPercentPerHour > 0
-        ? fromMs + ((100 - w.usedPercent) / w.burnPercentPerHour) * HOUR_MS
+        ? (100 - w.usedPercent) / w.burnPercentPerHour
         : Infinity;
-  const msToExhaust = Math.max(0, exhaustAtMs - nowMs);
   return {
     msToReset,
     hoursToReset,
     projectedPercent,
-    hoursToExhaust: msToExhaust / HOUR_MS,
-    msToExhaust,
+    hoursToExhaust,
+    msToExhaust: hoursToExhaust * HOUR_MS,
     exhaustsBeforeReset: projectedPercent > 100,
   };
 }

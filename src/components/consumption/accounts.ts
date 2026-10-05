@@ -209,7 +209,7 @@ export function usageOverview(
     nowMs,
     windowLabel: input.windowLabel,
     accounts,
-    headline: headlineOf(accounts, binding, nowMs, options),
+    headline: headlineOf(accounts, nowMs, options),
     binding,
   };
 }
@@ -225,9 +225,21 @@ function accountOf(
     .sort(meterOrder);
   const meters = shown.map(w => meterOf(source, w, nowMs));
   const state = planReadState(source, nowMs);
+  // A failing account read makes the card stale only when the figures on it
+  // ARE that read's: Codex's rollout logs can carry fresher windows than an
+  // account read that has never succeeded (an API-key sign-in, an old
+  // binary), and those are a working reading, not a stale one.
+  const freshestWindowMs = Math.max(
+    -Infinity,
+    ...shown.map(w => w.observedAtMs ?? -Infinity)
+  );
+  const readIsStale =
+    read?.status === 'unavailable' &&
+    read.observedAtMs !== null &&
+    freshestWindowMs <= read.observedAtMs;
   const health: AccountHealth =
     state === 'reported'
-      ? read?.status === 'unavailable'
+      ? readIsStale
         ? 'stale'
         : 'reporting'
       : meters.length > 0
@@ -368,13 +380,26 @@ export function planLabel(planType: string | null, tier: string | null): string 
 
 function headlineOf(
   accounts: readonly UsageAccount[],
-  binding: UsageOverview['binding'],
   nowMs: number,
   options: PhraseOptions
 ): UsageHeadline | null {
-  if (binding) {
-    const account = accounts.find(a => a.key === binding.accountKey)!;
-    const meter = binding.meter;
+  // The sentence speaks for the meter that runs out first AMONG those that
+  // state a run-out, which is not always the glyph's binding window: a session
+  // five minutes old can bite first on pace yet be too young to forecast,
+  // while a week beside it says it runs out on Thursday. Every meter that
+  // says "runs out" must have a sentence above it.
+  let alarm: { account: UsageAccount; meter: AccountMeter } | null = null;
+  for (const account of accounts) {
+    for (const meter of account.meters) {
+      const kind = meter.forecast?.kind;
+      if (!meter.live || (kind !== 'spent' && kind !== 'runs-out')) continue;
+      if (!alarm || bitesFirst(meter.reading, alarm.meter.reading) < 0) {
+        alarm = { account, meter };
+      }
+    }
+  }
+  if (alarm) {
+    const { account, meter } = alarm;
     const who = meterSubject(account, meter);
     const spares = spareResets(account);
     if (meter.forecast?.kind === 'spent') {

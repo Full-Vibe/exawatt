@@ -311,14 +311,17 @@ describe('bootstrapCommandSurface', () => {
     );
     await bootstrapCommandSurface(dependencies({ isTest: true }).deps);
 
-    expect(world.planAccountOptions.map(options => options.enabled)).toEqual([
+    // An automated launch is closed by capability, not by the switch: a
+    // Settings write (which `setEnabled` honours) must not reopen it there.
+    expect(world.planAccountOptions.map(options => options.allowed)).toEqual([
       true,
       true,
       true,
       false,
     ]);
     for (const options of world.planAccountOptions) {
-      expect(Object.keys(options).sort()).toEqual(['enabled', 'stateDir']);
+      expect(options.enabled).toBe(true);
+      expect(Object.keys(options).sort()).toEqual(['allowed', 'enabled', 'stateDir']);
     }
   });
 

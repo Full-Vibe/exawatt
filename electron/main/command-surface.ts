@@ -374,7 +374,8 @@ export async function bootstrapCommandSurface(
         // applies; automated test launches still never start a process.
         const claudePlanAccount = new ClaudePlanAccountService({
           stateDir: path.join(userDataPath(), 'consumption-plan'),
-          enabled: isClaudePlanWindowsEnabled(loadSettings()) && !deps.isTest,
+          enabled: isClaudePlanWindowsEnabled(loadSettings()),
+          allowed: !deps.isTest,
         });
         runtime.claudePlanAccount = claudePlanAccount;
         // ENG-038 slice 2: the Codex account, asked of the operator's own
@@ -383,7 +384,8 @@ export async function bootstrapCommandSurface(
         // automated test launches still never start an app-server.
         const codexPlanAccount = new CodexPlanAccountService({
           stateDir: path.join(userDataPath(), 'consumption-plan'),
-          enabled: isCodexPlanWindowsEnabled(loadSettings()) && !deps.isTest,
+          enabled: isCodexPlanWindowsEnabled(loadSettings()),
+          allowed: !deps.isTest,
         });
         runtime.codexPlanAccount = codexPlanAccount;
         registerConsumptionIPC(

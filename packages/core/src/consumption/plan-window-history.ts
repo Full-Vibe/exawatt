@@ -135,6 +135,9 @@ export class WindowObservationAccumulator {
 /** Below this observation span a rate would be mostly noise. */
 export const MIN_RATE_SPAN_MS = 10 * 60_000;
 
+/** A forward drop smaller than this many points is rounding, not a reset. */
+const RESET_DROP_TOLERANCE_PTS = 1;
+
 /**
  * How far back "the pace you are going now" looks (ENG-008 E15). An operator
  * who launches ten Agents at 9pm wants the forecast to move at 9:30, not to
@@ -186,7 +189,12 @@ export function derivePlanWindowRates(
     for (let i = list.length - 2; i >= 0; i -= 1) {
       const candidate = list[i];
       if (candidate.observedAtMs < latest.observedAtMs - windowMs) break;
-      if (candidate.usedPercent > earliest.usedPercent) break; // reset boundary
+      // A reset drops the window to near zero; a dip within the tolerance is
+      // two sources rounding one figure differently (a rollout log's 45.3
+      // beside the account read's integer 45), never a reset.
+      if (candidate.usedPercent > earliest.usedPercent + RESET_DROP_TOLERANCE_PTS) {
+        break; // reset boundary
+      }
       earliest = candidate;
       if (candidate.observedAtMs >= latest.observedAtMs - RECENT_RATE_SPAN_MS) {
         recent = candidate;
@@ -197,8 +205,8 @@ export function derivePlanWindowRates(
     const spanMs = latest.observedAtMs - from.observedAtMs;
     if (spanMs < MIN_RATE_SPAN_MS) continue;
     const deltaPercent = latest.usedPercent - from.usedPercent;
-    if (deltaPercent < 0) continue;
-    rates[key] = deltaPercent / (spanMs / 3_600_000);
+    if (deltaPercent < -RESET_DROP_TOLERANCE_PTS) continue;
+    rates[key] = Math.max(0, deltaPercent) / (spanMs / 3_600_000);
   }
   return rates;
 }

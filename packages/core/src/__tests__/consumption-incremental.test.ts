@@ -449,6 +449,19 @@ describe('derivePlanWindowRates', () => {
     expect(rates[planWindowKey(obs())]).toBe(0);
   });
 
+  it('reads a dip within a point as rounding between sources, not a reset', () => {
+    const at = Date.parse('2026-07-05T12:00:00.000Z');
+    const weekly = { windowMinutes: 10_080 };
+    // A rollout log's 45.3 beside the account read's integer 45, then real burn.
+    const rates = derivePlanWindowRates([
+      obs({ ...weekly, observedAtMs: at, usedPercent: 40 }),
+      obs({ ...weekly, observedAtMs: at + HOUR, usedPercent: 45.3 }),
+      obs({ ...weekly, observedAtMs: at + HOUR + 2 * 60_000, usedPercent: 45 }),
+      obs({ ...weekly, observedAtMs: at + 2 * HOUR, usedPercent: 50 }),
+    ]);
+    expect(rates[planWindowKey(obs(weekly))]).toBeCloseTo(5, 5);
+  });
+
   it('moves with the recent pace instead of the cycle average', () => {
     const at = Date.parse('2026-07-05T12:00:00.000Z');
     const weekly = { windowMinutes: 10_080 };

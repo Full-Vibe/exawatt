@@ -42,24 +42,28 @@ export class ProviderPlanCompositeSource implements ConsumptionScannerLike {
     private readonly accounts: readonly PlanAccountSource[]
   ) {}
 
+  /** Nudges each account whose harness the corpus has shown to exist. Until a
+   *  full scan has said which harnesses left files, no account is asked: a
+   *  machine without Codex must never start a Codex app-server. */
   private refreshAccounts(): void {
+    if (!this.lastScanState?.firstScanComplete) return;
     for (const account of this.accounts) {
-      if (this.emptySources.includes(account.view().account.source)) continue;
+      if (this.emptySources.includes(account.source)) continue;
       account.maybeRefresh();
     }
   }
 
   private accountRevision(): number {
-    return this.accounts.reduce((n, account) => n + account.view().revision, 0);
+    return this.accounts.reduce((n, account) => n + account.revision, 0);
   }
 
   async snapshot(
     request?: LiveConsumptionSnapshotRequest
   ): Promise<LiveConsumptionSnapshot> {
-    this.refreshAccounts();
     const snapshot = await this.scanner.snapshot(request);
     this.lastScanState = snapshot.scanState;
     this.emptySources = snapshot.emptySources;
+    this.refreshAccounts();
     const views = this.accounts.map(account => account.view());
     const revision =
       snapshot.scanState.revision + views.reduce((n, v) => n + v.revision, 0);

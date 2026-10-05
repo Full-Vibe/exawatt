@@ -348,3 +348,34 @@ until a format carrying it is seen.
 
 **Naming.** The demo arc's G4 / ENG-008 E16 Google read was labelled "ENG-038
 slice 3"; it is now slice 4.
+
+### Review repairs to slices 2 and 3's shared account path (2026-10-04)
+
+A high-effort review of the E15/slice 2 landing found ten defects; all were
+real on master after slice 3 and are repaired together:
+
+- **Test launches stay closed.** `PlanAccountService` gains an immutable
+  `allowed` capability (false in automated launches) so a Settings write,
+  which `setEnabled` honours, cannot start `claude` or `codex` inside an eval.
+  `enabled` is now only the operator's switch.
+- **No harness is asked before the corpus says it exists.** The composite
+  nudges accounts after the scanner snapshot and only once a full scan has
+  completed, so a machine without Codex never spawns an app-server, even on
+  first launch. Account `source` and `revision` are cheap getters, so the
+  composite no longer builds full views to read them.
+- **A too-old Codex app-server is remembered** for the launch, as the
+  delegation observer does (BUG-146), instead of respawned every five
+  minutes; failures carry named causes (`not-installed`, `timed-out`,
+  `exited`, `unrecognized`).
+- **Warm launches** count a persisted read that carried only resets or spend
+  as a reading. **Credits** are read from any per-limit snapshot when the
+  default one is absent.
+- **Pace across two sources**: a forward dip within one point is rounding
+  between the rollout log and the account read, never a reset.
+- Renderer: the headline speaks for the earliest meter that actually
+  forecasts a run-out (a five-minute-old session could bind the glyph while a
+  week beside it ran out, unspoken); a Codex card is stale only when its
+  figures ARE the failed account read, so fresh log windows beside a read
+  that never succeeded report normally; and projections run from now again,
+  because a Codex window is only written while Codex runs and aging an old
+  reading forward announced run-outs that never happened.

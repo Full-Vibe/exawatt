@@ -21,16 +21,21 @@
  * series.
  */
 import type {
+  PlanAccountFailureCause,
   PlanCreditBalance,
   PlanResetCredit,
   PlanResets,
   PlanWindow,
 } from '@exawatt/core';
-import { CodexAppServerClient } from '../harness-events/codex-app-server';
+import {
+  CodexAppServerClient,
+  isPermanentVerdict,
+} from '../harness-events/codex-app-server';
 import {
   PlanAccountService,
   type PlanAccountRead,
   type PlanAccountReader,
+  type PlanAccountReadFailure,
 } from './plan-account-service';
 
 const STATE_FILE = 'codex-plan.json';
@@ -104,7 +109,7 @@ function resetsOf(value: unknown): PlanResets | undefined {
   return { available: Math.max(0, Math.trunc(available)), credits };
 }
 
-function creditsOf(snapshot: Json | null): PlanCreditBalance | undefined {
+function creditsOf(snapshot: Json | null | undefined): PlanCreditBalance | undefined {
   const credits = record(snapshot?.credits);
   if (!credits) return undefined;
   const balance = text(credits.balance);
@@ -136,13 +141,27 @@ export function parseCodexAccountRateLimits(
   const windows = snapshots.flatMap(s => windowsOf(s, observedAt));
   const resets = resetsOf(body.rateLimitResetCredits);
   if (windows.length === 0 && !resets) return null;
+  // The balance is account-wide; read it from whichever snapshot carries it.
+  const credits =
+    creditsOf(primary) ?? snapshots.map(creditsOf).find(c => c !== undefined);
   return {
     windows,
     planType: text(primary?.planType) ?? text(snapshots[0]?.planType),
     spend: null,
     ...(resets ? { resets } : {}),
-    ...(creditsOf(primary) ? { credits: creditsOf(primary) } : {}),
+    ...(credits ? { credits } : {}),
   };
+}
+
+/** Why one app-server read failed, in the account card's vocabulary. */
+function codexFailureCause(error: unknown): PlanAccountFailureCause {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/timed out/iu.test(message)) return 'timed-out';
+  // A login shell that cannot find `codex` exits 127.
+  if (/exited \(127\)|command not found|ENOENT/iu.test(message)) {
+    return 'not-installed';
+  }
+  return 'exited';
 }
 
 /** The production reader: a short-lived read-side app-server per read. */
@@ -161,8 +180,22 @@ function codexPlanReader(options: {
         client.close();
       }
     });
+  // A permanent verdict (an app-server too old to speak the protocol) holds
+  // for this launch, the way the delegation observer remembers it (BUG-146):
+  // asking again every five minutes would only spawn the same refusal.
+  let verdict: PlanAccountReadFailure | null = null;
   return async () => {
-    const result = await readRateLimits();
+    if (verdict) return verdict;
+    let result: unknown;
+    try {
+      result = await readRateLimits();
+    } catch (error) {
+      if (isPermanentVerdict(error)) {
+        verdict = { failure: 'unrecognized' };
+        return verdict;
+      }
+      return { failure: codexFailureCause(error) };
+    }
     return parseCodexAccountRateLimits(
       result,
       new Date(options.now()).toISOString()
@@ -173,6 +206,8 @@ function codexPlanReader(options: {
 interface CodexPlanAccountOptions {
   stateDir: string;
   enabled: boolean;
+  /** False in automated test launches: no Settings write can start it. */
+  allowed?: boolean;
   /** The app-server call; injectable so tests replay a recorded answer. */
   readRateLimits?: () => Promise<unknown>;
   now?: () => number;
@@ -189,6 +224,7 @@ export class CodexPlanAccountService extends PlanAccountService {
       stateFileName: STATE_FILE,
       stateLabel: 'Codex plan history',
       enabled: options.enabled,
+      allowed: options.allowed,
       read: codexPlanReader({ readRateLimits: options.readRateLimits, now }),
       now,
       minFetchIntervalMs: options.minFetchIntervalMs,

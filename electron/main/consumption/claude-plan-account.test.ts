@@ -1000,6 +1000,7 @@ describe('ProviderPlanCompositeSource', () => {
   const scannerSnapshot = (revision: number): LiveConsumptionSnapshot => {
     const snapshot = emptyLiveConsumptionSnapshot(0);
     snapshot.scanState.revision = revision;
+    snapshot.scanState.firstScanComplete = true;
     const observation = (hoursAgo: number, usedPercent: number) => ({
       source: 'codex' as const,
       limitId: 'codex',
@@ -1107,13 +1108,34 @@ describe('ProviderPlanCompositeSource', () => {
     expect(events.at(-1)?.scanState.revision).toBe(events.at(-1)?.revision);
   });
 
-  it('rescan nudges the plan refresh alongside the scanner pass', () => {
+  it('rescan nudges the plan refresh alongside the scanner pass', async () => {
     const scanner = fakeScanner();
     const plan = planService(stateDir);
+    const composite = new ProviderPlanCompositeSource(scanner, [plan]);
+    await composite.snapshot();
     const spy = vi.spyOn(plan, 'maybeRefresh');
-    new ProviderPlanCompositeSource(scanner, [plan]).rescan();
+    composite.rescan();
     expect(spy).toHaveBeenCalledTimes(1);
     expect(scanner.rescans).toBe(1);
+  });
+
+  it('asks no account before a full scan has said which harnesses exist', async () => {
+    const plan = planService(stateDir);
+    const spy = vi.spyOn(plan, 'maybeRefresh');
+    const composite = new ProviderPlanCompositeSource(
+      {
+        ...fakeScanner(),
+        snapshot: async () => {
+          const first = scannerSnapshot(1);
+          first.scanState.firstScanComplete = false;
+          return first;
+        },
+      },
+      [plan]
+    );
+    await composite.snapshot();
+    composite.rescan();
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('reads an account only when its harness left local files', async () => {
@@ -1131,10 +1153,29 @@ describe('ProviderPlanCompositeSource', () => {
       [plan]
     );
     await composite.snapshot();
-    spy.mockClear();
     await composite.snapshot();
     composite.rescan();
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a test launch stays closed even when Settings turns the read on', async () => {
+    let runs = 0;
+    const closed = new ClaudePlanAccountService({
+      stateDir,
+      enabled: false,
+      allowed: false,
+      run: async () => {
+        runs += 1;
+        return finished(stdoutOf(SIGNED_IN_REAL));
+      },
+      now: () => NOW_MS,
+      minFetchIntervalMs: 0,
+      jitterMs: 0,
+    });
+    closed.setEnabled(true);
+    await closed.maybeRefresh();
+    expect(runs).toBe(0);
+    expect(closed.view().account.status).toBe('disabled');
   });
 });
 

@@ -13,6 +13,7 @@ import {
   CodexPlanAccountService,
   parseCodexAccountRateLimits,
 } from './codex-plan-account';
+import { CodexProtocolIncompatibleError } from '../harness-events/codex-app-server';
 
 const RECORDED = {
   ordinaryUsageAllowed: true,
@@ -216,4 +217,49 @@ describe('CodexPlanAccountService', () => {
     expect(svc.view().account.status).toBe('disabled');
     expect(svc.view().windows).toEqual([]);
   });
+
+  it('remembers a too-old app-server for the launch instead of respawning it', async () => {
+    let reads = 0;
+    const svc = service(async () => {
+      reads += 1;
+      throw new CodexProtocolIncompatibleError('installed app-server is older than 0.147.0');
+    });
+    await svc.maybeRefresh();
+    nowMs += 10 * 60_000;
+    await svc.maybeRefresh();
+    expect(reads).toBe(1);
+    expect(svc.view().account).toMatchObject({ status: 'unavailable', failure: 'unrecognized' });
+  });
+
+  it('names why a read failed', async () => {
+    const failing = (message: string) =>
+      service(async () => {
+        throw new Error(message);
+      });
+    const missing = failing('Codex app-server exited (127): fish: Unknown command: codex');
+    await missing.maybeRefresh();
+    expect(missing.view().account.failure).toBe('not-installed');
+    const slow = failing('Codex app-server request timed out: account/rateLimits/read');
+    await slow.maybeRefresh();
+    expect(slow.view().account.failure).toBe('timed-out');
+  });
+
+  it('keeps a warm launch readable when the last read carried only resets', async () => {
+    const resetsOnly = { rateLimitResetCredits: RECORDED.rateLimitResetCredits };
+    await service(async () => resetsOnly).maybeRefresh();
+    const warm = service(async () => null).view();
+    expect(warm.account.status).toBe('ok');
+    expect(warm.account.resets?.available).toBe(3);
+  });
 });
+
+describe('the credit balance is account-wide', () => {
+  it('is read from a per-limit snapshot when the default one is absent', () => {
+    const byIdOnly = { rateLimitsByLimitId: RECORDED.rateLimitsByLimitId };
+    expect(parseCodexAccountRateLimits(byIdOnly, OBSERVED_AT)?.credits).toEqual({
+      balance: 60941.199264,
+      unlimited: false,
+    });
+  });
+});
+

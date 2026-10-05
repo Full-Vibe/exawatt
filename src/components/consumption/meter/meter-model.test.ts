@@ -157,20 +157,17 @@ describe('bitesFirst — which window bites first', () => {
   });
 });
 
-describe('projection runs from the observation instant', () => {
-  it('a window read two hours ago has burned for those two hours', () => {
-    const fresh = readWindowPace(
-      source([]),
-      win({ usedPercent: 50, burnPercentPerHour: 10, resetsAtMs: NOW + 10 * HOUR, windowMinutes: 10_080, observedAtMs: NOW }),
-      NOW
-    );
+describe('projection runs from now', () => {
+  it('does not age an old reading forward into a run-out that never happened', () => {
+    // A Codex window last written three hours ago at 80%, burning 10%/h then.
+    // Logs are only written while Codex runs, so three quiet hours are most
+    // likely three hours of no burn: the forecast must not say "in 1 min".
     const old = readWindowPace(
       source([]),
-      win({ usedPercent: 50, burnPercentPerHour: 10, resetsAtMs: NOW + 10 * HOUR, windowMinutes: 10_080, observedAtMs: NOW - 2 * HOUR }),
+      win({ usedPercent: 80, burnPercentPerHour: 10, resetsAtMs: NOW + 2 * HOUR, observedAtMs: NOW - 3 * HOUR }),
       NOW
     );
-    expect(fresh.msToExhaust).toBe(5 * HOUR);
-    expect(old.msToExhaust).toBe(3 * HOUR);
+    expect(old.msToExhaust).toBe(2 * HOUR);
   });
 });
 

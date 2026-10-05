@@ -75,6 +75,10 @@ export interface PlanAccountView {
 
 /** What the plan composite needs from any account read. */
 export interface PlanAccountSource {
+  /** Which harness's account this reads. Cheap; never builds a view. */
+  readonly source: ConsumptionSourceId;
+  /** Monotonic within a launch. Cheap; never builds a view. */
+  readonly revision: number;
   view(): PlanAccountView;
   maybeRefresh(): Promise<void>;
   onUpdated(listener: () => void): () => void;
@@ -89,6 +93,12 @@ interface PlanAccountServiceOptions {
   stateLabel: string;
   /** Seeded from settings; `setEnabled` applies the toggle live. */
   enabled: boolean;
+  /**
+   * Immutable for the life of the service: false in an automated test
+   * launch, so no Settings write (which `setEnabled` honours) can start a
+   * harness process there. Defaults to true.
+   */
+  allowed?: boolean;
   read: PlanAccountReader;
   /** Re-reads a saved window in the current meaning (schema moves). */
   migrateWindow?: (window: PlanWindow) => PlanWindow;
@@ -157,7 +167,8 @@ const PLAN_STATE_FILE = jsonStateGrammar<PersistedPlanState>(value => {
 });
 
 export class PlanAccountService implements PlanAccountSource {
-  private readonly source: ConsumptionSourceId;
+  readonly source: ConsumptionSourceId;
+  private readonly allowed: boolean;
   private readonly stateDir: string;
   private readonly stateFileName: string;
   private readonly read: PlanAccountReader;
@@ -177,7 +188,7 @@ export class PlanAccountService implements PlanAccountSource {
   private available = false;
   /** Why the latest read failed; null while reads succeed. Not persisted. */
   private failure: PlanAccountFailureCause | null = null;
-  private revision = 0;
+  private revisionCount = 0;
   private nextAllowedAtMs = 0;
   private inFlight: Promise<void> | null = null;
   private disposed = false;
@@ -195,6 +206,7 @@ export class PlanAccountService implements PlanAccountSource {
     this.stateFileName = options.stateFileName;
     this.watch = new UnreadableStateWatch(this.stateFile, options.stateLabel);
     this.preferenceEnabled = options.enabled;
+    this.allowed = options.allowed ?? true;
     this.read = options.read;
     this.migrateWindow = options.migrateWindow ?? (window => window);
     this.now = options.now ?? Date.now;
@@ -205,7 +217,11 @@ export class PlanAccountService implements PlanAccountSource {
   }
 
   private get enabled(): boolean {
-    return this.preferenceEnabled;
+    return this.preferenceEnabled && this.allowed;
+  }
+
+  get revision(): number {
+    return this.revisionCount;
   }
 
   /** Current state, synchronously. Disabled serves ABSENCE (no windows, no
@@ -223,7 +239,7 @@ export class PlanAccountService implements PlanAccountSource {
           planType: null,
           spend: null,
         },
-        revision: this.revision,
+        revision: this.revisionCount,
       };
     }
     const observations = this.observations.list();
@@ -243,7 +259,7 @@ export class PlanAccountService implements PlanAccountSource {
         ...(last.resets ? { resets: last.resets } : {}),
         ...(last.credits ? { credits: last.credits } : {}),
       },
-      revision: this.revision,
+      revision: this.revisionCount,
     };
   }
 
@@ -289,7 +305,7 @@ export class PlanAccountService implements PlanAccountSource {
   /* ---------------------------------------------------------------- */
 
   private bump(): void {
-    this.revision += 1;
+    this.revisionCount += 1;
     for (const listener of [...this.listeners]) listener();
   }
 
@@ -375,7 +391,10 @@ export class PlanAccountService implements PlanAccountSource {
     if (newer) {
       const { version: _version, observations: _observations, ...rest } = saved;
       this.last = { ...rest, windows: saved.windows.map(this.migrateWindow) };
-      this.available = this.last.windows.length > 0;
+      // Any successful read counts: one that carried only resets or spend
+      // is still a reading, never "could not read".
+      this.available =
+        this.last.windows.length > 0 || !!this.last.resets || !!this.last.spend;
     }
     return true;
   }
