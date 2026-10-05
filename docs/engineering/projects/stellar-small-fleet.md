@@ -4,142 +4,64 @@ Roadmap item: ENG-015
 
 ## Current execution handoff — 2026-10-04
 
-**Final delivery is resubmitting after a reviewed upstream Fleet join.**
-The full normal floor on `d94cf97b3b0d2a0b6e1ef92d2f9aa23ef5c8d28d`
-passed 713 delivery tests, 3,485 related tests (10 existing skips), build,
-37 community-runtime checks, all ten R3F scenes at 100/100, roadmap contracts
-and all 31 declared gates. Ticket 576 then failed its automatic queue-head
-rebase onto `08465d51` before integration; its immutable attempt remains
-recoverable. This is verified candidate evidence, not an integration receipt.
+**Integrated and installed: the approved polish transaction is delivered.**
+Ticket 577 integrated `19712d6ff5b032586aee5a8fe9f45e3cc3be9c44` on 2026-10-04;
+public projection `3e4e9392ff108ba96f31a17de73d571689ac15bb` was published.
+The normal queued dogfood worker installed that exact source SHA at
+`2026-10-05T04:02:50.606Z`. Machine-local update-state and the worker receipt
+confirm installation; the running app was not restarted and no second installer
+was invoked. This documentation receipt uses the lightweight docs lane.
 
-Resolved checkpoint `9a4771677fd5cdf7a30df3f4af67ef966e8d82c3` preserves
-upstream honeycomb packing and candidate focus behavior alongside the shared
-unread status marks. The product conflict was only the obsolete presentation
-type import; the spatial milestone log retains both prior integration evidence
-and V3.9. Dependencies were reinstalled; 80 focused tests, scoped lint and both
-type checks pass. Independent read review approved the exact join. The required
-union remains 31 gates; normal resubmission reruns its full exact-tree floor
-under the owned temporary display-awake assertion. No waiver or installation
-claim. Logs: `/tmp/exawatt-final-combined-land.log` (ticket 576) and
-`/tmp/exawatt-final-rebased-land.log` (current resubmission).
+The full exact-tree floor passed: 713 delivery tests, 3,485 related tests
+(10 existing skips), lint, both type checks, publication/export checks,
+community build plus 37 runtime checks, Electron compilation, roadmap contracts,
+and all ten R3F scenes at 100/100. All 31 required surface gates passed with
+no waivers:
 
-Earlier reviewed checkpoint:
-Latest reviewed product checkpoint: `d83693ffc79b14261fcd3826ca3cd262b790bce9`,
-rebased without conflicts onto `22700bc6`; `pnpm install` completed. The owned
-4317 server and freshly compiled Electron main identify this checkout and HEAD.
-Both the unchanged native Fleet attention gate and the corrected turn-truth
-gate passed. The sole final landing declares all 31 required gates and dogfood,
-under a temporary process-scoped `caffeinate -d -i` assertion. No waiver, native
-focus bypass, permanent power setting change or second installer is used.
-Integration, actual installed SHA and final documentation receipt remain pending.
+- `eval:spatial:attention`, `eval:electron:source-compatibility`, `eval:electron:device-power`
+- `eval:electron:permissions`, `eval:electron:source-power`, `eval:electron:project-pause`
+- `eval:electron:clone-context`, `eval:electron:model-change`, `eval:workspace:ribbon:bench`
+- `eval:workspace:chrome`, `eval:workspace:split`, `eval:workspace:paused`
+- `eval:workspace:team`, `eval:navigation:spine`, `eval:spatial:viewport`
+- `eval:electron:connected-fleet`, `eval:electron:project-agent`, `eval:roadmap:rail`
+- `eval:electron:recents`, `eval:electron:lifecycle`, `eval:electron:idempotency`
+- `eval:spatial`, `eval:spatial:emergence`, `eval:spatial:pointer`
+- `eval:electron:delegation`, `eval:electron:turn-truth`, `eval:electron:tenancy`
+- `eval:navigation:electron`, `eval:electron:resume`, `eval:electron:chrome`
+- `eval:electron:session-parity`
 
-Earlier resumed evidence:
-The 2026-10-04 resumed read-only native session check confirms an unlocked,
-on-console desktop, with Exawatt frontmost. The combined branch was rebased
-onto `8265ec1c` and dependencies reinstalled. The ENG-045 notification-permission
-join keeps posting and sound source-owned: intervening read/resolution invalidates
-an asynchronous native authorization read, and its completion rechecks the exact
-unread source fact, live runtime, native focus and preference. Electron compilation,
-Electron test types, scoped lint and 98 focused tests pass. This is implemented
-verification evidence; no queue admission, integration or installation is claimed.
-Independent review approved `ff6b06ab` with no remaining scoped P1/P2. The
-required gate union is now 31, including the upstream permissions gate.
+The delivered ownership is shared across Agent, Team, Fleet and Demo/Live:
+purpose-first identity; independent source requests, results and operator read
+state; silent Mark unread reminders; stable priority/pass Cmd+J traversal;
+source-owned alert deduplication; authoritative roadmap attribution; exact
+pause-first recovery; unsupported-source record preservation; and the approved
+unread detail in the existing status slot. Native focus is seeded after its
+subscription attaches, with the diagnosed startup race recorded in
+[incident 0036](../incidents/0036-native-focus-predates-attention-subscription.md).
+The upstream permission, account and honeycomb/focus-field changes are preserved.
 
-The resumed normal floor on `5d937b0b` passed 3,474 related tests (10 existing
-skips), build, community runtime and all ten R3F scenes at 100/100, then exposed
-a native startup focus-subscription race. The instrumented failure had native
-focus true and monitor focus false throughout exact Session handoff, distinct
-from the earlier locked-host failure. [Incident 0036](../incidents/0036-native-focus-predates-attention-subscription.md)
-records the control, falsified hypotheses and subscribe-then-snapshot correction.
-No ticket was admitted. The unchanged native gate passed on `c715056c` after
-the reviewed focus correction. Its full floor passed 3,476 related tests,
-build and all ten R3F scenes, then correctly refused native foreground after
-the desktop relocked. The desktop is now verified unlocked; temporary `-d -i`
-assertions cover only QA lifetime and will be released at cleanup.
-Independent collection on `c715056c` passed 29 of 30 remaining gates; the lone
-turn-truth permission-paint assertion passed in isolation unchanged. The fixture
-now awaits the rendered state using its existing bound, preserving both source
-and display assertions without adding a delay. Evidence is retained in
-`/tmp/exawatt-resumed-independent-gates.json` and
-`/tmp/exawatt-resumed-turn-truth-alone.log`. Reconcile latest upstream, reinstall
-dependencies and rerun the full normal 31-gate floor; no waivers or installation
-claims.
+BUG-163/259/265/273 close on their final gates and installed artifact. BUG-257,
+BUG-258 and BUG-264 remain open for real-provider acceptance; the original
+BUG-257 screenshot trigger is not established by fixture evidence. BUG-260's
+input/viewport continuity gap, BUG-263's unobserved freeze, BUG-117 and the
+operator-deferred BUG-134 interaction remain open. The delegation popover was
+not adopted; its clean study remains on `agent/polish-delegation-gallery`
+(`55026e5e`). Research citations and bounded marketing examples remain in canon;
+this delivery does not claim a measured population-wide productivity benefit.
 
-The earlier locked-host checkpoint below remains historical evidence:
-Candidate behavior and fixture checkpoint: `8a2bcd4816141a7a245ddef86fd556a0852dab40`
-on `agent/polish-attention` in `../exawatt-polish-attention`. This documentation
-checkpoint follows that immutable candidate. No queue ticket was admitted;
-none of this combined transaction is integrated or installed yet.
+All contributor/root proof worktrees and branches were removed after consumption
+audits. The owned 4317 server is stopped. Temporary display-awake assertions are
+released; no power setting changed. The final attention worktree is removed after
+this docs receipt lands. Screenshots remain as evidence. Earlier split-delivery
+and pending-integration statements below are historical and superseded here.
 
-- Full candidate floor at `23532a08` passed lint, both type checks, delivery
-  machinery tests, export ownership, 3,319 related tests (10 existing skips),
-  community build/runtime, Electron compilation, roadmap contracts and all ten
-  R3F scenes at 100/100. It stopped at the native Fleet inspection gate because
-  macOS was locked; the browser portion passed.
-- Independent collection at `84df4384` ran all other 29 gates: 24 passed and
-  five exposed obsolete fixture assumptions. Corrections changed verification
-  only. At `8a2bcd48`, all five passed their reruns, plus exact-resume passed
-  again after its selector audit. Repeated restart retained the same Session
-  identities and cumulative history across three generations.
-- **Previous environment blocker (now unlocked):** the eval's
-  real `BrowserWindow` could not receive native focus. CDP `document.hasFocus()` is
-  insufficient. The earlier read-only IOKit check reported
-  `CGSSessionScreenIsLocked=Yes`; main correctly retained unread while its
-  native window was unfocused. Do not weaken that guard or waive the gate.
-- Separate machine-readable evidence is retained in
-  `/tmp/exawatt-combined-independent-gates.json` and
-  `/tmp/exawatt-combined-fixture-reruns.json`; each row names its log. The first
-  file is original-candidate evidence, not proof of the corrected fixtures.
-  All 29 non-foreground gates now have passing evidence across these exact
-  checkpoints. Full normal admission must still run on the final candidate.
-- The owned QA server was stopped for the earlier pending-input handoff.
-  Contributor branches/worktrees remain clean recovery inputs. Verify actual
-  unlock even if no text reply arrives, start this worktree's own dev server
-  with `pnpm dev -p 4317`, and rerun
-  `EXA_BASE=http://localhost:4317 pnpm eval:spatial:attention`. If it passes,
-  resume the sole normal delivery path below (all 31 gates, no waivers).
-
-```sh
-EXA_BASE=http://localhost:4317 pnpm agent:land -- \
-  --verify eval:spatial:attention \
-  --verify eval:electron:source-compatibility \
-  --verify eval:electron:device-power \
-  --verify eval:electron:permissions \
-  --verify eval:electron:source-power \
-  --verify eval:electron:project-pause \
-  --verify eval:electron:clone-context \
-  --verify eval:electron:model-change \
-  --verify eval:workspace:ribbon:bench \
-  --verify eval:workspace:chrome \
-  --verify eval:workspace:split \
-  --verify eval:workspace:paused \
-  --verify eval:workspace:team \
-  --verify eval:navigation:spine \
-  --verify eval:spatial:viewport \
-  --verify eval:electron:connected-fleet \
-  --verify eval:electron:project-agent \
-  --verify eval:roadmap:rail \
-  --verify eval:electron:recents \
-  --verify eval:electron:lifecycle \
-  --verify eval:electron:idempotency \
-  --verify eval:spatial \
-  --verify eval:spatial:emergence \
-  --verify eval:spatial:pointer \
-  --verify eval:electron:delegation \
-  --verify eval:electron:turn-truth \
-  --verify eval:electron:tenancy \
-  --verify eval:navigation:electron \
-  --verify eval:electron:resume \
-  --verify eval:electron:chrome \
-  --verify eval:electron:session-parity \
-  --dogfood
-```
-
-After integration, wait for the actual dogfood installed SHA, then publish the
-small documentation receipt using `agent:land -- --docs` without a second
-installation request. Only then close BUG-163/259/265/273 on their full evidence
-and release contributor cleanup. The source acceptance and deferred boundaries
-recorded below remain open.
+Delivery evidence: `.git/exawatt-delivery/metrics.jsonl`, ticket
+`00000577-3007f290`, and `/tmp/exawatt-final-rebased-land.log`.
+Earlier candidate `d94cf97b` also passed the full floor and 31 gates, but ticket
+576 conflicted with upstream Fleet changes before integration. The narrow join
+was independently reviewed at `9a477167` and the entire floor reran on the
+installed tree. Earlier locked-host retries and the renderer-ready fixture
+correction are diagnosis evidence, not substitutes for that final proof.
 
 Historical scope and milestone evidence follows. The current combined delivery
 checkpoint above supersedes earlier separate-stack sequencing.

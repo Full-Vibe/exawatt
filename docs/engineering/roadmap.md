@@ -2732,9 +2732,11 @@ Richer mixed-state presentation remains deferred. [Evidence and acceptance](proj
 
 ### BUG-163 Spatial ⌘J cannot focus Fleet Agents
 
-Status: bug · ENG-004 · operator product-feedback `1f51081a-6983-41a3-b713-57fc9969741f`, 2026-09-24.
+Status: done · ENG-004 · operator product-feedback `1f51081a-6983-41a3-b713-57fc9969741f`, 2026-09-24.
 
 Add a Fleet keyboard path that selects/follows an attention Agent with ⌘J, then opens that Session in Agent view on Enter. [Startup inspection diagnosis](incidents/0036-native-focus-predates-attention-subscription.md). Reuse existing attention eligibility and Session handoff. [Report and execution notes](projects/spatial-operations-board.md#2026-09-24--spatial-attention-keyboard-request-bug-163).
+
+Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full floor and all 31 declared gates passed. Fleet Cmd+J and its menu share stable priority/pass traversal; Enter opens and acknowledges the exact Session without resolving its request. [Final receipt](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
 
 ### BUG-195 Docs pushed straight to master skipped every landing check
 
@@ -3478,12 +3480,14 @@ never keep a spinner alive.
 
 ### BUG-259 There is no way to mark a tab unread
 
-Status: feature · ENG-015 · product-feedback d054b1c5 2026-09-28. "Add mark
+Status: done · ENG-015 · product-feedback d054b1c5 2026-09-28. "Add mark
 unread to complement cmd+j (maybe cmd+shift j?)". ⌘J visits the oldest
 needs-you; once visited, the operator has no verb to put a tab back in the
 queue for later. The mail and Chrome model applies: mark unread re-raises the
 attention marker without re-firing notifications, and it is discoverable per
 D57 (a verb cannot be born undiscoverable).
+
+Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full floor and all 31 declared gates passed. Mark unread is discoverable, silent and durable; an active Session without a source fact gets an operator reminder without fabricated completion or blockage. [Final receipt](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
 
 ### BUG-260 Restarting for an update loses the state the operator was holding
 
@@ -3576,7 +3580,7 @@ block.
 
 ### BUG-265 The bell does not sound when an agent needs you
 
-Status: bug · ENG-015 · product-feedback 23814904 2026-10-01. "Sound bell isn't
+Status: done · ENG-015 · product-feedback 23814904 2026-10-01. "Sound bell isn't
 working when an agent needs me. Should be a super robust coupled state. Anytime
 there is an amber icon, that should correspond with a notification in our
 internal notification system, which at present only includes the bell icon
@@ -3585,6 +3589,8 @@ produced by one transition, so neither fires without the other; a setting may
 mute the sound but the coupling stays. Check whether the sound still rides the
 PTY BEL path (D33) while the amber marker now comes from hooks (D4's
 `blockedOn`), so hook-raised attention never reaches the sound.
+
+Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full floor and all 31 declared gates passed. Harness and authoritative roadmap producers share one source-owned attention/alert boundary; read, restore and Mark unread cannot re-alert. Permission checks discard stale native notices. [Final receipt](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
 
 ### BUG-266 Images cannot be pasted into the feedback form
 
@@ -3697,7 +3703,7 @@ or durable resolution is established.
 
 ### BUG-273 Saved open Sessions fail when their source is unsupported
 
-Status: bug · ENG-016 · continuity audit, 2026-10-04; active follow-through with ENG-018.
+Status: done · ENG-016 · continuity audit, 2026-10-04; active follow-through with ENG-018.
 
 Known-version saved layouts assume every source string has current runtime
 metadata. Legacy migration can throw; current records with explicit title
@@ -3936,6 +3942,8 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | BUG-195's docs push guard, which let a docs push reach `master` once `docs:check` passed, and AGENTS.md's in-place docs path that pushed directly | BUG-200, 2026-09-24 | Only `agent:land` moves `master`. The pre-push hook refuses every other push to it, and documentation lands through `pnpm agent:land -- --docs`: no worktree, the docs checks only, a queue ticket like any other. |
 | ENG-030's latch policy as applied by `agent:land`: a latched publication failed the queue head, after its rebase and re-check | BUG-201, 2026-09-24 | The head checks publication before rebasing and holds, bounded and visible, instead of failing; a transient latch is retried, a deterministic one waits for the operator's recovery. Private `master` still never moves past unpublished work. |
 | BUG-162's rule that a failed roadmap read keeps the last good parse "as a fact with an age" | BUG-236, 2026-09-28 | Nothing aged it, so an unblocked Agent read blocked for as long as the file was unreadable. A failed read now declares the producer blind to that Project's Agents (unknown, never quiet or blocked); the block's `since` pin is held across the gap. |
+
+Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full floor and all 31 declared gates passed. Mixed saved sources preserve raw identity, purpose, history, opaque JSON and draft choice; unsupported runtime actions stay unavailable and known exact resume remains correct. [Final receipt](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
 
 ### BUG-274 Agents on the local network raise an unexplained macOS prompt
 

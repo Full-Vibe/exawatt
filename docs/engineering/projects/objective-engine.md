@@ -382,3 +382,13 @@ Builds on ENG-015 S4 context paging and ENG-016 D21's durable-Session storage,
 but explicitly supersedes the `KEEP` / `NO_GOAL` control-token prompt and PTY
 output sweep as the Session-label decision mechanism. Recap generation remains
 a separate “what changed while away?” concern.
+
+
+### 2026-10-04 — Combined polish delivery receipt
+
+**The reviewed implementation is integrated and installed.** Ticket 577 landed
+`19712d6ff5b032586aee5a8fe9f45e3cc3be9c44`; all 31 declared gates and the full
+normal floor passed, followed by exact-SHA dogfood installation. This supersedes
+the earlier pending combined-delivery statements. Contributor proof worktrees
+were removed after consumption review; the running app was not restarted.
+[Exact evidence and remaining acceptance boundaries](design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).

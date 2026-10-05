@@ -346,3 +346,13 @@ against this worktree's `EXA_BASE`, and is declared for the persistence/ledger
 surfaces in the delivery map. It also verifies that Fleet retains all three
 mixed-source records. Normal delivery will rerun it on the exact integrated
 candidate rather than relying on an earlier manual screenshot.
+
+
+### 2026-10-04 — Combined polish delivery receipt
+
+**The reviewed implementation is integrated and installed.** Ticket 577 landed
+`19712d6ff5b032586aee5a8fe9f45e3cc3be9c44`; all 31 declared gates and the full
+normal floor passed, followed by exact-SHA dogfood installation. This supersedes
+the earlier pending combined-delivery statements. Contributor proof worktrees
+were removed after consumption review; the running app was not restarted.
+[Exact evidence and remaining acceptance boundaries](design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
