@@ -22,7 +22,19 @@ a native startup focus-subscription race. The instrumented failure had native
 focus true and monitor focus false throughout exact Session handoff, distinct
 from the earlier locked-host failure. [Incident 0036](../incidents/0036-native-focus-predates-attention-subscription.md)
 records the control, falsified hypotheses and subscribe-then-snapshot correction.
-No ticket was admitted; native proof and the full normal floor must rerun.
+No ticket was admitted. The unchanged native gate passed on `c715056c` after
+the reviewed focus correction. Its full floor passed 3,476 related tests,
+build and all ten R3F scenes, then correctly refused native foreground after
+the desktop relocked. The desktop is now verified unlocked; temporary `-d -i`
+assertions cover only QA lifetime and will be released at cleanup.
+Independent collection on `c715056c` passed 29 of 30 remaining gates; the lone
+turn-truth permission-paint assertion passed in isolation unchanged. The fixture
+now awaits the rendered state using its existing bound, preserving both source
+and display assertions without adding a delay. Evidence is retained in
+`/tmp/exawatt-resumed-independent-gates.json` and
+`/tmp/exawatt-resumed-turn-truth-alone.log`. Reconcile latest upstream, reinstall
+dependencies and rerun the full normal 31-gate floor; no waivers or installation
+claims.
 
 The earlier locked-host checkpoint below remains historical evidence:
 Candidate behavior and fixture checkpoint: `8a2bcd4816141a7a245ddef86fd556a0852dab40`

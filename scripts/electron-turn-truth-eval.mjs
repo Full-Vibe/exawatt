@@ -364,6 +364,12 @@ try {
         async () => (await blockedOn()) === 'permission',
         'the permission gate'
       );
+      // Main source evidence precedes the renderer's subscription update.
+      // Assert the displayed result after its own observable boundary.
+      await until(
+        async () => (await status()) === 'blocked',
+        'the permission gate to render as needs-you'
+      );
       check(
         'a permission prompt reads as needs-you',
         (await status()) === 'blocked'
