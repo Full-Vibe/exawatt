@@ -22,14 +22,6 @@ import {
 export type SpatialBoardAltitude = 'fleet' | 'project' | 'agent';
 export type SpatialBoardProjection = 'top-down' | 'fixed-angle';
 /**
- * Automatic Project-address policy. Both policies are stable: a Project's
- * slot alone determines its centre, so arrivals never relayout learned
- * addresses. `honeycomb` is an operator-review candidate exposed through the
- * standing board bench; production continues to omit the option and therefore
- * receives `balanced`.
- */
-export type SpatialBoardProjectPacking = 'balanced' | 'honeycomb';
-/**
  * Board color lens (ENG-008): `status` is the default D40 protocol coloring;
  * `burn` recolors zones and population dots by normalized token share through
  * the consumption FLUX channel. Presentation-only — attention semantics
@@ -167,7 +159,6 @@ export interface SpatialBoardLayout {
   /** Project carrying the selection treatment without implying descent. */
   selectedProjectId: string | null;
   selectedAgentId: string | null;
-  projectPacking: SpatialBoardProjectPacking;
   zones: SpatialBoardProjectZone[];
   pieces: SpatialBoardPiece[];
   /** Delegated children at their final packed positions. Placed with the
@@ -199,8 +190,6 @@ export interface SpatialBoardLayoutOptions {
   /** Presentation selection, independent of semantic altitude. */
   selectedProjectId?: string | null;
   selectedAgentId?: string | null;
-  /** Stable automatic address policy; omitted in production. */
-  projectPacking?: SpatialBoardProjectPacking;
   /** Presentation-only; coordinates never branch on projection. */
   projection?: SpatialBoardProjection;
   /** Compute from full FleetState, then hide without changing stable addresses. */
@@ -240,9 +229,13 @@ const BOARD = {
    * board move together; a site-only override would have been a second layout
    * truth, which is the thing ENG-004's stable-address contract exists to
    * prevent.
+   *
+   * Rows are 24 apart since the lattice became a honeycomb (V3.9): staggered
+   * rows sit in each other's diagonal clearance, so they close from 28 without
+   * any pair of circles meeting.
    */
   fleetPitchX: 25,
-  fleetPitchY: 28,
+  fleetPitchY: 24,
   fleetMinRadius: 7,
   fleetMaxRadius: 14,
   zoneLabelClearance: 3.2,
@@ -647,27 +640,25 @@ function fleetZoneRadius(agentCount: number): number {
  * uniformly when some Project has outgrown the default footprint, so Projects
  * never intersect and every Project keeps its grid coordinate — the fleet gets
  * bigger, nothing moves relative to anything else.
+ *
+ * The lattice is a honeycomb (V3.9, operator 2026-10-04): alternate rows shift
+ * in opposing half-cell pairs, which keeps the field optically centred and
+ * buys vertical density from a circle's diagonal clearance, so the fleet reads
+ * as one board rather than strips of circles. The slot alone determines the
+ * centre; no current Project count enters this calculation, so arrivals never
+ * relayout learned addresses.
  */
 function fleetZoneRect(
   slotIndex: number,
   agentCount: number,
   radius = fleetZoneRadius(agentCount),
-  scale = 1,
-  packing: SpatialBoardProjectPacking = 'balanced'
+  scale = 1
 ): SpatialBoardRect {
   const { column, row } = fleetLatticeAddress(slotIndex);
-  // Honeycomb keeps the same stable slot order and only changes how a slot is
-  // projected. Alternate rows shift in opposing half-cell pairs, keeping the
-  // field optically centred while buying vertical density from a circle's
-  // diagonal clearance. No current Project count enters this calculation.
   const rowOrdinal = Math.round(row + 0.5);
-  const honeycombOffset = Math.abs(rowOrdinal) % 2 === 0 ? -0.25 : 0.25;
-  const centerX =
-    (column + (packing === 'honeycomb' ? honeycombOffset : 0)) *
-    BOARD.fleetPitchX *
-    scale;
-  const centerY =
-    row * (packing === 'honeycomb' ? 24 : BOARD.fleetPitchY) * scale;
+  const stagger = Math.abs(rowOrdinal) % 2 === 0 ? -0.25 : 0.25;
+  const centerX = (column + stagger) * BOARD.fleetPitchX * scale;
+  const centerY = row * BOARD.fleetPitchY * scale;
   return circleRect(centerX, centerY, radius);
 }
 
@@ -875,7 +866,6 @@ function projectZone(
   unitSize: number,
   fleetRadius: number,
   latticeScale: number,
-  projectPacking: SpatialBoardProjectPacking,
   selectedProjectId: string | null,
   selectedAgentId: string | null,
   visibleAgentIds: ReadonlySet<string> | undefined,
@@ -907,8 +897,7 @@ function projectZone(
       slotIndex,
       agents.length,
       fleetRadius,
-      latticeScale,
-      projectPacking
+      latticeScale
     ),
     visible:
       visible.length > 0 ||
@@ -1197,7 +1186,6 @@ export function selectSpatialBoardLayout(
     options.visibleAgentIds ??
     (options.census ? census.visibleAgentIds : undefined);
   const selectedAgentId = options.selectedAgentId ?? null;
-  const projectPacking = options.projectPacking ?? 'balanced';
   let altitude = options.altitude ?? 'fleet';
   let focusedProjectId = options.focusedProjectId ?? null;
   const allGroups = resolveContextGroups(state, {
@@ -1303,7 +1291,7 @@ export function selectSpatialBoardLayout(
   // The horizontal pitch is tighter than the nominal maximum diameter. Scale
   // from the radius that actually fits between neighbouring centres, not from
   // `fleetMaxRadius`; otherwise a maximal Project overlaps its horizontal
-  // neighbour in BOTH balanced and honeycomb projections.
+  // neighbour.
   const unscaledDisjointRadius = Math.min(
     BOARD.fleetMaxRadius,
     BOARD.fleetPitchX / 2
@@ -1335,8 +1323,7 @@ export function selectSpatialBoardLayout(
       slotIndex,
       group.agentIds.length,
       fleetFootprint.radius,
-      latticeScale,
-      projectPacking
+      latticeScale
     );
     return projectZone(
       group,
@@ -1347,7 +1334,6 @@ export function selectSpatialBoardLayout(
       fleetUnitSize,
       fleetFootprint.radius,
       latticeScale,
-      projectPacking,
       selectedProjectId,
       selectedAgentId,
       visibleAgentIds,
@@ -1434,7 +1420,6 @@ export function selectSpatialBoardLayout(
     focusedProjectId: altitude === 'fleet' ? null : focusedProjectId,
     selectedProjectId,
     selectedAgentId,
-    projectPacking,
     zones,
     pieces,
     delegationUnits,
@@ -1627,7 +1612,6 @@ const sameLayoutScalars = scalarComparator<
   focusedProjectId: true,
   selectedProjectId: true,
   selectedAgentId: true,
-  projectPacking: true,
 });
 
 const sameZoneScalars = scalarComparator<

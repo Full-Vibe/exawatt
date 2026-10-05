@@ -45,12 +45,7 @@ import {
   boardWorldPoint,
   boardWorldPosition,
 } from './operations-board-camera';
-import {
-  delegationStatusPieces,
-} from './delegation-roster';
-import type {
-  BoardAgentCandidate,
-} from './operations-board-presentation';
+import { delegationStatusPieces } from './delegation-roster';
 import {
   AGENT_HEX_GEOMETRY,
   FOCUS_RECESSION_MIX,
@@ -557,7 +552,6 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   lens,
   onSelectAgent,
   onToggleAgentSelect,
-  candidateTreatment,
   theme,
 }: {
   pieces: SpatialBoardPiece[];
@@ -572,7 +566,6 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   lens: SpatialBoardLens;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
-  candidateTreatment: BoardAgentCandidate;
   theme: SpatialThemeSnapshot;
 }) {
   const hoveredAgentId = useBoardHoverSlice(hover, state => state.agentId);
@@ -687,10 +680,9 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   const lastBodyRecession = useRef(new Map<string, number>());
   const entranceClock = useRef<number | null>(reduced ? null : 0);
   const pieceGeometry = AGENT_HEX_GEOMETRY;
-  // Keep the shipped cursor path local to this layer. The review treatment
-  // additionally lifts candidate state to the canvas root so its WebGL and
-  // DOM hit paths converge, but production should not rerender the whole
-  // board merely because the pointer crossed an Agent.
+  // The cursor follows the mesh this layer hit. Candidate state (hover and
+  // press) goes to the hover store instead, so the WebGL and DOM hit paths
+  // converge on one candidate and only its subscribers rerender.
   useCursor(hoveredMeshId != null);
   // Settled delegated children ride the parents' own D40 draws, so a child's
   // Active light is literally the same light — and costs no extra draw call.
@@ -828,31 +820,20 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
                 if (!interactive) return;
                 event.stopPropagation();
                 setHoveredMeshId(piece.id);
-                if (candidateTreatment === 'precision') {
-                  hover.setAgent(piece.agentId);
-                }
+                hover.setAgent(piece.agentId);
               }}
               onPointerOut={() => {
                 setHoveredMeshId(null);
-                if (candidateTreatment === 'precision') {
-                  hover.setAgent(null);
-                }
+                hover.setAgent(null);
               }}
               onPointerDown={event => {
-                if (
-                  !interactive ||
-                  !piece.agentId ||
-                  event.button !== 0 ||
-                  candidateTreatment !== 'precision'
-                )
+                if (!interactive || !piece.agentId || event.button !== 0)
                   return;
                 event.stopPropagation();
                 hover.setPressed(piece.agentId);
               }}
               onPointerUp={() => {
-                if (candidateTreatment === 'precision') {
-                  hover.setPressed(null);
-                }
+                hover.setPressed(null);
               }}
               onClick={(event: ThreeEvent<MouseEvent>) => {
                 if (!piece.agentId || event.delta > 5) return;
@@ -895,7 +876,7 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
           theme={theme}
         />
       )}
-      {candidateTreatment === 'precision' && candidate && (
+      {candidate && (
         <AgentCandidateReticle
           key={`agent-candidate:${candidate.id}`}
           piece={candidate}

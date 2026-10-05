@@ -46,10 +46,6 @@ import {
   spatialThemeFromResolvedAppearance,
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
-import {
-  resolveOperationsBoardPresentation,
-  type OperationsBoardPresentation,
-} from './operations-board-presentation';
 
 function useCoarsePointer(): boolean {
   const [coarse, setCoarse] = useState(
@@ -333,7 +329,6 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
   resolvedAppearance,
-  presentation: presentationCandidate,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
@@ -365,12 +360,6 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   /** Deterministic gallery/eval injection. Production omits this and consumes
    * the app-global AppearanceProvider snapshot. */
   resolvedAppearance?: ResolvedAppearance;
-  /**
-   * Bounded gallery seam. Production omits it and receives the shipped
-   * treatment; the standing board bench uses it to audition candidates on the
-   * exact renderer that would later ship them.
-   */
-  presentation?: Partial<OperationsBoardPresentation>;
 }) {
   const appearance = useAppearance();
   const resolved = resolvedAppearance ?? appearance.resolved;
@@ -381,10 +370,6 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   const appearanceVariables = useMemo(
     () => resolvedAppearanceCssVariables(resolved) as CSSProperties,
     [resolved]
-  );
-  const presentation = useMemo(
-    () => resolveOperationsBoardPresentation(presentationCandidate),
-    [presentationCandidate]
   );
   const controller = useRef<OperationsBoardHandle | null>(null);
   const coarsePointer = useCoarsePointer();
@@ -696,9 +681,6 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
       data-board-pieces={layout.stats.visiblePieceCount}
       data-board-status-lights={visibleLightStates}
       data-board-multi-count={multiSelection?.size ?? 0}
-      data-board-project-packing={layout.projectPacking}
-      data-board-project-emphasis={presentation.projectEmphasis}
-      data-board-agent-candidate={presentation.agentCandidate}
       data-session-handoff={sessionTransitionAgentId ?? undefined}
       data-spatial-theme={theme.themeId}
       data-spatial-bloom={theme.bloom.enabled ? 'on' : 'off'}
@@ -794,7 +776,6 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
                 : null
             }
             preserveDrawingBuffer={preserveDrawingBuffer}
-            presentation={presentation}
             theme={theme}
           />
         </BoardErrorBoundary>

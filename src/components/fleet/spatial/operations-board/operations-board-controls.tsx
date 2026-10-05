@@ -43,7 +43,6 @@ import {
 import { boardWorldPosition } from './operations-board-camera';
 import { delegationElapsedLabel } from '../spatial-agent-copy';
 import { useMinuteClock } from '../use-minute-clock';
-import type { BoardAgentCandidate } from './operations-board-presentation';
 
 function ProjectHealthRail({
   zone,
@@ -399,7 +398,6 @@ export const AgentControls = memo(function AgentControls({
   onToggleAgentSelect,
   onHoverChange,
   onPressedChange,
-  candidateTreatment,
   multiSelection,
   reduced,
   theme,
@@ -411,7 +409,6 @@ export const AgentControls = memo(function AgentControls({
   onToggleAgentSelect?: (agentId: string) => void;
   onHoverChange: (agentId: string | null) => void;
   onPressedChange: (agentId: string | null) => void;
-  candidateTreatment: BoardAgentCandidate;
   multiSelection?: ReadonlySet<string>;
   reduced: boolean;
   theme: SpatialThemeSnapshot;
@@ -475,70 +472,43 @@ export const AgentControls = memo(function AgentControls({
                 onSelectAgent(piece.agentId!);
               }
             }}
-            onPointerEnter={() => {
-              if (candidateTreatment === 'precision') {
-                onHoverChange(piece.agentId!);
-              }
-            }}
+            onPointerEnter={() => onHoverChange(piece.agentId!)}
             onPointerLeave={event => {
-              if (
-                candidateTreatment === 'precision' &&
-                document.activeElement !== event.currentTarget
-              ) {
+              if (document.activeElement !== event.currentTarget) {
                 onHoverChange(null);
               }
             }}
             onPointerDown={event => {
-              if (event.button !== 0 || candidateTreatment !== 'precision')
-                return;
+              if (event.button !== 0) return;
               event.currentTarget.setPointerCapture(event.pointerId);
               onPressedChange(piece.agentId!);
             }}
             onPointerUp={event => {
-              if (candidateTreatment !== 'precision') return;
               if (event.currentTarget.hasPointerCapture(event.pointerId)) {
                 event.currentTarget.releasePointerCapture(event.pointerId);
               }
               onPressedChange(null);
             }}
-            onPointerCancel={() => {
-              if (candidateTreatment === 'precision') onPressedChange(null);
-            }}
-            onLostPointerCapture={() => {
-              if (candidateTreatment === 'precision') onPressedChange(null);
-            }}
-            onFocus={() => {
-              if (candidateTreatment === 'precision') {
-                onHoverChange(piece.agentId!);
-              }
-            }}
+            onPointerCancel={() => onPressedChange(null)}
+            onLostPointerCapture={() => onPressedChange(null)}
+            // Keyboard focus shows as the in-world candidate outline, the
+            // same mark the pointer gets, rather than a DOM ring.
+            onFocus={() => onHoverChange(piece.agentId!)}
             onBlur={() => {
-              if (candidateTreatment === 'precision') {
-                onHoverChange(null);
-                onPressedChange(null);
-              }
+              onHoverChange(null);
+              onPressedChange(null);
             }}
             onKeyDown={event => {
-              if (
-                candidateTreatment === 'precision' &&
-                (event.key === 'Enter' || event.key === ' ')
-              ) {
+              if (event.key === 'Enter' || event.key === ' ') {
                 onPressedChange(piece.agentId!);
               }
             }}
             onKeyUp={event => {
-              if (
-                candidateTreatment === 'precision' &&
-                (event.key === 'Enter' || event.key === ' ')
-              ) {
+              if (event.key === 'Enter' || event.key === ' ') {
                 onPressedChange(null);
               }
             }}
-            className={`board-control-enter group relative grid h-11 w-11 cursor-pointer place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px ${
-              candidateTreatment === 'precision'
-                ? ''
-                : 'focus-visible:ring-2 focus-visible:ring-ring'
-            }`}
+            className="board-control-enter group relative grid h-11 w-11 cursor-pointer place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px"
           >
             {/* Reveal-only (operator, 2026-08-11): a persistent card per Agent
                 put three lines of prose on a board whose job is a glance, and

@@ -36,14 +36,18 @@ import {
   boardRectCenter as rectCenter,
 } from './operations-board-camera';
 import { mixHexColors } from '@/lib/appearance/color';
-import type {
-  BoardProjectEmphasis,
-} from './operations-board-presentation';
 import { FOCUS_RECESSION_MIX } from './operations-board-materials';
 import {
   useBoardHoverSlice,
   type BoardHoverStore,
 } from './operations-board-hover';
+
+/** While a Project is selected its peers recede (V3.9): their edges mix this
+ *  far toward the board, and their plates take this share of the full focus
+ *  recession, so selection reads as a lighter form of drilling in. */
+const SELECTION_EDGE_RECESSION = 0.42;
+const SELECTION_PLATE_RECESSION = 0.32;
+const SELECTION_RING_OPACITY = 0.72;
 
 function gridGeometry(
   bounds: SpatialBoardRect,
@@ -138,15 +142,14 @@ export const BoardGrid = memo(function BoardGrid({
 
 /** All circular Project edges in ONE Line2 draw: per-vertex accent colors carry each
  *  Project's hue, while selection replaces identity with the theme's
- *  selection role. Concrete sRGB values enter Three's color-managed working
- *  space once. */
+ *  selection role. While a Project is selected its peers' edges recede toward
+ *  the board. Concrete sRGB values enter Three's color-managed working space
+ *  once. */
 function ZoneEdges({
   zones,
-  projectEmphasis,
   theme,
 }: {
   zones: SpatialBoardProjectZone[];
-  projectEmphasis: BoardProjectEmphasis;
   theme: SpatialThemeSnapshot;
 }) {
   const { points, colors } = useMemo(() => {
@@ -158,8 +161,8 @@ function ZoneEdges({
         ? theme.selection
         : spatialProjectIdentityColor(theme, zone.id);
       const accent = new THREE.Color(
-        projectEmphasis === 'focus' && hasSelection && !zone.selected
-          ? mixHexColors(base, theme.canvas, 0.42)
+        hasSelection && !zone.selected
+          ? mixHexColors(base, theme.canvas, SELECTION_EDGE_RECESSION)
           : base
       );
       const center = rectCenter(zone.rect);
@@ -184,7 +187,7 @@ function ZoneEdges({
       }
     }
     return { points, colors };
-  }, [projectEmphasis, theme, zones]);
+  }, [theme, zones]);
   if (points.length === 0) return null;
   return (
     <Line
@@ -202,19 +205,19 @@ function ZoneEdges({
 }
 
 /**
- * Reviewable selected-Project emphasis. It is deliberately a sibling of the
- * shipped edge draw rather than a replacement: Project identity remains on
- * the zone edge, while selection gets the dedicated action/focus channel.
+ * The selected Project's outline, half of the selection treatment (V3.9,
+ * operator 2026-10-04): the selected Project keeps its contrast and this quiet
+ * outline while its peers recede, the same language drilling already speaks.
+ * It is a sibling of the edge draw rather than a replacement: Project identity
+ * stays on the zone edge, while selection gets the dedicated focus channel.
  * One selected Project means one additional Line2 draw at most.
  */
 function ProjectSelectionRing({
   zone,
-  treatment,
   reduced,
   theme,
 }: {
   zone: SpatialBoardProjectZone;
-  treatment: Exclude<BoardProjectEmphasis, 'current'>;
   reduced: boolean;
   theme: SpatialThemeSnapshot;
 }) {
@@ -229,7 +232,7 @@ function ProjectSelectionRing({
     return result;
   }, []);
   const center = rectCenter(zone.rect);
-  const radius = zone.radius * (treatment === 'lift' ? 1.045 : 1.03);
+  const radius = zone.radius * 1.03;
   useFrame((state, delta) => {
     const target = group.current;
     const material = line.current?.material;
@@ -238,15 +241,19 @@ function ProjectSelectionRing({
     const nextScale = reduced
       ? 1
       : THREE.MathUtils.damp(target.scale.x, 1, 12, clamped);
-    const targetOpacity = treatment === 'focus' ? 0.72 : 0.88;
     const nextOpacity = reduced
-      ? targetOpacity
-      : THREE.MathUtils.damp(material.opacity, targetOpacity, 12, clamped);
+      ? SELECTION_RING_OPACITY
+      : THREE.MathUtils.damp(
+          material.opacity,
+          SELECTION_RING_OPACITY,
+          12,
+          clamped
+        );
     target.scale.setScalar(nextScale);
     material.opacity = nextOpacity;
     if (
       Math.abs(nextScale - 1) > 0.001 ||
-      Math.abs(nextOpacity - targetOpacity) > 0.002
+      Math.abs(nextOpacity - SELECTION_RING_OPACITY) > 0.002
     ) {
       state.invalidate();
     }
@@ -261,10 +268,10 @@ function ProjectSelectionRing({
         ref={line}
         points={points}
         color={theme.selection}
-        lineWidth={treatment === 'lift' ? 2.6 : 2.1}
+        lineWidth={2.1}
         toneMapped={false}
         transparent
-        opacity={reduced ? (treatment === 'focus' ? 0.72 : 0.88) : 0}
+        opacity={reduced ? SELECTION_RING_OPACITY : 0}
         depthWrite={false}
         raycast={() => null}
         scale={radius}
@@ -283,7 +290,6 @@ export const ZoneLayer = memo(function ZoneLayer({
   onDrillProject,
   onToggleZoneSelect,
   hover,
-  projectEmphasis,
   theme,
 }: {
   zones: SpatialBoardProjectZone[];
@@ -293,7 +299,6 @@ export const ZoneLayer = memo(function ZoneLayer({
   onDrillProject: (projectId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
   hover: BoardHoverStore;
-  projectEmphasis: BoardProjectEmphasis;
   theme: SpatialThemeSnapshot;
 }) {
   const hoveredId = useBoardHoverSlice(hover, state => state.zoneId);
@@ -325,20 +330,19 @@ export const ZoneLayer = memo(function ZoneLayer({
   useFrame((state, delta) => {
     const material = materialRef.current;
     if (!material) return;
-    // Focus recession: a neighbour's plate mixes toward the board. Sampled
-    // from the shared clock so it arrives with the camera; written only when
-    // it changed so a resting board costs nothing.
+    // Focus recession: a neighbour's plate mixes toward the board, fully
+    // while descending into another Project and partly while another Project
+    // is merely selected. Sampled from the shared clock so it arrives with the
+    // camera; written only when it changed so a resting board costs nothing.
     const now = performance.now();
     let receding = false;
     for (const zone of zones) {
       const plate = plateRefs.current.get(zone.id);
       if (!plate?.color) continue;
       const semanticAmount = recession(zone.id, now);
-      const studyAmount =
-        projectEmphasis === 'focus' && hasSelectedZone && !zone.selected
-          ? 0.32
-          : 0;
-      const amount = Math.max(semanticAmount, studyAmount);
+      const selectionAmount =
+        hasSelectedZone && !zone.selected ? SELECTION_PLATE_RECESSION : 0;
+      const amount = Math.max(semanticAmount, selectionAmount);
       const previous = lastRecession.current.get(zone.id);
       if (previous !== undefined && Math.abs(previous - amount) < 0.002)
         continue;
@@ -357,49 +361,7 @@ export const ZoneLayer = memo(function ZoneLayer({
       );
       if (semanticAmount > 0.001 && semanticAmount < 0.999) receding = true;
     }
-    let lifting = false;
-    for (const zone of zones) {
-      const plate = plateRefs.current.get(zone.id);
-      if (!plate) continue;
-      const selectedLift = projectEmphasis === 'lift' && zone.selected;
-      const targetZ = selectedLift ? 0.18 : 0;
-      const targetScale = selectedLift ? 1.025 : 1;
-      if (reduced) {
-        plate.position.z = targetZ;
-        plate.scale.set(
-          zone.rect.width * targetScale,
-          zone.rect.height * targetScale,
-          0.62
-        );
-        continue;
-      }
-      plate.position.z = THREE.MathUtils.damp(
-        plate.position.z,
-        targetZ,
-        12,
-        Math.min(delta, 0.05)
-      );
-      plate.scale.x = THREE.MathUtils.damp(
-        plate.scale.x,
-        zone.rect.width * targetScale,
-        12,
-        Math.min(delta, 0.05)
-      );
-      plate.scale.y = THREE.MathUtils.damp(
-        plate.scale.y,
-        zone.rect.height * targetScale,
-        12,
-        Math.min(delta, 0.05)
-      );
-      if (
-        Math.abs(plate.position.z - targetZ) > 0.001 ||
-        Math.abs(plate.scale.x - zone.rect.width * targetScale) > 0.002 ||
-        Math.abs(plate.scale.y - zone.rect.height * targetScale) > 0.002
-      ) {
-        lifting = true;
-      }
-    }
-    if (receding || lifting) state.invalidate();
+    if (receding) state.invalidate();
     if (entrance.current >= 1) {
       material.opacity = 1;
       return;
@@ -464,23 +426,17 @@ export const ZoneLayer = memo(function ZoneLayer({
           );
         })}
       </Instances>
-      <ZoneEdges
-        zones={zones}
-        projectEmphasis={projectEmphasis}
-        theme={theme}
-      />
-      {projectEmphasis !== 'current' &&
-        zones
-          .filter(zone => zone.selected)
-          .map(zone => (
-            <ProjectSelectionRing
-              key={`project-selection:${zone.id}`}
-              zone={zone}
-              treatment={projectEmphasis}
-              reduced={reduced}
-              theme={theme}
-            />
-          ))}
+      <ZoneEdges zones={zones} theme={theme} />
+      {zones
+        .filter(zone => zone.selected)
+        .map(zone => (
+          <ProjectSelectionRing
+            key={`project-selection:${zone.id}`}
+            zone={zone}
+            reduced={reduced}
+            theme={theme}
+          />
+        ))}
     </>
   );
 });

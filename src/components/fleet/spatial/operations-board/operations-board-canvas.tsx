@@ -30,7 +30,6 @@ import {
   type BoardClampEdges,
   type OperationsBoardViewport,
 } from './operations-board-camera';
-import type { OperationsBoardPresentation } from './operations-board-presentation';
 
 export type { OperationsBoardViewport } from './operations-board-camera';
 import { useLowPowerMode, useReducedMotion } from './operations-board-env';
@@ -109,7 +108,6 @@ export function OperationsBoardCanvas({
   onSelectDelegationChild,
   selectedDelegationUnitId = null,
   preserveDrawingBuffer = false,
-  presentation,
   theme,
 }: {
   layout: SpatialBoardLayout;
@@ -137,7 +135,6 @@ export function OperationsBoardCanvas({
   /** The delegated child arrow navigation sits on, so it wears the ring. */
   selectedDelegationUnitId?: string | null;
   preserveDrawingBuffer?: boolean;
-  presentation: OperationsBoardPresentation;
   theme: SpatialThemeSnapshot;
 }) {
   const reduced = useReducedMotion();
@@ -269,7 +266,6 @@ export function OperationsBoardCanvas({
             onDrillProject={onDrillProject}
             onToggleZoneSelect={onToggleZoneSelect}
             hover={hover}
-            projectEmphasis={presentation.projectEmphasis}
             theme={theme}
           />
           <AgentPieceLayer
@@ -284,7 +280,6 @@ export function OperationsBoardCanvas({
             lens={lens}
             onSelectAgent={onSelectAgent}
             onToggleAgentSelect={onToggleAgentSelect}
-            candidateTreatment={presentation.agentCandidate}
             theme={theme}
           />
           <PopulationDotLayer
@@ -321,7 +316,6 @@ export function OperationsBoardCanvas({
             onToggleAgentSelect={onToggleAgentSelect}
             onHoverChange={hover.setAgent}
             onPressedChange={hover.setPressed}
-            candidateTreatment={presentation.agentCandidate}
             multiSelection={multiSelection}
             reduced={reduced}
             theme={theme}

@@ -8,10 +8,8 @@ import {
   selectSpatialBoardLayout,
   selectSpatialDelegationUnits,
   type SpatialBoardRect,
-  type SpatialBoardProjectPacking,
 } from '@exawatt/ui-model';
 import { OperationsBoardSurface } from '@/components/fleet/spatial/operations-board/operations-board-surface';
-import type { BoardProjectEmphasis } from '@/components/fleet/spatial/operations-board/operations-board-presentation';
 import {
   BOARD_STUDY_FIXTURES,
   boardStudyFleet,
@@ -43,42 +41,11 @@ const THEMES = {
 } as const satisfies Record<string, BuiltInThemeId>;
 
 type ThemeKey = keyof typeof THEMES;
-type DirectionId = 'lattice' | 'honeycomb' | 'focus';
-
-interface FleetDirection {
-  label: string;
-  note: string;
-  packing: SpatialBoardProjectPacking;
-  projectEmphasis: BoardProjectEmphasis;
-}
-
-const DIRECTIONS: Record<DirectionId, FleetDirection> = {
-  lattice: {
-    label: 'Stable lattice',
-    note: 'Balanced addresses · selected Project gets a precise outer ring.',
-    packing: 'balanced',
-    projectEmphasis: 'outline',
-  },
-  honeycomb: {
-    label: 'Close pack',
-    note: 'Staggered rows · selected Project lifts without moving its address.',
-    packing: 'honeycomb',
-    projectEmphasis: 'lift',
-  },
-  focus: {
-    label: 'Focus field',
-    note: 'Balanced addresses · selected Project holds contrast while peers recede.',
-    packing: 'balanced',
-    projectEmphasis: 'focus',
-  },
-};
-
 interface StudyState {
   fixture: BoardStudyFixtureId;
   altitude: 'fleet' | 'project';
   theme: ThemeKey;
   projection: 'top-down' | 'fixed-angle';
-  direction: DirectionId;
   selectedProjectId: string | null;
 }
 
@@ -87,7 +54,6 @@ const DEFAULTS: StudyState = {
   altitude: 'fleet',
   theme: 'classic',
   projection: 'top-down',
-  direction: 'lattice',
   selectedProjectId: null,
 };
 
@@ -97,7 +63,6 @@ function readState(search: string): StudyState {
   const altitude = params.get('altitude');
   const theme = params.get('theme');
   const projection = params.get('projection');
-  const direction = params.get('direction');
   return {
     fixture: BOARD_STUDY_FIXTURES.some(entry => entry.id === fixture)
       ? (fixture as BoardStudyFixtureId)
@@ -105,10 +70,6 @@ function readState(search: string): StudyState {
     altitude: altitude === 'project' ? 'project' : 'fleet',
     theme: theme && theme in THEMES ? (theme as ThemeKey) : DEFAULTS.theme,
     projection: projection === 'fixed-angle' ? 'fixed-angle' : 'top-down',
-    direction:
-      direction && direction in DIRECTIONS
-        ? (direction as DirectionId)
-        : DEFAULTS.direction,
     selectedProjectId: params.get('project'),
   };
 }
@@ -120,7 +81,6 @@ function href(state: StudyState, patch: Partial<StudyState>): string {
     altitude: next.altitude,
     theme: next.theme,
     projection: next.projection,
-    direction: next.direction,
   });
   if (next.selectedProjectId) params.set('project', next.selectedProjectId);
   return `/hud-gallery/board-study?${params.toString()}`;
@@ -134,16 +94,13 @@ function BoardStudyBench() {
   const params = useSearchParams();
   const router = useRouter();
   const state = useMemo(() => readState(params.toString()), [params]);
-  const direction = DIRECTIONS[state.direction];
 
   const fleetState = useMemo(
     () => boardStudyFleet(state.fixture),
     [state.fixture]
   );
   const layout = useMemo(() => {
-    const base = selectSpatialBoardLayout(fleetState, {
-      projectPacking: direction.packing,
-    });
+    const base = selectSpatialBoardLayout(fleetState);
     const selectedProjectId = base.zones.some(
       zone => zone.id === state.selectedProjectId && !zone.isAggregate
     )
@@ -153,9 +110,8 @@ function BoardStudyBench() {
       altitude: state.altitude,
       focusedProjectId: state.altitude === 'project' ? selectedProjectId : null,
       selectedProjectId,
-      projectPacking: direction.packing,
     });
-  }, [direction.packing, fleetState, state.altitude, state.selectedProjectId]);
+  }, [fleetState, state.altitude, state.selectedProjectId]);
 
   const selectProject = useCallback(
     (projectId: string) => {
@@ -224,7 +180,6 @@ function BoardStudyBench() {
       className="min-h-screen bg-background px-4 py-6 font-ui text-foreground sm:px-6"
       data-board-study={state.fixture}
       data-board-study-altitude={state.altitude}
-      data-board-study-direction={state.direction}
     >
       <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
         <header className="flex flex-col gap-2">
@@ -234,7 +189,7 @@ function BoardStudyBench() {
             </Link>{' '}
             / Fleet board
           </p>
-          <h1 className="text-surface-title font-semibold">Fleet directions</h1>
+          <h1 className="text-surface-title font-semibold">Fleet board</h1>
           <p className="max-w-3xl text-sm text-muted-foreground">
             Real board, deterministic fleets. Click a Project to move the
             selection; switch to Project altitude to test Agent hover and press.
@@ -242,15 +197,6 @@ function BoardStudyBench() {
         </header>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-border p-3">
-          <Control
-            label="Direction"
-            options={(Object.keys(DIRECTIONS) as DirectionId[]).map(value => ({
-              value,
-              label: DIRECTIONS[value].label,
-              href: href(state, { direction: value }),
-            }))}
-            current={state.direction}
-          />
           <Control
             label="Fixture"
             options={BOARD_STUDY_FIXTURES.map(entry => ({
@@ -290,7 +236,6 @@ function BoardStudyBench() {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-chrome-meta text-muted-foreground">
-          <span>{direction.note}</span>
           <span>{active.note}</span>
         </div>
 
@@ -307,10 +252,6 @@ function BoardStudyBench() {
             onBandSelect={bandSelect}
             preserveDrawingBuffer
             resolvedAppearance={resolvedAppearance}
-            presentation={{
-              projectEmphasis: direction.projectEmphasis,
-              agentCandidate: 'precision',
-            }}
           />
         </div>
       </div>

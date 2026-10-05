@@ -135,7 +135,9 @@ describe('selectSpatialBoardLayout', () => {
       expect(new Set(layout.zones.map(zone => zone.slotIndex)).size).toBe(
         projectCount
       );
-      expect(layout.bounds.width).toBeLessThanOrEqual(65);
+      // The honeycomb's half-cell stagger adds half a column pitch (12.5) of
+      // width to the straight lattice's 65; its closer rows take height away.
+      expect(layout.bounds.width).toBeLessThanOrEqual(77.5);
       expect(layout.bounds.height).toBeLessThanOrEqual(72);
       for (const zone of layout.zones) {
         expect(Number.isFinite(zone.rect.x)).toBe(true);
@@ -146,37 +148,45 @@ describe('selectSpatialBoardLayout', () => {
     }
   );
 
-  it('packs the common four-Project fleet as a balanced 2x2 overview', () => {
+  it('packs the common four-Project fleet as two staggered rows of two', () => {
     const layout = selectSpatialBoardLayout(projectFleet(4));
     const centers = layout.zones.map(zone => ({
       x: zone.rect.x + zone.rect.width / 2,
       y: zone.rect.y + zone.rect.height / 2,
     }));
 
-    expect(new Set(centers.map(center => center.x))).toHaveLength(2);
-    expect(new Set(centers.map(center => center.y))).toHaveLength(2);
-    expect(layout.bounds.width / layout.bounds.height).toBeLessThan(1.25);
+    // Two rows of two, the second shifted half a column pitch: four distinct
+    // columns, and still a compact overview rather than a strip.
+    const rows = [...new Set(centers.map(center => center.y))];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(centers.filter(center => center.y === row)).toHaveLength(2);
+    }
+    expect(new Set(centers.map(center => center.x))).toHaveLength(4);
+    expect(layout.bounds.width / layout.bounds.height).toBeLessThan(1.4);
   });
 
-  it('offers a stable honeycomb policy without changing slot ownership', () => {
-    const balanced = selectSpatialBoardLayout(projectFleet(10));
-    const honeycomb = selectSpatialBoardLayout(projectFleet(10), {
-      projectPacking: 'honeycomb',
-    });
-
-    expect(honeycomb.projectPacking).toBe('honeycomb');
-    expect(honeycomb.zones.map(zone => zone.slotIndex)).toEqual(
-      balanced.zones.map(zone => zone.slotIndex)
+  it('staggers alternate rows into a honeycomb and never moves a known Project', () => {
+    const layout = selectSpatialBoardLayout(projectFleet(10));
+    const centers = layout.zones.map(zone => ({
+      x: zone.rect.x + zone.radius,
+      y: zone.rect.y + zone.radius,
+    }));
+    const rows = [...new Set(centers.map(center => center.y))].sort(
+      (a, b) => a - b
     );
-    expect(honeycomb.zones.map(zone => zone.rect)).not.toEqual(
-      balanced.zones.map(zone => zone.rect)
-    );
+    expect(rows.length).toBeGreaterThan(1);
+    // Neighbouring rows sit half a cell apart, so no column lines up across
+    // them: the field reads as one board rather than strips.
+    const columnsOf = (y: number) =>
+      new Set(centers.filter(center => center.y === y).map(c => c.x));
+    for (let index = 1; index < rows.length; index += 1) {
+      const above = columnsOf(rows[index - 1]!);
+      for (const x of columnsOf(rows[index]!)) expect(above.has(x)).toBe(false);
+    }
 
-    const before = selectSpatialBoardLayout(projectFleet(6), {
-      projectPacking: 'honeycomb',
-    });
+    const before = selectSpatialBoardLayout(projectFleet(6));
     const after = selectSpatialBoardLayout(projectFleet(10), {
-      projectPacking: 'honeycomb',
       previousLayout: before,
     });
     for (const previous of before.zones) {
@@ -189,25 +199,21 @@ describe('selectSpatialBoardLayout', () => {
   it.each([1, 25, 200])(
     'keeps automatic Project circles disjoint at %i Agents per Project',
     agentsPerProject => {
-      for (const projectPacking of ['balanced', 'honeycomb'] as const) {
-        const layout = selectSpatialBoardLayout(
-          projectFleet(10, agentsPerProject),
-          { projectPacking }
-        );
+      const layout = selectSpatialBoardLayout(
+        projectFleet(10, agentsPerProject)
+      );
 
-        for (let left = 0; left < layout.zones.length; left += 1) {
-          for (let right = left + 1; right < layout.zones.length; right += 1) {
-            const a = layout.zones[left]!;
-            const b = layout.zones[right]!;
-            const distance = Math.hypot(
-              a.rect.x + a.radius - b.rect.x - b.radius,
-              a.rect.y + a.radius - b.rect.y - b.radius
-            );
-            expect(
-              distance,
-              `${projectPacking}: ${a.id} overlaps ${b.id}`
-            ).toBeGreaterThanOrEqual(a.radius + b.radius);
-          }
+      for (let left = 0; left < layout.zones.length; left += 1) {
+        for (let right = left + 1; right < layout.zones.length; right += 1) {
+          const a = layout.zones[left]!;
+          const b = layout.zones[right]!;
+          const distance = Math.hypot(
+            a.rect.x + a.radius - b.rect.x - b.radius,
+            a.rect.y + a.radius - b.rect.y - b.radius
+          );
+          expect(distance, `${a.id} overlaps ${b.id}`).toBeGreaterThanOrEqual(
+            a.radius + b.radius
+          );
         }
       }
     }
