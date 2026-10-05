@@ -158,7 +158,12 @@ export function UsageScenariosStudy() {
             <AmbientMeterControl overview={overview} href="#" />
           </div>
           <div className="flex max-w-3xl flex-col gap-6">
-            <UsageOverviewBody overview={overview} phrase={phrase} />
+            <UsageOverviewBody
+              overview={overview}
+              phrase={phrase}
+              // Simulated: the workbench never spends a real reset.
+              onUseReset={async () => 'reset'}
+            />
           </div>
         </section>
       </div>

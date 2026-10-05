@@ -12,6 +12,7 @@ import { planWindowKey } from '@exawatt/core';
 import {
   CodexPlanAccountService,
   parseCodexAccountRateLimits,
+  parseCodexResetOutcome,
 } from './codex-plan-account';
 import { CodexProtocolIncompatibleError } from '../harness-events/codex-app-server';
 
@@ -260,6 +261,89 @@ describe('the credit balance is account-wide', () => {
       balance: 60941.199264,
       unlimited: false,
     });
+  });
+});
+
+describe('spending a banked reset', () => {
+  let stateDir: string;
+  let nowMs: number;
+  beforeEach(() => {
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'exa-codex-reset-'));
+    nowMs = Date.parse(OBSERVED_AT);
+  });
+  afterEach(() => {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  it('reads every app-server outcome in the shared vocabulary', () => {
+    expect(parseCodexResetOutcome({ outcome: 'reset' })).toBe('reset');
+    expect(parseCodexResetOutcome({ outcome: 'alreadyRedeemed' })).toBe('reset');
+    expect(parseCodexResetOutcome({ outcome: 'nothingToReset' })).toBe('nothing-to-reset');
+    expect(parseCodexResetOutcome({ outcome: 'noCredit' })).toBe('no-credit');
+    expect(parseCodexResetOutcome({ outcome: 'somethingNew' })).toBe('failed');
+    expect(parseCodexResetOutcome(null)).toBe('failed');
+  });
+
+  it('spends the soonest-expiring credit, then reads the account again at once', async () => {
+    const spent: Array<string | null> = [];
+    let reads = 0;
+    const svc = new CodexPlanAccountService({
+      stateDir,
+      enabled: true,
+      readRateLimits: async () => {
+        reads += 1;
+        return RECORDED;
+      },
+      consumeReset: async creditId => {
+        spent.push(creditId);
+        return { outcome: 'reset' };
+      },
+      now: () => nowMs,
+      // The cadence would refuse a second read for an hour; a spent reset
+      // must not wait for it.
+      minFetchIntervalMs: 3_600_000,
+      jitterMs: 0,
+    });
+    await svc.maybeRefresh();
+    expect(svc.view().account.canUseReset).toBe(true);
+    await expect(svc.useReset()).resolves.toBe('reset');
+    expect(spent).toEqual(['redacted-1']);
+    expect(reads).toBe(2);
+  });
+
+  it('spends nothing and reads nothing more when the account had nothing to reset', async () => {
+    let reads = 0;
+    const svc = new CodexPlanAccountService({
+      stateDir,
+      enabled: true,
+      readRateLimits: async () => {
+        reads += 1;
+        return RECORDED;
+      },
+      consumeReset: async () => ({ outcome: 'nothingToReset' }),
+      now: () => nowMs,
+      minFetchIntervalMs: 0,
+      jitterMs: 0,
+    });
+    await svc.maybeRefresh();
+    await expect(svc.useReset()).resolves.toBe('nothing-to-reset');
+    expect(reads).toBe(1);
+  });
+
+  it('refuses to spend while the read is switched off', async () => {
+    let spends = 0;
+    const svc = new CodexPlanAccountService({
+      stateDir,
+      enabled: false,
+      readRateLimits: async () => RECORDED,
+      consumeReset: async () => {
+        spends += 1;
+        return { outcome: 'reset' };
+      },
+      now: () => nowMs,
+    });
+    await expect(svc.useReset()).resolves.toBe('failed');
+    expect(spends).toBe(0);
   });
 });
 

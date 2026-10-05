@@ -7,10 +7,10 @@
  *   2. Cards are named for the ACCOUNT, never for the harness that shares
  *      its credential (claude.ai chat burns the same plan).
  *   3. Vendor money renders the vendor's own figure in its own row.
- *   4. The glance and the page say the same thing: the popover renders the
+ *   4. The glance and the page show the same thing: the popover renders the
  *      page's projection, never its own.
  */
-import { render, screen, within } from '@testing-library/react';
+import { render, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { ProviderPlanAccountState } from '@exawatt/core';
 import { UsageOverviewBody } from '@/components/consumption/usage-overview';
@@ -97,14 +97,11 @@ describe('vendor money stays the vendor’s figure', () => {
 });
 
 describe('the glance and the page say the same thing', () => {
-  it('the popover renders the page headline and the same cards', () => {
+  it('the popover renders the same cards in the same order', () => {
     const scenario = usageScenario('runs-out-before-reset');
     const { overview, view } = renderScenario(scenario);
-    const page = view.container.querySelector('[data-usage-headline]')?.textContent;
-    expect(page).toBe(overview.headline?.text);
     view.unmount();
     render(<MeterPopover overview={overview} />);
-    expect(screen.getByText(overview.headline!.text)).toBeTruthy();
     const cards = document.querySelectorAll('[data-meter-popover] [data-usage-account]');
     expect([...cards].map(c => c.getAttribute('data-usage-account'))).toEqual(
       overview.accounts.map(a => a.key)

@@ -10,6 +10,7 @@ import {
   type ThemeBootstrapId,
 } from './generated-theme-bootstrap';
 import {
+  USAGE_ALERT_POLICY,
   deleteLaunchConfiguration as deleteConfiguration,
   emptyLaunchConfigurationPool,
   parseLaunchConfigurationPool,
@@ -320,10 +321,22 @@ const SETTINGS_SCHEMA: {
   },
   notifications: raw => {
     if (!raw || typeof raw !== 'object') return undefined;
-    const candidate = raw as { attention?: unknown; dockBadge?: unknown };
+    const candidate = raw as {
+      attention?: unknown;
+      dockBadge?: unknown;
+      usageAlerts?: unknown;
+      usageAlertLeadMinutes?: unknown;
+    };
+    const lead = candidate.usageAlertLeadMinutes;
+    const leadIsChoice =
+      lead === null ||
+      (typeof lead === 'number' &&
+        (USAGE_ALERT_POLICY.leadMinuteChoices as readonly (number | null)[]).includes(lead));
     if (
       typeof candidate.attention !== 'boolean' &&
-      typeof candidate.dockBadge !== 'boolean'
+      typeof candidate.dockBadge !== 'boolean' &&
+      typeof candidate.usageAlerts !== 'boolean' &&
+      !leadIsChoice
     ) {
       return undefined;
     }
@@ -333,6 +346,9 @@ const SETTINGS_SCHEMA: {
     };
     if (typeof candidate.dockBadge === 'boolean')
       parsed.dockBadge = candidate.dockBadge;
+    if (typeof candidate.usageAlerts === 'boolean')
+      parsed.usageAlerts = candidate.usageAlerts;
+    if (leadIsChoice) parsed.usageAlertLeadMinutes = lead as number | null;
     return parsed;
   },
   // Only an explicit boolean is a choice. A missing or malformed hosted-feature
@@ -555,7 +571,7 @@ function validStoredSettings(value: unknown): boolean {
       'letterSpacing',
       'fontStrokeWidth',
     ],
-    notifications: ['attention', 'dockBadge'],
+    notifications: ['attention', 'dockBadge', 'usageAlerts', 'usageAlertLeadMinutes'],
     power: ['keepAwake'],
     contextLabels: ['hosted'],
     conversationSummaries: ['hosted'],
@@ -821,11 +837,49 @@ export function setAttentionNotifications(enabled: boolean): StoredSettings {
 export function setDockBadge(enabled: boolean): StoredSettings {
   const settings = loadSettings();
   settings.notifications = {
+    ...settings.notifications,
     attention: settings.notifications?.attention ?? false,
     dockBadge: enabled,
   };
   writeSettings(settings);
   return settings;
+}
+
+export function setUsageAlerts(enabled: boolean): StoredSettings {
+  const settings = loadSettings();
+  settings.notifications = {
+    ...settings.notifications,
+    attention: settings.notifications?.attention ?? false,
+    usageAlerts: enabled,
+  };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setUsageAlertLeadMinutes(minutes: number | null): StoredSettings {
+  const settings = loadSettings();
+  settings.notifications = {
+    ...settings.notifications,
+    attention: settings.notifications?.attention ?? false,
+    usageAlertLeadMinutes: minutes,
+  };
+  writeSettings(settings);
+  return settings;
+}
+
+/** ENG-008 E17: the operator's usage-alert choices, defaults applied. */
+export function usageAlertPreferences(settings: StoredSettings): {
+  enabled: boolean;
+  leadMinutes: number | null;
+} {
+  const notifications = settings.notifications;
+  return {
+    enabled: notifications?.usageAlerts !== false,
+    leadMinutes:
+      notifications?.usageAlertLeadMinutes === undefined
+        ? USAGE_ALERT_POLICY.defaultLeadMinutes
+        : notifications.usageAlertLeadMinutes,
+  };
 }
 
 export function setHostedContextLabels(enabled: boolean): StoredSettings {

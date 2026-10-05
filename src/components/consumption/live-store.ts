@@ -51,7 +51,11 @@ import {
   type LiveScanView,
   type LiveSessionIdentity,
 } from './live-source';
-import type { PtyHarness } from '@exawatt/core';
+import type {
+  ConsumptionSourceId,
+  PlanResetOutcome,
+  PtyHarness,
+} from '@exawatt/core';
 import type {
   ClosedSessionEntry,
   PtySessionInfo,
@@ -549,6 +553,23 @@ function pending(): LiveConsumptionState {
 function stopped(): LiveConsumptionState {
   stoppedState ??= emptyState('paused');
   return stoppedState;
+}
+
+/**
+ * Spend one banked reset for an account (ENG-008 E17), only ever from the
+ * confirm on its card. Main reads the account again before it answers, and
+ * the revision bump it causes pulls the restored figures into this store.
+ */
+export async function spendAccountReset(
+  source: ConsumptionSourceId
+): Promise<PlanResetOutcome> {
+  const api = bridge();
+  if (!api?.useReset) return 'failed';
+  try {
+    return await api.useReset(source);
+  } catch {
+    return 'failed';
+  }
 }
 
 export function subscribeLiveConsumption(listener: () => void): () => void {

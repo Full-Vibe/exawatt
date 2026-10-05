@@ -117,6 +117,9 @@ export interface ProviderPlanSpend {
  * which is why the expiry is carried and not only the count.
  */
 export interface PlanResetCredit {
+  /** The vendor's opaque id, used to spend exactly this credit; null when
+   *  the source did not report one. Never displayed. */
+  id?: string | null;
   /** The vendor's own display title, e.g. `Full reset`. null when unlabelled. */
   title: string | null;
   /** ISO 8601 expiry; null when the credit never expires. */
@@ -163,7 +166,17 @@ export interface ProviderPlanAccountState {
   resets?: PlanResets;
   /** Prepaid credit balance. Absent when the source cannot report one. */
   credits?: PlanCreditBalance;
+  /** The account can spend a banked reset through Exawatt (Codex). */
+  canUseReset?: boolean;
 }
+
+/**
+ * What spending a banked reset did (ENG-008 E17), in the vendor's own terms:
+ * `reset` restored the eligible windows; `nothing-to-reset` means no window
+ * was eligible and no credit was spent; `no-credit` means none was left;
+ * `failed` means the request did not complete and nothing is known spent.
+ */
+export type PlanResetOutcome = 'reset' | 'nothing-to-reset' | 'no-credit' | 'failed';
 
 export const LIVE_CONSUMPTION_SNAPSHOT_VERSION = 1 as const;
 

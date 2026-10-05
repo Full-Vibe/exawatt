@@ -113,6 +113,8 @@ interface DesktopConsumptionApi {
   rescan: BridgeInvoke<'consumption:rescan'>;
   /** Cancels the pass in flight. Completed work is kept. */
   cancelScan: BridgeInvoke<'consumption:cancel-scan'>;
+  /** Spend one banked reset on the operator's confirm (ENG-008 E17). */
+  useReset: BridgeInvoke<'consumption:use-reset'>;
   onUpdated: BridgeSubscribe<'consumption:updated'>;
 }
 
@@ -246,6 +248,8 @@ export interface DesktopSettingsApi {
   setAppearance: BridgeInvoke<'settings:set-appearance'>;
   setAttentionNotifications: BridgeInvoke<'settings:set-attention-notifications'>;
   setDockBadge: BridgeInvoke<'settings:set-dock-badge'>;
+  setUsageAlerts: BridgeInvoke<'settings:set-usage-alerts'>;
+  setUsageAlertLead: BridgeInvoke<'settings:set-usage-alert-lead'>;
   setHostedContextLabels: BridgeInvoke<'settings:set-hosted-context-labels'>;
   setHostedConversationSummaries: BridgeInvoke<'settings:set-hosted-conversation-summaries'>;
   setGoalVisualsEnabled: BridgeInvoke<'settings:set-goal-visuals'>;

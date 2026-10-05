@@ -10,6 +10,8 @@ import { ClaudePlanAccountService } from './consumption/claude-plan-account';
 import { CodexPlanAccountService } from './consumption/codex-plan-account';
 import { ProviderPlanCompositeSource } from './consumption/provider-plan-composite';
 import { sampleRetentionPolicy } from './consumption/retention-policy';
+import { UsageAlertService } from './consumption/usage-alert-service';
+import { postUsageAlert } from './consumption/usage-alert-notifier';
 import { ConsumptionScannerService } from './consumption/scanner-service';
 import { registerConsumptionIPC } from './consumption-ipc';
 import type { DiagnosticRecorder } from './diagnostics-log';
@@ -23,6 +25,7 @@ import {
   isClaudePlanWindowsEnabled,
   isCodexPlanWindowsEnabled,
   loadSettings,
+  usageAlertPreferences,
 } from './settings-store';
 import type { ShutdownCoordinator } from './shutdown-coordinator';
 import type { ShutdownSequence } from './shutdown-sequence';
@@ -51,6 +54,7 @@ export class CommandRuntime {
   consumptionScanner: ConsumptionScannerService | null = null;
   claudePlanAccount: ClaudePlanAccountService | null = null;
   codexPlanAccount: CodexPlanAccountService | null = null;
+  usageAlerts: UsageAlertService | null = null;
   runStateStore: RunStateStore | null = null;
   authCoordinator: ElectronAuthCoordinator | null = null;
   recordAuthDiagnostic: AuthDiagnosticRecorder = () => {};
@@ -90,6 +94,7 @@ export class CommandRuntime {
     void this.consumptionScanner?.dispose();
     this.claudePlanAccount?.dispose();
     this.codexPlanAccount?.dispose();
+    this.usageAlerts?.dispose();
     void this.disposeConnectedSources().catch(error =>
       console.error('[shutdown] connected sources did not close', error)
     );
@@ -388,14 +393,31 @@ export async function bootstrapCommandSurface(
           allowed: !deps.isTest,
         });
         runtime.codexPlanAccount = codexPlanAccount;
+        const composite = new ProviderPlanCompositeSource(
+          runtime.consumptionScanner!,
+          [claudePlanAccount, codexPlanAccount]
+        );
+        // ENG-008 E17: usage alerts decide in main, from the same composed
+        // snapshot, so they keep watching while the window is in the
+        // background. Automated test launches never post.
+        const preferences = () => usageAlertPreferences(loadSettings());
+        const usageAlerts = new UsageAlertService({
+          source: composite,
+          stateDir: path.join(userDataPath(), 'consumption-plan'),
+          preferences: () => ({
+            ...preferences(),
+            enabled: preferences().enabled && !deps.isTest,
+          }),
+          post: alert => postUsageAlert(alert, () => preferences().enabled),
+        });
+        runtime.usageAlerts = usageAlerts;
         registerConsumptionIPC(
           () => deps.electron.BrowserWindow.getAllWindows(),
-          new ProviderPlanCompositeSource(runtime.consumptionScanner!, [
-            claudePlanAccount,
-            codexPlanAccount,
-          ]),
-          { claude: claudePlanAccount, codex: codexPlanAccount }
+          composite,
+          { claude: claudePlanAccount, codex: codexPlanAccount },
+          usageAlerts
         );
+        usageAlerts.start();
       },
     },
     { id: 'analytics', register: registerAnalyticsIPC },

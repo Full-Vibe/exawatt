@@ -5,6 +5,21 @@ import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
 import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
 import { Button } from '@/components/ui/button';
 import { usePermissions } from '@/components/permissions/permissions-provider';
+import { OptionMenu } from '@/components/ui/option-menu';
+import { USAGE_ALERT_POLICY } from '@exawatt/core';
+
+/** The second alert's lead time, as Settings names each choice. */
+const LEAD_OPTIONS = USAGE_ALERT_POLICY.leadMinuteChoices.map(minutes => ({
+  id: minutes === null ? 'off' : String(minutes),
+  label:
+    minutes === null
+      ? 'No second alert'
+      : minutes < 60
+        ? `${minutes} minutes before`
+        : minutes === 60
+          ? '1 hour before'
+          : `${minutes / 60} hours before`,
+}));
 
 /*
  * Data sharing is not a notification setting (ENG-030 OS1.5). Conversation
@@ -36,6 +51,12 @@ export function NotificationsSettings() {
 
   const attention = settings?.notifications?.attention ?? false;
   const dockBadge = settings?.notifications?.dockBadge ?? false;
+  // Absent means ON with the policy's default lead (ENG-008 E17).
+  const usageAlerts = settings?.notifications?.usageAlerts !== false;
+  const lead =
+    settings?.notifications?.usageAlertLeadMinutes === undefined
+      ? USAGE_ALERT_POLICY.defaultLeadMinutes
+      : settings.notifications.usageAlertLeadMinutes;
   const allowed = permissions.stateOf('notifications');
   // The switch is the user's intent; macOS has the final say. When the two
   // disagree the row says so and offers the way forward.
@@ -45,7 +66,7 @@ export function NotificationsSettings() {
   return (
     <SettingsGroup
       title="Notifications"
-      description="How Exawatt signals outside its own window when an agent needs you. Everything here starts off. Inside the app, tab pulses and the ⌘J attention queue always work."
+      description="How Exawatt signals outside its own window. Agent signals start off; usage alerts start on. Inside the app, tab pulses and the ⌘J attention queue always work."
       dataAttribute="data-notifications-settings"
     >
       <SettingRow
@@ -117,6 +138,46 @@ export function NotificationsSettings() {
           checked={dockBadge}
           label="Dock badge count"
           onChange={next => void window.electron?.settings?.setDockBadge(next)}
+        />
+      </SettingRow>
+      <SettingRow
+        title="Usage alerts"
+        description="Post a notification when a plan limit is on course to run out before it resets. Each limit alerts once per reset period."
+      >
+        <SettingSwitch
+          checked={usageAlerts}
+          label="Usage alerts"
+          onChange={next => {
+            const settingsApi = window.electron?.settings;
+            if (!next) {
+              void settingsApi?.setUsageAlerts(false);
+              return;
+            }
+            void permissions
+              .ensure(
+                'notifications',
+                'Turning this on lets Exawatt tell you when a plan limit is about to run out.'
+              )
+              .then(granted => {
+                if (granted) void settingsApi?.setUsageAlerts(true);
+              });
+          }}
+        />
+      </SettingRow>
+      <SettingRow
+        title="Second usage alert"
+        description="Alert again shortly before a limit runs out at the current pace."
+      >
+        <OptionMenu
+          label="Second usage alert"
+          options={LEAD_OPTIONS}
+          value={lead === null ? 'off' : String(lead)}
+          disabled={!usageAlerts}
+          onValueChange={id =>
+            void window.electron?.settings?.setUsageAlertLead(
+              id === 'off' ? null : Number(id)
+            )
+          }
         />
       </SettingRow>
     </SettingsGroup>

@@ -12,7 +12,9 @@ import type {
   ConsumptionUpdatedEvent,
   LiveConsumptionSnapshot,
   LiveConsumptionSnapshotRequest,
+  PlanResetOutcome,
 } from '../consumption/live-snapshot';
+import type { ConsumptionSourceId } from '../consumption/types';
 import type { AgentLaunchConfigurationInput } from '../launch-configurations';
 import type { OperatorStatsPublicationPlan } from '../operator-stats/publication';
 import type { OperatorStatsSyncEvent } from '../operator-stats/sync-state';
@@ -387,6 +389,12 @@ interface RequestTable {
     ExawattSettings
   >;
   'settings:set-dock-badge': Call<[enabled: boolean], ExawattSettings>;
+  'settings:set-usage-alerts': Call<[enabled: boolean], ExawattSettings>;
+  'consumption:use-reset': Call<[source: ConsumptionSourceId], PlanResetOutcome>;
+  'settings:set-usage-alert-lead': Call<
+    [minutes: number | null],
+    ExawattSettings
+  >;
   'settings:set-hosted-context-labels': Call<
     [enabled: boolean],
     ExawattSettings

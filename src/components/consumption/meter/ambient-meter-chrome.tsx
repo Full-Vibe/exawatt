@@ -12,13 +12,10 @@
  */
 
 import Link from 'next/link';
+import { planResetPhrase } from '@exawatt/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  resetPhrase,
-  usageOverview,
-  type UsageOverview,
-} from '../accounts';
+import { usageOverview, type UsageOverview } from '../accounts';
 import { useTenantConsumption } from '../use-tenant-consumption';
 import { BarMeter } from './meter-forms';
 import { METER_POPOVER_WIDTH, MeterPopover } from './meter-popover';
@@ -36,16 +33,13 @@ export function meterAriaLabel(overview: UsageOverview): string {
     ['stale', 'unreadable', 'off'].includes(a.health)
   );
   const partial = unknown ? ' Some accounts cannot be read right now.' : '';
-  if (overview.headline) {
-    return `Usage: ${overview.headline.text}${partial} Opens Usage.`;
-  }
   const binding = overview.binding;
   if (!binding) {
     return `Usage: no account reports plan limits.${partial} Opens Usage.`;
   }
   const account = overview.accounts.find(a => a.key === binding.accountKey);
   const m = binding.meter;
-  return `Usage: ${account?.name ?? ''} ${m.label.toLowerCase()} at ${Math.round(m.usedPercent)}%, resets ${resetPhrase(m.resetsAtMs, overview.nowMs)}.${partial} Opens Usage.`;
+  return `Usage: ${account?.name ?? ''} ${m.label.toLowerCase()} at ${Math.round(m.usedPercent)}%, resets ${planResetPhrase(m.resetsAtMs, overview.nowMs)}.${partial} Opens Usage.`;
 }
 
 const HOVER_OPEN_MS = 120;

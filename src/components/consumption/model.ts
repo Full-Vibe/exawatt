@@ -32,6 +32,7 @@
 import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
   CONSUMPTION_SOURCE_HARNESS,
+  planMeterLabel,
   SOURCE_CAPABILITIES,
   planWindowKey,
   type ConsumptionRollup,
@@ -52,18 +53,6 @@ export const HARNESS_LABEL = Object.fromEntries(
     agentSourceDeclaration(harness).label,
   ])
 ) as Record<Harness, string>;
-
-/**
- * The VENDOR ACCOUNT a harness draws on, named the way the operator names it
- * (ENG-008 E15). A plan window read from the vendor meters the whole account,
- * claude.ai chat included, so Usage names the card for the account ("Claude"),
- * never for the tool that shares its credential ("Claude Code").
- */
-export const ACCOUNT_NAME: Record<Harness, string> = {
-  'claude-code': 'Claude',
-  codex: 'Codex',
-  grok: 'Grok',
-};
 
 /** Stated once on the page that shows account figures (ENG-038). */
 export const ACCOUNT_SCOPE_NOTE =
@@ -183,34 +172,6 @@ export function windowFreshness(
   return age > w.windowMinutes * 60_000 ? 'stale' : 'live';
 }
 
-/**
- * Projected window position if the observed pace holds, from NOW. The
- * vendor's figure stands as of its observation and is not aged forward: a
- * Codex window is written only while Codex runs, so a reading hours old
- * usually means hours of no burn, and projecting the old pace across them
- * would announce a run-out that never happened ("runs out in 1 min" on a
- * quiet machine). An account read refreshes every few minutes anyway.
- */
-export function projectWindow(w: CapacityWindowView, nowMs: number) {
-  const msToReset = Math.max(0, w.resetsAtMs - nowMs);
-  const hoursToReset = msToReset / HOUR_MS;
-  const projectedPercent = w.usedPercent + w.burnPercentPerHour * hoursToReset;
-  const hoursToExhaust =
-    w.usedPercent >= 100
-      ? 0
-      : w.burnPercentPerHour > 0
-        ? (100 - w.usedPercent) / w.burnPercentPerHour
-        : Infinity;
-  return {
-    msToReset,
-    hoursToReset,
-    projectedPercent,
-    hoursToExhaust,
-    msToExhaust: hoursToExhaust * HOUR_MS,
-    exhaustsBeforeReset: projectedPercent > 100,
-  };
-}
-
 /* ------------------------------------------------------------------ */
 /* vendor account reads (ENG-038) — the credentialed source class       */
 /* ------------------------------------------------------------------ */
@@ -258,6 +219,8 @@ export interface AccountReadView {
   };
   /** Prepaid credit balance. Absent: the source cannot report one. */
   credits?: { balance: number | null; unlimited: boolean };
+  /** The account can spend a banked reset through Exawatt (ENG-008 E17). */
+  canUseReset?: boolean;
 }
 
 /**
@@ -311,7 +274,7 @@ export function capacityWindowFromPlan(
     // The provider's own window name wins when it carries one — it is the
     // only thing that can tell two same-length windows apart (Claude's
     // weekly all-models beside weekly Fable; Codex's model-scoped weeklies).
-    label: meterLabel(plan.windowMinutes, plan.limitName),
+    label: planMeterLabel(plan.windowMinutes, plan.limitName),
     scope: plan.limitName,
     usedPercent: plan.usedPercent,
     windowMinutes: plan.windowMinutes,
@@ -319,32 +282,6 @@ export function capacityWindowFromPlan(
     burnPercentPerHour,
     observedAtMs: Date.parse(plan.observedAt),
   };
-}
-
-/**
- * The one display name for a plan window, in the vendors' own vocabulary
- * (claude.ai: "Current session", "This week", "Fable this week"). `scope` is
- * the model a narrower limit applies to (`PlanWindow.limitName`).
- */
-export function meterLabel(windowMinutes: number, scope: string | null): string {
-  let period: string;
-  if (windowMinutes > 0 && windowMinutes % 10_080 === 0) {
-    const weeks = windowMinutes / 10_080;
-    period = weeks === 1 ? 'this week' : `these ${weeks} weeks`;
-  } else if (windowMinutes >= 40_320 && windowMinutes <= 44_640) {
-    period = 'this month';
-  } else if (windowMinutes > 0 && windowMinutes % 1440 === 0) {
-    const days = windowMinutes / 1440;
-    period = days === 1 ? 'today' : `these ${days} days`;
-  } else if (windowMinutes === 300) {
-    period = 'session';
-  } else {
-    const hours = Math.max(1, Math.round(windowMinutes / 60));
-    period = `${hours}-hour limit`;
-  }
-  if (scope) return `${scope} ${period}`;
-  if (period === 'session') return 'Current session';
-  return period.charAt(0).toUpperCase() + period.slice(1);
 }
 
 /* ------------------------------------------------------------------ */

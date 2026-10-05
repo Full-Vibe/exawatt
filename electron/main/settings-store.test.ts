@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   isClaudePlanWindowsEnabled,
+  usageAlertPreferences,
   isPersistableAppearancePreferences,
   parseAppearancePreferences,
   parseSettings,
@@ -110,6 +111,24 @@ describe('parseSettings', () => {
   // ENG-035: the publishing switch has the OPPOSITE polarity — opt-in under
   // decision `0029`. Absent or malformed must resolve to OFF, never on, and
   // only an explicit boolean is a choice.
+  it('reads usage alerts as on with the default lead when absent', () => {
+    expect(usageAlertPreferences(parseSettings({}))).toEqual({
+      enabled: true,
+      leadMinutes: 60,
+    });
+    expect(
+      usageAlertPreferences(
+        parseSettings({ notifications: { usageAlerts: false, usageAlertLeadMinutes: null } })
+      )
+    ).toEqual({ enabled: false, leadMinutes: null });
+  });
+
+  it('keeps only a lead time Settings offers', () => {
+    const odd = parseSettings({ notifications: { attention: true, usageAlertLeadMinutes: 17 } });
+    expect(odd.notifications?.usageAlertLeadMinutes).toBeUndefined();
+    expect(usageAlertPreferences(odd).leadMinutes).toBe(60);
+  });
+
   it('treats a missing or malformed publishing key as off, never on', () => {
     for (const settings of [
       parseSettings({}),

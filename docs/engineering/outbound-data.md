@@ -405,8 +405,14 @@ deleted.)
 - **Off**: Settings → Privacy → **Claude plan usage**
   (`claudePlanWindows.enabled`), enforced at the boundary: off starts no
   process and the meter shows Claude as unmetered again.
-- **Cadence**: at most one read per ~5 minutes, only while a consumption
-  surface is alive. A read analyses local session history and can take several
+- **Cadence**: at most one read per ~5 minutes, while a consumption surface
+  is alive or the usage-alert check runs (every ~5 minutes in the
+  background, ENG-008 E17).
+- **Spending a reset** (ENG-008 E17): only when the operator presses Use reset
+  on the Codex card and confirms, Electron main asks the same app-server
+  `account/rateLimitResetCredit/consume` with the soonest-expiring credit's
+  id and a fresh idempotency key. Codex makes the request to OpenAI under its
+  own sign-in; nothing else is sent. A read analyses local session history and can take several
   seconds of CPU on a large one, so it is never started more often.
 
 A third own-account path exists since 2026-09-29 (ENG-038 slice 2): **Codex

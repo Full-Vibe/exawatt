@@ -703,6 +703,21 @@ export class CodexAppServerClient implements CodexDelegationProtocol {
     return this.request('account/rateLimits/read', {});
   }
 
+  /**
+   * Spend one banked reset (ENG-008 E17), only ever on the operator's explicit
+   * confirm. The idempotency key identifies this one attempt, so a retry of
+   * the same attempt can never spend a second credit.
+   */
+  async consumeResetCredit(
+    creditId: string | null,
+    idempotencyKey: string
+  ): Promise<unknown> {
+    return this.request('account/rateLimitResetCredit/consume', {
+      idempotencyKey,
+      ...(creditId ? { creditId } : {}),
+    });
+  }
+
   /** An explicit local handoff reads only this exact thread's recent items. */
   async recentConversationItems(threadId: string): Promise<unknown[]> {
     const page = object(

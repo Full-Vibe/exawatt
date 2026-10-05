@@ -51,6 +51,15 @@ vi.mock('./consumption/codex-plan-account', () => ({
     dispose = () => void world.log.push('dispose:codex-plan-account');
   },
 }));
+vi.mock('./consumption/usage-alert-service', () => ({
+  UsageAlertService: class {
+    start = () => void world.log.push('start:usage-alerts');
+    dispose = () => void world.log.push('dispose:usage-alerts');
+  },
+}));
+vi.mock('./consumption/usage-alert-notifier', () => ({
+  postUsageAlert: () => {},
+}));
 vi.mock('./consumption/provider-plan-composite', () => ({
   ProviderPlanCompositeSource: class {},
 }));
@@ -61,6 +70,7 @@ vi.mock('./settings-store', () => ({
   loadSettings: () => ({}),
   isClaudePlanWindowsEnabled: () => true,
   isCodexPlanWindowsEnabled: () => true,
+  usageAlertPreferences: () => ({ enabled: true, leadMinutes: 60 }),
 }));
 vi.mock('./installed-build', () => ({
   watchInstalledBuild: () => {

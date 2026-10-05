@@ -159,6 +159,7 @@ const bridge = {
     snapshot: request => invoke('consumption:snapshot', request),
     rescan: () => invoke('consumption:rescan'),
     cancelScan: () => invoke('consumption:cancel-scan'),
+    useReset: source => invoke('consumption:use-reset', source),
     onUpdated: subscribe('consumption:updated'),
   },
   pty: {
@@ -267,6 +268,9 @@ const bridge = {
     setAttentionNotifications: enabled =>
       invoke('settings:set-attention-notifications', enabled),
     setDockBadge: enabled => invoke('settings:set-dock-badge', enabled),
+    setUsageAlerts: enabled => invoke('settings:set-usage-alerts', enabled),
+    setUsageAlertLead: minutes =>
+      invoke('settings:set-usage-alert-lead', minutes),
     setHostedContextLabels: enabled =>
       invoke('settings:set-hosted-context-labels', enabled),
     setHostedConversationSummaries: enabled =>

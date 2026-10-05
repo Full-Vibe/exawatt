@@ -540,6 +540,12 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-10-05 — ENG-008 E17: Usage is facts only. The one-sentence headline
+  above the account cards retired (operator: "systematic cards / sections
+  that show the facts"); each meter keeps its own forecast line, and a limit
+  on course to run out reaches the operator as a macOS notification instead.
+  A card that can spend a banked reset carries an outline "Use reset" button
+  behind the dialog primitive's confirm.
 - 2026-10-04 — BUG-061 gallery foundations now lead active studies, with other
   review benches grouped separately; specimen autofocus cannot seize page entry.
   BUG-138 retires only the unused command-key wrapper, preserving active studies.

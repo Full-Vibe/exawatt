@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  gapPhrase,
   healthLine,
   planLabel,
-  resetPhrase,
   usageOverview,
-  whenPhrase,
   type UsageOverview,
 } from './accounts';
 import {
   SCENARIO_NOW_MS,
-  SCENARIO_TIME_ZONE,
   USAGE_SCENARIOS,
   advanceScenario,
   scenarioOverview,
@@ -19,7 +15,6 @@ import {
 } from './usage-scenarios';
 
 const HOUR = 3_600_000;
-const tz = { timeZone: SCENARIO_TIME_ZONE };
 
 const account = (o: UsageOverview, key: string) => o.accounts.find(a => a.key === key);
 
@@ -38,16 +33,6 @@ describe('every scenario, through the production path', () => {
     describe(scenario.id, () => {
       const o = scenarioOverview(scenario);
 
-      it('names a headline whenever a live meter runs out, and never otherwise', () => {
-        const alarming = o.accounts.some(a =>
-          a.meters.some(
-            m => m.live && (m.forecast?.kind === 'runs-out' || m.forecast?.kind === 'spent')
-          )
-        );
-        if (alarming) expect(o.headline?.tone).toBe('hot');
-        else expect(o.headline?.tone ?? 'calm').toBe('calm');
-      });
-
       it('binds the chrome meter to a live meter of a listed account', () => {
         if (!o.binding) return;
         expect(o.binding.meter.live).toBe(true);
@@ -60,28 +45,27 @@ describe('every scenario, through the production path', () => {
             expect(text).not.toContain('—');
           }
         }
-        expect(o.headline?.text ?? '').not.toContain('—');
       });
     });
   }
 });
 
-describe('what runs out first, when, and before which reset', () => {
-  it('headlines Codex running out tomorrow morning, days before its reset', () => {
+describe('what runs out, when, and before which reset', () => {
+  it('forecasts Codex running out tomorrow morning, days before its reset', () => {
     const o = scenarioOverview(usageScenario('runs-out-before-reset'));
-    expect(o.headline).toMatchObject({ tone: 'hot', accountKey: 'codex', meterKey: expect.stringContaining('codex') });
     const week = account(o, 'codex')!.meters[0];
     expect(week.forecast?.kind).toBe('runs-out');
-    const at = week.forecast?.kind === "runs-out" ? week.forecast.atMs : 0;
-    // 78% used, 1.635%/h, read four minutes ago: about thirteen hours left.
+    const at = week.forecast?.kind === 'runs-out' ? week.forecast.atMs : 0;
+    // 78% used at 1.635%/h, projected from now: about thirteen hours left.
     expect((at - SCENARIO_NOW_MS) / HOUR).toBeGreaterThan(12.5);
     expect((at - SCENARIO_NOW_MS) / HOUR).toBeLessThan(14);
     expect(at).toBeLessThan(week.resetsAtMs);
+    expect(o.binding?.accountKey).toBe('codex');
   });
 
-  it('moves the headline to Claude once a banked reset restarts the Codex week', () => {
+  it('binds the glyph to Claude once a banked reset restarts the Codex week', () => {
     const o = scenarioOverview(usageScenario('after-a-reset'));
-    expect(o.headline?.accountKey).toBe('claude-code');
+    expect(o.binding?.accountKey).toBe('claude-code');
     expect(account(o, 'codex')!.resets?.available).toBe(3);
   });
 
@@ -89,16 +73,9 @@ describe('what runs out first, when, and before which reset', () => {
     const o = scenarioOverview(usageScenario('limit-reached'));
     expect(o.binding?.accountKey).toBe('claude-code');
     expect(o.binding?.meter.forecast?.kind).toBe('spent');
-    expect(o.headline?.tone).toBe('hot');
   });
 
-  it('says a banked reset is about to lapse when nothing runs out', () => {
-    const o = scenarioOverview(usageScenario('comfortable'));
-    expect(o.headline).toMatchObject({ tone: 'calm', accountKey: 'codex', meterKey: null });
-  });
-
-  it('says nothing above the cards when there is nothing to say', () => {
-    expect(scenarioOverview(usageScenario('first-run')).headline).toBeNull();
+  it('shows no account before any Agent runs', () => {
     expect(scenarioOverview(usageScenario('first-run')).accounts).toEqual([]);
   });
 });
@@ -164,20 +141,23 @@ describe('absence and failure stay visible', () => {
     const o = scenarioOverview(usageScenario('runs-out-before-reset'));
     expect(account(o, 'claude-code')!.resets).toBeNull();
     const none = scenarioOverview(usageScenario('limit-reached'));
-    expect(account(none, 'codex')!.resets).toEqual({ available: 0, next: null });
+    expect(account(none, 'codex')!.resets).toEqual({ available: 0, canUse: false, next: null });
   });
 });
 
-describe('losing a read never makes the page calmer', () => {
+describe('losing a read never makes a card calmer', () => {
+  const alarms = (o: UsageOverview) =>
+    o.accounts.flatMap(a =>
+      a.meters
+        .filter(m => m.forecast?.kind === 'runs-out' || m.forecast?.kind === 'spent')
+        .map(m => `${a.key}|${m.key}`)
+    );
   for (const scenario of USAGE_SCENARIOS) {
     for (const source of ['claude-code', 'codex'] as const) {
-      it(`${scenario.id}: failing the ${source} read keeps the headline`, () => {
-        const before = scenarioOverview(scenario).headline;
-        const after = scenarioOverview(withFailedRead(scenario, source)).headline;
-        if (before?.tone === 'hot') {
-          expect(after?.tone).toBe('hot');
-          expect(after?.accountKey).toBe(before.accountKey);
-        }
+      it(`${scenario.id}: failing the ${source} read keeps every run-out forecast`, () => {
+        const before = alarms(scenarioOverview(scenario));
+        const after = alarms(scenarioOverview(withFailedRead(scenario, source)));
+        for (const alarm of before) expect(after).toContain(alarm);
       });
     }
   }
@@ -222,31 +202,6 @@ describe('the simulator', () => {
   });
 });
 
-describe('wall-clock phrasing, in the operator zone', () => {
-  // Tuesday 6:40 PM in Los Angeles.
-  const now = SCENARIO_NOW_MS;
-
-  it('names today, tonight, tomorrow and a weekday by the local calendar', () => {
-    expect(whenPhrase(now + 40 * 60_000, now, tz)).toBe('in 40 min');
-    expect(whenPhrase(now + 4 * HOUR, now, tz)).toBe('tonight around 11 PM');
-    expect(whenPhrase(now + 13.3 * HOUR, now, tz)).toBe('tomorrow around 8 AM');
-    expect(whenPhrase(now + 52 * HOUR, now, tz)).toBe('Thursday around 11 PM');
-    expect(whenPhrase(now + 52 * HOUR, now, tz, true, true)).toBe('Thu around 11 PM');
-  });
-
-  it('states a reset instant exactly', () => {
-    expect(resetPhrase(now + 30 * 60_000, now, tz)).toBe('7:10 PM');
-    expect(resetPhrase(Date.parse('2026-10-05T09:00:00.000Z'), now, tz)).toBe('Mon 2:00 AM');
-  });
-
-  it('rounds a span the way a person says it', () => {
-    expect(gapPhrase(40 * 60_000)).toBe('40 min');
-    expect(gapPhrase(5 * HOUR)).toBe('5 hours');
-    expect(gapPhrase(24 * HOUR * 1.1)).toBe('26 hours');
-    expect(gapPhrase(24 * HOUR * 4.4)).toBe('4½ days');
-    expect(gapPhrase(24 * HOUR * 2)).toBe('2 days');
-  });
-});
 
 describe('planLabel', () => {
   it('reads the tier from the vendor tier id', () => {
@@ -271,28 +226,6 @@ describe('usageOverview input', () => {
   });
 });
 
-describe('every meter that runs out has a sentence above it', () => {
-  it('speaks for a week that runs out even when a younger session binds the glyph', () => {
-    const base = usageScenario('runs-out-before-reset');
-    // A Claude session five minutes old, burning fast: it bites first on pace
-    // but is too young to forecast.
-    const young: UsageScenario = {
-      ...base,
-      planWindows: base.planWindows.map(w =>
-        w.limitId === 'claude-session'
-          ? { ...w, usedPercent: 4, resetsAt: new Date(SCENARIO_NOW_MS + 295 * 60_000).toISOString() }
-          : w
-      ),
-      windowRates: Object.fromEntries(
-        Object.entries(base.windowRates).map(([k, v]) => [k, k.includes('claude-session') ? 60 : v])
-      ),
-    };
-    const o = scenarioOverview(young);
-    expect(o.binding?.meter.forecast).toBeNull();
-    expect(o.headline?.tone).toBe('hot');
-    expect(o.headline?.meterKey).not.toBe(o.binding?.meter.key);
-  });
-});
 
 describe('a Codex card is stale only when its figures are the failed read', () => {
   const base = usageScenario('runs-out-before-reset');

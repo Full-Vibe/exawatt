@@ -25,6 +25,7 @@ import {
   type ConsumptionSourceId,
   type PlanAccountFailureCause,
   type PlanCreditBalance,
+  type PlanResetOutcome,
   type PlanResets,
   type PlanWindow,
   type PlanWindowObservation,
@@ -100,6 +101,11 @@ interface PlanAccountServiceOptions {
    */
   allowed?: boolean;
   read: PlanAccountReader;
+  /**
+   * Spends one banked reset, the soonest to expire when the vendor named
+   * them (ENG-008 E17). Absent when the source cannot spend resets.
+   */
+  spendReset?: (creditId: string | null) => Promise<PlanResetOutcome>;
   /** Re-reads a saved window in the current meaning (schema moves). */
   migrateWindow?: (window: PlanWindow) => PlanWindow;
   now?: () => number;
@@ -172,6 +178,9 @@ export class PlanAccountService implements PlanAccountSource {
   private readonly stateDir: string;
   private readonly stateFileName: string;
   private readonly read: PlanAccountReader;
+  private readonly spendReset:
+    | ((creditId: string | null) => Promise<PlanResetOutcome>)
+    | null;
   private readonly migrateWindow: (window: PlanWindow) => PlanWindow;
   private readonly now: () => number;
   private readonly minFetchIntervalMs: number;
@@ -208,6 +217,7 @@ export class PlanAccountService implements PlanAccountSource {
     this.preferenceEnabled = options.enabled;
     this.allowed = options.allowed ?? true;
     this.read = options.read;
+    this.spendReset = options.spendReset ?? null;
     this.migrateWindow = options.migrateWindow ?? (window => window);
     this.now = options.now ?? Date.now;
     this.minFetchIntervalMs =
@@ -258,6 +268,7 @@ export class PlanAccountService implements PlanAccountSource {
         ...(last.rateLimitTier != null ? { rateLimitTier: last.rateLimitTier } : {}),
         ...(last.resets ? { resets: last.resets } : {}),
         ...(last.credits ? { credits: last.credits } : {}),
+        ...(this.spendReset ? { canUseReset: true } : {}),
       },
       revision: this.revisionCount,
     };
@@ -279,6 +290,36 @@ export class PlanAccountService implements PlanAccountSource {
       this.inFlight = null;
     });
     return this.inFlight;
+  }
+
+  /**
+   * Spend one banked reset on the operator's explicit confirm, then read the
+   * account again at once, past the cadence, so the card shows the restored
+   * window rather than the figure from before. Never retried here: the
+   * vendor's idempotency key belongs to one attempt.
+   */
+  async useReset(): Promise<PlanResetOutcome> {
+    if (!this.spendReset || !this.enabled || this.disposed) return 'failed';
+    // Soonest to expire first (the readers sort them), and never one that
+    // lapsed since the read that listed it.
+    const nowMs = this.now();
+    const credit =
+      this.last.resets?.credits?.find(
+        row =>
+          row.id && (row.expiresAt === null || Date.parse(row.expiresAt) > nowMs)
+      ) ?? null;
+    let outcome: PlanResetOutcome;
+    try {
+      outcome = await this.spendReset(credit?.id ?? null);
+    } catch {
+      outcome = 'failed';
+    }
+    if (outcome === 'reset') {
+      this.nextAllowedAtMs = 0;
+      await (this.inFlight ?? Promise.resolve());
+      await this.maybeRefresh();
+    }
+    return outcome;
   }
 
   /** The settings toggle, applied before it is announced: off serves absence

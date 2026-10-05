@@ -14,9 +14,12 @@
  * Honesty rules this module owns:
  *
  * - A read that failed keeps its last windows at their TRUE as-of instant and
- *   says it is stale. It never disappears, and it keeps forecasting from that
- *   reading at its true age, so losing a read can never make the headline
- *   calmer than the last thing Exawatt saw.
+ *   says it is stale. It never disappears, and its forecast lines keep
+ *   speaking from that reading, so losing a read never makes a card calmer
+ *   than the last thing Exawatt saw.
+ * - Facts only (operator, 2026-10-05, ENG-008 E17): cards and sections, no
+ *   prose summary across accounts. Forecasts come from core's
+ *   `forecastPlanWindow`, the same derivation main's usage alerts use.
  * - "Off", "couldn't read" and "keeps no plan record" are three different
  *   sentences (`planReadState`), never one.
  * - Absent is never zero: an account whose source cannot report resets or
@@ -26,12 +29,15 @@
  * an optional IANA time zone so tests and the simulator are deterministic.
  */
 import {
+  CONSUMPTION_ACCOUNT_NAME,
   CONSUMPTION_SOURCE_IDS,
+  planWhenPhrase,
   type ConsumptionSample,
   type PlanAccountFailureCause,
+  type PlanOutlook,
+  type PlanPhraseOptions,
 } from '@exawatt/core';
 import {
-  ACCOUNT_NAME,
   planReadState,
   windowFreshness,
   type AccountReadView,
@@ -45,16 +51,6 @@ import { bitesFirst, readWindowPace, type MeterReading } from './meter/meter-mod
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
-
-/** Forecasts stay quiet until this share of a window has elapsed: a pace
- *  read from the first minutes of a week is noise. */
-const FORECAST_MIN_ELAPSED_FRACTION = 0.03;
-
-/** "About N% left at reset" is worth a line only above this many points. */
-const UNUSED_WORTH_SAYING_PTS = 15;
-
-/** A banked reset that expires within this long reaches the headline. */
-const RESET_EXPIRY_HEADLINE_MS = 3 * DAY;
 
 /* ------------------------------------------------------------------ */
 /* shapes                                                              */
@@ -77,11 +73,7 @@ type AccountHealth =
   | 'off'
   | 'unmetered';
 
-type MeterForecast =
-  | { kind: 'spent' }
-  | { kind: 'runs-out'; atMs: number }
-  | { kind: 'left-at-reset'; percent: number }
-  | { kind: 'lasts' };
+type MeterForecast = PlanOutlook;
 
 export interface AccountMeter {
   /** Unique window-bucket key (`planWindowKey`). */
@@ -104,6 +96,9 @@ export interface AccountMeter {
 
 interface AccountResets {
   available: number;
+  /** Exawatt can spend one now: the read is current, the source can spend,
+   *  and the account holds at least one. */
+  canUse: boolean;
   /** The soonest-expiring reset, when the vendor reported details. */
   next: { title: string | null; expiresAtMs: number | null } | null;
 }
@@ -133,20 +128,11 @@ export interface UsageAccount {
   observedTokens: number;
 }
 
-interface UsageHeadline {
-  text: string;
-  /** `hot` when something runs out; `calm` for a reset about to expire. */
-  tone: 'hot' | 'calm';
-  accountKey: string;
-  meterKey: string | null;
-}
-
 export interface UsageOverview {
   nowMs: number;
   /** The span `observedTokens` covers, in words ("seven days"). */
   windowLabel: string;
   accounts: UsageAccount[];
-  headline: UsageHeadline | null;
   /** The meter the chrome glyph shows: the live one that bites first. */
   binding: { accountKey: string; meter: AccountMeter } | null;
 }
@@ -159,10 +145,7 @@ interface UsageOverviewInput {
   samples: readonly ConsumptionSample[];
 }
 
-export interface PhraseOptions {
-  /** IANA zone for wall-clock phrases; the host zone when omitted. */
-  timeZone?: string;
-}
+export type PhraseOptions = PlanPhraseOptions;
 
 /* ------------------------------------------------------------------ */
 /* the projection                                                      */
@@ -170,10 +153,7 @@ export interface PhraseOptions {
 
 const ACCOUNT_ORDER: readonly Harness[] = CONSUMPTION_SOURCE_IDS;
 
-export function usageOverview(
-  input: UsageOverviewInput,
-  options: PhraseOptions = {}
-): UsageOverview {
+export function usageOverview(input: UsageOverviewInput): UsageOverview {
   const { nowMs } = input;
   const tokensBySource = new Map<string, number>();
   for (const s of input.samples) {
@@ -209,7 +189,6 @@ export function usageOverview(
     nowMs,
     windowLabel: input.windowLabel,
     accounts,
-    headline: headlineOf(accounts, nowMs, options),
     binding,
   };
 }
@@ -262,7 +241,7 @@ function accountOf(
   return {
     key: source.key,
     harness: source.harness,
-    name: ACCOUNT_NAME[source.harness],
+    name: CONSUMPTION_ACCOUNT_NAME[source.harness],
     plan: planLabel(read?.planType ?? source.planType, read?.rateLimitTier ?? null),
     health,
     asOfMs: asOfCandidates.length > 0 ? Math.max(...asOfCandidates) : null,
@@ -309,27 +288,13 @@ function meterOf(
     usedPercent: window.usedPercent,
     resetsAtMs: window.resetsAtMs,
     evenPacePercent: reading.evenPacePercent,
-    forecast: live ? forecastOf(reading, nowMs) : null,
+    forecast: live ? reading.outlook : null,
     live,
     reading,
   };
 }
 
 /** The forecast one meter can honestly state. */
-function forecastOf(r: MeterReading, nowMs: number): MeterForecast | null {
-  if (r.usedPercent >= 100) return { kind: 'spent' };
-  const windowMs = r.window.windowMinutes * MIN;
-  const elapsed = windowMs - r.msToReset;
-  if (elapsed < windowMs * FORECAST_MIN_ELAPSED_FRACTION) return null;
-  if (r.exhaustsBeforeReset) {
-    return { kind: 'runs-out', atMs: nowMs + r.msToExhaust };
-  }
-  const left = 100 - r.projectedPercent;
-  if (left >= UNUSED_WORTH_SAYING_PTS) {
-    return { kind: 'left-at-reset', percent: Math.round(left) };
-  }
-  return { kind: 'lasts' };
-}
 
 function resetsOf(read: AccountReadView | undefined, nowMs: number): AccountResets | null {
   const resets = read?.resets;
@@ -342,6 +307,8 @@ function resetsOf(read: AccountReadView | undefined, nowMs: number): AccountRese
   )[0];
   return {
     available: resets.available,
+    canUse:
+      read?.status === 'ok' && read.canUseReset === true && resets.available > 0,
     next: soonest ? { title: soonest.title, expiresAtMs: soonest.expiresAtMs } : null,
   };
 }
@@ -375,166 +342,8 @@ export function planLabel(planType: string | null, tier: string | null): string 
 }
 
 /* ------------------------------------------------------------------ */
-/* the headline — one sentence, only when it earns its place           */
+/* phrasing                                                            */
 /* ------------------------------------------------------------------ */
-
-function headlineOf(
-  accounts: readonly UsageAccount[],
-  nowMs: number,
-  options: PhraseOptions
-): UsageHeadline | null {
-  // The sentence speaks for the meter that runs out first AMONG those that
-  // state a run-out, which is not always the glyph's binding window: a session
-  // five minutes old can bite first on pace yet be too young to forecast,
-  // while a week beside it says it runs out on Thursday. Every meter that
-  // says "runs out" must have a sentence above it.
-  let alarm: { account: UsageAccount; meter: AccountMeter } | null = null;
-  for (const account of accounts) {
-    for (const meter of account.meters) {
-      const kind = meter.forecast?.kind;
-      if (!meter.live || (kind !== 'spent' && kind !== 'runs-out')) continue;
-      if (!alarm || bitesFirst(meter.reading, alarm.meter.reading) < 0) {
-        alarm = { account, meter };
-      }
-    }
-  }
-  if (alarm) {
-    const { account, meter } = alarm;
-    const who = meterSubject(account, meter);
-    const spares = spareResets(account);
-    if (meter.forecast?.kind === 'spent') {
-      return {
-        text: `${who} is out until ${resetPhrase(meter.resetsAtMs, nowMs, options)}.${spares}`,
-        tone: 'hot',
-        accountKey: account.key,
-        meterKey: meter.key,
-      };
-    }
-    if (meter.forecast?.kind === 'runs-out') {
-      const gap = gapPhrase(meter.resetsAtMs - meter.forecast.atMs);
-      return {
-        text: `At this pace ${who} runs out ${whenPhrase(meter.forecast.atMs, nowMs, options)}, ${gap} before it resets.${spares}`,
-        tone: 'hot',
-        accountKey: account.key,
-        meterKey: meter.key,
-      };
-    }
-  }
-
-  let expiring: { account: UsageAccount; atMs: number } | null = null;
-  for (const account of accounts) {
-    const at = account.resets?.next?.expiresAtMs;
-    if (at == null || at - nowMs > RESET_EXPIRY_HEADLINE_MS) continue;
-    if (!expiring || at < expiring.atMs) expiring = { account, atMs: at };
-  }
-  if (expiring) {
-    return {
-      text: `A free ${expiring.account.name} reset expires ${whenPhrase(expiring.atMs, nowMs, options, false)}.`,
-      tone: 'calm',
-      accountKey: expiring.account.key,
-      meterKey: null,
-    };
-  }
-  return null;
-}
-
-/** "Codex", "Claude's session limit", "Claude's Fable limit". */
-function meterSubject(account: UsageAccount, meter: AccountMeter): string {
-  if (meter.scope) return `${account.name}'s ${meter.scope} limit`;
-  if (meter.windowMinutes < 1440) return `${account.name}'s session limit`;
-  return account.name;
-}
-
-function spareResets(account: UsageAccount): string {
-  const n = account.resets?.available ?? 0;
-  if (n <= 0) return '';
-  return n === 1 ? ' 1 free reset left.' : ` ${n} free resets left.`;
-}
-
-/* ------------------------------------------------------------------ */
-/* phrasing — wall clock, in the operator's zone                        */
-/* ------------------------------------------------------------------ */
-
-function parts(ms: number, timeZone: string | undefined) {
-  const out: Record<string, string> = {};
-  for (const p of new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    hourCycle: 'h23',
-  }).formatToParts(ms)) {
-    out[p.type] = p.value;
-  }
-  return {
-    day: Date.UTC(Number(out.year), Number(out.month) - 1, Number(out.day)) / DAY,
-    hour: Number(out.hour),
-  };
-}
-
-function fmt(ms: number, timeZone: string | undefined, format: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat('en-US', { timeZone, ...format }).format(ms);
-}
-
-/**
- * The vendor's exact reset instant: "7:10 PM" today, "Mon 2:00 AM" this week,
- * "Oct 12, 2:00 AM" beyond it. A reset time is a fact, so it keeps minutes.
- */
-export function resetPhrase(atMs: number, nowMs: number, options: PhraseOptions = {}): string {
-  const tz = options.timeZone;
-  const days = parts(atMs, tz).day - parts(nowMs, tz).day;
-  const time = fmt(atMs, tz, { hour: 'numeric', minute: '2-digit' });
-  if (days <= 0) return time;
-  if (days < 7) return `${fmt(atMs, tz, { weekday: 'short' })} ${time}`;
-  return `${fmt(atMs, tz, { month: 'short', day: 'numeric' })}, ${time}`;
-}
-
-/**
- * A forecast instant, stated with the precision a forecast deserves: "in 40
- * min", "tonight around 11 PM", "tomorrow around 8 AM", "Thursday around
- * 11 PM". `approximate: false` drops the "around" for instants that are
- * facts (a reset credit's expiry).
- */
-export function whenPhrase(
-  atMs: number,
-  nowMs: number,
-  options: PhraseOptions = {},
-  approximate = true,
-  short = false
-): string {
-  const tz = options.timeZone;
-  const ms = atMs - nowMs;
-  if (approximate && ms < 90 * MIN) {
-    return `in ${Math.max(1, Math.round(ms / MIN))} min`;
-  }
-  const at = approximate ? Math.round(atMs / HOUR) * HOUR : atMs;
-  const days = parts(at, tz).day - parts(nowMs, tz).day;
-  const hour = parts(at, tz).hour;
-  const time = approximate
-    ? fmt(at, tz, { hour: 'numeric' })
-    : fmt(at, tz, { hour: 'numeric', minute: '2-digit' });
-  const around = approximate ? 'around ' : 'at ';
-  if (days <= 0) return hour >= 18 ? `tonight ${around}${time}` : `today ${around}${time}`;
-  if (days === 1) return `tomorrow ${around}${time}`;
-  if (days < 7) {
-    return `${fmt(at, tz, { weekday: short ? 'short' : 'long' })} ${around}${time}`;
-  }
-  return `${fmt(at, tz, { month: 'short', day: 'numeric' })} ${around}${time}`;
-}
-
-/** A span as a person says it: "40 min", "5 hours", "1 day", "4½ days". */
-export function gapPhrase(ms: number): string {
-  if (ms < HOUR) return `${Math.max(1, Math.round(ms / MIN))} min`;
-  if (ms < 36 * HOUR) {
-    const hours = Math.round(ms / HOUR);
-    return hours === 1 ? '1 hour' : `${hours} hours`;
-  }
-  const halves = Math.round(ms / (DAY / 2));
-  const whole = Math.floor(halves / 2);
-  const half = halves % 2 === 1 ? '½' : '';
-  return whole === 1 && !half ? '1 day' : `${whole}${half} days`;
-}
 
 /** "Updated just now" / "Updated 3 min ago" / "Updated 2 hours ago". */
 export function asOfPhrase(asOfMs: number | null, nowMs: number): string | null {
@@ -564,7 +373,7 @@ export function forecastLine(
     case 'spent':
       return 'Out until reset';
     case 'runs-out':
-      return `Runs out ${whenPhrase(f.atMs, nowMs, options, true, short)}${pace}`;
+      return `Runs out ${planWhenPhrase(f.atMs, nowMs, options, true, short)}${pace}`;
     case 'left-at-reset':
       return `About ${f.percent}% left at reset${pace}`;
     case 'lasts':

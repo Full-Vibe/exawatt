@@ -62,6 +62,12 @@ export interface ExawattSettings<ThemeId extends string = string> {
     /** macOS dock badge count + bounce for needs-you attention (D18):
      *  default off; ambient OS-level signals are opt-in. */
     dockBadge?: boolean;
+    /** ENG-008 E17: a notification when a plan window goes on course to run
+     *  out before its reset. Absent means ON (the operator's pick). */
+    usageAlerts?: boolean;
+    /** Minutes before the projected run-out for a second alert; null turns
+     *  it off; absent means `USAGE_ALERT_POLICY.defaultLeadMinutes`. */
+    usageAlertLeadMinutes?: number | null;
   };
   /**
    * ENG-030 OS1.5. The outbound-feature switches below are decision `0031`'s

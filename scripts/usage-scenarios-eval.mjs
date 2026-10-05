@@ -20,9 +20,8 @@
  *   - a meter's percent label never overlaps its bar, and a bar's fill never
  *     outgrows its track;
  *   - no text inside a card is clipped;
- *   - a meter forecasting "runs out" or "spent" implies the headline exists
- *     (the page's one-sentence contract, read from the page's own data);
- *   - the chrome meter's popover opens inside the viewport.
+ *   - the chrome meter's popover and the Use reset confirm open inside the
+ *     viewport.
  */
 
 import { chromium } from 'playwright-core';
@@ -124,12 +123,6 @@ async function measure(page) {
         }
       }
     }
-    const alarming = document.querySelector(
-      'main [data-usage-forecast="runs-out"], main [data-usage-forecast="spent"]'
-    );
-    if (alarming && !document.querySelector('main [data-usage-headline]')) {
-      out.push('a meter runs out but the page has no headline');
-    }
     return out;
   });
 }
@@ -197,6 +190,22 @@ for (const view of VIEWS) {
     }
     await page.screenshot({ path: join(OUT, `popover.${view.id}.png`) });
     shots += 1;
+    // The Use reset confirm: opens inside the viewport, spends nothing yet.
+    await page.mouse.move(0, 0);
+    const useReset = await page.$('[data-usage-use-reset]');
+    if (useReset) {
+      await useReset.click();
+      const dialog = await page.waitForSelector('[data-usage-reset-confirm]');
+      const box = await dialog.boundingBox();
+      if (!box || box.x < 0 || box.y < 0 || box.x + box.width > view.width) {
+        failures.push(`reset confirm · ${view.id}: opens outside the viewport`);
+      }
+      await page.screenshot({ path: join(OUT, `reset-confirm.${view.id}.png`) });
+      shots += 1;
+      await page.keyboard.press('Escape');
+    } else {
+      failures.push('no scenario offers Use reset to check its confirm');
+    }
   }
   await page.close();
 }

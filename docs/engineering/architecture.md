@@ -1350,6 +1350,11 @@ Built:
   the Usage page, the chrome meter, and the scenario workbench all render;
   named scenarios travel the production live builder so tests, screenshots,
   and the burn-forward simulator exercise the real path.
+- ENG-008 E17 (2026-10-05): the plan-window forecast and its wall-clock
+  phrasing live in `@exawatt/core` (`plan-forecast.ts`) so Electron main can
+  decide usage alerts (`usage-alerts.ts`, pure; `UsageAlertService`, main)
+  from the same derivation the page renders. Account services gain an
+  optional `spendReset`, surfaced as `consumption:use-reset`.
 
 Implemented:
 

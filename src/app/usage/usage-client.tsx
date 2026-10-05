@@ -17,6 +17,7 @@
 import { useMemo } from 'react';
 import { usageOverview } from '@/components/consumption/accounts';
 import { UsageOverviewBody } from '@/components/consumption/usage-overview';
+import { spendAccountReset } from '@/components/consumption/live-store';
 import { useTenantConsumption } from '@/components/consumption/use-tenant-consumption';
 import { UsageShell } from './usage-shell';
 
@@ -25,7 +26,16 @@ export function UsageClient() {
   const overview = useMemo(() => usageOverview(tenant.view), [tenant.view]);
   return (
     <UsageShell tab="overview" tenant={tenant}>
-      <UsageOverviewBody overview={overview} />
+      <UsageOverviewBody
+        overview={overview}
+        // Only a live read of this machine can spend a reset; the demo and
+        // a paused engine show resets as facts.
+        onUseReset={
+          tenant.live && !tenant.stopped
+            ? account => spendAccountReset(account.harness)
+            : undefined
+        }
+      />
     </UsageShell>
   );
 }

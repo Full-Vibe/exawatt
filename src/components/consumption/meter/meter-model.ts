@@ -27,11 +27,8 @@ import {
   consumptionAlpha,
   pressureColorCss as pressureColor,
 } from '../flux';
-import {
-  projectWindow,
-  type CapacityWindowView,
-  type ConsumptionSourceView,
-} from '../model';
+import { forecastPlanWindow, type PlanOutlook } from '@exawatt/core';
+import type { CapacityWindowView, ConsumptionSourceView } from '../model';
 
 export type MeterState = 'healthy' | 'warm' | 'hot' | 'exhausted';
 export type MeterPace = 'ahead' | 'even' | 'behind';
@@ -66,12 +63,8 @@ export interface MeterReading {
   exhaustsBeforeReset: boolean;
   msToExhaust: number;
   state: MeterState;
-}
-
-function elapsedPercent(w: CapacityWindowView, nowMs: number): number {
-  const windowMs = w.windowMinutes * 60_000;
-  const elapsed = windowMs - Math.max(0, w.resetsAtMs - nowMs);
-  return Math.max(0, Math.min(100, (elapsed / windowMs) * 100));
+  /** The core forecast's outlook; null while the window is too young. */
+  outlook: PlanOutlook | null;
 }
 
 function stateFor(
@@ -94,8 +87,16 @@ export function readWindowPace(
   window: CapacityWindowView,
   nowMs: number
 ): MeterReading {
-  const p = projectWindow(window, nowMs);
-  const evenPace = elapsedPercent(window, nowMs);
+  const p = forecastPlanWindow(
+    {
+      usedPercent: window.usedPercent,
+      windowMinutes: window.windowMinutes,
+      resetsAtMs: window.resetsAtMs,
+      ratePerHour: window.burnPercentPerHour,
+    },
+    nowMs
+  );
+  const evenPace = p.evenPacePercent;
   const delta = window.usedPercent - evenPace;
   return {
     source,
@@ -109,6 +110,7 @@ export function readWindowPace(
     exhaustsBeforeReset: p.exhaustsBeforeReset,
     msToExhaust: p.msToExhaust,
     state: stateFor(window.usedPercent, p.exhaustsBeforeReset),
+    outlook: p.outlook,
   };
 }
 

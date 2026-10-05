@@ -30,13 +30,14 @@ import {
   asOfPhrase,
   forecastLine,
   healthLine,
-  resetPhrase,
   type AccountMeter,
   type PhraseOptions,
   type UsageAccount,
 } from './accounts';
+import { planResetPhrase } from '@exawatt/core';
 import { meterTone } from './meter/meter-model';
 import { planCredits } from './units';
+import { UseResetControl, type UseAccountReset } from './use-reset-control';
 
 const TRACK = consumptionAlpha(CHROME.text, 0.12);
 const TICK = consumptionAlpha(CHROME.text, 0.55);
@@ -114,7 +115,7 @@ function MeterRow({
   phrase?: PhraseOptions;
 }) {
   const forecast = forecastLine(meter, nowMs, phrase, compact);
-  const reset = `Resets ${resetPhrase(meter.resetsAtMs, nowMs, phrase)}`;
+  const reset = `Resets ${planResetPhrase(meter.resetsAtMs, nowMs, phrase)}`;
   const percent = `${Math.round(meter.usedPercent)}% used`;
   if (compact) {
     return (
@@ -180,27 +181,33 @@ function FactRow({
   compact,
   children,
   data,
+  action,
 }: {
   label: string;
   value: ReactNode;
   compact: boolean;
   children?: ReactNode;
   data: string;
+  /** A control beside the value (Use reset). */
+  action?: ReactNode;
 }) {
   return (
     <div data-usage-fact={data} className="flex flex-col gap-1">
-      <div className="flex items-baseline gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span
           className={compact ? 'text-chrome-meta' : 'text-sm'}
           style={{ color: CHROME.text }}
         >
           {label}
         </span>
-        <span
-          className={`ml-auto text-right ${compact ? 'text-chrome-meta' : 'text-sm'}`}
-          style={{ color: CHROME.textDim }}
-        >
-          {value}
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+          <span
+            className={`text-right ${compact ? 'text-chrome-meta' : 'text-sm'}`}
+            style={{ color: CHROME.textDim }}
+          >
+            {value}
+          </span>
+          {action}
         </span>
       </div>
       {children}
@@ -215,6 +222,7 @@ export function AccountCard({
   windowLabel,
   compact = false,
   phrase,
+  onUseReset,
 }: {
   account: UsageAccount;
   nowMs: number;
@@ -222,6 +230,8 @@ export function AccountCard({
   windowLabel: string;
   compact?: boolean;
   phrase?: PhraseOptions;
+  /** Spends a banked reset; absent where nothing can (demo, workbench). */
+  onUseReset?: UseAccountReset;
 }) {
   const note = healthLine(account, nowMs);
   const asOf = account.health === 'unmetered' ? null : asOfPhrase(account.asOfMs, nowMs);
@@ -321,11 +331,16 @@ export function AccountCard({
               data="resets"
               label="Free resets"
               compact={compact}
+              action={
+                !compact && onUseReset && resets.canUse ? (
+                  <UseResetControl account={account} onUseReset={onUseReset} />
+                ) : undefined
+              }
               value={
                 resets.available === 0
                   ? 'None'
                   : resets.next?.expiresAtMs != null
-                    ? `${resets.available} · next expires ${resetPhrase(resets.next.expiresAtMs, nowMs, phrase)}`
+                    ? `${resets.available} · next expires ${planResetPhrase(resets.next.expiresAtMs, nowMs, phrase)}`
                     : `${resets.available}`
               }
             />

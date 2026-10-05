@@ -20,9 +20,11 @@
  * fresher of the two readings wins per bucket and the pace history is one
  * series.
  */
+import { randomUUID } from 'node:crypto';
 import type {
   PlanAccountFailureCause,
   PlanCreditBalance,
+  PlanResetOutcome,
   PlanResetCredit,
   PlanResets,
   PlanWindow,
@@ -96,6 +98,7 @@ function resetsOf(value: unknown): PlanResets | undefined {
         .map(record)
         .filter((row): row is Json => row !== null && row.status === 'available')
         .map(row => ({
+          id: text(row.id),
           title: text(row.title),
           expiresAt: isoFromSeconds(row.expiresAt),
           grantedAt: isoFromSeconds(row.grantedAt),
@@ -203,6 +206,27 @@ function codexPlanReader(options: {
   };
 }
 
+/** The app-server's consume answer, in the shared outcome vocabulary. */
+export function parseCodexResetOutcome(result: unknown): PlanResetOutcome {
+  const outcome = record(result)?.outcome;
+  if (outcome === 'reset' || outcome === 'alreadyRedeemed') return 'reset';
+  if (outcome === 'nothingToReset') return 'nothing-to-reset';
+  if (outcome === 'noCredit') return 'no-credit';
+  return 'failed';
+}
+
+async function consumeWithAppServer(
+  creditId: string | null
+): Promise<unknown> {
+  const client = new CodexAppServerClient();
+  try {
+    await client.connect();
+    return await client.consumeResetCredit(creditId, randomUUID());
+  } finally {
+    client.close();
+  }
+}
+
 interface CodexPlanAccountOptions {
   stateDir: string;
   enabled: boolean;
@@ -210,6 +234,8 @@ interface CodexPlanAccountOptions {
   allowed?: boolean;
   /** The app-server call; injectable so tests replay a recorded answer. */
   readRateLimits?: () => Promise<unknown>;
+  /** The spend call; injectable so tests NEVER spend a real reset. */
+  consumeReset?: (creditId: string | null) => Promise<unknown>;
   now?: () => number;
   minFetchIntervalMs?: number;
   jitterMs?: number;
@@ -226,6 +252,10 @@ export class CodexPlanAccountService extends PlanAccountService {
       enabled: options.enabled,
       allowed: options.allowed,
       read: codexPlanReader({ readRateLimits: options.readRateLimits, now }),
+      spendReset: async creditId =>
+        parseCodexResetOutcome(
+          await (options.consumeReset ?? consumeWithAppServer)(creditId)
+        ),
       now,
       minFetchIntervalMs: options.minFetchIntervalMs,
       jitterMs: options.jitterMs,

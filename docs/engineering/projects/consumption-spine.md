@@ -1863,6 +1863,45 @@ limits" contradicts the product. Limit labels dropped the em dash
 ("Weekly — Fable" is now "Fable this week"): `PlanWindow.limitName` now names
 only a model scope, and saved Claude state migrates on load.
 
+### E17 — Usage facts, alerts and resets (2026-10-05)
+
+Operator answers to the E15 review questions: notifications when a limit is
+on course to run out ("configurable both to us as developers and architects
+and also to the user"), a Use reset button behind a confirm, and no prose
+headline ("We don't need copy like that. Should just be systematic cards /
+sections that show the facts").
+
+- **One forecast, two processes.** The pace, projection and outlook math and
+  the wall-clock phrasing moved from the renderer into `@exawatt/core`
+  (`consumption/plan-forecast.ts`), because Electron main now decides alerts
+  and cannot reach renderer modules. The meter reading, the account cards and
+  the alerts all call `forecastPlanWindow`; `PLAN_FORECAST_POLICY` holds the
+  thresholds. `meterLabel`, `ACCOUNT_NAME` and `observedBurnRate` moved with
+  it (`planMeterLabel`, `CONSUMPTION_ACCOUNT_NAME`, `observedAverageRate`);
+  the renderer copies were deleted.
+- **Alerts.** `dueUsageAlerts` (core, pure) speaks three stages per window
+  cycle (on course, within the lead time, spent), a later stage covering the
+  earlier ones, never for a stale or expired window, and identifies a cycle
+  by its reset rounded to ten minutes because Codex's reset jitters by
+  seconds. `UsageAlertService` (main) checks every five minutes and on every
+  snapshot change, which also keeps account reads fresh while the window is
+  in the background, and persists what it said in
+  `consumption-plan/usage-alerts.json`, pruned as cycles reset. Settings,
+  Notifications: "Usage alerts" (default on, the operator's pick) and a
+  second-alert lead time from `USAGE_ALERT_POLICY.leadMinuteChoices` (default
+  one hour). Automated launches never post. Fixed on the way: the dock-badge
+  setter rebuilt the notifications object and would have dropped any new
+  field.
+- **Use reset.** `PlanAccountService.useReset` spends through a vendor's
+  `spendReset` (Codex: `account/rateLimitResetCredit/consume`, the
+  soonest-expiring unexpired credit, a fresh idempotency key), then reads the
+  account again past the cadence. Outcomes are the vendor's own (reset,
+  nothing to reset, no credit) plus `failed`, said in place on the row. Tests
+  inject the spend; nothing in the suite can spend a real reset.
+- **Headline retired.** `usageOverview` no longer composes a sentence; the
+  popover and the meter's accessible label state facts from the binding
+  window.
+
 ## 9. Open questions for the operator
 
 1. **Cold-scan cost** (§5) — RESOLVED 2026-08-10 by the E5 scanner: the first

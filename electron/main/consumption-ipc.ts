@@ -12,12 +12,17 @@ import type {
   LiveConsumptionSnapshot,
   LiveConsumptionSnapshotRequest,
 } from '@exawatt/core';
-import { emptyLiveConsumptionSnapshot } from '@exawatt/core';
+import {
+  emptyLiveConsumptionSnapshot,
+  type PlanResetOutcome,
+} from '@exawatt/core';
 import { handleBounded } from './ipc-arguments';
 import { handleTrusted } from './ipc-security';
 import {
   setClaudePlanWindowsEnabled,
   setCodexPlanWindowsEnabled,
+  setUsageAlertLeadMinutes,
+  setUsageAlerts,
 } from './settings-store';
 import { broadcastToWindows } from './window-broadcast';
 
@@ -48,17 +53,42 @@ class StubConsumptionScanner implements ConsumptionScannerLike {
   }
 }
 
-/** An account read the operator can switch off from Settings, Privacy. */
+/** An account read the operator can switch off from Settings, Privacy, and
+ *  that may spend a banked reset on the operator's confirm. */
 interface SwitchableAccount {
   setEnabled(enabled: boolean): void;
+  useReset(): Promise<PlanResetOutcome>;
 }
 
 export function registerConsumptionIPC(
   windows: () => readonly BrowserWindow[],
   scanner: ConsumptionScannerLike = new StubConsumptionScanner(),
-  accounts: { claude?: SwitchableAccount; codex?: SwitchableAccount } = {}
+  accounts: { claude?: SwitchableAccount; codex?: SwitchableAccount } = {},
+  usageAlerts?: { check(): Promise<void> }
 ): () => void {
+  if (usageAlerts) {
+    // ENG-008 E17: the operator's alert choices. A change re-checks at once,
+    // so turning alerts on speaks for a window already on course.
+    handleBounded('settings:set-usage-alerts', (_event, enabled) => {
+      const settings = setUsageAlerts(enabled);
+      broadcastToWindows(windows(), 'settings:changed', settings);
+      void usageAlerts.check();
+      return settings;
+    });
+    handleBounded('settings:set-usage-alert-lead', (_event, minutes) => {
+      const settings = setUsageAlertLeadMinutes(minutes);
+      broadcastToWindows(windows(), 'settings:changed', settings);
+      void usageAlerts.check();
+      return settings;
+    });
+  }
   const planAccount = accounts.claude;
+  // ENG-008 E17: spend a banked reset, only from the confirm on its card.
+  handleBounded('consumption:use-reset', async (_event, source) => {
+    const account =
+      source === 'claude-code' ? accounts.claude : source === 'codex' ? accounts.codex : undefined;
+    return account ? account.useReset() : 'failed';
+  });
   if (accounts.codex) {
     const codex = accounts.codex;
     // ENG-038 slice 2: the same contract for the Codex account read. Off is

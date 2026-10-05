@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   localLogAssurance,
+  observedAverageRate,
   planWindowKey,
   type ConsumptionSample,
   type ConsumptionSourceId,
@@ -25,7 +26,6 @@ import {
   latestPlanWindows,
   liveProjectResolver,
   liveScanView,
-  observedBurnRate,
   sourceBurnSpark,
   type LiveConsumptionInputs,
   type LiveSessionIdentity,
@@ -191,7 +191,7 @@ describe('plan windows — latest observation, honest rates (E1/E3 seams)', () =
       resetsAt: iso(NOW + 150 * MIN),
       observedAt: iso(NOW),
     });
-    expect(observedBurnRate(w)).toBeCloseTo(20, 5);
+    expect(observedAverageRate(w)).toBeCloseTo(20, 5);
   });
 
   it("prefers main's trend-derived rate over the average fallback", () => {

@@ -1,5 +1,7 @@
 import { readPtyAttention } from '@exawatt/core/desktop-bridge';
 import {
+  USAGE_ALERT_POLICY,
+  isConsumptionSourceId,
   isAgentHarness,
   isAgentPermissionMode,
   isPtyHarness,
@@ -222,6 +224,14 @@ export const ARGUMENT_BOUNDARIES = {
       return [sinceMs === undefined ? undefined : { sinceMs }];
     },
   },
+  'consumption:use-reset': {
+    read([source]) {
+      if (!isConsumptionSourceId(source)) {
+        throw new Error('Invalid usage account');
+      }
+      return [source];
+    },
+  },
   'pty:create': {
     read([options]) {
       return [launchOptions(options)];
@@ -326,6 +336,21 @@ export const ARGUMENT_BOUNDARIES = {
     'Invalid notification setting'
   ),
   'settings:set-dock-badge': switchSetting('Invalid dock badge setting'),
+  'settings:set-usage-alerts': switchSetting('Invalid usage alert setting'),
+  // Only a lead time Settings offers can be stored: an arbitrary number from
+  // the renderer is refused, never kept as a policy nothing presents.
+  'settings:set-usage-alert-lead': {
+    read([minutes]) {
+      if (
+        !(USAGE_ALERT_POLICY.leadMinuteChoices as readonly unknown[]).includes(
+          minutes
+        )
+      ) {
+        throw new Error('Invalid usage alert lead time');
+      }
+      return [minutes as number | null];
+    },
+  },
   'settings:set-hosted-context-labels': switchSetting(
     'Invalid context label setting'
   ),

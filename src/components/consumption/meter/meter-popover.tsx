@@ -18,7 +18,6 @@ import { AccountCard } from '../usage-bars';
 export const METER_POPOVER_WIDTH = 320;
 
 export function MeterPopover({ overview }: { overview: UsageOverview }) {
-  const headline = overview.headline;
   return (
     <div
       data-meter-popover
@@ -36,15 +35,6 @@ export function MeterPopover({ overview }: { overview: UsageOverview }) {
         >
           Usage
         </span>
-        {headline && (
-          <span
-            data-meter-headline={headline.tone}
-            className="text-chrome-meta"
-            style={{ color: CHROME.text }}
-          >
-            {headline.text}
-          </span>
-        )}
       </div>
 
       {overview.accounts.length > 0 ? (

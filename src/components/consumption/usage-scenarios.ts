@@ -134,6 +134,7 @@ function codexAccount(
     observedAt: iso(at(-1 / 60)),
     planType: 'pro',
     spend: null,
+    canUseReset: true,
     resets: {
       available: 4,
       credits: [
@@ -445,7 +446,5 @@ function scenarioConsumption(scenario: UsageScenario) {
 
 /** The scenario as every usage surface renders it. */
 export function scenarioOverview(scenario: UsageScenario): UsageOverview {
-  return usageOverview(scenarioConsumption(scenario), {
-    timeZone: SCENARIO_TIME_ZONE,
-  });
+  return usageOverview(scenarioConsumption(scenario));
 }

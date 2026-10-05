@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { SOURCE_CAPABILITIES } from '@exawatt/core';
 import {
   capacityWindowFromPlan,
-  meterLabel,
   delegatedWeighted,
   displayUsage,
   interventionStats,
@@ -112,16 +111,6 @@ describe('capacityWindowFromPlan (ENG-038 vendor windows)', () => {
   });
 });
 
-describe('meterLabel', () => {
-  it('reads each window length the way claude.ai and ChatGPT do', () => {
-    expect(meterLabel(300, null)).toBe('Current session');
-    expect(meterLabel(10_080, null)).toBe('This week');
-    expect(meterLabel(1_440, null)).toBe('Today');
-    expect(meterLabel(43_200, null)).toBe('This month');
-    expect(meterLabel(60, null)).toBe('1-hour limit');
-    expect(meterLabel(300, 'GPT-5.3-Codex-Spark')).toBe('GPT-5.3-Codex-Spark session');
-  });
-});
 
 describe('demo corpus stays plausible against the real corpus', () => {
   const demo = demoConsumption();

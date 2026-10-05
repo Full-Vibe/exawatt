@@ -32,6 +32,7 @@
  */
 import {
   isOperatorEntrypoint,
+  observedAverageRate,
   planWindowKey,
   resolveModelWeight,
   weightUsage,
@@ -134,7 +135,7 @@ export interface LiveConsumptionInputs {
    * Main-derived observed rate per `limitId`, %/hour, from the snapshot's
    * bounded window-observation history. A limitId absent here has no
    * derivable trend yet; the builder falls back to the window's own
-   * observed AVERAGE since its start (`observedBurnRate`) — a real
+   * observed AVERAGE since its start (`observedAverageRate`) — a real
    * single-observation derivation, never a fabricated zero.
    */
   windowRates: Record<string, number>;
@@ -189,6 +190,7 @@ export function accountReads(
           }
         : {}),
       ...(account.credits ? { credits: { ...account.credits } } : {}),
+      ...(account.canUseReset ? { canUseReset: true } : {}),
       spend: account.spend
         ? {
             usedMinor: account.spend.usedMinor,
@@ -271,21 +273,6 @@ export function latestPlanWindows(planWindows: PlanWindow[]): PlanWindow[] {
   return [...byBucket.values()];
 }
 
-/**
- * Observed average burn for a window, %/hour: the harness's own usedPercent
- * over the window time elapsed at observation. An average, not a trend —
- * labelled "%/h observed" wherever it renders.
- */
-export function observedBurnRate(w: PlanWindow): number {
-  if (w.windowMinutes <= 0 || !w.resetsAt) return 0;
-  const windowMs = w.windowMinutes * MIN;
-  const resetsAtMs = Date.parse(w.resetsAt);
-  const observedAtMs = Date.parse(w.observedAt);
-  if (Number.isNaN(resetsAtMs) || Number.isNaN(observedAtMs)) return 0;
-  const elapsedMs = Math.min(windowMs, Math.max(0, windowMs - (resetsAtMs - observedAtMs)));
-  const hours = Math.max(0.5, elapsedMs / HOUR);
-  return w.usedPercent / hours;
-}
 
 /* ------------------------------------------------------------------ */
 /* sparklines — recent throughput per source                           */
@@ -487,7 +474,7 @@ export function buildLiveConsumption(
   const burnRates: Record<string, number> = {};
   for (const w of planWindows) {
     const key = planWindowKey(w);
-    burnRates[key] = inputs.windowRates[key] ?? observedBurnRate(w);
+    burnRates[key] = inputs.windowRates[key] ?? observedAverageRate(w);
   }
 
   return buildDemoConsumption({

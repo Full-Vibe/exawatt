@@ -144,4 +144,35 @@ export type {
   PlanCreditBalance,
   PlanResetCredit,
   PlanResets,
+  PlanResetOutcome,
 } from './live-snapshot';
+export {
+  CONSUMPTION_ACCOUNT_NAME,
+  PLAN_FORECAST_POLICY,
+  forecastPlanWindow,
+  observedAverageRate,
+  planGapPhrase,
+  planMeterLabel,
+  planResetPhrase,
+  planWhenPhrase,
+} from './plan-forecast';
+export type {
+  PlanForecastPolicy,
+  PlanOutlook,
+  PlanPhraseOptions,
+  PlanWindowForecast,
+  PlanWindowPosition,
+} from './plan-forecast';
+export {
+  USAGE_ALERT_POLICY,
+  dueUsageAlerts,
+  liveUsageAlertKeys,
+  usageAlertKey,
+} from './usage-alerts';
+export type {
+  UsageAlert,
+  UsageAlertInput,
+  UsageAlertLeadMinutes,
+  UsageAlertSettings,
+  UsageAlertStage,
+} from './usage-alerts';
