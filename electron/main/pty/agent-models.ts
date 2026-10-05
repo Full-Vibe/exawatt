@@ -818,7 +818,7 @@ export function antigravityModelCatalog(
  * `agy models` fetches the catalog from the account, so it gets the deadline
  * the other network catalogs do. Measured at about 1 s signed in on 1.2.17.
  */
-export async function readAntigravityModelCatalog(
+async function readAntigravityModelCatalog(
   cwd: string,
   shell: string
 ): Promise<AgentModelCatalog> {

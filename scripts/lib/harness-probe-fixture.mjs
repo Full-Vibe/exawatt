@@ -232,7 +232,7 @@ export const FAKE_HARNESSES = Object.freeze(Object.keys(PROBES));
 const EXECUTABLES = Object.freeze({ antigravity: 'agy' });
 
 /** The file name a fake `harness` is written as. */
-export function fakeHarnessExecutable(harness) {
+function fakeHarnessExecutable(harness) {
   return EXECUTABLES[harness] ?? harness;
 }
 

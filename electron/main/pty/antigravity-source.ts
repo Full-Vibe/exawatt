@@ -77,7 +77,7 @@ export function readAntigravityConfiguredModel(
   return typeof model === 'string' && model.trim() ? model.trim() : null;
 }
 
-export interface AntigravityModelRow {
+interface AntigravityModelRow {
   id: string;
   label: string;
 }
@@ -105,7 +105,7 @@ export function parseAntigravityModelRows(output: string): AntigravityModelRow[]
   return rows;
 }
 
-export interface AntigravityConversationSummary {
+interface AntigravityConversationSummary {
   id: string;
   /** Antigravity's own generated title, or null when it has none yet. */
   title: string | null;
