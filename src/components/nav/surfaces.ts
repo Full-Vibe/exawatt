@@ -382,7 +382,10 @@ export function usesDarkPublicChrome(pathname: string): boolean {
     // under this header. Judging the copy against a light frame it will never
     // ship with would be judging the wrong page. It stays footerless, because
     // internal previews are not marketing routes.
-    pathname === '/hud-gallery/fold-close'
+    pathname === '/hud-gallery/fold-close' ||
+    // The ENG-031 W15 homepage study is the same case: a dark marketing page
+    // judged under the chrome it would ship with.
+    pathname === '/hud-gallery/homepage-study'
   );
 }
 
