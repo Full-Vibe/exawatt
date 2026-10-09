@@ -522,6 +522,19 @@ text node. Content, header/footer, and pending UI opt into the shared semantic
 boundary. `eval:typography-stability` must hold identical computed metrics while
 Air/Classic/Night and 90/100/120% app-root inputs are deliberately perturbed.
 
+### Homepage terrain study boundary (ENG-031 W16)
+
+`/hud-gallery/terrain-story` is a fixed-ground exhibition prototype, independent
+of app appearance preferences. It uses the bundled Geist display/UI face and
+Geist Mono metadata, the existing 10/11/12/14/15/16/18/20px rungs, marketing
+headings up to 48px, and the existing closing-only 72px maximum. Four-pixel
+spacing, 4/6/8px corners, D40 shape/word/color redundancy and reduced-motion
+behavior apply. Its graphite/stone material is a scoped candidate, not a new
+production theme. Real agent state is not inferred from the illustrative
+surface. DOM status and inspection controls are the accessible siblings of
+three WebGL material studies. Local browser evidence: `/tmp/terrain-*.png`;
+see ENG-031 W16 for the review/retirement boundary.
+
 ### Appearance snapshot consistency
 
 An application surface consumes one resolved appearance snapshot at a time.
@@ -539,6 +552,8 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-10-09 — ENG-031 W16 adds the scoped homepage terrain study boundary above; existing production tokens and surfaces remain authoritative.
 
 - 2026-10-05 — ENG-008 E17: Usage is facts only. The one-sentence headline
   above the account cards retired (operator: "systematic cards / sections
