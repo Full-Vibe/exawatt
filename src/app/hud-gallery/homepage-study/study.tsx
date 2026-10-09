@@ -110,7 +110,10 @@ export function HomepageStudy() {
       data-homepage-study
       data-public-exhibition-surface="true"
     >
-      <div className="sticky top-12 z-30 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-white/10 bg-[#04060b]/90 px-4 py-2 backdrop-blur">
+      {/* The controls float over the pinned stage rather than sitting above
+          it in the flow, so the scene is pinned from the first pixel of
+          scroll and never shoves up under the bar first. */}
+      <div className="fixed inset-x-0 top-12 z-30 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-white/10 bg-[#04060b]/80 px-4 py-2 backdrop-blur">
         <p className="font-mono text-chrome-micro text-white/50">
           <Link href="/hud-gallery" className="hover:text-white">
             HUD Gallery

@@ -204,7 +204,11 @@ interface RailWindow {
   end: number;
 }
 
-const RAIL_WINDOW: RailWindow = { start: 0.25, end: 0.75 };
+/** How much of a stage's screen holds still on each side of the move. The
+ *  scroll maps pinned travel from the end of the first dwell to the start of
+ *  the last, so there is no dead scroll at either end of the page. */
+export const RAIL_DWELL = 0.25;
+const RAIL_WINDOW: RailWindow = { start: RAIL_DWELL, end: 1 - RAIL_DWELL };
 export const GROWTH_WINDOW: RailWindow = { start: 0.12, end: 0.92 };
 
 interface StageBlend {

@@ -137,8 +137,9 @@ function writeRail(d: StoryDrive, rail: number, recede: number) {
   d.recede = recede;
 }
 
-/** How fast the story input settles. */
-const STORY_RATE = 2.6;
+/** How fast the story input settles. Tight, so the scene answers the wheel
+ *  at once; the rail's ease is what makes the move smooth. */
+const STORY_RATE = 4.5;
 /** A light second pass on distance and target, so a ghost click or a
  *  fleet-size change arrives as a glide and not a cut. */
 const FIT_RATE = 9;

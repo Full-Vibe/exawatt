@@ -42,6 +42,7 @@ import {
   stageAt,
   type CopySetId,
   type Stage,
+  RAIL_DWELL,
 } from './stages';
 import {
   VisualAnchor,
@@ -57,6 +58,8 @@ const VisualCanvas = dynamic(
 );
 
 const STAGE_SCREENS = 1.0;
+/** Where the stage pins: under the 3rem site header (`top-12`). */
+const PIN_TOP = 48;
 
 function exemplarFor(
   agents: FleetAgent[],
@@ -145,10 +148,16 @@ export function ScrollExperience({
     const section = sectionRef.current;
     if (!section) return;
     const rect = section.getBoundingClientRect();
-    const viewport = window.innerHeight;
-    const travel = Math.max(1, rect.height - viewport);
-    const raw = (-rect.top / travel) * (STAGES.length - 1);
-    const progress = Math.max(0, Math.min(STAGES.length - 1, raw));
+    // Progress is pinned travel: zero the moment the stage pins under the
+    // header, one the moment it unpins, mapped from the end of the landing
+    // dwell to the start of the download dwell so every pixel of scroll
+    // moves the scene (operator 2026-10-09: "it absorbs some of the scroll
+    // before it starts updating the scene").
+    const stageHeight = stageRef.current?.offsetHeight ?? window.innerHeight;
+    const travel = Math.max(1, rect.height - stageHeight);
+    const pinned = Math.max(0, Math.min(travel, PIN_TOP - rect.top));
+    const last = STAGES.length - 1;
+    const progress = RAIL_DWELL + (pinned / travel) * (last - 2 * RAIL_DWELL);
     const d = drive.current;
     d.progress = progress;
     d.base = baseCount;
@@ -407,7 +416,7 @@ function Panel({
       : stage.panel === 'left'
         ? 'left-[6vw] top-1/2 -translate-y-1/2 items-start text-left'
         : stage.panel === 'center-top'
-          ? 'left-1/2 top-[9vh] -translate-x-1/2 items-center text-center'
+          ? 'left-1/2 top-[13vh] -translate-x-1/2 items-center text-center'
           : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center text-center';
   return (
     <div
