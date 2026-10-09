@@ -9,7 +9,7 @@ export interface Axial {
   r: number;
 }
 
-export interface SpiralTile {
+interface SpiralTile {
   axial: Axial;
   ring: number;
 }
@@ -24,7 +24,7 @@ const DIRECTIONS: Axial[] = [
 ];
 
 /** Tiles of one ring at distance `k`, in walking order. */
-export function hexRing(center: Axial, k: number): Axial[] {
+function hexRing(center: Axial, k: number): Axial[] {
   if (k === 0) return [{ ...center }];
   const out: Axial[] = [];
   let q = center.q + DIRECTIONS[4].q * k;

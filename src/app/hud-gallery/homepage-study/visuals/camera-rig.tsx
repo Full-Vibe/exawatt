@@ -59,7 +59,7 @@ export function fleetExtent(model: FleetModel, count: number): number {
 }
 
 /** Planar centroid of the present agents. */
-export function fleetCentroid(
+function fleetCentroid(
   model: FleetModel,
   count: number,
   out: THREE.Vector2
@@ -73,11 +73,6 @@ export function fleetCentroid(
     y += py;
   }
   return out.set(x / n, y / n);
-}
-
-export interface CameraRigState {
-  /** The count the camera is currently framing (eased). */
-  shown: number;
 }
 
 export function CameraRig({

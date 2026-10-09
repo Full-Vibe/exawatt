@@ -22,8 +22,6 @@ export const SPHERE_RADIUS = 38;
 
 export const SPHERE_CENTER = new THREE.Vector3(0, -SPHERE_RADIUS, 0);
 
-const scratch = new THREE.Vector3();
-
 /** Planar (x, y) in tile units to a world point on the sphere. */
 export function planeToSphere(
   x: number,
@@ -38,11 +36,6 @@ export function planeToSphere(
   if (d < 1e-6) return out.set(0, rr - radius, 0);
   const s = Math.sin(theta) * rr;
   return out.set((x / d) * s, Math.cos(theta) * rr - radius, (y / d) * s);
-}
-
-/** Outward unit normal at a world point on the sphere. */
-export function sphereNormal(point: THREE.Vector3, out: THREE.Vector3) {
-  return out.copy(point).sub(SPHERE_CENTER).normalize();
 }
 
 const e1 = new THREE.Vector3();
@@ -75,8 +68,4 @@ export function tileQuaternion(
   e2.crossVectors(n, e1).normalize();
   basis.makeBasis(e1, n, e2);
   return out.setFromRotationMatrix(basis);
-}
-
-export function sphereScratch() {
-  return scratch;
 }

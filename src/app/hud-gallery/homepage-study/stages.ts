@@ -20,7 +20,7 @@
 
 import type { StatusLightState } from '@/components/status-light/protocol';
 
-export type StageId =
+type StageId =
   | 'landing'
   | 'working'
   | 'needs-you'
@@ -31,7 +31,7 @@ export type StageId =
 
 export type CopySetId = 'deck' | 'canon';
 
-export interface StageCopy {
+interface StageCopy {
   kicker?: string;
   headline: string[];
   body?: string[];

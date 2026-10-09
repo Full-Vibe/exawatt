@@ -29,9 +29,9 @@ export const FLEET_MAX = 300;
 /** Fleet sizes the study is judged at (operator, 2026-09-11: a first user
  *  has one to ten, not ten thousand). */
 export const FLEET_COUNTS = [1, 10, 100, 300] as const;
-export type FleetCount = (typeof FLEET_COUNTS)[number];
+type FleetCount = (typeof FLEET_COUNTS)[number];
 
-export interface FleetProject {
+interface FleetProject {
   id: number;
   name: string;
   /** Hex axial centre on the shared grid. */
@@ -66,7 +66,7 @@ export interface FleetAgent {
   children: number;
 }
 
-export interface FleetTile {
+interface FleetTile {
   axial: Axial;
   project: number;
   /** Index into `agents`, or -1 for a territory tile with no agent. */
@@ -194,7 +194,7 @@ function statusFor(index: number, local: number, random: () => number) {
 }
 
 /** Rings a spiral needs for `n` tiles: 1 + 3k(k+1) tiles fit in k rings. */
-export function ringsFor(n: number): number {
+function ringsFor(n: number): number {
   let k = 0;
   while (1 + 3 * k * (k + 1) < n) k += 1;
   return k;
