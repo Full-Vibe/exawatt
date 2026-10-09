@@ -347,15 +347,6 @@
   background: #fff;
 }
 
-.storyCopy[data-copy='1'],
-.storyCopy[data-copy='3'] {
-  top: 15%;
-  left: auto;
-  right: 6%;
-  transform: none;
-  width: 29%;
-  text-align: left;
-}
 .storyCopy[data-copy='1'] p,
 .storyCopy[data-copy='3'] p,
 .storyCopy[data-copy='2'] p {
@@ -367,13 +358,6 @@
   font-size: clamp(28px, 2.9vw, 40px);
 }
 
-.storyCopy[data-copy='2'] {
-  top: 15%;
-  left: 6%;
-  transform: none;
-  width: 29%;
-  text-align: left;
-}
 .storyInspector {
   position: absolute;
   z-index: 3;
@@ -382,10 +366,7 @@
   top: 49%;
   max-width: 370px;
 }
-.storyInspector[data-inspector='2'] {
-  right: auto;
-  left: 6%;
-}
+
 .inspector {
   padding: 20px;
   background: #192226ed;
@@ -512,9 +493,6 @@
   text-decoration: underline;
 }
 
-.storyCopy[data-copy='4'] {
-  top: 12%;
-}
 .fleetCaption {
   position: absolute;
   right: 6%;
@@ -540,9 +518,6 @@
   margin-top: 12px;
 }
 
-.storyCopy[data-copy='5'] {
-  top: 13%;
-}
 .storyCopy[data-copy='5'] h1 {
   font-size: clamp(40px, 5vw, 72px);
 }
@@ -758,7 +733,7 @@
 .sketchWorld {
   width: 220px;
   position: absolute;
-  left: 50%;
+  left: 64%;
   top: 50%;
   transform: translate(-50%, -50%) rotateX(50deg) rotateZ(-20deg);
   display: flex;
@@ -776,7 +751,7 @@
 .sketchPanel {
   position: absolute;
   top: 65px;
-  right: 24px;
+  left: 24px;
   width: 100px;
   padding: 16px;
   background: #354348;
@@ -796,10 +771,7 @@
   height: 12px;
   border-radius: 4px;
 }
-.sketch[data-beat='2'] .sketchPanel {
-  right: auto;
-  left: 24px;
-}
+
 .sketch[data-beat='4'] .sketchWorld {
   width: 310px;
 }
@@ -875,11 +847,7 @@
   .storyCopy {
     top: 11%;
   }
-  .storyCopy[data-copy='1'],
-  .storyCopy[data-copy='2'],
-  .storyCopy[data-copy='3'] {
-    top: 12%;
-  }
+
   .storyInspector {
     top: 45%;
   }
@@ -924,16 +892,7 @@
     width: 32%;
     right: 4%;
   }
-  .storyCopy[data-copy='1'],
-  .storyCopy[data-copy='3'] {
-    width: 32%;
-    right: 4%;
-  }
-  .storyCopy[data-copy='2'],
-  .storyInspector[data-inspector='2'] {
-    width: 32%;
-    left: 4%;
-  }
+
   .previewBrand span {
     display: none;
   }
@@ -997,19 +956,6 @@
     right: 20px;
     font-size: 9px;
   }
-  .storyCopy,
-  .storyCopy[data-copy='1'],
-  .storyCopy[data-copy='2'],
-  .storyCopy[data-copy='3'],
-  .storyCopy[data-copy='4'],
-  .storyCopy[data-copy='5'] {
-    top: 62px;
-    left: 24px;
-    right: 24px;
-    width: auto;
-    transform: none;
-    text-align: left;
-  }
   .storyCopy h1,
   .storyCopy[data-copy='1'] h1,
   .storyCopy[data-copy='2'] h1,
@@ -1030,15 +976,6 @@
 
   .storyCopy[data-copy='5'] h1 {
     font-size: 40px;
-  }
-  .storyInspector,
-  .storyInspector[data-inspector='2'] {
-    top: auto;
-    bottom: 108px;
-    left: 24px;
-    right: 24px;
-    width: auto;
-    max-width: none;
   }
   .inspector {
     padding: 12px 16px;
@@ -1397,4 +1334,56 @@
 .stage[data-chapter='0'] .chosen:not(:hover):not(:focus-visible) .agentLabel,
 .stage[data-chapter='5'] .chosen:not(:hover):not(:focus-visible) .agentLabel {
   opacity: 0;
+}
+
+/* Every story beat keeps the same reading column and world side. */
+.stage .storyCopy {
+  top: 16%;
+  left: 6%;
+  right: auto;
+  width: 31%;
+  max-width: 470px;
+  transform: none;
+  text-align: left;
+}
+.stage .storyCopy h1 {
+  font-size: clamp(32px, 3.2vw, 48px);
+}
+.stage .storyCopy p {
+  margin: 0;
+}
+.stage .storyInspector {
+  top: 52%;
+  left: 6%;
+  right: auto;
+  width: 31%;
+}
+.stage .fleetCaption {
+  left: 6%;
+  right: auto;
+  bottom: 25%;
+}
+.canvasHost {
+  touch-action: pan-y !important;
+}
+@media (max-width: 700px) {
+  .stage .storyCopy {
+    top: 64px;
+    left: 24px;
+    width: calc(100% - 48px);
+    max-width: none;
+  }
+  .stage .storyCopy h1 {
+    font-size: 32px;
+  }
+  .stage .storyInspector {
+    top: auto;
+    bottom: 144px;
+    left: 24px;
+    width: calc(100% - 48px);
+  }
+  .stage .fleetCaption {
+    left: 24px;
+    bottom: 150px;
+  }
 }

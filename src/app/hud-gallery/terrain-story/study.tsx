@@ -146,6 +146,10 @@ export function TerrainStudy() {
   const switchMode = (next: Mode) => {
     setMode(next);
     if (next !== 'outline') motion.change({ mode: next });
+    if (next === 'lab')
+      requestAnimationFrame(() =>
+        scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+      );
   };
   const renderInspector = (
     isStory: boolean,

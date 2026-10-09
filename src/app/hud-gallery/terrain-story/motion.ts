@@ -5,6 +5,7 @@ type MotionInput = {
   yaw: number;
   pitch: number;
   focus: FocusScale;
+  hovered: number;
 };
 
 /** One input authority for scroll, buttons and pointer gestures. No DOM/canvas controllers compete. */
@@ -15,6 +16,7 @@ export function createMotionPort() {
     yaw: 0,
     pitch: 0,
     focus: 'fleet',
+    hovered: -1,
   };
   const listeners = new Set<() => void>();
   return {
@@ -45,12 +47,12 @@ export interface StoryPose {
   y: number;
 }
 const POSES: readonly StoryPose[] = [
-  { yaw: 0.35, pitch: 0.84, zoom: 1, x: 0, y: 0.55 },
-  { yaw: 0.1, pitch: 0.92, zoom: 0.9, x: 0.54, y: 0.12 },
-  { yaw: -0.32, pitch: 0.8, zoom: 0.94, x: -0.54, y: 0.12 },
-  { yaw: 0.1, pitch: 0.94, zoom: 0.91, x: 0.54, y: 0.12 },
-  { yaw: 0.48, pitch: 0.61, zoom: 1.1, x: 0, y: 0.4 },
-  { yaw: 0.78, pitch: 0.8, zoom: 1.04, x: 0, y: 0.62 },
+  { yaw: 0.35, pitch: 0.84, zoom: 1, x: -0.68, y: 0.12 },
+  { yaw: 0.1, pitch: 0.92, zoom: 0.9, x: -0.68, y: 0.12 },
+  { yaw: -0.32, pitch: 0.8, zoom: 0.94, x: -0.68, y: 0.12 },
+  { yaw: 0.1, pitch: 0.94, zoom: 0.91, x: -0.68, y: 0.12 },
+  { yaw: 0.48, pitch: 0.61, zoom: 1.1, x: -0.68, y: 0.12 },
+  { yaw: 0.78, pitch: 0.8, zoom: 1.04, x: -0.68, y: 0.12 },
 ];
 /** Continuous at every chapter boundary, independent of the discrete copy/selection chapter. */
 export function sampleStoryPose(progress: number, out: StoryPose) {

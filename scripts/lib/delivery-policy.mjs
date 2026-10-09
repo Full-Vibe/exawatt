@@ -116,6 +116,11 @@ const isBoardCanvas = file =>
 
 export const SURFACE_GATES = [
   {
+    gate: 'eval:terrain-story',
+    why: 'native wheel and touch must scroll over the 3D world and its agent targets',
+    match: file => (file.startsWith('src/app/hud-gallery/terrain-story/') && !/\.test\.tsx?$/.test(file)) || file === 'scripts/terrain-story-eval.mjs',
+  },
+  {
     gate: 'eval:gallery:labels',
     why: 'gallery world annotations must paint under the real CSP and preserve pointer and reduced-motion behavior',
     match: file =>
@@ -1464,6 +1469,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:lifecycle': GATE,
   'eval:electron:idempotency': GATE,
   'eval:hero-board': GATE,
+  'eval:terrain-story': GATE,
   'eval:typography-stability': GATE,
   'eval:spatial': GATE,
   'eval:spatial:pointer': GATE,

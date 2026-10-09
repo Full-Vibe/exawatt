@@ -546,6 +546,13 @@ exception for evaluating 3D representation, not a replacement status protocol.
 The lab direction heading may use 52px; small segmented focus controls use
 pill corners. Neither exception propagates to production without acceptance.
 
+W18 keeps every narrative beat in one left-hand reading column, with the
+persistent world on the right (stacked on phones). Local agent motion conveys
+activity: individually phased lift/turn, working signal particles, slower
+attention pulses, and hover/focus response; Off remains still. One scene clock
+and shared projected heights keep 3D bodies and DOM targets together. Native
+wheel/touch navigation owns scrolling; the camera's built-in input is disabled.
+
 ### Appearance snapshot consistency
 
 An application surface consumes one resolved appearance snapshot at a time.

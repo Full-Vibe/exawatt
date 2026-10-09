@@ -26,6 +26,7 @@ import {
 } from './model';
 import { agentGeometry, bodyMaterial, teamGeometry } from './materials';
 import { sampleStoryPose, type MotionPort } from './motion';
+import { sampleAgentLife } from './agent-life';
 import styles from './study.module.css';
 
 interface Props {
@@ -41,6 +42,7 @@ interface Props {
   onAdd: (id: number) => void;
   onProgress: (progress: number) => void;
 }
+type LifeAccess = () => { time: number; heights: Float32Array };
 const NO_RAYCAST = () => {};
 const UP = new THREE.Vector3(0, 1, 0);
 const COLORS = {
@@ -166,13 +168,15 @@ const Agents = memo(function Agents({
   approved,
   wire,
   motion,
+  life,
 }: Pick<
   Props,
   'kind' | 'count' | 'selected' | 'approved' | 'wire' | 'motion'
->) {
+> & { life: LifeAccess }) {
   const bodies = useRef<THREE.InstancedMesh>(null),
     hearts = useRef<THREE.InstancedMesh>(null),
-    sockets = useRef<THREE.InstancedMesh>(null);
+    sockets = useRef<THREE.InstancedMesh>(null),
+    sparks = useRef<THREE.InstancedMesh>(null);
   const geometry = useMemo(() => agentGeometry(kind), [kind]);
   const material = useMemo(() => bodyMaterial(kind, wire), [kind, wire]);
   const statuses = useMemo(
@@ -183,6 +187,10 @@ const Agents = memo(function Agents({
   const invalidate = useThree(s => s.invalidate);
   const cache = useRef({
     dummy: new THREE.Object3D(),
+    child: new THREE.Object3D(),
+    bodyMatrix: new THREE.Matrix4(),
+    lifePose: { lift: 0, yaw: 0, lean: 0, pulse: 1 },
+    hover: new Float32Array(SITES.length),
     normal: new THREE.Vector3(),
     color: new THREE.Color(),
     sizes: new Float32Array(SITES.length),
@@ -192,6 +200,15 @@ const Agents = memo(function Agents({
     emphasis: 0,
     teamEmphasis: 0,
   });
+  const scheduler = useMemo(() => createAmbientFrameScheduler(), []);
+  useEffect(() => () => scheduler.dispose(), [scheduler]);
+  useEffect(() => {
+    const resume = () => {
+      if (!document.hidden) invalidate();
+    };
+    document.addEventListener('visibilitychange', resume);
+    return () => document.removeEventListener('visibilitychange', resume);
+  }, [invalidate]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   useEffect(() => () => material.dispose(), [material]);
   useEffect(() => {
@@ -202,9 +219,17 @@ const Agents = memo(function Agents({
     invalidate();
   }, [count, kind, selected, approved, wire, invalidate]);
   useFrame((state, delta) => {
-    if (!bodies.current || !hearts.current || !sockets.current) return;
+    if (
+      !bodies.current ||
+      !hearts.current ||
+      !sockets.current ||
+      !sparks.current
+    )
+      return;
     const c = cache.current;
-    c.phase += Math.min(delta, 0.05);
+    if (!reduced && !document.hidden) c.phase += Math.min(delta, 0.1);
+    const frame = life();
+    frame.time = c.phase;
     c.countElapsed = reduced
       ? 1
       : Math.min(1, c.countElapsed + Math.min(delta, 0.05) / 0.8);
@@ -227,14 +252,23 @@ const Agents = memo(function Agents({
       c.sizes[i] = THREE.MathUtils.lerp(c.fromSizes[i], want, growth);
       if (Math.abs(c.sizes[i] - want) > 0.001) moving = true;
       const scale = Math.max(0.00001, c.sizes[i]);
+      const status = statuses[i];
+      const hoverTarget = input.hovered === i ? 1 : 0;
+      c.hover[i] = reduced
+        ? hoverTarget
+        : THREE.MathUtils.damp(c.hover[i], hoverTarget, 12, delta);
+      if (Math.abs(c.hover[i] - hoverTarget) > 0.001) moving = true;
+      sampleAgentLife(i, status, c.phase, c.hover[i], reduced, c.lifePose);
+      frame.heights[i] = c.lifePose.lift;
       c.normal.set(site.x, site.y + RADIUS, site.z).normalize();
       c.dummy.quaternion.setFromUnitVectors(UP, c.normal);
-      c.dummy.rotateY((i % 3) * 0.45 + 0.25);
-      c.dummy.position.set(site.x, site.y + 0.62, site.z);
+      c.dummy.rotateY((i % 3) * 0.45 + 0.25 + c.lifePose.yaw);
+      c.dummy.rotateZ(c.lifePose.lean);
+      c.dummy.position.set(site.x, site.y + 0.62 + c.lifePose.lift, site.z);
       c.dummy.scale.setScalar(scale);
       c.dummy.updateMatrix();
       bodies.current.setMatrixAt(i, c.dummy.matrix);
-      const status = statuses[i];
+      c.bodyMatrix.copy(c.dummy.matrix);
       const strength =
         (i === selected ? 1 : 1 - c.emphasis * 0.88) *
         (teamOf(i) === teamOf(selected) ? 1 : 1 - c.teamEmphasis * 0.75);
@@ -252,37 +286,56 @@ const Agents = memo(function Agents({
               ? 2
               : 3;
       for (let part = 0; part < 3; part++) {
-        const visible = part < pieces ? scale : 0.00001;
         const offset = (part - (pieces - 1) / 2) * 0.11;
-        c.dummy.position.set(
-          site.x +
-            (status === 'needs-you'
-              ? offset
-              : status === 'fault'
-                ? offset * 0.7
-                : 0),
-          site.y +
-            (kind === 'mercury' ? 1.075 : 0.66) +
+        c.child.position.set(
+          status === 'needs-you'
+            ? offset
+            : status === 'fault'
+              ? offset * 0.7
+              : 0,
+          (kind === 'mercury' ? 0.455 : 0.04) +
             (status === 'result' || status === 'fault' ? offset : 0),
-          site.z
+          0
         );
-        c.dummy.scale.set(
-          visible * (kind === 'mercury' ? 0.085 : 0.035),
-          visible *
-            (kind === 'mercury'
-              ? 0.012
-              : status === 'active'
-                ? 0.24
-                : status === 'needs-you'
-                  ? 0.13
-                  : 0.04),
-          visible * 0.035
+        c.child.scale.set(
+          (kind === 'mercury' ? 0.085 : 0.035) * c.lifePose.pulse,
+          (kind === 'mercury'
+            ? 0.012
+            : status === 'active'
+              ? 0.24
+              : status === 'needs-you'
+                ? 0.13
+                : 0.04) * c.lifePose.pulse,
+          0.035
         );
-        c.dummy.updateMatrix();
-        hearts.current.setMatrixAt(i * 3 + part, c.dummy.matrix);
-        c.color.set(COLORS[status]).multiplyScalar(strength);
+        if (part >= pieces) c.child.scale.setScalar(0.00001);
+        c.child.updateMatrix();
+        c.child.matrix.premultiply(c.bodyMatrix);
+        hearts.current.setMatrixAt(i * 3 + part, c.child.matrix);
+        c.color.set(COLORS[status]).multiplyScalar(strength * c.lifePose.pulse);
         hearts.current.setColorAt(i * 3 + part, c.color);
       }
+      // Working agents carry moving signal particles; waiting/result states stay distinct.
+      for (let part = 0; part < 2; part++) {
+        const phase = (reduced ? 0 : c.phase * 0.95) + i * 2.4 + part * Math.PI;
+        const radius = 0.43 + c.hover[i] * 0.035;
+        c.child.position.set(
+          Math.cos(phase) * radius,
+          Math.sin(phase * 1.5) * 0.15,
+          Math.sin(phase) * radius
+        );
+        c.child.scale.setScalar(
+          status === 'active' ? 0.034 : status === 'needs-you' ? 0.024 : 0.00001
+        );
+        if (status !== 'active')
+          c.child.position.set((part === 0 ? -1 : 1) * 0.4, 0.12, 0);
+        c.child.updateMatrix();
+        c.child.matrix.premultiply(c.bodyMatrix);
+        sparks.current.setMatrixAt(i * 2 + part, c.child.matrix);
+        c.color.set(COLORS[status]).multiplyScalar(strength * c.lifePose.pulse);
+        sparks.current.setColorAt(i * 2 + part, c.color);
+      }
+      c.dummy.quaternion.setFromUnitVectors(UP, c.normal);
       c.dummy.position.set(site.x, site.y + 0.025, site.z);
       c.dummy.rotateX(Math.PI / 2);
       c.dummy.scale.setScalar(scale * (i === selected ? 1.1 : 1));
@@ -293,6 +346,9 @@ const Agents = memo(function Agents({
         .multiplyScalar(i === selected ? 0.9 : 0.3 * strength);
       sockets.current.setColorAt(i, c.color);
     }
+    sparks.current.instanceMatrix.needsUpdate = true;
+    if (sparks.current.instanceColor)
+      sparks.current.instanceColor.needsUpdate = true;
     bodies.current.instanceMatrix.needsUpdate = true;
     hearts.current.instanceMatrix.needsUpdate = true;
     sockets.current.instanceMatrix.needsUpdate = true;
@@ -303,6 +359,10 @@ const Agents = memo(function Agents({
     if (sockets.current.instanceColor)
       sockets.current.instanceColor.needsUpdate = true;
     if (moving) state.invalidate();
+    scheduler.request(
+      reduced || document.hidden ? 'parked' : 'economy',
+      state.invalidate
+    );
   });
   return (
     <>
@@ -330,67 +390,18 @@ const Agents = memo(function Agents({
         <torusGeometry args={[0.48, 0.014, 6, 48]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
-      <AgentSignal selected={selected} approved={approved} />
+      <instancedMesh
+        ref={sparks}
+        args={[undefined, undefined, SITES.length * 2]}
+        raycast={NO_RAYCAST}
+        frustumCulled={false}
+      >
+        <sphereGeometry args={[1, 8, 6]} />
+        <meshBasicMaterial toneMapped={false} />
+      </instancedMesh>
     </>
   );
 });
-
-function AgentSignal({
-  selected,
-  approved,
-}: Pick<Props, 'selected' | 'approved'>) {
-  const group = useRef<THREE.Group>(null);
-  const reduced = usePrefersReducedMotion();
-  const scheduler = useMemo(() => createAmbientFrameScheduler(), []);
-  const invalidate = useThree(s => s.invalidate);
-  useEffect(() => {
-    const resume = () => {
-      if (!document.hidden) invalidate();
-    };
-    document.addEventListener('visibilitychange', resume);
-    return () => document.removeEventListener('visibilitychange', resume);
-  }, [invalidate]);
-  const phase = useRef(0);
-  const state = agentAt(selected, approved).state;
-  const site = SITES[selected];
-  useEffect(() => () => scheduler.dispose(), [scheduler]);
-  useFrame(({ invalidate }, delta) => {
-    if (!group.current || reduced || document.hidden || state !== 'active')
-      return;
-    phase.current += Math.min(delta, 0.1) * 0.8;
-    group.current.rotation.y = phase.current;
-    scheduler.request('economy', invalidate);
-  });
-  return (
-    <group position={[site.x, site.y + 0.65, site.z]} ref={group}>
-      {(state === 'active'
-        ? [0]
-        : state === 'needs-you'
-          ? [0, Math.PI]
-          : state === 'result'
-            ? [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]
-            : state === 'fault'
-              ? [0.3, 2.1, 4.5]
-              : []
-      ).map((a, i) => (
-        <mesh
-          key={i}
-          position={[
-            Math.cos(a) * 0.49,
-            state === 'fault' ? (i - 1) * 0.13 : 0,
-            Math.sin(a) * 0.49,
-          ]}
-          raycast={NO_RAYCAST}
-        >
-          <octahedronGeometry
-            args={[state === 'needs-you' ? 0.065 : 0.045, 0]}
-          />
-          <meshBasicMaterial color={COLORS[state]} toneMapped={false} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
 
 function Survey({ count, scan }: { count: number; scan: number }) {
   const reduced = usePrefersReducedMotion();
@@ -579,8 +590,10 @@ function CameraRig({
   motion,
   overlay,
   onProgress,
+  life,
 }: Pick<Props, 'count' | 'selected' | 'motion' | 'onProgress'> & {
   overlay: Overlay;
+  life: LifeAccess;
 }) {
   const controls = useRef<CameraControls>(null);
   const reduced = usePrefersReducedMotion();
@@ -715,9 +728,12 @@ function CameraRig({
     camera.updateMatrixWorld();
     for (const [id, el] of overlay()) {
       const p = SITES[id];
-      a.project.set(p.x, p.y + (id < count ? 0.62 : 0.05), p.z).project(camera);
+      const lift = id < count ? life().heights[id] : 0;
+      a.project
+        .set(p.x, p.y + (id < count ? 0.62 + lift : 0.05), p.z)
+        .project(camera);
       if (id < count) {
-        a.extent.set(p.x, p.y + 1.1, p.z).project(camera);
+        a.extent.set(p.x, p.y + 1.1 + lift, p.z).project(camera);
         const height = Math.max(
           28,
           Math.abs(a.extent.y - a.project.y) * size.height + 12
@@ -747,7 +763,9 @@ function CameraRig({
   return (
     <CameraControls
       ref={controls}
-      events={false}
+      enabled={false}
+      mouseButtons={{ left: 0, middle: 0, right: 0, wheel: 0 }}
+      touches={{ one: 0, two: 0, three: 0 }}
       minDistance={0.5}
       maxDistance={100}
     />
@@ -757,6 +775,11 @@ function CameraRig({
 export default function World(props: Props) {
   const overlay = useRef(new Map<number, HTMLButtonElement>());
   const getOverlay = useCallback(() => overlay.current, []);
+  const lifeFrame = useRef({
+    time: 0,
+    heights: new Float32Array(SITES.length),
+  });
+  const getLife = useCallback(() => lifeFrame.current, []);
   const [ready, setReady] = useState(false);
   const drag = useRef({
     active: false,
@@ -820,6 +843,7 @@ export default function World(props: Props) {
       <WorldBoundary>
         <Canvas
           aria-hidden="true"
+          className={styles.canvasHost}
           frameloop="demand"
           dpr={[1, 1.5]}
           camera={{ position: [5, 12, 14], fov: 35 }}
@@ -890,6 +914,7 @@ export default function World(props: Props) {
             approved={props.approved}
             wire={props.wire}
             motion={props.motion}
+            life={getLife}
           />
           {props.links && (
             <Connections count={props.count} selected={props.selected} />
@@ -899,6 +924,7 @@ export default function World(props: Props) {
             selected={props.selected}
             motion={props.motion}
             overlay={getOverlay}
+            life={getLife}
             onProgress={props.onProgress}
           />
         </Canvas>
@@ -915,6 +941,14 @@ export default function World(props: Props) {
                 else overlay.current.delete(site.id);
               }}
               draggable={false}
+              onPointerEnter={() => {
+                if (!ghost) props.motion.change({ hovered: site.id });
+              }}
+              onPointerLeave={() => props.motion.change({ hovered: -1 })}
+              onFocus={() => {
+                if (!ghost) props.motion.change({ hovered: site.id });
+              }}
+              onBlur={() => props.motion.change({ hovered: -1 })}
               className={`${styles.anchor} ${ghost ? styles.ghost : ''} ${site.id === props.selected && !ghost ? styles.chosen : ''}`}
               data-state={agent.state}
               data-agent={ghost ? undefined : site.id}
