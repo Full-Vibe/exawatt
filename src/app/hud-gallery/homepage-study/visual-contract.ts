@@ -11,7 +11,7 @@ import type { StatusLightState } from '@/components/status-light/protocol';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
 
-export type VisualId = 'crust' | 'lidar' | 'dome';
+export type VisualId = 'crust' | 'lidar' | 'dome' | 'prism' | 'mercury';
 
 export const VISUALS: { id: VisualId; name: string; note: string }[] = [
   {
@@ -28,6 +28,16 @@ export const VISUALS: { id: VisualId; name: string; note: string }[] = [
     id: 'dome',
     name: 'Dome',
     note: "Today's board, bent onto the sphere. The nearest step from what ships.",
+  },
+  {
+    id: 'prism',
+    name: 'Prism',
+    note: 'Crystal glass with a status light inside each agent. Dispersion and iridescence.',
+  },
+  {
+    id: 'mercury',
+    name: 'Mercury',
+    note: 'Liquid metal. Agents are droplets that merge into a pool as a Project fills.',
   },
 ];
 

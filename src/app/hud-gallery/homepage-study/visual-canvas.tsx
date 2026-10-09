@@ -15,6 +15,8 @@ import type { StoryDrive, VisualAnchor, VisualId } from './visual-contract';
 import { CrustVisual } from './visuals/crust-visual';
 import { DomeVisual } from './visuals/dome-visual';
 import { LidarVisual } from './visuals/lidar-visual';
+import { MercuryVisual } from './visuals/mercury-visual';
+import { PrismVisual } from './visuals/prism-visual';
 
 export function VisualCanvas({
   visual,
@@ -37,12 +39,14 @@ export function VisualCanvas({
   onExpand: () => void;
   onHoverChange: (agent: number) => void;
 }) {
-  const Visual =
-    visual === 'lidar'
-      ? LidarVisual
-      : visual === 'dome'
-        ? DomeVisual
-        : CrustVisual;
+  const VISUAL_COMPONENTS = {
+    crust: CrustVisual,
+    lidar: LidarVisual,
+    dome: DomeVisual,
+    prism: PrismVisual,
+    mercury: MercuryVisual,
+  } as const;
+  const Visual = VISUAL_COMPONENTS[visual];
   return (
     <Canvas
       className="absolute inset-0"
