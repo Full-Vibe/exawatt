@@ -1,5 +1,5 @@
 export type FocusScale = 'agent' | 'team' | 'fleet';
-export type MotionInput = {
+type MotionInput = {
   progress: number;
   mode: 'story' | 'lab';
   yaw: number;
