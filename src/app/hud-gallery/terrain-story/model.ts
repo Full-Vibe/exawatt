@@ -1,8 +1,32 @@
 import type { StatusLightState } from '@/components/status-light/protocol';
 
-export type WorldStyle = 'terrace' | 'survey' | 'contour';
+export type WorldStyle =
+  | 'prism'
+  | 'mercury'
+  | 'acrylic'
+  | 'terrace'
+  | 'survey'
+  | 'contour';
 export type Voice = 'control' | 'momentum';
 export const WORLDS: { id: WorldStyle; name: string; description: string }[] = [
+  {
+    id: 'prism',
+    name: 'Prism',
+    description:
+      'Cut glass, a luminous heart, and spectral edges. A crystalline landscape of work.',
+  },
+  {
+    id: 'mercury',
+    name: 'Mercury',
+    description:
+      'Liquid chrome on a sculpted surface. Individual agents emerge from a shared team.',
+  },
+  {
+    id: 'acrylic',
+    name: 'Acrylic',
+    description:
+      'Translucent color, soft edges, and layered territories. A lighter, more tactile world.',
+  },
   {
     id: 'terrace',
     name: 'Terrace',
@@ -181,4 +205,14 @@ export function agentAt(
     state,
     parent: index > 0 && index % 3 !== 0 ? Math.floor((index - 1) / 3) : null,
   };
+}
+
+export const TEAMS = ['Storefront', 'Research', 'Launch'] as const;
+export function teamOf(id: number) {
+  if (id === 0) return 0;
+  const point = SITES[id];
+  return Math.min(
+    2,
+    Math.floor((Math.atan2(point.z, point.x) + Math.PI) / ((Math.PI * 2) / 3))
+  );
 }

@@ -2,6 +2,7 @@
 
 import {
   Component,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -10,29 +11,46 @@ import {
   type ReactNode,
 } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { CameraControls } from '@react-three/drei';
+import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import * as THREE from 'three';
-import { StatusLightMark } from '@/components/status-light/status-light';
 import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import { SITES, RADIUS, surfaceY, agentAt, type WorldStyle } from './model';
+import { createAmbientFrameScheduler } from '@/components/fleet/spatial/operations-board/operations-board-ambient';
+import {
+  SITES,
+  RADIUS,
+  surfaceY,
+  agentAt,
+  teamOf,
+  type WorldStyle,
+} from './model';
+import { agentGeometry, bodyMaterial, teamGeometry } from './materials';
+import { sampleStoryPose, type MotionPort } from './motion';
 import styles from './study.module.css';
 
 interface Props {
   kind: WorldStyle;
   count: number;
   selected: number;
-  chapter: number;
-  angle: number;
+  motion: MotionPort;
   links: boolean;
   scan: number;
   approved: boolean;
   wire: boolean;
   onSelect: (id: number) => void;
   onAdd: (id: number) => void;
+  onProgress: (progress: number) => void;
 }
-const UP = new THREE.Vector3(0, 1, 0);
 const NO_RAYCAST = () => {};
+const UP = new THREE.Vector3(0, 1, 0);
+const COLORS = {
+  active: '#d8e8ff',
+  'needs-you': '#ffa46c',
+  result: '#a1eeaa',
+  fault: '#ff697b',
+  off: '#606976',
+};
+const TEAM_COLORS = ['#90baff', '#c1a3f3', '#91d4d5'];
 class WorldBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }
@@ -52,104 +70,325 @@ class WorldBoundary extends Component<
   }
 }
 
-function Terrain({
+const Territory = memo(function Territory({
   kind,
   count,
   wire,
 }: Pick<Props, 'kind' | 'count' | 'wire'>) {
-  const tiles = useRef<THREE.InstancedMesh>(null);
-  const stems = useRef<THREE.InstancedMesh>(null);
+  const geometry = useMemo(
+    () => [0, 1, 2].map(team => teamGeometry(team, 0)),
+    []
+  );
+  const meshes = useRef<(THREE.Mesh | null)[]>([]);
+  const getMeshes = useCallback(() => meshes.current, []);
+  const transition = useRef({
+    elapsed: 1,
+    from: [] as Float32Array[],
+    to: [] as Float32Array[],
+  });
   const reduced = usePrefersReducedMotion();
-  const cacheRef = useRef({
+  const invalidate = useThree(s => s.invalidate);
+  useEffect(() => {
+    const flight = transition.current;
+    flight.elapsed = 0;
+    flight.from = [];
+    flight.to = [];
+    for (let i = 0; i < 3; i++) {
+      const geo = getMeshes()[i]?.geometry;
+      if (!geo) continue;
+      flight.from.push(new Float32Array(geo.attributes.position.array));
+      const target = teamGeometry(i, count);
+      flight.to.push(new Float32Array(target.attributes.position.array));
+      target.dispose();
+    }
+    invalidate();
+  }, [count, invalidate, getMeshes]);
+  useEffect(() => () => geometry.forEach(g => g.dispose()), [geometry]);
+  useFrame((state, delta) => {
+    const flight = transition.current;
+    if (flight.elapsed >= 1) return;
+    flight.elapsed = reduced
+      ? 1
+      : Math.min(1, flight.elapsed + Math.min(delta, 0.05) / 0.8);
+    const t = 1 - Math.pow(1 - flight.elapsed, 3);
+    for (let i = 0; i < 3; i++) {
+      const geo = getMeshes()[i]?.geometry;
+      if (!geo || !flight.to[i]) continue;
+      const positions = geo.attributes.position;
+      for (let j = 0; j < positions.array.length; j++)
+        positions.array[j] = THREE.MathUtils.lerp(
+          flight.from[i][j],
+          flight.to[i][j],
+          t
+        );
+      positions.needsUpdate = true;
+      geo.computeVertexNormals();
+      geo.computeBoundingSphere();
+    }
+    if (flight.elapsed < 1) state.invalidate();
+  });
+  return (
+    <>
+      {geometry.map((geo, i) => (
+        <mesh
+          key={i}
+          ref={el => {
+            meshes.current[i] = el;
+          }}
+          geometry={geo}
+          raycast={NO_RAYCAST}
+        >
+          <meshPhysicalMaterial
+            color={
+              kind === 'acrylic'
+                ? TEAM_COLORS[i]
+                : kind === 'mercury'
+                  ? '#333c49'
+                  : '#293f59'
+            }
+            metalness={kind === 'mercury' ? 0.92 : 0.32}
+            roughness={kind === 'mercury' ? 0.23 : 0.3}
+            clearcoat={1}
+            clearcoatRoughness={0.14}
+            wireframe={wire}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+    </>
+  );
+});
+
+const Agents = memo(function Agents({
+  kind,
+  count,
+  selected,
+  approved,
+  wire,
+  motion,
+}: Pick<
+  Props,
+  'kind' | 'count' | 'selected' | 'approved' | 'wire' | 'motion'
+>) {
+  const bodies = useRef<THREE.InstancedMesh>(null),
+    hearts = useRef<THREE.InstancedMesh>(null),
+    sockets = useRef<THREE.InstancedMesh>(null);
+  const geometry = useMemo(() => agentGeometry(kind), [kind]);
+  const material = useMemo(() => bodyMaterial(kind, wire), [kind, wire]);
+  const statuses = useMemo(
+    () => SITES.map(site => agentAt(site.id, approved).state),
+    [approved]
+  );
+  const reduced = usePrefersReducedMotion();
+  const invalidate = useThree(s => s.invalidate);
+  const cache = useRef({
     dummy: new THREE.Object3D(),
     normal: new THREE.Vector3(),
     color: new THREE.Color(),
     sizes: new Float32Array(SITES.length),
-    stems: new Float32Array(SITES.length),
+    fromSizes: new Float32Array(SITES.length),
+    countElapsed: 1,
+    phase: 0,
+    emphasis: 0,
+    teamEmphasis: 0,
   });
-  const invalidate = useThree(s => s.invalidate);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => {
+    cache.current.fromSizes.set(cache.current.sizes);
+    cache.current.countElapsed = 0;
+  }, [count]);
   useEffect(() => {
     invalidate();
-  }, [count, kind, wire, invalidate]);
+  }, [count, kind, selected, approved, wire, invalidate]);
   useFrame((state, delta) => {
-    if (!tiles.current || !stems.current) return;
-    const cache = cacheRef.current;
-    let moving = false;
+    if (!bodies.current || !hearts.current || !sockets.current) return;
+    const c = cache.current;
+    c.phase += Math.min(delta, 0.05);
+    c.countElapsed = reduced
+      ? 1
+      : Math.min(1, c.countElapsed + Math.min(delta, 0.05) / 0.8);
+    const growth = 1 - Math.pow(1 - c.countElapsed, 3);
+    const input = motion.read();
+    const emphasis = input.mode === 'lab' && input.focus === 'agent' ? 1 : 0;
+    c.emphasis = reduced
+      ? emphasis
+      : THREE.MathUtils.damp(c.emphasis, emphasis, 8, delta);
+    const teamEmphasis = input.mode === 'lab' && input.focus === 'team' ? 1 : 0;
+    c.teamEmphasis = reduced
+      ? teamEmphasis
+      : THREE.MathUtils.damp(c.teamEmphasis, teamEmphasis, 8, delta);
+    let moving =
+      Math.abs(c.emphasis - emphasis) > 0.001 ||
+      Math.abs(c.teamEmphasis - teamEmphasis) > 0.001;
     for (let i = 0; i < SITES.length; i++) {
-      const site = SITES[i];
-      const want = i < count + 6 ? 1 : 0;
-      cache.sizes[i] = reduced
-        ? want
-        : THREE.MathUtils.damp(cache.sizes[i], want, 7, delta);
-      const unitWant = i < count ? 1 : 0;
-      cache.stems[i] = reduced
-        ? unitWant
-        : THREE.MathUtils.damp(cache.stems[i], unitWant, 8, delta);
-      if (
-        Math.abs(cache.sizes[i] - want) > 0.001 ||
-        Math.abs(cache.stems[i] - unitWant) > 0.001
-      )
-        moving = true;
-      cache.normal.set(site.x, site.y + RADIUS, site.z).normalize();
-      cache.dummy.quaternion.setFromUnitVectors(UP, cache.normal);
-      cache.dummy.position.set(site.x, site.y - 0.14, site.z);
-      cache.dummy.scale.setScalar(Math.max(0.0001, cache.sizes[i]));
-      cache.dummy.updateMatrix();
-      tiles.current.setMatrixAt(i, cache.dummy.matrix);
-      cache.color.set(
-        i < count
-          ? wire
-            ? '#575e62'
-            : kind === 'terrace'
-              ? '#667176'
-              : '#414c51'
-          : '#2c363b'
-      );
-      tiles.current.setColorAt(i, cache.color);
-      cache.dummy.position.set(site.x, site.y + 0.11, site.z);
-      cache.dummy.scale.setScalar(Math.max(0.0001, cache.stems[i]));
-      cache.dummy.updateMatrix();
-      stems.current.setMatrixAt(i, cache.dummy.matrix);
+      const site = SITES[i],
+        want = i < count ? 1 : 0;
+      c.sizes[i] = THREE.MathUtils.lerp(c.fromSizes[i], want, growth);
+      if (Math.abs(c.sizes[i] - want) > 0.001) moving = true;
+      const scale = Math.max(0.00001, c.sizes[i]);
+      c.normal.set(site.x, site.y + RADIUS, site.z).normalize();
+      c.dummy.quaternion.setFromUnitVectors(UP, c.normal);
+      c.dummy.rotateY((i % 3) * 0.45 + 0.25);
+      c.dummy.position.set(site.x, site.y + 0.62, site.z);
+      c.dummy.scale.setScalar(scale);
+      c.dummy.updateMatrix();
+      bodies.current.setMatrixAt(i, c.dummy.matrix);
+      const status = statuses[i];
+      const strength =
+        (i === selected ? 1 : 1 - c.emphasis * 0.88) *
+        (teamOf(i) === teamOf(selected) ? 1 : 1 - c.teamEmphasis * 0.75);
+      c.color.set(kind === 'acrylic' ? TEAM_COLORS[teamOf(i)] : '#ffffff');
+      c.color.multiplyScalar(strength);
+      bodies.current.setColorAt(i, c.color);
+      // State has physical structure: one working core, paired attention,
+      // stacked results, or fractured fault shards; rest is unlit.
+      const pieces =
+        status === 'off'
+          ? 0
+          : status === 'active'
+            ? 1
+            : status === 'needs-you'
+              ? 2
+              : 3;
+      for (let part = 0; part < 3; part++) {
+        const visible = part < pieces ? scale : 0.00001;
+        const offset = (part - (pieces - 1) / 2) * 0.11;
+        c.dummy.position.set(
+          site.x +
+            (status === 'needs-you'
+              ? offset
+              : status === 'fault'
+                ? offset * 0.7
+                : 0),
+          site.y +
+            (kind === 'mercury' ? 1.075 : 0.66) +
+            (status === 'result' || status === 'fault' ? offset : 0),
+          site.z
+        );
+        c.dummy.scale.set(
+          visible * (kind === 'mercury' ? 0.085 : 0.035),
+          visible *
+            (kind === 'mercury'
+              ? 0.012
+              : status === 'active'
+                ? 0.24
+                : status === 'needs-you'
+                  ? 0.13
+                  : 0.04),
+          visible * 0.035
+        );
+        c.dummy.updateMatrix();
+        hearts.current.setMatrixAt(i * 3 + part, c.dummy.matrix);
+        c.color.set(COLORS[status]).multiplyScalar(strength);
+        hearts.current.setColorAt(i * 3 + part, c.color);
+      }
+      c.dummy.position.set(site.x, site.y + 0.025, site.z);
+      c.dummy.rotateX(Math.PI / 2);
+      c.dummy.scale.setScalar(scale * (i === selected ? 1.1 : 1));
+      c.dummy.updateMatrix();
+      sockets.current.setMatrixAt(i, c.dummy.matrix);
+      c.color
+        .set(COLORS[status])
+        .multiplyScalar(i === selected ? 0.9 : 0.3 * strength);
+      sockets.current.setColorAt(i, c.color);
     }
-    tiles.current.instanceMatrix.needsUpdate = true;
-    if (tiles.current.instanceColor)
-      tiles.current.instanceColor.needsUpdate = true;
-    stems.current.instanceMatrix.needsUpdate = true;
+    bodies.current.instanceMatrix.needsUpdate = true;
+    hearts.current.instanceMatrix.needsUpdate = true;
+    sockets.current.instanceMatrix.needsUpdate = true;
+    if (bodies.current.instanceColor)
+      bodies.current.instanceColor.needsUpdate = true;
+    if (hearts.current.instanceColor)
+      hearts.current.instanceColor.needsUpdate = true;
+    if (sockets.current.instanceColor)
+      sockets.current.instanceColor.needsUpdate = true;
     if (moving) state.invalidate();
   });
   return (
     <>
       <instancedMesh
-        ref={tiles}
-        args={[undefined, undefined, SITES.length]}
-        frustumCulled={false}
+        ref={bodies}
+        args={[geometry, material, SITES.length]}
         raycast={NO_RAYCAST}
-        visible={kind === 'terrace'}
+        frustumCulled={false}
+      />
+      <instancedMesh
+        ref={hearts}
+        args={[undefined, undefined, SITES.length * 3]}
+        raycast={NO_RAYCAST}
+        frustumCulled={false}
       >
-        <cylinderGeometry
-          args={[
-            kind === 'contour' ? 0.737 : 0.685,
-            kind === 'contour' ? 0.737 : 0.62,
-            kind === 'terrace' ? 0.26 : 0.055,
-            6,
-          ]}
-        />
-        <meshStandardMaterial
-          metalness={0.32}
-          roughness={0.62}
-          wireframe={wire}
-        />
+        <octahedronGeometry args={[1, 0]} />
+        <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
       <instancedMesh
-        ref={stems}
+        ref={sockets}
         args={[undefined, undefined, SITES.length]}
-        frustumCulled={false}
         raycast={NO_RAYCAST}
+        frustumCulled={false}
       >
-        <cylinderGeometry args={[0.19, 0.25, 0.18, 24]} />
-        <meshStandardMaterial color="#a0a8aa" roughness={0.3} metalness={0.7} />
+        <torusGeometry args={[0.48, 0.014, 6, 48]} />
+        <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
+      <AgentSignal selected={selected} approved={approved} />
     </>
+  );
+});
+
+function AgentSignal({
+  selected,
+  approved,
+}: Pick<Props, 'selected' | 'approved'>) {
+  const group = useRef<THREE.Group>(null);
+  const reduced = usePrefersReducedMotion();
+  const scheduler = useMemo(() => createAmbientFrameScheduler(), []);
+  const invalidate = useThree(s => s.invalidate);
+  useEffect(() => {
+    const resume = () => {
+      if (!document.hidden) invalidate();
+    };
+    document.addEventListener('visibilitychange', resume);
+    return () => document.removeEventListener('visibilitychange', resume);
+  }, [invalidate]);
+  const phase = useRef(0);
+  const state = agentAt(selected, approved).state;
+  const site = SITES[selected];
+  useEffect(() => () => scheduler.dispose(), [scheduler]);
+  useFrame(({ invalidate }, delta) => {
+    if (!group.current || reduced || document.hidden || state !== 'active')
+      return;
+    phase.current += Math.min(delta, 0.1) * 0.8;
+    group.current.rotation.y = phase.current;
+    scheduler.request('economy', invalidate);
+  });
+  return (
+    <group position={[site.x, site.y + 0.65, site.z]} ref={group}>
+      {(state === 'active'
+        ? [0]
+        : state === 'needs-you'
+          ? [0, Math.PI]
+          : state === 'result'
+            ? [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]
+            : state === 'fault'
+              ? [0.3, 2.1, 4.5]
+              : []
+      ).map((a, i) => (
+        <mesh
+          key={i}
+          position={[
+            Math.cos(a) * 0.49,
+            state === 'fault' ? (i - 1) * 0.13 : 0,
+            Math.sin(a) * 0.49,
+          ]}
+          raycast={NO_RAYCAST}
+        >
+          <octahedronGeometry
+            args={[state === 'needs-you' ? 0.065 : 0.045, 0]}
+          />
+          <meshBasicMaterial color={COLORS[state]} toneMapped={false} />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -336,64 +575,181 @@ function Connections({ count, selected }: { count: number; selected: number }) {
 type Overlay = () => Map<number, HTMLButtonElement>;
 function CameraRig({
   count,
-  angle,
-  chapter,
+  selected,
+  motion,
   overlay,
-}: Pick<Props, 'count' | 'angle' | 'chapter'> & { overlay: Overlay }) {
+  onProgress,
+}: Pick<Props, 'count' | 'selected' | 'motion' | 'onProgress'> & {
+  overlay: Overlay;
+}) {
   const controls = useRef<CameraControls>(null);
   const reduced = usePrefersReducedMotion();
-  const project = useMemo(() => new THREE.Vector3(), []);
+  const invalidate = useThree(s => s.invalidate);
+  const cache = useRef({
+    project: new THREE.Vector3(),
+    extent: new THREE.Vector3(),
+    pose: { yaw: 0, pitch: 0, zoom: 1, x: 0, y: 0 },
+    progress: 0,
+    yaw: 0,
+    pitch: 0,
+    focus: 'fleet',
+    count: 0,
+    selected: -1,
+    elapsed: 1,
+    mode: 'story',
+    modeElapsed: 1,
+    fromLab: 0,
+    lab: 0,
+    from: new THREE.Vector4(0, 0, 0, 8),
+    current: new THREE.Vector4(0, 0, 0, 8),
+    target: new THREE.Vector4(0, 0, 0, 8),
+  });
   const bounds = useMemo(() => {
-    const box = new THREE.Box3();
-    SITES.slice(0, count + 6).forEach(p => {
-      box.expandByPoint(new THREE.Vector3(p.x, p.y, p.z));
-    });
-    box.expandByScalar(0.65);
-    return box;
-  }, [count]);
-  const size = useThree(s => s.size);
+    const fleet = new THREE.Box3(),
+      team = new THREE.Box3();
+    for (const site of SITES.slice(0, count + 3)) {
+      const v = new THREE.Vector3(site.x, site.y + 0.5, site.z);
+      fleet.expandByPoint(v);
+      if (site.id < count && teamOf(site.id) === teamOf(selected))
+        team.expandByPoint(v);
+    }
+    fleet.expandByScalar(0.85);
+    team.expandByScalar(0.85);
+    return {
+      fleet: fleet.getBoundingSphere(new THREE.Sphere()),
+      team: team.getBoundingSphere(new THREE.Sphere()),
+    };
+  }, [count, selected]);
+  useEffect(() => motion.subscribe(invalidate), [motion, invalidate]);
   useEffect(() => {
+    invalidate();
+  }, [bounds, reduced, invalidate]);
+  useFrame(({ camera, size, gl, scene }, delta) => {
     const c = controls.current;
     if (!c) return;
-    c.smoothTime = reduced ? 0 : 0.45;
-    // fitToBox snaps its fit axes; apply the authored orbit after fitting.
-    void c.fitToBox(bounds, !reduced, {
-      paddingTop: 0.15,
-      paddingBottom: 0.15,
-      paddingLeft: 0.15,
-      paddingRight: 0.15,
-    });
-    void c.rotateTo(
-      (angle * Math.PI) / 180 +
-        (chapter === 2 ? -0.18 : chapter === 1 ? 0.18 : 0),
-      chapter === 4 ? 0.62 : 0.86,
-      !reduced
+    const a = cache.current,
+      input = motion.read();
+    if (a.mode !== input.mode) {
+      a.mode = input.mode;
+      a.fromLab = a.lab;
+      a.modeElapsed = 0;
+    }
+    a.modeElapsed = Math.min(1, a.modeElapsed + Math.min(delta, 0.05) / 0.8);
+    a.lab = THREE.MathUtils.lerp(
+      a.fromLab,
+      input.mode === 'lab' ? 1 : 0,
+      reduced ? 1 : 1 - Math.pow(1 - a.modeElapsed, 3)
     );
-  }, [bounds, angle, chapter, reduced, size.width, size.height]);
-  useFrame(({ camera, size: viewport }) => {
-    const nodes = overlay();
-    for (const [id, el] of nodes) {
-      const site = SITES[id];
-      project.set(site.x, site.y + 0.29, site.z).project(camera);
-      el.style.transform = `translate(-50%, -50%) translate(${(project.x * 0.5 + 0.5) * viewport.width}px,${(-project.y * 0.5 + 0.5) * viewport.height}px)`;
+    const targetProgress = input.mode === 'story' ? input.progress : 0;
+    a.progress = reduced
+      ? targetProgress
+      : THREE.MathUtils.damp(a.progress, targetProgress, 12, delta);
+    a.yaw = reduced
+      ? input.yaw
+      : THREE.MathUtils.damp(a.yaw, input.yaw, 16, delta);
+    a.pitch = reduced
+      ? input.pitch
+      : THREE.MathUtils.damp(a.pitch, input.pitch, 16, delta);
+    sampleStoryPose(a.progress, a.pose);
+    const focus = input.mode === 'story' ? 'fleet' : input.focus;
+    const sphere = focus === 'team' ? bounds.team : bounds.fleet;
+    const site = SITES[selected];
+    const radius = focus === 'agent' ? 1.35 : sphere.radius;
+    const fit =
+      c.getDistanceToFitSphere(radius) * (size.width < 700 ? 1.02 : 1.2);
+    a.target.set(
+      focus === 'agent' ? site.x : sphere.center.x,
+      focus === 'agent' ? site.y + 0.55 : sphere.center.y,
+      focus === 'agent' ? site.z : sphere.center.z,
+      fit
+    );
+    if (
+      a.focus !== focus ||
+      a.count !== count ||
+      a.selected !== (focus === 'fleet' ? -1 : selected)
+    ) {
+      a.from.copy(a.current);
+      a.elapsed = 0;
+      a.focus = focus;
+      a.count = count;
+      a.selected = focus === 'fleet' ? -1 : selected;
+    }
+    a.elapsed = Math.min(1, a.elapsed + Math.min(delta, 0.05) / 0.8);
+    const t = reduced ? 1 : 1 - Math.pow(1 - a.elapsed, 3);
+    a.current.lerpVectors(a.from, a.target, t);
+    a.current.w = Math.exp(
+      THREE.MathUtils.lerp(
+        Math.log(Math.max(1, a.from.w)),
+        Math.log(a.target.w),
+        t
+      )
+    );
+    const distance = a.current.w * THREE.MathUtils.lerp(a.pose.zoom, 1, a.lab);
+    void c.moveTo(a.current.x, a.current.y, a.current.z, false);
+    void c.rotateTo(
+      THREE.MathUtils.lerp(a.pose.yaw, 0.35, a.lab) + a.yaw,
+      THREE.MathUtils.clamp(
+        THREE.MathUtils.lerp(a.pose.pitch, 0.92, a.lab) + a.pitch,
+        0.35,
+        1.35
+      ),
+      false
+    );
+    void c.dollyTo(distance, false);
+    // Focal offset changes composition inside a fixed canvas. It never resizes the scene.
+    const worldHeight =
+      2 * distance * Math.tan(THREE.MathUtils.degToRad(35 / 2));
+    const px = size.width > 700 ? a.pose.x * (1 - a.lab) : 0;
+    const py = THREE.MathUtils.lerp(
+      size.width < 700 ? 0.38 : a.pose.y,
+      size.width < 700 ? 0.23 : 0,
+      a.lab
+    );
+    void c.setFocalOffset(
+      px * worldHeight * 0.52,
+      -py * worldHeight * 0.28,
+      0,
+      false
+    );
+    c.update(0);
+    camera.updateMatrixWorld();
+    for (const [id, el] of overlay()) {
+      const p = SITES[id];
+      a.project.set(p.x, p.y + (id < count ? 0.62 : 0.05), p.z).project(camera);
+      if (id < count) {
+        a.extent.set(p.x, p.y + 1.1, p.z).project(camera);
+        const height = Math.max(
+          28,
+          Math.abs(a.extent.y - a.project.y) * size.height + 12
+        );
+        el.style.height = `${height}px`;
+        el.style.width = `${Math.max(24, height * 0.7)}px`;
+      }
+      el.style.transform = `translate(-50%,-50%) translate(${(a.project.x * 0.5 + 0.5) * size.width}px,${(-a.project.y * 0.5 + 0.5) * size.height}px)`;
       el.style.visibility =
-        project.z < 1 && Math.abs(project.x) < 1 && Math.abs(project.y) < 1
+        a.project.z < 1 &&
+        Math.abs(a.project.x) < 1 &&
+        Math.abs(a.project.y) < 1
           ? 'visible'
           : 'hidden';
     }
+    onProgress(a.progress);
+    gl.render(scene, camera);
+    if (
+      a.elapsed < 1 ||
+      a.modeElapsed < 1 ||
+      Math.abs(a.progress - targetProgress) > 0.0001 ||
+      Math.abs(a.yaw - input.yaw) > 0.0001 ||
+      Math.abs(a.pitch - input.pitch) > 0.0001
+    )
+      invalidate();
   }, 1);
-  // Positive priority owns render so projections sample CameraControls' updated camera.
-  useFrame(({ gl, scene, camera }) => gl.render(scene, camera), 2);
   return (
     <CameraControls
       ref={controls}
-      makeDefault
-      minPolarAngle={0.25}
-      maxPolarAngle={0.98}
-      minDistance={3}
-      maxDistance={45}
-      mouseButtons={{ left: 1, middle: 0, right: 0, wheel: 0 }}
-      touches={{ one: 0, two: 0, three: 0 }}
+      events={false}
+      minDistance={0.5}
+      maxDistance={100}
     />
   );
 }
@@ -402,9 +758,65 @@ export default function World(props: Props) {
   const overlay = useRef(new Map<number, HTMLButtonElement>());
   const getOverlay = useCallback(() => overlay.current, []);
   const [ready, setReady] = useState(false);
-  const reduced = usePrefersReducedMotion();
+  const drag = useRef({
+    active: false,
+    x: 0,
+    y: 0,
+    startX: 0,
+    startY: 0,
+    moved: false,
+  });
   return (
-    <div className={styles.world} data-world={props.kind} data-ready={ready}>
+    <div
+      className={styles.world}
+      data-world={props.kind}
+      data-ready={ready}
+      onDragStart={e => e.preventDefault()}
+      onPointerDown={e => {
+        if (e.button !== 0 || e.pointerType === 'touch') return;
+        const d = drag.current;
+        d.active = true;
+        d.x = d.startX = e.clientX;
+        d.y = d.startY = e.clientY;
+        d.moved = false;
+      }}
+      onPointerMove={e => {
+        const d = drag.current;
+        if (!d.active) return;
+        if (
+          !d.moved &&
+          Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 4
+        ) {
+          d.moved = true;
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }
+        if (d.moved) {
+          props.motion.orbit(
+            (d.x - e.clientX) * 0.005,
+            (d.y - e.clientY) * 0.003
+          );
+          e.preventDefault();
+        }
+        d.x = e.clientX;
+        d.y = e.clientY;
+      }}
+      onPointerUp={e => {
+        drag.current.active = false;
+        if (e.currentTarget.hasPointerCapture(e.pointerId))
+          e.currentTarget.releasePointerCapture(e.pointerId);
+      }}
+      onPointerCancel={() => {
+        drag.current.active = false;
+        drag.current.moved = false;
+      }}
+      onClickCapture={e => {
+        if (drag.current.moved) {
+          e.preventDefault();
+          e.stopPropagation();
+          drag.current.moved = false;
+        }
+      }}
+    >
       <WorldBoundary>
         <Canvas
           aria-hidden="true"
@@ -414,43 +826,87 @@ export default function World(props: Props) {
           gl={{ antialias: true, alpha: true }}
           onCreated={() => setReady(true)}
         >
-          <ambientLight intensity={1.25} />
+          <ambientLight intensity={0.6} />
           <directionalLight
-            position={[-8, 12, 3]}
+            position={[-5, 10, 5]}
             intensity={3}
-            color="#eceddf"
+            color="#eef5ff"
           />
           <directionalLight
-            position={[7, 3, -7]}
-            intensity={1.8}
-            color="#a3b8c6"
+            position={[5, 4, -6]}
+            intensity={2}
+            color="#a7b8e6"
           />
-          <Terrain kind={props.kind} count={props.count} wire={props.wire} />
-          {props.kind === 'contour' && (
-            <ContinuousSurface count={props.count} wire={props.wire} />
-          )}
-          {props.kind === 'survey' && (
+          <Environment resolution={256} frames={1}>
+            <mesh>
+              <sphereGeometry args={[40, 32, 16]} />
+              <meshBasicMaterial color="#728098" side={THREE.BackSide} />
+            </mesh>
+            <Lightformer
+              position={[-5, 5, 3]}
+              rotation={[0, Math.PI / 3, 0]}
+              scale={[7, 10, 1]}
+              intensity={2.5}
+              color="#f4f6ff"
+            />
+            <Lightformer
+              position={[5, 3, 1]}
+              rotation={[0, -Math.PI / 3, 0]}
+              scale={[1, 8, 1]}
+              intensity={2}
+              color="#bfd9ff"
+            />
+            <Lightformer
+              position={[0, 6, -3]}
+              rotation={[Math.PI / 2, 0, 0]}
+              scale={[8, 3, 1]}
+              intensity={2.5}
+            />
+            <Lightformer
+              position={[0, 1, 6]}
+              rotation={[0, Math.PI, 0]}
+              scale={[7, 1, 1]}
+              intensity={2}
+            />
+          </Environment>
+          {props.kind === 'survey' ? (
             <Survey count={props.count} scan={props.scan} />
+          ) : props.kind === 'contour' ? (
+            <ContinuousSurface count={props.count} wire={props.wire} />
+          ) : (
+            <Territory
+              kind={props.kind}
+              count={props.count}
+              wire={props.wire}
+            />
           )}
-          {props.kind !== 'terrace' && (
+          {(props.kind === 'survey' || props.kind === 'contour') && (
             <Contours count={props.count} kind={props.kind} />
           )}
+          <Agents
+            kind={props.kind}
+            count={props.count}
+            selected={props.selected}
+            approved={props.approved}
+            wire={props.wire}
+            motion={props.motion}
+          />
           {props.links && (
             <Connections count={props.count} selected={props.selected} />
           )}
           <CameraRig
             count={props.count}
-            angle={props.angle}
-            chapter={props.chapter}
+            selected={props.selected}
+            motion={props.motion}
             overlay={getOverlay}
+            onProgress={props.onProgress}
           />
         </Canvas>
       </WorldBoundary>
       <div className={styles.anchors}>
         {SITES.slice(0, Math.min(100, props.count + 3)).map(site => {
-          const ghost = site.id >= props.count;
-          const agent = agentAt(site.id, props.approved);
-          const meta = STATUS_LIGHT_META[agent.state];
+          const ghost = site.id >= props.count,
+            agent = agentAt(site.id, props.approved);
           return (
             <button
               key={site.id}
@@ -458,30 +914,30 @@ export default function World(props: Props) {
                 if (el) overlay.current.set(site.id, el);
                 else overlay.current.delete(site.id);
               }}
+              draggable={false}
               className={`${styles.anchor} ${ghost ? styles.ghost : ''} ${site.id === props.selected && !ghost ? styles.chosen : ''}`}
               data-state={agent.state}
               data-agent={ghost ? undefined : site.id}
               aria-label={
-                ghost ? 'Add a demo agent here' : `${agent.name}, ${meta.label}`
+                ghost
+                  ? 'Add a demo agent here'
+                  : `${agent.name}, ${STATUS_LIGHT_META[agent.state].label}`
               }
               aria-pressed={ghost ? undefined : props.selected === site.id}
               onClick={() =>
                 ghost ? props.onAdd(site.id) : props.onSelect(site.id)
               }
             >
-              <span className={styles.lamp}>
-                {ghost ? (
-                  '+'
-                ) : (
-                  <StatusLightMark
-                    state={agent.state}
-                    size={props.count > 30 ? 13 : 17}
-                    animated={!reduced}
-                  />
-                )}
-              </span>
-              {!ghost && (props.count <= 10 || site.id === props.selected) && (
-                <span className={styles.agentLabel}>{agent.name}</span>
+              {ghost ? (
+                <span className={styles.lamp}>+</span>
+              ) : (
+                <>
+                  <span className={styles.hitRing} />
+                  <span className={styles.agentLabel}>
+                    {agent.name}
+                    <small>{STATUS_LIGHT_META[agent.state].label}</small>
+                  </span>
+                </>
               )}
             </button>
           );

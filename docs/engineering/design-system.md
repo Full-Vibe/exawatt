@@ -532,8 +532,19 @@ spacing, 4/6/8px corners, D40 shape/word/color redundancy and reduced-motion
 behavior apply. Its graphite/stone material is a scoped candidate, not a new
 production theme. Real agent state is not inferred from the illustrative
 surface. DOM status and inspection controls are the accessible siblings of
-three WebGL material studies. Local browser evidence: `/tmp/terrain-*.png`;
+the WebGL material studies. Local browser evidence: `/tmp/terrain-*.png`;
 see ENG-031 W16 for the review/retirement boundary.
+
+W17 extends this experimental boundary with faceted transmissive glass, liquid
+chrome, and tinted layered acrylic, alongside the original landscape lenses.
+The scene keeps one fixed canvas and one camera/gesture authority. Scroll is a
+continuous input; Agent/Team/Fleet reframing uses a shared 800ms ease-out clock.
+Screen-space badges are removed from 3D bodies. Physical light cores and
+satellites explore a new shape grammar; D40 words/shapes remain authoritative
+in the DOM inspector and full agent index. This is an explicit gallery-only
+exception for evaluating 3D representation, not a replacement status protocol.
+The lab direction heading may use 52px; small segmented focus controls use
+pill corners. Neither exception propagates to production without acceptance.
 
 ### Appearance snapshot consistency
 

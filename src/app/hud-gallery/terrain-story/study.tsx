@@ -17,11 +17,14 @@ import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import {
   agentAt,
+  teamOf,
+  TEAMS,
   CHAPTERS,
   WORLDS,
   type Voice,
   type WorldStyle,
 } from './model';
+import { copyOpacity, createMotionPort, type FocusScale } from './motion';
 import styles from './study.module.css';
 
 const World = dynamic(() => import('./world'), {
@@ -32,13 +35,30 @@ type Mode = 'story' | 'lab' | 'outline';
 
 export function TerrainStudy() {
   const [mode, setMode] = useState<Mode>('story');
-  const [kind, setKind] = useState<WorldStyle>('terrace');
+  const [kind, setKind] = useState<WorldStyle>('prism');
   const [voice, setVoice] = useState<Voice>('control');
   const [chapter, setChapter] = useState(0);
   const [count, setCount] = useState(10);
-  const [manualCount, setManualCount] = useState(false);
+  const [motion] = useState(createMotionPort);
+  const [focus, setFocus] = useState<FocusScale>('fleet');
+  const copyNodes = useRef(new Map<number, HTMLDivElement>());
+  const inspectorNodes = useRef(new Map<number, HTMLDivElement>());
+  const paintProgress = useCallback((progress: number) => {
+    for (const [i, el] of copyNodes.current) {
+      const opacity = copyOpacity(progress, i);
+      el.style.opacity = String(opacity);
+      el.style.visibility = opacity > 0.01 ? 'visible' : 'hidden';
+      el.style.pointerEvents = opacity > 0.85 ? 'auto' : 'none';
+      el.inert = opacity < 0.85;
+    }
+    for (const [i, el] of inspectorNodes.current) {
+      const opacity = copyOpacity(progress, i);
+      el.style.opacity = String(opacity);
+      el.style.visibility = opacity > 0.01 ? 'visible' : 'hidden';
+      el.inert = opacity < 0.85;
+    }
+  }, []);
   const [selected, setSelected] = useState(0);
-  const [angle, setAngle] = useState(20);
   const [links, setLinks] = useState(true);
   const [wire, setWire] = useState(false);
   const [scan, setScan] = useState(0);
@@ -48,21 +68,11 @@ export function TerrainStudy() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastChapter = useRef(-1);
   const reduced = usePrefersReducedMotion();
-  const shownCount =
-    mode === 'story' && !manualCount
-      ? chapter === 4
-        ? 100
-        : chapter === 5
-          ? 1
-          : 10
-      : count;
+  const shownCount = count;
   const picked = Math.min(selected, shownCount - 1);
-  const agent = agentAt(picked, approved);
-  const beat = CHAPTERS[chapter];
   const currentWorld = WORLDS.find(w => w.id === kind)!;
   const setFleet = useCallback((n: number) => {
     setCount(Math.min(100, Math.max(1, n)));
-    setManualCount(true);
   }, []);
   const selectAgent = useCallback((id: number) => setSelected(id), []);
   const addAgent = useCallback(
@@ -87,6 +97,11 @@ export function TerrainStudy() {
     let pending = 0;
     const read = () => {
       pending = 0;
+      const progress = Math.max(
+        0,
+        Math.min(CHAPTERS.length - 1, root.scrollTop / root.clientHeight)
+      );
+      motion.change({ progress, mode: 'story' });
       const next = Math.min(
         CHAPTERS.length - 1,
         Math.max(0, Math.round(root.scrollTop / root.clientHeight))
@@ -106,7 +121,7 @@ export function TerrainStudy() {
       root.removeEventListener('scroll', onScroll);
       cancelAnimationFrame(pending);
     };
-  }, [mode]);
+  }, [mode, motion]);
   const jump = (i: number) => {
     if (mode !== 'story') {
       setChapter(i);
@@ -130,85 +145,94 @@ export function TerrainStudy() {
   };
   const switchMode = (next: Mode) => {
     setMode(next);
-    if (next === 'lab') {
-      setCount(shownCount);
-      setManualCount(true);
-    }
+    if (next !== 'outline') motion.change({ mode: next });
   };
-  const renderInspector = (isStory: boolean) => (
-    <div className={styles.inspector} data-state={agent.state}>
-      <div className={styles.inspectorTop}>
-        <span className={styles.eyebrow}>
-          {chapter === 3 && isStory ? 'Next in line' : 'Agent detail'}
-        </span>
-        <span className={styles.meta}>{agent.source}</span>
-      </div>
-      <h3>{agent.name}</h3>
-      <div className={styles.stateLine}>
-        <StatusLightMark state={agent.state} size={17} animated={!reduced} />
-        <span>{STATUS_LIGHT_META[agent.state].label}</span>
-      </div>
-      <div className={styles.detailRule} />
-      {chapter === 3 && isStory ? (
-        <>
-          <span className={styles.concept}>Scheduling concept</span>
-          <p>Waiting for the checkout review.</p>
-          <div className={styles.dependency}>
-            <span>01</span> Review the pull request <ArrowDown size={13} />
-            <span>02</span> Test the payment flow
-          </div>
-          <button className={styles.textButton} onClick={() => setSelected(1)}>
-            Inspect the dependency <ArrowUpRight size={14} />
-          </button>
-        </>
-      ) : agent.state === 'needs-you' ? (
-        <>
-          <p>Ready to run the migration against the staging database.</p>
-          <div className={styles.request}>Your approval is required.</div>
-          <button
-            className={styles.approve}
-            onClick={() => {
-              setApproved(true);
-              setNotice('Demo approval received. The agent is working again.');
-            }}
-          >
-            Approve in demo <ArrowUpRight size={15} />
-          </button>
-        </>
-      ) : (
-        <>
-          <p>
-            {agent.state === 'active'
-              ? 'Working through the next step. The session is ready when you want a closer look.'
-              : agent.state === 'result'
-                ? 'The result is ready for you to review.'
-                : agent.state === 'fault'
-                  ? 'The tool call failed. Open the session to investigate.'
-                  : 'At rest. Ready for the next instruction.'}
-          </p>
-          <dl>
-            <div>
-              <dt>Project</dt>
-              <dd>Storefront</dd>
+  const renderInspector = (
+    isStory: boolean,
+    storyChapter = chapter,
+    id = picked
+  ) => {
+    const agent = agentAt(id, approved);
+    return (
+      <div className={styles.inspector} data-state={agent.state}>
+        <div className={styles.inspectorTop}>
+          <span className={styles.eyebrow}>
+            {storyChapter === 3 && isStory ? 'Next in line' : 'Agent detail'}
+          </span>
+          <span className={styles.meta}>{agent.source}</span>
+        </div>
+        <h3>{agent.name}</h3>
+        <div className={styles.stateLine}>
+          <StatusLightMark state={agent.state} size={17} animated={!reduced} />
+          <span>{STATUS_LIGHT_META[agent.state].label}</span>
+        </div>
+        <div className={styles.detailRule} />
+        {storyChapter === 3 && isStory ? (
+          <>
+            <span className={styles.concept}>Scheduling concept</span>
+            <p>Waiting for the checkout review.</p>
+            <div className={styles.dependency}>
+              <span>01</span> Review the pull request <ArrowDown size={13} />
+              <span>02</span> Test the payment flow
             </div>
-            <div>
-              <dt>Context</dt>
-              <dd>
-                {agent.parent === null
-                  ? 'Primary session'
-                  : `Delegated by agent ${agent.parent + 1}`}
-              </dd>
-            </div>
-          </dl>
-          {approved && picked === 1 && (
-            <span className={styles.receipt}>
-              <Check size={14} /> Approval received
-            </span>
-          )}
-        </>
-      )}
-    </div>
-  );
+            <button
+              className={styles.textButton}
+              onClick={() => setSelected(1)}
+            >
+              Inspect the dependency <ArrowUpRight size={14} />
+            </button>
+          </>
+        ) : agent.state === 'needs-you' ? (
+          <>
+            <p>Ready to run the migration against the staging database.</p>
+            <div className={styles.request}>Your approval is required.</div>
+            <button
+              className={styles.approve}
+              onClick={() => {
+                setApproved(true);
+                setNotice(
+                  'Demo approval received. The agent is working again.'
+                );
+              }}
+            >
+              Approve in demo <ArrowUpRight size={15} />
+            </button>
+          </>
+        ) : (
+          <>
+            <p>
+              {agent.state === 'active'
+                ? 'Working through the next step. The session is ready when you want a closer look.'
+                : agent.state === 'result'
+                  ? 'The result is ready for you to review.'
+                  : agent.state === 'fault'
+                    ? 'The tool call failed. Open the session to investigate.'
+                    : 'At rest. Ready for the next instruction.'}
+            </p>
+            <dl>
+              <div>
+                <dt>Project</dt>
+                <dd>{TEAMS[teamOf(id)]}</dd>
+              </div>
+              <div>
+                <dt>Context</dt>
+                <dd>
+                  {agent.parent === null
+                    ? 'Primary session'
+                    : `Delegated by agent ${agent.parent + 1}`}
+                </dd>
+              </div>
+            </dl>
+            {approved && id === 1 && (
+              <span className={styles.receipt}>
+                <Check size={14} /> Approval received
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <main className={styles.study}>
@@ -350,6 +374,7 @@ export function TerrainStudy() {
               className={styles.stage}
               data-chapter={mode === 'lab' ? 'lab' : chapter}
               data-wire={wire}
+              data-material={kind}
             >
               <div className={styles.stageNoise} />
               <div className={styles.previewBrand}>
@@ -361,8 +386,8 @@ export function TerrainStudy() {
                   kind={kind}
                   count={shownCount}
                   selected={picked}
-                  chapter={mode === 'story' ? chapter : 0}
-                  angle={angle}
+                  motion={motion}
+                  onProgress={paintProgress}
                   links={links}
                   scan={scan}
                   approved={approved}
@@ -373,41 +398,70 @@ export function TerrainStudy() {
               </div>
               {mode === 'story' ? (
                 <>
-                  <div className={styles.storyCopy} key={`${chapter}-${voice}`}>
-                    <span className={styles.eyebrow}>
-                      {chapter === 0
-                        ? 'A command surface for your AI agents'
-                        : `0${chapter} / ${beat.label}`}
-                    </span>
-                    <h1>{beat[voice][0]}</h1>
-                    <p>{beat[voice][1]}</p>
-                    {chapter === 0 && (
-                      <button
-                        className={styles.primary}
-                        onClick={() => jump(1)}
-                      >
-                        See it in motion <ArrowDown size={16} />
-                      </button>
-                    )}
-                    {chapter === 5 && (
-                      <>
-                        <a
+                  {CHAPTERS.map((beat, index) => (
+                    <div
+                      className={styles.storyCopy}
+                      key={beat.id}
+                      data-copy={index}
+                      ref={el => {
+                        if (el) copyNodes.current.set(index, el);
+                        else copyNodes.current.delete(index);
+                      }}
+                      style={{
+                        opacity: index === 0 ? 1 : 0,
+                        visibility: index === 0 ? 'visible' : 'hidden',
+                      }}
+                    >
+                      <span className={styles.eyebrow}>
+                        {index === 0
+                          ? 'A command surface for your AI agents'
+                          : `0${index} / ${beat.label}`}
+                      </span>
+                      <h1>{beat[voice][0]}</h1>
+                      <p>{beat[voice][1]}</p>
+                      {index === 0 && (
+                        <button
                           className={styles.primary}
-                          href="/download/community"
+                          onClick={() => jump(1)}
                         >
-                          Download for macOS <ArrowUpRight size={16} />
-                        </a>
-                        <span className={styles.closeNote}>
-                          Explore the available Community build
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  {chapter >= 1 && chapter <= 3 && (
-                    <div className={styles.storyInspector}>
-                      {renderInspector(true)}
+                          See it in motion <ArrowDown size={16} />
+                        </button>
+                      )}
+                      {index === 5 && (
+                        <>
+                          <a
+                            className={styles.primary}
+                            href="/download/community"
+                          >
+                            Download for macOS <ArrowUpRight size={16} />
+                          </a>
+                          <span className={styles.closeNote}>
+                            Explore the available Community build
+                          </span>
+                        </>
+                      )}
                     </div>
-                  )}
+                  ))}
+                  {[1, 2, 3].map(i => (
+                    <div
+                      key={i}
+                      className={styles.storyInspector}
+                      data-inspector={i}
+                      ref={el => {
+                        if (el) inspectorNodes.current.set(i, el);
+                        else inspectorNodes.current.delete(i);
+                      }}
+                      style={{ opacity: 0, visibility: 'hidden' }}
+                    >
+                      {renderInspector(
+                        true,
+                        i,
+                        chapter === i
+                          ? picked
+                          : Math.min(count - 1, i === 2 ? 1 : i === 3 ? 4 : 0)
+                      )}
+                    </div>
+                  ))}
                   {chapter === 4 && (
                     <div className={styles.fleetCaption}>
                       <strong>{shownCount}</strong>
@@ -470,11 +524,46 @@ export function TerrainStudy() {
                         : 'Shortlist this direction'}{' '}
                       <ArrowUpRight size={14} />
                     </button>
+                    <span className={styles.dragHint}>
+                      Drag the world to orbit · select an agent to inspect
+                    </span>
                   </div>
                   <aside className={styles.labInspector}>
                     {renderInspector(false)}
                   </aside>
                 </>
+              )}
+              {mode === 'lab' && (
+                <div
+                  className={styles.focusControls}
+                  aria-label="Inspection scale"
+                >
+                  {(['agent', 'team', 'fleet'] as const).map(scale => (
+                    <button
+                      key={scale}
+                      aria-pressed={focus === scale}
+                      onClick={() => {
+                        setFocus(scale);
+                        motion.change({ focus: scale });
+                      }}
+                    >
+                      {scale}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {mode === 'lab' && focus === 'team' && (
+                <div className={styles.teamCaption}>
+                  {TEAMS[teamOf(picked)]}
+                  <span>
+                    {
+                      Array.from({ length: count }, (_, i) => i).filter(
+                        i => teamOf(i) === teamOf(picked)
+                      ).length
+                    }{' '}
+                    agents · shared territory
+                  </span>
+                </div>
               )}
               <div className={styles.worldControls}>
                 <div className={styles.countControl}>
@@ -499,14 +588,14 @@ export function TerrainStudy() {
                 <div className={styles.cameraControl}>
                   <button
                     aria-label="Rotate camera left"
-                    onClick={() => setAngle(a => a - 25)}
+                    onClick={() => motion.orbit(-0.42, 0)}
                   >
                     <ChevronLeft size={16} />
                   </button>
                   <span>Perspective</span>
                   <button
                     aria-label="Rotate camera right"
-                    onClick={() => setAngle(a => a + 25)}
+                    onClick={() => motion.orbit(0.42, 0)}
                   >
                     <ChevronRight size={16} />
                   </button>
@@ -521,14 +610,6 @@ export function TerrainStudy() {
                 {kind === 'survey' && (
                   <button onClick={() => setScan(n => n + 1)}>
                     <ScanLine size={15} /> Scan
-                  </button>
-                )}
-                {manualCount && mode === 'story' && (
-                  <button
-                    aria-label="Restore story fleet sizes"
-                    onClick={() => setManualCount(false)}
-                  >
-                    <RotateCcw size={14} />
                   </button>
                 )}
               </div>

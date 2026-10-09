@@ -221,8 +221,7 @@
 }
 .worldArea {
   position: absolute;
-  inset: 18% 10% 6%;
-  transition: inset 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  inset: 0;
 }
 .world {
   position: relative;
@@ -311,7 +310,6 @@
   text-align: center;
   width: min(680px, 80%);
   pointer-events: none;
-  animation: arrive 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .storyCopy h1 {
   white-space: pre-line;
@@ -348,15 +346,9 @@
 .primary:hover {
   background: #fff;
 }
-.stage[data-chapter='0'] .worldArea {
-  inset: 37% 10% 5%;
-}
-.stage[data-chapter='1'] .worldArea,
-.stage[data-chapter='3'] .worldArea {
-  inset: 13% 34% 13% 0;
-}
-.stage[data-chapter='1'] .storyCopy,
-.stage[data-chapter='3'] .storyCopy {
+
+.storyCopy[data-copy='1'],
+.storyCopy[data-copy='3'] {
   top: 15%;
   left: auto;
   right: 6%;
@@ -364,20 +356,18 @@
   width: 29%;
   text-align: left;
 }
-.stage[data-chapter='1'] .storyCopy p,
-.stage[data-chapter='3'] .storyCopy p,
-.stage[data-chapter='2'] .storyCopy p {
+.storyCopy[data-copy='1'] p,
+.storyCopy[data-copy='3'] p,
+.storyCopy[data-copy='2'] p {
   margin: 0;
 }
-.stage[data-chapter='1'] .storyCopy h1,
-.stage[data-chapter='2'] .storyCopy h1,
-.stage[data-chapter='3'] .storyCopy h1 {
+.storyCopy[data-copy='1'] h1,
+.storyCopy[data-copy='2'] h1,
+.storyCopy[data-copy='3'] h1 {
   font-size: clamp(28px, 2.9vw, 40px);
 }
-.stage[data-chapter='2'] .worldArea {
-  inset: 13% 0 13% 34%;
-}
-.stage[data-chapter='2'] .storyCopy {
+
+.storyCopy[data-copy='2'] {
   top: 15%;
   left: 6%;
   transform: none;
@@ -392,7 +382,7 @@
   top: 49%;
   max-width: 370px;
 }
-.stage[data-chapter='2'] .storyInspector {
+.storyInspector[data-inspector='2'] {
   right: auto;
   left: 6%;
 }
@@ -521,10 +511,8 @@
 .textButton:hover {
   text-decoration: underline;
 }
-.stage[data-chapter='4'] .worldArea {
-  inset: 32% 15% 10%;
-}
-.stage[data-chapter='4'] .storyCopy {
+
+.storyCopy[data-copy='4'] {
   top: 12%;
 }
 .fleetCaption {
@@ -551,13 +539,11 @@
   gap: 8px;
   margin-top: 12px;
 }
-.stage[data-chapter='5'] .worldArea {
-  inset: 44% 27% 7%;
-}
-.stage[data-chapter='5'] .storyCopy {
+
+.storyCopy[data-copy='5'] {
   top: 13%;
 }
-.stage[data-chapter='5'] .storyCopy h1 {
+.storyCopy[data-copy='5'] h1 {
   font-size: clamp(40px, 5vw, 72px);
 }
 .closeNote {
@@ -680,9 +666,7 @@
 .labIntro .textButton {
   margin-top: 24px;
 }
-.stage[data-chapter='lab'] .worldArea {
-  inset: 12% 26% 12% 20%;
-}
+
 .labInspector {
   position: absolute;
   top: 25%;
@@ -891,9 +875,9 @@
   .storyCopy {
     top: 11%;
   }
-  .stage[data-chapter='1'] .storyCopy,
-  .stage[data-chapter='2'] .storyCopy,
-  .stage[data-chapter='3'] .storyCopy {
+  .storyCopy[data-copy='1'],
+  .storyCopy[data-copy='2'],
+  .storyCopy[data-copy='3'] {
     top: 12%;
   }
   .storyInspector {
@@ -940,13 +924,13 @@
     width: 32%;
     right: 4%;
   }
-  .stage[data-chapter='1'] .storyCopy,
-  .stage[data-chapter='3'] .storyCopy {
+  .storyCopy[data-copy='1'],
+  .storyCopy[data-copy='3'] {
     width: 32%;
     right: 4%;
   }
-  .stage[data-chapter='2'] .storyCopy,
-  .stage[data-chapter='2'] .storyInspector {
+  .storyCopy[data-copy='2'],
+  .storyInspector[data-inspector='2'] {
     width: 32%;
     left: 4%;
   }
@@ -1014,11 +998,11 @@
     font-size: 9px;
   }
   .storyCopy,
-  .stage[data-chapter='1'] .storyCopy,
-  .stage[data-chapter='2'] .storyCopy,
-  .stage[data-chapter='3'] .storyCopy,
-  .stage[data-chapter='4'] .storyCopy,
-  .stage[data-chapter='5'] .storyCopy {
+  .storyCopy[data-copy='1'],
+  .storyCopy[data-copy='2'],
+  .storyCopy[data-copy='3'],
+  .storyCopy[data-copy='4'],
+  .storyCopy[data-copy='5'] {
     top: 62px;
     left: 24px;
     right: 24px;
@@ -1027,9 +1011,9 @@
     text-align: left;
   }
   .storyCopy h1,
-  .stage[data-chapter='1'] .storyCopy h1,
-  .stage[data-chapter='2'] .storyCopy h1,
-  .stage[data-chapter='3'] .storyCopy h1 {
+  .storyCopy[data-copy='1'] h1,
+  .storyCopy[data-copy='2'] h1,
+  .storyCopy[data-copy='3'] h1 {
     font-size: 30px;
     margin: 12px 0;
   }
@@ -1043,25 +1027,12 @@
     margin-top: 16px;
     font-size: 12px;
   }
-  .stage[data-chapter='0'] .worldArea {
-    inset: 42% -2% 8%;
-  }
-  .stage[data-chapter='1'] .worldArea,
-  .stage[data-chapter='2'] .worldArea,
-  .stage[data-chapter='3'] .worldArea {
-    inset: 34% -3% 27%;
-  }
-  .stage[data-chapter='4'] .worldArea {
-    inset: 34% 0 20%;
-  }
-  .stage[data-chapter='5'] .worldArea {
-    inset: 49% 8% 12%;
-  }
-  .stage[data-chapter='5'] .storyCopy h1 {
+
+  .storyCopy[data-copy='5'] h1 {
     font-size: 40px;
   }
   .storyInspector,
-  .stage[data-chapter='2'] .storyInspector {
+  .storyInspector[data-inspector='2'] {
     top: auto;
     bottom: 108px;
     left: 24px;
@@ -1175,9 +1146,7 @@
   .labIntro .textButton {
     margin-top: 12px;
   }
-  .stage[data-chapter='lab'] .worldArea {
-    inset: 35% -6% 23%;
-  }
+
   .labInspector {
     top: auto;
     bottom: 104px;
@@ -1246,4 +1215,186 @@
 .anchor:focus-visible,
 .chosen {
   z-index: 2;
+}
+
+/* One fixed viewport and one pointer owner for all material and altitude studies. */
+.world {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+  cursor: grab;
+}
+.world:active {
+  cursor: grabbing;
+}
+.world canvas {
+  pointer-events: none;
+}
+.anchor {
+  width: 42px;
+  height: 54px;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.hitRing {
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+.anchor:hover .hitRing,
+.anchor:focus-visible .hitRing {
+  border-color: #b5d5ff66;
+  background: #b5d5ff08;
+}
+.agentLabel {
+  opacity: 0;
+  top: calc(100% + 4px);
+  padding: 7px 10px;
+  border-radius: 5px;
+  background: #0e1728e8;
+  transition: opacity 0.15s;
+}
+.agentLabel small {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  color: #a4b6d0;
+}
+.chosen .agentLabel,
+.anchor:hover .agentLabel,
+.anchor:focus-visible .agentLabel {
+  opacity: 1;
+}
+.ghost {
+  width: 28px;
+  height: 28px;
+}
+.stage {
+  background: radial-gradient(
+    ellipse at 50% 65%,
+    #1c2a40 0%,
+    #101824 48%,
+    #0b111b 100%
+  );
+}
+.stage[data-material='mercury'] {
+  background: radial-gradient(
+    ellipse at 50% 60%,
+    #2a3039,
+    #13171e 55%,
+    #0a0e15
+  );
+}
+.stage[data-material='acrylic'] {
+  background: radial-gradient(
+    ellipse at 50% 55%,
+    #384758,
+    #1a2638 55%,
+    #101724
+  );
+}
+.stageNoise {
+  opacity: 0.025;
+}
+.focusControls {
+  position: absolute;
+  z-index: 5;
+  top: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #8198bb30;
+  background: #111b2de8;
+  border-radius: 20px;
+}
+.focusControls button {
+  text-transform: capitalize;
+  color: #a5b1c2;
+  padding: 8px 18px;
+  font-size: 11px;
+  border-radius: 16px;
+}
+.focusControls button[aria-pressed='true'] {
+  background: #33435a;
+  color: #fff;
+}
+.dragHint {
+  display: block;
+  margin-top: 28px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #8897af;
+  max-width: 190px;
+}
+.worldTabs {
+  overflow-x: auto;
+  min-width: 0;
+}
+.worldTabs button {
+  flex-shrink: 0;
+}
+@media (min-width: 1000px) {
+  .labIntro {
+    top: 24%;
+    width: 210px;
+  }
+  .labIntro h1 {
+    font-size: 52px;
+  }
+  .labInspector {
+    top: 27%;
+    width: 23%;
+  }
+}
+@media (max-width: 700px) {
+  .focusControls {
+    top: auto;
+    bottom: 110px;
+  }
+  .focusControls button {
+    padding: 8px 16px;
+  }
+  .dragHint {
+    display: none;
+  }
+  .anchor {
+    width: 32px;
+    height: 40px;
+  }
+  .worldTabs button {
+    padding-inline: 12px;
+  }
+}
+
+.teamCaption {
+  position: absolute;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #e8f1ff;
+  text-align: center;
+  font-size: 14px;
+  pointer-events: none;
+}
+.teamCaption span {
+  display: block;
+  margin-top: 6px;
+  color: #96a7bd;
+  font-size: 10px;
+}
+@media (max-width: 700px) {
+  .teamCaption {
+    top: auto;
+    bottom: 160px;
+  }
+}
+
+.stage[data-chapter='0'] .chosen:not(:hover):not(:focus-visible) .agentLabel,
+.stage[data-chapter='5'] .chosen:not(:hover):not(:focus-visible) .agentLabel {
+  opacity: 0;
 }
