@@ -13,6 +13,8 @@ import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-th
 import type { FleetModel } from './fleet-model';
 import type { StoryDrive, VisualAnchor, VisualId } from './visual-contract';
 import type { CrustMaterialId } from './visuals/crust-materials';
+import type { CrustSignalId } from './visuals/crust-signal';
+import type { EnvironmentKind } from './visuals/environment';
 import { CrustVisual } from './visuals/crust-visual';
 import { DomeVisual } from './visuals/dome-visual';
 import { LidarVisual } from './visuals/lidar-visual';
@@ -29,12 +31,18 @@ export function VisualCanvas({
   visible,
   material,
   marks,
+  signal,
+  light,
+  closeUp,
   onExpand,
   onHoverChange,
 }: {
   visual: VisualId;
   material: CrustMaterialId;
   marks: boolean;
+  signal: CrustSignalId;
+  light?: EnvironmentKind;
+  closeUp?: boolean;
   model: FleetModel;
   theme: SpatialThemeSnapshot;
   drive: RefObject<StoryDrive>;
@@ -71,6 +79,9 @@ export function VisualCanvas({
         model={model}
         material={material}
         marks={marks}
+        signal={signal}
+        light={light}
+        closeUp={closeUp}
         theme={theme}
         drive={drive}
         anchor={anchor}

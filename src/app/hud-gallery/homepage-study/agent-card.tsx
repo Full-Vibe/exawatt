@@ -31,19 +31,23 @@ export function AgentCard({
   agent,
   className,
   compact = false,
+  accent,
 }: {
   agent: FleetAgent;
   className?: string;
   compact?: boolean;
+  /** The product's selection colour, when the card is an open selection. */
+  accent?: string;
 }) {
   const resetMinutes = 240 - ((agent.id * 37) % 200);
   return (
     <div
       className={cn(
-        'w-[300px] rounded-xl border border-white/12 bg-[#0b1018]/90 text-white shadow-2xl backdrop-blur-md',
+        'relative w-[300px] rounded-xl border border-white/12 bg-[#0b1018]/90 text-white shadow-2xl backdrop-blur-md',
         compact ? 'p-3' : 'p-4',
         className
       )}
+      style={accent ? { borderColor: accent } : undefined}
       data-study-agent-card
     >
       <div className="flex items-center justify-between gap-3">

@@ -29,6 +29,7 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { fleetAt } from '../fleet-model';
 import { SPHERE_CENTER } from '../sphere';
+import { stageBlend } from '../stages';
 import type { VisualProps } from '../visual-contract';
 import { CameraRig } from './camera-rig';
 import {
@@ -41,6 +42,7 @@ import {
   hexPrismGeometry,
   makeCrustMaterial,
 } from './crust-materials';
+import { crustSignal } from './crust-signal';
 import { useRoomEnvironment } from './environment';
 import { GlobeBody } from './globe-body';
 import {
@@ -65,6 +67,34 @@ const METAL = new THREE.Color(0x8a9199);
 /** Frosted clear ground for the acrylic option. */
 const FROST = new THREE.Color(0xb9d2e4);
 const SPIN_RATE = 0.5;
+const blendScratch = { from: 0, to: 0, t: 0 };
+
+/** A soft radial falloff, drawn once, for light under a tile. */
+function makeGlowTexture(): THREE.Texture {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const g = ctx.createRadialGradient(
+      size / 2,
+      size / 2,
+      size * 0.18,
+      size / 2,
+      size / 2,
+      size / 2
+    );
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.45, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
 
 function makeAnim(tileCount: number, pipCount: number) {
   return {
@@ -91,6 +121,9 @@ export function CrustVisual({
   reducedMotion,
   material,
   marks,
+  signal,
+  light = 'room',
+  closeUp = false,
   onExpand,
   onHoverChange,
 }: VisualProps) {
@@ -98,8 +131,9 @@ export function CrustVisual({
   const placements = useMemo(() => placeTiles(model), [model]);
   const tileCount = model.tiles.length;
   const spec = useMemo(() => makeCrustMaterial(material), [material]);
+  const sig = useMemo(() => crustSignal(signal), [signal]);
   useEffect(() => () => disposeCrustMaterial(spec), [spec]);
-  useRoomEnvironment(spec.environment);
+  useRoomEnvironment(spec.environment, light);
 
   // Children: pips on the parent's vertices.
   const pips = useMemo(() => {
@@ -125,6 +159,9 @@ export function CrustVisual({
     Array.from({ length: GLYPH_COUNT }, () => null)
   );
   const ghostsRef = useRef<THREE.InstancedMesh>(null);
+  const rimsRef = useRef<THREE.InstancedMesh>(null);
+  const glowsRef = useRef<THREE.InstancedMesh>(null);
+  const selectionRef = useRef<THREE.Mesh>(null);
   const pipsRef = useRef<THREE.InstancedMesh>(null);
   const tethersRef = useRef<THREE.LineSegments>(null);
 
@@ -134,7 +171,7 @@ export function CrustVisual({
     animRef.current = makeAnim(tileCount, pips.length);
   const anim = animRef.current;
   const shownRef = useRef(1);
-  const { size } = useThree();
+  const { size, gl } = useThree();
   const tileOfAgent = useMemo(() => {
     const map = new Int32Array(model.agents.length).fill(-1);
     model.tiles.forEach((t, i) => {
@@ -162,6 +199,25 @@ export function CrustVisual({
     g.rotateY(Math.PI / 6);
     return g;
   }, []);
+  // Rim: a thin lit shell around the top edge, so the status is light on
+  // the side of the tile, not a line drawn on top of it.
+  const rimGeometry = useMemo(
+    () => new THREE.CylinderGeometry(0.905, 0.905, 0.07, 6, 1, true),
+    []
+  );
+  // Lamp: light spilling under the tile, a soft radial falloff on a quad.
+  const glowGeometry = useMemo(() => {
+    const g = new THREE.PlaneGeometry(3.2, 3.2);
+    g.rotateX(-Math.PI / 2);
+    return g;
+  }, []);
+  const glowTexture = useMemo(() => makeGlowTexture(), []);
+  const selectionGeometry = useMemo(() => {
+    const g = new THREE.RingGeometry(0.96, 1.01, 6, 1);
+    g.rotateX(-Math.PI / 2);
+    g.rotateY(Math.PI / 6);
+    return g;
+  }, []);
   const pipGeometry = useMemo(
     () => new THREE.CylinderGeometry(0.2, 0.2, 0.12, 6, 1),
     []
@@ -181,6 +237,10 @@ export function CrustVisual({
       coreGeometry.dispose();
       glyphGeometries.forEach(g => g.dispose());
       ghostGeometry.dispose();
+      rimGeometry.dispose();
+      glowGeometry.dispose();
+      glowTexture.dispose();
+      selectionGeometry.dispose();
       pipGeometry.dispose();
       tetherGeometry.dispose();
     },
@@ -189,6 +249,10 @@ export function CrustVisual({
       coreGeometry,
       glyphGeometries,
       ghostGeometry,
+      rimGeometry,
+      glowGeometry,
+      glowTexture,
+      selectionGeometry,
       pipGeometry,
       tetherGeometry,
     ]
@@ -200,12 +264,14 @@ export function CrustVisual({
     const agent = id >= 0 && anim.present[id] ? model.tiles[id].agent : -1;
     if (agent !== anim.hover) {
       anim.hover = agent;
+      gl.domElement.style.setProperty('cursor', agent >= 0 ? 'pointer' : '');
       onHoverChange?.(agent);
     }
   };
   const leaveTile = () => {
     if (anim.hover !== -1) {
       anim.hover = -1;
+      gl.domElement.style.setProperty('cursor', '');
       onHoverChange?.(-1);
     }
   };
@@ -224,10 +290,24 @@ export function CrustVisual({
     const agents = agentsRef.current;
     const cores = coresRef.current;
     const ghosts = ghostsRef.current;
+    const rims = rimsRef.current;
+    const glows = glowsRef.current;
+    const selection = selectionRef.current;
     const pipMesh = pipsRef.current;
     const tethers = tethersRef.current;
     const glyphs = glyphRefs.current;
-    if (!ground || !agents || !cores || !ghosts || !pipMesh || !tethers) return;
+    if (
+      !ground ||
+      !agents ||
+      !cores ||
+      !ghosts ||
+      !rims ||
+      !glows ||
+      !selection ||
+      !pipMesh ||
+      !tethers
+    )
+      return;
     for (let g = 0; g < GLYPH_COUNT; g += 1) if (!glyphs[g]) return;
 
     const shown = shownRef.current;
@@ -235,9 +315,17 @@ export function CrustVisual({
     anim.pulse += delta;
     const breathe = reducedMotion ? 0 : (Math.sin(anim.pulse * 2.2) + 1) * 0.5;
     const recede = d.recede;
+    // Stage states blend on the rail, with the camera.
+    const b = stageBlend(d.rail, undefined, blendScratch);
+    const h0 = d.highlights[b.from] ?? null;
+    const h1 = d.highlights[b.to] ?? null;
+    const lifted = THREE.MathUtils.lerp(h0 ? 1 : 0, h1 ? 1 : 0, b.t);
 
     let ghostCount = 0;
     let coreCount = 0;
+    let rimCount = 0;
+    let glowCount = 0;
+    selection.visible = false;
     anim.glyphCount.fill(0);
     for (let i = 0; i < tileCount; i += 1) {
       const tile = model.tiles[i];
@@ -250,7 +338,11 @@ export function CrustVisual({
       // Targets.
       const scaleTarget = present ? 1 : 0;
       const weightTarget = agent
-        ? highlightWeight(agent.status, d.highlight)
+        ? THREE.MathUtils.lerp(
+            highlightWeight(agent.status, h0),
+            highlightWeight(agent.status, h1),
+            b.t
+          )
         : 1;
       let liftTarget = 0;
       if (agent) {
@@ -263,10 +355,11 @@ export function CrustVisual({
                 ? 0.2
                 : 0.08;
         liftTarget *= 0.4 + 0.6 * weightTarget;
-        if (d.highlight && weightTarget === 1) liftTarget += 0.25;
+        liftTarget += 0.25 * lifted * weightTarget;
         if (tile.agent === d.exemplar) liftTarget += 0.2;
         if (tile.agent === anim.hover) liftTarget += 0.15;
-        liftTarget *= spec.liftScale;
+        if (tile.agent === d.selected) liftTarget += 0.3;
+        liftTarget *= spec.liftScale * sig.liftScale;
       }
 
       if (reducedMotion) {
@@ -317,7 +410,10 @@ export function CrustVisual({
         color.copy(palette.status[agent.status]);
         color.lerp(WHITE, spec.pastel);
         color.lerp(METAL, 1 - spec.bodyTint);
-        color.lerp(palette.dim, (1 - w) * 0.78);
+        color.lerp(palette.neutral, 1 - sig.bodyStatus);
+        color.lerp(palette.dim, (1 - w) * (sig.bodyStatus ? 0.78 : 0.45));
+        if (tile.agent === anim.hover || tile.agent === d.selected)
+          color.lerp(palette.label, 0.12);
         if (agent.status === 'active' && w > 0.5)
           color.lerp(palette.label, breathe * 0.08);
         color.lerp(palette.body, recede * 0.7);
@@ -338,7 +434,7 @@ export function CrustVisual({
         const mesh = glyphs[glyphIndex] as THREE.InstancedMesh;
         const slot = anim.glyphCount[glyphIndex];
         anim.glyphCount[glyphIndex] = slot + 1;
-        const capScale = s * (0.75 + 0.25 * w);
+        const capScale = s * (0.75 + 0.25 * w) * sig.glyphScale;
         tmp.addScaledVector(tmp2, (TILE_HEIGHT * thickness) / 2 + 0.05);
         dummy.position.copy(tmp);
         dummy.quaternion.copy(place.quaternion);
@@ -361,7 +457,59 @@ export function CrustVisual({
           (agent.status === 'needs-you' ? breathe * 0.25 * w : 0);
         color.lerp(WHITE, Math.min(0.6, lit * spec.inlayGlow));
         color.multiplyScalar((0.75 + 0.35 * w) * (1 - recede * 0.6));
+        // a quiet mark when the signal lives elsewhere on the tile
+        if (sig.glyphStatus < 1) {
+          color.copy(palette.neutral).lerp(palette.label, 0.22 + 0.1 * w);
+        }
         mesh.setColorAt(slot, color);
+
+        // Rim: the status as a lit band around the top edge.
+        if (sig.rim) {
+          dummy.position.copy(tmp).addScaledVector(tmp2, -0.09);
+          dummy.quaternion.copy(place.quaternion);
+          dummy.scale.set(s, 1, s);
+          dummy.updateMatrix();
+          rims.setMatrixAt(rimCount, dummy.matrix);
+          color.copy(palette.status[agent.status]);
+          color.multiplyScalar(
+            (0.45 +
+              0.55 * w +
+              (agent.status === 'needs-you' ? breathe * 0.35 * w : 0)) *
+              (1 - recede * 0.6)
+          );
+          color.lerp(palette.dim, (1 - w) * 0.6);
+          rims.setColorAt(rimCount, color);
+          rimCount += 1;
+        }
+
+        // Lamp: a glow under the tile.
+        if (sig.underglow) {
+          dummy.position.copy(place.position).addScaledVector(tmp2, 0.06);
+          dummy.quaternion.copy(place.quaternion);
+          const gs = s * (0.8 + 0.3 * w + breathe * 0.08 * w);
+          dummy.scale.set(gs, 1, gs);
+          dummy.updateMatrix();
+          glows.setMatrixAt(glowCount, dummy.matrix);
+          color.copy(palette.status[agent.status]);
+          color.multiplyScalar(
+            (0.2 +
+              0.5 * w +
+              (agent.status === 'needs-you' ? breathe * 0.3 * w : 0)) *
+              (1 - recede * 0.7)
+          );
+          glows.setColorAt(glowCount, color);
+          glowCount += 1;
+        }
+
+        // Selection: the product's ring on the ground around the tile.
+        if (tile.agent === d.selected) {
+          selection.visible = true;
+          selection.position
+            .copy(place.position)
+            .addScaledVector(tmp2, TILE_HEIGHT / 2 + 0.05);
+          selection.quaternion.copy(place.quaternion);
+          selection.scale.set(s, 1, s);
+        }
 
         if (spec.core) {
           const coreHeight = TILE_HEIGHT * thickness * 0.6;
@@ -410,6 +558,8 @@ export function CrustVisual({
     for (let g = ghostCount; g < tileCount; g += 1) anim.tileOfGhost[g] = -1;
     ghosts.count = ghostCount;
     cores.count = coreCount;
+    rims.count = rimCount;
+    glows.count = glowCount;
     for (let g = 0; g < GLYPH_COUNT; g += 1) {
       const mesh = glyphs[g] as THREE.InstancedMesh;
       mesh.count = anim.glyphCount[g];
@@ -465,7 +615,11 @@ export function CrustVisual({
     agents.instanceMatrix.needsUpdate = true;
     cores.instanceMatrix.needsUpdate = true;
     ghosts.instanceMatrix.needsUpdate = true;
+    rims.instanceMatrix.needsUpdate = true;
+    glows.instanceMatrix.needsUpdate = true;
     pipMesh.instanceMatrix.needsUpdate = true;
+    if (rims.instanceColor) rims.instanceColor.needsUpdate = true;
+    if (glows.instanceColor) glows.instanceColor.needsUpdate = true;
     if (ground.instanceColor) ground.instanceColor.needsUpdate = true;
     if (agents.instanceColor) agents.instanceColor.needsUpdate = true;
     if (cores.instanceColor) cores.instanceColor.needsUpdate = true;
@@ -489,14 +643,20 @@ export function CrustVisual({
       } else a.clearExemplar();
     } else a.clearExemplar();
 
-    if (anim.hover >= 0) {
-      const place = placements[tileOfAgent[anim.hover]];
+    const selectedTile = d.selected >= 0 ? tileOfAgent[d.selected] : -1;
+    if (selectedTile >= 0 && anim.present[selectedTile]) {
+      const place = placements[selectedTile];
       tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
-      tmp.copy(place.position).addScaledVector(tmp2, TILE_HEIGHT + 0.6);
+      tmp
+        .copy(place.position)
+        .addScaledVector(
+          tmp2,
+          TILE_HEIGHT + anim.lift[selectedTile] * 1.2 + 0.3
+        );
       if (projectToCanvas(tmp, state.camera, size.width, size.height, point)) {
-        a.setHover(anim.hover, point.x, point.y);
-      } else a.clearHover();
-    } else a.clearHover();
+        a.setFocus(d.selected, point.x, point.y);
+      } else a.clearFocus();
+    } else a.clearFocus();
     writeLabelAnchors(
       model,
       at,
@@ -517,6 +677,7 @@ export function CrustVisual({
         drive={drive}
         reducedMotion={reducedMotion}
         shownRef={shownRef}
+        closeUp={closeUp}
       />
       <color attach="background" args={[theme.canvas]} />
       <fog attach="fog" args={[theme.canvas, 60, 160]} />
@@ -583,6 +744,46 @@ export function CrustVisual({
           side={THREE.DoubleSide}
         />
       </instancedMesh>
+
+      <instancedMesh
+        ref={rimsRef}
+        args={[rimGeometry, undefined, tileCount]}
+        raycast={() => null}
+        frustumCulled={false}
+      >
+        <meshBasicMaterial toneMapped={false} side={THREE.DoubleSide} />
+      </instancedMesh>
+
+      <instancedMesh
+        ref={glowsRef}
+        args={[glowGeometry, undefined, tileCount]}
+        raycast={() => null}
+        frustumCulled={false}
+      >
+        <meshBasicMaterial
+          map={glowTexture}
+          toneMapped={false}
+          transparent
+          opacity={0.7}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          side={THREE.DoubleSide}
+        />
+      </instancedMesh>
+
+      <mesh
+        ref={selectionRef}
+        geometry={selectionGeometry}
+        raycast={() => null}
+        frustumCulled={false}
+        visible={false}
+      >
+        <meshBasicMaterial
+          color={palette.selection}
+          toneMapped={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
 
       <instancedMesh
         ref={pipsRef}

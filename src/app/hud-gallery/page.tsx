@@ -571,6 +571,13 @@ export default function HudGallery() {
                   Open the homepage study (crust, LiDAR, dome) →
                 </a>{' '}
                 <a
+                  href="/hud-gallery/agent-material"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the agent material study (one cluster, close) →
+                </a>{' '}
+                <a
                   href="/v2"
                   className="underline underline-offset-2"
                   style={{ color: HUD.cyan }}

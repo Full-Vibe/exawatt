@@ -27,6 +27,7 @@ import {
   planeToSphere,
   tileQuaternion,
 } from '../sphere';
+import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
 import { CameraRig } from './camera-rig';
 import { useRoomEnvironment } from './environment';
@@ -224,7 +225,9 @@ export function MercuryVisual({
     for (let i = 0; i < model.agents.length; i += 1) {
       const agent = model.agents[i];
       const present = i < at.count ? 1 : 0;
-      const weight = present ? highlightWeight(agent.status, d.highlight) : 1;
+      const weight = present
+        ? highlightWeight(agent.status, d.highlights[stageAt(d.rail)] ?? null)
+        : 1;
       if (reducedMotion) {
         anim.scale[i] = present;
         anim.weight[i] = weight;
@@ -404,14 +407,14 @@ export function MercuryVisual({
         a.setExemplar(point.x, point.y);
       else a.clearExemplar();
     } else a.clearExemplar();
-    if (anim.hover >= 0) {
-      const place = placements[tileOfAgent[anim.hover]];
+    if (d.selected >= 0 && tileOfAgent[d.selected] >= 0) {
+      const place = placements[tileOfAgent[d.selected]];
       tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
       tmp.copy(place.position).addScaledVector(tmp2, 1.4);
       if (projectToCanvas(tmp, state.camera, size.width, size.height, point))
-        a.setHover(anim.hover, point.x, point.y);
-      else a.clearHover();
-    } else a.clearHover();
+        a.setFocus(d.selected, point.x, point.y);
+      else a.clearFocus();
+    } else a.clearFocus();
     writeLabelAnchors(
       model,
       at,

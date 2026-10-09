@@ -36,6 +36,10 @@ export interface Palette {
   grid: THREE.Color;
   label: THREE.Color;
   dim: THREE.Color;
+  /** The product's selection colour. */
+  selection: THREE.Color;
+  /** A quiet body for the signal treatments that keep status off the body. */
+  neutral: THREE.Color;
 }
 
 export function paletteFrom(theme: SpatialThemeSnapshot): Palette {
@@ -56,6 +60,11 @@ export function paletteFrom(theme: SpatialThemeSnapshot): Palette {
     grid: new THREE.Color(theme.grid),
     label: new THREE.Color(theme.label),
     dim: canvas.clone().lerp(new THREE.Color(theme.unitMuted), 0.35),
+    selection: new THREE.Color(theme.selection),
+    neutral: new THREE.Color(theme.zone).lerp(
+      new THREE.Color(theme.unitMuted),
+      0.3
+    ),
   };
 }
 

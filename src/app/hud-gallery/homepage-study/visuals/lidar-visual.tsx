@@ -20,6 +20,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { fleetAt, type FleetModel } from '../fleet-model';
 import { SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
+import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
 import { CameraRig, fleetExtent } from './camera-rig';
 import {
@@ -368,7 +369,9 @@ export function LidarVisual({
       const tile = model.tiles[i];
       const present = at.tilePresent(tile) ? 1 : 0;
       const agent = at.tileAgent(tile) ? model.agents[tile.agent] : null;
-      const weight = agent ? highlightWeight(agent.status, d.highlight) : 1;
+      const weight = agent
+        ? highlightWeight(agent.status, d.highlights[stageAt(d.rail)] ?? null)
+        : 1;
       if (reducedMotion) {
         tileScale[i] = present;
         tileWeight[i] = weight;
@@ -466,14 +469,14 @@ export function LidarVisual({
         a.setExemplar(point.x, point.y);
       } else a.clearExemplar();
     } else a.clearExemplar();
-    if (hover.current >= 0) {
-      const place = placements[tileOfAgent[hover.current]];
+    if (d.selected >= 0 && tileOfAgent[d.selected] >= 0) {
+      const place = placements[tileOfAgent[d.selected]];
       tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
       tmp.copy(place.position).addScaledVector(tmp2, 1.6);
       if (projectToCanvas(tmp, state.camera, size.width, size.height, point)) {
-        a.setHover(hover.current, point.x, point.y);
-      } else a.clearHover();
-    } else a.clearHover();
+        a.setFocus(d.selected, point.x, point.y);
+      } else a.clearFocus();
+    } else a.clearFocus();
     writeLabelAnchors(
       model,
       at,

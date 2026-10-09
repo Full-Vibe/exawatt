@@ -21,6 +21,7 @@ import {
   CRUST_MATERIALS,
   type CrustMaterialId,
 } from './visuals/crust-materials';
+import { CRUST_SIGNALS, type CrustSignalId } from './visuals/crust-signal';
 
 interface StudyState {
   visual: VisualId;
@@ -28,6 +29,7 @@ interface StudyState {
   copy: CopySetId;
   material: CrustMaterialId;
   marks: boolean;
+  signal: CrustSignalId;
 }
 
 function readState(params: URLSearchParams): StudyState {
@@ -35,7 +37,11 @@ function readState(params: URLSearchParams): StudyState {
   const count = Number(params.get('count'));
   const copy = params.get('copy');
   const material = params.get('material');
+  const signal = params.get('signal');
   return {
+    signal: CRUST_SIGNALS.some(x => x.id === signal)
+      ? (signal as CrustSignalId)
+      : 'paint',
     material: CRUST_MATERIALS.some(m => m.id === material)
       ? (material as CrustMaterialId)
       : 'matte',
@@ -50,7 +56,7 @@ function readState(params: URLSearchParams): StudyState {
 }
 
 function href(state: StudyState): string {
-  return `/hud-gallery/homepage-study?visual=${state.visual}&count=${state.count}&copy=${state.copy}&material=${state.material}&marks=${state.marks ? 'on' : 'off'}`;
+  return `/hud-gallery/homepage-study?visual=${state.visual}&count=${state.count}&copy=${state.copy}&material=${state.material}&marks=${state.marks ? 'on' : 'off'}&signal=${state.signal}`;
 }
 
 function Option({
@@ -146,6 +152,21 @@ export function HomepageStudy() {
               </div>
               <div className="flex items-center gap-1">
                 <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+                  Signal
+                </span>
+                {CRUST_SIGNALS.map(option => (
+                  <Option
+                    key={option.id}
+                    active={option.id === state.signal}
+                    href={href({ ...state, signal: option.id })}
+                    title={option.note}
+                  >
+                    {option.name}
+                  </Option>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
                   Kind marks
                 </span>
                 <Option
@@ -218,6 +239,7 @@ export function HomepageStudy() {
         copySet={state.copy}
         material={state.material}
         marks={state.marks}
+        signal={state.signal}
         onExpand={expand}
       />
 

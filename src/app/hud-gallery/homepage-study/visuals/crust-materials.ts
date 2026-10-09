@@ -139,56 +139,66 @@ export function makeCrustMaterial(id: CrustMaterialId): CrustMaterialSpec {
     case 'acrylic':
       return {
         id,
+        // Frosted, with the status light inside: over a dark world there is
+        // nothing to see through, so what reads as acrylic is the light the
+        // body diffuses from within, the way a lit sign does.
         agent: new THREE.MeshPhysicalMaterial({
-          roughness: 0.3,
+          roughness: 0.48,
           metalness: 0,
-          transmission: 0.22,
-          thickness: 0.8,
+          transmission: 0.72,
+          thickness: 1.2,
           ior: 1.49,
-          clearcoat: 0.55,
-          clearcoatRoughness: 0.28,
-          envMapIntensity: 0.5,
+          attenuationColor: new THREE.Color(0xffffff),
+          attenuationDistance: 3,
+          clearcoat: 0.3,
+          clearcoatRoughness: 0.3,
+          envMapIntensity: 0.9,
         }),
         ground: new THREE.MeshPhysicalMaterial({
-          roughness: 0.6,
+          roughness: 0.62,
           metalness: 0,
-          transmission: 0.7,
+          transmission: 0.55,
           thickness: 0.6,
           ior: 1.49,
-          envMapIntensity: 0.5,
+          envMapIntensity: 0.6,
         }),
         edge: { size: 0.07, thickness: 0.05, segments: 2 },
-        core: false,
+        core: true,
         bodyTint: 1,
-        pastel: 0.15,
+        pastel: 0.1,
         groundPale: 0.3,
         environment: 1.0,
-        inlayGlow: 0.7,
+        inlayGlow: 0.6,
         liftScale: 1.1,
-        lightScale: 0.75,
+        lightScale: 0.7,
       };
     case 'anodized':
       return {
         id,
-        agent: new THREE.MeshStandardMaterial({
-          roughness: 0.26,
-          metalness: 0.9,
-          envMapIntensity: 1.5,
+        // Coloured metal with a brushed, anisotropic highlight. Metal is
+        // only metal when the environment has a bright band to reflect.
+        agent: new THREE.MeshPhysicalMaterial({
+          roughness: 0.24,
+          metalness: 1,
+          anisotropy: 0.7,
+          clearcoat: 0.25,
+          clearcoatRoughness: 0.2,
+          envMapIntensity: 2.2,
         }),
         ground: new THREE.MeshStandardMaterial({
-          roughness: 0.42,
-          metalness: 0.8,
-          envMapIntensity: 0.9,
+          roughness: 0.36,
+          metalness: 0.85,
+          envMapIntensity: 1.4,
         }),
         edge: { size: 0.05, thickness: 0.04, segments: 1 },
         core: false,
-        bodyTint: 0.75,
+        bodyTint: 0.8,
         pastel: 0,
         groundPale: 0,
-        environment: 1.3,
+        environment: 1.6,
         inlayGlow: 1.15,
         liftScale: 0.85,
-        lightScale: 0.8,
+        lightScale: 0.7,
       };
     case 'matte':
     default:

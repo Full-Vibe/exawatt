@@ -385,7 +385,9 @@ export function usesDarkPublicChrome(pathname: string): boolean {
     pathname === '/hud-gallery/fold-close' ||
     // The ENG-031 W15 homepage study is the same case: a dark marketing page
     // judged under the chrome it would ship with.
-    pathname === '/hud-gallery/homepage-study'
+    pathname === '/hud-gallery/homepage-study' ||
+    // W15d: the agent material study, the same renderer judged close.
+    pathname === '/hud-gallery/agent-material'
   );
 }
 

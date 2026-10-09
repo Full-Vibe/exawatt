@@ -23,11 +23,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
+import type { StatusLightState } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { DownloadCta } from '@/components/site/bands/download-cta';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { AgentCard } from './agent-card';
 import type { CrustMaterialId } from './visuals/crust-materials';
+import type { CrustSignalId } from './visuals/crust-signal';
 import {
   FLEET_MAX,
   fleetModel,
@@ -37,7 +39,7 @@ import {
 import {
   LAUNCH_SOURCES,
   STAGES,
-  stageIndex,
+  stageAt,
   type CopySetId,
   type Stage,
 } from './stages';
@@ -59,7 +61,7 @@ const STAGE_SCREENS = 1.0;
 function exemplarFor(
   agents: FleetAgent[],
   count: number,
-  status: StoryDrive['highlight']
+  status: StatusLightState | null
 ): number {
   if (!status) return -1;
   for (let i = 0; i < Math.min(count, agents.length); i += 1)
@@ -75,6 +77,7 @@ export function ScrollExperience({
   copySet,
   material,
   marks,
+  signal,
   onExpand,
 }: {
   visual: VisualId;
@@ -82,6 +85,7 @@ export function ScrollExperience({
   copySet: CopySetId;
   material: CrustMaterialId;
   marks: boolean;
+  signal: CrustSignalId;
   onExpand: () => void;
 }) {
   const model = useMemo(() => fleetModel(), []);
@@ -89,21 +93,52 @@ export function ScrollExperience({
   const reducedMotion = usePrefersReducedMotion();
   const sectionRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const highlights = useMemo(
+    () => STAGES.map(item => item.highlight[copySet] ?? null),
+    [copySet]
+  );
   const drive = useRef<StoryDrive>({
     progress: 0,
+    base: baseCount,
     count: baseCount,
-    highlight: null,
+    highlights,
     exemplar: -1,
-    side: 0,
+    selected: -1,
+    rail: 0,
     recede: 0,
   });
   const anchor = useRef<VisualAnchor>(new VisualAnchor());
   const [stage, setStage] = useState(0);
-  const [hoverAgent, setHoverAgent] = useState(-1);
+  const [selected, setSelected] = useState(-1);
   const [visible, setVisible] = useState(true);
-
-  const fleetAtIndex = stageIndex('fleet');
-  const launchIndex = stageIndex('launch');
+  // The agent under the pointer, mirrored here so a click can select it
+  // without a React render per hover.
+  const hoverRef = useRef(-1);
+  const pressRef = useRef({ x: 0, y: 0 });
+  const onHoverChange = useCallback((agent: number) => {
+    hoverRef.current = agent;
+  }, []);
+  const press = useCallback((e: React.PointerEvent) => {
+    pressRef.current.x = e.clientX;
+    pressRef.current.y = e.clientY;
+  }, []);
+  const release = useCallback((e: React.PointerEvent) => {
+    const moved =
+      Math.abs(e.clientX - pressRef.current.x) +
+      Math.abs(e.clientY - pressRef.current.y);
+    if (moved > 6) return; // a drag turned the world; not a click
+    setSelected(hoverRef.current);
+  }, []);
+  useEffect(() => {
+    drive.current.selected = selected;
+  }, [selected]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelected(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Progress from scroll, written to the drive; stage index into React.
   const sync = useCallback(() => {
@@ -116,19 +151,16 @@ export function ScrollExperience({
     const progress = Math.max(0, Math.min(STAGES.length - 1, raw));
     const d = drive.current;
     d.progress = progress;
-    const growth = Math.max(0, Math.min(1, progress - (fleetAtIndex - 1)));
-    d.count = Math.round(baseCount + (FLEET_MAX - baseCount) * growth);
-    d.recede = Math.max(0, Math.min(1, progress - (launchIndex - 1)));
-    const index = Math.round(progress);
+    d.base = baseCount;
+    d.highlights = highlights;
+    const index = stageAt(progress);
     const current = STAGES[index];
-    const highlight = current.highlight[copySet] ?? null;
-    d.highlight = highlight;
+    d.count = current.growToFleet ? FLEET_MAX : baseCount;
     d.exemplar = current.card
-      ? exemplarFor(model.agents, d.count, highlight)
+      ? exemplarFor(model.agents, d.count, highlights[index])
       : -1;
-    d.side = current.panel === 'right' ? 1 : current.panel === 'left' ? -1 : 0;
     setStage(previous => (previous === index ? previous : index));
-  }, [baseCount, copySet, fleetAtIndex, launchIndex, model]);
+  }, [baseCount, highlights, model]);
 
   useEffect(() => {
     sync();
@@ -156,7 +188,7 @@ export function ScrollExperience({
   const leaderDotRef = useRef<SVGCircleElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const hoverRef = useRef<HTMLDivElement>(null);
+  const focusRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let frame = 0;
     const tick = () => {
@@ -208,13 +240,21 @@ export function ScrollExperience({
           if (count.textContent !== text) count.textContent = text;
         }
       }
-      // hover
-      const hover = hoverRef.current;
-      if (hover) {
-        if (a.hoverPoint && a.hover >= 0) {
-          hover.style.opacity = '1';
-          hover.style.transform = `translate(${a.hoverPoint.x}px, ${a.hoverPoint.y}px) translate(-50%, calc(-100% - 14px))`;
-        } else hover.style.opacity = '0';
+      // the selected agent's card, beside its tile, on whichever side has room
+      const focus = focusRef.current;
+      if (focus) {
+        if (a.focusPoint && a.focus >= 0) {
+          const stageRect = stageEl.getBoundingClientRect();
+          const toLeft = a.focusPoint.x > stageRect.width * 0.62;
+          focus.style.opacity = '1';
+          focus.style.pointerEvents = 'auto';
+          focus.style.transform = toLeft
+            ? `translate(${a.focusPoint.x - 22}px, ${a.focusPoint.y}px) translate(-100%, -50%)`
+            : `translate(${a.focusPoint.x + 22}px, ${a.focusPoint.y}px) translate(0, -50%)`;
+        } else {
+          focus.style.opacity = '0';
+          focus.style.pointerEvents = 'none';
+        }
       }
     };
     frame = requestAnimationFrame(tick);
@@ -224,7 +264,7 @@ export function ScrollExperience({
   const current = STAGES[stage];
   const exemplarAgent =
     drive.current.exemplar >= 0 ? model.agents[drive.current.exemplar] : null;
-  const hovered = hoverAgent >= 0 ? model.agents[hoverAgent] : null;
+  const selectedAgent = selected >= 0 ? model.agents[selected] : null;
 
   return (
     <section
@@ -238,6 +278,8 @@ export function ScrollExperience({
         ref={stageRef}
         className="sticky top-12 z-10 h-[58svh] overflow-hidden bg-[#04060b] md:h-[calc(100svh-3rem)]"
         data-homepage-study-stage
+        onPointerDown={press}
+        onPointerUp={release}
       >
         <VisualCanvas
           visual={visual}
@@ -249,8 +291,9 @@ export function ScrollExperience({
           visible={visible}
           material={material}
           marks={marks}
+          signal={signal}
           onExpand={onExpand}
-          onHoverChange={setHoverAgent}
+          onHoverChange={onHoverChange}
         />
 
         {/* Project labels, positioned from the visual. */}
@@ -293,13 +336,17 @@ export function ScrollExperience({
           />
         </svg>
 
-        {/* Hover card. */}
+        {/* The selected agent. Click a tile to open it, anywhere else or
+            Escape to close. */}
         <div
-          ref={hoverRef}
-          className="pointer-events-none absolute left-0 top-0 opacity-0 transition-opacity duration-150 will-change-transform"
-          aria-hidden
+          ref={focusRef}
+          className="absolute left-0 top-0 opacity-0 transition-opacity duration-150 will-change-transform"
+          onPointerDown={e => e.stopPropagation()}
+          onPointerUp={e => e.stopPropagation()}
         >
-          {hovered ? <AgentCard agent={hovered} compact /> : null}
+          {selectedAgent ? (
+            <AgentCard agent={selectedAgent} compact accent={theme.selection} />
+          ) : null}
         </div>
 
         {/* Synthetic fleet stamp, always inside the frame. */}

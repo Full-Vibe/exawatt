@@ -189,6 +189,60 @@ export const STAGES: Stage[] = [
   },
 ];
 
+/**
+ * The rail (W15d, operator 2026-10-09: "it definitely does not feel like
+ * it's on rails, predictable, or smooth as I scroll between states").
+ *
+ * Every stage holds still for the first and last quarter of its screen and
+ * the move to the next stage runs through the middle half on one ease. The
+ * camera, the tile states, the fleet growth and the recede all read this one
+ * blend, so nothing changes on a schedule of its own. Growth gets a wider
+ * window because three hundred agents arriving in half a screen is a jolt.
+ */
+interface RailWindow {
+  start: number;
+  end: number;
+}
+
+const RAIL_WINDOW: RailWindow = { start: 0.25, end: 0.75 };
+export const GROWTH_WINDOW: RailWindow = { start: 0.12, end: 0.92 };
+
+interface StageBlend {
+  from: number;
+  to: number;
+  /** 0 at `from`, 1 at `to`, eased. */
+  t: number;
+}
+
+export function stageBlend(
+  progress: number,
+  window: RailWindow = RAIL_WINDOW,
+  out: StageBlend = { from: 0, to: 0, t: 0 }
+): StageBlend {
+  const last = STAGES.length - 1;
+  const p = Math.max(0, Math.min(last, progress));
+  const from = Math.min(last - 1, Math.floor(p));
+  const frac = p - from;
+  const x = Math.max(
+    0,
+    Math.min(1, (frac - window.start) / (window.end - window.start))
+  );
+  out.from = from;
+  out.to = from + 1;
+  out.t = x * x * (3 - 2 * x);
+  return out;
+}
+
+/** The stage on screen: the next one from the middle of the move. */
+export function stageAt(progress: number): number {
+  const b = stageBlend(progress);
+  return b.t < 0.5 ? b.from : b.to;
+}
+
+export function panelSide(stage: Stage): -1 | 0 | 1 {
+  return stage.panel === 'right' ? 1 : stage.panel === 'left' ? -1 : 0;
+}
+
 export function stageIndex(id: StageId): number {
   return STAGES.findIndex(stage => stage.id === id);
 }

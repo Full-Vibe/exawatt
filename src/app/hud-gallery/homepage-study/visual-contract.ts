@@ -11,6 +11,8 @@ import type { StatusLightState } from '@/components/status-light/protocol';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
 import type { CrustMaterialId } from './visuals/crust-materials';
+import type { CrustSignalId } from './visuals/crust-signal';
+import type { EnvironmentKind } from './visuals/environment';
 
 export type VisualId = 'crust' | 'lidar' | 'dome' | 'prism' | 'mercury';
 
@@ -42,20 +44,29 @@ export const VISUALS: { id: VisualId; name: string; note: string }[] = [
   },
 ];
 
-/** Written by the scroll experience every scroll frame; read in `useFrame`. */
+/**
+ * The story drive. The scroll experience writes the scroll-side fields every
+ * scroll frame; the camera rig writes the rail-side fields every rendered
+ * frame from its smoothed progress, so every visual reads one smoothed
+ * story and never raw scroll.
+ */
 export interface StoryDrive {
-  /** Stage index plus fraction, 0 .. STAGES.length - 1. */
+  /** Stage index plus fraction, 0 .. STAGES.length - 1. Raw scroll. */
   progress: number;
-  /** Agents the visual should show right now (eased by the visual). */
+  /** Agents before the fleet stage grows it. */
+  base: number;
+  /** Agents the stage on screen nominally shows (base, or the whole fleet). */
   count: number;
-  /** Signal to lift, or null for the whole fleet. */
-  highlight: StatusLightState | null;
+  /** The signal each stage lifts under the current copy set, by stage. */
+  highlights: (StatusLightState | null)[];
   /** Agent id the panel points at, or -1. */
   exemplar: number;
-  /** Side the reading column sits on, so the visual can keep the subject
-   *  clear of it. -1 left, 0 centre, 1 right. */
-  side: -1 | 0 | 1;
-  /** The visual recedes behind centred type. */
+  /** Agent the reader clicked, or -1. */
+  selected: number;
+  /** Smoothed progress, written by the camera rig. Visuals blend stage
+   *  states on this, through `stageBlend`. */
+  rail: number;
+  /** The visual recedes behind centred type. Written by the camera rig. */
   recede: number;
 }
 
@@ -67,12 +78,13 @@ export interface StoryDrive {
  */
 export class VisualAnchor {
   exemplar: { x: number; y: number } | null = null;
-  hover = -1;
-  hoverPoint: { x: number; y: number } | null = null;
+  /** The selected agent's canvas point, for the info card. */
+  focus = -1;
+  focusPoint: { x: number; y: number } | null = null;
   /** One slot per Project, in model order; the overlay draws the present ones. */
   labels: LabelAnchor[] = [];
   private exemplarSlot = { x: 0, y: 0 };
-  private hoverSlot = { x: 0, y: 0 };
+  private focusSlot = { x: 0, y: 0 };
 
   setExemplar(x: number, y: number) {
     this.exemplarSlot.x = x;
@@ -82,15 +94,15 @@ export class VisualAnchor {
   clearExemplar() {
     this.exemplar = null;
   }
-  setHover(agent: number, x: number, y: number) {
-    this.hoverSlot.x = x;
-    this.hoverSlot.y = y;
-    this.hover = agent;
-    this.hoverPoint = this.hoverSlot;
+  setFocus(agent: number, x: number, y: number) {
+    this.focusSlot.x = x;
+    this.focusSlot.y = y;
+    this.focus = agent;
+    this.focusPoint = this.focusSlot;
   }
-  clearHover() {
-    this.hover = -1;
-    this.hoverPoint = null;
+  clearFocus() {
+    this.focus = -1;
+    this.focusPoint = null;
   }
 }
 
@@ -114,8 +126,15 @@ export interface VisualProps {
   material: CrustMaterialId;
   /** Kind marks: the inlay is a glyph for the agent's harness (W15c). */
   marks: boolean;
+  /** How an agent carries its status (W15d). Crust only. */
+  signal: CrustSignalId;
+  /** Which reflection room lights the materials. Default `room`. */
+  light?: EnvironmentKind;
+  /** Frame one cluster close, for the material study. */
+  closeUp?: boolean;
   /** A ghost tile was clicked: the operator wants one more agent. */
   onExpand?: () => void;
+  /** The agent under the pointer, or -1. A click selects it. */
   onHoverChange?: (agent: number) => void;
 }
 

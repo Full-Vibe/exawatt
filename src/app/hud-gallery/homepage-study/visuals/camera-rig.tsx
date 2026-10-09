@@ -9,25 +9,30 @@
  * so a fleet of one fills the frame as honestly as a fleet of three hundred.
  * Distance mixes in log space (rule 4c). Nothing here allocates per frame.
  *
- * One smoothed story progress drives every framing value (W15c, operator
- * 2026-10-09: "too jittery or wiggly or wobbly ... unstable when it's
- * transitioning between the different camera angles"). The wobble was four
- * parameters moving at four speeds: azimuth followed raw scroll, polar and
- * distance lagged at two different rates, and the fitted extent and the
- * centroid stepped on integer counts. Now scroll progress, the reading side
- * and the count are the only eased inputs, and polar, azimuth, zoom, drop,
- * extent and centroid are smooth functions of them, so the camera travels
- * one path.
+ * The rig is on rails (W15c, W15d). Scroll progress is the one eased input;
+ * the stage blend (`stageBlend`) turns it into a dwell and a move, and
+ * polar, azimuth, zoom, drop, reading side, fleet count, extent and centroid
+ * are all read off that blend, so the camera travels one path and the
+ * visual's states move with it. During growth the count ramps on the same
+ * rail, the centroid runs straight from the first Project to the whole
+ * fleet, and the fitted extent reads a look-ahead curve that widens before
+ * each Project lands rather than stepping when it does.
  */
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { RefObject } from 'react';
-import { fleetAt, type FleetModel } from '../fleet-model';
+import { fleetAt, FLEET_MAX, type FleetModel } from '../fleet-model';
 import { axialToPlane } from '../fleet-model';
 import { planeToSphere } from '../sphere';
-import { STAGES } from '../stages';
+import {
+  GROWTH_WINDOW,
+  panelSide,
+  stageBlend,
+  stageIndex,
+  STAGES,
+} from '../stages';
 import type { StoryDrive } from '../visual-contract';
 
 interface StageFraming {
@@ -54,12 +59,6 @@ const FRAMING: Record<string, StageFraming> = {
   download: { polar: 1.2, azimuth: 1.9, zoom: 1.45, drop: 0 },
 };
 
-/** Mostly linear with a soft settle at each stage, so a steady scroll moves
- *  the camera at a steady pace rather than stop-go at every boundary. */
-function smooth(t: number) {
-  return 0.45 * t + 0.55 * (t * t * (3 - 2 * t));
-}
-
 /** Planar radius of the present fleet, tile units, with a margin ring. */
 export function fleetExtent(model: FleetModel, count: number): number {
   const at = fleetAt(model, count);
@@ -73,26 +72,30 @@ export function fleetExtent(model: FleetModel, count: number): number {
 }
 
 interface FitTables {
-  /** Extent and centroid at every integer count, so a fractional count
-   *  reads a continuous value and a growing fleet never steps the camera. */
+  /** Fitted extent at every integer count, widened ahead of each Project
+   *  and averaged, so a growing fleet pulls the camera back on a curve. */
   extent: Float32Array;
   cx: Float32Array;
   cy: Float32Array;
 }
 
+const LOOK_AHEAD = 60;
+const AVERAGE_HALF = 30;
 const fitTableCache = new WeakMap<FleetModel, FitTables>();
 
 function fitTables(model: FleetModel): FitTables {
   const hit = fitTableCache.get(model);
   if (hit) return hit;
   const n = model.agents.length;
+  const raw = new Float32Array(n + 1);
+  const ahead = new Float32Array(n + 1);
   const extent = new Float32Array(n + 1);
   const cx = new Float32Array(n + 1);
   const cy = new Float32Array(n + 1);
   let sx = 0;
   let sy = 0;
   for (let count = 0; count <= n; count += 1) {
-    extent[count] = fleetExtent(model, Math.max(1, count));
+    raw[count] = fleetExtent(model, Math.max(1, count));
     if (count > 0) {
       const [px, py] = axialToPlane(model.agents[count - 1].tile);
       sx += px;
@@ -100,6 +103,19 @@ function fitTables(model: FleetModel): FitTables {
       cx[count] = sx / count;
       cy[count] = sy / count;
     }
+  }
+  for (let count = 0; count <= n; count += 1) {
+    let m = 0;
+    for (let c = 0; c <= Math.min(n, count + LOOK_AHEAD); c += 1)
+      m = Math.max(m, raw[c]);
+    ahead[count] = m;
+  }
+  for (let count = 0; count <= n; count += 1) {
+    const lo = Math.max(0, count - AVERAGE_HALF);
+    const hi = Math.min(n, count + AVERAGE_HALF);
+    let sum = 0;
+    for (let c = lo; c <= hi; c += 1) sum += ahead[c];
+    extent[count] = sum / (hi - lo + 1);
   }
   const tables = { extent, cx, cy };
   fitTableCache.set(model, tables);
@@ -113,29 +129,18 @@ function readTable(table: Float32Array, count: number): number {
   return THREE.MathUtils.lerp(table[i0], table[i1], c - i0);
 }
 
-/** Stage framing at a fractional, already-smoothed progress. */
-function framingAt(
-  progress: number,
-  out: { polar: number; azimuth: number; zoom: number; drop: number }
-) {
-  const i0 = Math.max(0, Math.min(STAGES.length - 1, Math.floor(progress)));
-  const i1 = Math.min(STAGES.length - 1, i0 + 1);
-  const t = smooth(THREE.MathUtils.clamp(progress - i0, 0, 1));
-  const f0 = FRAMING[STAGES[i0].id];
-  const f1 = FRAMING[STAGES[i1].id];
-  out.polar = THREE.MathUtils.lerp(f0.polar, f1.polar, t);
-  out.azimuth = THREE.MathUtils.lerp(f0.azimuth, f1.azimuth, t);
-  out.zoom = Math.exp(
-    THREE.MathUtils.lerp(Math.log(f0.zoom), Math.log(f1.zoom), t)
-  );
-  out.drop = THREE.MathUtils.lerp(f0.drop, f1.drop, t);
+/** The rail-side fields of the drive, written by the rig. A plain function,
+ *  because the drive arrives as a prop and the compiler lint forbids
+ *  assigning into one directly. */
+function writeRail(d: StoryDrive, rail: number, recede: number) {
+  d.rail = rail;
+  d.recede = recede;
 }
 
-/** How fast the story inputs settle. One rate for all of them, so nothing
- *  leads or lags anything else. */
+/** How fast the story input settles. */
 const STORY_RATE = 2.6;
-/** A light second pass that rounds the kinks a new agent puts in the
- *  fitted extent. Fast enough never to lag the story visibly. */
+/** A light second pass on distance and target, so a ghost click or a
+ *  fleet-size change arrives as a glide and not a cut. */
 const FIT_RATE = 9;
 
 export function CameraRig({
@@ -143,23 +148,26 @@ export function CameraRig({
   drive,
   reducedMotion,
   shownRef,
+  closeUp = false,
 }: {
   model: FleetModel;
   drive: RefObject<StoryDrive>;
   reducedMotion: boolean;
   /** Shared eased count, so the visual and the camera agree. */
   shownRef: RefObject<number>;
+  /** Frame one cluster close and let the reader orbit all the way round. */
+  closeUp?: boolean;
 }) {
   const { camera, gl, size } = useThree();
   const state = useRef({
     progress: 0,
-    side: 0,
     azimuth: 0.4,
     azimuthVelocity: 0,
     polar: 0.78,
     distance: 40,
     target: new THREE.Vector3(),
     dragging: false,
+    moved: 0,
     lastX: 0,
     lastY: 0,
     polarVelocity: 0,
@@ -168,17 +176,18 @@ export function CameraRig({
   });
   const scratch = useMemo(
     () => ({
-      centroid: new THREE.Vector2(),
       targetWorld: new THREE.Vector3(),
       position: new THREE.Vector3(),
       right: new THREE.Vector3(),
       camUp: new THREE.Vector3(),
       up: new THREE.Vector3(0, 1, 0),
-      framing: { polar: 0.78, azimuth: 0, zoom: 1, drop: 0 },
+      blend: { from: 0, to: 0, t: 0 },
+      growth: { from: 0, to: 0, t: 0 },
     }),
     []
   );
   const tables = useMemo(() => fitTables(model), [model]);
+  const launchIndex = useMemo(() => stageIndex('launch'), []);
 
   // Drag to orbit: velocity in, decay out. Zoom and pan stay with the page.
   useEffect(() => {
@@ -186,6 +195,7 @@ export function CameraRig({
     const s = state.current;
     const down = (e: PointerEvent) => {
       s.dragging = true;
+      s.moved = 0;
       s.lastX = e.clientX;
       s.lastY = e.clientY;
       el.setPointerCapture(e.pointerId);
@@ -196,13 +206,14 @@ export function CameraRig({
       const dy = e.clientY - s.lastY;
       s.lastX = e.clientX;
       s.lastY = e.clientY;
+      s.moved += Math.abs(dx) + Math.abs(dy);
       s.azimuthVelocity = dx * 0.004;
       s.polarVelocity = dy * 0.003;
       s.userAzimuth += dx * 0.004;
       s.userPolar = THREE.MathUtils.clamp(
         s.userPolar + dy * 0.003,
-        -0.35,
-        0.35
+        closeUp ? -0.6 : -0.35,
+        closeUp ? 0.9 : 0.35
       );
     };
     const up = (e: PointerEvent) => {
@@ -224,43 +235,62 @@ export function CameraRig({
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
     };
-  }, [gl]);
+  }, [gl, closeUp]);
 
   useFrame((_, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
     const s = state.current;
     const d = drive.current;
 
-    // The story inputs, eased at one rate.
-    if (reducedMotion) {
-      s.progress = d.progress;
-      s.side = d.side;
-    } else {
-      s.progress = THREE.MathUtils.damp(
-        s.progress,
-        d.progress,
-        STORY_RATE,
-        delta
-      );
-      s.side = THREE.MathUtils.damp(s.side, d.side, STORY_RATE, delta);
-    }
-    const shown = reducedMotion
-      ? d.count
-      : THREE.MathUtils.damp(shownRef.current, d.count, 2.2, delta);
+    // The one eased input.
+    s.progress = reducedMotion
+      ? d.progress
+      : THREE.MathUtils.damp(s.progress, d.progress, STORY_RATE, delta);
+    const b = stageBlend(s.progress, undefined, scratch.blend);
+    const g = stageBlend(s.progress, GROWTH_WINDOW, scratch.growth);
+    const f0 = FRAMING[STAGES[b.from].id];
+    const f1 = FRAMING[STAGES[b.to].id];
+    const polar = THREE.MathUtils.lerp(f0.polar, f1.polar, b.t);
+    const stageAzimuth = THREE.MathUtils.lerp(f0.azimuth, f1.azimuth, b.t);
+    const zoom = Math.exp(
+      THREE.MathUtils.lerp(Math.log(f0.zoom), Math.log(f1.zoom), b.t)
+    );
+    // A close-up frames the cluster dead centre; the stage's side and drop
+    // exist to clear the reading column, which a close-up has none of.
+    const drop = closeUp ? 0 : THREE.MathUtils.lerp(f0.drop, f1.drop, b.t);
+    const side = closeUp
+      ? 0
+      : THREE.MathUtils.lerp(
+          panelSide(STAGES[b.from]),
+          panelSide(STAGES[b.to]),
+          b.t
+        );
+    writeRail(
+      d,
+      s.progress,
+      THREE.MathUtils.lerp(
+        b.from >= launchIndex ? 1 : 0,
+        b.to >= launchIndex ? 1 : 0,
+        b.t
+      )
+    );
+
+    // Count on the growth rail; the visual shows it.
+    const countFrom = STAGES[g.from].growToFleet ? FLEET_MAX : d.base;
+    const countTo = STAGES[g.to].growToFleet ? FLEET_MAX : d.base;
+    const shown = THREE.MathUtils.lerp(countFrom, countTo, g.t);
     shownRef.current = shown;
 
-    const f = scratch.framing;
-    framingAt(s.progress, f);
-
-    // Fit the present territory; extent is continuous in the eased count.
+    // Fit the present territory.
     const extent = readTable(tables.extent, shown);
     const cam = camera as THREE.PerspectiveCamera;
     const vfov = THREE.MathUtils.degToRad(cam.fov);
     const aspect = size.width / Math.max(1, size.height);
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
     const fov = Math.min(vfov, hfov);
-    const fitted = (extent / Math.tan(fov / 2)) * 1.05 * f.zoom;
-    const distanceTarget = Math.max(12, fitted);
+    const fitted =
+      (extent / Math.tan(fov / 2)) * 1.05 * zoom * (closeUp ? 0.6 : 1);
+    const distanceTarget = Math.max(closeUp ? 5 : 12, fitted);
 
     // Azimuth: stage perspective + slow drift + the user's own turn.
     if (!s.dragging) {
@@ -275,9 +305,8 @@ export function CameraRig({
     }
     const drift = reducedMotion ? 0 : delta * 0.045;
     s.azimuth += drift;
-    const azimuthTarget = s.azimuth + f.azimuth + s.userAzimuth;
-    s.polar = THREE.MathUtils.clamp(f.polar + s.userPolar, 0.2, 1.35);
-    const drop = f.drop;
+    const azimuthTarget = s.azimuth + stageAzimuth + s.userAzimuth;
+    s.polar = THREE.MathUtils.clamp(polar + s.userPolar, 0.2, 1.35);
 
     if (reducedMotion) s.distance = distanceTarget;
     else
@@ -290,16 +319,22 @@ export function CameraRig({
         )
       );
 
-    // Target: the present centroid on the sphere, nudged away from the
-    // reading column so the subject is never under the type.
-    scratch.centroid.set(
-      readTable(tables.cx, shown),
-      readTable(tables.cy, shown)
+    // Target: straight between the centroids at either end of the move,
+    // nudged away from the reading column so the subject is never under
+    // the type.
+    const cx = THREE.MathUtils.lerp(
+      readTable(tables.cx, countFrom),
+      readTable(tables.cx, countTo),
+      g.t
     );
-    planeToSphere(scratch.centroid.x, scratch.centroid.y, scratch.targetWorld);
+    const cy = THREE.MathUtils.lerp(
+      readTable(tables.cy, countFrom),
+      readTable(tables.cy, countTo),
+      g.t
+    );
+    planeToSphere(cx, cy, scratch.targetWorld);
     scratch.right.set(Math.cos(azimuthTarget), 0, -Math.sin(azimuthTarget));
-    const sideShift = s.side * extent * 0.28;
-    scratch.targetWorld.addScaledVector(scratch.right, sideShift);
+    scratch.targetWorld.addScaledVector(scratch.right, side * extent * 0.28);
     // Camera-up in world space for the current polar/azimuth, so a drop
     // moves the subject straight down the frame.
     scratch.camUp.set(
