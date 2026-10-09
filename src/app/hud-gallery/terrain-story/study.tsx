@@ -24,7 +24,12 @@ import {
   type Voice,
   type WorldStyle,
 } from './model';
-import { copyOpacity, createMotionPort, type FocusScale } from './motion';
+import {
+  copyOpacity,
+  createMotionPort,
+  storyFleetCount,
+  type FocusScale,
+} from './motion';
 import styles from './study.module.css';
 
 const World = dynamic(() => import('./world'), {
@@ -59,6 +64,7 @@ export function TerrainStudy() {
     }
   }, []);
   const [selected, setSelected] = useState(0);
+  const [inspected, setInspected] = useState<number | null>(null);
   const [links, setLinks] = useState(true);
   const [wire, setWire] = useState(false);
   const [scan, setScan] = useState(0);
@@ -73,12 +79,15 @@ export function TerrainStudy() {
   const currentWorld = WORLDS.find(w => w.id === kind)!;
   const setFleet = useCallback((n: number) => {
     setCount(Math.min(100, Math.max(1, n)));
+    setInspected(id => (id !== null && id >= n ? null : id));
   }, []);
-  const selectAgent = useCallback((id: number) => setSelected(id), []);
+  const selectAgent = useCallback((id: number) => {
+    setSelected(id);
+    setInspected(id);
+  }, []);
   const addAgent = useCallback(
     (id = shownCount) => {
       setFleet(id + 1);
-      setSelected(Math.min(99, id));
     },
     [shownCount, setFleet]
   );
@@ -102,6 +111,7 @@ export function TerrainStudy() {
         Math.min(CHAPTERS.length - 1, root.scrollTop / root.clientHeight)
       );
       motion.change({ progress, mode: 'story' });
+      setCount(storyFleetCount(progress));
       const next = Math.min(
         CHAPTERS.length - 1,
         Math.max(0, Math.round(root.scrollTop / root.clientHeight))
@@ -109,6 +119,7 @@ export function TerrainStudy() {
       setChapter(next);
       if (next !== lastChapter.current) {
         setSelected(next === 2 ? 1 : next === 3 ? 4 : 0);
+        setInspected(null);
         lastChapter.current = next;
       }
     };
@@ -270,9 +281,12 @@ export function TerrainStudy() {
           {WORLDS.map((w, i) => (
             <button
               key={w.id}
+              data-material-tab={w.id}
               aria-pressed={kind === w.id}
               onClick={() => {
                 setKind(w.id);
+                if (mode === 'lab')
+                  scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' });
                 setScan(n => n + 1);
               }}
             >
@@ -397,7 +411,11 @@ export function TerrainStudy() {
                   approved={approved}
                   wire={wire}
                   onSelect={selectAgent}
-                  onAdd={addAgent}
+                  inspected={
+                    inspected !== null && inspected < shownCount
+                      ? inspected
+                      : null
+                  }
                 />
               </div>
               {mode === 'story' ? (
@@ -446,30 +464,31 @@ export function TerrainStudy() {
                       )}
                     </div>
                   ))}
-                  {[1, 2, 3].map(i => (
-                    <div
-                      key={i}
-                      className={styles.storyInspector}
-                      data-inspector={i}
-                      ref={el => {
-                        if (el) inspectorNodes.current.set(i, el);
-                        else inspectorNodes.current.delete(i);
-                      }}
-                      style={{ opacity: 0, visibility: 'hidden' }}
-                    >
-                      {renderInspector(
-                        true,
-                        i,
-                        chapter === i
-                          ? picked
-                          : Math.min(count - 1, i === 2 ? 1 : i === 3 ? 4 : 0)
-                      )}
-                    </div>
-                  ))}
+                  {inspected !== null &&
+                    [1, 2, 3].map(i => (
+                      <div
+                        key={i}
+                        className={styles.storyInspector}
+                        data-inspector={i}
+                        ref={el => {
+                          if (el) inspectorNodes.current.set(i, el);
+                          else inspectorNodes.current.delete(i);
+                        }}
+                        style={{ opacity: 0, visibility: 'hidden' }}
+                      >
+                        {renderInspector(
+                          true,
+                          i,
+                          chapter === i
+                            ? picked
+                            : Math.min(count - 1, i === 2 ? 1 : i === 3 ? 4 : 0)
+                        )}
+                      </div>
+                    ))}
                   {chapter === 4 && (
                     <div className={styles.fleetCaption}>
                       <strong>{shownCount}</strong>
-                      <span>agents, one view</span>
+                      <span>agents, one view · scroll to grow</span>
                       <button
                         onClick={() => setFleet(shownCount === 100 ? 10 : 100)}
                       >
@@ -532,9 +551,11 @@ export function TerrainStudy() {
                       Drag the world to orbit · select an agent to inspect
                     </span>
                   </div>
-                  <aside className={styles.labInspector}>
-                    {renderInspector(false)}
-                  </aside>
+                  {inspected !== null && (
+                    <aside className={styles.labInspector}>
+                      {renderInspector(false)}
+                    </aside>
+                  )}
                 </>
               )}
               {mode === 'lab' && (
@@ -586,7 +607,7 @@ export function TerrainStudy() {
                     disabled={shownCount >= 100}
                     onClick={() => addAgent()}
                   >
-                    +
+                    Add agent
                   </button>
                 </div>
                 <div className={styles.cameraControl}>
@@ -623,8 +644,8 @@ export function TerrainStudy() {
             <section className={styles.agentIndex}>
               <h2>Every agent is reachable.</h2>
               <p>
-                Select a name to inspect it. Use the plus markers to grow the
-                fleet.
+                Select a name to inspect it. Outlines show where the fleet can
+                grow.
               </p>
               <div className={styles.agentList}>
                 {Array.from({ length: shownCount }, (_, i) => {
@@ -633,7 +654,7 @@ export function TerrainStudy() {
                     <button
                       key={i}
                       aria-pressed={picked === i}
-                      onClick={() => setSelected(i)}
+                      onClick={() => selectAgent(i)}
                     >
                       <StatusLightMark
                         state={a.state}

@@ -250,16 +250,7 @@
   border-radius: 50%;
   color: #cfe3ed;
 }
-.anchor .lamp {
-  display: grid;
-  place-items: center;
-  width: 25px;
-  height: 25px;
-  background: #182024;
-  box-shadow: 0 2px 8px #0008;
-  border-radius: 50%;
-  border: 1px solid #94a8af50;
-}
+
 .anchor[data-state='needs-you'] {
   color: #ffd0b8;
 }
@@ -272,11 +263,7 @@
 .anchor[data-state='off'] {
   color: #dce5ed;
 }
-.anchor:hover .lamp,
-.chosen .lamp {
-  outline: 1px solid currentColor;
-  outline-offset: 4px;
-}
+
 .agentLabel {
   position: absolute;
   top: 35px;
@@ -290,17 +277,7 @@
   pointer-events: none;
   box-shadow: 0 2px 6px #0004;
 }
-.ghost .lamp {
-  background: #18202440;
-  border: 1px dashed #b3c4cc80;
-  color: #b3c4cc;
-  box-shadow: none;
-  width: 28px;
-  height: 28px;
-}
-.ghost:hover .lamp {
-  background: #455559;
-}
+
 .storyCopy {
   position: absolute;
   z-index: 2;
@@ -1143,9 +1120,7 @@
   opacity: 0;
   transition: opacity 160ms ease;
 }
-.chosen .agentLabel,
-.anchor:hover .agentLabel,
-.anchor:focus-visible .agentLabel {
+.chosen .agentLabel {
   opacity: 1;
 }
 .anchor:hover,
@@ -1181,7 +1156,6 @@
   border: 1px solid transparent;
   border-radius: 10px;
 }
-.anchor:hover .hitRing,
 .anchor:focus-visible .hitRing {
   border-color: #b5d5ff66;
   background: #b5d5ff08;
@@ -1200,15 +1174,10 @@
   font-size: 9px;
   color: #a4b6d0;
 }
-.chosen .agentLabel,
-.anchor:hover .agentLabel,
-.anchor:focus-visible .agentLabel {
+.chosen .agentLabel {
   opacity: 1;
 }
-.ghost {
-  width: 28px;
-  height: 28px;
-}
+
 .stage {
   background: radial-gradient(
     ellipse at 50% 65%,
@@ -1331,11 +1300,6 @@
   }
 }
 
-.stage[data-chapter='0'] .chosen:not(:hover):not(:focus-visible) .agentLabel,
-.stage[data-chapter='5'] .chosen:not(:hover):not(:focus-visible) .agentLabel {
-  opacity: 0;
-}
-
 /* Every story beat keeps the same reading column and world side. */
 .stage .storyCopy {
   top: 16%;
@@ -1386,4 +1350,13 @@
     left: 24px;
     bottom: 150px;
   }
+}
+
+/* Size the pinned scene to the scroll viewport. */
+.scroller {
+  container-type: size;
+}
+.stage {
+  height: 100cqh;
+  min-height: 0;
 }

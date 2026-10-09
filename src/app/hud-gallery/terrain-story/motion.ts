@@ -74,3 +74,9 @@ export function copyOpacity(progress: number, index: number) {
   const distance = Math.abs(progress - index);
   return Math.max(0, Math.min(1, (0.55 - distance) / 0.3));
 }
+
+/** Fleet reveal is reversible and admits a stable prefix of sites. */
+export function storyFleetCount(progress: number) {
+  const t = Math.max(0, Math.min(1, (progress - 3.2) / 0.95));
+  return Math.round(10 + 90 * t * t * (3 - 2 * t));
+}

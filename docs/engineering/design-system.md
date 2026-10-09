@@ -548,10 +548,29 @@ pill corners. Neither exception propagates to production without acceptance.
 
 W18 keeps every narrative beat in one left-hand reading column, with the
 persistent world on the right (stacked on phones). Local agent motion conveys
-activity: individually phased lift/turn, working signal particles, slower
+activity: individually phased lift/turn, slower
 attention pulses, and hover/focus response; Off remains still. One scene clock
 and shared projected heights keep 3D bodies and DOM targets together. Native
 wheel/touch navigation owns scrolling; the camera's built-in input is disabled.
+
+W19 (local review) removes the orbiting particles and hover cards. Inspection
+requires selection; keyboard activation is equivalent to click. Expansion
+opportunities are non-interactive outlines rendered in the world, with the
+fleet beat demonstrating their conversion into occupied territory. A local-only
+vgpu/WebGPU material option shares the same synthetic fleet and DOM controls;
+it does not authorize a production renderer or dependency change.
+
+W20 extends only the local bench: renderer and material are independent controls.
+Vgpu supports Satin, Prism, Mercury, Acrylic, Terrace, Survey and Contour on one
+persistent canvas. Studio/Daylight and surface polish let the operator compare
+reflection, transmission and roughness. Agent/Team focus suppresses peripheral
+contrast without moving the world. The local control row uses existing 11px
+metadata and 4px corners; the pinned scene sizes to its remaining viewport.
+
+W21 approves the shared W19 interaction refinement for the hosted gallery using
+only the six Three.js directions. The pinned scene fits its scroll viewport.
+W20's renderer/material controls and vgpu dependency remain exclusively in the
+separate local study; they are absent from the delivered application.
 
 ### Appearance snapshot consistency
 

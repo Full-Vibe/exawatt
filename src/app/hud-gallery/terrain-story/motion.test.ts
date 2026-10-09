@@ -3,6 +3,7 @@ import {
   copyOpacity,
   createMotionPort,
   sampleStoryPose,
+  storyFleetCount,
   type StoryPose,
 } from './motion';
 
@@ -12,6 +13,17 @@ const pose = (progress: number) => {
   return out;
 };
 describe('continuous terrain story', () => {
+  it('grows a bounded, reversible fleet as the story advances', () => {
+    const counts = Array.from({ length: 501 }, (_, i) =>
+      storyFleetCount(i / 100)
+    );
+    for (let i = 1; i < counts.length; i++) {
+      expect(counts[i]).toBeGreaterThanOrEqual(counts[i - 1]);
+      expect(counts[i]).toBeLessThanOrEqual(100);
+      expect(counts[i]).toBe(storyFleetCount(i / 100));
+    }
+    expect(counts.at(-1)).toBeGreaterThan(counts[0]);
+  });
   it('does not cut the camera at either copy changes or chapter endpoints', () => {
     for (let boundary = 0.5; boundary <= 5; boundary += 0.5) {
       const before = pose(boundary - 0.00001),

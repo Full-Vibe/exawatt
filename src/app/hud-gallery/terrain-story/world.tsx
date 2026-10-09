@@ -29,7 +29,7 @@ import { sampleStoryPose, type MotionPort } from './motion';
 import { sampleAgentLife } from './agent-life';
 import styles from './study.module.css';
 
-interface Props {
+interface WorldProps {
   kind: WorldStyle;
   count: number;
   selected: number;
@@ -39,7 +39,7 @@ interface Props {
   approved: boolean;
   wire: boolean;
   onSelect: (id: number) => void;
-  onAdd: (id: number) => void;
+  inspected: number | null;
   onProgress: (progress: number) => void;
 }
 type LifeAccess = () => { time: number; heights: Float32Array };
@@ -76,7 +76,7 @@ const Territory = memo(function Territory({
   kind,
   count,
   wire,
-}: Pick<Props, 'kind' | 'count' | 'wire'>) {
+}: Pick<WorldProps, 'kind' | 'count' | 'wire'>) {
   const geometry = useMemo(
     () => [0, 1, 2].map(team => teamGeometry(team, 0)),
     []
@@ -161,6 +161,61 @@ const Territory = memo(function Territory({
   );
 });
 
+const ExpansionOutlines = memo(function ExpansionOutlines({
+  kind,
+  count,
+}: Pick<WorldProps, 'kind' | 'count'>) {
+  const geometry = useMemo(() => {
+    const body = agentGeometry(kind);
+    const edges = new THREE.EdgesGeometry(body, 24);
+    body.dispose();
+    return edges;
+  }, [kind]);
+  const ground = useMemo(() => {
+    const points: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      for (const corner of [i, i + 1]) {
+        const angle = (corner * Math.PI) / 3 + Math.PI / 6;
+        points.push(Math.cos(angle) * 0.66, 0, Math.sin(angle) * 0.66);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+    return geo;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => ground.dispose(), [ground]);
+  return (
+    <group name="Expansion outlines">
+      {SITES.slice(count, Math.min(100, count + 6)).map(site => (
+        <group key={site.id} position={[site.x, site.y + 0.035, site.z]}>
+          <lineSegments geometry={ground} raycast={NO_RAYCAST}>
+            <lineBasicMaterial
+              color="#adc3cf"
+              transparent
+              opacity={0.38}
+              depthWrite={false}
+            />
+          </lineSegments>
+          <lineSegments
+            geometry={geometry}
+            position={[0, 0.58, 0]}
+            rotation={[0, (site.id % 3) * 0.45 + 0.25, 0]}
+            raycast={NO_RAYCAST}
+          >
+            <lineBasicMaterial
+              color="#adc3cf"
+              transparent
+              opacity={0.3}
+              depthWrite={false}
+            />
+          </lineSegments>
+        </group>
+      ))}
+    </group>
+  );
+});
+
 const Agents = memo(function Agents({
   kind,
   count,
@@ -170,13 +225,12 @@ const Agents = memo(function Agents({
   motion,
   life,
 }: Pick<
-  Props,
+  WorldProps,
   'kind' | 'count' | 'selected' | 'approved' | 'wire' | 'motion'
 > & { life: LifeAccess }) {
   const bodies = useRef<THREE.InstancedMesh>(null),
     hearts = useRef<THREE.InstancedMesh>(null),
-    sockets = useRef<THREE.InstancedMesh>(null),
-    sparks = useRef<THREE.InstancedMesh>(null);
+    sockets = useRef<THREE.InstancedMesh>(null);
   const geometry = useMemo(() => agentGeometry(kind), [kind]);
   const material = useMemo(() => bodyMaterial(kind, wire), [kind, wire]);
   const statuses = useMemo(
@@ -219,13 +273,7 @@ const Agents = memo(function Agents({
     invalidate();
   }, [count, kind, selected, approved, wire, invalidate]);
   useFrame((state, delta) => {
-    if (
-      !bodies.current ||
-      !hearts.current ||
-      !sockets.current ||
-      !sparks.current
-    )
-      return;
+    if (!bodies.current || !hearts.current || !sockets.current) return;
     const c = cache.current;
     if (!reduced && !document.hidden) c.phase += Math.min(delta, 0.1);
     const frame = life();
@@ -315,26 +363,6 @@ const Agents = memo(function Agents({
         c.color.set(COLORS[status]).multiplyScalar(strength * c.lifePose.pulse);
         hearts.current.setColorAt(i * 3 + part, c.color);
       }
-      // Working agents carry moving signal particles; waiting/result states stay distinct.
-      for (let part = 0; part < 2; part++) {
-        const phase = (reduced ? 0 : c.phase * 0.95) + i * 2.4 + part * Math.PI;
-        const radius = 0.43 + c.hover[i] * 0.035;
-        c.child.position.set(
-          Math.cos(phase) * radius,
-          Math.sin(phase * 1.5) * 0.15,
-          Math.sin(phase) * radius
-        );
-        c.child.scale.setScalar(
-          status === 'active' ? 0.034 : status === 'needs-you' ? 0.024 : 0.00001
-        );
-        if (status !== 'active')
-          c.child.position.set((part === 0 ? -1 : 1) * 0.4, 0.12, 0);
-        c.child.updateMatrix();
-        c.child.matrix.premultiply(c.bodyMatrix);
-        sparks.current.setMatrixAt(i * 2 + part, c.child.matrix);
-        c.color.set(COLORS[status]).multiplyScalar(strength * c.lifePose.pulse);
-        sparks.current.setColorAt(i * 2 + part, c.color);
-      }
       c.dummy.quaternion.setFromUnitVectors(UP, c.normal);
       c.dummy.position.set(site.x, site.y + 0.025, site.z);
       c.dummy.rotateX(Math.PI / 2);
@@ -346,9 +374,6 @@ const Agents = memo(function Agents({
         .multiplyScalar(i === selected ? 0.9 : 0.3 * strength);
       sockets.current.setColorAt(i, c.color);
     }
-    sparks.current.instanceMatrix.needsUpdate = true;
-    if (sparks.current.instanceColor)
-      sparks.current.instanceColor.needsUpdate = true;
     bodies.current.instanceMatrix.needsUpdate = true;
     hearts.current.instanceMatrix.needsUpdate = true;
     sockets.current.instanceMatrix.needsUpdate = true;
@@ -388,15 +413,6 @@ const Agents = memo(function Agents({
         frustumCulled={false}
       >
         <torusGeometry args={[0.48, 0.014, 6, 48]} />
-        <meshBasicMaterial toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh
-        ref={sparks}
-        args={[undefined, undefined, SITES.length * 2]}
-        raycast={NO_RAYCAST}
-        frustumCulled={false}
-      >
-        <sphereGeometry args={[1, 8, 6]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
     </>
@@ -591,7 +607,7 @@ function CameraRig({
   overlay,
   onProgress,
   life,
-}: Pick<Props, 'count' | 'selected' | 'motion' | 'onProgress'> & {
+}: Pick<WorldProps, 'count' | 'selected' | 'motion' | 'onProgress'> & {
   overlay: Overlay;
   life: LifeAccess;
 }) {
@@ -772,7 +788,7 @@ function CameraRig({
   );
 }
 
-export default function World(props: Props) {
+export default function World(props: WorldProps) {
   const overlay = useRef(new Map<number, HTMLButtonElement>());
   const getOverlay = useCallback(() => overlay.current, []);
   const lifeFrame = useRef({
@@ -907,6 +923,7 @@ export default function World(props: Props) {
           {(props.kind === 'survey' || props.kind === 'contour') && (
             <Contours count={props.count} kind={props.kind} />
           )}
+          <ExpansionOutlines kind={props.kind} count={props.count} />
           <Agents
             kind={props.kind}
             count={props.count}
@@ -930,9 +947,8 @@ export default function World(props: Props) {
         </Canvas>
       </WorldBoundary>
       <div className={styles.anchors}>
-        {SITES.slice(0, Math.min(100, props.count + 3)).map(site => {
-          const ghost = site.id >= props.count,
-            agent = agentAt(site.id, props.approved);
+        {SITES.slice(0, props.count).map(site => {
+          const agent = agentAt(site.id, props.approved);
           return (
             <button
               key={site.id}
@@ -941,37 +957,23 @@ export default function World(props: Props) {
                 else overlay.current.delete(site.id);
               }}
               draggable={false}
-              onPointerEnter={() => {
-                if (!ghost) props.motion.change({ hovered: site.id });
-              }}
+              onPointerEnter={() => props.motion.change({ hovered: site.id })}
               onPointerLeave={() => props.motion.change({ hovered: -1 })}
-              onFocus={() => {
-                if (!ghost) props.motion.change({ hovered: site.id });
-              }}
+              onFocus={() => props.motion.change({ hovered: site.id })}
               onBlur={() => props.motion.change({ hovered: -1 })}
-              className={`${styles.anchor} ${ghost ? styles.ghost : ''} ${site.id === props.selected && !ghost ? styles.chosen : ''}`}
+              className={`${styles.anchor} ${site.id === props.inspected ? styles.chosen : ''}`}
               data-state={agent.state}
-              data-agent={ghost ? undefined : site.id}
-              aria-label={
-                ghost
-                  ? 'Add a demo agent here'
-                  : `${agent.name}, ${STATUS_LIGHT_META[agent.state].label}`
-              }
-              aria-pressed={ghost ? undefined : props.selected === site.id}
-              onClick={() =>
-                ghost ? props.onAdd(site.id) : props.onSelect(site.id)
-              }
+              data-agent={site.id}
+              aria-label={`${agent.name}, ${STATUS_LIGHT_META[agent.state].label}`}
+              aria-pressed={props.inspected === site.id}
+              onClick={() => props.onSelect(site.id)}
             >
-              {ghost ? (
-                <span className={styles.lamp}>+</span>
-              ) : (
-                <>
-                  <span className={styles.hitRing} />
-                  <span className={styles.agentLabel}>
-                    {agent.name}
-                    <small>{STATUS_LIGHT_META[agent.state].label}</small>
-                  </span>
-                </>
+              <span className={styles.hitRing} />
+              {props.inspected === site.id && (
+                <span className={styles.agentLabel}>
+                  {agent.name}
+                  <small>{STATUS_LIGHT_META[agent.state].label}</small>
+                </span>
               )}
             </button>
           );

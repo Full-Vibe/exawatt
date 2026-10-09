@@ -17,14 +17,52 @@ try {
     viewport: { width: 1512, height: 982 },
   });
   page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => {
+    if (
+      m.type() === 'error' &&
+      /shader|GL_INVALID|THREE.WebGLProgram/.test(m.text())
+    )
+      errors.push(m.text());
+  });
   await page.goto(`${base}/hud-gallery/terrain-story`, {
-    waitUntil: 'networkidle',
+    waitUntil: 'load',
   });
   await page.locator('[data-ready="true"]').waitFor();
   const scroller = page.locator('[aria-label="Homepage scroll preview"]');
   const canvas = await page.locator('canvas').elementHandle();
   const canvasBounds = await page.locator('canvas').boundingBox();
   const height = await scroller.evaluate(el => el.clientHeight);
+  const initialCount = await page.locator('[data-agent]').count();
+  const firstAgent = page.locator('[data-agent="0"]');
+  const firstBox = await firstAgent.boundingBox();
+  await page.mouse.move(
+    firstBox.x + firstBox.width / 2,
+    firstBox.y + firstBox.height / 2
+  );
+  await page.evaluate(
+    () =>
+      new Promise(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      )
+  );
+  assert.equal(
+    await page.locator('[data-agent] small').count(),
+    0,
+    'hover must not reveal an agent card'
+  );
+  await firstAgent.focus();
+  assert.equal(
+    await page.locator('[data-agent] small').count(),
+    0,
+    'focus alone must not select'
+  );
+  await page.keyboard.press('Enter');
+  assert.equal(await firstAgent.getAttribute('aria-pressed'), 'true');
+  assert.equal(
+    await firstAgent.locator('small').count(),
+    1,
+    'selection reveals the card'
+  );
   // Start over empty world (the old controller cancelled this exact wheel).
   await page.mouse.move(1400, 650);
   for (const direction of [1, -1]) {
@@ -69,9 +107,21 @@ try {
     );
     assert.deepEqual(await page.locator('canvas').boundingBox(), canvasBounds);
     assert(await canvas.evaluate(el => el.isConnected));
-    if (i === 0 || i === 2)
+    if (i === 4)
+      assert(
+        (await page.locator('[data-agent]').count()) > initialCount,
+        'the fleet must expand during the story'
+      );
+    if (i === 0 || i === 2 || i === 4)
       await page.screenshot({ path: `${output}/story-${i}.png` });
   }
+  // Reverse through the expansion beat: surviving agents keep their identities.
+  await page.mouse.wheel(0, -height * 2);
+  await page.waitForFunction(
+    n => document.querySelectorAll('[data-agent]').length === n,
+    initialCount
+  );
+  assert(await canvas.evaluate(el => el.isConnected));
   await page.getByRole('button', { name: 'Visual lab', exact: true }).click();
   await page.waitForFunction(
     () =>
@@ -81,6 +131,14 @@ try {
   // An inactive selection must not park the rest of the working fleet.
   await page.locator('[data-agent="4"]').focus();
   await page.keyboard.press('Enter');
+  await page
+    .getByRole('button', { name: 'Add one demo agent', exact: true })
+    .click();
+  assert.equal(
+    await page.locator('[data-agent="4"]').getAttribute('aria-pressed'),
+    'true',
+    'expansion must not select a different agent'
+  );
   const anchor = page.locator('[data-agent="0"]');
   const original = await anchor.getAttribute('style');
   await page.waitForFunction(
@@ -107,7 +165,7 @@ try {
   });
   mobile.on('pageerror', e => errors.push(e.message));
   await mobile.goto(`${base}/hud-gallery/terrain-story`, {
-    waitUntil: 'networkidle',
+    waitUntil: 'load',
   });
   await mobile.locator('[data-ready="true"]').waitFor();
   const cdp = await mobile.context().newCDPSession(mobile);
@@ -158,7 +216,7 @@ try {
   assert.equal(await mobile.locator('canvas').count(), 1);
   assert.deepEqual(errors, []);
   console.log(
-    '[terrain-story] passed real wheel down/up, fixed column, shared canvas, working-fleet activity, agent-target wheel, native touch down/up, reduced motion and runtime errors'
+    '[terrain-story] passed click-only cards, reversible growth, selection preservation, wheel/keyboard/touch scrolling, fixed column, shared canvas, activity, reduced motion and zero runtime/GPU errors'
   );
 } finally {
   await browser.close();
