@@ -164,9 +164,10 @@ export function ScrollExperience({
       const dot = leaderDotRef.current;
       const card = cardRef.current;
       if (leader && dot) {
-        if (a.exemplar && card) {
+        const cardRect = card?.getBoundingClientRect();
+        // No line on the phone: the card lives in the stack, not the stage.
+        if (a.exemplar && cardRect && cardRect.width > 0) {
           const stageRect = stageEl.getBoundingClientRect();
-          const cardRect = card.getBoundingClientRect();
           const toRight = cardRect.left - stageRect.left > stageRect.width / 2;
           const sx = toRight
             ? cardRect.left - stageRect.left
