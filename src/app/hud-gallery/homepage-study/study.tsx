@@ -17,18 +17,29 @@ import { FLEET_COUNTS, FLEET_MAX } from './fleet-model';
 import { ScrollExperience } from './scroll-experience';
 import type { CopySetId } from './stages';
 import { VISUALS, type VisualId } from './visual-contract';
+import {
+  CRUST_MATERIALS,
+  type CrustMaterialId,
+} from './visuals/crust-materials';
 
 interface StudyState {
   visual: VisualId;
   count: number;
   copy: CopySetId;
+  material: CrustMaterialId;
+  marks: boolean;
 }
 
 function readState(params: URLSearchParams): StudyState {
   const visual = params.get('visual');
   const count = Number(params.get('count'));
   const copy = params.get('copy');
+  const material = params.get('material');
   return {
+    material: CRUST_MATERIALS.some(m => m.id === material)
+      ? (material as CrustMaterialId)
+      : 'matte',
+    marks: params.get('marks') !== 'off',
     visual: VISUALS.some(v => v.id === visual) ? (visual as VisualId) : 'crust',
     count:
       Number.isFinite(count) && count >= 1
@@ -39,7 +50,7 @@ function readState(params: URLSearchParams): StudyState {
 }
 
 function href(state: StudyState): string {
-  return `/hud-gallery/homepage-study?visual=${state.visual}&count=${state.count}&copy=${state.copy}`;
+  return `/hud-gallery/homepage-study?visual=${state.visual}&count=${state.count}&copy=${state.copy}&material=${state.material}&marks=${state.marks ? 'on' : 'off'}`;
 }
 
 function Option({
@@ -116,6 +127,44 @@ export function HomepageStudy() {
               </Option>
             ))}
           </div>
+          {state.visual === 'crust' ? (
+            <>
+              <div className="flex items-center gap-1">
+                <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+                  Material
+                </span>
+                {CRUST_MATERIALS.map(option => (
+                  <Option
+                    key={option.id}
+                    active={option.id === state.material}
+                    href={href({ ...state, material: option.id })}
+                    title={option.note}
+                  >
+                    {option.name}
+                  </Option>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+                  Kind marks
+                </span>
+                <Option
+                  active={state.marks}
+                  href={href({ ...state, marks: true })}
+                  title="The inlay is a glyph for the harness: hexagon Claude Code, open ring Codex, triangle OpenCode, square Grok Build, ring OpenClaw, bar Antigravity."
+                >
+                  On
+                </Option>
+                <Option
+                  active={!state.marks}
+                  href={href({ ...state, marks: false })}
+                  title="Every agent wears the hexagon."
+                >
+                  Off
+                </Option>
+              </div>
+            </>
+          ) : null}
           <div className="flex items-center gap-1">
             <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
               Fleet
@@ -167,6 +216,8 @@ export function HomepageStudy() {
         visual={state.visual}
         baseCount={count}
         copySet={state.copy}
+        material={state.material}
+        marks={state.marks}
         onExpand={expand}
       />
 

@@ -9,13 +9,16 @@
  * like hex tiles. If there is only one agent, a little surrounding territory
  * and some ghost agents you can click to expand."
  *
- * Every tile is one instance of one hex prism. An agent tile carries its
- * status colour and a raised emissive cap; a territory tile is ground; the
- * ring beyond the territory is drawn as ghost outlines and a click on one
- * adds an agent. Delegated children sit as small pips on the parent's
- * vertices with hairline tethers. The sphere body underneath is a dark globe
- * with faint graticule so even a one-agent slice reads as a piece of
- * something round.
+ * Every tile is one instance of one hex prism: territory in the ground
+ * material, agents in the body material of the chosen option (W15c,
+ * `crust-materials.ts`). An agent carries its status as colour and rise, an
+ * inlaid light on top that is a glyph for its harness when kind marks are
+ * on (`crust-glyphs.ts`) and turns while it works, and, in the translucent
+ * options, a light inside the body. The ring beyond the territory is drawn
+ * as ghost outlines and a click on one adds an agent. Delegated children
+ * sit as small pips on the parent's vertices with hairline tethers. The
+ * sphere body underneath is a dark globe with faint graticule so even a
+ * one-agent slice reads as a piece of something round.
  *
  * Per-frame work mutates preallocated arrays and writes instance buffers.
  * Nothing allocates in `useFrame`.
@@ -28,6 +31,17 @@ import { fleetAt } from '../fleet-model';
 import { SPHERE_CENTER } from '../sphere';
 import type { VisualProps } from '../visual-contract';
 import { CameraRig } from './camera-rig';
+import {
+  GLYPH_COUNT,
+  glyphIndexFor,
+  makeGlyphGeometries,
+} from './crust-glyphs';
+import {
+  disposeCrustMaterial,
+  hexPrismGeometry,
+  makeCrustMaterial,
+} from './crust-materials';
+import { useRoomEnvironment } from './environment';
 import { GlobeBody } from './globe-body';
 import {
   highlightWeight,
@@ -42,7 +56,15 @@ const dummy = new THREE.Object3D();
 const color = new THREE.Color();
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
+const spin = new THREE.Quaternion();
+const yAxis = new THREE.Vector3(0, 1, 0);
 const point = { x: 0, y: 0 };
+const WHITE = new THREE.Color(0xffffff);
+/** Neutral body for the metal option; the status lives on the inlay. */
+const METAL = new THREE.Color(0x8a9199);
+/** Frosted clear ground for the acrylic option. */
+const FROST = new THREE.Color(0xb9d2e4);
+const SPIN_RATE = 0.5;
 
 function makeAnim(tileCount: number, pipCount: number) {
   return {
@@ -53,6 +75,7 @@ function makeAnim(tileCount: number, pipCount: number) {
     present: new Uint8Array(tileCount),
     ghostIndex: new Int32Array(tileCount).fill(-1),
     tileOfGhost: new Int32Array(tileCount).fill(-1),
+    glyphCount: new Int32Array(GLYPH_COUNT),
     pulse: 0,
     shown: 1,
     hover: -1,
@@ -66,12 +89,17 @@ export function CrustVisual({
   drive,
   anchor,
   reducedMotion,
+  material,
+  marks,
   onExpand,
   onHoverChange,
 }: VisualProps) {
   const palette = useMemo(() => paletteFrom(theme), [theme]);
   const placements = useMemo(() => placeTiles(model), [model]);
   const tileCount = model.tiles.length;
+  const spec = useMemo(() => makeCrustMaterial(material), [material]);
+  useEffect(() => () => disposeCrustMaterial(spec), [spec]);
+  useRoomEnvironment(spec.environment);
 
   // Children: pips on the parent's vertices.
   const pips = useMemo(() => {
@@ -90,8 +118,12 @@ export function CrustVisual({
     return out;
   }, [model]);
 
-  const tilesRef = useRef<THREE.InstancedMesh>(null);
-  const capsRef = useRef<THREE.InstancedMesh>(null);
+  const groundRef = useRef<THREE.InstancedMesh>(null);
+  const agentsRef = useRef<THREE.InstancedMesh>(null);
+  const coresRef = useRef<THREE.InstancedMesh>(null);
+  const glyphRefs = useRef<(THREE.InstancedMesh | null)[]>(
+    Array.from({ length: GLYPH_COUNT }, () => null)
+  );
   const ghostsRef = useRef<THREE.InstancedMesh>(null);
   const pipsRef = useRef<THREE.InstancedMesh>(null);
   const tethersRef = useRef<THREE.LineSegments>(null);
@@ -110,15 +142,20 @@ export function CrustVisual({
     });
     return map;
   }, [model]);
+  const glyphOfAgent = useMemo(
+    () => Int8Array.from(model.agents, a => glyphIndexFor(a.source)),
+    [model]
+  );
 
   const geometry = useMemo(
-    () => new THREE.CylinderGeometry(0.9, 0.9, TILE_HEIGHT, 6, 1),
+    () => hexPrismGeometry(0.9, TILE_HEIGHT, spec.edge),
+    [spec.edge]
+  );
+  const coreGeometry = useMemo(
+    () => new THREE.CylinderGeometry(0.46, 0.46, 1, 6, 1),
     []
   );
-  const capGeometry = useMemo(
-    () => new THREE.CylinderGeometry(0.56, 0.56, 0.1, 6, 1),
-    []
-  );
+  const glyphGeometries = useMemo(() => makeGlyphGeometries(), []);
   const ghostGeometry = useMemo(() => {
     const g = new THREE.RingGeometry(0.76, 0.86, 6, 1);
     g.rotateX(-Math.PI / 2);
@@ -141,12 +178,20 @@ export function CrustVisual({
   useEffect(
     () => () => {
       geometry.dispose();
-      capGeometry.dispose();
+      coreGeometry.dispose();
+      glyphGeometries.forEach(g => g.dispose());
       ghostGeometry.dispose();
       pipGeometry.dispose();
       tetherGeometry.dispose();
     },
-    [geometry, capGeometry, ghostGeometry, pipGeometry, tetherGeometry]
+    [
+      geometry,
+      coreGeometry,
+      glyphGeometries,
+      ghostGeometry,
+      pipGeometry,
+      tetherGeometry,
+    ]
   );
 
   // Hover and click on the instanced tiles.
@@ -175,12 +220,15 @@ export function CrustVisual({
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
     const d = drive.current;
-    const tiles = tilesRef.current;
-    const caps = capsRef.current;
+    const ground = groundRef.current;
+    const agents = agentsRef.current;
+    const cores = coresRef.current;
     const ghosts = ghostsRef.current;
     const pipMesh = pipsRef.current;
     const tethers = tethersRef.current;
-    if (!tiles || !caps || !ghosts || !pipMesh || !tethers) return;
+    const glyphs = glyphRefs.current;
+    if (!ground || !agents || !cores || !ghosts || !pipMesh || !tethers) return;
+    for (let g = 0; g < GLYPH_COUNT; g += 1) if (!glyphs[g]) return;
 
     const shown = shownRef.current;
     const at = fleetAt(model, Math.round(shown));
@@ -189,6 +237,8 @@ export function CrustVisual({
     const recede = d.recede;
 
     let ghostCount = 0;
+    let coreCount = 0;
+    anim.glyphCount.fill(0);
     for (let i = 0; i < tileCount; i += 1) {
       const tile = model.tiles[i];
       const place = placements[i];
@@ -216,6 +266,7 @@ export function CrustVisual({
         if (d.highlight && weightTarget === 1) liftTarget += 0.25;
         if (tile.agent === d.exemplar) liftTarget += 0.2;
         if (tile.agent === anim.hover) liftTarget += 0.15;
+        liftTarget *= spec.liftScale;
       }
 
       if (reducedMotion) {
@@ -240,7 +291,7 @@ export function CrustVisual({
       const s = anim.scale[i];
       const w = anim.weight[i];
 
-      // Tile body.
+      // Tile body: territory in the ground mesh, agents in the body mesh.
       const thickness = 1 + anim.lift[i] * 2.4;
       tmp.copy(place.position);
       // lift along the normal so the tile grows outward from the sphere
@@ -250,37 +301,89 @@ export function CrustVisual({
       dummy.quaternion.copy(place.quaternion);
       dummy.scale.set(s * 0.97, s * thickness, s * 0.97);
       dummy.updateMatrix();
-      tiles.setMatrixAt(i, dummy.matrix);
+      if (agent) {
+        agents.setMatrixAt(i, dummy.matrix);
+        dummy.scale.setScalar(0);
+        dummy.updateMatrix();
+        ground.setMatrixAt(i, dummy.matrix);
+      } else {
+        ground.setMatrixAt(i, dummy.matrix);
+        dummy.scale.setScalar(0);
+        dummy.updateMatrix();
+        agents.setMatrixAt(i, dummy.matrix);
+      }
 
       if (agent) {
         color.copy(palette.status[agent.status]);
+        color.lerp(WHITE, spec.pastel);
+        color.lerp(METAL, 1 - spec.bodyTint);
         color.lerp(palette.dim, (1 - w) * 0.78);
         if (agent.status === 'active' && w > 0.5)
           color.lerp(palette.label, breathe * 0.08);
+        color.lerp(palette.body, recede * 0.7);
+        agents.setColorAt(i, color);
       } else {
         color.copy(palette.ground);
         // Territory tiles nearest the agents are a touch brighter.
         color.lerp(palette.groundEdge, tile.ring === 0 ? 0.3 : 0.12);
+        color.lerp(FROST, spec.groundPale);
+        color.lerp(palette.body, recede * 0.7);
+        ground.setColorAt(i, color);
       }
-      color.lerp(palette.body, recede * 0.7);
-      tiles.setColorAt(i, color);
 
-      // Emissive cap on agent tiles.
-      const capScale = agent ? s * (0.75 + 0.25 * w) : 0;
-      tmp.addScaledVector(tmp2, (TILE_HEIGHT * thickness) / 2 + 0.05);
-      dummy.position.copy(tmp);
-      dummy.scale.set(capScale, capScale > 0 ? 1 : 0, capScale);
-      dummy.updateMatrix();
-      caps.setMatrixAt(i, dummy.matrix);
+      // The status light: an inlaid glyph on top, and inside the body for
+      // the translucent options.
       if (agent) {
+        const glyphIndex = marks ? glyphOfAgent[agent.id] : 0;
+        const mesh = glyphs[glyphIndex] as THREE.InstancedMesh;
+        const slot = anim.glyphCount[glyphIndex];
+        anim.glyphCount[glyphIndex] = slot + 1;
+        const capScale = s * (0.75 + 0.25 * w);
+        tmp.addScaledVector(tmp2, (TILE_HEIGHT * thickness) / 2 + 0.05);
+        dummy.position.copy(tmp);
+        dummy.quaternion.copy(place.quaternion);
+        if (agent.status === 'active' && !reducedMotion) {
+          spin.setFromAxisAngle(
+            yAxis,
+            anim.pulse * SPIN_RATE * (0.7 + 0.6 * w) + agent.id * 0.7
+          );
+          dummy.quaternion.multiply(spin);
+        }
+        dummy.scale.set(capScale, 1, capScale);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(slot, dummy.matrix);
+        // A lit glyph: the status hue carried toward white, never past it,
+        // so amber stays amber instead of clipping to cream.
         color.copy(palette.status[agent.status]);
-        const glow =
-          0.55 +
-          0.9 * w +
-          (agent.status === 'needs-you' ? breathe * 0.5 * w : 0);
-        color.multiplyScalar(glow * (1 - recede * 0.6));
-      } else color.setScalar(0);
-      caps.setColorAt(i, color);
+        const lit =
+          0.22 +
+          0.2 * w +
+          (agent.status === 'needs-you' ? breathe * 0.25 * w : 0);
+        color.lerp(WHITE, Math.min(0.6, lit * spec.inlayGlow));
+        color.multiplyScalar((0.75 + 0.35 * w) * (1 - recede * 0.6));
+        mesh.setColorAt(slot, color);
+
+        if (spec.core) {
+          const coreHeight = TILE_HEIGHT * thickness * 0.6;
+          tmp
+            .copy(place.position)
+            .addScaledVector(tmp2, (TILE_HEIGHT * thickness) / 2);
+          dummy.position.copy(tmp);
+          dummy.quaternion.copy(place.quaternion);
+          dummy.scale.set(s * 0.9, s * coreHeight, s * 0.9);
+          dummy.updateMatrix();
+          cores.setMatrixAt(coreCount, dummy.matrix);
+          color.copy(palette.status[agent.status]);
+          color.multiplyScalar(
+            (0.9 +
+              1.1 * w +
+              (agent.status === 'needs-you' ? breathe * 0.8 * w : 0)) *
+              (1 - recede * 0.6)
+          );
+          cores.setColorAt(coreCount, color);
+          coreCount += 1;
+        }
+      }
 
       // Ghosts: the next ring out, drawn as outlines, clickable.
       const ghost = at.tileGhost(tile);
@@ -306,6 +409,13 @@ export function CrustVisual({
     }
     for (let g = ghostCount; g < tileCount; g += 1) anim.tileOfGhost[g] = -1;
     ghosts.count = ghostCount;
+    cores.count = coreCount;
+    for (let g = 0; g < GLYPH_COUNT; g += 1) {
+      const mesh = glyphs[g] as THREE.InstancedMesh;
+      mesh.count = anim.glyphCount[g];
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
 
     // Children pips and tethers.
     const positions = tethers.geometry.attributes
@@ -351,12 +461,14 @@ export function CrustVisual({
     positions.needsUpdate = true;
     tethers.visible = pips.length > 0;
 
-    tiles.instanceMatrix.needsUpdate = true;
-    caps.instanceMatrix.needsUpdate = true;
+    ground.instanceMatrix.needsUpdate = true;
+    agents.instanceMatrix.needsUpdate = true;
+    cores.instanceMatrix.needsUpdate = true;
     ghosts.instanceMatrix.needsUpdate = true;
     pipMesh.instanceMatrix.needsUpdate = true;
-    if (tiles.instanceColor) tiles.instanceColor.needsUpdate = true;
-    if (caps.instanceColor) caps.instanceColor.needsUpdate = true;
+    if (ground.instanceColor) ground.instanceColor.needsUpdate = true;
+    if (agents.instanceColor) agents.instanceColor.needsUpdate = true;
+    if (cores.instanceColor) cores.instanceColor.needsUpdate = true;
     if (ghosts.instanceColor) ghosts.instanceColor.needsUpdate = true;
     if (pipMesh.instanceColor) pipMesh.instanceColor.needsUpdate = true;
 
@@ -393,7 +505,8 @@ export function CrustVisual({
       size.width,
       size.height,
       a,
-      TILE_HEIGHT + 0.5
+      // clear of a lifted exemplar, which stands three tile heights tall
+      TILE_HEIGHT + 1.4
     );
   });
 
@@ -407,30 +520,55 @@ export function CrustVisual({
       />
       <color attach="background" args={[theme.canvas]} />
       <fog attach="fog" args={[theme.canvas, 60, 160]} />
-      <hemisphereLight args={[0xcfe6ff, 0x101420, 0.9]} />
-      <directionalLight position={[30, 60, 20]} intensity={1.6} />
-      <directionalLight position={[-40, 20, -30]} intensity={0.35} />
+      <hemisphereLight args={[0xcfe6ff, 0x101420, 0.9 * spec.lightScale]} />
+      <directionalLight
+        position={[30, 60, 20]}
+        intensity={1.6 * spec.lightScale}
+      />
+      <directionalLight
+        position={[-40, 20, -30]}
+        intensity={0.35 * spec.lightScale}
+      />
 
       <GlobeBody palette={palette} graticule={0.1} />
 
       <instancedMesh
-        ref={tilesRef}
-        args={[geometry, undefined, tileCount]}
+        ref={groundRef}
+        args={[geometry, spec.ground, tileCount]}
+        raycast={() => null}
+        frustumCulled={false}
+      />
+
+      <instancedMesh
+        ref={agentsRef}
+        args={[geometry, spec.agent, tileCount]}
         onPointerMove={hoverTile}
         onPointerOut={leaveTile}
         frustumCulled={false}
-      >
-        <meshStandardMaterial roughness={0.6} metalness={0.15} />
-      </instancedMesh>
+      />
 
       <instancedMesh
-        ref={capsRef}
-        args={[capGeometry, undefined, tileCount]}
+        ref={coresRef}
+        args={[coreGeometry, undefined, tileCount]}
         raycast={() => null}
         frustumCulled={false}
       >
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
+
+      {glyphGeometries.map((glyph, g) => (
+        <instancedMesh
+          key={g}
+          ref={el => {
+            glyphRefs.current[g] = el;
+          }}
+          args={[glyph, undefined, tileCount]}
+          raycast={() => null}
+          frustumCulled={false}
+        >
+          <meshBasicMaterial toneMapped={false} />
+        </instancedMesh>
+      ))}
 
       <instancedMesh
         ref={ghostsRef}

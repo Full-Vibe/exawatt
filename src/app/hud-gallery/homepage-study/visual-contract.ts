@@ -10,6 +10,7 @@ import type { RefObject } from 'react';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
+import type { CrustMaterialId } from './visuals/crust-materials';
 
 export type VisualId = 'crust' | 'lidar' | 'dome' | 'prism' | 'mercury';
 
@@ -109,6 +110,10 @@ export interface VisualProps {
   drive: RefObject<StoryDrive>;
   anchor: VisualAnchor;
   reducedMotion: boolean;
+  /** Body material for the Crust geometry (W15c). Other visuals ignore it. */
+  material: CrustMaterialId;
+  /** Kind marks: the inlay is a glyph for the agent's harness (W15c). */
+  marks: boolean;
   /** A ghost tile was clicked: the operator wants one more agent. */
   onExpand?: () => void;
   onHoverChange?: (agent: number) => void;

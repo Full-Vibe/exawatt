@@ -27,6 +27,7 @@ import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion
 import { DownloadCta } from '@/components/site/bands/download-cta';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { AgentCard } from './agent-card';
+import type { CrustMaterialId } from './visuals/crust-materials';
 import {
   FLEET_MAX,
   fleetModel,
@@ -72,11 +73,15 @@ export function ScrollExperience({
   visual,
   baseCount,
   copySet,
+  material,
+  marks,
   onExpand,
 }: {
   visual: VisualId;
   baseCount: number;
   copySet: CopySetId;
+  material: CrustMaterialId;
+  marks: boolean;
   onExpand: () => void;
 }) {
   const model = useMemo(() => fleetModel(), []);
@@ -242,6 +247,8 @@ export function ScrollExperience({
           anchor={anchor.current}
           reducedMotion={reducedMotion}
           visible={visible}
+          material={material}
+          marks={marks}
           onExpand={onExpand}
           onHoverChange={setHoverAgent}
         />

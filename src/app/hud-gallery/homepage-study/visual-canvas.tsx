@@ -12,6 +12,7 @@ import type { RefObject } from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
 import type { StoryDrive, VisualAnchor, VisualId } from './visual-contract';
+import type { CrustMaterialId } from './visuals/crust-materials';
 import { CrustVisual } from './visuals/crust-visual';
 import { DomeVisual } from './visuals/dome-visual';
 import { LidarVisual } from './visuals/lidar-visual';
@@ -26,10 +27,14 @@ export function VisualCanvas({
   anchor,
   reducedMotion,
   visible,
+  material,
+  marks,
   onExpand,
   onHoverChange,
 }: {
   visual: VisualId;
+  material: CrustMaterialId;
+  marks: boolean;
   model: FleetModel;
   theme: SpatialThemeSnapshot;
   drive: RefObject<StoryDrive>;
@@ -62,8 +67,10 @@ export function VisualCanvas({
       aria-hidden
     >
       <Visual
-        key={visual}
+        key={`${visual}-${material}`}
         model={model}
+        material={material}
+        marks={marks}
         theme={theme}
         drive={drive}
         anchor={anchor}
