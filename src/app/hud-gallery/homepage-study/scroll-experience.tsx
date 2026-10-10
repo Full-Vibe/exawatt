@@ -28,8 +28,12 @@ import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion
 import { DownloadCta } from '@/components/site/bands/download-cta';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { AgentCard } from './agent-card';
+import { AgentPanel } from './agent-panel';
 import type { CrustMaterialId } from './visuals/crust-materials';
 import type { CrustSignalId } from './visuals/crust-signal';
+import type { EnvironmentKind } from './visuals/environment';
+
+export type SnapMode = 'off' | 'soft' | 'hard';
 import {
   FLEET_MAX,
   fleetModel,
@@ -43,6 +47,7 @@ import {
   type CopySetId,
   type Stage,
   RAIL_DWELL,
+  stageBlend,
 } from './stages';
 import {
   VisualAnchor,
@@ -60,6 +65,7 @@ const VisualCanvas = dynamic(
 const STAGE_SCREENS = 1.0;
 /** Where the stage pins: under the 3rem site header (`top-12`). */
 const PIN_TOP = 48;
+const labelBlend = { from: 0, to: 0, t: 0 };
 
 function exemplarFor(
   agents: FleetAgent[],
@@ -81,7 +87,8 @@ export function ScrollExperience({
   material,
   marks,
   signal,
-  onExpand,
+  light,
+  snap,
 }: {
   visual: VisualId;
   baseCount: number;
@@ -89,7 +96,10 @@ export function ScrollExperience({
   material: CrustMaterialId;
   marks: boolean;
   signal: CrustSignalId;
-  onExpand: () => void;
+  light: EnvironmentKind;
+  /** Off: park anywhere. Soft: a pull to the nearest frame when the scroll
+   *  stops near one. Hard: always land on a frame. */
+  snap: SnapMode;
 }) {
   const model = useMemo(() => fleetModel(), []);
   const theme = useMemo(() => heroBoardTheme('classic'), []);
@@ -164,7 +174,7 @@ export function ScrollExperience({
     d.highlights = highlights;
     const index = stageAt(progress);
     const current = STAGES[index];
-    d.count = current.growToFleet ? FLEET_MAX : baseCount;
+    d.count = baseCount;
     d.exemplar = current.card
       ? exemplarFor(model.agents, d.count, highlights[index])
       : -1;
@@ -180,6 +190,53 @@ export function ScrollExperience({
       window.removeEventListener('resize', sync);
     };
   }, [sync]);
+
+  // Snap: when the scroll stops, pull to the nearest composed frame.
+  useEffect(() => {
+    if (snap === 'off') return;
+    let timer = 0;
+    let settling = false;
+    const scrollYFor = (progress: number) => {
+      const section = sectionRef.current;
+      const stageEl = stageRef.current;
+      if (!section || !stageEl) return null;
+      const rect = section.getBoundingClientRect();
+      const travel = Math.max(1, rect.height - stageEl.offsetHeight);
+      const last = STAGES.length - 1;
+      const pinned = Math.max(
+        0,
+        Math.min(
+          travel,
+          ((progress - RAIL_DWELL) / (last - 2 * RAIL_DWELL)) * travel
+        )
+      );
+      return rect.top + window.scrollY + pinned - PIN_TOP;
+    };
+    const settle = () => {
+      const p = drive.current.progress;
+      const nearest = Math.round(p);
+      const away = Math.abs(p - nearest);
+      if (away < 0.01) return;
+      if (snap === 'soft' && away > 0.3) return;
+      const top = scrollYFor(nearest);
+      if (top === null || Math.abs(top - window.scrollY) < 2) return;
+      settling = true;
+      window.scrollTo({ top, behavior: 'smooth' });
+      window.setTimeout(() => {
+        settling = false;
+      }, 700);
+    };
+    const onScroll = () => {
+      if (settling) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(settle, 160);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, [snap]);
 
   // Park the canvas when the section is off screen.
   useEffect(() => {
@@ -198,6 +255,8 @@ export function ScrollExperience({
   const cardRef = useRef<HTMLDivElement>(null);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const focusRef = useRef<HTMLDivElement>(null);
+  const openLeaderRef = useRef<SVGPolylineElement>(null);
+  const openDotRef = useRef<SVGCircleElement>(null);
   useEffect(() => {
     let frame = 0;
     const tick = () => {
@@ -232,7 +291,11 @@ export function ScrollExperience({
           dot.style.opacity = '0';
         }
       }
-      // labels
+      // labels, faded with the stage on the rail
+      const lb = stageBlend(drive.current.rail, undefined, labelBlend);
+      const labelsOn =
+        (STAGES[lb.from].labels ? 1 - lb.t : 0) +
+        (STAGES[lb.to].labels ? lb.t : 0);
       for (let i = 0; i < a.labels.length; i += 1) {
         const el = labelRefs.current[i];
         const label = a.labels[i];
@@ -241,7 +304,7 @@ export function ScrollExperience({
           el.style.opacity = '0';
           continue;
         }
-        el.style.opacity = String(1 - drive.current.recede);
+        el.style.opacity = String(labelsOn * (1 - drive.current.recede));
         el.style.transform = `translate(${label.x}px, ${label.y}px) translate(-50%, -100%)`;
         const count = el.querySelector('[data-label-count]');
         if (count) {
@@ -249,20 +312,33 @@ export function ScrollExperience({
           if (count.textContent !== text) count.textContent = text;
         }
       }
-      // the selected agent's card, beside its tile, on whichever side has room
+      // the open agent: a panel tethered to its tile, on the side with room
       const focus = focusRef.current;
-      if (focus) {
+      const openLeader = openLeaderRef.current;
+      const openDot = openDotRef.current;
+      if (focus && openLeader && openDot) {
         if (a.focusPoint && a.focus >= 0) {
           const stageRect = stageEl.getBoundingClientRect();
-          const toLeft = a.focusPoint.x > stageRect.width * 0.62;
+          const fx = a.focusPoint.x;
+          const fy = a.focusPoint.y;
+          const toLeft = fx > stageRect.width * 0.62;
+          const gap = 54;
+          const px = toLeft ? fx - gap : fx + gap;
           focus.style.opacity = '1';
           focus.style.pointerEvents = 'auto';
           focus.style.transform = toLeft
-            ? `translate(${a.focusPoint.x - 22}px, ${a.focusPoint.y}px) translate(-100%, -50%)`
-            : `translate(${a.focusPoint.x + 22}px, ${a.focusPoint.y}px) translate(0, -50%)`;
+            ? `translate(${px}px, ${fy}px) translate(-100%, -50%) scale(1)`
+            : `translate(${px}px, ${fy}px) translate(0, -50%) scale(1)`;
+          openLeader.setAttribute('points', `${fx},${fy} ${px},${fy}`);
+          openLeader.style.opacity = '1';
+          openDot.setAttribute('cx', String(fx));
+          openDot.setAttribute('cy', String(fy));
+          openDot.style.opacity = '1';
         } else {
           focus.style.opacity = '0';
           focus.style.pointerEvents = 'none';
+          openLeader.style.opacity = '0';
+          openDot.style.opacity = '0';
         }
       }
     };
@@ -301,7 +377,7 @@ export function ScrollExperience({
           material={material}
           marks={marks}
           signal={signal}
-          onExpand={onExpand}
+          light={light}
           onHoverChange={onHoverChange}
         />
 
@@ -343,18 +419,33 @@ export function ScrollExperience({
             className="transition-opacity duration-300"
             style={{ opacity: 0 }}
           />
+          <polyline
+            ref={openLeaderRef}
+            fill="none"
+            stroke={theme.selection}
+            strokeWidth="1"
+            className="transition-opacity duration-200"
+            style={{ opacity: 0 }}
+          />
+          <circle
+            ref={openDotRef}
+            r="3"
+            fill={theme.selection}
+            className="transition-opacity duration-200"
+            style={{ opacity: 0 }}
+          />
         </svg>
 
         {/* The selected agent. Click a tile to open it, anywhere else or
             Escape to close. */}
         <div
           ref={focusRef}
-          className="absolute left-0 top-0 opacity-0 transition-opacity duration-150 will-change-transform"
+          className="absolute left-0 top-0 opacity-0 transition-[opacity,transform] duration-200 will-change-transform"
           onPointerDown={e => e.stopPropagation()}
           onPointerUp={e => e.stopPropagation()}
         >
           {selectedAgent ? (
-            <AgentCard agent={selectedAgent} compact accent={theme.selection} />
+            <AgentPanel agent={selectedAgent} theme={theme} />
           ) : null}
         </div>
 
@@ -423,7 +514,9 @@ function Panel({
       className={cn(
         'absolute flex max-w-[34rem] flex-col gap-5 transition-opacity duration-500',
         placement,
-        active ? 'opacity-100' : 'opacity-0'
+        // an invisible panel from another stage must never swallow a click
+        // meant for the world under it
+        active ? 'opacity-100' : 'opacity-0 [&_*]:!pointer-events-none'
       )}
       data-study-panel={stage.id}
       aria-hidden={!active}
@@ -433,6 +526,7 @@ function Panel({
         copySet={copySet}
         agent={agent}
         cardRef={cardRef}
+        interactive={active}
       />
     </div>
   );
@@ -443,11 +537,15 @@ function PanelBody({
   copySet,
   agent,
   cardRef,
+  interactive = true,
 }: {
   stage: Stage;
   copySet: CopySetId;
   agent: FleetAgent | null;
   cardRef?: React.RefObject<HTMLDivElement | null>;
+  /** Only the stage on screen may take the pointer. An invisible panel
+   *  from another stage must never swallow a click meant for the world. */
+  interactive?: boolean;
 }) {
   const copy = stage.copy[copySet];
   const isLanding = stage.id === 'landing';
@@ -457,7 +555,12 @@ function PanelBody({
   return (
     <>
       {stage.card && agent ? (
-        <div ref={cardRef} className="pointer-events-auto">
+        <div
+          ref={cardRef}
+          className={
+            interactive ? 'pointer-events-auto' : 'pointer-events-none'
+          }
+        >
           <AgentCard agent={agent} />
         </div>
       ) : null}
@@ -466,7 +569,8 @@ function PanelBody({
       ) : null}
       <h2
         className={cn(
-          'pointer-events-auto text-balance font-semibold tracking-tight text-white',
+          'text-balance font-semibold tracking-tight text-white',
+          interactive ? 'pointer-events-auto' : 'pointer-events-none',
           isLanding && 'text-4xl leading-[1.05] md:text-6xl',
           isDownload && 'text-5xl leading-[1.02] md:text-7xl',
           !isLanding && !isDownload && 'text-3xl leading-tight md:text-4xl'

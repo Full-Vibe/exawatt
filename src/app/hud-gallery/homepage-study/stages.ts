@@ -45,8 +45,12 @@ export interface Stage {
   highlight: Partial<Record<CopySetId, StatusLightState>>;
   /** Whether an agent card is shown, pointed at an exemplar. */
   card: boolean;
-  /** The visual grows to the full fleet on this stage. */
-  growToFleet: boolean;
+  /** What the camera fits: the whole fleet, or the first Project close.
+   *  The page opens on the fleet, the dissections go in, the fleet stage
+   *  comes all the way back out (operator 2026-10-09). */
+  focus: 'fleet' | 'project';
+  /** Project names over the world. Off under centred type. */
+  labels: boolean;
   copy: Record<CopySetId, StageCopy>;
 }
 
@@ -56,7 +60,8 @@ export const STAGES: Stage[] = [
     panel: 'center-top',
     highlight: {},
     card: false,
-    growToFleet: false,
+    focus: 'fleet',
+    labels: false,
     copy: {
       deck: {
         headline: ['Today you run 10 agents.', 'Tomorrow you will run 10,000.'],
@@ -73,7 +78,8 @@ export const STAGES: Stage[] = [
     panel: 'right',
     highlight: { deck: 'active', canon: 'active' },
     card: true,
-    growToFleet: false,
+    focus: 'project',
+    labels: true,
     copy: {
       deck: {
         headline: ["Easily see each agent's", 'working status'],
@@ -93,7 +99,8 @@ export const STAGES: Stage[] = [
     panel: 'left',
     highlight: { deck: 'needs-you', canon: 'needs-you' },
     card: true,
-    growToFleet: false,
+    focus: 'project',
+    labels: true,
     copy: {
       deck: {
         headline: ['The agents that need', 'you, surfaced.'],
@@ -113,7 +120,8 @@ export const STAGES: Stage[] = [
     panel: 'right',
     highlight: { deck: 'off', canon: 'result' },
     card: true,
-    growToFleet: false,
+    focus: 'project',
+    labels: true,
     copy: {
       deck: {
         headline: ['Queued agents orbit', 'the core'],
@@ -135,7 +143,8 @@ export const STAGES: Stage[] = [
     panel: 'center-top',
     highlight: {},
     card: false,
-    growToFleet: true,
+    focus: 'fleet',
+    labels: true,
     copy: {
       deck: {
         headline: ['All your fleets in one view.'],
@@ -154,7 +163,8 @@ export const STAGES: Stage[] = [
     panel: 'center',
     highlight: {},
     card: false,
-    growToFleet: true,
+    focus: 'fleet',
+    labels: false,
     copy: {
       deck: {
         headline: ['Choose your own model across', 'GPT, Grok, and Claude.'],
@@ -175,7 +185,8 @@ export const STAGES: Stage[] = [
     panel: 'center',
     highlight: {},
     card: false,
-    growToFleet: true,
+    focus: 'fleet',
+    labels: false,
     copy: {
       deck: {
         headline: ['Try Exawatt for free'],
@@ -209,7 +220,6 @@ interface RailWindow {
  *  the last, so there is no dead scroll at either end of the page. */
 export const RAIL_DWELL = 0.25;
 const RAIL_WINDOW: RailWindow = { start: RAIL_DWELL, end: 1 - RAIL_DWELL };
-export const GROWTH_WINDOW: RailWindow = { start: 0.12, end: 0.92 };
 
 interface StageBlend {
   from: number;

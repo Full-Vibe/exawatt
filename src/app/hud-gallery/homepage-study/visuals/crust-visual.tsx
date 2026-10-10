@@ -109,6 +109,8 @@ function makeAnim(tileCount: number, pipCount: number) {
     pulse: 0,
     shown: 1,
     hover: -1,
+    lastSelected: -1,
+    punch: new Float32Array(tileCount),
     pipScale: new Float32Array(pipCount),
   };
 }
@@ -326,6 +328,12 @@ export function CrustVisual({
     let rimCount = 0;
     let glowCount = 0;
     selection.visible = false;
+    // A click lands with a small bounce.
+    if (d.selected !== anim.lastSelected) {
+      anim.lastSelected = d.selected;
+      const t = d.selected >= 0 ? tileOfAgent[d.selected] : -1;
+      if (t >= 0) anim.punch[t] = 1;
+    }
     anim.glyphCount.fill(0);
     for (let i = 0; i < tileCount; i += 1) {
       const tile = model.tiles[i];
@@ -360,6 +368,10 @@ export function CrustVisual({
         if (tile.agent === anim.hover) liftTarget += 0.15;
         if (tile.agent === d.selected) liftTarget += 0.3;
         liftTarget *= spec.liftScale * sig.liftScale;
+        if (anim.punch[i] > 0) {
+          anim.punch[i] = Math.max(0, anim.punch[i] - delta * 2.4);
+          liftTarget += Math.sin(anim.punch[i] * Math.PI) * 0.4;
+        }
       }
 
       if (reducedMotion) {
@@ -734,7 +746,8 @@ export function CrustVisual({
       <instancedMesh
         ref={ghostsRef}
         args={[ghostGeometry, undefined, tileCount]}
-        onClick={clickGhost}
+        onClick={onExpand ? clickGhost : undefined}
+        raycast={onExpand ? undefined : () => null}
         frustumCulled={false}
       >
         <meshBasicMaterial

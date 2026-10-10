@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import { AgentCard } from '../homepage-study/agent-card';
+import { AgentPanel } from '../homepage-study/agent-panel';
 import { STATUS_LABEL } from '../homepage-study/fleet-model';
 import {
   STATUS_ORDER,
@@ -379,11 +379,7 @@ export function AgentMaterialStudy() {
             onPointerUp={e => e.stopPropagation()}
           >
             {selectedAgent ? (
-              <AgentCard
-                agent={selectedAgent}
-                compact
-                accent={theme.selection}
-              />
+              <AgentPanel agent={selectedAgent} theme={theme} />
             ) : null}
           </div>
           <p className="pointer-events-none absolute bottom-3 left-4 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">

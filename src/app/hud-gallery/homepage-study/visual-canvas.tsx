@@ -49,7 +49,7 @@ export function VisualCanvas({
   anchor: VisualAnchor;
   reducedMotion: boolean;
   visible: boolean;
-  onExpand: () => void;
+  onExpand?: () => void;
   onHoverChange: (agent: number) => void;
 }) {
   const VISUAL_COMPONENTS = {

@@ -13,26 +13,20 @@
  * the stage blend (`stageBlend`) turns it into a dwell and a move, and
  * polar, azimuth, zoom, drop, reading side, fleet count, extent and centroid
  * are all read off that blend, so the camera travels one path and the
- * visual's states move with it. During growth the count ramps on the same
- * rail, the centroid runs straight from the first Project to the whole
- * fleet, and the fitted extent reads a look-ahead curve that widens before
- * each Project lands rather than stepping when it does.
+ * visual's states move with it. The fleet never grows mid-story: the page
+ * opens on all of it, the dissections fit the first Project, and the fleet
+ * stage fits all of it again, with extent and centroid blended between the
+ * two fits on the rail.
  */
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { RefObject } from 'react';
-import { fleetAt, FLEET_MAX, type FleetModel } from '../fleet-model';
+import { fleetAt, type FleetModel } from '../fleet-model';
 import { axialToPlane } from '../fleet-model';
 import { planeToSphere } from '../sphere';
-import {
-  GROWTH_WINDOW,
-  panelSide,
-  stageBlend,
-  stageIndex,
-  STAGES,
-} from '../stages';
+import { panelSide, stageBlend, stageIndex, STAGES } from '../stages';
 import type { StoryDrive } from '../visual-contract';
 
 interface StageFraming {
@@ -72,54 +66,69 @@ export function fleetExtent(model: FleetModel, count: number): number {
 }
 
 interface FitTables {
-  /** Fitted extent at every integer count, widened ahead of each Project
-   *  and averaged, so a growing fleet pulls the camera back on a curve. */
-  extent: Float32Array;
-  cx: Float32Array;
-  cy: Float32Array;
+  /** Fitted extent and centroid at every integer count, for the whole
+   *  fleet and for the first Project alone, so a stage can fit either and
+   *  the rail can blend between them. */
+  fleetExtent: Float32Array;
+  fleetCx: Float32Array;
+  fleetCy: Float32Array;
+  projectExtent: Float32Array;
+  projectCx: Float32Array;
+  projectCy: Float32Array;
 }
 
-const LOOK_AHEAD = 60;
-const AVERAGE_HALF = 30;
 const fitTableCache = new WeakMap<FleetModel, FitTables>();
 
 function fitTables(model: FleetModel): FitTables {
   const hit = fitTableCache.get(model);
   if (hit) return hit;
   const n = model.agents.length;
-  const raw = new Float32Array(n + 1);
-  const ahead = new Float32Array(n + 1);
-  const extent = new Float32Array(n + 1);
-  const cx = new Float32Array(n + 1);
-  const cy = new Float32Array(n + 1);
+  const t: FitTables = {
+    fleetExtent: new Float32Array(n + 1),
+    fleetCx: new Float32Array(n + 1),
+    fleetCy: new Float32Array(n + 1),
+    projectExtent: new Float32Array(n + 1),
+    projectCx: new Float32Array(n + 1),
+    projectCy: new Float32Array(n + 1),
+  };
+  const first = model.projects[0];
+  const [pcx, pcy] = axialToPlane(first.center);
   let sx = 0;
   let sy = 0;
+  let px = 0;
+  let py = 0;
+  let pn = 0;
   for (let count = 0; count <= n; count += 1) {
-    raw[count] = fleetExtent(model, Math.max(1, count));
+    t.fleetExtent[count] = fleetExtent(model, Math.max(1, count));
+    const at = fleetAt(model, Math.max(1, count));
+    let r = 0;
+    for (const tile of model.tiles) {
+      if (tile.project !== first.id || !at.tilePresent(tile)) continue;
+      const [x, y] = axialToPlane(tile.axial);
+      r = Math.max(r, Math.hypot(x - pcx, y - pcy));
+    }
+    t.projectExtent[count] = r + 2.6;
     if (count > 0) {
-      const [px, py] = axialToPlane(model.agents[count - 1].tile);
-      sx += px;
-      sy += py;
-      cx[count] = sx / count;
-      cy[count] = sy / count;
+      const agent = model.agents[count - 1];
+      const [x, y] = axialToPlane(agent.tile);
+      sx += x;
+      sy += y;
+      t.fleetCx[count] = sx / count;
+      t.fleetCy[count] = sy / count;
+      if (agent.project === first.id) {
+        px += x;
+        py += y;
+        pn += 1;
+      }
+      t.projectCx[count] = pn ? px / pn : pcx;
+      t.projectCy[count] = pn ? py / pn : pcy;
+    } else {
+      t.projectCx[count] = pcx;
+      t.projectCy[count] = pcy;
     }
   }
-  for (let count = 0; count <= n; count += 1) {
-    let m = 0;
-    for (let c = 0; c <= Math.min(n, count + LOOK_AHEAD); c += 1)
-      m = Math.max(m, raw[c]);
-    ahead[count] = m;
-  }
-  for (let count = 0; count <= n; count += 1) {
-    const lo = Math.max(0, count - AVERAGE_HALF);
-    const hi = Math.min(n, count + AVERAGE_HALF);
-    let sum = 0;
-    for (let c = lo; c <= hi; c += 1) sum += ahead[c];
-    extent[count] = sum / (hi - lo + 1);
-  }
-  const tables = { extent, cx, cy };
-  fitTableCache.set(model, tables);
-  return tables;
+  fitTableCache.set(model, t);
+  return t;
 }
 
 function readTable(table: Float32Array, count: number): number {
@@ -183,7 +192,6 @@ export function CameraRig({
       camUp: new THREE.Vector3(),
       up: new THREE.Vector3(0, 1, 0),
       blend: { from: 0, to: 0, t: 0 },
-      growth: { from: 0, to: 0, t: 0 },
     }),
     []
   );
@@ -248,7 +256,6 @@ export function CameraRig({
       ? d.progress
       : THREE.MathUtils.damp(s.progress, d.progress, STORY_RATE, delta);
     const b = stageBlend(s.progress, undefined, scratch.blend);
-    const g = stageBlend(s.progress, GROWTH_WINDOW, scratch.growth);
     const f0 = FRAMING[STAGES[b.from].id];
     const f1 = FRAMING[STAGES[b.to].id];
     const polar = THREE.MathUtils.lerp(f0.polar, f1.polar, b.t);
@@ -276,14 +283,24 @@ export function CameraRig({
       )
     );
 
-    // Count on the growth rail; the visual shows it.
-    const countFrom = STAGES[g.from].growToFleet ? FLEET_MAX : d.base;
-    const countTo = STAGES[g.to].growToFleet ? FLEET_MAX : d.base;
-    const shown = THREE.MathUtils.lerp(countFrom, countTo, g.t);
+    // The fleet is what it is on every stage; the camera goes in and out.
+    const shown = d.base;
     shownRef.current = shown;
 
-    // Fit the present territory.
-    const extent = readTable(tables.extent, shown);
+    // Fit what the stage looks at, blended on the rail.
+    const fromFleet = STAGES[b.from].focus === 'fleet';
+    const toFleet = STAGES[b.to].focus === 'fleet';
+    const extentFrom = readTable(
+      fromFleet ? tables.fleetExtent : tables.projectExtent,
+      shown
+    );
+    const extentTo = readTable(
+      toFleet ? tables.fleetExtent : tables.projectExtent,
+      shown
+    );
+    const extent = Math.exp(
+      THREE.MathUtils.lerp(Math.log(extentFrom), Math.log(extentTo), b.t)
+    );
     const cam = camera as THREE.PerspectiveCamera;
     const vfov = THREE.MathUtils.degToRad(cam.fov);
     const aspect = size.width / Math.max(1, size.height);
@@ -293,16 +310,22 @@ export function CameraRig({
       (extent / Math.tan(fov / 2)) * 1.05 * zoom * (closeUp ? 0.6 : 1);
     const distanceTarget = Math.max(closeUp ? 5 : 12, fitted);
 
-    // Azimuth: stage perspective + slow drift + the user's own turn.
+    // Azimuth: stage perspective + slow drift + the user's own turn. A turn
+    // keeps its flick, then relaxes back to the authored frame, so the
+    // reader can play without leaving the story broken.
     if (!s.dragging) {
       s.azimuthVelocity = THREE.MathUtils.damp(s.azimuthVelocity, 0, 4, delta);
       s.polarVelocity = THREE.MathUtils.damp(s.polarVelocity, 0, 4, delta);
       s.userAzimuth += s.azimuthVelocity;
       s.userPolar = THREE.MathUtils.clamp(
         s.userPolar + s.polarVelocity,
-        -0.35,
-        0.35
+        closeUp ? -0.6 : -0.35,
+        closeUp ? 0.9 : 0.35
       );
+      if (!closeUp) {
+        s.userAzimuth = THREE.MathUtils.damp(s.userAzimuth, 0, 0.6, delta);
+        s.userPolar = THREE.MathUtils.damp(s.userPolar, 0, 0.6, delta);
+      }
     }
     const drift = reducedMotion ? 0 : delta * 0.045;
     s.azimuth += drift;
@@ -324,14 +347,14 @@ export function CameraRig({
     // nudged away from the reading column so the subject is never under
     // the type.
     const cx = THREE.MathUtils.lerp(
-      readTable(tables.cx, countFrom),
-      readTable(tables.cx, countTo),
-      g.t
+      readTable(fromFleet ? tables.fleetCx : tables.projectCx, shown),
+      readTable(toFleet ? tables.fleetCx : tables.projectCx, shown),
+      b.t
     );
     const cy = THREE.MathUtils.lerp(
-      readTable(tables.cy, countFrom),
-      readTable(tables.cy, countTo),
-      g.t
+      readTable(fromFleet ? tables.fleetCy : tables.projectCy, shown),
+      readTable(toFleet ? tables.fleetCy : tables.projectCy, shown),
+      b.t
     );
     planeToSphere(cx, cy, scratch.targetWorld);
     scratch.right.set(Math.cos(azimuthTarget), 0, -Math.sin(azimuthTarget));

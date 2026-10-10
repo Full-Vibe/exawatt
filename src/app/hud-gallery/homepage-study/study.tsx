@@ -9,12 +9,12 @@
  * it. Click a ghost tile to add an agent.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { FLEET_COUNTS, FLEET_MAX } from './fleet-model';
-import { ScrollExperience } from './scroll-experience';
+import { ScrollExperience, type SnapMode } from './scroll-experience';
 import type { CopySetId } from './stages';
 import { VISUALS, type VisualId } from './visual-contract';
 import {
@@ -22,6 +22,7 @@ import {
   type CrustMaterialId,
 } from './visuals/crust-materials';
 import { CRUST_SIGNALS, type CrustSignalId } from './visuals/crust-signal';
+import type { EnvironmentKind } from './visuals/environment';
 
 interface StudyState {
   visual: VisualId;
@@ -30,6 +31,8 @@ interface StudyState {
   material: CrustMaterialId;
   marks: boolean;
   signal: CrustSignalId;
+  light: EnvironmentKind;
+  snap: SnapMode;
 }
 
 function readState(params: URLSearchParams): StudyState {
@@ -41,22 +44,27 @@ function readState(params: URLSearchParams): StudyState {
   return {
     signal: CRUST_SIGNALS.some(x => x.id === signal)
       ? (signal as CrustSignalId)
-      : 'paint',
+      : 'lamp',
+    light: params.get('light') === 'room' ? 'room' : 'studio',
+    snap:
+      params.get('snap') === 'soft' || params.get('snap') === 'hard'
+        ? (params.get('snap') as SnapMode)
+        : 'off',
     material: CRUST_MATERIALS.some(m => m.id === material)
       ? (material as CrustMaterialId)
-      : 'matte',
+      : 'gummy',
     marks: params.get('marks') !== 'off',
     visual: VISUALS.some(v => v.id === visual) ? (visual as VisualId) : 'crust',
     count:
       Number.isFinite(count) && count >= 1
         ? Math.min(FLEET_MAX, Math.round(count))
-        : 10,
+        : 300,
     copy: copy === 'deck' ? 'deck' : 'canon',
   };
 }
 
 function href(state: StudyState): string {
-  return `/hud-gallery/homepage-study?visual=${state.visual}&count=${state.count}&copy=${state.copy}&material=${state.material}&marks=${state.marks ? 'on' : 'off'}&signal=${state.signal}`;
+  return `/hud-gallery/homepage-study?visual=${state.visual}&count=${state.count}&copy=${state.copy}&material=${state.material}&marks=${state.marks ? 'on' : 'off'}&signal=${state.signal}&light=${state.light}&snap=${state.snap}`;
 }
 
 function Option({
@@ -92,13 +100,10 @@ export function HomepageStudy() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const state = useMemo(() => readState(searchParams), [searchParams]);
-  const [extra, setExtra] = useState(0);
-  const count = Math.min(FLEET_MAX, state.count + extra);
+  const count = state.count;
 
-  const expand = useCallback(() => setExtra(value => value + 1), []);
   const setCount = useCallback(
     (value: number) => {
-      setExtra(0);
       router.replace(href({ ...state, count: value }), { scroll: false });
     },
     [router, state]
@@ -170,6 +175,23 @@ export function HomepageStudy() {
               </div>
               <div className="flex items-center gap-1">
                 <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+                  Light
+                </span>
+                <Option
+                  active={state.light === 'studio'}
+                  href={href({ ...state, light: 'studio' })}
+                >
+                  Studio
+                </Option>
+                <Option
+                  active={state.light === 'room'}
+                  href={href({ ...state, light: 'room' })}
+                >
+                  Room
+                </Option>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
                   Kind marks
                 </span>
                 <Option
@@ -209,11 +231,27 @@ export function HomepageStudy() {
                 {value}
               </button>
             ))}
-            {extra > 0 ? (
-              <span className="ml-1 font-mono text-chrome-micro text-white/50">
-                +{extra} · {count}
-              </span>
-            ) : null}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+              Snap
+            </span>
+            {(['off', 'soft', 'hard'] as SnapMode[]).map(mode => (
+              <Option
+                key={mode}
+                active={state.snap === mode}
+                href={href({ ...state, snap: mode })}
+                title={
+                  mode === 'off'
+                    ? 'Park anywhere.'
+                    : mode === 'soft'
+                      ? 'A pull to the nearest frame when the scroll stops near one.'
+                      : 'Always land on a frame.'
+                }
+              >
+                {mode[0].toUpperCase() + mode.slice(1)}
+              </Option>
+            ))}
           </div>
           <div className="flex items-center gap-1">
             <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
@@ -243,7 +281,8 @@ export function HomepageStudy() {
         material={state.material}
         marks={state.marks}
         signal={state.signal}
-        onExpand={expand}
+        light={state.light}
+        snap={state.snap}
       />
 
       <footer className="border-t border-white/10 px-6 py-8 text-[13px] text-white/45">
@@ -251,7 +290,8 @@ export function HomepageStudy() {
           Structure from the design partner&apos;s deck, slides 15 to 21. Three
           visuals on one synthetic fleet, laid out once at 300 agents so a
           smaller fleet is a prefix of the same layout and growth never moves an
-          agent. Drag to turn. Click an outlined tile to add one.
+          agent. Drag to turn; it settles back. Click an agent to open it.
+          Outlined tiles are the slots the next agents would take.
         </p>
       </footer>
     </main>
