@@ -43,6 +43,8 @@ path data as 3D geometry on the study's agent tiles. There Claude's mark is tint
 terracotta (#D97757, the colour Anthropic itself draws the mark in) and OpenClaw's lobster keeps the
 artwork's own pixel colours; the three marks supplied in black and white only take the surrounding
 ink, as everywhere else. Recorded 2026-10-13.
+(Updated the same day: for OpenClaw the study now draws the project's mascot rather than the pixel
+lobster; see the OpenClaw entry below.)
 
 **Three of these vendors forbid altering their mark, recolouring included.** They are called out
 per mark below. Rendering them in one neutral ink is the closest available reading of "as
@@ -190,6 +192,20 @@ Every URL below was fetched on **2026-08-18**.
 - **Date fetched:** 2026-08-18.
 - **Use here:** Nominative use to identify a third-party product inside a product UI, rendered at
   16 to 20px.
+- **Homepage study, the mascot (2026-10-13):** the homepage study
+  (`src/app/hud-gallery/homepage-study/`) draws the project's mascot, "molty", and not the pixel
+  lobster above, as a flat glyph in its panels and as 3D geometry on its agent tiles. Origin:
+  `https://github.com/openclaw/openclaw/blob/main/apps/macos/Icon.icon/Assets/molty.svg`, the
+  character on the project's own macOS app icon. Licence: MIT, "Copyright (c) 2026 OpenClaw
+  Foundation" (the repository's `LICENSE`). Path data is reproduced from the SVG: the body with its
+  feet and the two claws as written, the eyes and their glints (circles in the SVG) written as arcs,
+  and the two antennae kept as the vendor's stroked centrelines (stroke width 3) and given that
+  width when extruded. It is drawn in the vendor's own tones, its coral gradient (`#ff4d4d` to
+  `#e43d36`) flattened to `#ff4d4d`, the claws a shade deeper, near-black eyes with the teal glint
+  (`#00e5cc`). The geometry is in `HARNESS_MARK_PATHS` (`src/components/workspace/harness-icons.tsx`)
+  and the paint is resolved in `homepage-study/mark-tones.ts`. The product's own chrome icon
+  (`OpenClawIcon`: the launcher, the ribbons, Agent Sources settings, the hero board) is unchanged and
+  is still the pixel lobster described above. The trademark position recorded above is unchanged.
 
 ---
 

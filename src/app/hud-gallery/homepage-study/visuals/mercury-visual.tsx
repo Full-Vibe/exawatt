@@ -30,6 +30,7 @@ import {
 import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
 import { useRoomEnvironment } from './environment';
+import { keepPickable } from './pick-bounds';
 import {
   clearPoolField,
   makePoolField,
@@ -198,7 +199,7 @@ export function MercuryVisual({
     const up = (e: PointerEvent) => {
       if (Math.abs(e.clientX - press.x) + Math.abs(e.clientY - press.y) > 6)
         return;
-      onSelect?.(anim.hover);
+      onSelect?.(animRef.current?.hover ?? -1);
     };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerleave', leave);
@@ -231,6 +232,9 @@ export function MercuryVisual({
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
+    // The rig moved the camera this frame; refresh its matrices so every anchor
+    // projected below lands on this frame's picture, not the last one's.
+    state.camera.updateMatrixWorld();
     const d = drive.current;
     const at = fleetAt(model, Math.round(shownRef.current));
     anim.pulse += delta;
@@ -334,6 +338,7 @@ export function MercuryVisual({
     // Children beads and ghost outlines.
     const pipMesh = pipsRef.current;
     const ghosts = ghostsRef.current;
+    if (ghosts) keepPickable(ghosts);
     if (pipMesh) {
       for (let p = 0; p < pips.length; p += 1) {
         const pip = pips[p];
@@ -416,14 +421,6 @@ export function MercuryVisual({
     }
 
     const a = anchor;
-    if (d.exemplar >= 0 && d.exemplar < at.count) {
-      const place = placements[tileOfAgent[d.exemplar]];
-      tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
-      tmp.copy(place.position).addScaledVector(tmp2, 1.6);
-      if (projectToCanvas(tmp, state.camera, size.width, size.height, point))
-        a.setExemplar(point.x, point.y);
-      else a.clearExemplar();
-    } else a.clearExemplar();
     if (d.selected >= 0 && tileOfAgent[d.selected] >= 0) {
       const place = placements[tileOfAgent[d.selected]];
       tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();

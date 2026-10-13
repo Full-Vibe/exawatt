@@ -21,6 +21,7 @@ import { SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
 import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
 import { useRoomEnvironment } from './environment';
+import { keepPickable } from './pick-bounds';
 import {
   highlightWeight,
   paletteFrom,
@@ -157,6 +158,9 @@ export function PrismVisual({
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
+    // The rig moved the camera this frame; refresh its matrices so every anchor
+    // projected below lands on this frame's picture, not the last one's.
+    state.camera.updateMatrixWorld();
     const d = drive.current;
     const crystals = crystalsRef.current;
     const cores = coresRef.current;
@@ -164,6 +168,9 @@ export function PrismVisual({
     const ghosts = ghostsRef.current;
     const pipMesh = pipsRef.current;
     if (!crystals || !cores || !ground || !ghosts || !pipMesh) return;
+    keepPickable(ground);
+    keepPickable(crystals);
+    keepPickable(ghosts);
 
     const at = fleetAt(model, Math.round(shownRef.current));
     anim.pulse += delta;
@@ -333,17 +340,6 @@ export function PrismVisual({
     if (pipMesh.instanceColor) pipMesh.instanceColor.needsUpdate = true;
 
     const a = anchor;
-    const exemplarTile = d.exemplar >= 0 ? tileOfAgent[d.exemplar] : -1;
-    if (exemplarTile >= 0 && anim.present[exemplarTile]) {
-      const place = placements[exemplarTile];
-      tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
-      tmp
-        .copy(place.position)
-        .addScaledVector(tmp2, anim.height[exemplarTile] + 0.3);
-      if (projectToCanvas(tmp, state.camera, size.width, size.height, point))
-        a.setExemplar(point.x, point.y);
-      else a.clearExemplar();
-    } else a.clearExemplar();
     if (d.selected >= 0 && tileOfAgent[d.selected] >= 0) {
       const ti = tileOfAgent[d.selected];
       const place = placements[ti];

@@ -58,14 +58,20 @@ export interface StoryDrive {
   progress: number;
   /** Agents when the story does not say: the close-up study's own count. */
   base: number;
-  /** Agents the stage on screen shows (`Stage.count`), for the exemplar. */
+  /** Agents the stage on screen shows (`Stage.count`), for choosing the
+   *  exemplar. */
   count: number;
   /** The signal each stage lifts under the current copy set, by stage. */
   highlights: (StatusLightState | null)[];
-  /** Agent id the panel points at, or -1. */
+  /** The agent the stage lifts, the first of the highlighted signal, or -1. */
   exemplar: number;
   /** Agent the reader clicked, or -1. */
   selected: number;
+  /** How fast the rig lets its progress follow the scroll, per second. A
+   *  scroll that is already a smooth move (the study's Page mode) wants a
+   *  high rate, so the rig adds no lag of its own; a hand on the wheel wants
+   *  a low one, so the scene eases through its jitter. */
+  rate: number;
   /** Smoothed progress, written by the camera rig. Visuals blend stage
    *  states on this, through `stageBlend`. */
   rail: number;
@@ -80,23 +86,13 @@ export interface StoryDrive {
  * point.
  */
 export class VisualAnchor {
-  exemplar: { x: number; y: number } | null = null;
-  /** The selected agent's canvas point, for the info card. */
+  /** The selected agent's canvas point, for the open panel. */
   focus = -1;
   focusPoint: { x: number; y: number } | null = null;
   /** One slot per Project, in model order; the overlay draws the present ones. */
   labels: LabelAnchor[] = [];
-  private exemplarSlot = { x: 0, y: 0 };
   private focusSlot = { x: 0, y: 0 };
 
-  setExemplar(x: number, y: number) {
-    this.exemplarSlot.x = x;
-    this.exemplarSlot.y = y;
-    this.exemplar = this.exemplarSlot;
-  }
-  clearExemplar() {
-    this.exemplar = null;
-  }
   setFocus(agent: number, x: number, y: number) {
     this.focusSlot.x = x;
     this.focusSlot.y = y;
@@ -116,6 +112,9 @@ export interface LabelAnchor {
   visible: boolean;
   /** Agents present in the Project right now. */
   count: number;
+  /** How squarely the Project faces the camera, 1 head on to 0 at the limb
+   *  of the globe. A name over a cluster seen edge-on is clutter. */
+  facing: number;
 }
 
 export interface VisualProps {

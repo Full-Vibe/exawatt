@@ -423,8 +423,29 @@ export function fleetModel(): FleetModel {
  * present when its ring is within one of the Project's outermost present
  * agent, so the territory hugs a small fleet and grows with it.
  */
-export function fleetAt(model: FleetModel, count: number) {
-  const n = Math.max(0, Math.min(FLEET_MAX, count));
+const fleetAtCache = new WeakMap<FleetModel, Map<number, FleetView>>();
+
+/**
+ * The fleet at a size, memoised per model: every visual asks for it every
+ * frame, and almost always for the size it asked for last frame, so the
+ * answer (and the closures in it) is built once per size.
+ */
+export function fleetAt(model: FleetModel, count: number): FleetView {
+  const n = Math.max(0, Math.min(FLEET_MAX, Math.round(count)));
+  let bySize = fleetAtCache.get(model);
+  if (!bySize) {
+    bySize = new Map();
+    fleetAtCache.set(model, bySize);
+  }
+  let view = bySize.get(n);
+  if (!view) {
+    view = buildFleetView(model, n);
+    bySize.set(n, view);
+  }
+  return view;
+}
+
+function buildFleetView(model: FleetModel, n: number) {
   const presentProjects = model.projects.filter(p => p.first < n);
   const outermost = new Map<number, number>();
   for (const project of presentProjects) {
@@ -456,6 +477,8 @@ export function fleetAt(model: FleetModel, count: number) {
     tileAgent: (tile: FleetTile): boolean => tile.agent >= 0 && tile.agent < n,
   };
 }
+
+type FleetView = ReturnType<typeof buildFleetView>;
 
 export function formatMinutes(minutes: number): string {
   const h = Math.floor(minutes / 60);

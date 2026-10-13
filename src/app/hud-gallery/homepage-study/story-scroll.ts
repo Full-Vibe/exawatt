@@ -1,0 +1,73 @@
+/**
+ * How the page's scroll becomes the story's progress (ENG-031 W15, W15d).
+ * One tall section, one sticky stage inside it; the stage pins under the site
+ * header, and the distance it travels while pinned is the whole story. The
+ * mapping runs from the end of the first stage's dwell to the start of the
+ * last stage's, so the page's first and last pixels of travel already move
+ * the scene and nothing is dead scroll. Pure arithmetic, shared by the
+ * scroll listener, the paging, and the tests.
+ */
+
+import { HEADER_PX } from './narrow';
+import { RAIL_DWELL } from './stages';
+
+/** Where the stage pins: under the site header. */
+export const PIN_TOP = HEADER_PX;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+/** The distance the stage is pinned for: the section less one stage. */
+export function storyTravel(sectionHeight: number, stageHeight: number) {
+  return Math.max(1, sectionHeight - stageHeight);
+}
+
+/** How far into the pinned travel the page is, from the section's top edge
+ *  in the viewport. Zero before the stage pins, the travel once it unpins. */
+export function pinnedAt(sectionTop: number, travel: number) {
+  return clamp(PIN_TOP - sectionTop, 0, travel);
+}
+
+/** Whether the stage is pinned, or within a pixel of it. */
+export function isPinned(sectionTop: number, travel: number) {
+  const pinned = PIN_TOP - sectionTop;
+  return pinned >= -1 && pinned <= travel + 1;
+}
+
+/** The page is at or past the story's first frame: in the story, or in the
+ *  page below it. What the pager controls, so that a flick up from the footer
+ *  is the pager's and cannot coast through every scene on the browser's own
+ *  momentum. */
+export function isAtOrPast(sectionTop: number) {
+  return PIN_TOP - sectionTop >= -1;
+}
+
+/** Past the story's last frame, in the page below it. */
+export function isBeyond(sectionTop: number, travel: number) {
+  return PIN_TOP - sectionTop > travel + 1;
+}
+
+/** Story progress, a stage index plus a fraction, for a pinned distance. */
+export function progressAt(pinned: number, travel: number, last: number) {
+  return RAIL_DWELL + (pinned / travel) * (last - 2 * RAIL_DWELL);
+}
+
+/** The pinned distance at which the story reaches a progress. */
+export function pinnedFor(progress: number, travel: number, last: number) {
+  return clamp(
+    ((progress - RAIL_DWELL) / (last - 2 * RAIL_DWELL)) * travel,
+    0,
+    travel
+  );
+}
+
+/** The progress a frame (a stage index) rests at. The first and last frames
+ *  rest at the ends of the scroll, which are a dwell short of their index. */
+export function frameProgress(index: number, last: number) {
+  return clamp(index, RAIL_DWELL, last - RAIL_DWELL);
+}
+
+/** The frame nearest a progress. */
+export function nearestFrame(progress: number, last: number) {
+  return clamp(Math.round(progress), 0, last);
+}

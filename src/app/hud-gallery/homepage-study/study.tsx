@@ -10,7 +10,7 @@
  * Click an agent to open it. On a phone the bar folds to one button.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -64,10 +64,10 @@ function readState(params: URLSearchParams): StudyState {
       : 'relief',
     shape: CRUST_SHAPES.some(m => m.id === shape)
       ? (shape as CrustShapeId)
-      : 'hex',
+      : 'rounded',
     motion: CRUST_MOTIONS.some(m => m.id === motion)
       ? (motion as CrustMotionId)
-      : 'orbit',
+      : 'sheen',
     visual: VISUALS.some(v => v.id === visual) ? (visual as VisualId) : 'crust',
     copy: copy === 'deck' ? 'deck' : 'canon',
   };
@@ -110,6 +110,18 @@ export function HomepageStudy() {
   const searchParams = useSearchParams();
   const state = useMemo(() => readState(searchParams), [searchParams]);
   const [open, setOpen] = useState(false);
+  // How much of the stage's top the bar covers, for the open panel to clear.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(0);
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const measure = () => setBarHeight(bar.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <main
@@ -121,7 +133,10 @@ export function HomepageStudy() {
           it in the flow, so the scene is pinned from the first pixel of
           scroll and never shoves up under the bar first. On a phone they
           fold behind one button so the world keeps the screen. */}
-      <div className="fixed inset-x-0 top-12 z-30 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-white/10 bg-[#04060b]/80 px-4 py-2 backdrop-blur">
+      <div
+        ref={barRef}
+        className="fixed inset-x-0 top-12 z-30 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-white/10 bg-[#04060b]/90 px-4 py-2"
+      >
         <p className="font-mono text-chrome-micro text-white/50">
           <Link href="/hud-gallery" className="hover:text-white">
             HUD Gallery
@@ -304,9 +319,18 @@ export function HomepageStudy() {
         signal={state.signal}
         light={state.light}
         snap={state.snap}
+        insetTop={barHeight}
       />
 
-      <footer className="border-t border-white/10 px-6 py-8 text-[13px] text-white/45">
+      {/* Under Page on a touch screen the browser snaps to each scene and may
+          not skip one; the page's own end is a snap point too, so the footer
+          stays reachable. */}
+      <footer
+        className={cn(
+          'border-t border-white/10 px-6 py-8 text-[13px] text-white/45',
+          state.snap === 'page' && 'snap-end'
+        )}
+      >
         <p className="max-w-[60ch]">
           Structure from the design partner&apos;s deck, slides 15 to 21. Five
           visuals on one synthetic fleet, laid out once at 300 agents so a

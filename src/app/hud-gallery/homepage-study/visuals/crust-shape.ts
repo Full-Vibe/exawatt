@@ -86,6 +86,37 @@ function tileShape(radius: number, corner: number): THREE.Shape {
   return shape;
 }
 
+/** The tile's outline as a flat face, lying in XZ, normal +Y. */
+export function tileFaceGeometry(
+  radius: number,
+  corner: number
+): THREE.BufferGeometry {
+  const g = new THREE.ShapeGeometry(tileShape(radius, corner), 12);
+  g.rotateX(-Math.PI / 2);
+  return g;
+}
+
+/** The tile's outline extruded one unit up from y = 0: a slab the caller
+ *  scales to the thickness it wants. */
+export function tileSlabGeometry(
+  radius: number,
+  corner: number
+): THREE.BufferGeometry {
+  const g = new THREE.ExtrudeGeometry(tileShape(radius, corner), {
+    depth: 1,
+    bevelEnabled: false,
+    curveSegments: 12,
+  });
+  // Extruded toward +z; turned +90 degrees about x it runs down from y = 0 to
+  // y = -1, and the lift brings it to 0 to 1 with its cap facing up. (The
+  // other turn put it at 1 to 2, a lamp floating its own thickness above the
+  // face.)
+  g.rotateX(Math.PI / 2);
+  g.translate(0, 1, 0);
+  g.computeVertexNormals();
+  return g;
+}
+
 /** A flat ring of the tile's outline, lying in XZ, normal +Y. */
 export function tileRingGeometry(
   outer: number,

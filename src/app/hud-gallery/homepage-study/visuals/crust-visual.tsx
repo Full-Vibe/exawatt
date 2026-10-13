@@ -14,16 +14,23 @@
  * in the body material of the chosen option (W15c, `crust-materials.ts`).
  * An agent carries its status as colour and rise, a lamp on top or a glow
  * under it or a lit rim (W15d, `crust-signal.ts`), in the translucent
- * options a light inside the body, its harness as the vendor's own mark
- * extruded on the tile in the vendor's own tones (W15f/g,
- * `crust-marks.ts`), turned to face the camera, and, while it works, one
- * of five motions (W15g, `crust-motion.ts`). The ring beyond the territory
- * is drawn as ghost outlines; in the material study a click on one adds an
+ * options a lit cap of light inside the body, its harness as the vendor's
+ * own mark extruded on the face in the vendor's own tones (W15f/g,
+ * `crust-marks.ts`), turned to face the camera, and, while it works, one of
+ * five motions (W15g, `crust-motion.ts`). The ring beyond the territory is
+ * drawn as ghost outlines; in the material study a click on one adds an
  * agent. The sphere body underneath is a dark globe with faint graticule so
  * even a one-agent slice reads as a piece of something round.
  *
+ * What changes does so continuously (W15h): an agent arriving or leaving
+ * fades between agent and ground, a status change cross-fades its colour, a
+ * lift eases; nothing pops. Only what is drawn is submitted: tiles are packed
+ * into the instance buffers each frame, and only the packed range is
+ * uploaded, so ten agents cost ten agents.
+ *
  * Per-frame work mutates preallocated arrays and writes instance buffers.
- * Nothing allocates in `useFrame`.
+ * Nothing of ours allocates in `useFrame`; three keeps a small record per
+ * uploaded range, which it clears on upload.
  */
 
 import { useEffect, useMemo, useRef } from 'react';
@@ -33,20 +40,19 @@ import { fleetAt, sourceAdapterId } from '../fleet-model';
 import { SPHERE_CENTER } from '../sphere';
 import { stageBlend } from '../stages';
 import type { VisualProps } from '../visual-contract';
-import {
-  makeMarkParts,
-  markBrand,
-  markIndexFor,
-  MARK_COUNT,
-} from './crust-marks';
+import { makeMarkParts, markIndexFor } from './crust-marks';
 import { disposeCrustMaterial, makeCrustMaterial } from './crust-materials';
+import { sheenPhase, makeSheenMaterial } from './crust-sheen';
 import {
   shapeCorner,
   tileBandGeometry,
+  tileFaceGeometry,
   tilePrismGeometry,
   tileRingGeometry,
+  tileSlabGeometry,
 } from './crust-shape';
 import { crustSignal } from './crust-signal';
+import { keepPickable } from './pick-bounds';
 import { useRoomEnvironment } from './environment';
 import { GlobeBody } from './globe-body';
 import {
@@ -62,25 +68,44 @@ import {
  *  between all the hex tiles"). */
 const TILE_RADIUS = 0.82;
 const TILE_HEIGHT = 0.42;
-/** Width of a harness mark on the tile, and its depth by treatment. */
+/** Width of a harness mark on the face, and its depth by treatment. */
 const MARK_SIZE = 0.78;
 const MARK_DEPTH = { lit: 0.05, relief: 0.09, coin: 0.07 } as const;
+/** How far a part one layer up stands above the layer below, in mark depths.
+ *  Layers never share a plane; this is what keeps overlapping parts from
+ *  z-fighting. */
+const LAYER_STEP = 0.4;
 const COIN_RADIUS = 0.5;
 const COIN_HEIGHT = 0.08;
-/** How fast a tile answers: rise, status weight, arrival. Quick, so a
- *  click lands and a hover answers at once (operator 2026-10-12: "more
- *  snappy and less mushy"). */
+/** The lit cap in the translucent options: the share of the body the light
+ *  fills below the face, and how far it stands proud of it. Fixed, so a mark
+ *  sits on the cap at every lift (it floated over lifted tiles before). */
+const CAP_SHARE = 0.6;
+const CAP_PROUD = 0.06;
+/** Clearance between a surface and the thing standing on it. */
+const LIFT_OFF = 0.004;
+/** How fast a tile answers, per second: rise, status weight, arrival, being
+ *  an agent at all, and the colour of its status. Quick, so a click lands and
+ *  a hover answers at once (operator 2026-10-12: "more snappy and less
+ *  mushy"), yet nothing is a cut. */
 const LIFT_RATE = 13;
 const WEIGHT_RATE = 9;
 const ARRIVE_RATE = 9;
+const AGENT_RATE = 8;
+const STATUS_RATE = 14;
+/** Below this an agent is drawn as ground; a tile this small is not drawn. */
+const AGENT_MIN = 0.02;
+const SCALE_MIN = 0.004;
 
 const dummy = new THREE.Object3D();
 const color = new THREE.Color();
+const statusColor = new THREE.Color();
+const groundColor = new THREE.Color();
 const tmp = new THREE.Vector3();
-const tmp2 = new THREE.Vector3();
-const tmp3 = new THREE.Vector3();
+const normal = new THREE.Vector3();
+const side = new THREE.Vector3();
+const forward = new THREE.Vector3();
 const yaw = new THREE.Quaternion();
-const spin = new THREE.Quaternion();
 const yAxis = new THREE.Vector3(0, 1, 0);
 const point = { x: 0, y: 0 };
 const WHITE = new THREE.Color(0xffffff);
@@ -122,42 +147,41 @@ function makeGlowTexture(): THREE.Texture {
   return texture;
 }
 
-/** The status lamp: a flat hexagon, the tile's own shape. */
-function makeLampGeometry(): THREE.BufferGeometry {
-  const shape = new THREE.Shape();
-  for (let k = 0; k < 6; k += 1) {
-    const a = Math.PI / 2 + (k * Math.PI * 2) / 6;
-    const x = Math.cos(a) * 0.5;
-    const y = Math.sin(a) * 0.5;
-    if (k === 0) shape.moveTo(x, y);
-    else shape.lineTo(x, y);
-  }
-  shape.closePath();
-  const g = new THREE.ExtrudeGeometry(shape, {
-    depth: 1,
-    bevelEnabled: false,
-    curveSegments: 1,
-  });
-  g.rotateX(Math.PI / 2);
-  g.translate(0, 1, 0);
-  g.computeVertexNormals();
-  return g;
-}
-
 function makeAnim(tileCount: number, partCount: number) {
   return {
     scale: new Float32Array(tileCount),
     lift: new Float32Array(tileCount),
     weight: new Float32Array(tileCount).fill(1),
     ghost: new Float32Array(tileCount),
-    present: new Uint8Array(tileCount),
-    tileOfGhost: new Int32Array(tileCount).fill(-1),
+    /** 0 a tile of ground, 1 an agent; eases, so arriving and leaving fade. */
+    agentness: new Float32Array(tileCount),
+    /** The eased colour of the status, linear rgb per tile. */
+    status: new Float32Array(tileCount * 3),
+    statusReady: new Uint8Array(tileCount),
+    punch: new Float32Array(tileCount),
     partCount: new Int32Array(partCount),
-    pulse: 0,
+    /** Which tile each packed slot draws, for picking. */
+    agentTile: new Int32Array(tileCount),
+    tileOfGhost: new Int32Array(tileCount).fill(-1),
+    /** Agents in the fleet right now: an agent past this is leaving. */
+    agents: 0,
+    clock: 0,
     hover: -1,
     lastSelected: -1,
-    punch: new Float32Array(tileCount),
   };
+}
+
+/** Submit only what was packed, and upload only that. */
+function flush(mesh: THREE.InstancedMesh, count: number) {
+  mesh.count = count;
+  if (count === 0) return;
+  mesh.instanceMatrix.addUpdateRange(0, count * 16);
+  mesh.instanceMatrix.needsUpdate = true;
+  const colors = mesh.instanceColor;
+  if (colors) {
+    colors.addUpdateRange(0, count * 3);
+    colors.needsUpdate = true;
+  }
 }
 
 export function CrustVisual({
@@ -191,10 +215,6 @@ export function CrustVisual({
   const coresRef = useRef<THREE.InstancedMesh>(null);
   const lampsRef = useRef<THREE.InstancedMesh>(null);
   const parts = useMemo(() => makeMarkParts(), []);
-  const brands = useMemo(
-    () => Array.from({ length: MARK_COUNT }, (_, m) => markBrand(m)),
-    []
-  );
   const partRefs = useRef<(THREE.InstancedMesh | null)[]>(
     Array.from({ length: parts.length }, () => null)
   );
@@ -202,7 +222,7 @@ export function CrustVisual({
   const ghostsRef = useRef<THREE.InstancedMesh>(null);
   const rimsRef = useRef<THREE.InstancedMesh>(null);
   const glowsRef = useRef<THREE.InstancedMesh>(null);
-  const orbitsRef = useRef<THREE.InstancedMesh>(null);
+  const sheensRef = useRef<THREE.InstancedMesh>(null);
   const pulsesRef = useRef<THREE.InstancedMesh>(null);
   const selectionRef = useRef<THREE.Mesh>(null);
 
@@ -237,7 +257,7 @@ export function CrustVisual({
     () => tilePrismGeometry(0.42, 1, corner, null),
     [corner]
   );
-  const lampGeometry = useMemo(() => makeLampGeometry(), []);
+  const lampGeometry = useMemo(() => tileSlabGeometry(0.5, corner), [corner]);
   const coinGeometry = useMemo(
     () =>
       new THREE.CylinderGeometry(COIN_RADIUS, COIN_RADIUS, COIN_HEIGHT, 32, 1),
@@ -248,6 +268,18 @@ export function CrustVisual({
       new THREE.MeshStandardMaterial({
         roughness: 0.38,
         metalness: 0.55,
+        envMapIntensity: 0.9,
+      }),
+    []
+  );
+  // A mark in a colour of its own (Claude's terracotta, the mascot's coral)
+  // is solid paint, lit like a stamped enamel, so its colour is the vendor's
+  // and not the vendor's blended with the glass it stands on.
+  const paintMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        roughness: 0.42,
+        metalness: 0,
         envMapIntensity: 0.9,
       }),
     []
@@ -273,15 +305,21 @@ export function CrustVisual({
     () => tileRingGeometry(TILE_RADIUS + 0.11, TILE_RADIUS + 0.06, corner),
     [corner]
   );
-  // Working motion: a light that circles the tile, and a ring that leaves it.
-  const orbitGeometry = useMemo(
-    () => new THREE.SphereGeometry(0.075, 12, 8),
-    []
-  );
+  // Working motion: a ring that leaves the tile, and the sheen's face, which
+  // carries one phase per instance.
   const pulseGeometry = useMemo(
     () => tileRingGeometry(TILE_RADIUS + 0.02, TILE_RADIUS - 0.07, corner),
     [corner]
   );
+  const sheenGeometry = useMemo(() => {
+    const g = tileFaceGeometry(TILE_RADIUS * 0.97, corner);
+    g.setAttribute(
+      'aPhase',
+      new THREE.InstancedBufferAttribute(new Float32Array(tileCount), 1)
+    );
+    return g;
+  }, [corner, tileCount]);
+  const sheenMaterial = useMemo(() => makeSheenMaterial(), []);
 
   useEffect(
     () => () => {
@@ -296,34 +334,50 @@ export function CrustVisual({
       rimGeometry.dispose();
       selectionGeometry.dispose();
       pulseGeometry.dispose();
+      sheenGeometry.dispose();
+      lampGeometry.dispose();
     },
-    [coreGeometry, ghostGeometry, rimGeometry, selectionGeometry, pulseGeometry]
+    [
+      coreGeometry,
+      ghostGeometry,
+      rimGeometry,
+      selectionGeometry,
+      pulseGeometry,
+      sheenGeometry,
+      lampGeometry,
+    ]
   );
   useEffect(
     () => () => {
-      lampGeometry.dispose();
       parts.forEach(part => part.geometry.dispose());
       coinGeometry.dispose();
       coinMaterial.dispose();
+      paintMaterial.dispose();
       glowGeometry.dispose();
       glowTexture.dispose();
-      orbitGeometry.dispose();
+      sheenMaterial.dispose();
     },
     [
-      lampGeometry,
       parts,
       coinGeometry,
       coinMaterial,
+      paintMaterial,
       glowGeometry,
       glowTexture,
-      orbitGeometry,
+      sheenMaterial,
     ]
   );
 
-  // Hover and click on the instanced tiles.
+  // Hover and click on the packed agent instances: the instance id is a
+  // slot, and the slot names its tile.
+  const agentAt = (e: ThreeEvent<PointerEvent | MouseEvent>): number => {
+    const slot = e.instanceId ?? -1;
+    if (slot < 0) return -1;
+    const agent = model.tiles[anim.agentTile[slot]]?.agent ?? -1;
+    return agent >= 0 && agent < anim.agents ? agent : -1;
+  };
   const hoverTile = (e: ThreeEvent<PointerEvent>) => {
-    const id = e.instanceId ?? -1;
-    const agent = id >= 0 && anim.present[id] ? model.tiles[id].agent : -1;
+    const agent = agentAt(e);
     if (agent !== anim.hover) {
       anim.hover = agent;
       gl.domElement.style.setProperty('cursor', agent >= 0 ? 'pointer' : '');
@@ -340,8 +394,7 @@ export function CrustVisual({
   // A click is a press that did not travel; a drag turned the world.
   const clickTile = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 6) return;
-    const id = e.instanceId ?? -1;
-    const agent = id >= 0 && anim.present[id] ? model.tiles[id].agent : -1;
+    const agent = agentAt(e);
     if (agent < 0) return;
     e.stopPropagation();
     onSelect?.(agent);
@@ -358,6 +411,9 @@ export function CrustVisual({
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
+    // The rig moved the camera this frame; refresh its matrices so every anchor
+    // projected below lands on this frame's picture, not the last one's.
+    state.camera.updateMatrixWorld();
     const d = drive.current;
     const ground = groundRef.current;
     const agents = agentsRef.current;
@@ -367,7 +423,7 @@ export function CrustVisual({
     const ghosts = ghostsRef.current;
     const rims = rimsRef.current;
     const glows = glowsRef.current;
-    const orbits = orbitsRef.current;
+    const sheens = sheensRef.current;
     const pulses = pulsesRef.current;
     const selection = selectionRef.current;
     const partMeshes = partRefs.current;
@@ -380,17 +436,23 @@ export function CrustVisual({
       !ghosts ||
       !rims ||
       !glows ||
-      !orbits ||
+      !sheens ||
       !pulses ||
       !selection
     )
       return;
     for (let p = 0; p < parts.length; p += 1) if (!partMeshes[p]) return;
+    const phaseAttr = sheens.geometry.getAttribute(
+      'aPhase'
+    ) as THREE.InstancedBufferAttribute;
 
     const shown = shownRef.current;
     const at = fleetAt(model, Math.round(shown));
-    anim.pulse += delta;
-    const clock = anim.pulse;
+    anim.agents = at.count;
+    keepPickable(agents);
+    keepPickable(ghosts);
+    anim.clock += delta;
+    const clock = anim.clock;
     const attention = reducedMotion ? 0 : (Math.sin(clock * 2.2) + 1) * 0.5;
     const recede = d.recede;
     // Stage states blend on the rail, with the camera.
@@ -400,21 +462,24 @@ export function CrustVisual({
     const lifted = THREE.MathUtils.lerp(h0 ? 1 : 0, h1 ? 1 : 0, b.t);
     // Marks face the camera: turned about the tile normal so the page's up
     // is away from the viewer and its right is the viewer's right.
-    state.camera.getWorldDirection(tmp3);
-    yaw.setFromAxisAngle(yAxis, Math.atan2(-tmp3.x, -tmp3.z));
+    state.camera.getWorldDirection(forward);
+    yaw.setFromAxisAngle(yAxis, Math.atan2(-forward.x, -forward.z));
     const marked = mark !== 'off';
     const markDepth = marked ? MARK_DEPTH[mark] : 0;
     // A bright top face takes dark ink; a dark one takes light.
     const brightFace = spec.core || sig.bodyStatus === 1;
     const moving = !reducedMotion;
+    const colorRate = reducedMotion ? 1 : 1 - Math.exp(-STATUS_RATE * delta);
 
+    let agentCount = 0;
+    let groundCount = 0;
     let ghostCount = 0;
     let coreCount = 0;
     let lampCount = 0;
     let coinCount = 0;
     let rimCount = 0;
     let glowCount = 0;
-    let orbitCount = 0;
+    let sheenCount = 0;
     let pulseCount = 0;
     selection.visible = false;
     // A click lands with a short bounce.
@@ -428,21 +493,53 @@ export function CrustVisual({
       const tile = model.tiles[i];
       const place = placements[i];
       const present = at.tilePresent(tile);
-      anim.present[i] = present ? 1 : 0;
       const isAgent = tile.agent >= 0 && tile.agent < at.count;
-      const agent = isAgent ? model.agents[tile.agent] : null;
-      const working = agent !== null && agent.status === 'active' && moving;
+
+      // Targets, eased: arriving, being an agent, rising, the stage's weight.
+      const scaleTarget = present ? 1 : 0;
+      const agentTarget = isAgent ? 1 : 0;
+      const weightTarget =
+        isAgent && tile.agent >= 0
+          ? THREE.MathUtils.lerp(
+              highlightWeight(model.agents[tile.agent].status, h0),
+              highlightWeight(model.agents[tile.agent].status, h1),
+              b.t
+            )
+          : 1;
+      // An agent that is leaving keeps drawing as one while it fades.
+      const known = tile.agent >= 0 ? model.agents[tile.agent] : null;
+      if (reducedMotion) {
+        anim.scale[i] = scaleTarget;
+        anim.agentness[i] = agentTarget;
+        anim.weight[i] = weightTarget;
+      } else {
+        anim.scale[i] = THREE.MathUtils.damp(
+          anim.scale[i],
+          scaleTarget,
+          ARRIVE_RATE,
+          delta
+        );
+        anim.agentness[i] = THREE.MathUtils.damp(
+          anim.agentness[i],
+          agentTarget,
+          AGENT_RATE,
+          delta
+        );
+        anim.weight[i] = THREE.MathUtils.damp(
+          anim.weight[i],
+          weightTarget,
+          WEIGHT_RATE,
+          delta
+        );
+      }
+      const s = anim.scale[i];
+      const a = anim.agentness[i];
+      const w = anim.weight[i];
+      const agent = known !== null && a > AGENT_MIN ? known : null;
+      const working =
+        agent !== null && agent.status === 'active' && moving && a > 0.5;
       const phase = agent ? agent.id * 0.9 : 0;
 
-      // Targets.
-      const scaleTarget = present ? 1 : 0;
-      const weightTarget = agent
-        ? THREE.MathUtils.lerp(
-            highlightWeight(agent.status, h0),
-            highlightWeight(agent.status, h1),
-            b.t
-          )
-        : 1;
       let liftTarget = 0;
       if (agent) {
         liftTarget =
@@ -461,323 +558,32 @@ export function CrustVisual({
         liftTarget *= spec.liftScale * sig.liftScale;
         if (working && motion === 'bob')
           liftTarget += (Math.sin(clock * 1.7 + phase) + 1) * 0.06;
+        if (working && motion === 'wave')
+          liftTarget +=
+            (Math.sin(clock * 1.5 - (place.x * 0.5 + place.y * 0.32)) + 1) *
+            0.05;
         if (anim.punch[i] > 0) {
           anim.punch[i] = Math.max(0, anim.punch[i] - delta * 4);
           liftTarget += Math.sin(anim.punch[i] * Math.PI) * 0.3;
         }
+        liftTarget *= a;
       }
+      anim.lift[i] = reducedMotion
+        ? liftTarget
+        : THREE.MathUtils.damp(anim.lift[i], liftTarget, LIFT_RATE, delta);
 
-      if (reducedMotion) {
-        anim.scale[i] = scaleTarget;
-        anim.lift[i] = liftTarget;
-        anim.weight[i] = weightTarget;
-      } else {
-        anim.scale[i] = THREE.MathUtils.damp(
-          anim.scale[i],
-          scaleTarget,
-          ARRIVE_RATE,
-          delta
-        );
-        anim.lift[i] = THREE.MathUtils.damp(
-          anim.lift[i],
-          liftTarget,
-          LIFT_RATE,
-          delta
-        );
-        anim.weight[i] = THREE.MathUtils.damp(
-          anim.weight[i],
-          weightTarget,
-          WEIGHT_RATE,
-          delta
-        );
-      }
-      const s = anim.scale[i];
-      const w = anim.weight[i];
-      const breathe =
-        working && motion === 'breathe' && w > 0.5
-          ? (Math.sin(clock * 1.6 + phase) + 1) * 0.5
-          : 0;
-
-      // Tile body: territory in the ground mesh, agents in the body mesh.
-      const thickness = 1 + anim.lift[i] * 2.4;
-      tmp.copy(place.position);
-      // lift along the normal so the tile grows outward from the sphere
-      tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
-      tmp.addScaledVector(tmp2, (TILE_HEIGHT * (thickness - 1)) / 2);
-      dummy.position.copy(tmp);
-      dummy.quaternion.copy(place.quaternion);
-      dummy.scale.set(s, s * thickness, s);
-      dummy.updateMatrix();
-      if (agent) {
-        agents.setMatrixAt(i, dummy.matrix);
-        dummy.scale.setScalar(0);
-        dummy.updateMatrix();
-        ground.setMatrixAt(i, dummy.matrix);
-      } else {
-        ground.setMatrixAt(i, dummy.matrix);
-        dummy.scale.setScalar(0);
-        dummy.updateMatrix();
-        agents.setMatrixAt(i, dummy.matrix);
-      }
-
-      if (agent) {
-        color.copy(palette.status[agent.status]);
-        color.lerp(WHITE, spec.pastel);
-        color.lerp(METAL, 1 - spec.bodyTint);
-        color.lerp(palette.neutral, 1 - sig.bodyStatus);
-        color.lerp(palette.dim, (1 - w) * (sig.bodyStatus ? 0.78 : 0.45));
-        if (tile.agent === anim.hover || tile.agent === d.selected)
-          color.lerp(palette.label, 0.12);
-        color.lerp(palette.label, breathe * 0.14);
-        color.lerp(palette.body, recede * 0.7);
-        agents.setColorAt(i, color);
-      } else {
-        color.copy(palette.ground);
-        // Territory tiles nearest the agents are a touch brighter.
-        color.lerp(palette.groundEdge, tile.ring === 0 ? 0.3 : 0.12);
-        color.lerp(FROST, spec.groundPale);
-        color.lerp(palette.body, recede * 0.7);
-        ground.setColorAt(i, color);
-      }
-
-      if (agent) {
-        // The top face, where the lamp and the mark sit. In the translucent
-        // options the light inside the body stands a little proud of the
-        // face as a lit cap, and the mark sits on that cap.
-        tmp.addScaledVector(tmp2, (TILE_HEIGHT * thickness) / 2 + 0.01);
-        const coreHeight = TILE_HEIGHT * thickness * 0.6;
-        const capLift = spec.core ? coreHeight / 2 + 0.004 : 0;
-
-        // The harness mark, facing the camera, part by part.
-        const markIndex = marked ? markOfAgent[agent.id] : -1;
-        if (markIndex >= 0) {
-          const onCoin = mark === 'coin';
-          const brand = brands[markIndex];
-          dummy.quaternion.copy(place.quaternion).multiply(yaw);
-          if (working && motion === 'spin') {
-            spin.setFromAxisAngle(yAxis, clock * 0.55 + phase);
-            dummy.quaternion.multiply(spin);
-          }
-          const ms = s * (onCoin ? MARK_SIZE * 0.78 : MARK_SIZE);
-          for (let p = 0; p < parts.length; p += 1) {
-            const part = parts[p];
-            if (part.mark !== markIndex) continue;
-            const mesh = partMeshes[p] as THREE.InstancedMesh;
-            const slot = anim.partCount[p];
-            anim.partCount[p] = slot + 1;
-            dummy.position
-              .copy(tmp)
-              .addScaledVector(
-                tmp2,
-                capLift +
-                  (onCoin ? COIN_HEIGHT : 0) +
-                  part.raise * markDepth * 0.6
-              );
-            dummy.scale.set(ms, s * markDepth, ms);
-            dummy.updateMatrix();
-            mesh.setMatrixAt(slot, dummy.matrix);
-            // Tone: the vendor's colour, the artwork's own, or the ink.
-            const tone = part.tone === 'brand' ? brand : part.tone;
-            if (tone === 'ink' || tone === null) {
-              if (mark === 'lit') {
-                if (brightFace)
-                  color.copy(INK).lerp(palette.dim, (1 - w) * 0.5);
-                else
-                  color
-                    .copy(palette.label)
-                    .multiplyScalar((0.55 + 0.4 * w) * (1 - recede * 0.6));
-              } else if (onCoin) {
-                color.copy(INK);
-              } else {
-                agents.getColorAt(i, color);
-                if (brightFace) color.lerp(INK, 0.35);
-                else color.lerp(palette.label, 0.45);
-              }
-            } else if (mark === 'relief') {
-              // the tile's own body, carried most of the way to the colour
-              agents.getColorAt(i, color);
-              color.lerp(tone, 0.75);
-            } else {
-              color.copy(tone);
-              if (mark === 'lit')
-                color.lerp(palette.dim, (1 - w) * 0.4 + recede * 0.5);
-            }
-            mesh.setColorAt(slot, color);
-          }
-          if (onCoin) {
-            dummy.position
-              .copy(tmp)
-              .addScaledVector(tmp2, capLift + COIN_HEIGHT / 2);
-            dummy.quaternion.copy(place.quaternion);
-            dummy.scale.set(s, s, s);
-            dummy.updateMatrix();
-            coins.setMatrixAt(coinCount, dummy.matrix);
-            color.copy(COIN).lerp(palette.dim, (1 - w) * 0.5);
-            color.lerp(palette.body, recede * 0.7);
-            coins.setColorAt(coinCount, color);
-            coinCount += 1;
-          }
-        }
-
-        // The status lamp: the whole top when there is no mark, a small
-        // light below the mark (toward the viewer) when there is one. The
-        // rim treatment carries the status on the edge and shows no lamp
-        // beside a mark.
-        const lampOn = !(
-          marked &&
-          markIndex >= 0 &&
-          (sig.rim || sig.bodyStatus)
-        );
-        if (lampOn) {
-          const beside = marked && markIndex >= 0;
-          dummy.position.copy(tmp);
-          dummy.quaternion.copy(place.quaternion).multiply(yaw);
-          if (beside) {
-            tmp3.set(0, 0, 0.6).applyQuaternion(dummy.quaternion);
-            dummy.position.add(tmp3);
-          }
-          const ls =
-            s * (beside ? 0.2 : (0.75 + 0.25 * w) * sig.glyphScale * 1.12);
-          dummy.scale.set(ls, s * 0.05, ls);
-          dummy.updateMatrix();
-          lamps.setMatrixAt(lampCount, dummy.matrix);
-          // A lit lamp: the status hue carried toward white, never past it,
-          // so amber stays amber instead of clipping to cream.
-          color.copy(palette.status[agent.status]);
-          const lit =
-            0.22 +
-            0.2 * w +
-            (agent.status === 'needs-you' ? attention * 0.25 * w : 0);
-          color.lerp(WHITE, Math.min(0.6, lit * spec.inlayGlow));
-          color.multiplyScalar((0.75 + 0.35 * w) * (1 - recede * 0.6));
-          // a quiet mark when the signal lives elsewhere on the tile
-          if (sig.glyphStatus < 1)
-            color.copy(palette.neutral).lerp(palette.label, 0.22 + 0.1 * w);
-          lamps.setColorAt(lampCount, color);
-          lampCount += 1;
-        }
-
-        // Rim: the status as a lit band around the top edge.
-        if (sig.rim) {
-          dummy.position.copy(tmp).addScaledVector(tmp2, -0.1);
-          dummy.quaternion.copy(place.quaternion);
-          dummy.scale.set(s, 1, s);
-          dummy.updateMatrix();
-          rims.setMatrixAt(rimCount, dummy.matrix);
-          color.copy(palette.status[agent.status]);
-          color.multiplyScalar(
-            (0.45 +
-              0.55 * w +
-              (agent.status === 'needs-you' ? attention * 0.35 * w : 0)) *
-              (1 - recede * 0.6)
-          );
-          color.lerp(palette.dim, (1 - w) * 0.6);
-          rims.setColorAt(rimCount, color);
-          rimCount += 1;
-        }
-
-        // Lamp: a glow under the tile.
-        if (sig.underglow) {
-          dummy.position.copy(place.position).addScaledVector(tmp2, 0.06);
-          dummy.quaternion.copy(place.quaternion);
-          const gs = s * (0.8 + 0.3 * w + attention * 0.08 * w);
-          dummy.scale.set(gs, 1, gs);
-          dummy.updateMatrix();
-          glows.setMatrixAt(glowCount, dummy.matrix);
-          color.copy(palette.status[agent.status]);
-          color.multiplyScalar(
-            (0.2 +
-              0.5 * w +
-              (agent.status === 'needs-you' ? attention * 0.3 * w : 0)) *
-              (1 - recede * 0.7)
-          );
-          glows.setColorAt(glowCount, color);
-          glowCount += 1;
-        }
-
-        // Working motion: a light that circles the edge.
-        if (working && motion === 'orbit') {
-          const a = clock * 1.6 + phase;
-          tmp3
-            .set(
-              Math.cos(a) * TILE_RADIUS * 0.84,
-              0,
-              Math.sin(a) * TILE_RADIUS * 0.84
-            )
-            .applyQuaternion(place.quaternion);
-          dummy.position.copy(tmp).add(tmp3).addScaledVector(tmp2, 0.06);
-          dummy.quaternion.copy(place.quaternion);
-          dummy.scale.setScalar(s * (0.8 + 0.4 * w));
-          dummy.updateMatrix();
-          orbits.setMatrixAt(orbitCount, dummy.matrix);
-          color.copy(palette.status.active).lerp(WHITE, 0.45);
-          color.multiplyScalar((0.7 + 0.5 * w) * (1 - recede * 0.6));
-          orbits.setColorAt(orbitCount, color);
-          orbitCount += 1;
-        }
-        // Working motion: a ring that leaves the tile and fades.
-        if (working && motion === 'pulse') {
-          const ph = (clock * 0.42 + phase * 0.37) % 1;
-          dummy.position
-            .copy(place.position)
-            .addScaledVector(tmp2, TILE_HEIGHT / 2 + 0.03);
-          dummy.quaternion.copy(place.quaternion);
-          const ps = s * (1 + ph * 0.9);
-          dummy.scale.set(ps, 1, ps);
-          dummy.updateMatrix();
-          pulses.setMatrixAt(pulseCount, dummy.matrix);
-          color.copy(palette.status.active);
-          color.multiplyScalar(
-            (1 - ph) * (1 - ph) * (0.35 + 0.4 * w) * (1 - recede * 0.7)
-          );
-          pulses.setColorAt(pulseCount, color);
-          pulseCount += 1;
-        }
-
-        // Selection: the product's ring on the ground around the tile.
-        if (tile.agent === d.selected) {
-          selection.visible = true;
-          selection.position
-            .copy(place.position)
-            .addScaledVector(tmp2, TILE_HEIGHT / 2 + 0.05);
-          selection.quaternion.copy(place.quaternion);
-          selection.scale.set(s, 1, s);
-        }
-
-        if (spec.core) {
-          dummy.position
-            .copy(place.position)
-            .addScaledVector(tmp2, (TILE_HEIGHT * thickness) / 2);
-          dummy.quaternion.copy(place.quaternion);
-          dummy.scale.set(s * 0.9, s * coreHeight, s * 0.9);
-          dummy.updateMatrix();
-          cores.setMatrixAt(coreCount, dummy.matrix);
-          color.copy(palette.status[agent.status]);
-          color.multiplyScalar(
-            (0.9 +
-              1.1 * w +
-              (agent.status === 'needs-you' ? attention * 0.8 * w : 0) +
-              breathe * 0.5) *
-              (1 - recede * 0.6)
-          );
-          cores.setColorAt(coreCount, color);
-          coreCount += 1;
-        }
-      }
-
-      // Ghosts: the next ring out, drawn as outlines.
-      const ghost = at.tileGhost(tile);
-      const ghostTarget = ghost ? 1 : 0;
+      // The ghost ring: the next slots out, drawn as outlines.
+      const ghostTarget = at.tileGhost(tile) ? 1 : 0;
       anim.ghost[i] = reducedMotion
         ? ghostTarget
         : THREE.MathUtils.damp(anim.ghost[i], ghostTarget, 7, delta);
+      normal.copy(place.position).sub(SPHERE_CENTER).normalize();
       if (anim.ghost[i] > 0.02) {
         dummy.position
           .copy(place.position)
-          .addScaledVector(tmp2, present ? TILE_HEIGHT / 2 + 0.04 : 0.04);
+          .addScaledVector(normal, present ? TILE_HEIGHT / 2 + 0.04 : 0.04);
         dummy.quaternion.copy(place.quaternion);
-        const gs = anim.ghost[i];
-        dummy.scale.set(gs, 1, gs);
+        dummy.scale.set(anim.ghost[i], 1, anim.ghost[i]);
         dummy.updateMatrix();
         ghosts.setMatrixAt(ghostCount, dummy.matrix);
         color.copy(palette.ghost).multiplyScalar(0.55 + 0.45 * anim.ghost[i]);
@@ -786,66 +592,340 @@ export function CrustVisual({
         anim.tileOfGhost[ghostCount] = i;
         ghostCount += 1;
       }
+
+      if (s < SCALE_MIN) {
+        anim.statusReady[i] = 0;
+        continue;
+      }
+
+      // The body: territory in the ground mesh, agents in the body mesh,
+      // lifted along the normal so the tile grows outward from the sphere.
+      const thickness = 1 + anim.lift[i] * 2.4;
+      const bodyHeight = TILE_HEIGHT * thickness;
+      const bodyTop = bodyHeight - TILE_HEIGHT / 2;
+      dummy.position
+        .copy(place.position)
+        .addScaledVector(normal, (TILE_HEIGHT * (thickness - 1)) / 2);
+      dummy.quaternion.copy(place.quaternion);
+      dummy.scale.set(s, s * thickness, s);
+      dummy.updateMatrix();
+
+      if (!agent) {
+        anim.statusReady[i] = 0;
+        ground.setMatrixAt(groundCount, dummy.matrix);
+        color.copy(palette.ground);
+        // Territory tiles nearest the agents are a touch brighter.
+        color.lerp(palette.groundEdge, tile.ring === 0 ? 0.3 : 0.12);
+        color.lerp(FROST, spec.groundPale);
+        color.lerp(palette.body, recede * 0.7);
+        ground.setColorAt(groundCount, color);
+        groundCount += 1;
+        continue;
+      }
+
+      // An agent. Its status colour eases toward the new one on a change.
+      const target = palette.status[agent.status];
+      const si = i * 3;
+      if (!anim.statusReady[i]) {
+        anim.status[si] = target.r;
+        anim.status[si + 1] = target.g;
+        anim.status[si + 2] = target.b;
+        anim.statusReady[i] = 1;
+      } else {
+        anim.status[si] += (target.r - anim.status[si]) * colorRate;
+        anim.status[si + 1] += (target.g - anim.status[si + 1]) * colorRate;
+        anim.status[si + 2] += (target.b - anim.status[si + 2]) * colorRate;
+      }
+      statusColor.setRGB(
+        anim.status[si],
+        anim.status[si + 1],
+        anim.status[si + 2]
+      );
+
+      // How alive the tile is: arrival and being an agent, for everything
+      // that stands on it.
+      const sa = s * a;
+      const breathe =
+        working && (motion === 'breathe' || motion === 'wave') && w > 0.5
+          ? (Math.sin(
+              motion === 'wave'
+                ? clock * 1.5 - (place.x * 0.5 + place.y * 0.32)
+                : clock * 1.6 + phase
+            ) +
+              1) *
+            0.5
+          : 0;
+
+      agents.setMatrixAt(agentCount, dummy.matrix);
+      anim.agentTile[agentCount] = i;
+      color.copy(statusColor);
+      color.lerp(WHITE, spec.pastel);
+      color.lerp(METAL, 1 - spec.bodyTint);
+      color.lerp(palette.neutral, 1 - sig.bodyStatus);
+      color.lerp(palette.dim, (1 - w) * (sig.bodyStatus ? 0.78 : 0.45));
+      if (tile.agent === anim.hover || tile.agent === d.selected)
+        color.lerp(palette.label, 0.12);
+      color.lerp(palette.label, breathe * 0.14);
+      color.lerp(palette.body, recede * 0.7);
+      // fade to ground as the agent leaves, toward the ground's own colour
+      if (a < 1) {
+        groundColor
+          .copy(palette.ground)
+          .lerp(palette.groundEdge, tile.ring === 0 ? 0.3 : 0.12)
+          .lerp(FROST, spec.groundPale)
+          .lerp(palette.body, recede * 0.7);
+        color.lerp(groundColor, 1 - a);
+      }
+      agents.setColorAt(agentCount, color);
+      agentCount += 1;
+
+      // Where things stand: the face the marks and lamps sit on. In the
+      // translucent options that is the lit cap, which is fixed above the
+      // body's top at every lift.
+      const faceTop = spec.core ? bodyTop + CAP_PROUD : bodyTop;
+
+      // The lit cap of light inside the body.
+      if (spec.core) {
+        const capHeight = bodyHeight * CAP_SHARE + CAP_PROUD;
+        dummy.position
+          .copy(place.position)
+          .addScaledVector(normal, bodyTop + CAP_PROUD - capHeight / 2);
+        dummy.quaternion.copy(place.quaternion);
+        dummy.scale.set(sa * 0.9, sa * capHeight, sa * 0.9);
+        dummy.updateMatrix();
+        cores.setMatrixAt(coreCount, dummy.matrix);
+        color.copy(statusColor);
+        color.multiplyScalar(
+          (0.9 +
+            1.1 * w +
+            (agent.status === 'needs-you' ? attention * 0.8 * w : 0) +
+            breathe * 0.5) *
+            (1 - recede * 0.6)
+        );
+        cores.setColorAt(coreCount, color);
+        coreCount += 1;
+      }
+
+      // The harness mark, facing the camera, part by part.
+      const markIndex = marked ? markOfAgent[agent.id] : -1;
+      if (markIndex >= 0) {
+        const onCoin = mark === 'coin';
+        dummy.quaternion.copy(place.quaternion).multiply(yaw);
+        const ms = sa * (onCoin ? MARK_SIZE * 0.78 : MARK_SIZE);
+        for (let p = 0; p < parts.length; p += 1) {
+          const part = parts[p];
+          if (part.mark !== markIndex) continue;
+          const mesh = partMeshes[p] as THREE.InstancedMesh;
+          const slot = anim.partCount[p];
+          anim.partCount[p] = slot + 1;
+          dummy.position
+            .copy(place.position)
+            .addScaledVector(
+              normal,
+              faceTop +
+                LIFT_OFF +
+                (onCoin ? COIN_HEIGHT : 0) +
+                part.layer * LAYER_STEP * markDepth
+            );
+          dummy.scale.set(ms, sa * markDepth, ms);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(slot, dummy.matrix);
+          // Tone: the vendor's colour, the artwork's own, or the ink.
+          const tone = part.tone;
+          if (tone === 'ink') {
+            if (mark === 'lit') {
+              if (brightFace) color.copy(INK);
+              else
+                color
+                  .copy(palette.label)
+                  .multiplyScalar((0.55 + 0.4 * w) * (1 - recede * 0.6));
+            } else if (onCoin) {
+              color.copy(INK);
+            } else {
+              color.copy(statusColor).lerp(WHITE, spec.pastel);
+              color.lerp(METAL, 1 - spec.bodyTint);
+              color.lerp(palette.neutral, 1 - sig.bodyStatus);
+              if (brightFace) color.lerp(INK, 0.35);
+              else color.lerp(palette.label, 0.45);
+            }
+          } else {
+            color.copy(tone);
+          }
+          // a mark steps back with its agent, and with the world behind type
+          color.lerp(palette.dim, Math.min(1, (1 - w) * 0.5 + recede * 0.5));
+          mesh.setColorAt(slot, color);
+        }
+        if (onCoin) {
+          dummy.position
+            .copy(place.position)
+            .addScaledVector(normal, faceTop + LIFT_OFF + COIN_HEIGHT / 2);
+          dummy.quaternion.copy(place.quaternion);
+          dummy.scale.set(sa, sa, sa);
+          dummy.updateMatrix();
+          coins.setMatrixAt(coinCount, dummy.matrix);
+          color.copy(COIN).lerp(palette.dim, (1 - w) * 0.5);
+          color.lerp(palette.body, recede * 0.7);
+          coins.setColorAt(coinCount, color);
+          coinCount += 1;
+        }
+      }
+
+      // The status lamp: the whole top when there is no mark, a small
+      // light below the mark (toward the viewer) when there is one. The
+      // rim treatment carries the status on the edge and shows no lamp
+      // beside a mark.
+      const lampOn = !(marked && markIndex >= 0 && (sig.rim || sig.bodyStatus));
+      if (lampOn) {
+        const beside = marked && markIndex >= 0;
+        dummy.position
+          .copy(place.position)
+          .addScaledVector(normal, faceTop + LIFT_OFF);
+        dummy.quaternion.copy(place.quaternion).multiply(yaw);
+        if (beside) {
+          side.set(0, 0, 0.6).applyQuaternion(dummy.quaternion);
+          dummy.position.add(side);
+        }
+        const ls =
+          sa * (beside ? 0.2 : (0.75 + 0.25 * w) * sig.glyphScale * 1.12);
+        dummy.scale.set(ls, sa * 0.05, ls);
+        dummy.updateMatrix();
+        lamps.setMatrixAt(lampCount, dummy.matrix);
+        // A lit lamp: the status hue carried toward white, never past it,
+        // so amber stays amber instead of clipping to cream.
+        color.copy(statusColor);
+        const lit =
+          0.22 +
+          0.2 * w +
+          (agent.status === 'needs-you' ? attention * 0.25 * w : 0);
+        color.lerp(WHITE, Math.min(0.6, lit * spec.inlayGlow));
+        color.multiplyScalar((0.75 + 0.35 * w) * (1 - recede * 0.6));
+        // a quiet mark when the signal lives elsewhere on the tile
+        if (sig.glyphStatus < 1)
+          color.copy(palette.neutral).lerp(palette.label, 0.22 + 0.1 * w);
+        lamps.setColorAt(lampCount, color);
+        lampCount += 1;
+      }
+
+      // Rim: the status as a lit band around the top edge.
+      if (sig.rim) {
+        dummy.position
+          .copy(place.position)
+          .addScaledVector(normal, bodyTop - 0.09);
+        dummy.quaternion.copy(place.quaternion);
+        dummy.scale.set(sa, 1, sa);
+        dummy.updateMatrix();
+        rims.setMatrixAt(rimCount, dummy.matrix);
+        color.copy(statusColor);
+        color.multiplyScalar(
+          (0.45 +
+            0.55 * w +
+            (agent.status === 'needs-you' ? attention * 0.35 * w : 0)) *
+            (1 - recede * 0.6)
+        );
+        color.lerp(palette.dim, (1 - w) * 0.6);
+        rims.setColorAt(rimCount, color);
+        rimCount += 1;
+      }
+
+      // Lamp: a glow under the tile.
+      if (sig.underglow) {
+        dummy.position.copy(place.position).addScaledVector(normal, 0.06);
+        dummy.quaternion.copy(place.quaternion);
+        const gs = sa * (0.8 + 0.3 * w + attention * 0.08 * w);
+        dummy.scale.set(gs, 1, gs);
+        dummy.updateMatrix();
+        glows.setMatrixAt(glowCount, dummy.matrix);
+        color.copy(statusColor);
+        color.multiplyScalar(
+          (0.2 +
+            0.5 * w +
+            (agent.status === 'needs-you' ? attention * 0.3 * w : 0)) *
+            (1 - recede * 0.7)
+        );
+        glows.setColorAt(glowCount, color);
+        glowCount += 1;
+      }
+
+      // Working motion: a soft band of light that sweeps the face.
+      if (working && motion === 'sheen') {
+        // on the face the marks stand on: in the translucent options that is
+        // the lit cap, which is proud of the body and would hide a sweep laid
+        // on the body's own top
+        dummy.position
+          .copy(place.position)
+          .addScaledVector(normal, faceTop + LIFT_OFF * 2);
+        dummy.quaternion.copy(place.quaternion);
+        dummy.scale.set(sa, 1, sa);
+        dummy.updateMatrix();
+        sheens.setMatrixAt(sheenCount, dummy.matrix);
+        color.copy(statusColor).lerp(WHITE, 0.55);
+        color.multiplyScalar(0.4 * (1 - recede * 0.7));
+        sheens.setColorAt(sheenCount, color);
+        phaseAttr.setX(sheenCount, sheenPhase(clock, agent.id * 0.173));
+        sheenCount += 1;
+      }
+      // Working motion: a ring that leaves the tile and fades.
+      if (working && motion === 'pulse') {
+        const ph = (clock * 0.42 + phase * 0.37) % 1;
+        dummy.position
+          .copy(place.position)
+          .addScaledVector(normal, TILE_HEIGHT / 2 + 0.03);
+        dummy.quaternion.copy(place.quaternion);
+        const ps = sa * (1 + ph * 0.9);
+        dummy.scale.set(ps, 1, ps);
+        dummy.updateMatrix();
+        pulses.setMatrixAt(pulseCount, dummy.matrix);
+        color.copy(statusColor);
+        color.multiplyScalar(
+          (1 - ph) * (1 - ph) * (0.35 + 0.4 * w) * (1 - recede * 0.7)
+        );
+        pulses.setColorAt(pulseCount, color);
+        pulseCount += 1;
+      }
+
+      // Selection: the product's ring on the ground around the tile.
+      if (tile.agent === d.selected && isAgent) {
+        selection.visible = true;
+        selection.position
+          .copy(place.position)
+          .addScaledVector(normal, TILE_HEIGHT / 2 + 0.05);
+        selection.quaternion.copy(place.quaternion);
+        selection.scale.set(s, 1, s);
+      }
     }
     for (let g = ghostCount; g < tileCount; g += 1) anim.tileOfGhost[g] = -1;
-    ghosts.count = ghostCount;
-    cores.count = coreCount;
-    lamps.count = lampCount;
-    coins.count = coinCount;
-    rims.count = rimCount;
-    glows.count = glowCount;
-    orbits.count = orbitCount;
-    pulses.count = pulseCount;
-    for (let p = 0; p < parts.length; p += 1) {
-      const mesh = partMeshes[p] as THREE.InstancedMesh;
-      mesh.count = anim.partCount[p];
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    }
 
-    for (const mesh of [
-      ground,
-      agents,
-      cores,
-      lamps,
-      coins,
-      ghosts,
-      rims,
-      glows,
-      orbits,
-      pulses,
-    ]) {
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    flush(ground, groundCount);
+    flush(agents, agentCount);
+    flush(ghosts, ghostCount);
+    flush(cores, coreCount);
+    flush(lamps, lampCount);
+    flush(coins, coinCount);
+    flush(rims, rimCount);
+    flush(glows, glowCount);
+    flush(sheens, sheenCount);
+    flush(pulses, pulseCount);
+    if (sheenCount > 0) {
+      phaseAttr.addUpdateRange(0, sheenCount);
+      phaseAttr.needsUpdate = true;
     }
+    for (let p = 0; p < parts.length; p += 1)
+      flush(partMeshes[p] as THREE.InstancedMesh, anim.partCount[p]);
 
-    // Anchors for the DOM overlay.
+    // Anchors for the DOM overlay: the selected agent, while it is here.
     const a = anchor;
-    const exemplarTile = d.exemplar >= 0 ? tileOfAgent[d.exemplar] : -1;
-    if (exemplarTile >= 0 && anim.present[exemplarTile]) {
-      const place = placements[exemplarTile];
-      tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
-      tmp
-        .copy(place.position)
-        .addScaledVector(
-          tmp2,
-          TILE_HEIGHT + anim.lift[exemplarTile] * 1.2 + 0.2
-        );
-      if (projectToCanvas(tmp, state.camera, size.width, size.height, point)) {
-        a.setExemplar(point.x, point.y);
-      } else a.clearExemplar();
-    } else a.clearExemplar();
-
     const selectedTile = d.selected >= 0 ? tileOfAgent[d.selected] : -1;
-    if (selectedTile >= 0 && anim.present[selectedTile]) {
+    if (
+      selectedTile >= 0 &&
+      d.selected < at.count &&
+      anim.agentness[selectedTile] > 0.5 &&
+      anim.scale[selectedTile] > 0.5
+    ) {
       const place = placements[selectedTile];
-      tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
-      tmp
-        .copy(place.position)
-        .addScaledVector(
-          tmp2,
-          TILE_HEIGHT + anim.lift[selectedTile] * 1.2 + 0.3
-        );
+      normal.copy(place.position).sub(SPHERE_CENTER).normalize();
+      const top =
+        TILE_HEIGHT * (1 + anim.lift[selectedTile] * 2.4) - TILE_HEIGHT / 2;
+      tmp.copy(place.position).addScaledVector(normal, top + 0.3);
       if (projectToCanvas(tmp, state.camera, size.width, size.height, point)) {
         a.setFocus(d.selected, point.x, point.y);
       } else a.clearFocus();
@@ -858,7 +938,7 @@ export function CrustVisual({
       size.width,
       size.height,
       a,
-      // clear of a lifted exemplar, which stands three tile heights tall
+      // clear of a lifted agent, which stands three tile heights tall
       TILE_HEIGHT + 1.4
     );
   });
@@ -925,9 +1005,13 @@ export function CrustVisual({
           args={[
             part.geometry,
             mark === 'relief'
-              ? spec.agent
+              ? part.tone === 'ink'
+                ? spec.agent
+                : paintMaterial
               : mark === 'coin'
-                ? coinMaterial
+                ? part.tone === 'ink'
+                  ? coinMaterial
+                  : paintMaterial
                 : undefined,
             tileCount,
           ]}
@@ -989,13 +1073,11 @@ export function CrustVisual({
       </instancedMesh>
 
       <instancedMesh
-        ref={orbitsRef}
-        args={[orbitGeometry, undefined, tileCount]}
+        ref={sheensRef}
+        args={[sheenGeometry, sheenMaterial, tileCount]}
         raycast={() => null}
         frustumCulled={false}
-      >
-        <meshBasicMaterial toneMapped={false} transparent />
-      </instancedMesh>
+      />
 
       <instancedMesh
         ref={pulsesRef}

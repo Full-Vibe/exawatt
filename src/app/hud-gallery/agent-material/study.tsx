@@ -21,8 +21,9 @@ import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import { AgentPanel } from '../homepage-study/agent-panel';
 import { STATUS_LABEL } from '../homepage-study/fleet-model';
+import { PinnedAgentPanel } from '../homepage-study/pinned-agent-panel';
+import { STAGES } from '../homepage-study/stages';
 import {
   STATUS_ORDER,
   VisualAnchor,
@@ -84,10 +85,10 @@ function readState(params: URLSearchParams): StudyState {
       : 'relief',
     shape: CRUST_SHAPES.some(m => m.id === shape)
       ? (shape as CrustShapeId)
-      : 'hex',
+      : 'rounded',
     motion: CRUST_MOTIONS.some(m => m.id === motion)
       ? (motion as CrustMotionId)
-      : 'orbit',
+      : 'sheen',
     status: STATUS_ORDER.includes(status as StatusLightState)
       ? (status as StatusLightState)
       : 'active',
@@ -177,9 +178,10 @@ export function AgentMaterialStudy() {
     progress: 1,
     base: count,
     count,
-    highlights: [null, null, null, null, null, null, null],
+    highlights: STAGES.map(() => null),
     exemplar: -1,
     selected: -1,
+    rate: 4.5,
     rail: 1,
     recede: 0,
   });
@@ -189,55 +191,23 @@ export function AgentMaterialStudy() {
   }, [count]);
   const anchor = useRef(new VisualAnchor());
 
-  // Hover to feel it, click to open it.
-  const [selected, setSelected] = useState(-1);
+  // Hover to feel it, click to open it, click it again to close it.
+  const [openAgent, setOpenAgent] = useState(-1);
   const onHoverChange = useCallback(() => {}, []);
   const onSelect = useCallback((agent: number) => {
-    setSelected(previous => (previous === agent ? previous : agent));
+    setOpenAgent(previous => (agent === previous ? -1 : agent));
   }, []);
+  // An agent the cluster no longer has cannot stay open.
+  const selected = openAgent >= 0 && openAgent < count ? openAgent : -1;
   useEffect(() => {
     drive.current.selected = selected;
   }, [selected]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelected(-1);
+      if (e.key === 'Escape') setOpenAgent(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
-  const stageRef = useRef<HTMLDivElement>(null);
-  const focusRef = useRef<HTMLDivElement>(null);
-  const openedAt = useRef(-1);
-  useEffect(() => {
-    let frame = 0;
-    const tick = () => {
-      frame = requestAnimationFrame(tick);
-      const a = anchor.current;
-      const focus = focusRef.current;
-      const stageEl = stageRef.current;
-      if (!focus || !stageEl) return;
-      if (a.focusPoint && a.focus >= 0) {
-        // Placed every frame beside the tile; pops in where the tile is.
-        const now = performance.now();
-        if (openedAt.current < 0) openedAt.current = now;
-        const pop = Math.min(1, (now - openedAt.current) / 160);
-        const ease = 1 - (1 - pop) * (1 - pop);
-        const scale = 0.94 + 0.06 * ease;
-        const toLeft = a.focusPoint.x > stageEl.clientWidth * 0.62;
-        focus.style.opacity = String(ease);
-        focus.style.pointerEvents = 'auto';
-        focus.style.transform = toLeft
-          ? `translate(${a.focusPoint.x - 18}px, ${a.focusPoint.y}px) translate(-100%, -50%) scale(${scale})`
-          : `translate(${a.focusPoint.x + 18}px, ${a.focusPoint.y}px) translate(0, -50%) scale(${scale})`;
-      } else {
-        openedAt.current = -1;
-        focus.style.opacity = '0';
-        focus.style.pointerEvents = 'none';
-      }
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
   }, []);
 
   const selectedAgent = selected >= 0 ? model.agents[selected] : null;
@@ -250,7 +220,10 @@ export function AgentMaterialStudy() {
       data-public-exhibition-surface="true"
     >
       <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start">
-        <div className="flex w-full flex-col gap-2 lg:w-[26rem] lg:shrink-0">
+        {/* On a phone the controls scroll beneath the pinned stage (the stage
+            is first, below), so a tap on any option changes a scene that is
+            still in view. From `lg` up they stand beside it, as before. */}
+        <div className="order-2 flex w-full flex-col gap-2 lg:order-1 lg:w-[26rem] lg:shrink-0">
           <p className="mb-2 font-mono text-chrome-micro text-white/50">
             <Link href="/hud-gallery" className="hover:text-white">
               HUD Gallery
@@ -382,8 +355,7 @@ export function AgentMaterialStudy() {
         </div>
 
         <div
-          ref={stageRef}
-          className="relative h-[70svh] min-h-[420px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#04060b] lg:h-[calc(100svh-5rem)]"
+          className="sticky top-12 z-10 order-1 h-[52svh] min-h-[240px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#04060b] lg:relative lg:top-auto lg:z-auto lg:order-2 lg:h-[calc(100svh-5rem)] lg:min-h-[420px]"
           data-agent-material-stage
         >
           <VisualCanvas
@@ -405,16 +377,16 @@ export function AgentMaterialStudy() {
             onHoverChange={onHoverChange}
             onSelect={onSelect}
           />
-          <div
-            ref={focusRef}
-            className="absolute left-0 top-0 opacity-0 will-change-transform"
-            onPointerDown={e => e.stopPropagation()}
-            onPointerUp={e => e.stopPropagation()}
-          >
-            {selectedAgent ? (
-              <AgentPanel agent={selectedAgent} theme={theme} />
-            ) : null}
-          </div>
+          <PinnedAgentPanel
+            agent={selectedAgent}
+            theme={theme}
+            anchor={anchor.current}
+            column={0}
+            insetTop={12}
+            insetBottom={32}
+            narrowSlack={0}
+            reducedMotion={reducedMotion}
+          />
           <p className="pointer-events-none absolute bottom-3 left-4 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
             Demo workspace · synthetic agent
           </p>

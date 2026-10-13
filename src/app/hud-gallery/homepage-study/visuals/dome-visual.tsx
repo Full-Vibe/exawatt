@@ -20,6 +20,7 @@ import { SPHERE_CENTER, planeToSphere } from '../sphere';
 import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
 import { GlobeBody } from './globe-body';
+import { keepPickable } from './pick-bounds';
 import {
   highlightWeight,
   paletteFrom,
@@ -162,12 +163,16 @@ export function DomeVisual({
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
+    // The rig moved the camera this frame; refresh its matrices so every anchor
+    // projected below lands on this frame's picture, not the last one's.
+    state.camera.updateMatrixWorld();
     const d = drive.current;
     const marks = marksRef.current;
     const halos = halosRef.current;
     const pipMesh = pipsRef.current;
     const tethers = tethersRef.current;
     if (!marks || !halos || !pipMesh || !tethers) return;
+    keepPickable(marks);
     const shown = shownRef.current;
     const at = fleetAt(model, Math.round(shown));
     anim.pulse += delta;
@@ -330,14 +335,6 @@ export function DomeVisual({
     if (pipMesh.instanceColor) pipMesh.instanceColor.needsUpdate = true;
 
     const a = anchor;
-    if (d.exemplar >= 0 && d.exemplar < at.count) {
-      const place = placements[tileOfAgent[d.exemplar]];
-      tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
-      tmp.copy(place.position).addScaledVector(tmp2, 0.9);
-      if (projectToCanvas(tmp, state.camera, size.width, size.height, point)) {
-        a.setExemplar(point.x, point.y);
-      } else a.clearExemplar();
-    } else a.clearExemplar();
     if (d.selected >= 0 && tileOfAgent[d.selected] >= 0) {
       const place = placements[tileOfAgent[d.selected]];
       tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();

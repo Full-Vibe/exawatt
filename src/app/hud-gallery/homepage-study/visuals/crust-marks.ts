@@ -17,21 +17,27 @@
  *   tinted toward the vendor's colour.
  * - Coin: a light disc on the tile with the mark in relief on it.
  *
- * A mark is one or more parts (W15g): most are one shape; OpenClaw's pixel
- * lobster is its outline, body, claws and eyes in the artwork's own tones,
- * because the silhouette alone did not read as a lobster (operator
- * 2026-10-13). Marks face the camera, so a logo is upright from wherever
- * the story looks. Antigravity has no mark: Google permits only its own
- * artwork, unaltered.
+ * A mark is one or more parts (W15g). OpenClaw's mascot is a body, two
+ * claws, two antennae, two eyes and their glints, in the artwork's own
+ * tones; parts that overlap stand on different layers, so no two surfaces
+ * ever share a plane (the fluttering the operator saw on the pixel lobster's
+ * sides was exactly that: coplanar parts at one height, z-fighting). Marks
+ * face the camera, so a logo is upright from wherever the story looks.
+ * Antigravity has no mark: Google permits only its own artwork, unaltered.
  *
  * Unit geometries: a part fits a 1 by 1 box centred on the origin and is
  * extruded from y = 0 to y = 1; the visual scales each instance to the size
- * and depth its treatment wants and lifts a raised part by its `raise`.
+ * and depth its treatment wants and lifts a part by its layer.
  */
 
 import * as THREE from 'three';
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
-import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
+import {
+  HARNESS_MARK_PATHS,
+  type HarnessMarkId,
+  type HarnessMarkPart,
+} from '@/components/workspace/harness-icons';
+import { markBrandHex, markToneHex } from '../mark-tones';
 
 export type CrustMarkId = 'off' | 'lit' | 'relief' | 'coin';
 
@@ -54,28 +60,7 @@ export const CRUST_MARKS: { id: CrustMarkId; name: string; note: string }[] = [
   },
 ];
 
-type MarkId = keyof typeof HARNESS_MARK_PATHS;
-
-const MARK_IDS = Object.keys(HARNESS_MARK_PATHS) as MarkId[];
-
-/** The vendor's own colour for its mark, where it supplies one: Anthropic
- *  draws Claude's mark in its terracotta; OpenClaw's lobster is red by its
- *  own artwork. The others are supplied in black and white only and take
- *  the surrounding ink. Study paint, not product chrome: the product draws
- *  every mark in one ink (LICENSES/brand/harness-marks.md). */
-const BRAND: Partial<Record<MarkId, string>> = {
-  claude: '#D97757',
-  openclaw: '#ff4f40',
-};
-
-/** The pixel lobster's own tones, the same bytes the SVG paints. */
-const ARTWORK_TONES = {
-  outline: '#3a0a0d',
-  body: '#ff4f40',
-  claws: '#ff775f',
-  eyeDark: '#081016',
-  eyeLight: '#f5fbff',
-} as const;
+const MARK_IDS = Object.keys(HARNESS_MARK_PATHS) as HarnessMarkId[];
 
 export const MARK_COUNT = MARK_IDS.length;
 
@@ -84,26 +69,97 @@ export function markIndexFor(adapterId: string): number {
   return (MARK_IDS as readonly string[]).indexOf(adapterId);
 }
 
-/** One extruded part of a mark, with how it is coloured and lifted. */
+/** One extruded part of a mark, with how it is coloured and stacked. */
 interface MarkPart {
   /** Which mark this part belongs to, in `markIndexFor` order. */
   mark: number;
   geometry: THREE.BufferGeometry;
-  /** `ink` takes the surrounding ink, `brand` the vendor's colour, or a
-   *  fixed colour of the artwork's own. */
-  tone: 'ink' | 'brand' | THREE.Color;
-  /** Lift above the mark's base, in mark depths. */
-  raise: number;
+  /** `ink` takes the surrounding ink, or the vendor's or the artwork's own
+   *  colour. */
+  tone: 'ink' | THREE.Color;
+  /** Stacking layer: a higher layer stands on a lower one. */
+  layer: number;
 }
 
 /** The vendor's colour for a mark, or null where it supplies none. */
 export function markBrand(index: number): THREE.Color | null {
-  const brand = BRAND[MARK_IDS[index]];
-  return brand ? new THREE.Color(brand) : null;
+  const hex = markBrandHex(MARK_IDS[index]);
+  return hex ? new THREE.Color(hex) : null;
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
 function partSvg(viewBox: number, fillRule: string, d: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBox} ${viewBox}"><path d="${d}" fill="#000" fill-rule="${fillRule}"/></svg>`;
+  return `<svg xmlns="${SVG_NS}" viewBox="0 0 ${viewBox} ${viewBox}"><path d="${d}" fill="#000" fill-rule="${fillRule}"/></svg>`;
+}
+
+/** Points on the half circle that turns a stroke around at one end. */
+const CAP_SEGMENTS = 8;
+
+/**
+ * A stroked centreline as a filled outline, with round caps: the left edge
+ * out, a half circle round the far end, the right edge back, a half circle
+ * round the near end. The vendor strokes the antennae; a relief needs a
+ * shape to extrude.
+ */
+function strokeOutline(points: THREE.Vector2[], half: number): THREE.Shape {
+  const n = points.length;
+  const normals: THREE.Vector2[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = points[Math.max(0, i - 1)];
+    const b = points[Math.min(n - 1, i + 1)];
+    const t = b.clone().sub(a).normalize();
+    normals.push(new THREE.Vector2(-t.y, t.x));
+  }
+  const left = points.map((p, i) =>
+    p.clone().addScaledVector(normals[i], half)
+  );
+  const right = points.map((p, i) =>
+    p.clone().addScaledVector(normals[i], -half)
+  );
+  const shape = new THREE.Shape();
+  shape.moveTo(left[0].x, left[0].y);
+  for (let i = 1; i < n; i += 1) shape.lineTo(left[i].x, left[i].y);
+  // far end: from the left normal's angle, turning by -PI through the tangent
+  const endAngle = Math.atan2(normals[n - 1].y, normals[n - 1].x);
+  for (let k = 1; k <= CAP_SEGMENTS; k += 1) {
+    const a = endAngle - (Math.PI * k) / (CAP_SEGMENTS + 1);
+    shape.lineTo(
+      points[n - 1].x + Math.cos(a) * half,
+      points[n - 1].y + Math.sin(a) * half
+    );
+  }
+  for (let i = n - 1; i >= 0; i -= 1) shape.lineTo(right[i].x, right[i].y);
+  // near end: from the right normal's angle, turning by -PI through -tangent
+  const startAngle = Math.atan2(normals[0].y, normals[0].x) + Math.PI;
+  for (let k = 1; k <= CAP_SEGMENTS; k += 1) {
+    const a = startAngle - (Math.PI * k) / (CAP_SEGMENTS + 1);
+    shape.lineTo(
+      points[0].x + Math.cos(a) * half,
+      points[0].y + Math.sin(a) * half
+    );
+  }
+  shape.closePath();
+  return shape;
+}
+
+function partShapes(
+  loader: SVGLoader,
+  viewBox: number,
+  fillRule: string,
+  part: HarnessMarkPart
+): THREE.Shape[] {
+  const data = loader.parse(partSvg(viewBox, fillRule, part.d));
+  const shapes: THREE.Shape[] = [];
+  for (const path of data.paths) {
+    if (part.stroke === undefined) {
+      shapes.push(...SVGLoader.createShapes(path));
+    } else {
+      for (const sub of path.subPaths)
+        shapes.push(strokeOutline(sub.getPoints(24), part.stroke / 2));
+    }
+  }
+  return shapes;
 }
 
 /** Every part of every mark, in mark order. Caller disposes. */
@@ -112,19 +168,17 @@ export function makeMarkParts(): MarkPart[] {
   const out: MarkPart[] = [];
   MARK_IDS.forEach((id, index) => {
     const mark = HARNESS_MARK_PATHS[id];
+    const [dx, dy] = mark.translate ?? [0, 0];
     for (const part of mark.parts) {
-      const shapes: THREE.Shape[] = [];
-      for (const path of loader.parse(
-        partSvg(mark.viewBox, mark.fillRule, part.d)
-      ).paths)
-        shapes.push(...SVGLoader.createShapes(path));
-      const g = new THREE.ExtrudeGeometry(shapes, {
-        depth: 1,
-        bevelEnabled: false,
-        curveSegments: 10,
-      });
+      const g = new THREE.ExtrudeGeometry(
+        partShapes(loader, mark.viewBox, mark.fillRule, part),
+        // A mark is at most a hundred pixels across; six segments a curve is
+        // smooth at that size, and twelve put a million vertices on the board
+        // at three hundred agents.
+        { depth: 1, bevelEnabled: false, curveSegments: 6 }
+      );
       // Centre the vendor's box on the origin and fit it to one unit.
-      g.translate(-mark.viewBox / 2, -mark.viewBox / 2, 0);
+      g.translate(dx - mark.viewBox / 2, dy - mark.viewBox / 2, 0);
       g.scale(1 / mark.viewBox, 1 / mark.viewBox, 1);
       // SVG y runs down the page. Turned this way the page's up is the
       // tile's local -Z and the extrusion runs down local Y; lifted back up
@@ -133,14 +187,12 @@ export function makeMarkParts(): MarkPart[] {
       g.rotateX(Math.PI / 2);
       g.translate(0, 1, 0);
       g.computeVertexNormals();
+      const hex = markToneHex(id, part.tone);
       out.push({
         mark: index,
         geometry: g,
-        tone:
-          part.tone === 'ink' || part.tone === 'brand'
-            ? part.tone
-            : new THREE.Color(ARTWORK_TONES[part.tone]),
-        raise: part.raise,
+        tone: hex ? new THREE.Color(hex) : 'ink',
+        layer: part.layer,
       });
     }
   });

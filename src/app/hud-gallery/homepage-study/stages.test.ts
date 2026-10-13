@@ -53,6 +53,28 @@ describe('homepage study copy', () => {
     expect(Math.min(...STAGES.map(stage => stage.count))).toBe(1);
     expect(STAGES[STAGES.length - 1].count).toBe(agentsInFleet());
   });
+
+  it('tells it as ten, one, ten, a hundred, then everything', () => {
+    expect(STAGES.map(stage => stage.count)).toEqual([
+      10,
+      1,
+      10,
+      100,
+      agentsInFleet(),
+      agentsInFleet(),
+    ]);
+  });
+
+  it('has no launch scene: the harness is the mark on every tile', () => {
+    expect(STAGES.map(stage => stage.id)).toEqual([
+      'landing',
+      'working',
+      'needs-you',
+      'third',
+      'fleet',
+      'download',
+    ]);
+  });
 });
 
 function agentsInFleet(): number {

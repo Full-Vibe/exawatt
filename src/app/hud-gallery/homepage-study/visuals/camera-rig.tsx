@@ -30,7 +30,8 @@ import type { RefObject } from 'react';
 import { fleetAt, type FleetModel } from '../fleet-model';
 import { axialToPlane } from '../fleet-model';
 import { planeToSphere } from '../sphere';
-import { panelSide, stageBlend, stageIndex, STAGES } from '../stages';
+import { isNarrow } from '../narrow';
+import { panelSide, stageBlend, STAGES } from '../stages';
 import type { StoryDrive } from '../visual-contract';
 
 interface StageFraming {
@@ -48,12 +49,11 @@ interface StageFraming {
 /** Polar and zoom move one way through the dissections and one way out to
  *  the fleet, so the camera never nods back on itself between stages. */
 const FRAMING: Record<string, StageFraming> = {
-  landing: { polar: 0.78, azimuth: 0, zoom: 0.95, drop: 0.75 },
+  landing: { polar: 0.78, azimuth: 0, zoom: 0.95, drop: 0.52 },
   working: { polar: 0.66, azimuth: 0.35, zoom: 0.84, drop: 0 },
   'needs-you': { polar: 0.62, azimuth: 0.75, zoom: 0.8, drop: 0 },
   third: { polar: 0.6, azimuth: 1.15, zoom: 0.8, drop: 0 },
-  fleet: { polar: 0.95, azimuth: 1.45, zoom: 0.96, drop: 0.14 },
-  launch: { polar: 1.1, azimuth: 1.7, zoom: 1.25, drop: 0.1 },
+  fleet: { polar: 0.95, azimuth: 1.45, zoom: 0.84, drop: -0.04 },
   download: { polar: 1.2, azimuth: 1.9, zoom: 1.45, drop: 0 },
 };
 
@@ -66,8 +66,7 @@ const NARROW: Record<string, { zoom: number; drop: number }> = {
   working: { zoom: 1.0, drop: -0.22 },
   'needs-you': { zoom: 1.0, drop: -0.22 },
   third: { zoom: 1.0, drop: -0.22 },
-  fleet: { zoom: 0.8, drop: 0.5 },
-  launch: { zoom: 1.0, drop: 0 },
+  fleet: { zoom: 0.95, drop: 0.12 },
   download: { zoom: 1.0, drop: 0 },
 };
 
@@ -174,9 +173,26 @@ const USER_POLAR: [number, number][] = [
   [-0.6, 0.9],
 ];
 
-/** How fast the story input settles. Tight, so the scene answers the wheel
- *  at once; the rail's ease is what makes the move smooth. */
-const STORY_RATE = 4.5;
+/**
+ * Fog is a depth cue for the far limb of the globe, so it must start beyond
+ * the subject, wherever the camera has put it. Fixed distances swallowed the
+ * whole globe on a phone, where the fleet fits by moving the camera back past
+ * them (operator-visible as a blank fleet scene, 2026-10-13). The ramp keeps
+ * its length and never starts nearer than it used to.
+ */
+const FOG_NEAR_MIN = 60;
+const FOG_RAMP = 100;
+const FOG_CLEAR = 10;
+
+/** A plain function, because the fog arrives from a hook and the compiler
+ *  lint forbids assigning into it directly. */
+function setFog(fog: THREE.Fog, distance: number) {
+  fog.near = Math.max(FOG_NEAR_MIN, distance + FOG_CLEAR);
+  fog.far = fog.near + FOG_RAMP;
+}
+
+/** The stage that recedes behind centred type: the last one. */
+const RECEDE_FROM = STAGES.length - 1;
 /** A light second pass on distance and target, so a ghost click or a
  *  fleet-size change arrives as a glide and not a cut. */
 const FIT_RATE = 9;
@@ -196,7 +212,7 @@ export function CameraRig({
   /** Frame one cluster close and let the reader orbit all the way round. */
   closeUp?: boolean;
 }) {
-  const { camera, gl, size } = useThree();
+  const { camera, gl, size, scene } = useThree();
   const state = useRef({
     progress: 0,
     azimuth: 0.4,
@@ -224,7 +240,6 @@ export function CameraRig({
     []
   );
   const tables = useMemo(() => fitTables(model), [model]);
-  const launchIndex = useMemo(() => stageIndex('launch'), []);
 
   // Drag to orbit: velocity in, decay out. Zoom and pan stay with the page.
   useEffect(() => {
@@ -286,7 +301,7 @@ export function CameraRig({
     // The one eased input.
     s.progress = reducedMotion
       ? d.progress
-      : THREE.MathUtils.damp(s.progress, d.progress, STORY_RATE, delta);
+      : THREE.MathUtils.damp(s.progress, d.progress, d.rate, delta);
     const b = stageBlend(s.progress, undefined, scratch.blend);
     const f0 = FRAMING[STAGES[b.from].id];
     const f1 = FRAMING[STAGES[b.to].id];
@@ -299,7 +314,7 @@ export function CameraRig({
     // exist to clear the reading column, which a close-up has none of. On a
     // narrow screen the column sits under the world instead of beside it,
     // so the subject moves up the frame, never sideways.
-    const narrow = size.width < size.height;
+    const narrow = isNarrow(size.width, size.height);
     const n0 = NARROW[STAGES[b.from].id];
     const n1 = NARROW[STAGES[b.to].id];
     const drop = closeUp
@@ -326,8 +341,8 @@ export function CameraRig({
       d,
       s.progress,
       THREE.MathUtils.lerp(
-        b.from >= launchIndex ? 1 : 0,
-        b.to >= launchIndex ? 1 : 0,
+        b.from >= RECEDE_FROM ? 1 : 0,
+        b.to >= RECEDE_FROM ? 1 : 0,
         b.t
       )
     );
@@ -404,6 +419,7 @@ export function CameraRig({
           delta
         )
       );
+    if (scene.fog instanceof THREE.Fog) setFog(scene.fog, s.distance);
 
     // Target: straight between the centroids at either end of the move,
     // nudged away from the reading column so the subject is never under

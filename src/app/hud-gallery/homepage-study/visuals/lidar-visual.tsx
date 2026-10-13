@@ -371,6 +371,9 @@ export function LidarVisual({
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
+    // The rig moved the camera this frame; refresh its matrices so every anchor
+    // projected below lands on this frame's picture, not the last one's.
+    state.camera.updateMatrixWorld();
     const d = drive.current;
     const points = pointsRef.current;
     if (!points) return;
@@ -477,16 +480,6 @@ export function LidarVisual({
     }
 
     const a = anchor;
-    const exemplarTile =
-      d.exemplar >= 0 && d.exemplar < at.count ? tileOfAgent[d.exemplar] : -1;
-    if (exemplarTile >= 0) {
-      const place = placements[exemplarTile];
-      tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();
-      tmp.copy(place.position).addScaledVector(tmp2, 2.2);
-      if (projectToCanvas(tmp, state.camera, size.width, size.height, point)) {
-        a.setExemplar(point.x, point.y);
-      } else a.clearExemplar();
-    } else a.clearExemplar();
     if (d.selected >= 0 && tileOfAgent[d.selected] >= 0) {
       const place = placements[tileOfAgent[d.selected]];
       tmp2.copy(place.position).sub(SPHERE_CENTER).normalize();

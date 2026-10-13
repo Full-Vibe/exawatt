@@ -5,21 +5,18 @@
  * panel, but very small and simple and subtle... feel like it's part of
  * the scene and be desirable UI instead of an afterthought").
  *
- * Glass over the globe beside the tile, corner ticks in the product's
- * selection colour, the status as a lit dot, the harness as its own mark
- * (never its name: operator 2026-10-12), three facts, one action. Nothing
- * in it is decoration; every line is a thing the product knows about the
- * agent. No leader to the tile: the panel stands where the tile is.
+ * Glass over the globe, corner ticks in the product's selection colour, the
+ * status as a lit dot, the harness as its own mark (never its name: operator
+ * 2026-10-12), three facts, one action. Nothing in it is decoration; every
+ * line is a thing the product knows about the agent. No leader to the tile
+ * (operator 2026-10-12: "fragile and divergent"); `pinned-agent-panel.tsx`
+ * stands it at the side of the stage, off the middle of the scene, and this
+ * fills whatever width it is given.
  */
 
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
-import { SourceGlyph } from '@/components/workspace/harness-icons';
-import {
-  formatMinutes,
-  sourceAdapterId,
-  STATUS_LABEL,
-  type FleetAgent,
-} from './fleet-model';
+import { formatMinutes, STATUS_LABEL, type FleetAgent } from './fleet-model';
+import { MarkGlyph } from './mark-glyph';
 
 export function AgentPanel({
   agent,
@@ -39,7 +36,7 @@ export function AgentPanel({
   const tick = 'pointer-events-none absolute h-2 w-2';
   return (
     <div
-      className="relative w-[236px] rounded-md border bg-[#070b12]/70 px-3 py-2.5 text-white shadow-[0_18px_40px_rgba(0,0,0,0.5)] backdrop-blur-md"
+      className="relative w-full rounded-md border bg-[#070b12]/75 px-3 py-2.5 text-white shadow-[0_18px_40px_rgba(0,0,0,0.5)] backdrop-blur-md"
       style={{ borderColor: `${accent}55` }}
       data-study-agent-panel
     >
@@ -71,7 +68,7 @@ export function AgentPanel({
           {STATUS_LABEL[agent.status]}
         </span>
         <span className="text-white/70" title={agent.source}>
-          <SourceGlyph source={sourceAdapterId(agent.source)} size={13} />
+          <MarkGlyph source={agent.source} size={14} />
         </span>
       </div>
       <p className="mt-1.5 truncate text-[13px] font-medium">{agent.name}</p>

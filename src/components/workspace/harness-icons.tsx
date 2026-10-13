@@ -41,51 +41,100 @@ const OPENCLAW_EYES_DARK_D = 'M6 5h1v1H6zM9 5h1v1H9z';
 const OPENCLAW_EYES_LIGHT_D = 'M6 4h1v1H6zM9 4h1v1H9z';
 
 /**
- * The marks' path data, byte for byte, in one place. The components below
- * draw it as SVG; the homepage study extrudes the same bytes into 3D
- * (`src/app/hud-gallery/homepage-study/visuals/crust-marks.ts`), so a mark on
- * a tile is the vendor's own geometry and not a drawing of it. Nothing is
- * redrawn here either: `viewBox` is the vendor's box, `fillRule` the mark's
- * own, and a mark is its parts, each named for the tone it takes: `ink` is
- * the surrounding ink, `brand` the vendor's own colour where it supplies one,
- * and the rest are the pixel lobster's own tones, as the component below
- * paints them. The study resolves the names to paint; this file carries no
- * colour of its own beyond the artwork's. A part's `raise` lifts it above
- * the others when it sits on top of them (the lobster's eyes on its body).
+ * The OpenClaw mascot ("molty"), the vendor's own geometry, for the
+ * homepage study's 3D tiles. The paths are copied byte for byte from
+ * `apps/macos/Icon.icon/Assets/molty.svg` in `openclaw/openclaw` (MIT):
+ * the body with its legs, the two claws, the two eyes and their glints (the
+ * SVG's circles, written as arcs), and the two antennae as the centrelines
+ * the vendor strokes at width 3. The chrome icon below stays the project's
+ * pixel lobster; this is the character the project's own site and app icon
+ * show. Provenance: `LICENSES/brand/harness-marks.md`.
  */
-export const HARNESS_MARK_PATHS = {
+const MOLTY_BODY_D =
+  'M60 10C30 10 15 35 15 55C15 75 30 95 45 100L45 110L55 110L55 100C55 100 60 102 65 100L65 110L75 110L75 100C90 95 105 75 105 55C105 35 90 10 60 10Z';
+const MOLTY_CLAWS_D =
+  'M20 45C5 40 0 50 5 60C10 70 20 65 25 55C28 48 25 45 20 45Z M100 45C115 40 120 50 115 60C110 70 100 65 95 55C92 48 95 45 100 45Z';
+const MOLTY_ANTENNAE_D = 'M45 15Q35 5 30 8 M75 15Q85 5 90 8';
+const MOLTY_EYES_D =
+  'M39 35a6 6 0 1 0 12 0a6 6 0 1 0-12 0Z M69 35a6 6 0 1 0 12 0a6 6 0 1 0-12 0Z';
+const MOLTY_GLINTS_D =
+  'M43.5 34a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0Z M73.5 34a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0Z';
+
+export type HarnessMarkId =
+  | 'claude'
+  | 'codex'
+  | 'opencode'
+  | 'grok'
+  | 'openclaw';
+
+export interface HarnessMarkPart {
+  /** Path data. A fill is the vendor's own outline; a stroke (see
+   *  `stroke`) is the centreline the vendor strokes. */
+  d: string;
+  /** The tone role this part takes: `ink` is the surrounding ink, `brand`
+   *  the vendor's own colour where it supplies one, anything else a named
+   *  tone of the artwork. The surface that draws it resolves the name; this
+   *  file carries no colour. */
+  tone: string;
+  /** Stacking for a surface with depth: a higher layer stands on a lower
+   *  one, so overlapping parts never share a plane. */
+  layer: number;
+  /** Stroke width in the mark's own units, when the part is a stroke. */
+  stroke?: number;
+}
+
+interface HarnessMarkPaths {
+  viewBox: number;
+  fillRule: 'nonzero' | 'evenodd';
+  /** The vendor's own group offset, when the artwork carries one. */
+  translate?: readonly [number, number];
+  /** In the vendor's own drawing order. */
+  parts: readonly HarnessMarkPart[];
+}
+
+/**
+ * The marks' path data in one place. The components below draw it as SVG;
+ * the homepage study draws the same bytes as a 2D glyph in its panels and
+ * extrudes them into 3D on its tiles
+ * (`src/app/hud-gallery/homepage-study/visuals/crust-marks.ts`), so a mark
+ * on a tile is the vendor's own geometry and not a drawing of it. Nothing
+ * is redrawn here: `viewBox` is the vendor's box, `fillRule` the mark's
+ * own, and a mark is its parts, each named for the tone it takes.
+ */
+export const HARNESS_MARK_PATHS: Record<HarnessMarkId, HarnessMarkPaths> = {
   claude: {
     viewBox: 24,
     fillRule: 'nonzero',
-    parts: [{ d: CLAUDE_D, tone: 'brand', raise: 0 }],
+    parts: [{ d: CLAUDE_D, tone: 'brand', layer: 0 }],
   },
   codex: {
     viewBox: 24,
     fillRule: 'evenodd',
-    parts: [{ d: OPENAI_D, tone: 'ink', raise: 0 }],
+    parts: [{ d: OPENAI_D, tone: 'ink', layer: 0 }],
   },
   opencode: {
     viewBox: 24,
     fillRule: 'evenodd',
-    parts: [{ d: OPENCODE_D, tone: 'ink', raise: 0 }],
+    parts: [{ d: OPENCODE_D, tone: 'ink', layer: 0 }],
   },
   grok: {
     viewBox: 24,
     fillRule: 'evenodd',
-    parts: [{ d: GROK_D, tone: 'ink', raise: 0 }],
+    parts: [{ d: GROK_D, tone: 'ink', layer: 0 }],
   },
   openclaw: {
-    viewBox: 16,
+    viewBox: 120,
     fillRule: 'nonzero',
+    translate: [0, 2],
     parts: [
-      { d: OPENCLAW_OUTLINE_D, tone: 'outline', raise: 0 },
-      { d: OPENCLAW_BODY_D, tone: 'body', raise: 0 },
-      { d: OPENCLAW_CLAWS_D, tone: 'claws', raise: 0 },
-      { d: OPENCLAW_EYES_DARK_D, tone: 'eyeDark', raise: 1 },
-      { d: OPENCLAW_EYES_LIGHT_D, tone: 'eyeLight', raise: 1 },
+      { d: MOLTY_BODY_D, tone: 'brand', layer: 1 },
+      { d: MOLTY_CLAWS_D, tone: 'claws', layer: 0 },
+      { d: MOLTY_ANTENNAE_D, tone: 'brand', layer: 0, stroke: 3 },
+      { d: MOLTY_EYES_D, tone: 'eye', layer: 2 },
+      { d: MOLTY_GLINTS_D, tone: 'glint', layer: 3 },
     ],
   },
-} as const;
+};
 
 function ClaudeIcon({ size = 12 }: { size?: number }) {
   return (

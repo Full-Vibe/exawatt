@@ -8,7 +8,12 @@ import type { StatusLightState } from '@/components/status-light/protocol';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import { axialToPlane, type fleetAt, type FleetModel } from '../fleet-model';
 import type { LabelAnchor } from '../visual-contract';
-import { SPHERE_CENTER, planeToSphere, tileQuaternion } from '../sphere';
+import {
+  SPHERE_CENTER,
+  SPHERE_RADIUS,
+  planeToSphere,
+  tileQuaternion,
+} from '../sphere';
 
 export interface TilePlacement {
   position: THREE.Vector3;
@@ -93,11 +98,38 @@ export function projectToCanvas(
   return true;
 }
 
-/** Write one label anchor per Project: its centre tile on the sphere,
- *  lifted, projected to canvas pixels. Present Projects only. */
+const centerTileCache = new WeakMap<FleetModel, number[]>();
+
+/** Each Project's centre tile (ring 0), by Project id, found once. */
+function centerTiles(model: FleetModel): number[] {
+  let centers = centerTileCache.get(model);
+  if (!centers) {
+    centers = model.projects.map(project =>
+      model.tiles.findIndex(t => t.project === project.id && t.ring === 0)
+    );
+    centerTileCache.set(model, centers);
+  }
+  return centers;
+}
+
+/** Planar distance between neighbouring rings of a Project, in tile units. */
+const RING_PITCH = Math.sqrt(3);
+/** Past the outermost ring, so a name stands clear of its own tiles. */
+const LABEL_MARGIN = 0.9;
+
+/**
+ * Write one label anchor per Project, projected to canvas pixels. The name
+ * stands beyond the cluster's far rim as the camera sees it, not over its
+ * middle: from the Project's centre it is carried along the surface in the
+ * direction that is up on screen, out past the outermost ring, then raised
+ * `lift` clear of the tiles. (From the middle, a name over a big cluster sat
+ * on its own tiles and could not be read.) Present Projects only.
+ */
 const labelPoint = { x: 0, y: 0 };
 const labelWorld = new THREE.Vector3();
 const labelNormal = new THREE.Vector3();
+const labelUp = new THREE.Vector3();
+const labelOut = new THREE.Vector3();
 export function writeLabelAnchors(
   model: FleetModel,
   at: ReturnType<typeof fleetAt>,
@@ -115,26 +147,38 @@ export function writeLabelAnchors(
       y: 0,
       visible: false,
       count: 0,
+      facing: 0,
     }));
   }
+  // the rig moved the camera this frame; the matrices must say so, or every
+  // anchor trails the picture by a frame
+  camera.updateMatrixWorld();
+  labelUp.setFromMatrixColumn(camera.matrixWorld, 1);
+  const centers = centerTiles(model);
   for (const project of model.projects) {
     const slot = anchor.labels[project.id];
-    const present = at.projects.includes(project);
-    if (!present) {
+    if (project.first >= at.count) {
       slot.visible = false;
+      slot.count = 0;
+      slot.facing = 0;
       continue;
     }
-    // the centre tile is the Project's first tile in model order
-    const centerTile = model.tiles.findIndex(
-      t => t.project === project.id && t.ring === 0
-    );
-    const place = placements[centerTile];
-    const lastIndex = Math.min(at.count, project.first + project.count) - 1;
-    const edge = model.agents[lastIndex].ring;
+    const place = placements[centers[project.id]];
+    const last = Math.min(at.count, project.first + project.count);
+    const edge = model.agents[last - 1].ring;
     labelNormal.copy(place.position).sub(SPHERE_CENTER).normalize();
+    // screen-up, flattened onto the surface here
+    labelOut
+      .copy(labelUp)
+      .addScaledVector(labelNormal, -labelUp.dot(labelNormal));
+    if (labelOut.lengthSq() < 0.04) labelOut.set(0, 0, -1);
+    labelOut.normalize();
     labelWorld
       .copy(place.position)
-      .addScaledVector(labelNormal, lift + 1.1 + edge * 1.15);
+      .addScaledVector(labelOut, (edge + 1) * RING_PITCH + LABEL_MARGIN)
+      .sub(SPHERE_CENTER)
+      .setLength(SPHERE_RADIUS + lift)
+      .add(SPHERE_CENTER);
     slot.visible = projectToCanvas(
       labelWorld,
       camera,
@@ -144,7 +188,8 @@ export function writeLabelAnchors(
     );
     slot.x = labelPoint.x;
     slot.y = labelPoint.y;
-    const last = Math.min(at.count, project.first + project.count);
     slot.count = Math.max(0, last - project.first);
+    labelOut.copy(camera.position).sub(place.position).normalize();
+    slot.facing = labelNormal.dot(labelOut);
   }
 }

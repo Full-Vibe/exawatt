@@ -2,10 +2,13 @@
  * The scroll story (ENG-031 W15), taken from the design partner's structure
  * (Figma "Exawatt Website Structure", slides 15 to 21, 2026-09-11): a landing
  * over one globe, three dissections of it by agent state with a panel pointed
- * at a real agent, a zoom-out to the whole fleet, a launch band, and the
- * download. Her order starts inside one Project and arrives at the Fleet
- * last; the shipped `/v2` runs the other way. Per the operator (2026-09-13)
- * the order was hers to resolve, so this study follows the deck.
+ * at a real agent, a zoom-out to the whole fleet, and the download. (The
+ * deck's launch band, a composer and a row of harness names, is gone: the
+ * operator, 2026-10-13, "doesn't seem to communicate much", and the harness
+ * is now the mark on every tile.) Her order starts inside one Project and
+ * arrives at the Fleet last; the shipped `/v2` runs the other way. Per the
+ * operator (2026-09-13) the order was hers to resolve, so this study follows
+ * the deck.
  *
  * Two copy sets, switchable on the page:
  * - `deck`  the deck's own lines, verbatim where it has them. Its third
@@ -26,7 +29,6 @@ type StageId =
   | 'needs-you'
   | 'third'
   | 'fleet'
-  | 'launch'
   | 'download';
 
 export type CopySetId = 'deck' | 'canon';
@@ -170,29 +172,6 @@ export const STAGES: Stage[] = [
     },
   },
   {
-    id: 'launch',
-    panel: 'center',
-    highlight: {},
-    card: false,
-    focus: 'fleet',
-    labels: false,
-    count: 300,
-    copy: {
-      deck: {
-        headline: ['Choose your own model across', 'GPT, Grok, and Claude.'],
-        body: [
-          'Instead of hunting through ten browser tabs and different apps to remember what you set running.',
-        ],
-      },
-      canon: {
-        headline: ['Launch from one place.'],
-        body: [
-          'Claude Code, Codex, OpenCode, Grok Build and OpenClaw, on the plan you already pay for.',
-        ],
-      },
-    },
-  },
-  {
     id: 'download',
     panel: 'center',
     highlight: {},
@@ -268,16 +247,3 @@ export function stageAt(progress: number): number {
 export function panelSide(stage: Stage): -1 | 0 | 1 {
   return stage.panel === 'right' ? 1 : stage.panel === 'left' ? -1 : 0;
 }
-
-export function stageIndex(id: StageId): number {
-  return STAGES.findIndex(stage => stage.id === id);
-}
-
-/** Launch band chips: the sources the shipped page already names. */
-export const LAUNCH_SOURCES = [
-  'Claude Code',
-  'Codex',
-  'OpenCode',
-  'Grok Build',
-  'OpenClaw',
-];

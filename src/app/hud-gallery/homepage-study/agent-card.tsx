@@ -9,13 +9,8 @@
 
 import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
-import { SourceGlyph } from '@/components/workspace/harness-icons';
-import {
-  formatMinutes,
-  sourceAdapterId,
-  STATUS_LABEL,
-  type FleetAgent,
-} from './fleet-model';
+import { formatMinutes, STATUS_LABEL, type FleetAgent } from './fleet-model';
+import { MarkGlyph } from './mark-glyph';
 
 const STATUS_TONE: Record<StatusLightState, string> = {
   active: 'text-sky-300',
@@ -105,7 +100,7 @@ export function AgentCard({
               className="flex items-center text-white/85"
               title={agent.source}
             >
-              <SourceGlyph source={sourceAdapterId(agent.source)} size={14} />
+              <MarkGlyph source={agent.source} size={15} />
             </dd>
           </dl>
           <div className="mt-4 flex justify-end gap-2">
