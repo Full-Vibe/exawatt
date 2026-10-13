@@ -17,6 +17,8 @@ import type { StoryDrive, VisualAnchor, VisualId } from './visual-contract';
 import { CameraRig } from './visuals/camera-rig';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
+import type { CrustMotionId } from './visuals/crust-motion';
+import type { CrustShapeId } from './visuals/crust-shape';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
 import { CrustVisual } from './visuals/crust-visual';
@@ -43,6 +45,8 @@ export function VisualCanvas({
   visible,
   material,
   mark,
+  shape,
+  motion,
   signal,
   light,
   closeUp,
@@ -53,6 +57,8 @@ export function VisualCanvas({
   visual: VisualId;
   material: CrustMaterialId;
   mark: CrustMarkId;
+  shape: CrustShapeId;
+  motion: CrustMotionId;
   signal: CrustSignalId;
   light?: EnvironmentKind;
   closeUp?: boolean;
@@ -95,6 +101,8 @@ export function VisualCanvas({
         shownRef={shownRef}
         material={material}
         mark={mark}
+        shape={shape}
+        motion={motion}
         signal={signal}
         light={light}
         closeUp={closeUp}

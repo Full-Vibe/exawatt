@@ -46,17 +46,44 @@ const OPENCLAW_EYES_LIGHT_D = 'M6 4h1v1H6zM9 4h1v1H9z';
  * (`src/app/hud-gallery/homepage-study/visuals/crust-marks.ts`), so a mark on
  * a tile is the vendor's own geometry and not a drawing of it. Nothing is
  * redrawn here either: `viewBox` is the vendor's box, `fillRule` the mark's
- * own, and OpenClaw's silhouette is its outline, body and claw groups.
+ * own, and a mark is its parts, each named for the tone it takes: `ink` is
+ * the surrounding ink, `brand` the vendor's own colour where it supplies one,
+ * and the rest are the pixel lobster's own tones, as the component below
+ * paints them. The study resolves the names to paint; this file carries no
+ * colour of its own beyond the artwork's. A part's `raise` lifts it above
+ * the others when it sits on top of them (the lobster's eyes on its body).
  */
 export const HARNESS_MARK_PATHS = {
-  claude: { viewBox: 24, fillRule: 'nonzero', d: [CLAUDE_D] },
-  codex: { viewBox: 24, fillRule: 'evenodd', d: [OPENAI_D] },
-  opencode: { viewBox: 24, fillRule: 'evenodd', d: [OPENCODE_D] },
-  grok: { viewBox: 24, fillRule: 'evenodd', d: [GROK_D] },
+  claude: {
+    viewBox: 24,
+    fillRule: 'nonzero',
+    parts: [{ d: CLAUDE_D, tone: 'brand', raise: 0 }],
+  },
+  codex: {
+    viewBox: 24,
+    fillRule: 'evenodd',
+    parts: [{ d: OPENAI_D, tone: 'ink', raise: 0 }],
+  },
+  opencode: {
+    viewBox: 24,
+    fillRule: 'evenodd',
+    parts: [{ d: OPENCODE_D, tone: 'ink', raise: 0 }],
+  },
+  grok: {
+    viewBox: 24,
+    fillRule: 'evenodd',
+    parts: [{ d: GROK_D, tone: 'ink', raise: 0 }],
+  },
   openclaw: {
     viewBox: 16,
     fillRule: 'nonzero',
-    d: [OPENCLAW_OUTLINE_D, OPENCLAW_BODY_D, OPENCLAW_CLAWS_D],
+    parts: [
+      { d: OPENCLAW_OUTLINE_D, tone: 'outline', raise: 0 },
+      { d: OPENCLAW_BODY_D, tone: 'body', raise: 0 },
+      { d: OPENCLAW_CLAWS_D, tone: 'claws', raise: 0 },
+      { d: OPENCLAW_EYES_DARK_D, tone: 'eyeDark', raise: 1 },
+      { d: OPENCLAW_EYES_LIGHT_D, tone: 'eyeLight', raise: 1 },
+    ],
   },
 } as const;
 

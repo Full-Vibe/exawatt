@@ -22,6 +22,8 @@ import {
   CRUST_MATERIALS,
   type CrustMaterialId,
 } from './visuals/crust-materials';
+import { CRUST_MOTIONS, type CrustMotionId } from './visuals/crust-motion';
+import { CRUST_SHAPES, type CrustShapeId } from './visuals/crust-shape';
 import { CRUST_SIGNALS, type CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
 
@@ -30,6 +32,8 @@ interface StudyState {
   copy: CopySetId;
   material: CrustMaterialId;
   mark: CrustMarkId;
+  shape: CrustShapeId;
+  motion: CrustMotionId;
   signal: CrustSignalId;
   light: EnvironmentKind;
   snap: SnapMode;
@@ -40,27 +44,37 @@ function readState(params: URLSearchParams): StudyState {
   const copy = params.get('copy');
   const material = params.get('material');
   const mark = params.get('mark');
+  const shape = params.get('shape');
+  const motion = params.get('motion');
   const signal = params.get('signal');
   return {
     signal: CRUST_SIGNALS.some(x => x.id === signal)
       ? (signal as CrustSignalId)
-      : 'lamp',
+      : 'paint',
     light: params.get('light') === 'room' ? 'room' : 'studio',
     snap:
-      params.get('snap') === 'soft' || params.get('snap') === 'hard'
+      params.get('snap') === 'soft' || params.get('snap') === 'off'
         ? (params.get('snap') as SnapMode)
-        : 'off',
+        : 'page',
     material: CRUST_MATERIALS.some(m => m.id === material)
       ? (material as CrustMaterialId)
-      : 'gummy',
-    mark: CRUST_MARKS.some(m => m.id === mark) ? (mark as CrustMarkId) : 'lit',
+      : 'acrylic',
+    mark: CRUST_MARKS.some(m => m.id === mark)
+      ? (mark as CrustMarkId)
+      : 'relief',
+    shape: CRUST_SHAPES.some(m => m.id === shape)
+      ? (shape as CrustShapeId)
+      : 'hex',
+    motion: CRUST_MOTIONS.some(m => m.id === motion)
+      ? (motion as CrustMotionId)
+      : 'orbit',
     visual: VISUALS.some(v => v.id === visual) ? (visual as VisualId) : 'crust',
     copy: copy === 'deck' ? 'deck' : 'canon',
   };
 }
 
 function href(state: StudyState): string {
-  return `/hud-gallery/homepage-study?visual=${state.visual}&copy=${state.copy}&material=${state.material}&mark=${state.mark}&signal=${state.signal}&light=${state.light}&snap=${state.snap}`;
+  return `/hud-gallery/homepage-study?visual=${state.visual}&copy=${state.copy}&material=${state.material}&mark=${state.mark}&shape=${state.shape}&motion=${state.motion}&signal=${state.signal}&light=${state.light}&snap=${state.snap}`;
 }
 
 function Option({
@@ -207,13 +221,43 @@ export function HomepageStudy() {
                   </Option>
                 ))}
               </div>
+              <div className="flex items-center gap-1">
+                <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+                  Shape
+                </span>
+                {CRUST_SHAPES.map(option => (
+                  <Option
+                    key={option.id}
+                    active={option.id === state.shape}
+                    href={href({ ...state, shape: option.id })}
+                    title={option.note}
+                  >
+                    {option.name}
+                  </Option>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+                  Working
+                </span>
+                {CRUST_MOTIONS.map(option => (
+                  <Option
+                    key={option.id}
+                    active={option.id === state.motion}
+                    href={href({ ...state, motion: option.id })}
+                    title={option.note}
+                  >
+                    {option.name}
+                  </Option>
+                ))}
+              </div>
             </>
           ) : null}
           <div className="flex items-center gap-1">
             <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
               Snap
             </span>
-            {(['off', 'soft', 'hard'] as SnapMode[]).map(mode => (
+            {(['page', 'soft', 'off'] as SnapMode[]).map(mode => (
               <Option
                 key={mode}
                 active={state.snap === mode}
@@ -223,7 +267,7 @@ export function HomepageStudy() {
                     ? 'Park anywhere.'
                     : mode === 'soft'
                       ? 'A pull to the nearest frame when the scroll stops near one.'
-                      : 'Always land on a frame.'
+                      : 'One scene per gesture: a wheel flick, a key or a swipe moves one scene and lands.'
                 }
               >
                 {mode[0].toUpperCase() + mode.slice(1)}
@@ -255,6 +299,8 @@ export function HomepageStudy() {
         copySet={state.copy}
         material={state.material}
         mark={state.mark}
+        shape={state.shape}
+        motion={state.motion}
         signal={state.signal}
         light={state.light}
         snap={state.snap}

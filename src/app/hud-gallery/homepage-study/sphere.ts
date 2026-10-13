@@ -64,8 +64,14 @@ export function tileQuaternion(
   e1.subVectors(p1, p0).normalize();
   e2.subVectors(p2, p0).normalize();
   n.crossVectors(e2, e1).normalize();
-  // re-orthogonalise e2 against the normal and e1
-  e2.crossVectors(n, e1).normalize();
+  // Re-orthogonalise e2 against the normal and e1, right-handed: e1 cross
+  // n is +Z when e1 is +X and n is +Y. The other order made a mirror, a
+  // basis with determinant -1, and a quaternion read off a mirror has
+  // length 1/sqrt(2); composed with any further turn (the marks facing the
+  // camera, W15f) the instance shrank toward nothing as the turn neared a
+  // half circle and grew back (operator 2026-10-13: "the codex logo is
+  // like shrinking over time").
+  e2.crossVectors(e1, n).normalize();
   basis.makeBasis(e1, n, e2);
   return out.setFromRotationMatrix(basis);
 }

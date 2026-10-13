@@ -12,6 +12,8 @@ import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-th
 import type { FleetModel } from './fleet-model';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
+import type { CrustMotionId } from './visuals/crust-motion';
+import type { CrustShapeId } from './visuals/crust-shape';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
 
@@ -129,6 +131,10 @@ export interface VisualProps {
   material: CrustMaterialId;
   /** How the agent carries its harness's mark (W15f). Crust only. */
   mark: CrustMarkId;
+  /** The tile's outline, crisp to round (W15g). Crust only. */
+  shape: CrustShapeId;
+  /** How a working agent moves (W15g). Crust only. */
+  motion: CrustMotionId;
   /** How an agent carries its status (W15d). Crust only. */
   signal: CrustSignalId;
   /** Which reflection room lights the materials. Default `room`. */

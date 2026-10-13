@@ -30,10 +30,12 @@ import { AgentCard } from './agent-card';
 import { AgentPanel } from './agent-panel';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
+import type { CrustMotionId } from './visuals/crust-motion';
+import type { CrustShapeId } from './visuals/crust-shape';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
 
-export type SnapMode = 'off' | 'soft' | 'hard';
+export type SnapMode = 'off' | 'soft' | 'page';
 import {
   fleetModel,
   sourceAdapterId,
@@ -89,6 +91,8 @@ export function ScrollExperience({
   copySet,
   material,
   mark,
+  shape,
+  motion,
   signal,
   light,
   snap,
@@ -97,10 +101,15 @@ export function ScrollExperience({
   copySet: CopySetId;
   material: CrustMaterialId;
   mark: CrustMarkId;
+  shape: CrustShapeId;
+  motion: CrustMotionId;
   signal: CrustSignalId;
   light: EnvironmentKind;
   /** Off: park anywhere. Soft: a pull to the nearest frame when the scroll
-   *  stops near one. Hard: always land on a frame. */
+   *  stops near one. Page: one scene per gesture (W15g, operator
+   *  2026-10-13: a larger scroll "goes quickly through several scroll
+   *  scenes and feels like it jumps around. it should land me in one
+   *  scene at a time"). */
   snap: SnapMode;
 }) {
   const model = useMemo(() => fleetModel(), []);
@@ -178,9 +187,146 @@ export function ScrollExperience({
     };
   }, [sync]);
 
+  // Page: one scene per gesture. A wheel gesture inside the story is taken
+  // over and turned into one eased move to the next frame; its momentum
+  // tail is ignored until it dies or a new gesture rises over it. Keys
+  // page too. Touch gets the browser's own snap points (below), one per
+  // frame, which is the nearest a flick can be held to one scene.
+  useEffect(() => {
+    if (snap !== 'page') return;
+    const section = sectionRef.current;
+    const stageEl = stageRef.current;
+    if (!section || !stageEl) return;
+    const last = STAGES.length - 1;
+    let animating = false;
+    /** A second gesture that rose while a move was under way: taken as
+     *  soon as the move lands, so two quick flicks are two scenes. */
+    let queued = 0;
+    /** The gesture under way: its loudest event so far, and whether its
+     *  tail has fallen off that peak. A trackpad flick rises to a peak and
+     *  decays; only after the decay can a rising event be a new flick. */
+    let peak = 0;
+    let decayed = true;
+    let lastAbs = 0;
+    let lastTime = 0;
+    let frame = 0;
+    const travel = () =>
+      Math.max(
+        1,
+        section.getBoundingClientRect().height - stageEl.offsetHeight
+      );
+    const frameTop = (index: number) => {
+      const rect = section.getBoundingClientRect();
+      const t = travel();
+      const pinned = Math.max(
+        0,
+        Math.min(t, ((index - RAIL_DWELL) / (last - 2 * RAIL_DWELL)) * t)
+      );
+      return rect.top + window.scrollY + pinned - PIN_TOP;
+    };
+    const inStory = () => {
+      const pinned = PIN_TOP - section.getBoundingClientRect().top;
+      return pinned >= -1 && pinned <= travel() + 1;
+    };
+    const go = (index: number) => {
+      const top = frameTop(index);
+      const from = window.scrollY;
+      if (Math.abs(top - from) < 2) return;
+      animating = true;
+      const start = performance.now();
+      const duration = 680;
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+        window.scrollTo(0, from + (top - from) * eased);
+        if (t < 1) frame = requestAnimationFrame(step);
+        else {
+          animating = false;
+          if (queued !== 0) {
+            const next = queued;
+            queued = 0;
+            go(Math.max(0, Math.min(last, index + next)));
+          }
+        }
+      };
+      frame = requestAnimationFrame(step);
+    };
+    const current = () =>
+      Math.max(0, Math.min(last, Math.round(drive.current.progress)));
+    const onWheel = (e: WheelEvent) => {
+      if (!inStory()) return;
+      const direction = Math.sign(e.deltaY);
+      if (direction === 0) return;
+      const at = current();
+      // at either end the page carries on out of the story natively
+      if (
+        !animating &&
+        direction > 0 &&
+        at >= last &&
+        drive.current.progress >= last - 0.01
+      )
+        return;
+      if (
+        !animating &&
+        direction < 0 &&
+        at <= 0 &&
+        drive.current.progress <= 0.01
+      )
+        return;
+      e.preventDefault();
+      const now = performance.now();
+      const abs = Math.abs(e.deltaY);
+      const silent = now - lastTime > 350;
+      const rising = abs > lastAbs * 1.4;
+      lastTime = now;
+      lastAbs = abs;
+      if (silent) {
+        peak = 0;
+        decayed = true;
+      }
+      peak = Math.max(peak, abs);
+      if (abs < peak * 0.5) decayed = true;
+      // a new gesture: silence before it, or a rise after the last one's
+      // tail has fallen off its peak
+      if (!(silent || (decayed && rising)) || abs < 4) return;
+      peak = abs;
+      decayed = false;
+      if (animating) {
+        queued = direction;
+        return;
+      }
+      go(Math.max(0, Math.min(last, at + direction)));
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!inStory()) return;
+      const direction =
+        e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' '
+          ? 1
+          : e.key === 'ArrowUp' || e.key === 'PageUp'
+            ? -1
+            : 0;
+      if (direction === 0 || animating) return;
+      const target = e.target as HTMLElement | null;
+      if (target && /^(input|textarea|select)$/i.test(target.tagName)) return;
+      e.preventDefault();
+      go(Math.max(0, Math.min(last, current() + direction)));
+    };
+    window.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('keydown', onKey);
+    const root = document.documentElement;
+    const previousSnap = root.style.scrollSnapType;
+    root.style.scrollSnapType = 'y proximity';
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onKey);
+      root.style.scrollSnapType = previousSnap;
+    };
+  }, [snap]);
+
   // Snap: when the scroll stops, pull to the nearest composed frame.
   useEffect(() => {
-    if (snap === 'off') return;
+    if (snap !== 'soft') return;
     let timer = 0;
     let settling = false;
     const scrollYFor = (progress: number) => {
@@ -203,8 +349,7 @@ export function ScrollExperience({
       const p = drive.current.progress;
       const nearest = Math.round(p);
       const away = Math.abs(p - nearest);
-      if (away < 0.01) return;
-      if (snap === 'soft' && away > 0.3) return;
+      if (away < 0.01 || away > 0.3) return;
       const top = scrollYFor(nearest);
       if (top === null || Math.abs(top - window.scrollY) < 2) return;
       settling = true;
@@ -320,6 +465,30 @@ export function ScrollExperience({
       data-homepage-study-experience
       data-stage={current.id}
     >
+      {/* One snap point per frame, for touch under Page. */}
+      {snap === 'page'
+        ? STAGES.map((item, index) => {
+            // the frame's pinned travel as a share of the whole, laid out
+            // in the section's own units: travel is the section less one
+            // stage (100svh less the 3rem header)
+            const share = Math.max(
+              0,
+              (index - RAIL_DWELL) / (STAGES.length - 1 - 2 * RAIL_DWELL)
+            );
+            return (
+              <div
+                key={item.id}
+                aria-hidden
+                className="pointer-events-none absolute left-0 h-px w-px"
+                style={{
+                  top: `calc(${share * 100}% - ${share * 100}svh + ${share * 3}rem)`,
+                  scrollSnapAlign: 'start',
+                  scrollMarginTop: `${PIN_TOP}px`,
+                }}
+              />
+            );
+          })
+        : null}
       <div
         ref={stageRef}
         className="sticky top-12 z-10 h-[calc(100svh-3rem)] overflow-hidden bg-[#04060b]"
@@ -335,6 +504,8 @@ export function ScrollExperience({
           visible={visible}
           material={material}
           mark={mark}
+          shape={shape}
+          motion={motion}
           signal={signal}
           light={light}
           onHoverChange={onHoverChange}

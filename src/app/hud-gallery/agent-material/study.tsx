@@ -7,9 +7,11 @@
  *
  * One cluster, close, in the exact renderer the homepage study uses, with
  * every dial on the agent itself: material, signal treatment, the harness
- * mark, the hero's status and harness, the reflection room, and how many
- * agents stand around it. Drag to orbit. Hover to feel it. Click to open
- * it.
+ * mark, the tile's shape, how it moves while it works, the hero's status
+ * and harness, the reflection room, and how many agents stand around it.
+ * A change of status or harness changes the hero in place; nothing else
+ * in the scene moves (operator 2026-10-13). Drag to orbit. Hover to feel
+ * it. Click to open it.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +38,14 @@ import {
   type CrustMaterialId,
 } from '../homepage-study/visuals/crust-materials';
 import {
+  CRUST_MOTIONS,
+  type CrustMotionId,
+} from '../homepage-study/visuals/crust-motion';
+import {
+  CRUST_SHAPES,
+  type CrustShapeId,
+} from '../homepage-study/visuals/crust-shape';
+import {
   CRUST_SIGNALS,
   type CrustSignalId,
 } from '../homepage-study/visuals/crust-signal';
@@ -46,6 +56,8 @@ interface StudyState {
   material: CrustMaterialId;
   signal: CrustSignalId;
   mark: CrustMarkId;
+  shape: CrustShapeId;
+  motion: CrustMotionId;
   status: StatusLightState;
   source: string;
   light: EnvironmentKind;
@@ -56,16 +68,26 @@ function readState(params: URLSearchParams): StudyState {
   const material = params.get('material');
   const signal = params.get('signal');
   const mark = params.get('mark');
+  const shape = params.get('shape');
+  const motion = params.get('motion');
   const status = params.get('status');
   const source = params.get('source');
   return {
     material: CRUST_MATERIALS.some(m => m.id === material)
       ? (material as CrustMaterialId)
-      : 'gummy',
+      : 'acrylic',
     signal: CRUST_SIGNALS.some(x => x.id === signal)
       ? (signal as CrustSignalId)
       : 'paint',
-    mark: CRUST_MARKS.some(m => m.id === mark) ? (mark as CrustMarkId) : 'lit',
+    mark: CRUST_MARKS.some(m => m.id === mark)
+      ? (mark as CrustMarkId)
+      : 'relief',
+    shape: CRUST_SHAPES.some(m => m.id === shape)
+      ? (shape as CrustShapeId)
+      : 'hex',
+    motion: CRUST_MOTIONS.some(m => m.id === motion)
+      ? (motion as CrustMotionId)
+      : 'orbit',
     status: STATUS_ORDER.includes(status as StatusLightState)
       ? (status as StatusLightState)
       : 'active',
@@ -82,6 +104,8 @@ function href(state: StudyState): string {
     material: state.material,
     signal: state.signal,
     mark: state.mark,
+    shape: state.shape,
+    motion: state.motion,
     status: state.status,
     source: state.source,
     light: state.light,
@@ -269,6 +293,30 @@ export function AgentMaterialStudy() {
               </Option>
             ))}
           </Row>
+          <Row label="Shape">
+            {CRUST_SHAPES.map(option => (
+              <Option
+                key={option.id}
+                active={option.id === state.shape}
+                href={href({ ...state, shape: option.id })}
+                title={option.note}
+              >
+                {option.name}
+              </Option>
+            ))}
+          </Row>
+          <Row label="Working">
+            {CRUST_MOTIONS.map(option => (
+              <Option
+                key={option.id}
+                active={option.id === state.motion}
+                href={href({ ...state, motion: option.id })}
+                title={option.note}
+              >
+                {option.name}
+              </Option>
+            ))}
+          </Row>
           <Row label="Status">
             {STATUS_ORDER.map(status => (
               <Option
@@ -339,7 +387,6 @@ export function AgentMaterialStudy() {
           data-agent-material-stage
         >
           <VisualCanvas
-            key={`${state.status}-${state.source}`}
             visual="crust"
             model={model}
             theme={theme}
@@ -349,6 +396,8 @@ export function AgentMaterialStudy() {
             visible
             material={state.material}
             mark={state.mark}
+            shape={state.shape}
+            motion={state.motion}
             signal={state.signal}
             light={state.light}
             closeUp
