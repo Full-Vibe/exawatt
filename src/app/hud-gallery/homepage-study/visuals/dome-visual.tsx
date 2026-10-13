@@ -19,7 +19,6 @@ import { axialToPlane, fleetAt } from '../fleet-model';
 import { SPHERE_CENTER, planeToSphere } from '../sphere';
 import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
-import { CameraRig } from './camera-rig';
 import { GlobeBody } from './globe-body';
 import {
   highlightWeight,
@@ -53,7 +52,9 @@ export function DomeVisual({
   drive,
   anchor,
   reducedMotion,
+  shownRef,
   onHoverChange,
+  onSelect,
 }: VisualProps) {
   const palette = useMemo(() => paletteFrom(theme), [theme]);
   const placements = useMemo(() => placeTiles(model), [model]);
@@ -82,7 +83,6 @@ export function DomeVisual({
   const pipsRef = useRef<THREE.InstancedMesh>(null);
   const tethersRef = useRef<THREE.LineSegments>(null);
   const ringsRef = useRef<(THREE.LineLoop | null)[]>([]);
-  const shownRef = useRef(1);
   const { size } = useThree();
 
   const animRef = useRef<ReturnType<typeof makeAnim> | null>(null);
@@ -151,6 +151,14 @@ export function DomeVisual({
       onHoverChange?.(-1);
     }
   };
+  const clickMark = (e: ThreeEvent<MouseEvent>) => {
+    if (e.delta > 6) return;
+    const id = e.instanceId ?? -1;
+    if (id < 0 || anim.scale[id] <= 0.5) return;
+    e.stopPropagation();
+    onSelect?.(id);
+  };
+  const missMark = () => onSelect?.(-1);
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
@@ -352,12 +360,6 @@ export function DomeVisual({
 
   return (
     <>
-      <CameraRig
-        model={model}
-        drive={drive}
-        reducedMotion={reducedMotion}
-        shownRef={shownRef}
-      />
       <color attach="background" args={[theme.canvas]} />
       <fog attach="fog" args={[theme.canvas, 60, 160]} />
       <hemisphereLight args={[0xcfe6ff, 0x101420, 0.8]} />
@@ -387,6 +389,8 @@ export function DomeVisual({
         args={[markGeometry, undefined, agentCount]}
         onPointerMove={hoverMark}
         onPointerOut={leaveMark}
+        onClick={clickMark}
+        onPointerMissed={missMark}
         frustumCulled={false}
       >
         <meshBasicMaterial toneMapped={false} />

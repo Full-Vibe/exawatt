@@ -29,7 +29,6 @@ import {
 } from '../sphere';
 import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
-import { CameraRig } from './camera-rig';
 import { useRoomEnvironment } from './environment';
 import {
   clearPoolField,
@@ -108,8 +107,10 @@ export function MercuryVisual({
   drive,
   anchor,
   reducedMotion,
+  shownRef,
   onExpand,
   onHoverChange,
+  onSelect,
 }: VisualProps) {
   useRoomEnvironment(1.3);
   const palette = useMemo(() => paletteFrom(theme), [theme]);
@@ -152,7 +153,6 @@ export function MercuryVisual({
   const anim = animRef.current;
   const fieldRef = useRef(makePoolField(RESOLUTION));
   const field = fieldRef.current;
-  const shownRef = useRef(1);
   const { size, gl } = useThree();
   const pipsRef = useRef<THREE.InstancedMesh>(null);
   const ghostsRef = useRef<THREE.InstancedMesh>(null);
@@ -187,13 +187,30 @@ export function MercuryVisual({
     const leave = () => {
       hoverPointerRef.current.active = false;
     };
+    // A press that does not travel selects what is under it; a drag turned
+    // the world.
+    const press = { x: 0, y: 0 };
+    const down = (e: PointerEvent) => {
+      press.x = e.clientX;
+      press.y = e.clientY;
+      move(e);
+    };
+    const up = (e: PointerEvent) => {
+      if (Math.abs(e.clientX - press.x) + Math.abs(e.clientY - press.y) > 6)
+        return;
+      onSelect?.(anim.hover);
+    };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerleave', leave);
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointerup', up);
     return () => {
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerleave', leave);
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointerup', up);
     };
-  }, [gl]);
+  }, [gl, onSelect]);
 
   const clickGhost = (e: {
     instanceId?: number;
@@ -429,12 +446,6 @@ export function MercuryVisual({
 
   return (
     <>
-      <CameraRig
-        model={model}
-        drive={drive}
-        reducedMotion={reducedMotion}
-        shownRef={shownRef}
-      />
       <color attach="background" args={[theme.canvas]} />
       <fog attach="fog" args={[theme.canvas, 70, 170]} />
       <directionalLight position={[30, 60, 20]} intensity={1.4} />

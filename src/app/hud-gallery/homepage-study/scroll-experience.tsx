@@ -12,12 +12,10 @@
  * The reading column is a panel per stage positioned where the deck puts it:
  * centred over the top of the globe on the landing and the fleet, to the
  * right or left for the three dissections, centred for the launch band and
- * the download. The three dissections carry the agent card, and a leader
- * line in an SVG overlay joins the card to the agent the visual is lifting.
- *
- * Below `md` the stage is a fixed-height card at the top of the viewport and
- * every panel is an ordinary block beneath it at full opacity (marketing
- * canon, "The phone stacks; it does not shrink").
+ * the download. The three dissections carry the agent card on the agent the
+ * stage lifts. On a narrow screen the same panels sit at the foot of the
+ * stage over the world, which the camera lifts to clear them (W15f: one
+ * pinned experience on every screen, never a stacked copy of itself).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -27,16 +25,18 @@ import type { StatusLightState } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { DownloadCta } from '@/components/site/bands/download-cta';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
+import { SourceGlyph } from '@/components/workspace/harness-icons';
 import { AgentCard } from './agent-card';
 import { AgentPanel } from './agent-panel';
+import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
 
 export type SnapMode = 'off' | 'soft' | 'hard';
 import {
-  FLEET_MAX,
   fleetModel,
+  sourceAdapterId,
   STATUS_LABEL,
   type FleetAgent,
 } from './fleet-model';
@@ -65,6 +65,10 @@ const VisualCanvas = dynamic(
 const STAGE_SCREENS = 1.0;
 /** Where the stage pins: under the 3rem site header (`top-12`). */
 const PIN_TOP = 48;
+/** The open panel's distance from the tile's top point, and how long its
+ *  arrival takes. It appears where the tile is; it never travels there. */
+const PANEL_GAP = 18;
+const PANEL_POP_MS = 160;
 const labelBlend = { from: 0, to: 0, t: 0 };
 
 function exemplarFor(
@@ -82,19 +86,17 @@ function exemplarFor(
 
 export function ScrollExperience({
   visual,
-  baseCount,
   copySet,
   material,
-  marks,
+  mark,
   signal,
   light,
   snap,
 }: {
   visual: VisualId;
-  baseCount: number;
   copySet: CopySetId;
   material: CrustMaterialId;
-  marks: boolean;
+  mark: CrustMarkId;
   signal: CrustSignalId;
   light: EnvironmentKind;
   /** Off: park anywhere. Soft: a pull to the nearest frame when the scroll
@@ -112,8 +114,8 @@ export function ScrollExperience({
   );
   const drive = useRef<StoryDrive>({
     progress: 0,
-    base: baseCount,
-    count: baseCount,
+    base: STAGES[0].count,
+    count: STAGES[0].count,
     highlights,
     exemplar: -1,
     selected: -1,
@@ -124,23 +126,9 @@ export function ScrollExperience({
   const [stage, setStage] = useState(0);
   const [selected, setSelected] = useState(-1);
   const [visible, setVisible] = useState(true);
-  // The agent under the pointer, mirrored here so a click can select it
-  // without a React render per hover.
-  const hoverRef = useRef(-1);
-  const pressRef = useRef({ x: 0, y: 0 });
-  const onHoverChange = useCallback((agent: number) => {
-    hoverRef.current = agent;
-  }, []);
-  const press = useCallback((e: React.PointerEvent) => {
-    pressRef.current.x = e.clientX;
-    pressRef.current.y = e.clientY;
-  }, []);
-  const release = useCallback((e: React.PointerEvent) => {
-    const moved =
-      Math.abs(e.clientX - pressRef.current.x) +
-      Math.abs(e.clientY - pressRef.current.y);
-    if (moved > 6) return; // a drag turned the world; not a click
-    setSelected(hoverRef.current);
+  const onHoverChange = useCallback(() => {}, []);
+  const onSelect = useCallback((agent: number) => {
+    setSelected(previous => (previous === agent ? previous : agent));
   }, []);
   useEffect(() => {
     drive.current.selected = selected;
@@ -170,16 +158,15 @@ export function ScrollExperience({
     const progress = RAIL_DWELL + (pinned / travel) * (last - 2 * RAIL_DWELL);
     const d = drive.current;
     d.progress = progress;
-    d.base = baseCount;
     d.highlights = highlights;
     const index = stageAt(progress);
     const current = STAGES[index];
-    d.count = baseCount;
+    d.count = current.count;
     d.exemplar = current.card
       ? exemplarFor(model.agents, d.count, highlights[index])
       : -1;
     setStage(previous => (previous === index ? previous : index));
-  }, [baseCount, highlights, model]);
+  }, [highlights, model]);
 
   useEffect(() => {
     sync();
@@ -249,14 +236,10 @@ export function ScrollExperience({
     return () => io.disconnect();
   }, []);
 
-  // Overlay: leader line, labels, hover card, written each frame from refs.
-  const leaderRef = useRef<SVGPolylineElement>(null);
-  const leaderDotRef = useRef<SVGCircleElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
+  // Overlay: labels and the open panel, written each frame from refs.
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const focusRef = useRef<HTMLDivElement>(null);
-  const openLeaderRef = useRef<SVGPolylineElement>(null);
-  const openDotRef = useRef<SVGCircleElement>(null);
+  const openedAt = useRef(-1);
   useEffect(() => {
     let frame = 0;
     const tick = () => {
@@ -264,38 +247,16 @@ export function ScrollExperience({
       const a = anchor.current;
       const stageEl = stageRef.current;
       if (!stageEl) return;
-      // leader
-      const leader = leaderRef.current;
-      const dot = leaderDotRef.current;
-      const card = cardRef.current;
-      if (leader && dot) {
-        const cardRect = card?.getBoundingClientRect();
-        // No line on the phone: the card lives in the stack, not the stage.
-        if (a.exemplar && cardRect && cardRect.width > 0) {
-          const stageRect = stageEl.getBoundingClientRect();
-          const toRight = cardRect.left - stageRect.left > stageRect.width / 2;
-          const sx = toRight
-            ? cardRect.left - stageRect.left
-            : cardRect.right - stageRect.left;
-          const sy = cardRect.top - stageRect.top + 28;
-          const ex = a.exemplar.x;
-          const ey = a.exemplar.y;
-          const mx = toRight ? sx - 36 : sx + 36;
-          leader.setAttribute('points', `${sx},${sy} ${mx},${sy} ${ex},${ey}`);
-          leader.style.opacity = '1';
-          dot.setAttribute('cx', String(ex));
-          dot.setAttribute('cy', String(ey));
-          dot.style.opacity = '1';
-        } else {
-          leader.style.opacity = '0';
-          dot.style.opacity = '0';
-        }
-      }
-      // labels, faded with the stage on the rail
+      // labels, faded with the stage on the rail; a narrow screen has no
+      // room for ten names over the whole fleet, so there they show only
+      // while the story is inside one Project
+      const stageRect = stageEl.getBoundingClientRect();
+      const narrow = stageRect.width < stageRect.height;
       const lb = stageBlend(drive.current.rail, undefined, labelBlend);
+      const labelled = (index: number) =>
+        STAGES[index].labels && !(narrow && STAGES[index].focus === 'fleet');
       const labelsOn =
-        (STAGES[lb.from].labels ? 1 - lb.t : 0) +
-        (STAGES[lb.to].labels ? lb.t : 0);
+        (labelled(lb.from) ? 1 - lb.t : 0) + (labelled(lb.to) ? lb.t : 0);
       for (let i = 0; i < a.labels.length; i += 1) {
         const el = labelRefs.current[i];
         const label = a.labels[i];
@@ -306,39 +267,39 @@ export function ScrollExperience({
         }
         el.style.opacity = String(labelsOn * (1 - drive.current.recede));
         el.style.transform = `translate(${label.x}px, ${label.y}px) translate(-50%, -100%)`;
-        const count = el.querySelector('[data-label-count]');
-        if (count) {
-          const text = `${label.count} agent${label.count === 1 ? '' : 's'}${label.needsYou ? ` · ${label.needsYou} need you` : ''}`;
-          if (count.textContent !== text) count.textContent = text;
-        }
       }
-      // the open agent: a panel tethered to its tile, on the side with room
+      // The open agent: a panel beside its tile, on the side with room. It
+      // is placed every frame, so it stands where the tile is as the world
+      // moves, and it pops in rather than sliding over from wherever it
+      // last was (operator 2026-10-12: "it slowly translates to position").
       const focus = focusRef.current;
-      const openLeader = openLeaderRef.current;
-      const openDot = openDotRef.current;
-      if (focus && openLeader && openDot) {
+      if (focus) {
         if (a.focusPoint && a.focus >= 0) {
-          const stageRect = stageEl.getBoundingClientRect();
+          const now = performance.now();
+          if (openedAt.current < 0) openedAt.current = now;
+          const pop = Math.min(1, (now - openedAt.current) / PANEL_POP_MS);
+          const ease = 1 - (1 - pop) * (1 - pop);
           const fx = a.focusPoint.x;
           const fy = a.focusPoint.y;
           const toLeft = fx > stageRect.width * 0.62;
-          const gap = 54;
-          const px = toLeft ? fx - gap : fx + gap;
-          focus.style.opacity = '1';
+          const scale = 0.94 + 0.06 * ease;
+          focus.style.opacity = String(ease);
           focus.style.pointerEvents = 'auto';
-          focus.style.transform = toLeft
-            ? `translate(${px}px, ${fy}px) translate(-100%, -50%) scale(1)`
-            : `translate(${px}px, ${fy}px) translate(0, -50%) scale(1)`;
-          openLeader.setAttribute('points', `${fx},${fy} ${px},${fy}`);
-          openLeader.style.opacity = '1';
-          openDot.setAttribute('cx', String(fx));
-          openDot.setAttribute('cy', String(fy));
-          openDot.style.opacity = '1';
+          // On a narrow screen the panel stands over the tile, or under it
+          // when the tile is near the top, always inside the frame.
+          const narrowX = Math.min(Math.max(fx, 128), stageRect.width - 128);
+          const below = fy < stageRect.height * 0.45;
+          focus.style.transform = narrow
+            ? below
+              ? `translate(${narrowX}px, ${fy + PANEL_GAP + 8}px) translate(-50%, 0) scale(${scale})`
+              : `translate(${narrowX}px, ${fy - PANEL_GAP}px) translate(-50%, -100%) scale(${scale})`
+            : toLeft
+              ? `translate(${fx - PANEL_GAP}px, ${fy}px) translate(-100%, -50%) scale(${scale})`
+              : `translate(${fx + PANEL_GAP}px, ${fy}px) translate(0, -50%) scale(${scale})`;
         } else {
+          openedAt.current = -1;
           focus.style.opacity = '0';
           focus.style.pointerEvents = 'none';
-          openLeader.style.opacity = '0';
-          openDot.style.opacity = '0';
         }
       }
     };
@@ -361,10 +322,8 @@ export function ScrollExperience({
     >
       <div
         ref={stageRef}
-        className="sticky top-12 z-10 h-[58svh] overflow-hidden bg-[#04060b] md:h-[calc(100svh-3rem)]"
+        className="sticky top-12 z-10 h-[calc(100svh-3rem)] overflow-hidden bg-[#04060b]"
         data-homepage-study-stage
-        onPointerDown={press}
-        onPointerUp={release}
       >
         <VisualCanvas
           visual={visual}
@@ -375,10 +334,11 @@ export function ScrollExperience({
           reducedMotion={reducedMotion}
           visible={visible}
           material={material}
-          marks={marks}
+          mark={mark}
           signal={signal}
           light={light}
           onHoverChange={onHoverChange}
+          onSelect={onSelect}
         />
 
         {/* Project labels, positioned from the visual. */}
@@ -394,53 +354,15 @@ export function ScrollExperience({
               <p className="text-[13px] font-medium text-white/85">
                 {project.name}
               </p>
-              <p className="text-[11px] text-white/45" data-label-count />
             </div>
           ))}
         </div>
-
-        {/* Leader line from the card to the lifted agent. */}
-        <svg
-          className="pointer-events-none absolute inset-0 h-full w-full"
-          aria-hidden
-        >
-          <polyline
-            ref={leaderRef}
-            fill="none"
-            stroke="rgba(255,255,255,0.55)"
-            strokeWidth="1"
-            className="transition-opacity duration-300"
-            style={{ opacity: 0 }}
-          />
-          <circle
-            ref={leaderDotRef}
-            r="3.5"
-            fill="white"
-            className="transition-opacity duration-300"
-            style={{ opacity: 0 }}
-          />
-          <polyline
-            ref={openLeaderRef}
-            fill="none"
-            stroke={theme.selection}
-            strokeWidth="1"
-            className="transition-opacity duration-200"
-            style={{ opacity: 0 }}
-          />
-          <circle
-            ref={openDotRef}
-            r="3"
-            fill={theme.selection}
-            className="transition-opacity duration-200"
-            style={{ opacity: 0 }}
-          />
-        </svg>
 
         {/* The selected agent. Click a tile to open it, anywhere else or
             Escape to close. */}
         <div
           ref={focusRef}
-          className="absolute left-0 top-0 opacity-0 transition-[opacity,transform] duration-200 will-change-transform"
+          className="absolute left-0 top-0 opacity-0 will-change-transform"
           onPointerDown={e => e.stopPropagation()}
           onPointerUp={e => e.stopPropagation()}
         >
@@ -450,12 +372,12 @@ export function ScrollExperience({
         </div>
 
         {/* Synthetic fleet stamp, always inside the frame. */}
-        <p className="pointer-events-none absolute bottom-3 left-4 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+        <p className="pointer-events-none absolute right-4 top-[3.25rem] font-mono text-[10px] uppercase tracking-[0.18em] text-white/35 md:bottom-3 md:left-4 md:right-auto md:top-auto">
           Demo workspace · synthetic fleet
         </p>
 
-        {/* Desktop panels. */}
-        <div className="pointer-events-none absolute inset-0 hidden md:block">
+        {/* The reading column, one panel per stage. */}
+        <div className="pointer-events-none absolute inset-0">
           {STAGES.map((item, index) => (
             <Panel
               key={item.id}
@@ -463,26 +385,9 @@ export function ScrollExperience({
               copySet={copySet}
               active={index === stage}
               agent={index === stage ? exemplarAgent : null}
-              cardRef={index === stage ? cardRef : undefined}
             />
           ))}
         </div>
-      </div>
-
-      {/* Phone: the same panels, stacked, full opacity. */}
-      <div className="md:hidden">
-        {STAGES.map((item, index) => (
-          <div
-            key={item.id}
-            className="flex min-h-[42svh] flex-col justify-center gap-5 px-6 py-10"
-          >
-            <PanelBody
-              stage={item}
-              copySet={copySet}
-              agent={index === stage ? exemplarAgent : null}
-            />
-          </div>
-        ))}
       </div>
     </section>
   );
@@ -493,26 +398,25 @@ function Panel({
   copySet,
   active,
   agent,
-  cardRef,
 }: {
   stage: Stage;
   copySet: CopySetId;
   active: boolean;
   agent: FleetAgent | null;
-  cardRef?: React.RefObject<HTMLDivElement | null>;
 }) {
+  // Beside the world on a wide screen; at its foot on a narrow one.
   const placement =
     stage.panel === 'right'
-      ? 'right-[6vw] top-1/2 -translate-y-1/2 items-start text-left'
+      ? 'inset-x-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] items-start text-left md:inset-x-auto md:bottom-auto md:right-[6vw] md:top-1/2 md:-translate-y-1/2'
       : stage.panel === 'left'
-        ? 'left-[6vw] top-1/2 -translate-y-1/2 items-start text-left'
+        ? 'inset-x-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] items-start text-left md:inset-x-auto md:bottom-auto md:left-[6vw] md:top-1/2 md:-translate-y-1/2'
         : stage.panel === 'center-top'
-          ? 'left-1/2 top-[13vh] -translate-x-1/2 items-center text-center'
-          : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center text-center';
+          ? 'inset-x-5 top-[14vh] items-center text-center md:inset-x-auto md:left-1/2 md:top-[13vh] md:-translate-x-1/2'
+          : 'inset-x-5 top-1/2 -translate-y-1/2 items-center text-center md:inset-x-auto md:left-1/2 md:-translate-x-1/2';
   return (
     <div
       className={cn(
-        'absolute flex max-w-[34rem] flex-col gap-5 transition-opacity duration-500',
+        'absolute flex flex-col gap-4 transition-opacity duration-500 md:max-w-[34rem] md:gap-5',
         placement,
         // an invisible panel from another stage must never swallow a click
         // meant for the world under it
@@ -525,7 +429,6 @@ function Panel({
         stage={stage}
         copySet={copySet}
         agent={agent}
-        cardRef={cardRef}
         interactive={active}
       />
     </div>
@@ -536,13 +439,11 @@ function PanelBody({
   stage,
   copySet,
   agent,
-  cardRef,
   interactive = true,
 }: {
   stage: Stage;
   copySet: CopySetId;
   agent: FleetAgent | null;
-  cardRef?: React.RefObject<HTMLDivElement | null>;
   /** Only the stage on screen may take the pointer. An invisible panel
    *  from another stage must never swallow a click meant for the world. */
   interactive?: boolean;
@@ -556,10 +457,10 @@ function PanelBody({
     <>
       {stage.card && agent ? (
         <div
-          ref={cardRef}
-          className={
+          className={cn(
+            'hidden md:block',
             interactive ? 'pointer-events-auto' : 'pointer-events-none'
-          }
+          )}
         >
           <AgentCard agent={agent} />
         </div>
@@ -572,8 +473,8 @@ function PanelBody({
           'text-balance font-semibold tracking-tight text-white',
           interactive ? 'pointer-events-auto' : 'pointer-events-none',
           isLanding && 'text-4xl leading-[1.05] md:text-6xl',
-          isDownload && 'text-5xl leading-[1.02] md:text-7xl',
-          !isLanding && !isDownload && 'text-3xl leading-tight md:text-4xl'
+          isDownload && 'text-4xl leading-[1.02] md:text-7xl',
+          !isLanding && !isDownload && 'text-[1.7rem] leading-tight md:text-4xl'
         )}
       >
         {copy.headline.map((line, index) => (
@@ -589,7 +490,7 @@ function PanelBody({
         ))}
       </h2>
       {copy.body ? (
-        <p className="pointer-events-auto max-w-[32rem] text-[17px] leading-relaxed text-white/70">
+        <p className="pointer-events-auto max-w-[32rem] text-[15px] leading-relaxed text-white/70 md:text-[17px]">
           {copy.body.map(line => (
             <span key={line} className="block">
               {line}
@@ -617,7 +518,8 @@ function PanelBody({
   );
 }
 
-/** The deck's "start a session" band (slide 9), as a lofi composer. */
+/** The deck's "start a session" band (slide 9), as a lofi composer. The
+ *  harnesses are their marks. */
 function LaunchComposer() {
   return (
     <div className="pointer-events-auto mt-2 w-[min(36rem,86vw)] rounded-xl border border-white/12 bg-[#0b1018]/85 p-3 text-left shadow-2xl backdrop-blur-md">
@@ -633,8 +535,9 @@ function LaunchComposer() {
         {LAUNCH_SOURCES.map(source => (
           <span
             key={source}
-            className="rounded-full border border-white/12 px-2.5 py-1 text-[12px] text-white/70"
+            className="flex items-center gap-1.5 rounded-full border border-white/12 px-2.5 py-1 text-[12px] text-white/70"
           >
+            <SourceGlyph source={sourceAdapterId(source)} size={12} />
             {source}
           </span>
         ))}

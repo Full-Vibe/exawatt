@@ -22,7 +22,7 @@ import { fleetAt, type FleetModel } from '../fleet-model';
 import { SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
 import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
-import { CameraRig, fleetExtent } from './camera-rig';
+import { fleetExtent } from './camera-rig';
 import {
   highlightWeight,
   paletteFrom,
@@ -236,7 +236,9 @@ export function LidarVisual({
   drive,
   anchor,
   reducedMotion,
+  shownRef,
   onHoverChange,
+  onSelect,
 }: VisualProps) {
   const palette = useMemo(() => paletteFrom(theme), [theme]);
   const placements = useMemo(() => placeTiles(model), [model]);
@@ -251,7 +253,6 @@ export function LidarVisual({
     });
     return map;
   }, [model]);
-  const shownRef = useRef(1);
   const { size } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const scanRef = useRef<THREE.Line | null>(null);
@@ -340,13 +341,30 @@ export function LidarVisual({
     const leave = () => {
       hoverPointerRef.current.active = false;
     };
+    // A press that does not travel selects what is under it; a drag turned
+    // the world.
+    const press = { x: 0, y: 0 };
+    const down = (e: PointerEvent) => {
+      press.x = e.clientX;
+      press.y = e.clientY;
+      move(e);
+    };
+    const up = (e: PointerEvent) => {
+      if (Math.abs(e.clientX - press.x) + Math.abs(e.clientY - press.y) > 6)
+        return;
+      onSelect?.(hover.current);
+    };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerleave', leave);
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointerup', up);
     return () => {
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerleave', leave);
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointerup', up);
     };
-  }, [gl]);
+  }, [gl, onSelect]);
   const hoverPointerRef = useRef({ x: 0, y: 0, active: false });
 
   const fleetExtentOf = (count: number) => fleetExtent(model, count);
@@ -491,12 +509,6 @@ export function LidarVisual({
 
   return (
     <>
-      <CameraRig
-        model={model}
-        drive={drive}
-        reducedMotion={reducedMotion}
-        shownRef={shownRef}
-      />
       <color attach="background" args={[theme.canvas]} />
       <fog attach="fog" args={[theme.canvas, 50, 150]} />
       <points

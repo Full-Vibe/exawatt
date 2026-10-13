@@ -6,10 +6,10 @@
  * independently of the motion scroll / homepage experience").
  *
  * One cluster, close, in the exact renderer the homepage study uses, with
- * every dial on the agent itself: material, signal treatment, kind marks,
- * the hero's status and harness, subagents, the reflection room, and how
- * many agents stand around it. Drag to orbit. Hover to feel it. Click to
- * open it.
+ * every dial on the agent itself: material, signal treatment, the harness
+ * mark, the hero's status and harness, the reflection room, and how many
+ * agents stand around it. Drag to orbit. Hover to feel it. Click to open
+ * it.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,6 +28,10 @@ import {
 } from '../homepage-study/visual-contract';
 import { VisualCanvas } from '../homepage-study/visual-canvas';
 import {
+  CRUST_MARKS,
+  type CrustMarkId,
+} from '../homepage-study/visuals/crust-marks';
+import {
   CRUST_MATERIALS,
   type CrustMaterialId,
 } from '../homepage-study/visuals/crust-materials';
@@ -41,10 +45,9 @@ import { CLUSTER_SOURCES, clusterModel } from './cluster-model';
 interface StudyState {
   material: CrustMaterialId;
   signal: CrustSignalId;
-  marks: boolean;
+  mark: CrustMarkId;
   status: StatusLightState;
   source: string;
-  children: boolean;
   light: EnvironmentKind;
   count: 1 | 7;
 }
@@ -52,6 +55,7 @@ interface StudyState {
 function readState(params: URLSearchParams): StudyState {
   const material = params.get('material');
   const signal = params.get('signal');
+  const mark = params.get('mark');
   const status = params.get('status');
   const source = params.get('source');
   return {
@@ -61,14 +65,13 @@ function readState(params: URLSearchParams): StudyState {
     signal: CRUST_SIGNALS.some(x => x.id === signal)
       ? (signal as CrustSignalId)
       : 'paint',
-    marks: params.get('marks') !== 'off',
+    mark: CRUST_MARKS.some(m => m.id === mark) ? (mark as CrustMarkId) : 'lit',
     status: STATUS_ORDER.includes(status as StatusLightState)
       ? (status as StatusLightState)
       : 'active',
     source: (CLUSTER_SOURCES as readonly string[]).includes(source ?? '')
       ? (source as string)
       : 'Claude Code',
-    children: params.get('children') === 'on',
     light: params.get('light') === 'room' ? 'room' : 'studio',
     count: params.get('count') === '7' ? 7 : 1,
   };
@@ -78,10 +81,9 @@ function href(state: StudyState): string {
   const q = new URLSearchParams({
     material: state.material,
     signal: state.signal,
-    marks: state.marks ? 'on' : 'off',
+    mark: state.mark,
     status: state.status,
     source: state.source,
-    children: state.children ? 'on' : 'off',
     light: state.light,
     count: String(state.count),
   });
@@ -141,8 +143,8 @@ export function AgentMaterialStudy() {
   const reducedMotion = usePrefersReducedMotion();
   const [extra, setExtra] = useState(0);
   const model = useMemo(
-    () => clusterModel(state.status, state.source, state.children),
-    [state.status, state.source, state.children]
+    () => clusterModel(state.status, state.source),
+    [state.status, state.source]
   );
   const count = Math.min(7, state.count + extra);
 
@@ -165,21 +167,9 @@ export function AgentMaterialStudy() {
 
   // Hover to feel it, click to open it.
   const [selected, setSelected] = useState(-1);
-  const hoverRef = useRef(-1);
-  const pressRef = useRef({ x: 0, y: 0 });
-  const onHoverChange = useCallback((agent: number) => {
-    hoverRef.current = agent;
-  }, []);
-  const press = useCallback((e: React.PointerEvent) => {
-    pressRef.current.x = e.clientX;
-    pressRef.current.y = e.clientY;
-  }, []);
-  const release = useCallback((e: React.PointerEvent) => {
-    const moved =
-      Math.abs(e.clientX - pressRef.current.x) +
-      Math.abs(e.clientY - pressRef.current.y);
-    if (moved > 6) return;
-    setSelected(hoverRef.current);
+  const onHoverChange = useCallback(() => {}, []);
+  const onSelect = useCallback((agent: number) => {
+    setSelected(previous => (previous === agent ? previous : agent));
   }, []);
   useEffect(() => {
     drive.current.selected = selected;
@@ -194,6 +184,7 @@ export function AgentMaterialStudy() {
 
   const stageRef = useRef<HTMLDivElement>(null);
   const focusRef = useRef<HTMLDivElement>(null);
+  const openedAt = useRef(-1);
   useEffect(() => {
     let frame = 0;
     const tick = () => {
@@ -203,13 +194,20 @@ export function AgentMaterialStudy() {
       const stageEl = stageRef.current;
       if (!focus || !stageEl) return;
       if (a.focusPoint && a.focus >= 0) {
+        // Placed every frame beside the tile; pops in where the tile is.
+        const now = performance.now();
+        if (openedAt.current < 0) openedAt.current = now;
+        const pop = Math.min(1, (now - openedAt.current) / 160);
+        const ease = 1 - (1 - pop) * (1 - pop);
+        const scale = 0.94 + 0.06 * ease;
         const toLeft = a.focusPoint.x > stageEl.clientWidth * 0.62;
-        focus.style.opacity = '1';
+        focus.style.opacity = String(ease);
         focus.style.pointerEvents = 'auto';
         focus.style.transform = toLeft
-          ? `translate(${a.focusPoint.x - 22}px, ${a.focusPoint.y}px) translate(-100%, -50%)`
-          : `translate(${a.focusPoint.x + 22}px, ${a.focusPoint.y}px) translate(0, -50%)`;
+          ? `translate(${a.focusPoint.x - 18}px, ${a.focusPoint.y}px) translate(-100%, -50%) scale(${scale})`
+          : `translate(${a.focusPoint.x + 18}px, ${a.focusPoint.y}px) translate(0, -50%) scale(${scale})`;
       } else {
+        openedAt.current = -1;
         focus.style.opacity = '0';
         focus.style.pointerEvents = 'none';
       }
@@ -259,16 +257,17 @@ export function AgentMaterialStudy() {
               </Option>
             ))}
           </Row>
-          <Row label="Kind marks">
-            <Option active={state.marks} href={href({ ...state, marks: true })}>
-              On
-            </Option>
-            <Option
-              active={!state.marks}
-              href={href({ ...state, marks: false })}
-            >
-              Off
-            </Option>
+          <Row label="Harness mark">
+            {CRUST_MARKS.map(option => (
+              <Option
+                key={option.id}
+                active={option.id === state.mark}
+                href={href({ ...state, mark: option.id })}
+                title={option.note}
+              >
+                {option.name}
+              </Option>
+            ))}
           </Row>
           <Row label="Status">
             {STATUS_ORDER.map(status => (
@@ -291,20 +290,6 @@ export function AgentMaterialStudy() {
                 {source}
               </Option>
             ))}
-          </Row>
-          <Row label="Subagents">
-            <Option
-              active={state.children}
-              href={href({ ...state, children: true })}
-            >
-              On
-            </Option>
-            <Option
-              active={!state.children}
-              href={href({ ...state, children: false })}
-            >
-              Off
-            </Option>
           </Row>
           <Row label="Light">
             <Option
@@ -351,12 +336,10 @@ export function AgentMaterialStudy() {
         <div
           ref={stageRef}
           className="relative h-[70svh] min-h-[420px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#04060b] lg:h-[calc(100svh-5rem)]"
-          onPointerDown={press}
-          onPointerUp={release}
           data-agent-material-stage
         >
           <VisualCanvas
-            key={`${state.status}-${state.source}-${state.children}`}
+            key={`${state.status}-${state.source}`}
             visual="crust"
             model={model}
             theme={theme}
@@ -365,16 +348,17 @@ export function AgentMaterialStudy() {
             reducedMotion={reducedMotion}
             visible
             material={state.material}
-            marks={state.marks}
+            mark={state.mark}
             signal={state.signal}
             light={state.light}
             closeUp
             onExpand={expand}
             onHoverChange={onHoverChange}
+            onSelect={onSelect}
           />
           <div
             ref={focusRef}
-            className="absolute left-0 top-0 opacity-0 transition-opacity duration-150 will-change-transform"
+            className="absolute left-0 top-0 opacity-0 will-change-transform"
             onPointerDown={e => e.stopPropagation()}
             onPointerUp={e => e.stopPropagation()}
           >

@@ -3,13 +3,19 @@
 /**
  * The agent panel from the design partner's deck (slides 5 to 8), lofi
  * (ENG-031 W15): status, working time, credit usage, reset, model, source,
- * and one action. It is pointed at a real agent in the visual by a leader
- * line the experience draws, so the panel is never decoration.
+ * and one action, on the agent the stage lifts. The harness is its mark,
+ * never its name.
  */
 
 import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
-import { formatMinutes, STATUS_LABEL, type FleetAgent } from './fleet-model';
+import { SourceGlyph } from '@/components/workspace/harness-icons';
+import {
+  formatMinutes,
+  sourceAdapterId,
+  STATUS_LABEL,
+  type FleetAgent,
+} from './fleet-model';
 
 const STATUS_TONE: Record<StatusLightState, string> = {
   active: 'text-sky-300',
@@ -95,7 +101,12 @@ export function AgentCard({
             <dt className="text-white/50">Model</dt>
             <dd className="text-white/85">{agent.model}</dd>
             <dt className="text-white/50">Source</dt>
-            <dd className="text-white/85">{agent.source}</dd>
+            <dd
+              className="flex items-center text-white/85"
+              title={agent.source}
+            >
+              <SourceGlyph source={sourceAdapterId(agent.source)} size={14} />
+            </dd>
           </dl>
           <div className="mt-4 flex justify-end gap-2">
             {agent.status === 'needs-you' ? (

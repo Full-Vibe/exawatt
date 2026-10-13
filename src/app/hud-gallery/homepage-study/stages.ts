@@ -51,6 +51,12 @@ export interface Stage {
   focus: 'fleet' | 'project';
   /** Project names over the world. Off under centred type. */
   labels: boolean;
+  /** Agents on screen. The story opens on ten, closes in on one, and grows
+   *  from there to the whole fleet (operator 2026-10-12: "show 10 agents in
+   *  the very first slide... zoom in and cut the count down to just one...
+   *  zoom out and subsequently pop up 100... some narrative that can also
+   *  visually illustrate the quantity expanding"). */
+  count: number;
   copy: Record<CopySetId, StageCopy>;
 }
 
@@ -62,6 +68,7 @@ export const STAGES: Stage[] = [
     card: false,
     focus: 'fleet',
     labels: false,
+    count: 10,
     copy: {
       deck: {
         headline: ['Today you run 10 agents.', 'Tomorrow you will run 10,000.'],
@@ -80,6 +87,7 @@ export const STAGES: Stage[] = [
     card: true,
     focus: 'project',
     labels: true,
+    count: 1,
     copy: {
       deck: {
         headline: ["Easily see each agent's", 'working status'],
@@ -101,6 +109,7 @@ export const STAGES: Stage[] = [
     card: true,
     focus: 'project',
     labels: true,
+    count: 10,
     copy: {
       deck: {
         headline: ['The agents that need', 'you, surfaced.'],
@@ -122,6 +131,7 @@ export const STAGES: Stage[] = [
     card: true,
     focus: 'project',
     labels: true,
+    count: 100,
     copy: {
       deck: {
         headline: ['Queued agents orbit', 'the core'],
@@ -145,6 +155,7 @@ export const STAGES: Stage[] = [
     card: false,
     focus: 'fleet',
     labels: true,
+    count: 300,
     copy: {
       deck: {
         headline: ['All your fleets in one view.'],
@@ -165,6 +176,7 @@ export const STAGES: Stage[] = [
     card: false,
     focus: 'fleet',
     labels: false,
+    count: 300,
     copy: {
       deck: {
         headline: ['Choose your own model across', 'GPT, Grok, and Claude.'],
@@ -187,6 +199,7 @@ export const STAGES: Stage[] = [
     card: false,
     focus: 'fleet',
     labels: false,
+    count: 300,
     copy: {
       deck: {
         headline: ['Try Exawatt for free'],
@@ -207,8 +220,7 @@ export const STAGES: Stage[] = [
  * Every stage holds still for the first and last quarter of its screen and
  * the move to the next stage runs through the middle half on one ease. The
  * camera, the tile states, the fleet growth and the recede all read this one
- * blend, so nothing changes on a schedule of its own. Growth gets a wider
- * window because three hundred agents arriving in half a screen is a jolt.
+ * blend, so nothing changes on a schedule of its own.
  */
 interface RailWindow {
   start: number;

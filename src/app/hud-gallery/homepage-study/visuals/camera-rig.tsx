@@ -13,10 +13,14 @@
  * the stage blend (`stageBlend`) turns it into a dwell and a move, and
  * polar, azimuth, zoom, drop, reading side, fleet count, extent and centroid
  * are all read off that blend, so the camera travels one path and the
- * visual's states move with it. The fleet never grows mid-story: the page
- * opens on all of it, the dissections fit the first Project, and the fleet
- * stage fits all of it again, with extent and centroid blended between the
- * two fits on the rail.
+ * visual's states move with it. The fleet changes size with the story
+ * (`Stage.count`): the fit at either end of a move is read for that stage's
+ * own count and focus, and extent and centroid blend between the two on the
+ * rail, so the camera never chases the agents as they arrive; they arrive
+ * into a frame that is already on its way to fitting them.
+ *
+ * The rig lives in the canvas, above the visual, so switching the visual or
+ * the material swaps what is drawn and never restarts the camera.
  */
 
 import { useEffect, useMemo, useRef } from 'react';
@@ -48,9 +52,23 @@ const FRAMING: Record<string, StageFraming> = {
   working: { polar: 0.66, azimuth: 0.35, zoom: 0.84, drop: 0 },
   'needs-you': { polar: 0.62, azimuth: 0.75, zoom: 0.8, drop: 0 },
   third: { polar: 0.6, azimuth: 1.15, zoom: 0.8, drop: 0 },
-  fleet: { polar: 0.95, azimuth: 1.45, zoom: 1.0, drop: 0.35 },
+  fleet: { polar: 0.95, azimuth: 1.45, zoom: 0.96, drop: 0.14 },
   launch: { polar: 1.1, azimuth: 1.7, zoom: 1.25, drop: 0.1 },
   download: { polar: 1.2, azimuth: 1.9, zoom: 1.45, drop: 0 },
+};
+
+/** On a narrow screen the reading column is under the world or over it,
+ *  never beside it: a stage that reads beside the subject lifts it instead,
+ *  the landing pushes its ten agents under the type and the button, and the
+ *  fleet stage comes in closer so three hundred agents are not a smudge. */
+const NARROW: Record<string, { zoom: number; drop: number }> = {
+  landing: { zoom: 1.5, drop: 1.15 },
+  working: { zoom: 1.0, drop: -0.22 },
+  'needs-you': { zoom: 1.0, drop: -0.22 },
+  third: { zoom: 1.0, drop: -0.22 },
+  fleet: { zoom: 0.8, drop: 0.5 },
+  launch: { zoom: 1.0, drop: 0 },
+  download: { zoom: 1.0, drop: 0 },
 };
 
 /** Planar radius of the present fleet, tile units, with a margin ring. */
@@ -146,6 +164,16 @@ function writeRail(d: StoryDrive, rail: number, recede: number) {
   d.recede = recede;
 }
 
+/** How far a drag may turn the world, radians, by mode (story, close-up).
+ *  The story keeps the reader near the authored frame (operator 2026-10-12:
+ *  "constrain the drag camera angle a bit more"); the close-up is the
+ *  reader's to turn. */
+const USER_AZIMUTH = [0.55, Math.PI * 4];
+const USER_POLAR: [number, number][] = [
+  [-0.16, 0.2],
+  [-0.6, 0.9],
+];
+
 /** How fast the story input settles. Tight, so the scene answers the wheel
  *  at once; the rail's ease is what makes the move smooth. */
 const STORY_RATE = 4.5;
@@ -218,11 +246,15 @@ export function CameraRig({
       s.moved += Math.abs(dx) + Math.abs(dy);
       s.azimuthVelocity = dx * 0.004;
       s.polarVelocity = dy * 0.003;
-      s.userAzimuth += dx * 0.004;
+      s.userAzimuth = THREE.MathUtils.clamp(
+        s.userAzimuth + dx * 0.004,
+        -USER_AZIMUTH[closeUp ? 1 : 0],
+        USER_AZIMUTH[closeUp ? 1 : 0]
+      );
       s.userPolar = THREE.MathUtils.clamp(
         s.userPolar + dy * 0.003,
-        closeUp ? -0.6 : -0.35,
-        closeUp ? 0.9 : 0.35
+        USER_POLAR[closeUp ? 1 : 0][0],
+        USER_POLAR[closeUp ? 1 : 0][1]
       );
     };
     const up = (e: PointerEvent) => {
@@ -264,15 +296,32 @@ export function CameraRig({
       THREE.MathUtils.lerp(Math.log(f0.zoom), Math.log(f1.zoom), b.t)
     );
     // A close-up frames the cluster dead centre; the stage's side and drop
-    // exist to clear the reading column, which a close-up has none of.
-    const drop = closeUp ? 0 : THREE.MathUtils.lerp(f0.drop, f1.drop, b.t);
-    const side = closeUp
+    // exist to clear the reading column, which a close-up has none of. On a
+    // narrow screen the column sits under the world instead of beside it,
+    // so the subject moves up the frame, never sideways.
+    const narrow = size.width < size.height;
+    const n0 = NARROW[STAGES[b.from].id];
+    const n1 = NARROW[STAGES[b.to].id];
+    const drop = closeUp
       ? 0
       : THREE.MathUtils.lerp(
-          panelSide(STAGES[b.from]),
-          panelSide(STAGES[b.to]),
+          narrow ? n0.drop : f0.drop,
+          narrow ? n1.drop : f1.drop,
           b.t
         );
+    const narrowZoom = narrow
+      ? Math.exp(
+          THREE.MathUtils.lerp(Math.log(n0.zoom), Math.log(n1.zoom), b.t)
+        )
+      : 1;
+    const side =
+      closeUp || narrow
+        ? 0
+        : THREE.MathUtils.lerp(
+            panelSide(STAGES[b.from]),
+            panelSide(STAGES[b.to]),
+            b.t
+          );
     writeRail(
       d,
       s.progress,
@@ -283,20 +332,25 @@ export function CameraRig({
       )
     );
 
-    // The fleet is what it is on every stage; the camera goes in and out.
-    const shown = d.base;
+    // The fleet is the stage's own size at either end of the move; what is
+    // present eases between them with the rail, so agents arrive in a wave
+    // as the camera travels. A close-up shows the study's own count.
+    const countFrom = closeUp ? d.base : STAGES[b.from].count;
+    const countTo = closeUp ? d.base : STAGES[b.to].count;
+    const shown = THREE.MathUtils.lerp(countFrom, countTo, b.t);
     shownRef.current = shown;
 
-    // Fit what the stage looks at, blended on the rail.
+    // Fit what each end of the move looks at, at its own count, blended on
+    // the rail.
     const fromFleet = STAGES[b.from].focus === 'fleet';
     const toFleet = STAGES[b.to].focus === 'fleet';
     const extentFrom = readTable(
       fromFleet ? tables.fleetExtent : tables.projectExtent,
-      shown
+      countFrom
     );
     const extentTo = readTable(
       toFleet ? tables.fleetExtent : tables.projectExtent,
-      shown
+      countTo
     );
     const extent = Math.exp(
       THREE.MathUtils.lerp(Math.log(extentFrom), Math.log(extentTo), b.t)
@@ -307,7 +361,11 @@ export function CameraRig({
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
     const fov = Math.min(vfov, hfov);
     const fitted =
-      (extent / Math.tan(fov / 2)) * 1.05 * zoom * (closeUp ? 0.6 : 1);
+      (extent / Math.tan(fov / 2)) *
+      1.05 *
+      zoom *
+      narrowZoom *
+      (closeUp ? 0.6 : 1);
     const distanceTarget = Math.max(closeUp ? 5 : 12, fitted);
 
     // Azimuth: stage perspective + slow drift + the user's own turn. A turn
@@ -316,11 +374,15 @@ export function CameraRig({
     if (!s.dragging) {
       s.azimuthVelocity = THREE.MathUtils.damp(s.azimuthVelocity, 0, 4, delta);
       s.polarVelocity = THREE.MathUtils.damp(s.polarVelocity, 0, 4, delta);
-      s.userAzimuth += s.azimuthVelocity;
+      s.userAzimuth = THREE.MathUtils.clamp(
+        s.userAzimuth + s.azimuthVelocity,
+        -USER_AZIMUTH[closeUp ? 1 : 0],
+        USER_AZIMUTH[closeUp ? 1 : 0]
+      );
       s.userPolar = THREE.MathUtils.clamp(
         s.userPolar + s.polarVelocity,
-        closeUp ? -0.6 : -0.35,
-        closeUp ? 0.9 : 0.35
+        USER_POLAR[closeUp ? 1 : 0][0],
+        USER_POLAR[closeUp ? 1 : 0][1]
       );
       if (!closeUp) {
         s.userAzimuth = THREE.MathUtils.damp(s.userAzimuth, 0, 0.6, delta);
@@ -347,13 +409,13 @@ export function CameraRig({
     // nudged away from the reading column so the subject is never under
     // the type.
     const cx = THREE.MathUtils.lerp(
-      readTable(fromFleet ? tables.fleetCx : tables.projectCx, shown),
-      readTable(toFleet ? tables.fleetCx : tables.projectCx, shown),
+      readTable(fromFleet ? tables.fleetCx : tables.projectCx, countFrom),
+      readTable(toFleet ? tables.fleetCx : tables.projectCx, countTo),
       b.t
     );
     const cy = THREE.MathUtils.lerp(
-      readTable(fromFleet ? tables.fleetCy : tables.projectCy, shown),
-      readTable(toFleet ? tables.fleetCy : tables.projectCy, shown),
+      readTable(fromFleet ? tables.fleetCy : tables.projectCy, countFrom),
+      readTable(toFleet ? tables.fleetCy : tables.projectCy, countTo),
       b.t
     );
     planeToSphere(cx, cy, scratch.targetWorld);

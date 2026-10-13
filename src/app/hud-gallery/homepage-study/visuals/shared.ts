@@ -115,7 +115,6 @@ export function writeLabelAnchors(
       y: 0,
       visible: false,
       count: 0,
-      needsYou: 0,
     }));
   }
   for (const project of model.projects) {
@@ -147,9 +146,5 @@ export function writeLabelAnchors(
     slot.y = labelPoint.y;
     const last = Math.min(at.count, project.first + project.count);
     slot.count = Math.max(0, last - project.first);
-    let needsYou = 0;
-    for (let i = project.first; i < last; i += 1)
-      if (model.agents[i].status === 'needs-you') needsYou += 1;
-    slot.needsYou = needsYou;
   }
 }

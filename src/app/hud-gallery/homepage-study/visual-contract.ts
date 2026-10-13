@@ -10,6 +10,7 @@ import type { RefObject } from 'react';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
+import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
@@ -53,9 +54,9 @@ export const VISUALS: { id: VisualId; name: string; note: string }[] = [
 export interface StoryDrive {
   /** Stage index plus fraction, 0 .. STAGES.length - 1. Raw scroll. */
   progress: number;
-  /** Agents before the fleet stage grows it. */
+  /** Agents when the story does not say: the close-up study's own count. */
   base: number;
-  /** Agents the stage on screen nominally shows (base, or the whole fleet). */
+  /** Agents the stage on screen shows (`Stage.count`), for the exemplar. */
   count: number;
   /** The signal each stage lifts under the current copy set, by stage. */
   highlights: (StatusLightState | null)[];
@@ -113,7 +114,6 @@ export interface LabelAnchor {
   visible: boolean;
   /** Agents present in the Project right now. */
   count: number;
-  needsYou: number;
 }
 
 export interface VisualProps {
@@ -122,10 +122,13 @@ export interface VisualProps {
   drive: RefObject<StoryDrive>;
   anchor: VisualAnchor;
   reducedMotion: boolean;
+  /** The eased count the camera rig fits, shared so the visual and the
+   *  camera agree on what is present. */
+  shownRef: RefObject<number>;
   /** Body material for the Crust geometry (W15c). Other visuals ignore it. */
   material: CrustMaterialId;
-  /** Kind marks: the inlay is a glyph for the agent's harness (W15c). */
-  marks: boolean;
+  /** How the agent carries its harness's mark (W15f). Crust only. */
+  mark: CrustMarkId;
   /** How an agent carries its status (W15d). Crust only. */
   signal: CrustSignalId;
   /** Which reflection room lights the materials. Default `room`. */
@@ -134,8 +137,10 @@ export interface VisualProps {
   closeUp?: boolean;
   /** A ghost tile was clicked: the operator wants one more agent. */
   onExpand?: () => void;
-  /** The agent under the pointer, or -1. A click selects it. */
+  /** The agent under the pointer, or -1. */
   onHoverChange?: (agent: number) => void;
+  /** A click landed on an agent, or on nothing (-1). */
+  onSelect?: (agent: number) => void;
 }
 
 export const STATUS_ORDER: StatusLightState[] = [

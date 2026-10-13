@@ -2,21 +2,22 @@
 
 /**
  * Homepage study (ENG-031 W15): the design partner's scroll structure over
- * three candidate fleet visuals, switchable on the page, judged at four
- * fleet sizes and under two copy sets.
+ * five candidate fleet visuals, switchable on the page, under two copy
+ * sets. The fleet's size is the story's own (`Stage.count`): ten, then one,
+ * then the whole fleet.
  *
- * One row of controls and then the page. Scroll it. Drag the visual to turn
- * it. Click a ghost tile to add an agent.
+ * One bar of controls over the page. Scroll it. Drag the visual to turn it.
+ * Click an agent to open it. On a phone the bar folds to one button.
  */
 
-import { useCallback, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { FLEET_COUNTS, FLEET_MAX } from './fleet-model';
 import { ScrollExperience, type SnapMode } from './scroll-experience';
 import type { CopySetId } from './stages';
 import { VISUALS, type VisualId } from './visual-contract';
+import { CRUST_MARKS, type CrustMarkId } from './visuals/crust-marks';
 import {
   CRUST_MATERIALS,
   type CrustMaterialId,
@@ -26,10 +27,9 @@ import type { EnvironmentKind } from './visuals/environment';
 
 interface StudyState {
   visual: VisualId;
-  count: number;
   copy: CopySetId;
   material: CrustMaterialId;
-  marks: boolean;
+  mark: CrustMarkId;
   signal: CrustSignalId;
   light: EnvironmentKind;
   snap: SnapMode;
@@ -37,9 +37,9 @@ interface StudyState {
 
 function readState(params: URLSearchParams): StudyState {
   const visual = params.get('visual');
-  const count = Number(params.get('count'));
   const copy = params.get('copy');
   const material = params.get('material');
+  const mark = params.get('mark');
   const signal = params.get('signal');
   return {
     signal: CRUST_SIGNALS.some(x => x.id === signal)
@@ -53,18 +53,14 @@ function readState(params: URLSearchParams): StudyState {
     material: CRUST_MATERIALS.some(m => m.id === material)
       ? (material as CrustMaterialId)
       : 'gummy',
-    marks: params.get('marks') !== 'off',
+    mark: CRUST_MARKS.some(m => m.id === mark) ? (mark as CrustMarkId) : 'lit',
     visual: VISUALS.some(v => v.id === visual) ? (visual as VisualId) : 'crust',
-    count:
-      Number.isFinite(count) && count >= 1
-        ? Math.min(FLEET_MAX, Math.round(count))
-        : 300,
     copy: copy === 'deck' ? 'deck' : 'canon',
   };
 }
 
 function href(state: StudyState): string {
-  return `/hud-gallery/homepage-study?visual=${state.visual}&count=${state.count}&copy=${state.copy}&material=${state.material}&marks=${state.marks ? 'on' : 'off'}&signal=${state.signal}&light=${state.light}&snap=${state.snap}`;
+  return `/hud-gallery/homepage-study?visual=${state.visual}&copy=${state.copy}&material=${state.material}&mark=${state.mark}&signal=${state.signal}&light=${state.light}&snap=${state.snap}`;
 }
 
 function Option({
@@ -97,17 +93,9 @@ function Option({
 }
 
 export function HomepageStudy() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const state = useMemo(() => readState(searchParams), [searchParams]);
-  const count = state.count;
-
-  const setCount = useCallback(
-    (value: number) => {
-      router.replace(href({ ...state, count: value }), { scroll: false });
-    },
-    [router, state]
-  );
+  const [open, setOpen] = useState(false);
 
   return (
     <main
@@ -117,7 +105,8 @@ export function HomepageStudy() {
     >
       {/* The controls float over the pinned stage rather than sitting above
           it in the flow, so the scene is pinned from the first pixel of
-          scroll and never shoves up under the bar first. */}
+          scroll and never shoves up under the bar first. On a phone they
+          fold behind one button so the world keeps the screen. */}
       <div className="fixed inset-x-0 top-12 z-30 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-white/10 bg-[#04060b]/80 px-4 py-2 backdrop-blur">
         <p className="font-mono text-chrome-micro text-white/50">
           <Link href="/hud-gallery" className="hover:text-white">
@@ -125,7 +114,20 @@ export function HomepageStudy() {
           </Link>{' '}
           / <span className="text-white">Homepage study</span>
         </p>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <button
+          type="button"
+          onClick={() => setOpen(value => !value)}
+          aria-expanded={open}
+          className="rounded border border-white/15 px-2 py-1 font-mono text-chrome-micro text-white/70 md:hidden"
+        >
+          {open ? 'Hide controls' : 'Controls'}
+        </button>
+        <div
+          className={cn(
+            'w-full flex-col items-start gap-y-2 md:flex md:w-auto md:flex-row md:flex-wrap md:items-center md:gap-x-5',
+            open ? 'flex' : 'hidden'
+          )}
+        >
           <div className="flex items-center gap-1">
             <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
               Visual
@@ -192,46 +194,21 @@ export function HomepageStudy() {
               </div>
               <div className="flex items-center gap-1">
                 <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
-                  Kind marks
+                  Harness mark
                 </span>
-                <Option
-                  active={state.marks}
-                  href={href({ ...state, marks: true })}
-                  title="The inlay is a glyph for the harness: hexagon Claude Code, open ring Codex, triangle OpenCode, square Grok Build, ring OpenClaw, bar Antigravity."
-                >
-                  On
-                </Option>
-                <Option
-                  active={!state.marks}
-                  href={href({ ...state, marks: false })}
-                  title="Every agent wears the hexagon."
-                >
-                  Off
-                </Option>
+                {CRUST_MARKS.map(option => (
+                  <Option
+                    key={option.id}
+                    active={option.id === state.mark}
+                    href={href({ ...state, mark: option.id })}
+                    title={option.note}
+                  >
+                    {option.name}
+                  </Option>
+                ))}
               </div>
             </>
           ) : null}
-          <div className="flex items-center gap-1">
-            <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
-              Fleet
-            </span>
-            {FLEET_COUNTS.map(value => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setCount(value)}
-                aria-current={value === state.count ? 'true' : undefined}
-                className={cn(
-                  'rounded border px-2 py-1 font-mono text-chrome-micro transition-colors',
-                  value === state.count
-                    ? 'border-white bg-white text-black'
-                    : 'border-white/15 text-white/70 hover:bg-white/10'
-                )}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
           <div className="flex items-center gap-1">
             <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
               Snap
@@ -274,12 +251,10 @@ export function HomepageStudy() {
       </div>
 
       <ScrollExperience
-        key={`${state.visual}-${state.copy}`}
         visual={state.visual}
-        baseCount={count}
         copySet={state.copy}
         material={state.material}
-        marks={state.marks}
+        mark={state.mark}
         signal={state.signal}
         light={state.light}
         snap={state.snap}
@@ -287,11 +262,14 @@ export function HomepageStudy() {
 
       <footer className="border-t border-white/10 px-6 py-8 text-[13px] text-white/45">
         <p className="max-w-[60ch]">
-          Structure from the design partner&apos;s deck, slides 15 to 21. Three
+          Structure from the design partner&apos;s deck, slides 15 to 21. Five
           visuals on one synthetic fleet, laid out once at 300 agents so a
           smaller fleet is a prefix of the same layout and growth never moves an
-          agent. Drag to turn; it settles back. Click an agent to open it.
-          Outlined tiles are the slots the next agents would take.
+          agent. The story opens on ten agents, closes in on one, and grows to
+          the whole fleet. Drag to turn; it settles back. Click an agent to open
+          it. Outlined tiles are the slots the next agents would take. Harness
+          marks are the vendors&apos; own, used to name the product that runs
+          each agent.
         </p>
       </footer>
     </main>

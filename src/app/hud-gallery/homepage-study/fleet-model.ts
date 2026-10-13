@@ -82,81 +82,162 @@ export interface FleetModel {
 }
 
 const PROJECT_NAMES = [
-  'Web Platform',
-  'Mobile App',
-  'Partner API',
-  'Design System',
-  'Billing',
-  'Data Pipeline',
-  'Docs',
+  'Spring launch',
+  'Marketing',
+  'Sales',
+  'Design',
+  'Finance',
   'Support',
-  'Infra',
-  'Growth',
+  'Hiring',
+  'Research',
+  'Operations',
+  'Home',
 ];
 
 /** Agents per Project at full size. Sums to FLEET_MAX; the first is large
  *  enough that the ten-agent fleet is one Project. */
 const PROJECT_SIZES = [34, 22, 46, 18, 28, 40, 31, 26, 35, 20];
 
-const PURPOSES = [
-  'Migrate auth to passkeys',
-  'Triage flaky tests',
-  'Basis feature sweep',
-  'Rewrite the onboarding flow',
-  'Index the support archive',
-  'Port the billing worker',
-  'Draft the release notes',
-  'Fix the checkout regression',
-  'Audit dependency licenses',
-  'Profile the cold start',
-  'Backfill usage events',
-  'Localize the settings pages',
-  'Tune the search ranker',
-  'Repair the nightly build',
-  'Trim the bundle',
-  'Model the pricing table',
-  'Verify the sandbox policy',
-  'Reconcile the ledger',
-  'Classify inbound tickets',
-  'Refresh the brand assets',
-  'Prune stale feature flags',
-  'Upgrade the ORM',
-  'Harden the webhook path',
-  'Write the API changelog',
-  'Shadow the canary deploy',
-  'Cluster the churn cohort',
-  'Rotate the signing keys',
-  'Generate the fixture set',
-  'Review open pull requests',
-  'Map the schema drift',
+/**
+ * What the agents are doing, per Project, in the words their owner would
+ * use (operator 2026-10-12: "more high-level and less geeky / technical.
+ * Like marketing, sales tasks, in addition to product engineering. Maybe
+ * personal admin as well... in their own project zone"). The first Project
+ * is the one the dissections open on; the personal admin lives in the last.
+ */
+const TASKS: string[][] = [
+  [
+    'Ship passkey sign-in',
+    'Rewrite the onboarding',
+    'Fix checkout on Safari',
+    'Make the first load fast',
+    'Draft the launch post',
+    'Cut the release',
+    'Write the migration guide',
+    'Test the upgrade path',
+    'Finish the new pricing page',
+    'Close the launch bugs',
+    'Record the product tour',
+    'Tidy the settings screen',
+  ],
+  [
+    'Write the launch email',
+    'Refresh the homepage copy',
+    'Plan the April webinar',
+    'Draft three ad variants',
+    'Summarize last week',
+    'Post the changelog',
+    'Cut the demo into clips',
+    'Pitch two newsletters',
+    'Update the case studies',
+  ],
+  [
+    "Qualify this morning's leads",
+    'Draft the Acme proposal',
+    'Prep the Tuesday demo',
+    'Follow up with trials',
+    'Update the pipeline',
+    'Research ten prospects',
+    'Answer the security questionnaire',
+    'Renew the Northwind contract',
+    'Write the quarterly recap',
+    'Book the conference meetings',
+  ],
+  [
+    'Redesign the settings page',
+    'Mock the mobile flow',
+    'Tidy the icon set',
+    'Review the empty states',
+    'Draft the brand refresh',
+    'Audit the colour contrast',
+  ],
+  [
+    'Reconcile March invoices',
+    'Forecast Q2 cash',
+    'Chase overdue invoices',
+    'Model the new pricing',
+    'Prepare the board pack',
+    'Sort the expense reports',
+    'Close the books',
+  ],
+  [
+    'Answer the ticket queue',
+    'Find why exports fail',
+    'Triage the morning bugs',
+    'Write the refund macro',
+    'Call back the enterprise accounts',
+    'Update the help centre',
+    'Summarize the weekly complaints',
+  ],
+  [
+    'Screen the designer applicants',
+    'Schedule the panel',
+    'Draft the offer letter',
+    'Write the job post',
+    'Check the references',
+    'Plan the onboarding week',
+  ],
+  [
+    'Compare the three vendors',
+    'Summarize competitor pricing',
+    'Read the new regulation',
+    'Survey the churned accounts',
+    'Map the market',
+    'Digest the user interviews',
+  ],
+  [
+    'Renew the domains',
+    'Audit who has admin',
+    'Move the backups',
+    'Rotate the keys',
+    'Order the new laptops',
+    'Review the vendor bills',
+    'Plan the office move',
+  ],
+  [
+    'Find a two-bedroom near the office',
+    'Book the Lisbon flights',
+    'Compare car insurance quotes',
+    'Plan the birthday dinner',
+    'Sort the tax documents',
+    'Cancel the unused subscriptions',
+    'Find a weekend plumber',
+    'Shortlist the summer camps',
+  ],
 ];
 
 const DOING = [
-  'Reading the auth module',
-  'Running the test suite',
+  'Reading the brief',
+  'Drafting a first version',
   'Waiting on your approval',
-  'Opened a pull request',
-  'Comparing two migrations',
-  'Editing six files',
-  'Needs a decision on scope',
-  'Result ready to review',
-  'Scanning the ticket queue',
-  'Rebuilding the index',
-  'Blocked on a permission',
+  'Ready for your review',
+  'Comparing two options',
+  'Working through the list',
+  'Needs a decision from you',
+  'Finished, waiting for you',
+  'Checking the numbers',
+  'Gathering what it needs',
+  'Blocked on a login',
   'Writing the summary',
   'Idle until the next turn',
-  'Checking the deploy logs',
-  'Drafting the fix',
+  'Double-checking the result',
+  'Putting it together',
 ];
 
-const SOURCES = [
-  'Claude Code',
-  'Codex',
-  'OpenCode',
-  'Grok Build',
-  'OpenClaw',
-  'Antigravity',
+/** The harnesses in the study fleet: the five the site names, each with
+ *  the product's own adapter id so a surface can draw the vendor's mark. */
+const SOURCES: { id: string; label: string }[] = [
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'grok', label: 'Grok Build' },
+  { id: 'openclaw', label: 'OpenClaw' },
 ];
+
+/** The adapter id behind a study agent's harness label, for the mark. */
+export function sourceAdapterId(label: string): string {
+  return SOURCES.find(source => source.label === label)?.id ?? label;
+}
 
 const MODELS: Record<string, string[]> = {
   'Claude Code': ['Fable 5.1', 'Opus 5.5', 'Sonnet 5.5'],
@@ -164,7 +245,6 @@ const MODELS: Record<string, string[]> = {
   OpenCode: ['Sonnet 5.5', 'Haiku 5.5'],
   'Grok Build': ['Grok 5'],
   OpenClaw: ['Opus 5.5'],
-  Antigravity: ['Gemini 3.5 Pro'],
 };
 
 /** Mulberry32: tiny, seeded, deterministic. */
@@ -290,10 +370,11 @@ export function fleetModel(): FleetModel {
     for (let local = 0; local < project.count; local += 1) {
       const index = project.first + local;
       const tile = spiral[local];
-      const source = SOURCES[(index * 7 + project.id) % SOURCES.length];
+      const source = SOURCES[(index * 7 + project.id) % SOURCES.length].label;
       const models = MODELS[source];
       const status = statusFor(index, local, random);
-      const purpose = PURPOSES[(index * 13 + project.id * 3) % PURPOSES.length];
+      const tasks = TASKS[project.id];
+      const purpose = tasks[(local * 5 + project.id) % tasks.length];
       const doing =
         status === 'needs-you'
           ? DOING[[2, 6, 10][index % 3]]
@@ -305,7 +386,7 @@ export function fleetModel(): FleetModel {
       agents.push({
         id: index,
         project: project.id,
-        name: `${purpose} ${1 + (index % 4)}/${4 + (index % 3)}`,
+        name: purpose,
         doing,
         status,
         source,

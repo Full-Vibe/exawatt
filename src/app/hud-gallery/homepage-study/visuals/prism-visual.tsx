@@ -20,7 +20,6 @@ import { fleetAt } from '../fleet-model';
 import { SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
 import { stageAt } from '../stages';
 import type { VisualProps } from '../visual-contract';
-import { CameraRig } from './camera-rig';
 import { useRoomEnvironment } from './environment';
 import {
   highlightWeight,
@@ -56,8 +55,10 @@ export function PrismVisual({
   drive,
   anchor,
   reducedMotion,
+  shownRef,
   onExpand,
   onHoverChange,
+  onSelect,
 }: VisualProps) {
   useRoomEnvironment(1.1);
   const palette = useMemo(() => paletteFrom(theme), [theme]);
@@ -89,7 +90,6 @@ export function PrismVisual({
   if (animRef.current === null)
     animRef.current = makeAnim(tileCount, pips.length);
   const anim = animRef.current;
-  const shownRef = useRef(1);
   const { size } = useThree();
 
   const crystalsRef = useRef<THREE.InstancedMesh>(null);
@@ -138,6 +138,15 @@ export function PrismVisual({
       onHoverChange?.(-1);
     }
   };
+  const clickTile = (e: ThreeEvent<MouseEvent>) => {
+    if (e.delta > 6) return;
+    const id = e.instanceId ?? -1;
+    const agent = id >= 0 && anim.present[id] ? model.tiles[id].agent : -1;
+    if (agent < 0) return;
+    e.stopPropagation();
+    onSelect?.(agent);
+  };
+  const missTile = () => onSelect?.(-1);
   const clickGhost = (e: ThreeEvent<MouseEvent>) => {
     const id = e.instanceId ?? -1;
     if (id >= 0 && anim.tileOfGhost[id] >= 0) {
@@ -358,12 +367,6 @@ export function PrismVisual({
 
   return (
     <>
-      <CameraRig
-        model={model}
-        drive={drive}
-        reducedMotion={reducedMotion}
-        shownRef={shownRef}
-      />
       <color attach="background" args={[theme.canvas]} />
       <fog attach="fog" args={[theme.canvas, 70, 170]} />
       <directionalLight
@@ -399,6 +402,8 @@ export function PrismVisual({
         args={[groundGeometry, undefined, tileCount]}
         onPointerMove={hoverTile}
         onPointerOut={leaveTile}
+        onClick={clickTile}
+        onPointerMissed={missTile}
         frustumCulled={false}
       >
         <meshPhysicalMaterial
@@ -425,6 +430,7 @@ export function PrismVisual({
         args={[crystalGeometry, undefined, tileCount]}
         onPointerMove={hoverTile}
         onPointerOut={leaveTile}
+        onClick={clickTile}
         frustumCulled={false}
       >
         <meshPhysicalMaterial

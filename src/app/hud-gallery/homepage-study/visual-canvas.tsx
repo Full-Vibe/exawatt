@@ -2,16 +2,20 @@
 
 /**
  * The one canvas (ENG-031 W15). Client-only chunk; the page's HTML never
- * carries a WebGL context. Switching the visual option remounts the scene
- * under the same canvas; the story drive and anchors are the parent's refs,
- * so the switch keeps the reader's place.
+ * carries a WebGL context. The camera rig lives here, above the visual, so
+ * switching the visual or the material swaps what is drawn in place and
+ * never restarts the camera (operator 2026-10-12: "changing visuals should
+ * just swap the agent types in place"). The story drive and anchors are the
+ * parent's refs, so the switch keeps the reader's place too.
  */
 
 import { Canvas } from '@react-three/fiber';
-import type { RefObject } from 'react';
+import { useRef, type RefObject } from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
 import type { StoryDrive, VisualAnchor, VisualId } from './visual-contract';
+import { CameraRig } from './visuals/camera-rig';
+import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
@@ -20,6 +24,14 @@ import { DomeVisual } from './visuals/dome-visual';
 import { LidarVisual } from './visuals/lidar-visual';
 import { MercuryVisual } from './visuals/mercury-visual';
 import { PrismVisual } from './visuals/prism-visual';
+
+const VISUAL_COMPONENTS = {
+  crust: CrustVisual,
+  lidar: LidarVisual,
+  dome: DomeVisual,
+  prism: PrismVisual,
+  mercury: MercuryVisual,
+} as const;
 
 export function VisualCanvas({
   visual,
@@ -30,16 +42,17 @@ export function VisualCanvas({
   reducedMotion,
   visible,
   material,
-  marks,
+  mark,
   signal,
   light,
   closeUp,
   onExpand,
   onHoverChange,
+  onSelect,
 }: {
   visual: VisualId;
   material: CrustMaterialId;
-  marks: boolean;
+  mark: CrustMarkId;
   signal: CrustSignalId;
   light?: EnvironmentKind;
   closeUp?: boolean;
@@ -51,15 +64,10 @@ export function VisualCanvas({
   visible: boolean;
   onExpand?: () => void;
   onHoverChange: (agent: number) => void;
+  onSelect: (agent: number) => void;
 }) {
-  const VISUAL_COMPONENTS = {
-    crust: CrustVisual,
-    lidar: LidarVisual,
-    dome: DomeVisual,
-    prism: PrismVisual,
-    mercury: MercuryVisual,
-  } as const;
   const Visual = VISUAL_COMPONENTS[visual];
+  const shownRef = useRef(1);
   return (
     <Canvas
       className="absolute inset-0"
@@ -74,11 +82,19 @@ export function VisualCanvas({
       }}
       aria-hidden
     >
-      <Visual
-        key={`${visual}-${material}`}
+      <CameraRig
         model={model}
+        drive={drive}
+        reducedMotion={reducedMotion}
+        shownRef={shownRef}
+        closeUp={closeUp}
+      />
+      <Visual
+        key={visual}
+        model={model}
+        shownRef={shownRef}
         material={material}
-        marks={marks}
+        mark={mark}
         signal={signal}
         light={light}
         closeUp={closeUp}
@@ -88,6 +104,7 @@ export function VisualCanvas({
         reducedMotion={reducedMotion}
         onExpand={onExpand}
         onHoverChange={onHoverChange}
+        onSelect={onSelect}
       />
     </Canvas>
   );

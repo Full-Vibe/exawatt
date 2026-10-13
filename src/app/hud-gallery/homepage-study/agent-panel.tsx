@@ -5,14 +5,21 @@
  * panel, but very small and simple and subtle... feel like it's part of
  * the scene and be desirable UI instead of an afterthought").
  *
- * Glass over the globe, tethered to the tile by a leader the experience
- * draws in the product's selection colour, corner ticks in the same
- * colour, the status as a lit dot, three facts, one action. Nothing in it
- * is decoration; every line is a thing the product knows about the agent.
+ * Glass over the globe beside the tile, corner ticks in the product's
+ * selection colour, the status as a lit dot, the harness as its own mark
+ * (never its name: operator 2026-10-12), three facts, one action. Nothing
+ * in it is decoration; every line is a thing the product knows about the
+ * agent. No leader to the tile: the panel stands where the tile is.
  */
 
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
-import { formatMinutes, STATUS_LABEL, type FleetAgent } from './fleet-model';
+import { SourceGlyph } from '@/components/workspace/harness-icons';
+import {
+  formatMinutes,
+  sourceAdapterId,
+  STATUS_LABEL,
+  type FleetAgent,
+} from './fleet-model';
 
 export function AgentPanel({
   agent,
@@ -63,8 +70,8 @@ export function AgentPanel({
           />
           {STATUS_LABEL[agent.status]}
         </span>
-        <span className="font-mono text-[10px] text-white/45">
-          {agent.source}
+        <span className="text-white/70" title={agent.source}>
+          <SourceGlyph source={sourceAdapterId(agent.source)} size={13} />
         </span>
       </div>
       <p className="mt-1.5 truncate text-[13px] font-medium">{agent.name}</p>

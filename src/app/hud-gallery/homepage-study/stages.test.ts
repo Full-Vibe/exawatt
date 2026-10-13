@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { READER_AS_BOTTLENECK } from '@/components/site/bands/fold-copy';
+import { fleetModel } from './fleet-model';
 import { STAGES, stageAt, stageBlend } from './stages';
 
 const prose = (lines: (string | undefined)[]) =>
@@ -36,7 +37,27 @@ describe('homepage study copy', () => {
       expect(stage.highlight.deck).toBeDefined();
     }
   });
+
+  it("has an agent to point at inside every dissection's own fleet size", () => {
+    const agents = fleetModel().agents;
+    for (const stage of STAGES.filter(stage => stage.card))
+      for (const set of ['deck', 'canon'] as const) {
+        const status = stage.highlight[set];
+        const present = agents.slice(0, stage.count);
+        expect(present.some(agent => agent.status === status)).toBe(true);
+      }
+  });
+
+  it('opens on ten agents, closes in on one, and ends on the whole fleet', () => {
+    expect(STAGES[0].count).toBe(10);
+    expect(Math.min(...STAGES.map(stage => stage.count))).toBe(1);
+    expect(STAGES[STAGES.length - 1].count).toBe(agentsInFleet());
+  });
 });
+
+function agentsInFleet(): number {
+  return fleetModel().agents.length;
+}
 
 describe('the rail', () => {
   it('holds each stage still for a quarter screen on either side of the move', () => {

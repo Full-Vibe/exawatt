@@ -3,7 +3,9 @@
  * same FleetModel shape the homepage study renders, so the agent is judged
  * in the exact renderer that will ship it: the hero at the centre with the
  * chosen status and harness, six neighbours around it covering the other
- * signals, one ring of ground and the ghost ring beyond.
+ * signals, one ring of ground and the ghost ring beyond. No delegated
+ * children: their pips and tethers read as stray lines (operator
+ * 2026-10-12) and are gone from the Crust visual.
  */
 
 import type { StatusLightState } from '@/components/status-light/protocol';
@@ -16,7 +18,6 @@ export const CLUSTER_SOURCES = [
   'OpenCode',
   'Grok Build',
   'OpenClaw',
-  'Antigravity',
 ] as const;
 
 const NEIGHBOUR_STATUS: StatusLightState[] = [
@@ -34,21 +35,28 @@ const MODEL_FOR: Record<string, string> = {
   OpenCode: 'Sonnet 5.5',
   'Grok Build': 'Grok 5',
   OpenClaw: 'Opus 5.5',
-  Antigravity: 'Gemini 3.5 Pro',
 };
 
 const DOING: Record<StatusLightState, string> = {
-  active: 'Reading the auth module',
-  'needs-you': 'Blocked on a permission',
-  result: 'Opened a pull request',
+  active: 'Drafting a first version',
+  'needs-you': 'Needs a decision from you',
+  result: 'Finished, waiting for you',
   off: 'Idle until the next turn',
-  fault: 'Lost the sandbox',
+  fault: 'Lost its connection',
 };
+
+const NEIGHBOUR_TASKS = [
+  'Rewrite the onboarding',
+  'Draft the launch post',
+  'Fix checkout on Safari',
+  'Cut the release',
+  'Write the migration guide',
+  'Record the product tour',
+];
 
 export function clusterModel(
   status: StatusLightState,
-  source: string,
-  children: boolean
+  source: string
 ): FleetModel {
   const rings = 3;
   const spiral = hexSpiral({ q: 0, r: 0 }, rings);
@@ -67,7 +75,7 @@ export function clusterModel(
     agents.push({
       id: local,
       project: 0,
-      name: local === 0 ? 'Migrate auth to passkeys 1/4' : `Neighbour ${local}`,
+      name: local === 0 ? 'Ship passkey sign-in' : NEIGHBOUR_TASKS[local - 1],
       doing: DOING[agentStatus],
       status: agentStatus,
       source: agentSource,
@@ -76,7 +84,7 @@ export function clusterModel(
       minutes: 36 + 41 * local,
       tile: tile.axial,
       ring: tile.ring,
-      children: local === 0 && children ? 3 : 0,
+      children: 0,
     });
   }
   const tiles = spiral.map((tile, i) => ({
