@@ -168,7 +168,7 @@ export const STAGES: Stage[] = [
       canon: {
         headline: ['Every kind of agent,', 'side by side.'],
         body: [
-          'Bring Claude Code, Codex, OpenClaw, or one you built yourself.',
+          'Bring Claude Code, Codex, OpenClaw, or your own.',
           'Run them together and watch them all work in one place.',
         ],
       },

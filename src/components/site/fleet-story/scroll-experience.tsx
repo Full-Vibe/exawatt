@@ -20,7 +20,7 @@
  * One agent card on the page, never two (W15j). On the dissections the card
  * in the reading column shows the agent in focus: the scene's exemplar until
  * the reader picks another. Where that card is not shown (the landing and
- * the fleet, and every scene on a narrow screen) the open agent is the same
+ * the fleet, and every scene on a narrow or short screen) the open agent is the same
  * card pinned to a side of the stage, or a sheet on a phone
  * (`pinned-agent-panel.tsx`). A pick belongs to the scene it was made in; a
  * pinned card closes the moment the camera starts toward another scene, so
@@ -47,7 +47,7 @@ import { AgentCard } from './agent-card';
 import { StoryCanvas } from './canvas-boundary';
 import { fleetModel, STATUS_LABEL, type FleetAgent } from './fleet-model';
 import { facingFade, nameShown, nameStyleOf, type NamesId } from './names';
-import { isNarrow } from './narrow';
+import { isNarrow, isShort } from './narrow';
 import { PinnedAgentPanel } from './pinned-agent-panel';
 import {
   exemplarFor,
@@ -375,8 +375,12 @@ export function ScrollExperience({
         stageEl.style.setProperty('--push-signed', push.toFixed(3));
       }
       // one measure of narrow for the steps, the card in the column and the
-      // sheet
+      // sheet, and one of short, where the column's card steps aside too
       const narrow = isNarrow(stageEl.clientWidth, stageEl.clientHeight);
+      const short = isShort(stageEl.clientHeight);
+      // a phone and a short stage keep the Project names to the scenes
+      // inside one Project, where they have room
+      const cramped = narrow || short;
       // The scene steps show the scroll itself (W15o, operator 2026-10-14:
       // "It doesn't just go one direction, expanding or contracting. It
       // actually kind of glitches and moves up and down"): where the page is
@@ -422,12 +426,15 @@ export function ScrollExperience({
       const narrowFlag = narrow ? 'true' : 'false';
       if (stageEl.dataset.narrow !== narrowFlag)
         stageEl.dataset.narrow = narrowFlag;
+      const shortFlag = short ? 'true' : 'false';
+      if (stageEl.dataset.short !== shortFlag)
+        stageEl.dataset.short = shortFlag;
       // A pinned card closes when the camera starts toward another scene;
       // a pick shown in the column's card stays with its scene and fades
       // with it.
       if (
         selectedRef.current !== -1 &&
-        (narrow || !STAGES[stageNow.current].card) &&
+        (cramped || !STAGES[stageNow.current].card) &&
         lb.t > MOVING_FROM &&
         lb.t < 1 - MOVING_FROM
       )
@@ -439,11 +446,11 @@ export function ScrollExperience({
       const style = nameStyleOf(
         namesRef.current,
         STAGES[lb.t < 0.5 ? lb.from : lb.to],
-        narrow
+        cramped
       );
       const still = 1 - 4 * lb.t * (1 - lb.t);
       const shown = style
-        ? nameShown(namesRef.current, style, drive.current.rail, narrow) *
+        ? nameShown(namesRef.current, style, drive.current.rail, cramped) *
           (style === 'border' ? still * still : 1)
         : 0;
       for (let i = 0; i < a.labels.length; i += 1) {
@@ -552,7 +559,8 @@ export function ScrollExperience({
         {/* The selected agent. Click a tile to open it, click it again,
             anywhere else, or press Escape to close it. On a stage with the
             agent card beside the world the card is the selection, so this
-            opens only where that card is not shown: on a narrow screen. */}
+            opens only where that card is not shown: on a narrow or a short
+            screen. */}
         <PinnedAgentPanel
           agent={selectedAgent}
           theme={theme}
@@ -876,7 +884,7 @@ function PanelBody({
       {stage.card && agent ? (
         <div
           className={cn(
-            'hidden group-data-[narrow=false]/stage:block',
+            'hidden group-data-[narrow=false]/stage:block group-data-[short=true]/stage:!hidden',
             interactive ? 'pointer-events-auto' : 'pointer-events-none'
           )}
         >
@@ -901,8 +909,12 @@ function PanelBody({
         className={cn(
           'text-balance font-semibold tracking-tight text-white',
           interactive ? 'pointer-events-auto' : 'pointer-events-none',
-          isLanding && 'text-4xl leading-[1.05] md:text-6xl',
-          !isLanding && 'text-[1.7rem] leading-tight md:text-4xl'
+          // sized by the stage's height as well as its width, so a phone held
+          // sideways or a short window keeps the type clear of the world
+          isLanding &&
+            'text-[length:clamp(2.25rem,min(6vw,9vh),3.75rem)] leading-[1.05]',
+          !isLanding &&
+            'text-[length:clamp(1.7rem,min(3.2vw,6.4vh),2.25rem)] leading-tight'
         )}
       >
         {copy.headline.map((line, index) => (

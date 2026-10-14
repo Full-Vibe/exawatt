@@ -17,9 +17,10 @@
  *   no line.
  *
  * **GitHub is present and its repository is private until ENG-030 flips it.**
- * The two-license split in the footer is meaningless without somewhere to read
- * the licenses, the repository goes public at the same launch moment this page
- * is built for, and the URL is already canonical in `package.json` and in
+ * The footer's Repository and Licensing links and the homepage's "View on
+ * GitHub" are meaningless without somewhere to read the code and its
+ * licenses, the repository goes public at the same launch moment this page is
+ * built for, and the URL is already canonical in `package.json` and in
  * `contracts/`.
  *
  * THE INTERIM 404 IS AN ACCEPTED OPERATOR DECISION, 2026-08-19, not an open

@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import { AgentCard } from './agent-card';
 import type { FleetAgent } from './fleet-model';
-import { HEADER_PX, isNarrow } from './narrow';
+import { HEADER_PX, isNarrow, isShort } from './narrow';
 import { panelWidth, placePanel, type PanelSide } from './panel-placement';
 import type { VisualAnchor } from './visual-contract';
 
@@ -31,8 +31,6 @@ import type { VisualAnchor } from './visual-contract';
 const IN_RATE = 24;
 const OUT_RATE = 16;
 const MOVE_RATE = 18;
-/** A stage shorter than this shows the card in its compact form. */
-const COMPACT_BELOW = 520;
 
 export function PinnedAgentPanel({
   agent,
@@ -61,8 +59,9 @@ export function PinnedAgentPanel({
   insetBottom?: number;
   /** How much taller than wide a stage can be before it counts as narrow. */
   narrowSlack?: number;
-  /** Open only on a narrow stage: where the agent card already stands
-   *  beside the world, the card is the selection and this stays shut. */
+  /** Open only where the reading column's card is not shown, a narrow or a
+   *  short stage: where the agent card already stands beside the world, the
+   *  card is the selection and this stays shut. */
   narrowOnly?: boolean;
   reducedMotion: boolean;
 }) {
@@ -121,11 +120,13 @@ export function PinnedAgentPanel({
       const width = host.clientWidth;
       const height = host.clientHeight;
       const narrow = isNarrow(width, height, mine.narrowSlack);
+      // the reading column's card is not shown on a short stage either
+      const short = isShort(height);
       const want =
         mine.agent !== null &&
         point !== null &&
         anchor.focus === mine.agent.id &&
-        (narrow || !mine.narrowOnly);
+        (narrow || short || !mine.narrowOnly);
       const w = panelWidth(width, narrow);
       if (w !== state.width) {
         wrap.style.width = `${w}px`;
@@ -173,7 +174,7 @@ export function PinnedAgentPanel({
         narrow && want ? (state.y > height / 2 ? 'foot' : 'top') : '';
       // the compact card where the full one would fill the stage: a phone's
       // sheet, and any stage too short to hold it beside the agent
-      const compactFlag = narrow || height < COMPACT_BELOW ? 'true' : 'false';
+      const compactFlag = narrow || short ? 'true' : 'false';
       if (wrap.dataset.compact !== compactFlag)
         wrap.dataset.compact = compactFlag;
       if (sheet !== state.sheet) {

@@ -755,10 +755,12 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
     status: 'reserved',
     // W8 moved this to the FOOTER column, which is where the research put it:
     // open source belongs as a band and a footer column, never the headline,
-    // and the page had one screen too many. `site-footer.tsx` states the split
-    // once, plainly.
+    // and the page had one screen too many. The column's sentence stating the
+    // split went in W15o (operator 2026-10-14: "useless copy... doesn't need
+    // to be on the home page"); the column links to the repository and its
+    // licensing.
     reservedUntil:
-      'The two-license split needs more than the footer column states. It is stated once in `site-footer.tsx` today.',
+      'The two-license split needs more than a footer link. The footer column links to `LICENSING.md` today.',
   },
   {
     id: 'proof',

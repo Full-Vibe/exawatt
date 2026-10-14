@@ -19,3 +19,15 @@ export function isNarrow(
 ): boolean {
   return stageWidth <= stageHeight + slack;
 }
+
+/**
+ * A stage too short for the full agent card beside its type (W15o): a phone
+ * held sideways, a short browser window. There the card in the reading column
+ * steps aside and an open agent is the compact card pinned to the stage, as
+ * on a phone, and the Project names keep to the scenes inside one Project.
+ */
+export const SHORT_BELOW = 520;
+
+export function isShort(stageHeight: number): boolean {
+  return stageHeight < SHORT_BELOW;
+}
