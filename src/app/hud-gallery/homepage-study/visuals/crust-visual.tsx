@@ -204,9 +204,10 @@ const WANDER_SPILL = 1.4;
 /** The wandering light's own size and brightness, in tile units. */
 const ORB_RADIUS = 0.16;
 const ORB_GLOW = 2.4;
-/** Spin (W15j): the harness mark turns once in about five seconds, and when
- *  the agent stops working it comes back to face the reader. */
-const SPIN_RATE = 1.25;
+/** Spin (W15j): the harness mark turns once in about eleven seconds (it was
+ *  five; operator 2026-10-14: "Rotate the harness icons slower in Spin"),
+ *  and when the agent stops working it comes back to face the reader. */
+const SPIN_RATE = 0.56;
 const SPIN_SETTLE = 5;
 /** Below this an agent is drawn as ground; a tile this small is not drawn. */
 const AGENT_MIN = 0.02;

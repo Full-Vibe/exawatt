@@ -59,8 +59,10 @@ describe('working motion', () => {
 
   it('toggles one light motion and leaves the rest', () => {
     const next = toggleGlow(DEFAULT_MOTION, 'breathe');
-    expect(next.breathe).toBe(true);
-    expect(next.sheen).toBe(true);
-    expect(toggleGlow(next, 'sheen').sheen).toBe(false);
+    expect(next.breathe).toBe(!DEFAULT_MOTION.breathe);
+    expect({ ...next, breathe: DEFAULT_MOTION.breathe }).toEqual(
+      DEFAULT_MOTION
+    );
+    expect(toggleGlow(next, 'breathe')).toEqual(DEFAULT_MOTION);
   });
 });

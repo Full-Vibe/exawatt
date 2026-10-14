@@ -49,7 +49,7 @@ interface StageFraming {
 /** Polar and zoom move one way through the dissections and one way out to
  *  the fleet, so the camera never nods back on itself between stages. */
 const FRAMING: Record<string, StageFraming> = {
-  landing: { polar: 0.78, azimuth: 0, zoom: 0.95, drop: 0.72 },
+  landing: { polar: 0.78, azimuth: 0, zoom: 0.95, drop: 0.6 },
   working: { polar: 0.66, azimuth: 0.35, zoom: 0.84, drop: 0 },
   'needs-you': { polar: 0.62, azimuth: 0.75, zoom: 0.8, drop: 0 },
   third: { polar: 0.6, azimuth: 1.15, zoom: 0.8, drop: 0 },

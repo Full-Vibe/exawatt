@@ -126,6 +126,37 @@ const borderPlane = new Float32Array(BORDER_SAMPLES * 2);
 const borderNormals = new Float32Array(BORDER_SAMPLES * 2);
 const rimWorld = new THREE.Vector3();
 const rimPoint = { x: 0, y: 0 };
+const planeX = new THREE.Vector3();
+const planeY = new THREE.Vector3();
+
+/**
+ * Where a ray from (`cx`, `cy`) along (`dx`, `dy`) leaves a closed outline
+ * of `count` points, as a distance along the ray, or -1. The border holds its
+ * Project's centre, so the ray leaves it once.
+ */
+function rayExit(
+  outline: Float32Array,
+  count: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number
+): number {
+  let best = -1;
+  for (let i = 0; i < count; i += 1) {
+    const ax = outline[i * 2] - cx;
+    const ay = outline[i * 2 + 1] - cy;
+    const j = (i + 1) % count;
+    const ex = outline[j * 2] - cx - ax;
+    const ey = outline[j * 2 + 1] - cy - ay;
+    const denom = dx * ey - dy * ex;
+    if (Math.abs(denom) < 1e-9) continue;
+    const t = (ax * ey - ay * ex) / denom;
+    const u = (ax * dy - ay * dx) / denom;
+    if (t > 0 && u >= 0 && u <= 1 && (best < 0 || t < best)) best = t;
+  }
+  return best;
+}
 /** Past the outermost ring, so a name stands clear of its own tiles. */
 const LABEL_MARGIN = 0.9;
 
@@ -193,6 +224,12 @@ export function writeLabelAnchors(
       .addScaledVector(labelNormal, -labelUp.dot(labelNormal));
     if (labelOut.lengthSq() < 0.04) labelOut.set(0, 0, -1);
     labelOut.normalize();
+    // the same direction in the fleet's plane, for the border's anchor
+    planeToSphere(place.x + 0.5, place.y, planeX).sub(place.position);
+    planeToSphere(place.x, place.y + 0.5, planeY).sub(place.position);
+    const upX = labelOut.dot(planeX) / planeX.lengthSq();
+    const upY = labelOut.dot(planeY) / planeY.lengthSq();
+    const upLength = Math.hypot(upX, upY) || 1;
     labelWorld
       .copy(place.position)
       .addScaledVector(labelOut, (edge + 1) * RING_PITCH + LABEL_MARGIN)
@@ -213,6 +250,12 @@ export function writeLabelAnchors(
     slot.facing = labelNormal.dot(labelOut);
     slot.rimVisible = false;
     if (rim) {
+      // The border's point straight above the Project's centre on screen,
+      // where the ray up the screen leaves the outline. It moves smoothly
+      // with the camera; the highest of the outline's samples, the anchor
+      // before, stepped from sample to sample as the world turned and made
+      // the name jump at the slightest nudge (operator 2026-10-14: "The
+      // project labels are too jumpy").
       writeBorder(
         place.x,
         place.y,
@@ -220,25 +263,30 @@ export function writeLabelAnchors(
         borderPlane,
         borderNormals
       );
-      let top = Infinity;
-      for (let i = 0; i < BORDER_SAMPLES; i += 1) {
+      const dx = upX / upLength;
+      const dy = upY / upLength;
+      const reach = rayExit(
+        borderPlane,
+        BORDER_SAMPLES,
+        place.x,
+        place.y,
+        dx,
+        dy
+      );
+      if (reach > 0) {
         planeToSphere(
-          borderPlane[i * 2],
-          borderPlane[i * 2 + 1],
+          place.x + dx * reach,
+          place.y + dy * reach,
           rimWorld,
           SPHERE_RADIUS,
           BORDER_LIFT
         );
-        if (
-          projectToCanvas(rimWorld, camera, width, height, rimPoint) &&
-          rimPoint.y < top
-        ) {
-          top = rimPoint.y;
+        if (projectToCanvas(rimWorld, camera, width, height, rimPoint)) {
           slot.rimX = rimPoint.x;
           slot.rimY = rimPoint.y;
+          slot.rimVisible = true;
         }
       }
-      slot.rimVisible = top < Infinity;
     }
   }
 }

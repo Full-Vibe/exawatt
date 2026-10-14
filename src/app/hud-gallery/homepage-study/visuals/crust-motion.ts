@@ -80,13 +80,14 @@ export const CRUST_LIFTS: { id: CrustLiftId; name: string; note: string }[] = [
   },
 ];
 
+/** Wander with Wave (operator 2026-10-14: "I like Wander + Wave or Spin"). */
 export const DEFAULT_MOTION: CrustMotion = {
-  sheen: true,
+  sheen: false,
   breathe: false,
-  wander: false,
+  wander: true,
   pulse: false,
   spin: false,
-  lift: 'still',
+  lift: 'wave',
 };
 
 /** Read a motion from its URL form. Missing is the default; present with no

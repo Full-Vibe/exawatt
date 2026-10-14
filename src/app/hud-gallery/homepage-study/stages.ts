@@ -68,7 +68,9 @@ export const STAGES: Stage[] = [
     panel: 'center-top',
     highlight: {},
     card: false,
-    cta: true,
+    // the download waits for the end of the story (operator 2026-10-14:
+    // "Remove the CTA from the first slide")
+    cta: false,
     focus: 'fleet',
     labels: false,
     count: 10,
