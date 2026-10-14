@@ -12,6 +12,39 @@
  */
 
 import * as THREE from 'three';
+import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+/** Faces that meet at less than this share their normals: a bevel's bands
+ *  and a rounded corner's facets shade as one smooth surface, while a crisp
+ *  hexagon's corners (60 degrees) and a plain prism's top edge stay crisp.
+ *  Flat-shaded bands read as a stack of coins on a glossy body (W15i). */
+const CREASE = (50 * Math.PI) / 180;
+
+/**
+ * Smooth normals, and flat caps. Creasing averages a cap's rim with the
+ * bevel band beside it, and a cap is triangulated from its rim alone, so
+ * the whole flat top would tilt and wobble with the triangulation (a
+ * blotchy highlight on gloss). The cap's rim, and the bevel's first ring
+ * where it meets the cap, face straight out again: the top is flat and the
+ * bevel rolls off from it smoothly.
+ */
+function smoothed(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const out = toCreasedNormals(g, CREASE);
+  out.computeBoundingBox();
+  const box = out.boundingBox as THREE.Box3;
+  const position = out.getAttribute('position');
+  const normal = out.getAttribute('normal');
+  const near = Math.cos(CREASE);
+  for (let i = 0; i < position.count; i += 1) {
+    const y = position.getY(i);
+    const ny = normal.getY(i);
+    if (Math.abs(y - box.max.y) < 1e-5 && ny > near) normal.setXYZ(i, 0, 1, 0);
+    else if (Math.abs(y - box.min.y) < 1e-5 && ny < -near)
+      normal.setXYZ(i, 0, -1, 0);
+  }
+  normal.needsUpdate = true;
+  return out;
+}
 
 export type CrustShapeId = 'hex' | 'rounded' | 'puck';
 
@@ -172,8 +205,7 @@ export function tilePrismGeometry(
     });
     g.translate(0, 0, -height / 2);
     g.rotateX(-Math.PI / 2);
-    g.computeVertexNormals();
-    return g;
+    return smoothed(g);
   }
   const depth = Math.max(0.02, height - 2 * edge.thickness);
   const g = new THREE.ExtrudeGeometry(tileShape(radius - edge.size, corner), {
@@ -187,6 +219,5 @@ export function tilePrismGeometry(
   });
   g.translate(0, 0, -depth / 2);
   g.rotateX(-Math.PI / 2);
-  g.computeVertexNormals();
-  return g;
+  return smoothed(g);
 }

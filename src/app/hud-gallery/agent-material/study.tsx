@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
@@ -39,8 +39,12 @@ import {
   type CrustMaterialId,
 } from '../homepage-study/visuals/crust-materials';
 import {
-  CRUST_MOTIONS,
-  type CrustMotionId,
+  CRUST_GLOWS,
+  CRUST_LIFTS,
+  motionParam,
+  parseMotion,
+  toggleGlow,
+  type CrustMotion,
 } from '../homepage-study/visuals/crust-motion';
 import {
   CRUST_SHAPES,
@@ -58,11 +62,12 @@ interface StudyState {
   signal: CrustSignalId;
   mark: CrustMarkId;
   shape: CrustShapeId;
-  motion: CrustMotionId;
+  motion: CrustMotion;
   status: StatusLightState;
   source: string;
   light: EnvironmentKind;
   count: 1 | 7;
+  sound: boolean;
 }
 
 function readState(params: URLSearchParams): StudyState {
@@ -70,7 +75,6 @@ function readState(params: URLSearchParams): StudyState {
   const signal = params.get('signal');
   const mark = params.get('mark');
   const shape = params.get('shape');
-  const motion = params.get('motion');
   const status = params.get('status');
   const source = params.get('source');
   return {
@@ -86,9 +90,7 @@ function readState(params: URLSearchParams): StudyState {
     shape: CRUST_SHAPES.some(m => m.id === shape)
       ? (shape as CrustShapeId)
       : 'rounded',
-    motion: CRUST_MOTIONS.some(m => m.id === motion)
-      ? (motion as CrustMotionId)
-      : 'sheen',
+    motion: parseMotion(params.get('motion')),
     status: STATUS_ORDER.includes(status as StatusLightState)
       ? (status as StatusLightState)
       : 'active',
@@ -97,6 +99,7 @@ function readState(params: URLSearchParams): StudyState {
       : 'Claude Code',
     light: params.get('light') === 'room' ? 'room' : 'studio',
     count: params.get('count') === '7' ? 7 : 1,
+    sound: params.get('sound') !== 'off',
   };
 }
 
@@ -106,11 +109,12 @@ function href(state: StudyState): string {
     signal: state.signal,
     mark: state.mark,
     shape: state.shape,
-    motion: state.motion,
+    motion: motionParam(state.motion),
     status: state.status,
     source: state.source,
     light: state.light,
     count: String(state.count),
+    sound: state.sound ? 'on' : 'off',
   });
   return `/hud-gallery/agent-material?${q.toString()}`;
 }
@@ -166,12 +170,12 @@ export function AgentMaterialStudy() {
   const state = useMemo(() => readState(searchParams), [searchParams]);
   const theme = useMemo(() => heroBoardTheme('classic'), []);
   const reducedMotion = usePrefersReducedMotion();
-  const [extra, setExtra] = useState(0);
+  const router = useRouter();
   const model = useMemo(
     () => clusterModel(state.status, state.source),
     [state.status, state.source]
   );
-  const count = Math.min(7, state.count + extra);
+  const count = state.count;
 
   // A still story: the working stage's framing, nothing lifted, no recede.
   const drive = useRef<StoryDrive>({
@@ -184,6 +188,7 @@ export function AgentMaterialStudy() {
     rate: 4.5,
     rail: 1,
     recede: 0,
+    moving: 0,
   });
   useEffect(() => {
     drive.current.base = count;
@@ -211,7 +216,14 @@ export function AgentMaterialStudy() {
   }, []);
 
   const selectedAgent = selected >= 0 ? model.agents[selected] : null;
-  const expand = useCallback(() => setExtra(value => value + 1), []);
+  // A lone agent's empty slots answer the pointer; a press on one fills the
+  // cluster (operator 2026-10-13: "Add an affordance to click one of the
+  // unfinished tombstone agents when I'm in one-agent mode to transition to
+  // seven-agent mode").
+  const expand = useCallback(
+    () => router.replace(href({ ...state, count: 7 }), { scroll: false }),
+    [router, state]
+  );
 
   return (
     <main
@@ -279,11 +291,29 @@ export function AgentMaterialStudy() {
             ))}
           </Row>
           <Row label="Working">
-            {CRUST_MOTIONS.map(option => (
+            {CRUST_GLOWS.map(option => (
               <Option
                 key={option.id}
-                active={option.id === state.motion}
-                href={href({ ...state, motion: option.id })}
+                active={state.motion[option.id]}
+                href={href({
+                  ...state,
+                  motion: toggleGlow(state.motion, option.id),
+                })}
+                title={option.note}
+              >
+                {option.name}
+              </Option>
+            ))}
+          </Row>
+          <Row label="Working lift">
+            {CRUST_LIFTS.map(option => (
+              <Option
+                key={option.id}
+                active={option.id === state.motion.lift}
+                href={href({
+                  ...state,
+                  motion: { ...state.motion, lift: option.id },
+                })}
                 title={option.note}
               >
                 {option.name}
@@ -341,16 +371,27 @@ export function AgentMaterialStudy() {
             >
               7
             </Option>
-            {extra > 0 ? (
-              <span className="ml-1 font-mono text-chrome-micro text-white/50">
-                +{extra}
-              </span>
-            ) : null}
+          </Row>
+          <Row label="Sound">
+            <Option
+              active={state.sound}
+              href={href({ ...state, sound: true })}
+              title="Pressing an agent clicks like the keyswitch study's Frosted thock."
+            >
+              On
+            </Option>
+            <Option
+              active={!state.sound}
+              href={href({ ...state, sound: false })}
+            >
+              Off
+            </Option>
           </Row>
           <p className="mt-4 max-w-[36ch] text-[13px] leading-relaxed text-white/45">
             The same renderer as the homepage study, one cluster, close. Drag to
-            orbit. Hover to feel it. Click an agent to open it, an outlined slot
-            to add one. What is decided here lands in the scroll unchanged.
+            orbit. Hover to feel it, press it, click it to open it. Around one
+            agent, click an outlined slot to fill the cluster. What is decided
+            here lands in the scroll unchanged.
           </p>
         </div>
 
@@ -374,6 +415,8 @@ export function AgentMaterialStudy() {
             light={state.light}
             closeUp
             onExpand={expand}
+            expandable={count === 1}
+            sound={state.sound}
             onHoverChange={onHoverChange}
             onSelect={onSelect}
           />

@@ -27,6 +27,7 @@ import {
   paletteFrom,
   placeTiles,
   projectToCanvas,
+  RIM_NOW,
   writeLabelAnchors,
 } from './shared';
 
@@ -60,6 +61,7 @@ export function PrismVisual({
   onExpand,
   onHoverChange,
   onSelect,
+  names = 'float',
 }: VisualProps) {
   useRoomEnvironment(1.1);
   const palette = useMemo(() => paletteFrom(theme), [theme]);
@@ -357,7 +359,8 @@ export function PrismVisual({
       size.width,
       size.height,
       a,
-      2.2
+      2.2,
+      names === 'float' ? null : RIM_NOW
     );
   });
 

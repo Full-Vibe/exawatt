@@ -78,3 +78,27 @@ describe('the corner', () => {
     expect(reach(0.5)).toBeLessThan(reach(0.3));
   });
 });
+
+describe.each([
+  null,
+  { size: 0.07, thickness: 0.05, segments: 2 },
+  { size: 0.22, thickness: 0.17, segments: 6 },
+])('a tile body with edge %o', edge => {
+  it.each([0, 0.3, 0.5])('keeps its top flat at corner %s', corner => {
+    const g = tilePrismGeometry(0.82, 0.42, corner, edge);
+    g.computeBoundingBox();
+    const top = (g.boundingBox as THREE.Box3).max.y;
+    const position = g.getAttribute('position');
+    const normal = g.getAttribute('normal');
+    let capVertices = 0;
+    for (let i = 0; i < position.count; i += 1) {
+      if (Math.abs(position.getY(i) - top) > 1e-5) continue;
+      if (normal.getY(i) < 0.6) continue; // a side wall's top edge
+      capVertices += 1;
+      expect(normal.getX(i)).toBe(0);
+      expect(normal.getY(i)).toBe(1);
+      expect(normal.getZ(i)).toBe(0);
+    }
+    expect(capVertices).toBeGreaterThan(0);
+  });
+});

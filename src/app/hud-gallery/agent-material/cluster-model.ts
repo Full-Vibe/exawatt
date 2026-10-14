@@ -20,6 +20,19 @@ export const CLUSTER_SOURCES = [
   'OpenClaw',
 ] as const;
 
+/** The neighbours' harnesses are their own: the study's harness switch
+ *  changes the hero and nothing else (operator 2026-10-13: "It's confusing
+ *  to me that the harness selector changes a bunch of other agents'
+ *  harnesses to something unpredictable"). */
+const NEIGHBOUR_SOURCE = [
+  'Codex',
+  'OpenClaw',
+  'Claude Code',
+  'Grok Build',
+  'OpenCode',
+  'Claude Code',
+] as const;
+
 const NEIGHBOUR_STATUS: StatusLightState[] = [
   'active',
   'needs-you',
@@ -65,13 +78,7 @@ export function clusterModel(
   for (let local = 0; local < count; local += 1) {
     const tile = spiral[local];
     const agentStatus = local === 0 ? status : NEIGHBOUR_STATUS[local - 1];
-    const agentSource =
-      local === 0
-        ? source
-        : CLUSTER_SOURCES[
-            (local + CLUSTER_SOURCES.indexOf(source as never) + 1) %
-              CLUSTER_SOURCES.length
-          ];
+    const agentSource = local === 0 ? source : NEIGHBOUR_SOURCE[local - 1];
     agents.push({
       id: local,
       project: 0,

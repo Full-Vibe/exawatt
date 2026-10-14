@@ -13,11 +13,12 @@ import { Canvas } from '@react-three/fiber';
 import { useRef, type RefObject } from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
+import type { NamesId } from './names';
 import type { StoryDrive, VisualAnchor, VisualId } from './visual-contract';
 import { CameraRig } from './visuals/camera-rig';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
-import type { CrustMotionId } from './visuals/crust-motion';
+import type { CrustMotion } from './visuals/crust-motion';
 import type { CrustShapeId } from './visuals/crust-shape';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
@@ -51,6 +52,9 @@ export function VisualCanvas({
   light,
   closeUp,
   onExpand,
+  expandable,
+  sound,
+  names,
   onHoverChange,
   onSelect,
 }: {
@@ -58,7 +62,7 @@ export function VisualCanvas({
   material: CrustMaterialId;
   mark: CrustMarkId;
   shape: CrustShapeId;
-  motion: CrustMotionId;
+  motion: CrustMotion;
   signal: CrustSignalId;
   light?: EnvironmentKind;
   closeUp?: boolean;
@@ -69,6 +73,9 @@ export function VisualCanvas({
   reducedMotion: boolean;
   visible: boolean;
   onExpand?: () => void;
+  expandable?: boolean;
+  sound?: boolean;
+  names?: NamesId;
   onHoverChange: (agent: number) => void;
   onSelect: (agent: number) => void;
 }) {
@@ -111,6 +118,9 @@ export function VisualCanvas({
         anchor={anchor}
         reducedMotion={reducedMotion}
         onExpand={onExpand}
+        expandable={expandable}
+        sound={sound}
+        names={names}
         onHoverChange={onHoverChange}
         onSelect={onSelect}
       />

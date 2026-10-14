@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import { axialToPlane, type fleetAt, type FleetModel } from '../fleet-model';
+import { BORDER_SAMPLES, writeBorder } from '../territory';
 import type { LabelAnchor } from '../visual-contract';
 import {
   SPHERE_CENTER,
@@ -101,7 +102,7 @@ export function projectToCanvas(
 const centerTileCache = new WeakMap<FleetModel, number[]>();
 
 /** Each Project's centre tile (ring 0), by Project id, found once. */
-function centerTiles(model: FleetModel): number[] {
+export function centerTiles(model: FleetModel): number[] {
   let centers = centerTileCache.get(model);
   if (!centers) {
     centers = model.projects.map(project =>
@@ -114,6 +115,17 @@ function centerTiles(model: FleetModel): number[] {
 
 /** Planar distance between neighbouring rings of a Project, in tile units. */
 const RING_PITCH = Math.sqrt(3);
+/** Where a Project's border lies: on the globe's skin, just above it. The
+ *  globe body is a quarter of a unit under the tiles' centres. */
+export const BORDER_LIFT = -0.22;
+/** Ask `writeLabelAnchors` for each Project's border's highest point, at
+ *  the rings the Project holds now: for the visuals that draw no border of
+ *  their own, so a tag still has a foot (W15i). */
+export const RIM_NOW: { rings?: Float32Array } = {};
+const borderPlane = new Float32Array(BORDER_SAMPLES * 2);
+const borderNormals = new Float32Array(BORDER_SAMPLES * 2);
+const rimWorld = new THREE.Vector3();
+const rimPoint = { x: 0, y: 0 };
 /** Past the outermost ring, so a name stands clear of its own tiles. */
 const LABEL_MARGIN = 0.9;
 
@@ -138,7 +150,11 @@ export function writeLabelAnchors(
   width: number,
   height: number,
   anchor: { labels: LabelAnchor[] },
-  lift: number
+  lift: number,
+  /** Find each Project's border's highest point on screen, for the names
+   *  that are pinned to it; with each Project's rings as the border is drawn
+   *  (eased), or the rings it holds now. */
+  rim: { rings?: Float32Array } | null = null
 ) {
   if (anchor.labels.length !== model.projects.length) {
     anchor.labels = model.projects.map(project => ({
@@ -148,6 +164,9 @@ export function writeLabelAnchors(
       visible: false,
       count: 0,
       facing: 0,
+      rimX: 0,
+      rimY: 0,
+      rimVisible: false,
     }));
   }
   // the rig moved the camera this frame; the matrices must say so, or every
@@ -161,6 +180,7 @@ export function writeLabelAnchors(
       slot.visible = false;
       slot.count = 0;
       slot.facing = 0;
+      slot.rimVisible = false;
       continue;
     }
     const place = placements[centers[project.id]];
@@ -191,5 +211,34 @@ export function writeLabelAnchors(
     slot.count = Math.max(0, last - project.first);
     labelOut.copy(camera.position).sub(place.position).normalize();
     slot.facing = labelNormal.dot(labelOut);
+    slot.rimVisible = false;
+    if (rim) {
+      writeBorder(
+        place.x,
+        place.y,
+        rim.rings ? rim.rings[project.id] : edge + 1,
+        borderPlane,
+        borderNormals
+      );
+      let top = Infinity;
+      for (let i = 0; i < BORDER_SAMPLES; i += 1) {
+        planeToSphere(
+          borderPlane[i * 2],
+          borderPlane[i * 2 + 1],
+          rimWorld,
+          SPHERE_RADIUS,
+          BORDER_LIFT
+        );
+        if (
+          projectToCanvas(rimWorld, camera, width, height, rimPoint) &&
+          rimPoint.y < top
+        ) {
+          top = rimPoint.y;
+          slot.rimX = rimPoint.x;
+          slot.rimY = rimPoint.y;
+        }
+      }
+      slot.rimVisible = top < Infinity;
+    }
   }
 }

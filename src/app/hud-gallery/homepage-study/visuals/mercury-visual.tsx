@@ -40,11 +40,12 @@ import {
 } from './mercury-field';
 import {
   highlightWeight,
+  type Palette,
   paletteFrom,
   placeTiles,
   projectToCanvas,
+  RIM_NOW,
   writeLabelAnchors,
-  type Palette,
 } from './shared';
 
 const RESOLUTION = 56;
@@ -112,6 +113,7 @@ export function MercuryVisual({
   onExpand,
   onHoverChange,
   onSelect,
+  names = 'float',
 }: VisualProps) {
   useRoomEnvironment(1.3);
   const palette = useMemo(() => paletteFrom(theme), [theme]);
@@ -437,7 +439,8 @@ export function MercuryVisual({
       size.width,
       size.height,
       a,
-      2.6
+      2.6,
+      names === 'float' ? null : RIM_NOW
     );
   });
 

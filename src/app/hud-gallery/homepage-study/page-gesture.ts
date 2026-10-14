@@ -118,6 +118,26 @@ export class WheelPager {
     this.armed = NOT_ARMED;
   }
 
+  /**
+   * How far the gesture under way has pushed toward a move, at time `now`:
+   * a signed share of what a move needs, 0 at rest and toward 1 or -1 as a
+   * push builds; 0 again the moment a move starts (the move is the answer),
+   * while a gesture is held, and once the stream has gone quiet. For
+   * feedback only (W15i: the page shows a push before it pages); it changes
+   * nothing the pager decides.
+   */
+  pending(now: number): number {
+    if (this.locked || this.armed === NOT_ARMED) return 0;
+    const dt = now - this.last;
+    if (!(dt < this.cfg.silenceMs)) return 0;
+    const need =
+      this.armed === ARMED_BY_SILENCE
+        ? this.cfg.triggerPx
+        : this.cfg.triggerPx * this.cfg.valleyIntent;
+    const left = this.acc * Math.exp(-Math.max(0, dt) / this.cfg.leakMs);
+    return Math.max(-1, Math.min(1, left / need));
+  }
+
   /** Forget everything: the mode changed, or the page was left. */
   reset() {
     this.acc = 0;

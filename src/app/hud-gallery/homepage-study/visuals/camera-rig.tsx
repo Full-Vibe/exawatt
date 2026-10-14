@@ -31,7 +31,7 @@ import { fleetAt, type FleetModel } from '../fleet-model';
 import { axialToPlane } from '../fleet-model';
 import { planeToSphere } from '../sphere';
 import { isNarrow } from '../narrow';
-import { panelSide, stageBlend, STAGES } from '../stages';
+import { leanBlend, leanCurve, panelSide, stageBlend, STAGES } from '../stages';
 import type { StoryDrive } from '../visual-contract';
 
 interface StageFraming {
@@ -193,6 +193,16 @@ function setFog(fog: THREE.Fog, distance: number) {
 
 /** The stage that recedes behind centred type: the last one. */
 const RECEDE_FROM = STAGES.length - 1;
+/** The world's own slow turn, radians per second: a full turn in about five
+ *  minutes (operator 2026-10-13: "Slower rotation orbit"; it was 0.045). */
+const DRIFT_RATE = 0.021;
+/** A push on the wheel before the page moves leans the camera toward the
+ *  scene it asks for, up to this share of the move (in the move's eased
+ *  terms), and the lean springs back at this rate if the push is let go
+ *  (operator 2026-10-13: "when I'm beginning my scroll gesture but before
+ *  it begins the scene transition, there's no visible feedback"). */
+const LEAN_MAX = 0.12;
+const LEAN_RATE = 14;
 /** A light second pass on distance and target, so a ghost click or a
  *  fleet-size change arrives as a glide and not a cut. */
 const FIT_RATE = 9;
@@ -217,6 +227,8 @@ export function CameraRig({
     progress: 0,
     azimuth: 0.4,
     azimuthVelocity: 0,
+    /** The camera's lean toward the scene a push asks for, signed. */
+    lean: 0,
     polar: 0.78,
     distance: 40,
     target: new THREE.Vector3(),
@@ -236,6 +248,7 @@ export function CameraRig({
       camUp: new THREE.Vector3(),
       up: new THREE.Vector3(0, 1, 0),
       blend: { from: 0, to: 0, t: 0 },
+      leaned: { from: 0, to: 0, t: 0 },
     }),
     []
   );
@@ -303,39 +316,58 @@ export function CameraRig({
       ? d.progress
       : THREE.MathUtils.damp(s.progress, d.progress, d.rate, delta);
     const b = stageBlend(s.progress, undefined, scratch.blend);
-    const f0 = FRAMING[STAGES[b.from].id];
-    const f1 = FRAMING[STAGES[b.to].id];
-    const polar = THREE.MathUtils.lerp(f0.polar, f1.polar, b.t);
-    const stageAzimuth = THREE.MathUtils.lerp(f0.azimuth, f1.azimuth, b.t);
+    // The lean: eased toward what the push asks for; held once the move it
+    // asked for starts, until the move has carried the camera past it, so
+    // the move goes on from the lean and never dips back first.
+    const intent =
+      !reducedMotion && !closeUp && d.intent
+        ? d.intent(performance.now())
+        : 0;
+    const holding = d.moving !== 0 && Math.sign(s.lean) === d.moving;
+    if (!holding)
+      s.lean = THREE.MathUtils.damp(
+        s.lean,
+        Math.sign(intent) * LEAN_MAX * leanCurve(intent),
+        LEAN_RATE,
+        delta
+      );
+    const lb = leanBlend(b, s.lean, scratch.leaned);
+    if (holding && lb.from === b.from && lb.t === b.t) s.lean = 0;
+    // The framing follows the leaned blend; what is present and how much
+    // the world recedes follow the story itself.
+    const f0 = FRAMING[STAGES[lb.from].id];
+    const f1 = FRAMING[STAGES[lb.to].id];
+    const polar = THREE.MathUtils.lerp(f0.polar, f1.polar, lb.t);
+    const stageAzimuth = THREE.MathUtils.lerp(f0.azimuth, f1.azimuth, lb.t);
     const zoom = Math.exp(
-      THREE.MathUtils.lerp(Math.log(f0.zoom), Math.log(f1.zoom), b.t)
+      THREE.MathUtils.lerp(Math.log(f0.zoom), Math.log(f1.zoom), lb.t)
     );
     // A close-up frames the cluster dead centre; the stage's side and drop
     // exist to clear the reading column, which a close-up has none of. On a
     // narrow screen the column sits under the world instead of beside it,
     // so the subject moves up the frame, never sideways.
     const narrow = isNarrow(size.width, size.height);
-    const n0 = NARROW[STAGES[b.from].id];
-    const n1 = NARROW[STAGES[b.to].id];
+    const n0 = NARROW[STAGES[lb.from].id];
+    const n1 = NARROW[STAGES[lb.to].id];
     const drop = closeUp
       ? 0
       : THREE.MathUtils.lerp(
           narrow ? n0.drop : f0.drop,
           narrow ? n1.drop : f1.drop,
-          b.t
+          lb.t
         );
     const narrowZoom = narrow
       ? Math.exp(
-          THREE.MathUtils.lerp(Math.log(n0.zoom), Math.log(n1.zoom), b.t)
+          THREE.MathUtils.lerp(Math.log(n0.zoom), Math.log(n1.zoom), lb.t)
         )
       : 1;
     const side =
       closeUp || narrow
         ? 0
         : THREE.MathUtils.lerp(
-            panelSide(STAGES[b.from]),
-            panelSide(STAGES[b.to]),
-            b.t
+            panelSide(STAGES[lb.from]),
+            panelSide(STAGES[lb.to]),
+            lb.t
           );
     writeRail(
       d,
@@ -404,7 +436,7 @@ export function CameraRig({
         s.userPolar = THREE.MathUtils.damp(s.userPolar, 0, 0.6, delta);
       }
     }
-    const drift = reducedMotion ? 0 : delta * 0.045;
+    const drift = reducedMotion ? 0 : delta * DRIFT_RATE;
     s.azimuth += drift;
     const azimuthTarget = s.azimuth + stageAzimuth + s.userAzimuth;
     s.polar = THREE.MathUtils.clamp(polar + s.userPolar, 0.2, 1.35);

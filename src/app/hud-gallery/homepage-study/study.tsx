@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { NAMES, parseNames, type NamesId } from './names';
 import { ScrollExperience, type SnapMode } from './scroll-experience';
 import type { CopySetId } from './stages';
 import { VISUALS, type VisualId } from './visual-contract';
@@ -22,7 +23,14 @@ import {
   CRUST_MATERIALS,
   type CrustMaterialId,
 } from './visuals/crust-materials';
-import { CRUST_MOTIONS, type CrustMotionId } from './visuals/crust-motion';
+import {
+  CRUST_GLOWS,
+  CRUST_LIFTS,
+  motionParam,
+  parseMotion,
+  toggleGlow,
+  type CrustMotion,
+} from './visuals/crust-motion';
 import { CRUST_SHAPES, type CrustShapeId } from './visuals/crust-shape';
 import { CRUST_SIGNALS, type CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
@@ -33,10 +41,12 @@ interface StudyState {
   material: CrustMaterialId;
   mark: CrustMarkId;
   shape: CrustShapeId;
-  motion: CrustMotionId;
+  motion: CrustMotion;
   signal: CrustSignalId;
   light: EnvironmentKind;
   snap: SnapMode;
+  sound: boolean;
+  names: NamesId;
 }
 
 function readState(params: URLSearchParams): StudyState {
@@ -45,7 +55,6 @@ function readState(params: URLSearchParams): StudyState {
   const material = params.get('material');
   const mark = params.get('mark');
   const shape = params.get('shape');
-  const motion = params.get('motion');
   const signal = params.get('signal');
   return {
     signal: CRUST_SIGNALS.some(x => x.id === signal)
@@ -65,16 +74,16 @@ function readState(params: URLSearchParams): StudyState {
     shape: CRUST_SHAPES.some(m => m.id === shape)
       ? (shape as CrustShapeId)
       : 'rounded',
-    motion: CRUST_MOTIONS.some(m => m.id === motion)
-      ? (motion as CrustMotionId)
-      : 'sheen',
+    motion: parseMotion(params.get('motion')),
+    sound: params.get('sound') !== 'off',
+    names: parseNames(params.get('names')),
     visual: VISUALS.some(v => v.id === visual) ? (visual as VisualId) : 'crust',
     copy: copy === 'deck' ? 'deck' : 'canon',
   };
 }
 
 function href(state: StudyState): string {
-  return `/hud-gallery/homepage-study?visual=${state.visual}&copy=${state.copy}&material=${state.material}&mark=${state.mark}&shape=${state.shape}&motion=${state.motion}&signal=${state.signal}&light=${state.light}&snap=${state.snap}`;
+  return `/hud-gallery/homepage-study?visual=${state.visual}&copy=${state.copy}&material=${state.material}&mark=${state.mark}&shape=${state.shape}&motion=${motionParam(state.motion)}&signal=${state.signal}&light=${state.light}&snap=${state.snap}&sound=${state.sound ? 'on' : 'off'}&names=${state.names}`;
 }
 
 function Option({
@@ -255,11 +264,32 @@ export function HomepageStudy() {
                 <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
                   Working
                 </span>
-                {CRUST_MOTIONS.map(option => (
+                {CRUST_GLOWS.map(option => (
                   <Option
                     key={option.id}
-                    active={option.id === state.motion}
-                    href={href({ ...state, motion: option.id })}
+                    active={state.motion[option.id]}
+                    href={href({
+                      ...state,
+                      motion: toggleGlow(state.motion, option.id),
+                    })}
+                    title={option.note}
+                  >
+                    {option.name}
+                  </Option>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+                  Lift
+                </span>
+                {CRUST_LIFTS.map(option => (
+                  <Option
+                    key={option.id}
+                    active={option.id === state.motion.lift}
+                    href={href({
+                      ...state,
+                      motion: { ...state.motion, lift: option.id },
+                    })}
                     title={option.note}
                   >
                     {option.name}
@@ -268,6 +298,21 @@ export function HomepageStudy() {
               </div>
             </>
           ) : null}
+          <div className="flex items-center gap-1">
+            <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+              Names
+            </span>
+            {NAMES.map(option => (
+              <Option
+                key={option.id}
+                active={option.id === state.names}
+                href={href({ ...state, names: option.id })}
+                title={option.note}
+              >
+                {option.name}
+              </Option>
+            ))}
+          </div>
           <div className="flex items-center gap-1">
             <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
               Snap
@@ -288,6 +333,24 @@ export function HomepageStudy() {
                 {mode[0].toUpperCase() + mode.slice(1)}
               </Option>
             ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+              Sound
+            </span>
+            <Option
+              active={state.sound}
+              href={href({ ...state, sound: true })}
+              title="Pressing an agent clicks like the keyswitch study's Frosted thock."
+            >
+              On
+            </Option>
+            <Option
+              active={!state.sound}
+              href={href({ ...state, sound: false })}
+            >
+              Off
+            </Option>
           </div>
           <div className="flex items-center gap-1">
             <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
@@ -319,6 +382,8 @@ export function HomepageStudy() {
         signal={state.signal}
         light={state.light}
         snap={state.snap}
+        sound={state.sound}
+        names={state.names}
         insetTop={barHeight}
       />
 

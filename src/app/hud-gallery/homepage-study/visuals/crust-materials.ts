@@ -31,7 +31,7 @@ export const CRUST_MATERIALS: {
   {
     id: 'gummy',
     name: 'Gummy',
-    note: 'Soft translucent body, rounded edges, status light scattering from inside.',
+    note: 'A jelly: half clear, a wet gloss, puffy edges, and a wobble when you touch it.',
   },
   {
     id: 'acrylic',
@@ -109,29 +109,36 @@ export function makeCrustMaterial(id: CrustMaterialId): CrustMaterialSpec {
     case 'gummy':
       return {
         id,
+        // A jelly (operator 2026-10-13: "Revisit the gummy material to make
+        // it even more gelatinous and lickable and delightfully gummy"):
+        // half clear, the rest the jelly's own colour, softly blurred
+        // through (over a dark world a clearer body only shows the dark), a
+        // wet clear coat over a smooth body, puffy edges. It wobbles too: its
+        // springs are looser (`crust-visual.tsx`).
         agent: new THREE.MeshPhysicalMaterial({
-          roughness: 0.34,
+          roughness: 0.3,
           metalness: 0,
-          transmission: 0.58,
-          thickness: 1.3,
-          ior: 1.42,
+          transmission: 0.5,
+          thickness: 0.9,
+          ior: 1.4,
           attenuationColor: new THREE.Color(0xffffff),
-          attenuationDistance: 2.5,
+          attenuationDistance: 1.6,
+          specularIntensity: 1,
           clearcoat: 1,
-          clearcoatRoughness: 0.08,
-          envMapIntensity: 0.45,
+          clearcoatRoughness: 0.04,
+          envMapIntensity: 0.75,
         }),
         ground: new THREE.MeshStandardMaterial({
           roughness: 0.72,
           metalness: 0.05,
           envMapIntensity: 0.25,
         }),
-        edge: { size: 0.15, thickness: 0.12, segments: 4 },
+        edge: { size: 0.22, thickness: 0.17, segments: 6 },
         core: true,
         bodyTint: 1,
         pastel: 0,
         groundPale: 0,
-        environment: 0.8,
+        environment: 0.9,
         inlayGlow: 0.45,
         liftScale: 1,
         lightScale: 0.7,
@@ -140,18 +147,21 @@ export function makeCrustMaterial(id: CrustMaterialId): CrustMaterialSpec {
       return {
         id,
         // Frosted, with the status light inside: over a dark world there is
-        // nothing to see through, so what reads as acrylic is the light the
-        // body diffuses from within, the way a lit sign does.
+        // little to see through, so what reads as acrylic is the light the
+        // body diffuses from within, the way a lit sign does. A touch
+        // clearer since W15i (operator 2026-10-13: "Make acrylic slightly
+        // more translucent"): the lit cap and the depth show through a
+        // satin body with a glossier edge.
         agent: new THREE.MeshPhysicalMaterial({
-          roughness: 0.48,
+          roughness: 0.4,
           metalness: 0,
-          transmission: 0.72,
-          thickness: 1.2,
+          transmission: 0.8,
+          thickness: 1.0,
           ior: 1.49,
           attenuationColor: new THREE.Color(0xffffff),
-          attenuationDistance: 3,
-          clearcoat: 0.3,
-          clearcoatRoughness: 0.3,
+          attenuationDistance: 2.6,
+          clearcoat: 0.45,
+          clearcoatRoughness: 0.2,
           envMapIntensity: 0.9,
         }),
         ground: new THREE.MeshPhysicalMaterial({
@@ -165,7 +175,7 @@ export function makeCrustMaterial(id: CrustMaterialId): CrustMaterialSpec {
         edge: { size: 0.07, thickness: 0.05, segments: 2 },
         core: true,
         bodyTint: 1,
-        pastel: 0.1,
+        pastel: 0.07,
         groundPale: 0.3,
         environment: 1.0,
         inlayGlow: 0.6,

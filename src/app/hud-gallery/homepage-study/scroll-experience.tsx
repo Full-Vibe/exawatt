@@ -33,9 +33,13 @@ import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { AgentCard } from './agent-card';
 import { CanvasBoundary } from './canvas-boundary';
 import { fleetModel, STATUS_LABEL, type FleetAgent } from './fleet-model';
+import { facingFade, type NamesId } from './names';
 import { isNarrow } from './narrow';
 import { PinnedAgentPanel } from './pinned-agent-panel';
 import {
+  labelsShown,
+  leanBlend,
+  leanCurve,
   panelSide,
   RAIL_DWELL,
   STAGES,
@@ -53,7 +57,7 @@ import {
 } from './visual-contract';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
-import type { CrustMotionId } from './visuals/crust-motion';
+import type { CrustMotion } from './visuals/crust-motion';
 import type { CrustShapeId } from './visuals/crust-shape';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
@@ -77,9 +81,15 @@ const PAGED_RATE = 12;
  *  end, and the open panel closes. */
 const MOVING_FROM = 0.02;
 const labelBlend = { from: 0, to: 0, t: 0 };
-/** The "synthetic fleet" stamp runs across the top of a portrait stage; an
- *  open sheet starts below it. */
-const STAMP_CLEAR = 26;
+const stepBlend = { from: 0, to: 0, t: 0 };
+const stepLean = { from: 0, to: 0, t: 0 };
+/** How fast the page's own show of a push follows it, per second, and how
+ *  much of the next step a whole push fills. */
+const PUSH_RATE = 14;
+const STEP_PUSH = 0.4;
+/** The "synthetic fleet" stamp runs across the top of a portrait stage,
+ *  under the scene steps; an open sheet starts below it. */
+const STAMP_CLEAR = 34;
 
 function exemplarFor(
   agents: FleetAgent[],
@@ -104,6 +114,8 @@ export function ScrollExperience({
   signal,
   light,
   snap,
+  sound,
+  names,
   insetTop = 0,
 }: {
   visual: VisualId;
@@ -111,12 +123,16 @@ export function ScrollExperience({
   material: CrustMaterialId;
   mark: CrustMarkId;
   shape: CrustShapeId;
-  motion: CrustMotionId;
+  motion: CrustMotion;
   signal: CrustSignalId;
   light: EnvironmentKind;
   /** Off: the browser scrolls. Soft: a glide to the nearest frame when the
    *  scroll stops near one. Page: one scene per gesture. */
   snap: SnapMode;
+  /** Pressing an agent clicks like a key. */
+  sound: boolean;
+  /** How the Project names are drawn. */
+  names: NamesId;
   /** Pixels of the stage's top covered by the study's own controls. */
   insetTop?: number;
 }) {
@@ -139,6 +155,7 @@ export function ScrollExperience({
     rate: HAND_RATE,
     rail: 0,
     recede: 0,
+    moving: 0,
   });
   const anchor = useRef<VisualAnchor>(new VisualAnchor());
   const [stage, setStage] = useState(0);
@@ -219,12 +236,13 @@ export function ScrollExperience({
     };
   }, [sync]);
 
-  useSceneScroll({
+  const goToScene = useSceneScroll({
     mode: snap,
     sectionRef,
     stageRef,
     frames: STAGES.length,
     reducedMotion,
+    drive,
   });
 
   // Park the canvas when the section is off screen.
@@ -243,16 +261,56 @@ export function ScrollExperience({
   // the camera starts toward another scene.
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const labelTopRef = useRef(0);
+  const namesRef = useRef<NamesId>(names);
+  useEffect(() => {
+    namesRef.current = names;
+  }, [names]);
+  // The scene steps' fills, and the push as the page shows it.
+  const stepRefs = useRef<(HTMLSpanElement | null)[]>([]);
   useEffect(() => {
     labelTopRef.current = insetTop + 22;
   }, [insetTop]);
   useEffect(() => {
     let frame = 0;
+    let push = 0;
+    let shownPush = Number.NaN;
+    let then = performance.now();
     const tick = () => {
       frame = requestAnimationFrame(tick);
       const a = anchor.current;
       const stageEl = stageRef.current;
       if (!stageEl) return;
+      // A push on the wheel before the page moves (W15i): eased here as on
+      // the camera, written to the stage for the reading column and the
+      // landing's cue, and into the scene steps, where the next step starts
+      // to fill.
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - then) / 1000);
+      then = now;
+      const intent = drive.current.intent?.(now) ?? 0;
+      const pushTarget = Math.sign(intent) * leanCurve(intent);
+      // held into the move it asked for, as the camera holds its lean, so
+      // the next step never drains before the move fills it
+      const moving = drive.current.moving;
+      const holding = moving !== 0 && Math.sign(push) === moving;
+      if (!holding)
+        push += (pushTarget - push) * (1 - Math.exp(-PUSH_RATE * dt));
+      if (Math.abs(push) < 0.002) push = 0;
+      if (push !== shownPush) {
+        shownPush = push;
+        stageEl.style.setProperty('--push', Math.abs(push).toFixed(3));
+        stageEl.style.setProperty('--push-signed', push.toFixed(3));
+      }
+      const sb = stageBlend(drive.current.rail, undefined, stepBlend);
+      const leaned = leanBlend(sb, push * STEP_PUSH, stepLean);
+      if (holding && leaned.from === sb.from && leaned.t === sb.t) push = 0;
+      const at = leaned.from + leaned.t;
+      for (let i = 0; i < stepRefs.current.length; i += 1) {
+        const fill = stepRefs.current[i];
+        if (!fill) continue;
+        const f = Math.max(0, Math.min(1, 1 - Math.abs(at - i)));
+        fill.style.transform = `scaleX(${f.toFixed(3)})`;
+      }
       const labelTop = labelTopRef.current;
       const lb = stageBlend(drive.current.rail, undefined, labelBlend);
       if (
@@ -261,26 +319,27 @@ export function ScrollExperience({
         lb.t < 1 - MOVING_FROM
       )
         onSelect(-1);
-      // labels, faded with the stage on the rail; a narrow screen has no
-      // room for ten names over the whole fleet, so there they show only
-      // while the story is inside one Project
+      // labels, faded with the stage on the rail (`labelsShown`)
       const narrow = isNarrow(stageEl.clientWidth, stageEl.clientHeight);
-      const labelled = (index: number) =>
-        STAGES[index].labels && !(narrow && STAGES[index].focus === 'fleet');
-      const labelsOn =
-        (labelled(lb.from) ? 1 - lb.t : 0) + (labelled(lb.to) ? lb.t : 0);
+      const labelsOn = labelsShown(drive.current.rail, narrow);
+      const style = namesRef.current;
       for (let i = 0; i < a.labels.length; i += 1) {
         const el = labelRefs.current[i];
         const label = a.labels[i];
         if (!el) continue;
-        if (!label.visible || label.count === 0) {
+        const pinned = style !== 'float';
+        if (
+          !label.visible ||
+          label.count === 0 ||
+          (pinned && !label.rimVisible)
+        ) {
           el.style.opacity = '0';
           continue;
         }
         // clusters near the limb are seen edge-on and fade out, and a name
         // never goes under the study's own controls
-        const facing = Math.min(1, Math.max(0, (label.facing - 0.22) / 0.3));
-        const y = Math.max(label.y, labelTop);
+        const x = pinned ? label.rimX : label.x;
+        const y = Math.max(pinned ? label.rimY : label.y, labelTop);
         // on a phone an open sheet takes the top of the stage, where a name
         // would show through the glass
         const behindSheet = narrow && selectedRef.current !== -1 ? 0 : 1;
@@ -288,11 +347,13 @@ export function ScrollExperience({
           labelsOn *
             (1 - drive.current.recede) *
             behindSheet *
-            facing *
-            facing *
-            (3 - 2 * facing)
+            facingFade(label.facing)
         );
-        el.style.transform = `translate(${label.x}px, ${y}px) translate(-50%, -100%)`;
+        // a tag hangs from its stem over the border's highest point; a
+        // border's name sits on the line itself
+        el.style.transform = `translate(${x}px, ${y}px) translate(-50%, ${
+          style === 'border' ? '-50%' : '-100%'
+        })`;
       }
     };
     frame = requestAnimationFrame(tick);
@@ -358,6 +419,8 @@ export function ScrollExperience({
             motion={motion}
             signal={signal}
             light={light}
+            sound={sound}
+            names={names}
             onHoverChange={onHoverChange}
             onSelect={onSelect}
           />
@@ -379,11 +442,9 @@ export function ScrollExperience({
               ref={el => {
                 labelRefs.current[project.id] = el;
               }}
-              className="absolute left-0 top-0 whitespace-nowrap text-center opacity-0 transition-opacity duration-300 will-change-transform"
+              className="absolute left-0 top-0 flex flex-col items-center whitespace-nowrap text-center opacity-0 transition-opacity duration-300 will-change-transform"
             >
-              <p className="text-[13px] font-medium text-white/85">
-                {project.name}
-              </p>
+              <ProjectName name={project.name} style={names} />
             </div>
           ))}
         </div>
@@ -401,9 +462,21 @@ export function ScrollExperience({
         />
 
         {/* Synthetic fleet stamp, always inside the frame. */}
-        <p className="pointer-events-none absolute right-4 top-[3.25rem] font-mono text-[10px] uppercase tracking-[0.18em] text-white/35 landscape:bottom-3 landscape:left-4 landscape:right-auto landscape:top-auto">
+        <p className="pointer-events-none absolute right-4 top-[3.75rem] font-mono text-[10px] uppercase tracking-[0.18em] text-white/35 landscape:bottom-3 landscape:left-4 landscape:right-auto landscape:top-auto">
           Demo workspace · synthetic fleet
         </p>
+
+        {/* Where the story is, one step per scene: the current one full, the
+            next filling as a push builds or a move runs. A step takes the
+            reader to its scene. */}
+        <SceneSteps
+          stage={stage}
+          copySet={copySet}
+          fillRefs={stepRefs}
+          onStep={index => goToScene.current(index)}
+          reducedMotion={reducedMotion}
+          insetTop={insetTop}
+        />
 
         {/* The reading column, one panel per stage. */}
         <div className="pointer-events-none absolute inset-0">
@@ -419,6 +492,146 @@ export function ScrollExperience({
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * The story's steps, one per scene (W15i, operator 2026-10-13: "There's no
+ * visibility into that: I'm about to enter an immersive multi-step
+ * experience"): down the right edge beside the world, and on a portrait
+ * screen, where the world fills the width, a segmented bar across the top
+ * of the stage, the way a story on a phone shows its pages. Each step is a
+ * short track whose fill is written every frame from where the camera is on
+ * the rail, so a move empties one step into the next and a push starts to
+ * fill the next before the page moves. A step is a button to its scene.
+ */
+function SceneSteps({
+  stage,
+  copySet,
+  fillRefs,
+  onStep,
+  reducedMotion,
+  insetTop,
+}: {
+  stage: number;
+  copySet: CopySetId;
+  fillRefs: React.RefObject<(HTMLSpanElement | null)[]>;
+  onStep: (index: number) => void;
+  reducedMotion: boolean;
+  insetTop: number;
+}) {
+  return (
+    <nav
+      aria-label="Scenes"
+      className="pointer-events-auto absolute z-20 flex landscape:right-2 landscape:top-1/2 landscape:-translate-y-1/2 landscape:flex-col landscape:items-end md:landscape:right-4 portrait:inset-x-3 portrait:top-[var(--steps-top)] portrait:flex-row portrait:gap-1"
+      style={{ '--steps-top': `${insetTop + 2}px` } as React.CSSProperties}
+    >
+      {/* below the steps, on the landing only: the invitation to scroll */}
+      <div className="absolute right-0 top-full flex w-9 justify-end portrait:hidden">
+        <ScrollCue shown={stage === 0} reducedMotion={reducedMotion} />
+      </div>
+      {/* where the reader is, beside the step it names */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute right-11 top-0 flex h-7 items-center whitespace-nowrap font-mono text-[10px] tabular-nums tracking-[0.16em] text-white/45 transition-transform duration-500 ease-out portrait:hidden"
+        style={{ transform: `translateY(${stage * 28}px)` }}
+      >
+        {String(stage + 1).padStart(2, '0')} / {String(STAGES.length).padStart(2, '0')}
+      </span>
+      {/* and for a screen reader, each scene as it arrives */}
+      <p className="sr-only" aria-live="polite">
+        {`Scene ${stage + 1} of ${STAGES.length}: ${STAGES[stage].copy[copySet].headline.join(' ')}`}
+      </p>
+      {STAGES.map((item, index) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onStep(index)}
+          aria-label={`Scene ${index + 1} of ${STAGES.length}: ${item.copy[copySet].headline.join(' ')}`}
+          aria-current={index === stage ? 'step' : undefined}
+          className="group/step flex items-center landscape:h-7 landscape:w-9 landscape:justify-end portrait:h-5 portrait:flex-1"
+        >
+          <span
+            className={cn(
+              'relative block h-[2px] overflow-hidden rounded-full bg-white/15 transition-[width,background-color] duration-300 group-hover/step:bg-white/30 portrait:w-full',
+              index === stage ? 'landscape:w-6' : 'landscape:w-3.5'
+            )}
+          >
+            <span
+              ref={el => {
+                fillRefs.current[index] = el;
+              }}
+              className="absolute inset-0 rounded-full bg-white/90 landscape:origin-right portrait:origin-left"
+              style={{ transform: 'scaleX(0)' }}
+            />
+          </span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/**
+ * On the landing, under the steps, an invitation to scroll that answers the
+ * scroll: a line with a bead running down it, which fills as a push builds
+ * (`--push`). It sits on the edge, clear of the world and the type.
+ */
+function ScrollCue({
+  shown,
+  reducedMotion,
+}: {
+  shown: boolean;
+  reducedMotion: boolean;
+}) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        'pointer-events-none mt-3 flex w-6 flex-col items-center gap-2 transition-opacity duration-500',
+        shown ? 'opacity-100' : 'opacity-0'
+      )}
+    >
+      <style>{`@keyframes study-cue-bead { 0% { transform: translateY(-4px); opacity: 0 } 25% { opacity: 1 } 80% { opacity: 1 } 100% { transform: translateY(26px); opacity: 0 } }`}</style>
+      <span className="relative block h-7 w-px overflow-hidden bg-white/15">
+        <span
+          className="absolute inset-0 origin-top bg-white/80"
+          style={{ transform: 'scaleY(var(--push, 0))' }}
+        />
+        {reducedMotion ? null : (
+          <span
+            className="absolute left-1/2 top-0 -ml-[1.5px] block h-[3px] w-[3px] rounded-full bg-white"
+            style={{ animation: 'study-cue-bead 1.8s ease-in-out infinite' }}
+          />
+        )}
+      </span>
+      <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/45 [writing-mode:vertical-rl]">
+        Scroll
+      </span>
+    </div>
+  );
+}
+
+/**
+ * A Project's name in the style the study is showing (`names.ts`). A tag is
+ * a small glass label on a stem whose foot is the Project's border; under
+ * Border the same label sits on the outline the globe draws, which passes
+ * behind it, so the name reads as the border's own.
+ */
+function ProjectName({ name, style }: { name: string; style: NamesId }) {
+  if (style === 'float')
+    return <p className="text-[13px] font-medium text-white/85">{name}</p>;
+  return (
+    <>
+      <p className="rounded-full border border-white/20 bg-[#04060b]/70 px-2.5 py-[3px] text-[12.5px] font-medium leading-none text-white/90 shadow-[0_2px_10px_rgba(0,0,0,0.45)] backdrop-blur-[6px]">
+        {name}
+      </p>
+      {style === 'tag' ? (
+        <span
+          aria-hidden
+          className="h-3.5 w-px bg-gradient-to-b from-white/45 to-white/10"
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -490,12 +703,22 @@ function Panel({
       data-study-panel={stage.id}
       aria-hidden={!active}
     >
-      <PanelBody
-        stage={stage}
-        copySet={copySet}
-        agent={agent}
-        interactive={active}
-      />
+      {/* the column gives a little to a push, and comes back if it is let go */}
+      <div
+        className="flex flex-col gap-4 md:gap-5"
+        style={{
+          transform: 'translate3d(0, calc(var(--push-signed, 0) * -10px), 0)',
+          opacity: 'calc(1 - var(--push, 0) * 0.16)',
+          alignItems: 'inherit',
+        }}
+      >
+        <PanelBody
+          stage={stage}
+          copySet={copySet}
+          agent={agent}
+          interactive={active}
+        />
+      </div>
     </div>
   );
 }

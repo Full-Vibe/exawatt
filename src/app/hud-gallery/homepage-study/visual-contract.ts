@@ -10,9 +10,10 @@ import type { RefObject } from 'react';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
+import type { NamesId } from './names';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
-import type { CrustMotionId } from './visuals/crust-motion';
+import type { CrustMotion } from './visuals/crust-motion';
 import type { CrustShapeId } from './visuals/crust-shape';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
@@ -77,6 +78,26 @@ export interface StoryDrive {
   rail: number;
   /** The visual recedes behind centred type. Written by the camera rig. */
   recede: number;
+  /** How far a gesture has pushed toward the next scene before it pages,
+   *  signed, -1 to 1, at a time in milliseconds (W15i). The scroll writes
+   *  the reader; the camera leans by it and the page shows it. Absent
+   *  outside Page mode. */
+  intent?: (now: number) => number;
+  /** The direction of the paged move under way, or 0. */
+  moving: -1 | 0 | 1;
+}
+
+/** Say how a gesture is going (W15i). Module functions, so a hook writes
+ *  through the drive it was handed without assigning into its argument. */
+export function setIntent(
+  drive: StoryDrive,
+  intent: ((now: number) => number) | undefined
+): void {
+  drive.intent = intent;
+}
+
+export function setMoving(drive: StoryDrive, moving: -1 | 0 | 1): void {
+  drive.moving = moving;
 }
 
 /**
@@ -115,6 +136,11 @@ export interface LabelAnchor {
   /** How squarely the Project faces the camera, 1 head on to 0 at the limb
    *  of the globe. A name over a cluster seen edge-on is clutter. */
   facing: number;
+  /** The highest point on screen of the Project's border on the globe
+   *  (`territory.ts`): where a tag is pinned and a border's name sits. */
+  rimX: number;
+  rimY: number;
+  rimVisible: boolean;
 }
 
 export interface VisualProps {
@@ -132,16 +158,25 @@ export interface VisualProps {
   mark: CrustMarkId;
   /** The tile's outline, crisp to round (W15g). Crust only. */
   shape: CrustShapeId;
-  /** How a working agent moves (W15g). Crust only. */
-  motion: CrustMotionId;
+  /** How a working agent moves: any of three lights, one lift (W15i).
+   *  Crust only. */
+  motion: CrustMotion;
   /** How an agent carries its status (W15d). Crust only. */
   signal: CrustSignalId;
   /** Which reflection room lights the materials. Default `room`. */
   light?: EnvironmentKind;
   /** Frame one cluster close, for the material study. */
   closeUp?: boolean;
-  /** A ghost tile was clicked: the operator wants one more agent. */
+  /** A ghost tile was clicked: the operator wants the cluster filled. */
   onExpand?: () => void;
+  /** Whether a ghost answers the pointer now (a lone agent's slots do; a
+   *  full cluster's do not). Read only when `onExpand` is given. */
+  expandable?: boolean;
+  /** Pressing an agent or a slot clicks like a key (W15i). */
+  sound?: boolean;
+  /** How the Project names are drawn (W15i); Border also outlines each
+   *  Project's land. Crust only draws the outline. */
+  names?: NamesId;
   /** The agent under the pointer, or -1. */
   onHoverChange?: (agent: number) => void;
   /** A click landed on an agent, or on nothing (-1). */

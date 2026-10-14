@@ -238,6 +238,68 @@ export function stageBlend(
   return out;
 }
 
+/**
+ * A stage blend leaned toward the scene a push asks for (W15i): `lean` is a
+ * signed share of the move in the blend's own eased terms. Forward from a
+ * scene the camera starts toward the next one; back from a scene it starts
+ * toward the one before, which is the blend that ends here, run backward.
+ * A lean never pulls the camera behind where a move has already taken it.
+ */
+export function leanBlend(
+  b: StageBlend,
+  lean: number,
+  out: StageBlend
+): StageBlend {
+  out.from = b.from;
+  out.to = b.to;
+  out.t = b.t;
+  if (lean > 0) {
+    // a scene reached from below is the end of the blend before it: lean
+    // from the scene itself into the next (the camera's eased progress
+    // settles a hair short of a whole scene and never reaches it)
+    if (b.t === 1 && b.to < STAGES.length - 1) {
+      out.from = b.to;
+      out.to = b.to + 1;
+      out.t = lean;
+    } else out.t = Math.max(b.t, lean);
+  } else if (lean < 0) {
+    if (b.t === 0 && b.from > 0) {
+      out.from = b.from - 1;
+      out.to = b.from;
+      out.t = 1 + lean;
+    } else out.t = Math.min(b.t, 1 + lean);
+  }
+  return out;
+}
+
+/**
+ * How much of a lean a push shows: steep at first, so the first few pixels
+ * of a gesture already move the page (Android's predictive back shapes its
+ * preview the same way, "so that the gesture is more apparent in the
+ * beginning"), and level as it nears a whole move.
+ */
+export function leanCurve(intent: number): number {
+  const x = Math.min(1, Math.abs(intent));
+  return 1 - (1 - x) ** 3;
+}
+
+const labelScratch: StageBlend = { from: 0, to: 0, t: 0 };
+
+/**
+ * How much the Project names show at a rail position, 0 to 1: on the stages
+ * that name Projects, faded across a move. A narrow screen has no room for
+ * ten names over the whole fleet, so there they show only while the story
+ * is inside one Project.
+ */
+export function labelsShown(rail: number, narrow: boolean): number {
+  const b = stageBlend(rail, undefined, labelScratch);
+  const on = (index: number) =>
+    STAGES[index].labels && !(narrow && STAGES[index].focus === 'fleet')
+      ? 1
+      : 0;
+  return on(b.from) * (1 - b.t) + on(b.to) * b.t;
+}
+
 /** The stage on screen: the next one from the middle of the move. */
 export function stageAt(progress: number): number {
   const b = stageBlend(progress);

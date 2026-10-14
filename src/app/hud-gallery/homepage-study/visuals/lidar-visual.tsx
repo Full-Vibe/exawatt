@@ -25,12 +25,13 @@ import type { VisualProps } from '../visual-contract';
 import { fleetExtent } from './camera-rig';
 import {
   highlightWeight,
+  type Palette,
   paletteFrom,
   placeTiles,
   projectToCanvas,
-  writeLabelAnchors,
-  type Palette,
+  RIM_NOW,
   type TilePlacement,
+  writeLabelAnchors,
 } from './shared';
 
 const VERT = /* glsl */ `
@@ -239,6 +240,7 @@ export function LidarVisual({
   shownRef,
   onHoverChange,
   onSelect,
+  names = 'float',
 }: VisualProps) {
   const palette = useMemo(() => paletteFrom(theme), [theme]);
   const placements = useMemo(() => placeTiles(model), [model]);
@@ -496,7 +498,8 @@ export function LidarVisual({
       size.width,
       size.height,
       a,
-      1.6
+      1.6,
+      names === 'float' ? null : RIM_NOW
     );
   });
 

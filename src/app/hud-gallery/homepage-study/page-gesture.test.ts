@@ -409,6 +409,37 @@ describe('one scene per gesture', () => {
     expect(run(next, () => true, pager).moves).toHaveLength(1);
   });
 
+  it('reports a push as it builds, and nothing once it pages or goes quiet', () => {
+    const pager = new WheelPager();
+    const can = () => true;
+    expect(pager.pending(0)).toBe(0);
+    // a slow, deliberate start: a few pixels an event
+    let t = 1000;
+    let last = 0;
+    const seen: number[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      const verdict = pager.wheel(2, t, can);
+      if (verdict === 'next') break;
+      seen.push(pager.pending(t));
+      t += 16;
+    }
+    // it rises with the push, toward a whole move, and never past it
+    for (const value of seen) {
+      expect(value).toBeGreaterThan(last);
+      expect(value).toBeLessThan(1);
+      last = value;
+    }
+    expect(last).toBeGreaterThan(0.6);
+    // the move is under way: nothing is pending
+    expect(pager.pending(t)).toBe(0);
+    // upward pushes read negative, and the push is forgotten in quiet
+    const up = new WheelPager();
+    up.wheel(-12, 5000, can);
+    expect(up.pending(5000)).toBeLessThan(0);
+    expect(up.pending(5100)).toBeLessThan(0);
+    expect(up.pending(5000 + 231)).toBe(0);
+  });
+
   it('forgets everything on reset', () => {
     const pager = new WheelPager();
     expect(pager.wheel(100, 0, () => true)).toBe('next');

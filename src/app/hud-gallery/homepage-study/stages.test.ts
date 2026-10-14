@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { READER_AS_BOTTLENECK } from '@/components/site/bands/fold-copy';
 import { fleetModel } from './fleet-model';
-import { STAGES, stageAt, stageBlend } from './stages';
+import { leanBlend, STAGES, stageAt, stageBlend } from './stages';
 
 const prose = (lines: (string | undefined)[]) =>
   lines.filter(Boolean).join(' ');
@@ -104,5 +104,48 @@ describe('the rail', () => {
     expect(stageAt(1.49)).toBe(1);
     expect(stageAt(1.51)).toBe(2);
     expect(stageAt(STAGES.length - 1)).toBe(STAGES.length - 1);
+  });
+});
+
+describe('a lean before the page moves', () => {
+  const out = { from: 0, to: 0, t: 0 };
+  it('starts forward from a scene toward the next', () => {
+    expect(leanBlend({ from: 2, to: 3, t: 0 }, 0.1, out)).toEqual({
+      from: 2,
+      to: 3,
+      t: 0.1,
+    });
+  });
+  it('starts back from a scene toward the one before', () => {
+    const b = leanBlend({ from: 2, to: 3, t: 0 }, -0.1, out);
+    expect(b.from).toBe(1);
+    expect(b.to).toBe(2);
+    expect(b.t).toBeCloseTo(0.9, 6);
+  });
+  it('never holds a move back behind where it has got to', () => {
+    expect(leanBlend({ from: 2, to: 3, t: 0.4 }, 0.1, out).t).toBe(0.4);
+    expect(leanBlend({ from: 1, to: 2, t: 0.3 }, -0.1, out).t).toBe(0.3);
+  });
+  it('leans forward from a scene reached from below', () => {
+    // eased progress settles a hair short of 2: the blend before it, ended
+    expect(leanBlend({ from: 1, to: 2, t: 1 }, 0.1, out)).toEqual({
+      from: 2,
+      to: 3,
+      t: 0.1,
+    });
+    // and the last scene has nothing past it
+    const last = STAGES.length - 1;
+    expect(leanBlend({ from: last - 1, to: last, t: 1 }, 0.1, out)).toEqual({
+      from: last - 1,
+      to: last,
+      t: 1,
+    });
+  });
+  it('has no scene before the first to lean toward', () => {
+    expect(leanBlend({ from: 0, to: 1, t: 0 }, -0.1, out)).toEqual({
+      from: 0,
+      to: 1,
+      t: 0,
+    });
   });
 });

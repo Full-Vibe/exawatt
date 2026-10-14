@@ -26,6 +26,7 @@ import {
   paletteFrom,
   placeTiles,
   projectToCanvas,
+  RIM_NOW,
   writeLabelAnchors,
 } from './shared';
 
@@ -56,6 +57,7 @@ export function DomeVisual({
   shownRef,
   onHoverChange,
   onSelect,
+  names = 'float',
 }: VisualProps) {
   const palette = useMemo(() => paletteFrom(theme), [theme]);
   const placements = useMemo(() => placeTiles(model), [model]);
@@ -351,7 +353,8 @@ export function DomeVisual({
       size.width,
       size.height,
       a,
-      0.6
+      0.6,
+      names === 'float' ? null : RIM_NOW
     );
   });
 

@@ -24,7 +24,7 @@
  * key typed into a field, and the page outside the story.
  */
 
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { easeInOutCubic, MOVE_MS, pagedProgress, railMove } from './page-curve';
 import { WheelPager } from './page-gesture';
 import {
@@ -39,6 +39,7 @@ import {
   progressAt,
   storyTravel,
 } from './story-scroll';
+import { setIntent, setMoving, type StoryDrive } from './visual-contract';
 
 export type SnapMode = 'off' | 'soft' | 'page';
 
@@ -51,6 +52,16 @@ const ON_FRAME = 0.02;
 /** A wheel event this soon after the last one, from outside the story, is
  *  the same gesture carrying in. */
 const ENTRY_HOLD_MS = 180;
+/** The landing's invitation (W15i): after this long with no input on the
+ *  landing, the page leans toward the next scene by itself, as a push
+ *  would, and lets go; at most twice, a while apart, and never again once
+ *  the reader has touched anything. The delay is the keyswitch study's idle
+ *  hint's. */
+const HINT_AFTER_MS = 2400;
+const HINT_MS = 1500;
+const HINT_AGAIN_MS = 7000;
+const HINT_REACH = 0.4;
+const HINTS = 2;
 
 /** Whether something under the pointer scrolls itself in this direction. */
 function scrollsItself(target: EventTarget | null, dy: number): boolean {
@@ -83,6 +94,7 @@ export function useSceneScroll({
   stageRef,
   frames,
   reducedMotion,
+  drive,
 }: {
   mode: SnapMode;
   sectionRef: RefObject<HTMLElement | null>;
@@ -90,12 +102,18 @@ export function useSceneScroll({
   /** How many frames (stages) the story has. */
   frames: number;
   reducedMotion: boolean;
-}) {
+  /** The story drive: Page mode writes how far a gesture has pushed and
+   *  which way a move is going, for the camera and the page to show. */
+  drive: RefObject<StoryDrive>;
+}): RefObject<(index: number) => void> {
+  // Go to a scene from outside a gesture (the scene steps): on the camera's
+  // own curve when it is the next one over, otherwise a plain glide.
+  const goToRef = useRef<(index: number) => void>(() => undefined);
   useEffect(() => {
-    if (mode === 'off') return;
     const section = sectionRef.current;
     const stage = stageRef.current;
     if (!section || !stage) return;
+    const story = drive.current;
     const last = frames - 1;
     const root = document.documentElement;
     const previousSnap = root.style.scrollSnapType;
@@ -137,6 +155,32 @@ export function useSceneScroll({
     let frame = 0;
     let animating = false;
     const pager = new WheelPager();
+
+    // The invitation: a push the page makes itself, shaped like a breath,
+    // while the story rests on its landing.
+    // A push from the footer goes to the story's last scene, which is not
+    // the way a lean from the last scene would point: shown as nothing.
+    let pastStory = false;
+    let hintsOff = reducedMotion;
+    let hintsPlayed = 0;
+    let hintAt = performance.now() + HINT_AFTER_MS;
+    const landing = frameProgress(0, last);
+    const onLanding = () => Math.abs(story.progress - landing) < ON_FRAME;
+    const stopHints = () => {
+      hintsOff = true;
+    };
+    const hint = (now: number) => {
+      if (hintsOff || animating || !onLanding() || now < hintAt) return 0;
+      const t = (now - hintAt) / HINT_MS;
+      if (t >= 1) {
+        hintsPlayed += 1;
+        if (hintsPlayed >= HINTS) hintsOff = true;
+        else hintAt = now + HINT_AGAIN_MS;
+        return 0;
+      }
+      const s = Math.sin(Math.PI * t);
+      return HINT_REACH * s * s;
+    };
 
     const scrollTop = (top: number) =>
       window.scrollTo({ top, left: 0, behavior: 'instant' });
@@ -190,6 +234,15 @@ export function useSceneScroll({
         run(to, tau => (pagedProgress(tau, move) - move.from) / span, landed);
       } else run(to, easeInOutCubic, landed);
     };
+    goToRef.current = index => {
+      if (!animating) goTo(Math.max(0, Math.min(last, index)));
+    };
+    if (mode === 'off') {
+      return () => {
+        cancelAnimationFrame(frame);
+        goToRef.current = () => undefined;
+      };
+    }
 
     // The pager controls the story and the page below it, so a flick up from
     // the footer is the pager's: the browser lets a wheel sequence whose first
@@ -202,6 +255,7 @@ export function useSceneScroll({
     let lastWheel = Number.NEGATIVE_INFINITY;
     let wasInside = false;
     const onWheel = (event: WheelEvent) => {
+      stopHints();
       if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
       const { rect, travel, progress } = read();
       const inside = isAtOrPast(rect.top);
@@ -228,6 +282,7 @@ export function useSceneScroll({
       if (!inside) return;
       if (scrollsItself(event.target, dy)) return;
       const beyond = isBeyond(rect.top, travel);
+      pastStory = beyond;
       const index = beyond ? last : nearestFrame(progress, last);
       const verdict = pager.wheel(dy, event.timeStamp, dir =>
         dir > 0 ? index < last : index > 0
@@ -235,13 +290,19 @@ export function useSceneScroll({
       if (verdict === 'pass') return;
       event.preventDefault();
       if (verdict === 'swallow') return;
+      // the camera holds whatever lean the push gave it until the move
+      // carries it further (`camera-rig.tsx`)
+      const dir = verdict === 'next' ? 1 : -1;
+      if (!beyond) setMoving(story, dir);
       // from the footer, up is the story's last scene, not the one before it
-      goTo(beyond ? last : index + (verdict === 'next' ? 1 : -1), () =>
-        pager.moveEnded()
-      );
+      goTo(beyond ? last : index + dir, () => {
+        pager.moveEnded();
+        setMoving(story, 0);
+      });
     };
 
     const onKey = (event: KeyboardEvent) => {
+      stopHints();
       if (event.defaultPrevented) return;
       if (event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target instanceof Element ? event.target : null;
@@ -284,6 +345,7 @@ export function useSceneScroll({
     };
     const onScroll = () => {
       if (animating) return;
+      if (!onLanding()) stopHints();
       window.clearTimeout(settleTimer);
       settleTimer = window.setTimeout(settle, SETTLE_MS);
     };
@@ -295,16 +357,30 @@ export function useSceneScroll({
     if (mode === 'page') {
       window.addEventListener('wheel', onWheel, { passive: false });
       window.addEventListener('keydown', onKey);
+      // how far a push has got before it pages, for the camera and the page,
+      // and the landing's invitation, which is shown the same way
+      setIntent(
+        story,
+        now => (pastStory ? 0 : pager.pending(now)) + hint(now)
+      );
     }
     window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('pointerdown', stopHints, { passive: true });
+    window.addEventListener('touchstart', stopHints, { passive: true });
     return () => {
       cancelAnimationFrame(frame);
+      goToRef.current = () => undefined;
+      setIntent(story, undefined);
+      setMoving(story, 0);
       window.clearTimeout(settleTimer);
       window.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('pointerdown', stopHints);
+      window.removeEventListener('touchstart', stopHints);
       if (previousSnap) root.style.scrollSnapType = previousSnap;
       else root.style.removeProperty('scroll-snap-type');
     };
-  }, [mode, sectionRef, stageRef, frames, reducedMotion]);
+  }, [mode, sectionRef, stageRef, frames, reducedMotion, drive]);
+  return goToRef;
 }
