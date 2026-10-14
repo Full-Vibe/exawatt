@@ -70,6 +70,7 @@ import {
 import { crustSignal } from './crust-signal';
 import {
   addWorkAttributes,
+  handoverAt,
   makeSurfaceLightUniforms,
   sheenPhase,
   turnSurfaceLight,
@@ -251,6 +252,23 @@ const INK = new THREE.Color(0x1b2027);
 const PAPER = new THREE.Color(0xf2f4f7);
 const INK_TINT = 0.1;
 const blendScratch = { from: 0, to: 0, t: 0 };
+
+/** A territory tile's colour: the ground, a touch brighter nearest the
+ *  agents, frosted on the clear options, lit a little by a pointer over its
+ *  slot. A leaving agent fades to exactly this. */
+function groundShade(
+  out: THREE.Color,
+  palette: ReturnType<typeof paletteFrom>,
+  ring: number,
+  groundPale: number,
+  slotHover: number
+): THREE.Color {
+  return out
+    .copy(palette.ground)
+    .lerp(palette.groundEdge, ring === 0 ? 0.3 : 0.12)
+    .lerp(FROST, groundPale)
+    .lerp(palette.label, 0.08 * slotHover);
+}
 
 /** A soft radial falloff, drawn once, for light under a tile. */
 function makeGlowTexture(): THREE.Texture {
@@ -547,7 +565,8 @@ export function CrustVisual({
   const surface = useMemo(() => makeSurfaceLightUniforms(), []);
   const spec = useMemo(() => {
     const made = makeCrustMaterial(material);
-    withSurfaceLight(made.agent, surface, 1);
+    // the body takes on the ground's finish as its agent leaves
+    withSurfaceLight(made.agent, surface, 1, made.ground);
     return made;
   }, [material, surface]);
   const sig = useMemo(() => crustSignal(signal), [signal]);
@@ -1119,8 +1138,21 @@ export function CrustVisual({
       const slotHover = anim.slotHover[i];
       const slotPress = anim.slotPress[i];
       const agent = known !== null && a > AGENT_MIN ? known : null;
-      const working =
-        agent !== null && agent.status === 'active' && moving && a > 0.5;
+      // How far the tile has gone over to ground as its agent leaves, or has
+      // still to come from it as one arrives: all the way on the frame the
+      // tile changes between the agents' mesh and the ground's, so its
+      // colour and its finish are already the ground's and the change shows
+      // nothing (operator 2026-10-14: the tiles around the one agent left
+      // "transition from silvery to black and that kind of snaps").
+      const handover = handoverAt(a, AGENT_MIN);
+      // How much of its work a working agent shows: all of it once it is
+      // here, none as ground, and in between as it arrives or leaves, so a
+      // light inside never cuts in or out part way (it did at half way).
+      const live =
+        agent !== null && agent.status === 'active' && moving
+          ? a * a * (3 - 2 * a)
+          : 0;
+      const working = live > 0;
       const phase = agent ? agent.id * 0.9 : 0;
       // Wander: where the light inside is, in the tile's own plane.
       const wandering = working && motion.wander;
@@ -1148,11 +1180,11 @@ export function CrustVisual({
               motion.lift === 'wave'
                 ? wavePhase
                 : (clock * Math.PI * 2) / BREATH_SECONDS + phase
-            )
+            ) * live
           : 0;
       const waveLight =
         working && motion.lift === 'wave' && !motion.breathe
-          ? (Math.sin(wavePhase) + 1) * 0.5
+          ? (Math.sin(wavePhase) + 1) * 0.5 * live
           : 0;
 
       // A jelly jolts when its status changes.
@@ -1190,9 +1222,10 @@ export function CrustVisual({
         }
         liftTarget *= spec.liftScale * sig.liftScale;
         if (working && motion.lift === 'bob')
-          liftTarget += (Math.sin(clock * BOB_RATE + phase) + 1) * BOB_LIFT;
+          liftTarget +=
+            (Math.sin(clock * BOB_RATE + phase) + 1) * BOB_LIFT * live;
         if (working && motion.lift === 'wave')
-          liftTarget += (Math.sin(wavePhase) + 1) * WAVE_LIFT;
+          liftTarget += (Math.sin(wavePhase) + 1) * WAVE_LIFT * live;
         liftTarget += breath * BREATH_LIFT;
         liftTarget *= a;
       } else if (present && slotsLive) {
@@ -1289,14 +1322,11 @@ export function CrustVisual({
 
       if (!agent) {
         anim.statusReady[i] = 0;
-        dummy.scale.set(foot, thickness, foot);
+        // as wide as the body it was, if it was one still settling
+        dummy.scale.set(foot * pinch, thickness, foot * pinch);
         dummy.updateMatrix();
         ground.setMatrixAt(groundCount, dummy.matrix);
-        color.copy(palette.ground);
-        // Territory tiles nearest the agents are a touch brighter.
-        color.lerp(palette.groundEdge, tile.ring === 0 ? 0.3 : 0.12);
-        color.lerp(FROST, spec.groundPale);
-        color.lerp(palette.label, 0.08 * slotHover);
+        groundShade(color, palette, tile.ring, spec.groundPale, slotHover);
         ground.setColorAt(groundCount, color);
         groundCount += 1;
         continue;
@@ -1343,22 +1373,26 @@ export function CrustVisual({
       else if (tile.agent === anim.hover || tile.agent === d.selected)
         color.lerp(palette.label, 0.12);
       // fade to ground as the agent leaves, toward the ground's own colour
-      if (a < 1) {
-        groundColor
-          .copy(palette.ground)
-          .lerp(palette.groundEdge, tile.ring === 0 ? 0.3 : 0.12)
-          .lerp(FROST, spec.groundPale);
-        color.lerp(groundColor, 1 - a);
+      if (handover > 0) {
+        groundShade(
+          groundColor,
+          palette,
+          tile.ring,
+          spec.groundPale,
+          slotHover
+        );
+        color.lerp(groundColor, handover);
       }
       agents.setColorAt(agentCount, color);
       // the light on its surface: the sheen's phase and strength, and the
       // glow of its own colour a breath or a wave gives it
-      const sheenStrength = working && motion.sheen ? 0.9 * (0.5 + 0.5 * w) : 0;
+      const sheenStrength =
+        working && motion.sheen ? 0.9 * (0.5 + 0.5 * w) * live : 0;
       const sheenAt =
         sheenStrength > 0 ? sheenPhase(clock, agent.id * 0.173) : 0;
       const glow = (breath * BREATH_GLOW + waveLight * WAVE_GLOW) * w;
-      work.setXYZW(agentCount, sheenAt, sheenStrength, glow, 0);
-      const lightGlow = wandering ? WANDER_GLOW * (0.5 + 0.5 * w) : 0;
+      work.setXYZW(agentCount, sheenAt, sheenStrength, glow, handover);
+      const lightGlow = wandering ? WANDER_GLOW * (0.5 + 0.5 * w) * live : 0;
       wanderLight.setXYZ(agentCount, lightX, lightY, lightGlow);
       agentCount += 1;
 
@@ -1384,7 +1418,7 @@ export function CrustVisual({
             (agent.status === 'needs-you' ? attention * 0.8 * w : 0) +
             breath * 0.6 +
             waveLight * 0.25) *
-            (wandering ? WANDER_CAP : 1)
+            (wandering ? 1 - (1 - WANDER_CAP) * live : 1)
         );
         cores.setColorAt(coreCount, color);
         coreWork.setXYZW(coreCount, sheenAt, sheenStrength, 0, 0);
@@ -1402,7 +1436,7 @@ export function CrustVisual({
           dummy.updateMatrix();
           orbs.setMatrixAt(orbCount, dummy.matrix);
           color.copy(statusColor).lerp(WHITE, 0.35);
-          color.multiplyScalar(ORB_GLOW * (0.5 + 0.5 * w));
+          color.multiplyScalar(ORB_GLOW * (0.5 + 0.5 * w) * live);
           orbs.setColorAt(orbCount, color);
           orbCount += 1;
         }
@@ -1539,7 +1573,7 @@ export function CrustVisual({
             0.5 * w +
             (agent.status === 'needs-you' ? attention * 0.3 * w : 0) +
             breath * 0.25 +
-            (wandering ? 0.2 * w : 0)
+            (wandering ? 0.2 * w * live : 0)
         );
         glows.setColorAt(glowCount, color);
         glowCount += 1;
@@ -1559,14 +1593,18 @@ export function CrustVisual({
         pulses.setMatrixAt(pulseCount, dummy.matrix);
         const fade = (1 - ph) * (1 - ph);
         color.copy(statusColor).lerp(WHITE, 0.3);
-        color.multiplyScalar(fade * Math.min(1, ph * 8) * (0.1 + 0.12 * w));
+        color.multiplyScalar(
+          fade * Math.min(1, ph * 8) * (0.1 + 0.12 * w) * live
+        );
         pulses.setColorAt(pulseCount, color);
         pulseCount += 1;
       }
 
       // Selection: the product's ring on the ground around the tile, easing
       // in where it opened and out where it closed.
-      if (i === anim.ringTile && anim.ring > 0.01 && isAgent) {
+      // (on an agent that is leaving too: a ring eases out faster than its
+      // agent goes, and never vanishes the frame it starts to)
+      if (i === anim.ringTile && anim.ring > 0.01) {
         selection.visible = true;
         selection.position
           .copy(origin)
@@ -1576,7 +1614,7 @@ export function CrustVisual({
         selection.scale.set(rs, 1, rs);
         (selection.material as THREE.MeshBasicMaterial).opacity = anim.ring;
       }
-      if (i === anim.fadingTile && anim.fading > 0.01 && isAgent) {
+      if (i === anim.fadingTile && anim.fading > 0.01) {
         fadingRing.visible = true;
         fadingRing.position
           .copy(origin)

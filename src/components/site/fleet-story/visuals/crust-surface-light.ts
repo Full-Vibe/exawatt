@@ -8,7 +8,8 @@
  * visible surface").
  *
  * Each instance carries `aWork`: x the sheen's phase in turns, y its
- * strength, z a glow of the tile's own colour (Breathe), w unused; and
+ * strength, z a glow of the tile's own colour (Breathe), w how far the tile
+ * has gone over to ground (the handover, below); and
  * `aWander`: where a light inside the tile is (x, y, in the tile's own
  * plane, tile units) and how strongly it shades the tile (z, 0 to 1), for
  * Wander (W15j): the side nearest the light brightens and the far side
@@ -17,6 +18,17 @@
  * turned by the same yaw that turns the marks to the camera, so every
  * working agent's sheen travels the same way across the screen, like one
  * light passing over glass.
+ *
+ * The handover (W15o). An agent that leaves its tile becomes ground, which
+ * the ground mesh draws in the ground's own material: a matte one, or a
+ * clearer or glossier one than the body's. Easing the body's colour to the
+ * ground's was not enough: on the frame the tile changed mesh its finish
+ * changed at once, the clear coat, the glass and the gloss gone in a frame
+ * (operator 2026-10-14, on the tiles around the one agent left: they
+ * "transition from silvery to black and that kind of snaps"). So the body
+ * takes on the ground's finish as it goes, by `aWork.w`, and is all ground
+ * on the frame it changes mesh; an arriving agent starts as ground the same
+ * way.
  *
  * Built once per material. Nothing here runs per frame but the uniform.
  */
@@ -38,6 +50,50 @@ export function makeSurfaceLightUniforms(): SurfaceLightUniforms {
 /** A phase, in turns, for a clock in seconds and a per-agent offset. */
 export function sheenPhase(clock: number, offset: number): number {
   return clock / SHEEN_PERIOD + offset;
+}
+
+/**
+ * What the ground looks like: the finish an agent's body takes on as it
+ * becomes ground, read off the ground's material. A standard material has
+ * no clear coat and no transmission, and reflects as an index of 1.5 does.
+ * Every option's environment comes from the scene at one intensity, so the
+ * two materials' own `envMapIntensity` never differs on screen.
+ */
+export interface GroundFinish {
+  roughness: number;
+  metalness: number;
+  ior: number;
+  clearcoat: number;
+  clearcoatRoughness: number;
+  transmission: number;
+  thickness: number;
+}
+
+export function groundFinish(material: THREE.Material): GroundFinish {
+  const standard = material as THREE.MeshStandardMaterial;
+  const physical = (material as THREE.MeshPhysicalMaterial)
+    .isMeshPhysicalMaterial
+    ? (material as THREE.MeshPhysicalMaterial)
+    : null;
+  return {
+    roughness: standard.isMeshStandardMaterial ? standard.roughness : 1,
+    metalness: standard.isMeshStandardMaterial ? standard.metalness : 0,
+    ior: physical ? physical.ior : 1.5,
+    clearcoat: physical ? physical.clearcoat : 0,
+    clearcoatRoughness: physical ? physical.clearcoatRoughness : 0,
+    transmission: physical ? physical.transmission : 0,
+    thickness: physical ? physical.thickness : 0,
+  };
+}
+
+/**
+ * How far a tile has gone over to ground (`aWork.w`), from how much of an
+ * agent it still is: not at all on an agent, and all the way at `swapAt`,
+ * the agentness below which the ground's mesh draws the tile, so the frame
+ * it changes mesh changes nothing on screen.
+ */
+export function handoverAt(agentness: number, swapAt: number): number {
+  return Math.min(1, Math.max(0, (1 - agentness) / (1 - swapAt)));
 }
 
 /** Give a geometry its per-instance work and wandering-light attributes. */
@@ -120,18 +176,72 @@ vec3 surfaceLight(vec3 own) {
 }
 `;
 
+const HANDOVER_PARS = /* glsl */ `
+uniform float uGroundRoughness;
+uniform float uGroundMetalness;
+uniform float uGroundIor;
+uniform float uGroundClearcoat;
+uniform float uGroundClearcoatRoughness;
+uniform float uGroundTransmission;
+uniform float uGroundThickness;
+`;
+
+/** Gloss and metal, before the material is set up from them. */
+const HANDOVER_SURFACE = /* glsl */ `
+roughnessFactor = mix( roughnessFactor, uGroundRoughness, vWork.w );
+metalnessFactor = mix( metalnessFactor, uGroundMetalness, vWork.w );
+`;
+
+/** The reflectance, the clear coat and the brushing, once the material is
+ *  set up, as three's own setup computes them. */
+const HANDOVER_MATERIAL = /* glsl */ `
+#ifdef IOR
+	material.ior = mix( material.ior, uGroundIor, vWork.w );
+	material.specularColor = min( pow2( ( material.ior - 1.0 ) / ( material.ior + 1.0 ) ) * specularColorFactor, vec3( 1.0 ) ) * specularIntensityFactor;
+	material.specularColorBlended = mix( material.specularColor, diffuseColor.rgb, metalnessFactor );
+#endif
+#ifdef USE_CLEARCOAT
+	material.clearcoat = mix( material.clearcoat, uGroundClearcoat, vWork.w );
+	material.clearcoatRoughness = mix( material.clearcoatRoughness, min( max( uGroundClearcoatRoughness, 0.0525 ) + geometryRoughness, 1.0 ), vWork.w );
+#endif
+#ifdef USE_ANISOTROPY
+	material.anisotropy *= 1.0 - vWork.w;
+	material.alphaT = mix( pow2( material.roughness ), 1.0, pow2( material.anisotropy ) );
+#endif
+`;
+
+const TRANSMISSION_SETUP = 'material.transmission = transmission;';
+const THICKNESS_SETUP = 'material.thickness = thickness;';
+
+/** How clear the body is, as three sets it up, eased to the ground's. The
+ *  setup lives inside its chunk, which `onBeforeCompile` sees as an
+ *  unresolved include, so the include is replaced by the chunk's own text
+ *  with the two lines changed. */
+export const HANDOVER_TRANSMISSION = THREE.ShaderChunk.transmission_fragment
+  .replace(
+    TRANSMISSION_SETUP,
+    'material.transmission = mix( transmission, uGroundTransmission, vWork.w );'
+  )
+  .replace(
+    THICKNESS_SETUP,
+    'material.thickness = mix( thickness, uGroundThickness, vWork.w );'
+  );
+
 /**
  * Light a material by the tile's work: a lit material takes it as emitted
  * light, a basic one (the lit cap) adds it to its colour. `localScale` maps
  * the geometry's own units onto the tile's, so the band runs on from the
- * body across the cap.
+ * body across the cap. Given the ground's material, the body also takes on
+ * the ground's finish by the handover.
  */
 export function withSurfaceLight<T extends THREE.Material>(
   material: T,
   uniforms: SurfaceLightUniforms,
-  localScale: number
+  localScale: number,
+  ground?: THREE.Material
 ): T {
   const scale = { value: localScale };
+  const finish = ground ? groundFinish(ground) : null;
   // a material may already have a patch of its own
   const before = material.onBeforeCompile.bind(material);
   const key = material.customProgramCacheKey();
@@ -164,8 +274,35 @@ export function withSurfaceLight<T extends THREE.Material>(
       '#include <opaque_fragment>',
       'outgoingLight *= wanderShade();\n#include <opaque_fragment>'
     );
+    if (finish) {
+      shader.uniforms.uGroundRoughness = { value: finish.roughness };
+      shader.uniforms.uGroundMetalness = { value: finish.metalness };
+      shader.uniforms.uGroundIor = { value: finish.ior };
+      shader.uniforms.uGroundClearcoat = { value: finish.clearcoat };
+      shader.uniforms.uGroundClearcoatRoughness = {
+        value: finish.clearcoatRoughness,
+      };
+      shader.uniforms.uGroundTransmission = { value: finish.transmission };
+      shader.uniforms.uGroundThickness = { value: finish.thickness };
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${HANDOVER_PARS}`)
+        .replace(
+          '#include <metalnessmap_fragment>',
+          `#include <metalnessmap_fragment>\n${HANDOVER_SURFACE}`
+        )
+        .replace(
+          '#include <lights_physical_fragment>',
+          `#include <lights_physical_fragment>\n${HANDOVER_MATERIAL}`
+        )
+        // a function, so nothing in the chunk is read as a replacement pattern
+        .replace(
+          '#include <transmission_fragment>',
+          () => HANDOVER_TRANSMISSION
+        );
+    }
   };
-  material.customProgramCacheKey = () => `${key}|crust-surface-light`;
+  material.customProgramCacheKey = () =>
+    `${key}|crust-surface-light${finish ? '|ground-handover' : ''}`;
   return material;
 }
 
