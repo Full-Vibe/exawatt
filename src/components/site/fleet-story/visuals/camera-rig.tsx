@@ -47,10 +47,14 @@ interface StageFraming {
   drop: number;
 }
 
-/** Polar and zoom move one way through the dissections and one way out to
- *  the fleet, so the camera never nods back on itself between stages. */
+/** Polar moves one way through the dissections and one way out to the
+ *  fleet, and the distance between two scenes (the fit times the zoom, on
+ *  one blend) is one glide, so the camera never nods back on itself between
+ *  stages. The landing frames its ten agents close enough to read as the
+ *  product's agents, under the type (operator 2026-10-14: "on desktop as
+ *  well, the agent scene should be a little bit bigger"). */
 const FRAMING: Record<string, StageFraming> = {
-  landing: { polar: 0.78, azimuth: 0, zoom: 0.95, drop: 0.6 },
+  landing: { polar: 0.78, azimuth: 0, zoom: 0.8, drop: 0.3 },
   working: { polar: 0.66, azimuth: 0.35, zoom: 0.84, drop: 0 },
   'needs-you': { polar: 0.62, azimuth: 0.75, zoom: 0.8, drop: 0 },
   third: { polar: 0.6, azimuth: 1.15, zoom: 0.8, drop: 0 },
@@ -58,15 +62,19 @@ const FRAMING: Record<string, StageFraming> = {
 };
 
 /** On a narrow screen the reading column is under the world or over it,
- *  never beside it: a stage that reads beside the subject lifts it instead,
- *  the landing pushes its ten agents under the type and the button, and the
- *  fleet stage comes in closer so three hundred agents are not a smudge. */
+ *  never beside it: a stage that reads beside the subject lifts it instead.
+ *  The landing comes in close under the type, so its ten agents read as
+ *  agents, their marks and colours, and not as dots (operator 2026-10-14:
+ *  "really tiny dots and you can't really tell what's going on... it
+ *  should be... bigger on my phone"); the close comes in on the globe's cap
+ *  under the download, so its Projects fill the foot of the screen instead
+ *  of a small ball over its own dark underside. */
 const NARROW: Record<string, { zoom: number; drop: number }> = {
-  landing: { zoom: 1.5, drop: 1.15 },
+  landing: { zoom: 0.62, drop: 0.32 },
   working: { zoom: 1.0, drop: -0.22 },
   'needs-you': { zoom: 1.0, drop: -0.22 },
   third: { zoom: 1.0, drop: -0.22 },
-  fleet: { zoom: 0.95, drop: 0.12 },
+  fleet: { zoom: 0.62, drop: 0.32 },
 };
 
 /** Planar radius of the present fleet, tile units, with a margin ring. */
@@ -406,20 +414,27 @@ export function CameraRig({
     const shown = THREE.MathUtils.lerp(countFrom, countTo, b.t);
     shownRef.current = shown;
 
-    // Fit what each end of the move looks at, at its own count, blended on
-    // the rail.
-    const fromFleet = STAGES[b.from].focus === 'fleet';
-    const toFleet = STAGES[b.to].focus === 'fleet';
+    // Fit what each end of the move looks at, at its own count, on the
+    // same leaned blend as the framing. The distance is the fit times the
+    // zoom, so a lean that moved one without the other would swing the
+    // camera past a scene and back: on a phone the landing frames its ten
+    // agents closer than their fit while the one agent's fit shrinks, and
+    // the lean into the one-agent scene came in 6% past it and backed out.
+    // What is present still follows the story itself.
+    const fitFrom = closeUp ? d.base : STAGES[lb.from].count;
+    const fitTo = closeUp ? d.base : STAGES[lb.to].count;
+    const fromFleet = STAGES[lb.from].focus === 'fleet';
+    const toFleet = STAGES[lb.to].focus === 'fleet';
     const extentFrom = readTable(
       fromFleet ? tables.fleetExtent : tables.projectExtent,
-      countFrom
+      fitFrom
     );
     const extentTo = readTable(
       toFleet ? tables.fleetExtent : tables.projectExtent,
-      countTo
+      fitTo
     );
     const extent = Math.exp(
-      THREE.MathUtils.lerp(Math.log(extentFrom), Math.log(extentTo), b.t)
+      THREE.MathUtils.lerp(Math.log(extentFrom), Math.log(extentTo), lb.t)
     );
     const cam = camera as THREE.PerspectiveCamera;
     const vfov = THREE.MathUtils.degToRad(cam.fov);
@@ -476,14 +491,14 @@ export function CameraRig({
     // nudged away from the reading column so the subject is never under
     // the type.
     const cx = THREE.MathUtils.lerp(
-      readTable(fromFleet ? tables.fleetCx : tables.projectCx, countFrom),
-      readTable(toFleet ? tables.fleetCx : tables.projectCx, countTo),
-      b.t
+      readTable(fromFleet ? tables.fleetCx : tables.projectCx, fitFrom),
+      readTable(toFleet ? tables.fleetCx : tables.projectCx, fitTo),
+      lb.t
     );
     const cy = THREE.MathUtils.lerp(
-      readTable(fromFleet ? tables.fleetCy : tables.projectCy, countFrom),
-      readTable(toFleet ? tables.fleetCy : tables.projectCy, countTo),
-      b.t
+      readTable(fromFleet ? tables.fleetCy : tables.projectCy, fitFrom),
+      readTable(toFleet ? tables.fleetCy : tables.projectCy, fitTo),
+      lb.t
     );
     planeToSphere(cx, cy, scratch.targetWorld);
     scratch.right.set(Math.cos(azimuthTarget), 0, -Math.sin(azimuthTarget));
