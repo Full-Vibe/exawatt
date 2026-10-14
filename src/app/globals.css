@@ -297,16 +297,14 @@ html:has(main[data-home-arrangement='proposed']) body {
    overscroll must never pull the app's light `--background` into frame. The
    literal is the story's own stage ground (`scroll-experience.tsx`).
 
-   Under Page on a touch screen the browser snaps to each scene and may not
-   skip one; the page's own end is a snap point too, so the footer stays
-   reachable. */
+   No bounce at either end (W15o): the story pages a finger itself
+   (`touch-pager.ts`) and nothing of the browser's may move the page under it.
+   An iPhone's bounce at the first scene was what carried the old snap on to
+   the second. */
 html:has(main[data-fleet-story]),
 html:has(main[data-fleet-story]) body {
   background: #04060b !important;
-}
-
-html:has(main[data-fleet-story]) #site-footer {
-  scroll-snap-align: end;
+  overscroll-behavior-y: none;
 }
 
 /* The Architecture map is the same kind of all-dark page, and its document

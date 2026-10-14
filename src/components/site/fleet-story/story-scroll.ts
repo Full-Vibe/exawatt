@@ -73,17 +73,73 @@ export function nearestFrame(progress: number, last: number) {
 }
 
 /**
- * How far the scroll has gone from the frame it is nearest, as a share of
- * the hold around that frame, -1 to 1 (W15l). Around every frame the story
- * holds the scene still for a quarter of a screen; this is how far into
- * that hold the scroll has gone, so the page can answer the finger from its
- * first pixel (a lean toward the next scene, the type following) instead of
- * an inch and a half of nothing (operator 2026-10-14: "I have to move my
+ * How far the scroll has gone from the frame it set out from, as a share of
+ * the hold around that frame, -1 to 1 (W15l, W15o). Around every frame the
+ * story holds the scene still for a quarter of a screen; this is how far
+ * into that hold the scroll has gone, so the page can answer the finger from
+ * its first pixel (a lean toward the next scene, the type following) instead
+ * of an inch and a half of nothing (operator 2026-10-14: "I have to move my
  * finger a good inch and a half, maybe two inches, before the bar at the
  * top... even begins responding"). Past the hold it stays at its end, where
  * the move itself has taken over.
+ *
+ * It is read from the frame the scroll last rested on or passed through
+ * (`frameReached`), never from the nearest one. The nearest frame changes in
+ * the middle of a move, which turned the lean round mid-flight: a flick from
+ * one scene to the next pulled the camera and the scene steps back toward
+ * the scene it had left before they arrived (operator 2026-10-14: the steps
+ * "glitch and move up and down").
  */
-export function scrollIntent(progress: number, last: number): number {
-  const frame = frameProgress(nearestFrame(progress, last), last);
+export function scrollIntent(
+  progress: number,
+  from: number,
+  last: number
+): number {
+  const frame = frameProgress(clamp(Math.round(from), 0, last), last);
   return clamp((progress - frame) / RAIL_DWELL, -1, 1);
+}
+
+/** How near a frame the scroll must come to have reached it, in stages: a
+ *  few pixels, for a scroll that lands a rounding short of it. Any wider and
+ *  a scroll still arriving would turn its lean round before it got there. */
+export const REACHED = 0.004;
+
+/**
+ * The frame a scroll reached or passed through between two readings of its
+ * progress, the one nearest the later reading, or -1. A flick can cross a
+ * frame between two scroll events, so passing counts as well as arriving.
+ */
+export function frameReached(
+  previous: number,
+  next: number,
+  last: number
+): number {
+  let found = -1;
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 0; i <= last; i += 1) {
+    const frame = frameProgress(i, last);
+    const passed = (previous - frame) * (next - frame) <= 0;
+    const away = Math.abs(next - frame);
+    if ((passed || away < REACHED) && away < best) {
+      found = i;
+      best = away;
+    }
+  }
+  return found;
+}
+
+/**
+ * Where the scroll is in scenes, linear between the scroll positions the
+ * frames rest at: 1.5 is halfway from the second scene to the third. What
+ * the scene steps show (W15o): the scroll itself, so they move one way
+ * under one-way movement and never wait out a hold.
+ */
+export function frameCoord(progress: number, last: number): number {
+  if (progress <= frameProgress(0, last)) return 0;
+  for (let i = 0; i < last; i += 1) {
+    const from = frameProgress(i, last);
+    const to = frameProgress(i + 1, last);
+    if (progress <= to) return i + (progress - from) / (to - from);
+  }
+  return last;
 }

@@ -51,7 +51,6 @@ import { isNarrow } from './narrow';
 import { PinnedAgentPanel } from './pinned-agent-panel';
 import {
   exemplarFor,
-  leanBlend,
   leanCurve,
   panelSide,
   RAIL_DWELL,
@@ -62,9 +61,10 @@ import {
   type Stage,
 } from './stages';
 import {
+  frameCoord,
   frameProgress,
+  frameReached,
   pinnedAt,
-  PIN_TOP,
   progressAt,
   scrollIntent,
   storyTravel,
@@ -101,12 +101,13 @@ const PAGED_RATE = 12;
  *  end, and the open panel closes. */
 const MOVING_FROM = 0.02;
 const labelBlend = { from: 0, to: 0, t: 0 };
-const stepBlend = { from: 0, to: 0, t: 0 };
-const stepLean = { from: 0, to: 0, t: 0 };
 /** How fast the page's own show of a push follows it, per second, and how
  *  much of the next step a whole push fills. */
 const PUSH_RATE = 14;
 const STEP_PUSH = 0.4;
+/** How fast the scene steps follow the scroll, per second: close behind it,
+ *  and smooth through a move whose first pixels go by in a blink. */
+const STEP_RATE = 16;
 /** The reading column follows the scroll (W15l, operator 2026-10-14: "there
  *  isn't really a response under my finger and it feels pretty
  *  disconnected"): a share of the finger's travel, and how far from its
@@ -171,6 +172,7 @@ export function ScrollExperience({
     rate: HAND_RATE,
     rail: 0,
     moving: 0,
+    restFrame: 0,
   });
   const anchor = useRef<VisualAnchor>(new VisualAnchor());
   const [stage, setStage] = useState(0);
@@ -244,6 +246,10 @@ export function ScrollExperience({
       STAGES.length - 1
     );
     const d = drive.current;
+    // the frame the scroll last reached or passed is where a scroll leans
+    // from (`scrollIntent`)
+    const reached = frameReached(d.progress, progress, STAGES.length - 1);
+    if (reached >= 0) d.restFrame = reached;
     d.progress = progress;
     d.highlights = highlights;
     pxPerProgressRef.current =
@@ -315,6 +321,10 @@ export function ScrollExperience({
     let frame = 0;
     let push = 0;
     let shownPush = Number.NaN;
+    /** The wheel's push as the scene steps show it, and where they show the
+     *  story, eased. */
+    let stepPush = 0;
+    let stepAt = Number.NaN;
     let then = performance.now();
     const tick = () => {
       frame = requestAnimationFrame(tick);
@@ -329,15 +339,15 @@ export function ScrollExperience({
       const dt = Math.min(0.05, (now - then) / 1000);
       then = now;
       // the wheel's push before the page moves, and the scroll's way into
-      // the hold around a frame (a finger on glass), as the camera reads them
+      // the hold around the frame it set out from (a finger on glass), as
+      // the camera reads them
+      const d = drive.current;
       const last = STAGES.length - 1;
-      const progress = drive.current.progress;
+      const progress = d.progress;
+      const pending = d.intent?.(now) ?? 0;
       const intent = Math.max(
         -1,
-        Math.min(
-          1,
-          (drive.current.intent?.(now) ?? 0) + scrollIntent(progress, last)
-        )
+        Math.min(1, pending + scrollIntent(progress, d.restFrame, last))
       );
       const pushTarget = Math.sign(intent) * leanCurve(intent);
       // every scene's column follows the scroll and fades as it leaves its
@@ -357,32 +367,58 @@ export function ScrollExperience({
         if (panel.style.getPropertyValue('--follow') !== follow)
           panel.style.setProperty('--follow', follow);
       }
-      // held into the move it asked for, as the camera holds its lean, so
-      // the next step never drains before the move fills it
-      const moving = drive.current.moving;
-      const holding = moving !== 0 && Math.sign(push) === moving;
-      if (!holding)
-        push += (pushTarget - push) * (1 - Math.exp(-PUSH_RATE * dt));
+      push += (pushTarget - push) * (1 - Math.exp(-PUSH_RATE * dt));
       if (Math.abs(push) < 0.002) push = 0;
       if (push !== shownPush) {
         shownPush = push;
         stageEl.style.setProperty('--push', Math.abs(push).toFixed(3));
         stageEl.style.setProperty('--push-signed', push.toFixed(3));
       }
-      const sb = stageBlend(drive.current.rail, undefined, stepBlend);
-      const leaned = leanBlend(sb, push * STEP_PUSH, stepLean);
-      if (holding && leaned.from === sb.from && leaned.t === sb.t) push = 0;
-      const at = leaned.from + leaned.t;
+      // one measure of narrow for the steps, the card in the column and the
+      // sheet
+      const narrow = isNarrow(stageEl.clientWidth, stageEl.clientHeight);
+      // The scene steps show the scroll itself (W15o, operator 2026-10-14:
+      // "It doesn't just go one direction, expanding or contracting. It
+      // actually kind of glitches and moves up and down"): where the page is
+      // between two scenes, so a one-way scroll fills them one way. Before
+      // a wheel pages, its push starts to fill the next step, held through
+      // the move it asks for until the move has filled past it.
+      const moving = d.moving;
+      const holding = moving !== 0 && Math.sign(stepPush) === moving;
+      if (!holding)
+        stepPush +=
+          (Math.sign(pending) * leanCurve(pending) - stepPush) *
+          (1 - Math.exp(-PUSH_RATE * dt));
+      if (Math.abs(stepPush) < 0.002) stepPush = 0;
+      const coord = frameCoord(progress, last);
+      const lean = stepPush * STEP_PUSH;
+      const leanTo = Math.max(0, Math.min(last, d.restFrame + lean));
+      const stepTarget =
+        lean > 0
+          ? Math.max(coord, leanTo)
+          : lean < 0
+            ? Math.min(coord, leanTo)
+            : coord;
+      if (holding && (moving > 0 ? coord >= leanTo : coord <= leanTo))
+        stepPush = 0;
+      stepAt =
+        Number.isNaN(stepAt) || reducedMotionRef.current
+          ? stepTarget
+          : stepAt + (stepTarget - stepAt) * (1 - Math.exp(-STEP_RATE * dt));
       for (let i = 0; i < stepRefs.current.length; i += 1) {
         const fill = stepRefs.current[i];
         if (!fill) continue;
-        const f = Math.max(0, Math.min(1, 1 - Math.abs(at - i)));
-        fill.style.transform = `scaleX(${f.toFixed(3)})`;
+        // a phone's bar fills like a story's pages, the scenes behind full;
+        // the edge's steps mark the one scene the reader is on
+        const f = Math.max(
+          0,
+          Math.min(1, narrow ? stepAt - i + 1 : 1 - Math.abs(stepAt - i))
+        );
+        const scale = `scaleX(${f.toFixed(3)})`;
+        if (fill.style.transform !== scale) fill.style.transform = scale;
       }
       const labelTop = labelTopRef.current;
       const lb = stageBlend(drive.current.rail, undefined, labelBlend);
-      // one measure of narrow for the card in the column and the sheet
-      const narrow = isNarrow(stageEl.clientWidth, stageEl.clientHeight);
       const narrowFlag = narrow ? 'true' : 'false';
       if (stageEl.dataset.narrow !== narrowFlag)
         stageEl.dataset.narrow = narrowFlag;
@@ -460,31 +496,6 @@ export function ScrollExperience({
       data-homepage-study-experience
       data-stage={current.id}
     >
-      {/* One snap point per frame, for a touch screen under Page. */}
-      {snap === 'page'
-        ? STAGES.map((item, index) => {
-            // the frame's pinned travel as a share of the whole, laid out in
-            // the section's own units: travel is the section less one stage
-            // (100svh less the 3rem header)
-            const share = Math.min(
-              1,
-              Math.max(0, (index - RAIL_DWELL) / (last - 2 * RAIL_DWELL))
-            );
-            return (
-              <div
-                key={item.id}
-                aria-hidden
-                className="pointer-events-none absolute left-0 h-px w-px"
-                style={{
-                  top: `calc(${share * 100}% - ${share * 100}svh + ${share * 3}rem)`,
-                  scrollSnapAlign: 'start',
-                  scrollSnapStop: 'always',
-                  scrollMarginTop: `${PIN_TOP}px`,
-                }}
-              />
-            );
-          })
-        : null}
       <div
         ref={stageRef}
         className="group/stage sticky top-12 z-10 h-[calc(100svh-3rem)] select-none overflow-hidden bg-[#04060b] [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none]"

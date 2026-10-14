@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  frameCoord,
   frameProgress,
+  frameReached,
   isAtOrPast,
+  REACHED,
   isBeyond,
   isPinned,
   nearestFrame,
@@ -77,15 +80,79 @@ describe('the story scroll', () => {
 
   it('answers a scroll into the hold around a frame from its first pixel', () => {
     const frame = frameProgress(2, LAST);
-    expect(scrollIntent(frame, LAST)).toBe(0);
+    expect(scrollIntent(frame, 2, LAST)).toBe(0);
     // a few pixels in either direction already register, in proportion
-    expect(scrollIntent(frame + 0.01, LAST)).toBeCloseTo(0.01 / RAIL_DWELL, 6);
-    expect(scrollIntent(frame - 0.01, LAST)).toBeCloseTo(-0.01 / RAIL_DWELL, 6);
+    expect(scrollIntent(frame + 0.01, 2, LAST)).toBeCloseTo(
+      0.01 / RAIL_DWELL,
+      6
+    );
+    expect(scrollIntent(frame - 0.01, 2, LAST)).toBeCloseTo(
+      -0.01 / RAIL_DWELL,
+      6
+    );
     // at the edge of the hold it is whole, and stays whole into the move
-    expect(scrollIntent(frame + RAIL_DWELL, LAST)).toBe(1);
-    expect(scrollIntent(frame + 0.4, LAST)).toBe(1);
+    expect(scrollIntent(frame + RAIL_DWELL, 2, LAST)).toBe(1);
+    expect(scrollIntent(frame + 0.4, 2, LAST)).toBe(1);
     // the first and last frames rest at the ends of the scroll
-    expect(scrollIntent(frameProgress(0, LAST), LAST)).toBe(0);
-    expect(scrollIntent(frameProgress(LAST, LAST), LAST)).toBe(0);
+    expect(scrollIntent(frameProgress(0, LAST), 0, LAST)).toBe(0);
+    expect(scrollIntent(frameProgress(LAST, LAST), LAST, LAST)).toBe(0);
+  });
+
+  it('never turns round in the middle of a move', () => {
+    // a move from scene 1 to 2 leans toward 2 all the way, through the
+    // middle of the move where the nearest frame changes
+    // (at most a rounding short of arriving, where it is nothing to see)
+    let previous = 1;
+    for (let p = 1; p <= 2; p += 0.001) {
+      const from = frameReached(previous, p, LAST) === 2 ? 2 : 1;
+      expect(scrollIntent(p, from, LAST)).toBeGreaterThanOrEqual(
+        -REACHED / RAIL_DWELL
+      );
+      previous = p;
+    }
+    // and back from 2 it leans toward 1
+    expect(scrollIntent(1.6, 2, LAST)).toBe(-1);
+  });
+});
+
+describe('the frame a scroll set out from', () => {
+  it('is the frame it arrived at or came within a few pixels of', () => {
+    expect(frameReached(1.5, 2, LAST)).toBe(2);
+    expect(frameReached(1.5, 1.998, LAST)).toBe(2);
+    expect(frameReached(1.5, 1.99, LAST)).toBe(-1);
+  });
+
+  it('is a frame a flick passed between two readings', () => {
+    expect(frameReached(1.7, 2.3, LAST)).toBe(2);
+    expect(frameReached(2.3, 1.7, LAST)).toBe(2);
+    // across two frames, the later one
+    expect(frameReached(0.6, 2.2, LAST)).toBe(2);
+    expect(frameReached(2.2, 0.6, LAST)).toBe(1);
+  });
+
+  it('includes the ends of the story, where the frames rest a dwell in', () => {
+    expect(frameReached(0.5, frameProgress(0, LAST), LAST)).toBe(0);
+    expect(frameReached(3.5, frameProgress(LAST, LAST), LAST)).toBe(LAST);
+  });
+});
+
+describe('the scroll in scenes', () => {
+  it('is a whole scene at each frame and linear between them', () => {
+    for (let i = 0; i <= LAST; i += 1)
+      expect(frameCoord(frameProgress(i, LAST), LAST)).toBeCloseTo(i, 9);
+    expect(frameCoord(1.5, LAST)).toBeCloseTo(1.5, 9);
+    // the first gap is shorter in progress (the first frame rests a dwell
+    // in), and still reads from 0 to 1
+    const mid = (frameProgress(0, LAST) + frameProgress(1, LAST)) / 2;
+    expect(frameCoord(mid, LAST)).toBeCloseTo(0.5, 9);
+  });
+
+  it('only ever moves the way the scroll moves', () => {
+    let previous = -1;
+    for (let p = 0; p <= LAST; p += 0.005) {
+      const coord = frameCoord(p, LAST);
+      expect(coord).toBeGreaterThanOrEqual(previous);
+      previous = coord;
+    }
   });
 });

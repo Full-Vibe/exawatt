@@ -56,6 +56,10 @@ export interface StoryDrive {
   intent?: (now: number) => number;
   /** The direction of the paged move under way, or 0. */
   moving: -1 | 0 | 1;
+  /** The frame the scroll last rested on or passed through: a scroll leans
+   *  the camera away from it (`scrollIntent`), never from whichever frame
+   *  happens to be nearest (W15o). */
+  restFrame: number;
 }
 
 /** Say how a gesture is going (W15i). Module functions, so a hook writes
@@ -69,6 +73,10 @@ export function setIntent(
 
 export function setMoving(drive: StoryDrive, moving: -1 | 0 | 1): void {
   drive.moving = moving;
+}
+
+export function setRestFrame(drive: StoryDrive, frame: number): void {
+  drive.restFrame = frame;
 }
 
 /**

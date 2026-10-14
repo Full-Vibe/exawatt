@@ -346,7 +346,7 @@ export function CameraRig({
         ? 0
         : THREE.MathUtils.clamp(
             (d.intent ? d.intent(performance.now()) : 0) +
-              scrollIntent(d.progress, STAGES.length - 1),
+              scrollIntent(d.progress, d.restFrame, STAGES.length - 1),
             -1,
             1
           );
