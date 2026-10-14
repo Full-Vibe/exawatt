@@ -30,7 +30,7 @@ import type { RefObject } from 'react';
 import { fleetAt, type FleetModel } from '../fleet-model';
 import { axialToPlane } from '../fleet-model';
 import { planeToSphere } from '../sphere';
-import { isNarrow } from '../narrow';
+import { isNarrow, isShort } from '../narrow';
 import { leanBlend, leanCurve, panelSide, stageBlend, STAGES } from '../stages';
 import { scrollIntent } from '../story-scroll';
 import type { StoryDrive } from '../visual-contract';
@@ -76,6 +76,15 @@ const NARROW: Record<string, { zoom: number; drop: number }> = {
   third: { zoom: 1.0, drop: -0.22 },
   fleet: { zoom: 0.62, drop: 0.32 },
 };
+
+/** A short stage (a phone held sideways, a short window: `isShort`) keeps
+ *  its reading column beside the world but has little height for either
+ *  (W15o). The close drops its globe below the type and the download, and a
+ *  column beside the world moves the subject aside by a share of the frame's
+ *  own width rather than of the subject's extent, since the column takes
+ *  more of a wide, short frame than of a tall one. */
+const SHORT_DROP: Partial<Record<string, number>> = { fleet: 1.0 };
+const SHORT_SIDE_SHARE = 0.42;
 
 /** Planar radius of the present fleet, tile units, with a margin ring. */
 export function fleetExtent(model: FleetModel, count: number): number {
@@ -382,13 +391,16 @@ export function CameraRig({
     // narrow screen the column sits under the world instead of beside it,
     // so the subject moves up the frame, never sideways.
     const narrow = isNarrow(size.width, size.height);
+    const short = !narrow && isShort(size.height);
     const n0 = NARROW[STAGES[lb.from].id];
     const n1 = NARROW[STAGES[lb.to].id];
+    const dropOf = (id: string, n: { drop: number }, f: StageFraming) =>
+      narrow ? n.drop : short ? (SHORT_DROP[id] ?? f.drop) : f.drop;
     const drop = closeUp
       ? 0
       : THREE.MathUtils.lerp(
-          narrow ? n0.drop : f0.drop,
-          narrow ? n1.drop : f1.drop,
+          dropOf(STAGES[lb.from].id, n0, f0),
+          dropOf(STAGES[lb.to].id, n1, f1),
           lb.t
         );
     const narrowZoom = narrow
@@ -502,7 +514,10 @@ export function CameraRig({
     );
     planeToSphere(cx, cy, scratch.targetWorld);
     scratch.right.set(Math.cos(azimuthTarget), 0, -Math.sin(azimuthTarget));
-    scratch.targetWorld.addScaledVector(scratch.right, side * extent * 0.28);
+    const sideShift = short
+      ? SHORT_SIDE_SHARE * distanceTarget * Math.tan(hfov / 2)
+      : extent * 0.28;
+    scratch.targetWorld.addScaledVector(scratch.right, side * sideShift);
     // Camera-up in world space for the current polar/azimuth, so a drop
     // moves the subject straight down the frame.
     scratch.camUp.set(

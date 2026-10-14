@@ -422,6 +422,7 @@ export function ScrollExperience({
         if (fill.style.transform !== scale) fill.style.transform = scale;
       }
       const labelTop = labelTopRef.current;
+      const stageWidth = Math.max(1, stageEl.clientWidth);
       const lb = stageBlend(drive.current.rail, undefined, labelBlend);
       const narrowFlag = narrow ? 'true' : 'false';
       if (stageEl.dataset.narrow !== narrowFlag)
@@ -476,8 +477,11 @@ export function ScrollExperience({
         // on a phone an open sheet takes the top of the stage, where a name
         // would show through the glass
         const behindSheet = narrow && selectedRef.current !== -1 ? 0 : 1;
+        // and beside the world a name never sits under the reading column:
+        // a neighbouring Project's tag over a headline reads as part of it
+        const clear = narrow ? 1 : columnClear(x / stageWidth, lb);
         el.style.opacity = String(
-          shown * behindSheet * facingFade(label.facing)
+          shown * behindSheet * clear * facingFade(label.facing)
         );
         // a tag hangs from its stem over the border's highest point; a
         // border's name sits on the line itself
@@ -750,6 +754,27 @@ function ProjectName({ name }: { name: string }) {
 }
 
 /**
+ * How clear of the reading column a name at `share` of the stage's width
+ * is, 0 to 1, across the move `b`: a column on the right covers the right of
+ * the stage from a little past its middle, one on the left the left; the
+ * centred columns sit over the sky, where no name goes.
+ */
+function columnClear(
+  share: number,
+  b: { from: number; to: number; t: number }
+): number {
+  const clearOf = (stage: Stage) => {
+    const side = panelSide(stage);
+    if (side === 0) return 1;
+    // from the column's inner edge (about 52% of the width in) outward
+    const into = side > 0 ? share - 0.46 : 0.54 - share;
+    const r = Math.max(0, Math.min(1, into / 0.08));
+    return 1 - r * r * (3 - 2 * r);
+  };
+  return clearOf(STAGES[b.from]) * (1 - b.t) + clearOf(STAGES[b.to]) * b.t;
+}
+
+/**
  * A dark wash behind the reading column on the stages where it sits beside
  * the world, so white type is never set over bright tiles (operator
  * 2026-10-13, on a stage where the copy ran across a cluster). It fades with
@@ -760,15 +785,18 @@ function Scrim({ stage, active }: { stage: Stage; active: boolean }) {
   if (stage.panel !== 'right' && stage.panel !== 'left') return null;
   const side =
     stage.panel === 'right'
-      ? 'landscape:inset-y-0 landscape:left-auto landscape:right-0 landscape:h-auto landscape:w-[min(46rem,64vw)] landscape:bg-gradient-to-l'
-      : 'landscape:inset-y-0 landscape:left-0 landscape:right-auto landscape:h-auto landscape:w-[min(46rem,64vw)] landscape:bg-gradient-to-r';
+      ? 'landscape:inset-y-0 landscape:left-auto landscape:right-0 landscape:h-auto landscape:w-[min(52rem,70vw)] landscape:bg-gradient-to-l'
+      : 'landscape:inset-y-0 landscape:left-0 landscape:right-auto landscape:h-auto landscape:w-[min(52rem,70vw)] landscape:bg-gradient-to-r';
   return (
     <div
       aria-hidden
       className={cn(
         'pointer-events-none absolute inset-x-0 bottom-0 h-[64%] bg-gradient-to-t from-[#04060b]/90 via-[#04060b]/55 to-transparent transition-opacity duration-500',
         side,
-        'landscape:from-[#04060b]/80 landscape:via-[#04060b]/45',
+        // dark under the whole column, so a neighbouring Project's bright
+        // tiles never read through the type (a hundred agents reach under
+        // it on the third scene)
+        'landscape:from-[#04060b]/92 landscape:via-[#04060b]/72 landscape:via-60%',
         active ? 'opacity-100' : 'opacity-0'
       )}
     />
@@ -816,7 +844,8 @@ function Panel({
         // sized to its content, which wrapped a two-line headline onto three.
         stage.panel === 'center-top'
           ? 'landscape:w-max md:max-w-[min(60rem,92vw)]'
-          : 'md:max-w-[34rem]',
+          : // a short stage gives the world more of its width
+            'md:max-w-[34rem] group-data-[short=true]/stage:!max-w-[min(34rem,42vw)]',
         placement,
         // an invisible panel from another stage must never swallow a click
         // meant for the world under it
