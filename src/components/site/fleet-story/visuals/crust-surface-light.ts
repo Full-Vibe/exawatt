@@ -59,7 +59,7 @@ export function sheenPhase(clock: number, offset: number): number {
  * Every option's environment comes from the scene at one intensity, so the
  * two materials' own `envMapIntensity` never differs on screen.
  */
-export interface GroundFinish {
+interface GroundFinish {
   roughness: number;
   metalness: number;
   ior: number;

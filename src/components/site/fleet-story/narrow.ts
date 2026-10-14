@@ -26,7 +26,7 @@ export function isNarrow(
  * steps aside and an open agent is the compact card pinned to the stage, as
  * on a phone, and the Project names keep to the scenes inside one Project.
  */
-export const SHORT_BELOW = 520;
+const SHORT_BELOW = 520;
 
 export function isShort(stageHeight: number): boolean {
   return stageHeight < SHORT_BELOW;
