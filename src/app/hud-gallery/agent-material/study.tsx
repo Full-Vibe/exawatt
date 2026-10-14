@@ -8,10 +8,13 @@
  * One cluster, close, in the exact renderer the homepage study uses, with
  * every dial on the agent itself: material, signal treatment, the harness
  * mark, the tile's shape, how it moves while it works, the hero's status
- * and harness, the reflection room, and how many agents stand around it.
- * A change of status or harness changes the hero in place; nothing else
- * in the scene moves (operator 2026-10-13). Drag to orbit. Hover to feel
- * it. Click to open it.
+ * and harness, the reflection room, how many agents stand around it, and
+ * the sound a press makes (operator 2026-10-14: "add some sound effect
+ * options... other cool sound effects to use for the different materials":
+ * by default each material plays its own, and any sound can be picked; a
+ * pick plays it once). A change of status or harness changes the hero in
+ * place; nothing else in the scene moves (operator 2026-10-13). Drag to
+ * orbit. Hover to feel it. Click to open it.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -23,7 +26,14 @@ import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { STATUS_LABEL } from '@/components/site/fleet-story/fleet-model';
 import { PinnedAgentPanel } from '@/components/site/fleet-story/pinned-agent-panel';
+import {
+  MATERIAL_SOUND,
+  PRESS_SOUNDS,
+  type PressSoundId,
+  type PressSoundSetting,
+} from '@/components/site/fleet-story/press-sounds';
 import { STAGES } from '@/components/site/fleet-story/stages';
+import { usePressSoundPreview } from '@/components/site/fleet-story/use-press-sound';
 import {
   STATUS_ORDER,
   VisualAnchor,
@@ -57,6 +67,29 @@ import {
 import type { EnvironmentKind } from '@/components/site/fleet-story/visuals/environment';
 import { CLUSTER_SOURCES, clusterModel } from './cluster-model';
 
+/** No sound, the material's own, or one sound by name. */
+type SoundChoice = 'off' | 'material' | PressSoundId;
+
+function readSound(param: string | null): SoundChoice {
+  if (param === 'off') return 'off';
+  return PRESS_SOUNDS.some(sound => sound.id === param)
+    ? (param as PressSoundId)
+    : 'material';
+}
+
+function soundName(id: PressSoundId): string {
+  return PRESS_SOUNDS.find(sound => sound.id === id)?.name ?? id;
+}
+
+/** The sound a choice plays over a material. */
+function soundOf(
+  choice: SoundChoice,
+  material: CrustMaterialId
+): PressSoundId | null {
+  if (choice === 'off') return null;
+  return choice === 'material' ? MATERIAL_SOUND[material] : choice;
+}
+
 interface StudyState {
   material: CrustMaterialId;
   signal: CrustSignalId;
@@ -67,7 +100,7 @@ interface StudyState {
   source: string;
   light: EnvironmentKind;
   count: 1 | 7;
-  sound: boolean;
+  sound: SoundChoice;
 }
 
 function readState(params: URLSearchParams): StudyState {
@@ -99,7 +132,7 @@ function readState(params: URLSearchParams): StudyState {
       : 'Claude Code',
     light: params.get('light') === 'room' ? 'room' : 'studio',
     count: params.get('count') === '7' ? 7 : 1,
-    sound: params.get('sound') !== 'off',
+    sound: readSound(params.get('sound')),
   };
 }
 
@@ -114,7 +147,7 @@ function href(state: StudyState): string {
     source: state.source,
     light: state.light,
     count: String(state.count),
-    sound: state.sound ? 'on' : 'off',
+    sound: state.sound,
   });
   return `/hud-gallery/agent-material?${q.toString()}`;
 }
@@ -124,17 +157,21 @@ function Option({
   href: to,
   children,
   title,
+  onClick,
 }: {
   active: boolean;
   href: string;
   children: React.ReactNode;
   title?: string;
+  /** Also on the click, before the page follows the link. */
+  onClick?: () => void;
 }) {
   return (
     <Link
       href={to}
       scroll={false}
       title={title}
+      onClick={onClick}
       aria-current={active ? 'true' : undefined}
       className={cn(
         'rounded border px-2 py-1 text-chrome-micro transition-colors',
@@ -215,6 +252,10 @@ export function AgentMaterialStudy() {
   }, []);
 
   const selectedAgent = selected >= 0 ? model.agents[selected] : null;
+  // The sound a press makes, and a pick in the Sound row heard at once.
+  const pressSound: PressSoundSetting =
+    soundOf(state.sound, state.material) ?? false;
+  const preview = usePressSoundPreview();
   // A lone agent's empty slots answer the pointer; a press on one fills the
   // cluster (operator 2026-10-13: "Add an affordance to click one of the
   // unfinished tombstone agents when I'm in one-agent mode to transition to
@@ -373,18 +414,37 @@ export function AgentMaterialStudy() {
           </Row>
           <Row label="Sound">
             <Option
-              active={state.sound}
-              href={href({ ...state, sound: true })}
-              title="Pressing an agent clicks like the keyswitch study's Frosted thock."
-            >
-              On
-            </Option>
-            <Option
-              active={!state.sound}
-              href={href({ ...state, sound: false })}
+              active={state.sound === 'off'}
+              href={href({ ...state, sound: 'off' })}
             >
               Off
             </Option>
+            <Option
+              active={state.sound === 'material'}
+              href={href({ ...state, sound: 'material' })}
+              title={`Each material's own: ${CRUST_MATERIALS.map(
+                option =>
+                  `${option.name} ${soundName(MATERIAL_SOUND[option.id]).toLowerCase()}`
+              ).join(', ')}.`}
+              onClick={() => preview(MATERIAL_SOUND[state.material])}
+            >
+              Material
+              <span className="opacity-60">
+                {' '}
+                · {soundName(MATERIAL_SOUND[state.material])}
+              </span>
+            </Option>
+            {PRESS_SOUNDS.map(option => (
+              <Option
+                key={option.id}
+                active={option.id === state.sound}
+                href={href({ ...state, sound: option.id })}
+                title={option.note}
+                onClick={() => preview(option.id)}
+              >
+                {option.name}
+              </Option>
+            ))}
           </Row>
           <p className="mt-4 max-w-[36ch] text-[13px] leading-relaxed text-white/45">
             The same renderer as the homepage study, one cluster, close. Drag to
@@ -414,7 +474,7 @@ export function AgentMaterialStudy() {
             closeUp
             onExpand={expand}
             expandable={count === 1}
-            sound={state.sound}
+            sound={pressSound}
             onHoverChange={onHoverChange}
             onSelect={onSelect}
           />

@@ -13,6 +13,7 @@ import type { StatusLightState } from '@/components/status-light/protocol';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
 import type { NamesId } from './names';
+import type { PressSoundSetting } from './press-sounds';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
 import type { CrustMotion } from './visuals/crust-motion';
@@ -142,8 +143,9 @@ export interface VisualProps {
   /** Whether a ghost answers the pointer now (a lone agent's slots do; a
    *  full cluster's do not). Read only when `onExpand` is given. */
   expandable?: boolean;
-  /** Pressing an agent or a slot clicks like a key (W15i). */
-  sound?: boolean;
+  /** Pressing an agent or a slot clicks like a key (W15i): `true` is the
+   *  homepage's Frosted thock, or a sound from `press-sounds.ts` by name. */
+  sound?: PressSoundSetting;
   /** How the Project names are drawn (W15i); Border also outlines each
    *  Project's land. Crust only draws the outline. */
   names?: NamesId;

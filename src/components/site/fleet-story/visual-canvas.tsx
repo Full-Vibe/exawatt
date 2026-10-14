@@ -14,6 +14,7 @@ import { useRef, type ComponentType, type RefObject } from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
 import type { NamesId } from './names';
+import type { PressSoundSetting } from './press-sounds';
 import type { StoryDrive, VisualAnchor, VisualProps } from './visual-contract';
 import { CameraRig } from './visuals/camera-rig';
 import type { CrustMarkId } from './visuals/crust-marks';
@@ -65,7 +66,7 @@ export function VisualCanvas({
   visible: boolean;
   onExpand?: () => void;
   expandable?: boolean;
-  sound?: boolean;
+  sound?: PressSoundSetting;
   names?: NamesId;
   onHoverChange: (agent: number) => void;
   onSelect: (agent: number) => void;
