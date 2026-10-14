@@ -8,7 +8,11 @@
  * visible surface").
  *
  * Each instance carries `aWork`: x the sheen's phase in turns, y its
- * strength, z a glow of the tile's own colour (Breathe), w unused. The band
+ * strength, z a glow of the tile's own colour (Breathe), w unused; and
+ * `aWander`: where a light inside the tile is (x, y, in the tile's own
+ * plane, tile units) and how strongly it shades the tile (z, 0 to 1), for
+ * Wander (W15j): the side nearest the light brightens and the far side
+ * dims, so the light reads as moving about inside. The band
  * crosses the tile on the screen's diagonal, lower left to upper right,
  * turned by the same yaw that turns the marks to the camera, so every
  * working agent's sheen travels the same way across the screen, like one
@@ -36,29 +40,37 @@ export function sheenPhase(clock: number, offset: number): number {
   return clock / SHEEN_PERIOD + offset;
 }
 
-/** Give a geometry its per-instance work attribute. */
-export function addWorkAttribute(
+/** Give a geometry its per-instance work and wandering-light attributes. */
+export function addWorkAttributes(
   geometry: THREE.BufferGeometry,
   count: number
-): THREE.InstancedBufferAttribute {
-  const attribute = new THREE.InstancedBufferAttribute(
+): void {
+  const work = new THREE.InstancedBufferAttribute(
     new Float32Array(count * 4),
     4
   );
-  attribute.setUsage(THREE.DynamicDrawUsage);
-  geometry.setAttribute('aWork', attribute);
-  return attribute;
+  work.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute('aWork', work);
+  const wander = new THREE.InstancedBufferAttribute(
+    new Float32Array(count * 3),
+    3
+  );
+  wander.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute('aWander', wander);
 }
 
 const VERTEX_PARS = /* glsl */ `
 attribute vec4 aWork;
+attribute vec3 aWander;
 varying vec4 vWork;
+varying vec3 vWander;
 varying vec3 vTileLocal;
 varying vec3 vTileNormal;
 `;
 
 const VERTEX_MAIN = /* glsl */ `
 vWork = aWork;
+vWander = aWander;
 vTileLocal = position;
 vTileNormal = normal;
 `;
@@ -67,8 +79,22 @@ const FRAGMENT_PARS = /* glsl */ `
 uniform float uYaw;
 uniform float uLocalScale;
 varying vec4 vWork;
+varying vec3 vWander;
 varying vec3 vTileLocal;
 varying vec3 vTileNormal;
+
+// How near this point is to a light wandering inside the tile, 1 at it.
+float wanderNear() {
+  vec2 toLight = vTileLocal.xz * uLocalScale - vWander.xy;
+  return 1.0 / (1.0 + dot(toLight, toLight) * 8.0);
+}
+
+// The wandering light shades the whole tile: brighter on the side it is
+// near, darker across from it, the way a light carried through a block of
+// glass lights it (an added glow alone cannot be seen on a bright body).
+float wanderShade() {
+  return mix(1.0, 0.42 + 0.95 * wanderNear(), vWander.z);
+}
 
 vec3 surfaceLight(vec3 own) {
   // where this point sits on the tile, in tile units (radius about 0.8)
@@ -88,7 +114,9 @@ vec3 surfaceLight(vec3 own) {
   // strongest on the top, a glint on the sides
   float top = smoothstep(0.25, 0.85, normalize(vTileNormal).y);
   float sheen = band * band * travelling * vWork.y * mix(0.3, 1.0, top);
-  return mix(own, vec3(1.0), 0.65) * sheen * 0.95 + own * vWork.z;
+  // and the surface nearest the wandering light glows a little of its own
+  return mix(own, vec3(1.0), 0.65) * sheen * 0.95 + own * vWork.z +
+    mix(own, vec3(1.0), 0.25) * vWander.z * wanderNear() * 0.6;
 }
 `;
 
@@ -132,6 +160,10 @@ export function withSurfaceLight<T extends THREE.Material>(
           '#include <opaque_fragment>',
           'outgoingLight += surfaceLight(diffuseColor.rgb);\n#include <opaque_fragment>'
         );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      'outgoingLight *= wanderShade();\n#include <opaque_fragment>'
+    );
   };
   material.customProgramCacheKey = () => `${key}|crust-surface-light`;
   return material;

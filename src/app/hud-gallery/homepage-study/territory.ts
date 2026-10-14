@@ -17,8 +17,10 @@ export const BORDER_SAMPLES = 96;
 
 /** A tile's circumradius: how far its point stands past its centre. */
 const TILE_REACH = 0.82;
-/** Clear space between the outermost tiles and the border. */
-const BORDER_MARGIN = 0.5;
+/** Clear space between the outermost tiles and the border (operator
+ *  2026-10-13: "add some more padding empty space inside the border between
+ *  that and the outer layer of hex cells"; it was 0.5). */
+const BORDER_MARGIN = 1.1;
 /** How far along each side a corner's curve starts, in tile units, and at
  *  most this share of a side. Fixed, not a share of the side: a share grows
  *  with the Project and a big Project's rounded corner would cut through its

@@ -108,11 +108,14 @@ describe('the open panel placement', () => {
   });
 
   describe('on a phone', () => {
-    const phone = (tile: { x: number; y: number }): PanelPlacementInput => ({
+    const phone = (
+      tile: { x: number; y: number },
+      column: PanelSide = 1
+    ): PanelPlacementInput => ({
       stage: PHONE,
       tile,
       panel: { width: panelWidth(PHONE.width, true), height: 170 },
-      column: 0,
+      column,
       narrow: true,
       inset: { top: 96, bottom: 24 },
     });
@@ -125,11 +128,36 @@ describe('the open panel placement', () => {
       expect(p.x).toBeCloseTo((PHONE.width - w) / 2, 5);
     });
 
-    it('takes the top, where the type is not, unless the tile is up there', () => {
+    it('takes the top beside a scene whose type is at the foot, unless the tile is up there', () => {
       const middle = placePanel(phone({ x: 195, y: 420 }));
       expect(middle.y).toBe(96);
       const high = placePanel(phone({ x: 195, y: 190 }));
       expect(high.y).toBeGreaterThan(300);
+    });
+
+    it('takes the foot under a scene whose type is centred at the top', () => {
+      const middle = placePanel(phone({ x: 195, y: 420 }, 0));
+      expect(middle.y).toBe(PHONE.height - 24 - 170);
+      const low = placePanel(phone({ x: 195, y: PHONE.height - 120 }, 0));
+      expect(low.y).toBe(96);
+    });
+
+    it('stands as far from the tile as it can when both ends reach it', () => {
+      // a short phone and a tall card: both ends come within the tile's clear
+      const short = { width: 390, height: 520 };
+      const tall = { width: panelWidth(390, true), height: 240 };
+      const input = (y: number): PanelPlacementInput => ({
+        stage: short,
+        tile: { x: 195, y },
+        panel: tall,
+        column: 1,
+        narrow: true,
+        inset: { top: 40, bottom: 24 },
+      });
+      const nearTop = placePanel(input(250));
+      expect(nearTop.y).toBe(short.height - 24 - 240);
+      const nearFoot = placePanel(input(300));
+      expect(nearFoot.y).toBe(40);
     });
 
     it('never covers the tile, wherever it is', () => {

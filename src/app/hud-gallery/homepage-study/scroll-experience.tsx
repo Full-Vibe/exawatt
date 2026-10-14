@@ -12,15 +12,19 @@
  *
  * The reading column is a panel per stage positioned where the deck puts it:
  * centred over the top of the globe on the landing and the fleet, to the
- * right or left for the three dissections, centred for the download. On a
- * portrait screen the same panels sit at the foot of the stage over the
- * world, which the camera lifts to clear them (W15f: one pinned experience on
- * every screen, never a stacked copy of itself).
+ * right or left for the three dissections. On a portrait screen the side
+ * panels sit at the foot of the stage over the world, which the camera lifts
+ * to clear them (W15f: one pinned experience on every screen, never a
+ * stacked copy of itself).
  *
- * The open agent (W15h) is a panel pinned to a side of the stage
- * (`pinned-agent-panel.tsx`). It belongs to the scene it was opened in: the
- * moment the camera starts toward another scene it closes, so a panel never
- * sits over a scene it is not about.
+ * One agent card on the page, never two (W15j). On the dissections the card
+ * in the reading column shows the agent in focus: the scene's exemplar until
+ * the reader picks another. Where that card is not shown (the landing and
+ * the fleet, and every scene on a narrow screen) the open agent is the same
+ * card pinned to a side of the stage, or a sheet on a phone
+ * (`pinned-agent-panel.tsx`). A pick belongs to the scene it was made in; a
+ * pinned card closes the moment the camera starts toward another scene, so
+ * it never sits over a scene it is not about.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -33,11 +37,10 @@ import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { AgentCard } from './agent-card';
 import { CanvasBoundary } from './canvas-boundary';
 import { fleetModel, STATUS_LABEL, type FleetAgent } from './fleet-model';
-import { facingFade, type NamesId } from './names';
+import { facingFade, nameShown, nameStyleOf, type NamesId } from './names';
 import { isNarrow } from './narrow';
 import { PinnedAgentPanel } from './pinned-agent-panel';
 import {
-  labelsShown,
   leanBlend,
   leanCurve,
   panelSide,
@@ -154,7 +157,6 @@ export function ScrollExperience({
     selected: -1,
     rate: HAND_RATE,
     rail: 0,
-    recede: 0,
     moving: 0,
   });
   const anchor = useRef<VisualAnchor>(new VisualAnchor());
@@ -181,10 +183,20 @@ export function ScrollExperience({
         : { agent: next, stage: where };
     });
   }, []);
+  // The agent in focus: the one the reader picked, or on a stage that shows
+  // the agent card, the stage's own exemplar. The card always shows the
+  // agent in focus and the world rings it, so the card is never about an
+  // agent the scene does not point at (operator 2026-10-13: "when I click
+  // on an agent to select it, that thing changes to show the selected agent
+  // information and does not have duplicate modals on screen at one time").
+  const exemplar = STAGES[stage].card
+    ? exemplarFor(model.agents, STAGES[stage].count, highlights[stage])
+    : -1;
+  const focused = selected >= 0 ? selected : exemplar;
   useEffect(() => {
-    drive.current.selected = selected;
+    drive.current.selected = focused;
     selectedRef.current = selected;
-  }, [selected]);
+  }, [focused, selected]);
   useEffect(() => {
     drive.current.rate = snap === 'page' ? PAGED_RATE : HAND_RATE;
   }, [snap]);
@@ -313,22 +325,44 @@ export function ScrollExperience({
       }
       const labelTop = labelTopRef.current;
       const lb = stageBlend(drive.current.rail, undefined, labelBlend);
+      // one measure of narrow for the card in the column and the sheet
+      const narrow = isNarrow(stageEl.clientWidth, stageEl.clientHeight);
+      const narrowFlag = narrow ? 'true' : 'false';
+      if (stageEl.dataset.narrow !== narrowFlag)
+        stageEl.dataset.narrow = narrowFlag;
+      // A pinned card closes when the camera starts toward another scene;
+      // a pick shown in the column's card stays with its scene and fades
+      // with it.
       if (
         selectedRef.current !== -1 &&
+        (narrow || !STAGES[stageNow.current].card) &&
         lb.t > MOVING_FROM &&
         lb.t < 1 - MOVING_FROM
       )
         onSelect(-1);
-      // labels, faded with the stage on the rail (`labelsShown`)
-      const narrow = isNarrow(stageEl.clientWidth, stageEl.clientHeight);
-      const labelsOn = labelsShown(drive.current.rail, narrow);
-      const style = namesRef.current;
+      // names, in the style of the scene the camera is at (it changes at the
+      // middle of a move, where `nameShown` has both styles out), faded with
+      // the rail; a border's tag also steps aside while the camera moves,
+      // with the border the world draws
+      const style = nameStyleOf(
+        namesRef.current,
+        STAGES[lb.t < 0.5 ? lb.from : lb.to],
+        narrow
+      );
+      const still = 1 - 4 * lb.t * (1 - lb.t);
+      const shown = style
+        ? nameShown(namesRef.current, style, drive.current.rail, narrow) *
+          (style === 'border' ? still * still : 1)
+        : 0;
       for (let i = 0; i < a.labels.length; i += 1) {
         const el = labelRefs.current[i];
         const label = a.labels[i];
         if (!el) continue;
+        const drawn = style ?? '';
+        if (el.dataset.style !== drawn) el.dataset.style = drawn;
         const pinned = style !== 'float';
         if (
+          shown === 0 ||
           !label.visible ||
           label.count === 0 ||
           (pinned && !label.rimVisible)
@@ -344,10 +378,7 @@ export function ScrollExperience({
         // would show through the glass
         const behindSheet = narrow && selectedRef.current !== -1 ? 0 : 1;
         el.style.opacity = String(
-          labelsOn *
-            (1 - drive.current.recede) *
-            behindSheet *
-            facingFade(label.facing)
+          shown * behindSheet * facingFade(label.facing)
         );
         // a tag hangs from its stem over the border's highest point; a
         // border's name sits on the line itself
@@ -361,8 +392,7 @@ export function ScrollExperience({
   }, [onSelect]);
 
   const current = STAGES[stage];
-  const exemplarAgent =
-    drive.current.exemplar >= 0 ? model.agents[drive.current.exemplar] : null;
+  const focusedAgent = focused >= 0 ? model.agents[focused] : null;
   const selectedAgent = selected >= 0 ? model.agents[selected] : null;
   const last = STAGES.length - 1;
 
@@ -402,6 +432,9 @@ export function ScrollExperience({
       <div
         ref={stageRef}
         className="group/stage sticky top-12 z-10 h-[calc(100svh-3rem)] overflow-hidden bg-[#04060b]"
+        // the study's own controls cover the stage's top; the reading column
+        // keeps clear of them (on the homepage there are none)
+        style={{ '--inset-top': `${insetTop}px` } as React.CSSProperties}
         data-homepage-study-stage
       >
         <CanvasBoundary>
@@ -442,15 +475,17 @@ export function ScrollExperience({
               ref={el => {
                 labelRefs.current[project.id] = el;
               }}
-              className="absolute left-0 top-0 flex flex-col items-center whitespace-nowrap text-center opacity-0 transition-opacity duration-300 will-change-transform"
+              className="group/name absolute left-0 top-0 flex flex-col items-center whitespace-nowrap text-center opacity-0 will-change-transform"
             >
-              <ProjectName name={project.name} style={names} />
+              <ProjectName name={project.name} />
             </div>
           ))}
         </div>
 
         {/* The selected agent. Click a tile to open it, click it again,
-            anywhere else, or press Escape to close it. */}
+            anywhere else, or press Escape to close it. On a stage with the
+            agent card beside the world the card is the selection, so this
+            opens only where that card is not shown: on a narrow screen. */}
         <PinnedAgentPanel
           agent={selectedAgent}
           theme={theme}
@@ -458,6 +493,7 @@ export function ScrollExperience({
           column={panelSide(current)}
           insetTop={insetTop + 12}
           insetTopNarrow={insetTop + 12 + STAMP_CLEAR}
+          narrowOnly={current.card}
           reducedMotion={reducedMotion}
         />
 
@@ -486,7 +522,9 @@ export function ScrollExperience({
               stage={item}
               copySet={copySet}
               active={index === stage}
-              agent={index === stage ? exemplarAgent : null}
+              agent={index === stage ? focusedAgent : null}
+              accent={theme.selection}
+              reducedMotion={reducedMotion}
             />
           ))}
         </div>
@@ -536,7 +574,8 @@ function SceneSteps({
         className="pointer-events-none absolute right-11 top-0 flex h-7 items-center whitespace-nowrap font-mono text-[10px] tabular-nums tracking-[0.16em] text-white/45 transition-transform duration-500 ease-out portrait:hidden"
         style={{ transform: `translateY(${stage * 28}px)` }}
       >
-        {String(stage + 1).padStart(2, '0')} / {String(STAGES.length).padStart(2, '0')}
+        {String(stage + 1).padStart(2, '0')} /{' '}
+        {String(STAGES.length).padStart(2, '0')}
       </span>
       {/* and for a screen reader, each scene as it arrives */}
       <p className="sr-only" aria-live="polite">
@@ -612,25 +651,26 @@ function ScrollCue({
 }
 
 /**
- * A Project's name in the style the study is showing (`names.ts`). A tag is
- * a small glass label on a stem whose foot is the Project's border; under
- * Border the same label sits on the outline the globe draws, which passes
- * behind it, so the name reads as the border's own.
+ * A Project's name in every style the study draws (`names.ts`); the frame
+ * loop says which one shows, from where the camera is, so a style never
+ * changes while it can be seen. A tag is a small glass label on a stem whose
+ * foot is the Project's border; under Border the same label sits on the
+ * outline the globe draws, which passes behind it, so the name reads as the
+ * border's own; Float is the name alone.
  */
-function ProjectName({ name, style }: { name: string; style: NamesId }) {
-  if (style === 'float')
-    return <p className="text-[13px] font-medium text-white/85">{name}</p>;
+function ProjectName({ name }: { name: string }) {
   return (
     <>
-      <p className="rounded-full border border-white/20 bg-[#04060b]/70 px-2.5 py-[3px] text-[12.5px] font-medium leading-none text-white/90 shadow-[0_2px_10px_rgba(0,0,0,0.45)] backdrop-blur-[6px]">
+      <p className="hidden text-[13px] font-medium text-white/85 group-data-[style=float]/name:block">
         {name}
       </p>
-      {style === 'tag' ? (
-        <span
-          aria-hidden
-          className="h-3.5 w-px bg-gradient-to-b from-white/45 to-white/10"
-        />
-      ) : null}
+      <p className="hidden rounded-full border border-white/20 bg-[#04060b]/70 px-2.5 py-[3px] text-[12.5px] font-medium leading-none text-white/90 shadow-[0_2px_10px_rgba(0,0,0,0.45)] backdrop-blur-[6px] group-data-[style=border]/name:block group-data-[style=tag]/name:block">
+        {name}
+      </p>
+      <span
+        aria-hidden
+        className="hidden h-3.5 w-px bg-gradient-to-b from-white/45 to-white/10 group-data-[style=tag]/name:block"
+      />
     </>
   );
 }
@@ -666,29 +706,35 @@ function Panel({
   copySet,
   active,
   agent,
+  accent,
+  reducedMotion,
 }: {
   stage: Stage;
   copySet: CopySetId;
   active: boolean;
   agent: FleetAgent | null;
+  /** The product's selection colour: the card is the agent in focus. */
+  accent: string;
+  reducedMotion: boolean;
 }) {
+  // A panel fading out keeps the card it showed rather than emptying.
+  const [held, setHeld] = useState<FleetAgent | null>(agent);
+  if (agent !== null && agent !== held) setHeld(agent);
+  const shown = active ? agent : held;
   // At the foot of a portrait stage, beside the world on a landscape one.
   const placement =
     stage.panel === 'right'
-      ? 'inset-x-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] items-start text-left landscape:inset-x-auto landscape:bottom-auto landscape:right-[6vw] landscape:top-1/2 landscape:-translate-y-1/2'
+      ? 'inset-x-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] items-start text-left landscape:inset-x-auto landscape:bottom-auto landscape:right-[6vw] landscape:top-[calc(50%+var(--inset-top,0px)/2)] landscape:-translate-y-1/2'
       : stage.panel === 'left'
-        ? 'inset-x-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] items-start text-left landscape:inset-x-auto landscape:bottom-auto landscape:left-[6vw] landscape:top-1/2 landscape:-translate-y-1/2'
-        : stage.panel === 'center-top'
-          ? 'inset-x-5 top-[14vh] items-center text-center landscape:inset-x-auto landscape:left-1/2 landscape:top-[13vh] landscape:-translate-x-1/2'
-          : 'inset-x-5 top-1/2 -translate-y-1/2 items-center text-center landscape:inset-x-auto landscape:left-1/2 landscape:-translate-x-1/2';
+        ? 'inset-x-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] items-start text-left landscape:inset-x-auto landscape:bottom-auto landscape:left-[6vw] landscape:top-[calc(50%+var(--inset-top,0px)/2)] landscape:-translate-y-1/2'
+        : 'inset-x-5 top-[14vh] items-center text-center landscape:inset-x-auto landscape:left-1/2 landscape:top-[max(13vh,calc(var(--inset-top,0px)+1.25rem))] landscape:-translate-x-1/2';
   return (
     <div
       className={cn(
         'absolute flex flex-col gap-4 transition-opacity duration-500 md:gap-5',
-        // The landing's headline is two long lines; the rest read in a column.
-        // A centred absolute box shrinks to fit half the stage unless it is
-        // sized to its content, which is what wrapped "Tomorrow you will run
-        // 10,000." onto a third line.
+        // The centred headlines are long lines; the rest read in a column. A
+        // centred absolute box shrinks to fit half the stage unless it is
+        // sized to its content, which wrapped a two-line headline onto three.
         stage.panel === 'center-top'
           ? 'landscape:w-max md:max-w-[min(60rem,92vw)]'
           : 'md:max-w-[34rem]',
@@ -696,9 +742,12 @@ function Panel({
         // an invisible panel from another stage must never swallow a click
         // meant for the world under it
         active ? 'opacity-100' : 'opacity-0 [&_*]:!pointer-events-none',
-        // on a portrait screen the open agent's sheet sometimes takes the
-        // foot of the stage, where the type is, and then the type steps aside
-        'portrait:group-data-[sheet=foot]/stage:opacity-0 portrait:group-data-[sheet=foot]/stage:[&_*]:!pointer-events-none'
+        // on a portrait screen the open agent's sheet takes the end of the
+        // stage the type is not at, unless the agent is there; then the type
+        // steps aside, so the sheet is never under it
+        stage.panel === 'center-top'
+          ? 'portrait:group-data-[sheet=top]/stage:opacity-0 portrait:group-data-[sheet=top]/stage:[&_*]:!pointer-events-none'
+          : 'portrait:group-data-[sheet=foot]/stage:opacity-0 portrait:group-data-[sheet=foot]/stage:[&_*]:!pointer-events-none'
       )}
       data-study-panel={stage.id}
       aria-hidden={!active}
@@ -715,8 +764,10 @@ function Panel({
         <PanelBody
           stage={stage}
           copySet={copySet}
-          agent={agent}
+          agent={shown}
           interactive={active}
+          accent={accent}
+          reducedMotion={reducedMotion}
         />
       </div>
     </div>
@@ -728,6 +779,8 @@ function PanelBody({
   copySet,
   agent,
   interactive = true,
+  accent,
+  reducedMotion,
 }: {
   stage: Stage;
   copySet: CopySetId;
@@ -735,21 +788,33 @@ function PanelBody({
   /** Only the stage on screen may take the pointer. An invisible panel
    *  from another stage must never swallow a click meant for the world. */
   interactive?: boolean;
+  accent: string;
+  reducedMotion: boolean;
 }) {
   const copy = stage.copy[copySet];
   const isLanding = stage.id === 'landing';
-  const isDownload = stage.id === 'download';
   const last = copy.headline.length - 1;
   return (
     <>
       {stage.card && agent ? (
         <div
           className={cn(
-            'hidden landscape:block',
+            'hidden group-data-[narrow=false]/stage:block',
             interactive ? 'pointer-events-auto' : 'pointer-events-none'
           )}
         >
-          <AgentCard agent={agent} />
+          {/* a new agent in focus settles into the card, it does not cut */}
+          <style>{`@keyframes study-card-swap { from { opacity: 0.35; transform: translateY(3px) } to { opacity: 1; transform: none } }`}</style>
+          <div
+            key={agent.id}
+            style={
+              reducedMotion
+                ? undefined
+                : { animation: 'study-card-swap 220ms ease-out' }
+            }
+          >
+            <AgentCard agent={agent} accent={accent} />
+          </div>
         </div>
       ) : null}
       {copy.kicker ? (
@@ -760,8 +825,7 @@ function PanelBody({
           'text-balance font-semibold tracking-tight text-white',
           interactive ? 'pointer-events-auto' : 'pointer-events-none',
           isLanding && 'text-4xl leading-[1.05] md:text-6xl',
-          isDownload && 'text-4xl leading-[1.02] md:text-7xl',
-          !isLanding && !isDownload && 'text-[1.7rem] leading-tight md:text-4xl'
+          !isLanding && 'text-[1.7rem] leading-tight md:text-4xl'
         )}
       >
         {copy.headline.map((line, index) => (
@@ -777,7 +841,13 @@ function PanelBody({
         ))}
       </h2>
       {copy.body ? (
-        <p className="pointer-events-auto max-w-[32rem] text-pretty text-[15px] leading-relaxed text-white/70 md:text-[17px]">
+        <p
+          className={cn(
+            'pointer-events-auto max-w-[32rem] text-pretty text-[15px] leading-relaxed text-white/70 md:text-[17px]',
+            // on the landing the line under the title is the promise
+            isLanding && 'text-[17px] text-white/75 md:text-[21px]'
+          )}
+        >
           {copy.body.map(line => (
             <span key={line} className="block">
               {line}
@@ -785,15 +855,8 @@ function PanelBody({
           ))}
         </p>
       ) : null}
-      {isLanding ? (
+      {stage.cta ? (
         <DownloadCta align="center" className="pointer-events-auto pt-1" />
-      ) : null}
-      {isDownload ? (
-        <DownloadCta
-          size="close"
-          align="center"
-          className="pointer-events-auto pt-2"
-        />
       ) : null}
       {stage.id === 'third' && copySet === 'deck' ? (
         <p className="text-[12px] text-white/40">

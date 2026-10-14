@@ -179,7 +179,6 @@ export function PrismVisual({
     const breathe = reducedMotion
       ? 0.5
       : (Math.sin(anim.pulse * 2.2) + 1) * 0.5;
-    const recede = d.recede;
 
     let ghostCount = 0;
     for (let i = 0; i < tileCount; i += 1) {
@@ -244,7 +243,6 @@ export function PrismVisual({
       color
         .copy(palette.ground)
         .lerp(palette.label, tile.ring === 0 ? 0.18 : 0.08);
-      color.lerp(palette.body, recede * 0.7);
       ground.setColorAt(i, color);
 
       // Crystal and its light.
@@ -273,7 +271,7 @@ export function PrismVisual({
           1.2 +
           1.8 * w +
           (agent.status === 'needs-you' ? breathe * 0.9 * w : 0);
-        color.multiplyScalar(glow * (1 - recede * 0.6));
+        color.multiplyScalar(glow);
       } else color.setScalar(0);
       cores.setColorAt(i, color);
 
@@ -292,7 +290,6 @@ export function PrismVisual({
         dummy.updateMatrix();
         ghosts.setMatrixAt(ghostCount, dummy.matrix);
         color.copy(palette.label).multiplyScalar(0.35 + 0.35 * anim.ghost[i]);
-        color.lerp(palette.body, recede * 0.8);
         ghosts.setColorAt(ghostCount, color);
         anim.tileOfGhost[ghostCount] = i;
         ghostCount += 1;
@@ -323,10 +320,7 @@ export function PrismVisual({
       dummy.scale.set(ps, ps, ps);
       dummy.updateMatrix();
       pipMesh.setMatrixAt(p, dummy.matrix);
-      color
-        .copy(palette.status.active)
-        .multiplyScalar(1.4)
-        .lerp(palette.body, recede * 0.7);
+      color.copy(palette.status.active).multiplyScalar(1.4);
       pipMesh.setColorAt(p, color);
     }
 

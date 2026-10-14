@@ -76,8 +76,6 @@ export interface StoryDrive {
   /** Smoothed progress, written by the camera rig. Visuals blend stage
    *  states on this, through `stageBlend`. */
   rail: number;
-  /** The visual recedes behind centred type. Written by the camera rig. */
-  recede: number;
   /** How far a gesture has pushed toward the next scene before it pages,
    *  signed, -1 to 1, at a time in milliseconds (W15i). The scroll writes
    *  the reader; the camera leans by it and the page shows it. Absent

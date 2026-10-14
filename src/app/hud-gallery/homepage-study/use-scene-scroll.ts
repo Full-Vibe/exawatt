@@ -359,10 +359,7 @@ export function useSceneScroll({
       window.addEventListener('keydown', onKey);
       // how far a push has got before it pages, for the camera and the page,
       // and the landing's invitation, which is shown the same way
-      setIntent(
-        story,
-        now => (pastStory ? 0 : pager.pending(now)) + hint(now)
-      );
+      setIntent(story, now => (pastStory ? 0 : pager.pending(now)) + hint(now));
     }
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('pointerdown', stopHints, { passive: true });

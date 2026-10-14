@@ -177,7 +177,7 @@ export function AgentMaterialStudy() {
   );
   const count = state.count;
 
-  // A still story: the working stage's framing, nothing lifted, no recede.
+  // A still story: the working stage's framing, nothing lifted.
   const drive = useRef<StoryDrive>({
     progress: 1,
     base: count,
@@ -187,7 +187,6 @@ export function AgentMaterialStudy() {
     selected: -1,
     rate: 4.5,
     rail: 1,
-    recede: 0,
     moving: 0,
   });
   useEffect(() => {

@@ -16,7 +16,9 @@ describe('working motion', () => {
     expect(motion).toEqual({
       sheen: true,
       breathe: true,
+      wander: false,
       pulse: false,
+      spin: false,
       lift: 'wave',
     });
     expect(parseMotion(motionParam(motion))).toEqual(motion);
@@ -26,7 +28,9 @@ describe('working motion', () => {
     expect(parseMotion('bob')).toEqual({
       sheen: false,
       breathe: false,
+      wander: false,
       pulse: false,
+      spin: false,
       lift: 'bob',
     });
     expect(parseMotion('pulse').pulse).toBe(true);
@@ -36,11 +40,21 @@ describe('working motion', () => {
     const none = {
       sheen: false,
       breathe: false,
+      wander: false,
       pulse: false,
+      spin: false,
       lift: 'still' as const,
     };
     expect(motionParam(none)).toBe('still');
     expect(parseMotion('still')).toEqual(none);
+  });
+
+  it('reads the lantern and the turning mark alongside the rest', () => {
+    const motion = parseMotion('sheen.wander.spin.bob');
+    expect(motion.wander).toBe(true);
+    expect(motion.spin).toBe(true);
+    expect(motion.lift).toBe('bob');
+    expect(parseMotion(motionParam(motion))).toEqual(motion);
   });
 
   it('toggles one light motion and leaves the rest', () => {

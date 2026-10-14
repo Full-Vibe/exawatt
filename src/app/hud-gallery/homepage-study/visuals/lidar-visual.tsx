@@ -409,23 +409,22 @@ export function LidarVisual({
         ? present
         : THREE.MathUtils.damp(agentScale[i], present, 5, delta);
     }
-    const fade = 1 - d.recede * 0.75;
     const alphas = cloud.alphas;
     for (let p = 0; p < cloud.count; p += 1) {
       const t = cloud.tile[p];
       if (t < 0) {
-        alphas[p] = 0.5 * fade;
+        alphas[p] = 0.5;
         continue;
       }
       const agentId = cloud.agent[p];
       if (agentId >= 0) {
         const w = tileWeight[t];
-        let a = agentScale[agentId] * (0.25 + 0.75 * w) * fade;
+        let a = agentScale[agentId] * (0.25 + 0.75 * w);
         if (agentId === d.exemplar || agentId === hover.current)
           a = Math.min(1, a + 0.6);
         alphas[p] = a;
       } else {
-        alphas[p] = tileScale[t] * 0.85 * fade;
+        alphas[p] = tileScale[t] * 0.85;
       }
     }
     (geometry.attributes.pointAlpha as THREE.BufferAttribute).needsUpdate =
@@ -452,7 +451,7 @@ export function LidarVisual({
         );
       }
       pos.needsUpdate = true;
-      (scan.material as THREE.LineBasicMaterial).opacity = 0.35 * fade;
+      (scan.material as THREE.LineBasicMaterial).opacity = 0.35;
     }
 
     // Hover: nearest present agent column in screen space.

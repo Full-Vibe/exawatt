@@ -110,15 +110,16 @@ export function makeCrustMaterial(id: CrustMaterialId): CrustMaterialSpec {
       return {
         id,
         // A jelly (operator 2026-10-13: "Revisit the gummy material to make
-        // it even more gelatinous and lickable and delightfully gummy"):
-        // half clear, the rest the jelly's own colour, softly blurred
-        // through (over a dark world a clearer body only shows the dark), a
-        // wet clear coat over a smooth body, puffy edges. It wobbles too: its
-        // springs are looser (`crust-visual.tsx`).
+        // it even more gelatinous and lickable and delightfully gummy", then
+        // "slightly more transparent"): more than half clear, the rest the
+        // jelly's own colour, softly blurred through (over a dark world a
+        // clearer body only shows the dark), a wet clear coat over a smooth
+        // body, puffy edges. It wobbles too: its springs are looser
+        // (`crust-visual.tsx`).
         agent: new THREE.MeshPhysicalMaterial({
-          roughness: 0.3,
+          roughness: 0.26,
           metalness: 0,
-          transmission: 0.5,
+          transmission: 0.6,
           thickness: 0.9,
           ior: 1.4,
           attenuationColor: new THREE.Color(0xffffff),
@@ -148,14 +149,15 @@ export function makeCrustMaterial(id: CrustMaterialId): CrustMaterialSpec {
         id,
         // Frosted, with the status light inside: over a dark world there is
         // little to see through, so what reads as acrylic is the light the
-        // body diffuses from within, the way a lit sign does. A touch
-        // clearer since W15i (operator 2026-10-13: "Make acrylic slightly
-        // more translucent"): the lit cap and the depth show through a
-        // satin body with a glossier edge.
+        // body diffuses from within, the way a lit sign does. Clearer in
+        // W15i and again in W15j (operator 2026-10-13: "Make acrylic
+        // slightly more translucent", then "slightly more transparent"): the
+        // lit cap and the depth show through a satin body with a glossier
+        // edge.
         agent: new THREE.MeshPhysicalMaterial({
-          roughness: 0.4,
+          roughness: 0.34,
           metalness: 0,
-          transmission: 0.8,
+          transmission: 0.87,
           thickness: 1.0,
           ior: 1.49,
           attenuationColor: new THREE.Color(0xffffff),

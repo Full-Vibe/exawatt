@@ -41,7 +41,7 @@ interface PanelPlacement {
 }
 
 /** Wide panel width, and the most a sheet on a narrow screen takes. */
-const WIDE_WIDTH = 236;
+const WIDE_WIDTH = 300;
 const SHEET_MAX = 340;
 /** Where the panel is pinned vertically, as a share of the stage's height. */
 const PIN_Y = 0.44;
@@ -93,11 +93,19 @@ export function placePanel(input: PanelPlacementInput): PanelPlacement {
 
   if (narrow) {
     const x = clamp((stage.width - panel.width) / 2, 0, stage.width);
-    // The top first: on a phone the reading column stands at the foot, so the
-    // top is the quiet zone and the type can stay. The foot only when the
-    // tile is up there.
-    const y = covers(x, minY, panel, tile, clear) ? maxY : minY;
-    return { x, y, side: 0 };
+    // The end the reading column is not at first: on a phone a scene's
+    // column stands at the foot when the scene reads beside the world and at
+    // the top when it reads centred over it. The other end only when the
+    // tile is in the way, and when the tile is in the way at both, the end
+    // farther from it (W15j: the full agent card is tall enough on a short
+    // phone for both ends to reach the middle).
+    const first = column === 0 ? maxY : minY;
+    const second = first === minY ? maxY : minY;
+    if (!covers(x, first, panel, tile, clear)) return { x, y: first, side: 0 };
+    if (!covers(x, second, panel, tile, clear))
+      return { x, y: second, side: 0 };
+    const gap = (y: number) => Math.abs(y + panel.height / 2 - tile.y);
+    return { x, y: gap(first) >= gap(second) ? first : second, side: 0 };
   }
 
   const middle = stage.width / 2;

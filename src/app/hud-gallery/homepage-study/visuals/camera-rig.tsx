@@ -49,12 +49,11 @@ interface StageFraming {
 /** Polar and zoom move one way through the dissections and one way out to
  *  the fleet, so the camera never nods back on itself between stages. */
 const FRAMING: Record<string, StageFraming> = {
-  landing: { polar: 0.78, azimuth: 0, zoom: 0.95, drop: 0.52 },
+  landing: { polar: 0.78, azimuth: 0, zoom: 0.95, drop: 0.72 },
   working: { polar: 0.66, azimuth: 0.35, zoom: 0.84, drop: 0 },
   'needs-you': { polar: 0.62, azimuth: 0.75, zoom: 0.8, drop: 0 },
   third: { polar: 0.6, azimuth: 1.15, zoom: 0.8, drop: 0 },
-  fleet: { polar: 0.95, azimuth: 1.45, zoom: 0.84, drop: -0.04 },
-  download: { polar: 1.2, azimuth: 1.9, zoom: 1.45, drop: 0 },
+  fleet: { polar: 0.95, azimuth: 1.45, zoom: 0.9, drop: 0.24 },
 };
 
 /** On a narrow screen the reading column is under the world or over it,
@@ -67,7 +66,6 @@ const NARROW: Record<string, { zoom: number; drop: number }> = {
   'needs-you': { zoom: 1.0, drop: -0.22 },
   third: { zoom: 1.0, drop: -0.22 },
   fleet: { zoom: 0.95, drop: 0.12 },
-  download: { zoom: 1.0, drop: 0 },
 };
 
 /** Planar radius of the present fleet, tile units, with a margin ring. */
@@ -155,12 +153,11 @@ function readTable(table: Float32Array, count: number): number {
   return THREE.MathUtils.lerp(table[i0], table[i1], c - i0);
 }
 
-/** The rail-side fields of the drive, written by the rig. A plain function,
+/** The rail-side field of the drive, written by the rig. A plain function,
  *  because the drive arrives as a prop and the compiler lint forbids
  *  assigning into one directly. */
-function writeRail(d: StoryDrive, rail: number, recede: number) {
+function writeRail(d: StoryDrive, rail: number) {
   d.rail = rail;
-  d.recede = recede;
 }
 
 /** How far a drag may turn the world, radians, by mode (story, close-up).
@@ -191,8 +188,6 @@ function setFog(fog: THREE.Fog, distance: number) {
   fog.far = fog.near + FOG_RAMP;
 }
 
-/** The stage that recedes behind centred type: the last one. */
-const RECEDE_FROM = STAGES.length - 1;
 /** The world's own slow turn, radians per second: a full turn in about five
  *  minutes (operator 2026-10-13: "Slower rotation orbit"; it was 0.045). */
 const DRIFT_RATE = 0.021;
@@ -320,9 +315,7 @@ export function CameraRig({
     // asked for starts, until the move has carried the camera past it, so
     // the move goes on from the lean and never dips back first.
     const intent =
-      !reducedMotion && !closeUp && d.intent
-        ? d.intent(performance.now())
-        : 0;
+      !reducedMotion && !closeUp && d.intent ? d.intent(performance.now()) : 0;
     const holding = d.moving !== 0 && Math.sign(s.lean) === d.moving;
     if (!holding)
       s.lean = THREE.MathUtils.damp(
@@ -333,8 +326,8 @@ export function CameraRig({
       );
     const lb = leanBlend(b, s.lean, scratch.leaned);
     if (holding && lb.from === b.from && lb.t === b.t) s.lean = 0;
-    // The framing follows the leaned blend; what is present and how much
-    // the world recedes follow the story itself.
+    // The framing follows the leaned blend; what is present follows the
+    // story itself.
     const f0 = FRAMING[STAGES[lb.from].id];
     const f1 = FRAMING[STAGES[lb.to].id];
     const polar = THREE.MathUtils.lerp(f0.polar, f1.polar, lb.t);
@@ -369,15 +362,7 @@ export function CameraRig({
             panelSide(STAGES[lb.to]),
             lb.t
           );
-    writeRail(
-      d,
-      s.progress,
-      THREE.MathUtils.lerp(
-        b.from >= RECEDE_FROM ? 1 : 0,
-        b.to >= RECEDE_FROM ? 1 : 0,
-        b.t
-      )
-    );
+    writeRail(d, s.progress);
 
     // The fleet is the stage's own size at either end of the move; what is
     // present eases between them with the rail, so agents arrive in a wave

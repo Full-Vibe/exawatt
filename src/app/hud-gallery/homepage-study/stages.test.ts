@@ -61,19 +61,18 @@ describe('homepage study copy', () => {
       10,
       100,
       agentsInFleet(),
-      agentsInFleet(),
     ]);
   });
 
-  it('has no launch scene: the harness is the mark on every tile', () => {
+  it('has no launch scene, and ends on the fleet with the download over it', () => {
     expect(STAGES.map(stage => stage.id)).toEqual([
       'landing',
       'working',
       'needs-you',
       'third',
       'fleet',
-      'download',
     ]);
+    expect(STAGES[STAGES.length - 1].cta).toBe(true);
   });
 });
 

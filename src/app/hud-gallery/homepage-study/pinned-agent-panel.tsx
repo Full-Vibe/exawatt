@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * The open agent, stood where it belongs (ENG-031 W15h). Placement is
+ * The open agent, stood where it belongs (ENG-031 W15h), in the same agent
+ * card the dissections show (W15j: one card on the page, never two). Placement is
  * `panel-placement.ts`: pinned to a side of the stage, drifting a little with
  * the selected tile, never over it. This component is the motion:
  *
@@ -20,7 +21,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
-import { AgentPanel } from './agent-panel';
+import { AgentCard } from './agent-card';
 import type { FleetAgent } from './fleet-model';
 import { HEADER_PX, isNarrow } from './narrow';
 import { panelWidth, placePanel, type PanelSide } from './panel-placement';
@@ -30,6 +31,8 @@ import type { VisualAnchor } from './visual-contract';
 const IN_RATE = 24;
 const OUT_RATE = 16;
 const MOVE_RATE = 18;
+/** A stage shorter than this shows the card in its compact form. */
+const COMPACT_BELOW = 520;
 
 export function PinnedAgentPanel({
   agent,
@@ -40,6 +43,7 @@ export function PinnedAgentPanel({
   insetTopNarrow,
   insetBottom = 36,
   narrowSlack = HEADER_PX,
+  narrowOnly = false,
   reducedMotion,
 }: {
   /** The selected agent, or null. */
@@ -57,6 +61,9 @@ export function PinnedAgentPanel({
   insetBottom?: number;
   /** How much taller than wide a stage can be before it counts as narrow. */
   narrowSlack?: number;
+  /** Open only on a narrow stage: where the agent card already stands
+   *  beside the world, the card is the selection and this stays shut. */
+  narrowOnly?: boolean;
   reducedMotion: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -71,6 +78,7 @@ export function PinnedAgentPanel({
     insetTopNarrow,
     insetBottom,
     narrowSlack,
+    narrowOnly,
     reducedMotion,
   });
   useEffect(() => {
@@ -81,6 +89,7 @@ export function PinnedAgentPanel({
       insetTopNarrow,
       insetBottom,
       narrowSlack,
+      narrowOnly,
       reducedMotion,
     };
   });
@@ -109,11 +118,14 @@ export function PinnedAgentPanel({
       before = now;
       const mine = latest.current;
       const point = anchor.focusPoint;
-      const want =
-        mine.agent !== null && point !== null && anchor.focus === mine.agent.id;
       const width = host.clientWidth;
       const height = host.clientHeight;
       const narrow = isNarrow(width, height, mine.narrowSlack);
+      const want =
+        mine.agent !== null &&
+        point !== null &&
+        anchor.focus === mine.agent.id &&
+        (narrow || !mine.narrowOnly);
       const w = panelWidth(width, narrow);
       if (w !== state.width) {
         wrap.style.width = `${w}px`;
@@ -154,10 +166,16 @@ export function PinnedAgentPanel({
         state.opacity += (0 - state.opacity) * ease(OUT_RATE);
         if (state.opacity < 0.01) state.opacity = 0;
       }
-      // On a phone, when the sheet takes the foot of the stage the reading
-      // column's type steps aside (the stage's CSS reads this); at the top
-      // the two do not meet.
-      const sheet = narrow && want && state.y > height / 2 ? 'foot' : '';
+      // On a phone the stage's CSS reads which end the sheet took, and the
+      // reading column at that end steps aside; the compact card is the
+      // sheet's, the full card the side panel's.
+      const sheet =
+        narrow && want ? (state.y > height / 2 ? 'foot' : 'top') : '';
+      // the compact card where the full one would fill the stage: a phone's
+      // sheet, and any stage too short to hold it beside the agent
+      const compactFlag = narrow || height < COMPACT_BELOW ? 'true' : 'false';
+      if (wrap.dataset.compact !== compactFlag)
+        wrap.dataset.compact = compactFlag;
       if (sheet !== state.sheet) {
         state.sheet = sheet;
         if (sheet) host.dataset.sheet = sheet;
@@ -182,9 +200,26 @@ export function PinnedAgentPanel({
       role="region"
       aria-label="Selected agent"
       aria-hidden={agent === null}
-      className="pointer-events-none invisible absolute left-0 top-0 origin-center opacity-0 will-change-transform"
+      className="group/sheet pointer-events-none invisible absolute left-0 top-0 origin-center opacity-0 will-change-transform"
     >
-      {held ? <AgentPanel agent={held} theme={theme} /> : null}
+      {held ? (
+        <>
+          <AgentCard
+            agent={held}
+            accent={theme.selection}
+            className="w-full group-data-[compact=true]/sheet:hidden"
+          />
+          {/* on a phone, or a stage too short for the full card, the card's
+              compact form: the full card would reach the agent from either
+              end of the stage */}
+          <AgentCard
+            agent={held}
+            accent={theme.selection}
+            compact
+            className="hidden w-full group-data-[compact=true]/sheet:block"
+          />
+        </>
+      ) : null}
     </div>
   );
 }

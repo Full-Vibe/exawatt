@@ -26,7 +26,9 @@ describe('territory border', () => {
     // and it hugs them: no point further out than its rounded corner allows
     for (let i = 0; i < BORDER_SAMPLES; i += 1) {
       const d = Math.hypot(points[i * 2], points[i * 2 + 1]);
-      expect(d).toBeLessThanOrEqual(borderInradius(rings) / Math.cos(Math.PI / 6) + 1e-4);
+      expect(d).toBeLessThanOrEqual(
+        borderInradius(rings) / Math.cos(Math.PI / 6) + 1e-4
+      );
       expect(d).toBeGreaterThanOrEqual(borderInradius(rings) - 1e-4);
     }
   });

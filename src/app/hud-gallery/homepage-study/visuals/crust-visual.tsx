@@ -52,8 +52,8 @@ import type { StatusLightState } from '@/components/status-light/protocol';
 import { fleetAt, sourceAdapterId, type FleetModel } from '../fleet-model';
 import { isNarrow } from '../narrow';
 import { planeToSphere, SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
-import { facingFade } from '../names';
-import { labelsShown, stageBlend } from '../stages';
+import { facingFade, nameShown, nameStyleOf } from '../names';
+import { stageBlend, STAGES } from '../stages';
 import { BORDER_SAMPLES, writeBorder } from '../territory';
 import { usePressSound } from '../use-press-sound';
 import type { LabelAnchor, VisualProps } from '../visual-contract';
@@ -69,7 +69,7 @@ import {
 } from './crust-shape';
 import { crustSignal } from './crust-signal';
 import {
-  addWorkAttribute,
+  addWorkAttributes,
   makeSurfaceLightUniforms,
   sheenPhase,
   turnSurfaceLight,
@@ -156,7 +156,7 @@ const SPRING_STEP = 1 / 120;
  *  (operator 2026-10-12: "more snappy and less mushy"), yet nothing is a
  *  cut. */
 const WEIGHT_RATE = 9;
-const ARRIVE_RATE = 9;
+const ARRIVE_RATE = 11;
 const AGENT_RATE = 8;
 const STATUS_RATE = 14;
 const SLOT_HOVER_RATE = 16;
@@ -182,6 +182,32 @@ const WAVE_LIFT = 0.085;
 const WAVE_GLOW = 0.12;
 const PULSE_PER_SECOND = 0.36;
 const PULSE_REACH = 0.36;
+/** Arriving and leaving (W15j, operator 2026-10-13, on the move from ten
+ *  agents to one: "the hex tiles kind of diminishing and getting really
+ *  small. They turn into dots. That kind of looks bad and takes too long"):
+ *  a tile rises out of the globe and sinks back into it, giving up only a
+ *  little of its width, instead of shrinking to a dot; the globe hides what
+ *  has sunk. `SINK_CLEAR` takes the tallest mark below the surface. */
+const FOOT_MIN = 0.72;
+const SINK_CLEAR = 0.3;
+/** Wander (W15j): the light inside goes round the tile about once in five
+ *  seconds, out between the lit cap and the wall where a clear body shows
+ *  it, drifting a little in and out as it goes, and lights the surface
+ *  nearest it; the cap and the body give up some of their own light so the
+ *  moving one reads. Under the Lamp signal the glow under the tile goes
+ *  round with it. */
+const WANDER_TURN = 1.25;
+const WANDER_REACH = 0.55;
+const WANDER_GLOW = 1;
+const WANDER_CAP = 0.85;
+const WANDER_SPILL = 1.4;
+/** The wandering light's own size and brightness, in tile units. */
+const ORB_RADIUS = 0.16;
+const ORB_GLOW = 2.4;
+/** Spin (W15j): the harness mark turns once in about five seconds, and when
+ *  the agent stops working it comes back to face the reader. */
+const SPIN_RATE = 1.25;
+const SPIN_SETTLE = 5;
 /** Below this an agent is drawn as ground; a tile this small is not drawn. */
 const AGENT_MIN = 0.02;
 const SCALE_MIN = 0.004;
@@ -203,6 +229,8 @@ const normal = new THREE.Vector3();
 const side = new THREE.Vector3();
 const forward = new THREE.Vector3();
 const yaw = new THREE.Quaternion();
+const spinTurn = new THREE.Quaternion();
+const origin = new THREE.Vector3();
 const yAxis = new THREE.Vector3(0, 1, 0);
 const point = { x: 0, y: 0 };
 const WHITE = new THREE.Color(0xffffff);
@@ -255,6 +283,8 @@ function makeAnim(tileCount: number, partCount: number) {
     scale: new Float32Array(tileCount),
     lift: new Float32Array(tileCount),
     liftVelocity: new Float32Array(tileCount),
+    /** How far a working agent's mark has turned (Spin), radians. */
+    spin: new Float32Array(tileCount),
     /** Height share the tile is squeezed (below 0) or stretched (above). */
     squash: new Float32Array(tileCount),
     squashVelocity: new Float32Array(tileCount),
@@ -287,10 +317,12 @@ function makeAnim(tileCount: number, partCount: number) {
     pressY: 0,
     pressTouch: false,
     pressClock: 0,
-    /** The open agent's ring: its tile, and how far it has eased in. */
+    /** The open agent's ring: its tile, and how far it has eased in; and
+     *  the ring it moved from, easing out where it was. */
     ringTile: -1,
     ring: 0,
-    lastSelected: -1,
+    fadingTile: -1,
+    fading: 0,
   };
 }
 
@@ -350,7 +382,7 @@ function flush(mesh: THREE.InstancedMesh, count: number) {
 
 function flushWork(attribute: THREE.InstancedBufferAttribute, count: number) {
   if (count === 0) return;
-  attribute.addUpdateRange(0, count * 4);
+  attribute.addUpdateRange(0, count * attribute.itemSize);
   attribute.needsUpdate = true;
 }
 
@@ -400,7 +432,10 @@ function easeBorders(
   rings: Float32Array,
   fades: Float32Array,
   delta: number,
-  reducedMotion: boolean
+  reducedMotion: boolean,
+  /** How much the borders show: while they cannot be seen they take their
+   *  new size at once, so a border never morphs on screen (W15j). */
+  shown: number
 ) {
   for (const project of model.projects) {
     const present = project.first < count;
@@ -409,7 +444,7 @@ function easeBorders(
       const last = Math.min(count, project.first + project.count) - 1;
       const target = model.agents[last].ring + 1;
       rings[p] =
-        reducedMotion || fades[p] < 0.01
+        reducedMotion || fades[p] < 0.01 || shown < 0.02
           ? target
           : THREE.MathUtils.damp(rings[p], target, BORDER_RATE, delta);
     }
@@ -447,10 +482,7 @@ function drawBorders(
     const p = project.id;
     const base = p * BORDER_SAMPLES * 2;
     const alpha =
-      BORDER_ALPHA *
-      fades[p] *
-      shown *
-      facingFade(labels[p]?.facing ?? 0);
+      BORDER_ALPHA * fades[p] * shown * facingFade(labels[p]?.facing ?? 0);
     const r = ink.r * alpha;
     const g = ink.g * alpha;
     const b = ink.b * alpha;
@@ -504,6 +536,7 @@ export function CrustVisual({
   expandable = true,
   sound = false,
   names = 'float',
+  closeUp = false,
   onHoverChange,
   onSelect,
 }: VisualProps) {
@@ -539,7 +572,9 @@ export function CrustVisual({
   const rimsRef = useRef<THREE.InstancedMesh>(null);
   const glowsRef = useRef<THREE.InstancedMesh>(null);
   const pulsesRef = useRef<THREE.InstancedMesh>(null);
+  const orbsRef = useRef<THREE.InstancedMesh>(null);
   const selectionRef = useRef<THREE.Mesh>(null);
+  const fadingRingRef = useRef<THREE.Mesh>(null);
   const bordersRef = useRef<THREE.Mesh>(null);
 
   // Per-tile animated state, preallocated once and mutated in place. It
@@ -573,12 +608,12 @@ export function CrustVisual({
   );
   const agentGeometry = useMemo(() => {
     const g = tilePrismGeometry(TILE_RADIUS, TILE_HEIGHT, corner, spec.edge);
-    addWorkAttribute(g, tileCount);
+    addWorkAttributes(g, tileCount);
     return g;
   }, [spec.edge, corner, tileCount]);
   const coreGeometry = useMemo(() => {
     const g = tilePrismGeometry(0.42, 1, corner, null);
-    addWorkAttribute(g, tileCount);
+    addWorkAttributes(g, tileCount);
     return g;
   }, [corner, tileCount]);
   const coreMaterial = useMemo(
@@ -661,6 +696,9 @@ export function CrustVisual({
     };
   }, [model]);
   // Pulse: a thin ring that leaves the top edge.
+  // Wander's light, a small bright orb that drifts inside a clear body: the
+  // glass refracts it, so it reads as a glow moving about within the tile.
+  const orbGeometry = useMemo(() => new THREE.SphereGeometry(1, 16, 12), []);
   const pulseGeometry = useMemo(
     () => tileRingGeometry(TILE_RADIUS + 0.02, TILE_RADIUS - 0.05, corner),
     [corner]
@@ -692,6 +730,7 @@ export function CrustVisual({
       rimGeometry.dispose();
       selectionGeometry.dispose();
       pulseGeometry.dispose();
+      orbGeometry.dispose();
       lampGeometry.dispose();
     },
     [
@@ -701,6 +740,7 @@ export function CrustVisual({
       rimGeometry,
       selectionGeometry,
       pulseGeometry,
+      orbGeometry,
       lampGeometry,
     ]
   );
@@ -824,6 +864,10 @@ export function CrustVisual({
     const agent = agentAt(e);
     if (agent < 0) return;
     e.stopPropagation();
+    // a click lands with a jolt, which a jelly feels most; a focus that
+    // moves by itself (a new scene, Escape) does not
+    const t = tileOfAgent[agent];
+    if (t >= 0) anim.squashVelocity[t] += kicks.select;
     onSelect?.(agent);
   };
   const missTile = () => onSelect?.(-1);
@@ -888,7 +932,9 @@ export function CrustVisual({
     const rims = rimsRef.current;
     const glows = glowsRef.current;
     const pulses = pulsesRef.current;
+    const orbs = orbsRef.current;
     const selection = selectionRef.current;
+    const fadingRing = fadingRingRef.current;
     const partMeshes = partRefs.current;
     if (
       !ground ||
@@ -900,7 +946,9 @@ export function CrustVisual({
       !rims ||
       !glows ||
       !pulses ||
-      !selection
+      !orbs ||
+      !selection ||
+      !fadingRing
     )
       return;
     for (let p = 0; p < parts.length; p += 1) if (!partMeshes[p]) return;
@@ -909,6 +957,12 @@ export function CrustVisual({
     ) as THREE.InstancedBufferAttribute;
     const coreWork = cores.geometry.getAttribute(
       'aWork'
+    ) as THREE.InstancedBufferAttribute;
+    const wanderLight = agents.geometry.getAttribute(
+      'aWander'
+    ) as THREE.InstancedBufferAttribute;
+    const coreWander = cores.geometry.getAttribute(
+      'aWander'
     ) as THREE.InstancedBufferAttribute;
 
     const shown = shownRef.current;
@@ -919,9 +973,16 @@ export function CrustVisual({
     anim.clock += delta;
     const clock = anim.clock;
     const attention = reducedMotion ? 0 : (Math.sin(clock * 2.2) + 1) * 0.5;
-    const recede = d.recede;
     // Stage states blend on the rail, with the camera.
     const b = stageBlend(d.rail, undefined, blendScratch);
+    // Where a border is drawn the ring of slots beyond each Project would sit
+    // across it, so only the slots inside the land are drawn there.
+    const outlined =
+      nameStyleOf(
+        names,
+        STAGES[b.t < 0.5 ? b.from : b.to],
+        isNarrow(size.width, size.height)
+      ) === 'border';
     const h0 = d.highlights[b.from] ?? null;
     const h1 = d.highlights[b.to] ?? null;
     const lifted = THREE.MathUtils.lerp(h0 ? 1 : 0, h1 ? 1 : 0, b.t);
@@ -962,19 +1023,22 @@ export function CrustVisual({
     let rimCount = 0;
     let glowCount = 0;
     let pulseCount = 0;
-    // A click lands with a jolt, which a jelly feels most.
-    if (d.selected !== anim.lastSelected) {
-      anim.lastSelected = d.selected;
-      const t = d.selected >= 0 ? tileOfAgent[d.selected] : -1;
-      if (t >= 0) anim.squashVelocity[t] += kicks.select;
-    }
-    // The open agent's ring eases in where it opened and out where it closed.
+    let orbCount = 0;
+    // The open agent's ring eases in where it opened and out where it
+    // closed; when the focus moves, the old ring eases out where it was.
     const selectedTile =
       d.selected >= 0 && d.selected < at.count ? tileOfAgent[d.selected] : -1;
     if (selectedTile >= 0 && selectedTile !== anim.ringTile) {
+      if (anim.ringTile >= 0 && anim.ring > 0.02) {
+        anim.fadingTile = anim.ringTile;
+        anim.fading = anim.ring;
+      }
       anim.ringTile = selectedTile;
       anim.ring = 0;
     }
+    anim.fading = reducedMotion
+      ? 0
+      : THREE.MathUtils.damp(anim.fading, 0, RING_RATE, delta);
     anim.ring = reducedMotion
       ? selectedTile >= 0
         ? 1
@@ -986,6 +1050,7 @@ export function CrustVisual({
           delta
         );
     selection.visible = false;
+    fadingRing.visible = false;
     anim.partCount.fill(0);
     for (let i = 0; i < tileCount; i += 1) {
       const tile = model.tiles[i];
@@ -1056,6 +1121,23 @@ export function CrustVisual({
       const working =
         agent !== null && agent.status === 'active' && moving && a > 0.5;
       const phase = agent ? agent.id * 0.9 : 0;
+      // Wander: where the light inside is, in the tile's own plane.
+      const wandering = working && motion.wander;
+      const wanderAngle = clock * WANDER_TURN + phase * 2.1;
+      const wanderReach =
+        WANDER_REACH * (0.86 + 0.14 * Math.sin(clock * 0.83 + phase));
+      const lightX = wandering ? Math.cos(wanderAngle) * wanderReach : 0;
+      const lightY = wandering ? Math.sin(wanderAngle) * wanderReach : 0;
+      // Spin: the mark turns while it works and comes home after.
+      if (working && motion.spin)
+        anim.spin[i] = (anim.spin[i] + delta * SPIN_RATE) % (Math.PI * 2);
+      else if (anim.spin[i] !== 0) {
+        const home = Math.round(anim.spin[i] / (Math.PI * 2)) * (Math.PI * 2);
+        anim.spin[i] = reducedMotion
+          ? home
+          : THREE.MathUtils.damp(anim.spin[i], home, SPIN_SETTLE, delta);
+        if (Math.abs(anim.spin[i] - home) < 1e-3) anim.spin[i] = 0;
+      }
       // Wave's phase is where the tile sits, so it travels; with Wave on,
       // a breath rides it.
       const wavePhase = clock * WAVE_RATE - (place.x * 0.5 + place.y * 0.32);
@@ -1093,9 +1175,13 @@ export function CrustVisual({
                 : 0.08;
         liftTarget *= 0.4 + 0.6 * weightTarget;
         liftTarget += 0.25 * lifted * weightTarget;
-        if (tile.agent === d.exemplar) liftTarget += 0.2;
+        // the stage's exemplar stands up; the agent in focus stands taller
+        // (and is often the exemplar: the two do not stack)
+        liftTarget += Math.max(
+          tile.agent === d.exemplar ? 0.2 : 0,
+          tile.agent === d.selected ? SELECT_LIFT : 0
+        );
         if (tile.agent === anim.hover) liftTarget += HOVER_LIFT;
-        if (tile.agent === d.selected) liftTarget += SELECT_LIFT;
         // a key goes down from wherever it stood, and bottoms out
         if (tile.agent === pressShown) {
           liftTarget = Math.max(0, liftTarget - PRESS_DEPTH);
@@ -1150,15 +1236,21 @@ export function CrustVisual({
       // Under Border the outline is the Project's edge; the ring of slots
       // beyond it would sit across the line, so only the slots inside it
       // are drawn.
-      const ghostTarget = isGhost && (present || names !== 'border') ? 1 : 0;
+      const ghostTarget = isGhost && (present || !outlined) ? 1 : 0;
       anim.ghost[i] = reducedMotion
         ? ghostTarget
         : THREE.MathUtils.damp(anim.ghost[i], ghostTarget, 7, delta);
       normal.copy(place.position).sub(SPHERE_CENTER).normalize();
+      // Arriving and leaving: the tile rises out of the globe or sinks into
+      // it, everything that stands on it with it.
+      const foot = FOOT_MIN + (1 - FOOT_MIN) * s;
+      origin
+        .copy(place.position)
+        .addScaledVector(normal, -(1 - s) * (bodyHeight + SINK_CLEAR));
       if (anim.ghost[i] > 0.02) {
         const g = anim.ghost[i];
         dummy.position
-          .copy(place.position)
+          .copy(present ? origin : place.position)
           .addScaledVector(normal, present ? bodyTop + 0.04 : 0.04);
         dummy.quaternion.copy(place.quaternion);
         const gs = g * (1 + 0.05 * slotHover - 0.05 * slotPress);
@@ -1170,7 +1262,6 @@ export function CrustVisual({
           .multiplyScalar(
             (0.55 + 0.45 * g) * (1 + 0.9 * slotHover + 0.4 * slotPress)
           );
-        color.lerp(palette.body, recede * 0.8);
         ghosts.setColorAt(ghostCount, color);
         if (slots) {
           slots.setMatrixAt(ghostCount, dummy.matrix);
@@ -1191,13 +1282,13 @@ export function CrustVisual({
       // The body: territory in the ground mesh, agents in the body mesh,
       // lifted along the normal so the tile grows outward from the sphere.
       dummy.position
-        .copy(place.position)
+        .copy(origin)
         .addScaledVector(normal, (bodyHeight - TILE_HEIGHT) / 2);
       dummy.quaternion.copy(place.quaternion);
 
       if (!agent) {
         anim.statusReady[i] = 0;
-        dummy.scale.set(s, s * thickness, s);
+        dummy.scale.set(foot, thickness, foot);
         dummy.updateMatrix();
         ground.setMatrixAt(groundCount, dummy.matrix);
         color.copy(palette.ground);
@@ -1205,14 +1296,13 @@ export function CrustVisual({
         color.lerp(palette.groundEdge, tile.ring === 0 ? 0.3 : 0.12);
         color.lerp(FROST, spec.groundPale);
         color.lerp(palette.label, 0.08 * slotHover);
-        color.lerp(palette.body, recede * 0.7);
         ground.setColorAt(groundCount, color);
         groundCount += 1;
         continue;
       }
 
-      const wide = s * pinch;
-      dummy.scale.set(wide, s * thickness, wide);
+      const wide = foot * pinch;
+      dummy.scale.set(wide, thickness, wide);
       dummy.updateMatrix();
 
       // An agent. Its status colour eases toward the new one on a change.
@@ -1236,7 +1326,7 @@ export function CrustVisual({
 
       // How alive the tile is: arrival and being an agent, for everything
       // that stands on it; and how wide it stands this frame.
-      const sa = s * a;
+      const sa = foot * a;
       const sw = sa * pinch;
 
       agents.setMatrixAt(agentCount, dummy.matrix);
@@ -1251,25 +1341,24 @@ export function CrustVisual({
       if (tile.agent === pressShown) color.lerp(palette.label, 0.05);
       else if (tile.agent === anim.hover || tile.agent === d.selected)
         color.lerp(palette.label, 0.12);
-      color.lerp(palette.body, recede * 0.7);
       // fade to ground as the agent leaves, toward the ground's own colour
       if (a < 1) {
         groundColor
           .copy(palette.ground)
           .lerp(palette.groundEdge, tile.ring === 0 ? 0.3 : 0.12)
-          .lerp(FROST, spec.groundPale)
-          .lerp(palette.body, recede * 0.7);
+          .lerp(FROST, spec.groundPale);
         color.lerp(groundColor, 1 - a);
       }
       agents.setColorAt(agentCount, color);
       // the light on its surface: the sheen's phase and strength, and the
       // glow of its own colour a breath or a wave gives it
-      const sheenStrength =
-        working && motion.sheen ? 0.9 * (0.5 + 0.5 * w) * (1 - recede * 0.7) : 0;
-      const sheenAt = sheenStrength > 0 ? sheenPhase(clock, agent.id * 0.173) : 0;
-      const glow =
-        (breath * BREATH_GLOW + waveLight * WAVE_GLOW) * w * (1 - recede * 0.7);
+      const sheenStrength = working && motion.sheen ? 0.9 * (0.5 + 0.5 * w) : 0;
+      const sheenAt =
+        sheenStrength > 0 ? sheenPhase(clock, agent.id * 0.173) : 0;
+      const glow = (breath * BREATH_GLOW + waveLight * WAVE_GLOW) * w;
       work.setXYZW(agentCount, sheenAt, sheenStrength, glow, 0);
+      const lightGlow = wandering ? WANDER_GLOW * (0.5 + 0.5 * w) : 0;
+      wanderLight.setXYZ(agentCount, lightX, lightY, lightGlow);
       agentCount += 1;
 
       // Where things stand: the face the marks and lamps sit on. In the
@@ -1281,7 +1370,7 @@ export function CrustVisual({
       if (spec.core) {
         const capHeight = bodyHeight * CAP_SHARE + CAP_PROUD;
         dummy.position
-          .copy(place.position)
+          .copy(origin)
           .addScaledVector(normal, bodyTop + CAP_PROUD - capHeight / 2);
         dummy.quaternion.copy(place.quaternion);
         dummy.scale.set(sw * 0.9, sa * capHeight, sw * 0.9);
@@ -1294,11 +1383,28 @@ export function CrustVisual({
             (agent.status === 'needs-you' ? attention * 0.8 * w : 0) +
             breath * 0.6 +
             waveLight * 0.25) *
-            (1 - recede * 0.6)
+            (wandering ? WANDER_CAP : 1)
         );
         cores.setColorAt(coreCount, color);
         coreWork.setXYZW(coreCount, sheenAt, sheenStrength, 0, 0);
+        coreWander.setXYZ(coreCount, lightX, lightY, lightGlow);
         coreCount += 1;
+        // the wandering light itself, inside the clear body, beside the cap
+        if (wandering) {
+          side.set(lightX, 0, lightY).applyQuaternion(place.quaternion);
+          dummy.position
+            .copy(origin)
+            .add(side)
+            .addScaledVector(normal, bodyTop - bodyHeight * 0.42);
+          const r = sa * ORB_RADIUS;
+          dummy.scale.set(r, r, r);
+          dummy.updateMatrix();
+          orbs.setMatrixAt(orbCount, dummy.matrix);
+          color.copy(statusColor).lerp(WHITE, 0.35);
+          color.multiplyScalar(ORB_GLOW * (0.5 + 0.5 * w));
+          orbs.setColorAt(orbCount, color);
+          orbCount += 1;
+        }
       }
 
       // The harness mark, facing the camera, part by part.
@@ -1306,6 +1412,10 @@ export function CrustVisual({
       if (markIndex >= 0) {
         const onCoin = mark === 'coin';
         dummy.quaternion.copy(place.quaternion).multiply(yaw);
+        if (anim.spin[i] !== 0)
+          dummy.quaternion.multiply(
+            spinTurn.setFromAxisAngle(yAxis, anim.spin[i])
+          );
         const ms = sw * (onCoin ? MARK_SIZE * 0.78 : MARK_SIZE);
         for (let p = 0; p < parts.length; p += 1) {
           const part = parts[p];
@@ -1314,7 +1424,7 @@ export function CrustVisual({
           const slot = anim.partCount[p];
           anim.partCount[p] = slot + 1;
           dummy.position
-            .copy(place.position)
+            .copy(origin)
             .addScaledVector(
               normal,
               faceTop +
@@ -1332,24 +1442,23 @@ export function CrustVisual({
             color.copy(onCoin || brightFace ? INK : PAPER);
             color.lerp(statusColor, INK_TINT);
             if (mark === 'lit' && !onCoin && !brightFace)
-              color.multiplyScalar((0.62 + 0.38 * w) * (1 - recede * 0.6));
+              color.multiplyScalar(0.62 + 0.38 * w);
           } else {
             color.copy(tone);
           }
           // a mark steps back with its agent, and with the world behind type
-          color.lerp(palette.dim, Math.min(1, (1 - w) * 0.5 + recede * 0.5));
+          color.lerp(palette.dim, (1 - w) * 0.5);
           mesh.setColorAt(slot, color);
         }
         if (onCoin) {
           dummy.position
-            .copy(place.position)
+            .copy(origin)
             .addScaledVector(normal, faceTop + LIFT_OFF + COIN_HEIGHT / 2);
           dummy.quaternion.copy(place.quaternion);
           dummy.scale.set(sw, sa, sw);
           dummy.updateMatrix();
           coins.setMatrixAt(coinCount, dummy.matrix);
           color.copy(COIN).lerp(palette.dim, (1 - w) * 0.5);
-          color.lerp(palette.body, recede * 0.7);
           coins.setColorAt(coinCount, color);
           coinCount += 1;
         }
@@ -1362,9 +1471,7 @@ export function CrustVisual({
       const lampOn = !(marked && markIndex >= 0 && (sig.rim || sig.bodyStatus));
       if (lampOn) {
         const beside = marked && markIndex >= 0;
-        dummy.position
-          .copy(place.position)
-          .addScaledVector(normal, faceTop + LIFT_OFF);
+        dummy.position.copy(origin).addScaledVector(normal, faceTop + LIFT_OFF);
         dummy.quaternion.copy(place.quaternion).multiply(yaw);
         if (beside) {
           side.set(0, 0, 0.6 * pinch).applyQuaternion(dummy.quaternion);
@@ -1383,9 +1490,7 @@ export function CrustVisual({
           0.2 * w +
           (agent.status === 'needs-you' ? attention * 0.25 * w : 0);
         color.lerp(WHITE, Math.min(0.6, lit * spec.inlayGlow));
-        color.multiplyScalar(
-          (0.75 + 0.35 * w + breath * 0.25) * (1 - recede * 0.6)
-        );
+        color.multiplyScalar(0.75 + 0.35 * w + breath * 0.25);
         // a quiet mark when the signal lives elsewhere on the tile
         if (sig.glyphStatus < 1)
           color.copy(palette.neutral).lerp(palette.label, 0.22 + 0.1 * w);
@@ -1395,20 +1500,17 @@ export function CrustVisual({
 
       // Rim: the status as a lit band around the top edge.
       if (sig.rim) {
-        dummy.position
-          .copy(place.position)
-          .addScaledVector(normal, bodyTop - 0.09);
+        dummy.position.copy(origin).addScaledVector(normal, bodyTop - 0.09);
         dummy.quaternion.copy(place.quaternion);
         dummy.scale.set(sw, 1, sw);
         dummy.updateMatrix();
         rims.setMatrixAt(rimCount, dummy.matrix);
         color.copy(statusColor);
         color.multiplyScalar(
-          (0.45 +
+          0.45 +
             0.55 * w +
             (agent.status === 'needs-you' ? attention * 0.35 * w : 0) +
-            breath * 0.3) *
-            (1 - recede * 0.6)
+            breath * 0.3
         );
         color.lerp(palette.dim, (1 - w) * 0.6);
         rims.setColorAt(rimCount, color);
@@ -1417,19 +1519,26 @@ export function CrustVisual({
 
       // Lamp: a glow under the tile.
       if (sig.underglow) {
-        dummy.position.copy(place.position).addScaledVector(normal, 0.06);
+        dummy.position.copy(origin).addScaledVector(normal, 0.06);
         dummy.quaternion.copy(place.quaternion);
+        // under Wander the light under the tile goes round with the one in it
+        if (wandering) {
+          side
+            .set(lightX * WANDER_SPILL, 0, lightY * WANDER_SPILL)
+            .applyQuaternion(place.quaternion);
+          dummy.position.add(side);
+        }
         const gs = sa * (0.8 + 0.3 * w + attention * 0.08 * w + breath * 0.1);
         dummy.scale.set(gs, 1, gs);
         dummy.updateMatrix();
         glows.setMatrixAt(glowCount, dummy.matrix);
         color.copy(statusColor);
         color.multiplyScalar(
-          (0.2 +
+          0.2 +
             0.5 * w +
             (agent.status === 'needs-you' ? attention * 0.3 * w : 0) +
-            breath * 0.25) *
-            (1 - recede * 0.7)
+            breath * 0.25 +
+            (wandering ? 0.2 * w : 0)
         );
         glows.setColorAt(glowCount, color);
         glowCount += 1;
@@ -1440,7 +1549,7 @@ export function CrustVisual({
       if (working && motion.pulse) {
         const ph = (clock * PULSE_PER_SECOND + phase * 0.37) % 1;
         dummy.position
-          .copy(place.position)
+          .copy(origin)
           .addScaledVector(normal, faceTop + LIFT_OFF * 3);
         dummy.quaternion.copy(place.quaternion);
         const ps = sw * (0.94 + ph * PULSE_REACH);
@@ -1449,9 +1558,7 @@ export function CrustVisual({
         pulses.setMatrixAt(pulseCount, dummy.matrix);
         const fade = (1 - ph) * (1 - ph);
         color.copy(statusColor).lerp(WHITE, 0.3);
-        color.multiplyScalar(
-          fade * Math.min(1, ph * 8) * (0.1 + 0.12 * w) * (1 - recede * 0.7)
-        );
+        color.multiplyScalar(fade * Math.min(1, ph * 8) * (0.1 + 0.12 * w));
         pulses.setColorAt(pulseCount, color);
         pulseCount += 1;
       }
@@ -1461,12 +1568,21 @@ export function CrustVisual({
       if (i === anim.ringTile && anim.ring > 0.01 && isAgent) {
         selection.visible = true;
         selection.position
-          .copy(place.position)
+          .copy(origin)
           .addScaledVector(normal, TILE_HEIGHT / 2 + 0.05);
         selection.quaternion.copy(place.quaternion);
-        const rs = s * (0.9 + 0.1 * anim.ring);
+        const rs = foot * (0.9 + 0.1 * anim.ring);
         selection.scale.set(rs, 1, rs);
         (selection.material as THREE.MeshBasicMaterial).opacity = anim.ring;
+      }
+      if (i === anim.fadingTile && anim.fading > 0.01 && isAgent) {
+        fadingRing.visible = true;
+        fadingRing.position
+          .copy(origin)
+          .addScaledVector(normal, TILE_HEIGHT / 2 + 0.05);
+        fadingRing.quaternion.copy(place.quaternion);
+        fadingRing.scale.set(foot, 1, foot);
+        (fadingRing.material as THREE.MeshBasicMaterial).opacity = anim.fading;
       }
     }
     for (let g = ghostCount; g < tileCount; g += 1) anim.tileOfGhost[g] = -1;
@@ -1481,8 +1597,11 @@ export function CrustVisual({
     flush(rims, rimCount);
     flush(glows, glowCount);
     flush(pulses, pulseCount);
+    flush(orbs, orbCount);
     flushWork(work, agentCount);
     flushWork(coreWork, coreCount);
+    flushWork(wanderLight, agentCount);
+    flushWork(coreWander, coreCount);
     for (let p = 0; p < parts.length; p += 1)
       flush(partMeshes[p] as THREE.InstancedMesh, anim.partCount[p]);
 
@@ -1504,13 +1623,27 @@ export function CrustVisual({
     } else anchors.clearFocus();
     // Each Project's land, eased as the fleet grows; the names pinned to it
     // and, under Border, the outline itself.
+    // The borders show on the stages that draw them, and step aside while
+    // the camera moves between stages: a border that shrank or grew on
+    // screen as the fleet changed size was most of what made a move busy
+    // (operator 2026-10-13: "Too many things are happening with the
+    // circle").
+    const still = 1 - 4 * b.t * (1 - b.t);
+    const borderShown =
+      nameShown(names, 'border', d.rail, isNarrow(size.width, size.height)) *
+      still *
+      still;
     easeBorders(
       model,
-      at.count,
+      // the size of the land at the nearer end of the move: it changes at
+      // the middle, where the border is out of sight, not on screen as the
+      // agents arrive
+      closeUp ? at.count : STAGES[b.t < 0.5 ? b.from : b.to].count,
       borderState.rings,
       borderState.fades,
       delta,
-      reducedMotion
+      reducedMotion,
+      borderShown
     );
     writeLabelAnchors(
       model,
@@ -1533,9 +1666,7 @@ export function CrustVisual({
         centerTiles(model),
         borderState.rings,
         borderState.fades,
-        // as the names show: on their stages, facing the camera, in front
-        // of the world rather than behind type
-        labelsShown(d.rail, isNarrow(size.width, size.height)) * (1 - recede),
+        borderShown,
         anchors.labels,
         state.camera,
         palette.label,
@@ -1691,6 +1822,15 @@ export function CrustVisual({
       </instancedMesh>
 
       <instancedMesh
+        ref={orbsRef}
+        args={[orbGeometry, undefined, tileCount]}
+        raycast={() => null}
+        frustumCulled={false}
+      >
+        <meshBasicMaterial toneMapped={false} />
+      </instancedMesh>
+
+      <instancedMesh
         ref={pulsesRef}
         args={[pulseGeometry, undefined, tileCount]}
         raycast={() => null}
@@ -1705,7 +1845,7 @@ export function CrustVisual({
         />
       </instancedMesh>
 
-      {names === 'border' ? (
+      {names === 'border' || names === 'auto' ? (
         <mesh
           ref={bordersRef}
           geometry={borderGeometry}
@@ -1727,6 +1867,20 @@ export function CrustVisual({
           through the lifted body above it as a trail of dots. */}
       <mesh
         ref={selectionRef}
+        geometry={selectionGeometry}
+        raycast={() => null}
+        frustumCulled={false}
+        visible={false}
+      >
+        <meshBasicMaterial
+          color={palette.selection}
+          toneMapped={false}
+          transparent
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh
+        ref={fadingRingRef}
         geometry={selectionGeometry}
         raycast={() => null}
         frustumCulled={false}

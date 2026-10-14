@@ -243,7 +243,6 @@ export function MercuryVisual({
     const breathe = reducedMotion
       ? 0.5
       : (Math.sin(anim.pulse * 2.4) + 1) * 0.5;
-    const recede = d.recede;
 
     for (let i = 0; i < model.agents.length; i += 1) {
       const agent = model.agents[i];
@@ -272,7 +271,7 @@ export function MercuryVisual({
       const toUnit = (v: number) => v / worldPerUnit;
       clearPoolField(field);
       // the sheet: every present territory tile, soft-edged, combined by max
-      sheetColor.copy(palette.label).lerp(palette.body, 0.55 + recede * 0.35);
+      sheetColor.copy(palette.label).lerp(palette.body, 0.55);
       for (const ti of pool.tiles) {
         const tile = model.tiles[ti];
         if (!at.tilePresent(tile)) continue;
@@ -309,7 +308,7 @@ export function MercuryVisual({
                 : agent.status === 'fault'
                   ? 0.5
                   : 0.32;
-        statusColor(palette, agent.status, w).lerp(palette.body, recede * 0.6);
+        statusColor(palette, agent.status, w);
         splatBump(
           field,
           toUnit(x - pool.cx) + 0.5,
@@ -384,8 +383,7 @@ export function MercuryVisual({
         ghosts.setMatrixAt(ghostCount, dummy.matrix);
         color
           .copy(palette.label)
-          .multiplyScalar(0.3 + 0.3 * ghostAnim.current[i])
-          .lerp(palette.body, recede * 0.8);
+          .multiplyScalar(0.3 + 0.3 * ghostAnim.current[i]);
         ghosts.setColorAt(ghostCount, color);
         ghostOfIndex.current[ghostCount] = i;
         ghostCount += 1;

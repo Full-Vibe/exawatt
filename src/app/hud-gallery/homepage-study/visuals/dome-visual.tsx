@@ -181,7 +181,6 @@ export function DomeVisual({
     const breathe = reducedMotion
       ? 0.5
       : (Math.sin(anim.pulse * 2.4) + 1) * 0.5;
-    const recede = d.recede;
 
     for (let i = 0; i < agentCount; i += 1) {
       const agent = model.agents[i];
@@ -220,7 +219,6 @@ export function DomeVisual({
       color.copy(palette.status[agent.status]);
       color.multiplyScalar(0.75 + 0.3 * w);
       color.lerp(palette.dim, (1 - w) * 0.8);
-      color.lerp(palette.body, recede * 0.7);
       marks.setColorAt(i, color);
 
       // Halo on marks that need you.
@@ -235,7 +233,6 @@ export function DomeVisual({
       color
         .copy(palette.status['needs-you'])
         .multiplyScalar(0.6 + breathe * 0.4);
-      color.lerp(palette.body, recede * 0.7);
       halos.setColorAt(i, color);
     }
 
@@ -285,7 +282,7 @@ export function DomeVisual({
       }
       positions.needsUpdate = true;
       const material = loop.material as THREE.LineBasicMaterial;
-      material.opacity = anim.ringAlpha[project.id] * 0.55 * (1 - recede * 0.7);
+      material.opacity = anim.ringAlpha[project.id] * 0.55;
       loop.visible = anim.ringAlpha[project.id] > 0.02;
     }
 
@@ -308,10 +305,7 @@ export function DomeVisual({
       dummy.scale.set(ps, 1, ps);
       dummy.updateMatrix();
       pipMesh.setMatrixAt(p, dummy.matrix);
-      color
-        .copy(palette.status.active)
-        .multiplyScalar(0.5 + 0.6 * w)
-        .lerp(palette.body, recede * 0.7);
+      color.copy(palette.status.active).multiplyScalar(0.5 + 0.6 * w);
       pipMesh.setColorAt(p, color);
       if (s > 0.05) {
         tpos.setXYZ(
