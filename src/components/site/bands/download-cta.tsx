@@ -44,12 +44,18 @@ export function DownloadCta({
   className,
   size = 'fold',
   align = 'center',
+  requirement = true,
 }: {
   className?: string;
   /** The close repeats the fold's button; only the leading rhythm differs. */
   size?: 'fold' | 'close';
   /** The fold is a left column now; the close is still centred type. */
   align?: 'center' | 'start';
+  /** The machine it needs, under the button. The homepage leaves it to the
+   *  download page (operator 2026-10-14: "we can remove the macOS 12 or
+   *  later Apple Silicon disclaimer. That can just be on the download
+   *  page"). */
+  requirement?: boolean;
 }) {
   return (
     <div
@@ -72,12 +78,14 @@ export function DownloadCta({
           <Link href={DOWNLOAD_HREF}>{DOWNLOAD_LABEL}</Link>
         </Button>
       </div>
-      <p
-        className="text-[13px] leading-snug text-white/50"
-        data-band-download-requirement
-      >
-        {DOWNLOAD_REQUIREMENT}
-      </p>
+      {requirement ? (
+        <p
+          className="text-[13px] leading-snug text-white/50"
+          data-band-download-requirement
+        >
+          {DOWNLOAD_REQUIREMENT}
+        </p>
+      ) : null}
     </div>
   );
 }

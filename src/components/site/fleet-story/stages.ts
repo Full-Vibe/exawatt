@@ -17,14 +17,16 @@
  * - `deck`  the deck's own lines, verbatim where it has them. Its third
  *           dissection is "queued", which is not a product status; the study
  *           lights the `off` signal for it.
- * - `canon` the same beats on the operator's frame and the product's own
- *           five-signal grammar (working, needs you, done). The third
- *           dissection becomes Done, which the product can actually show.
+ * - `canon` the same beats on the operator's frame: one agent at work, the
+ *           agents that need you, then every kind of agent at work side by
+ *           side (operator 2026-10-14: "use these slides to explain other
+ *           value props"), each lifted by the product's own signals.
  *
  * No em dashes. The reader is never the bottleneck.
  */
 
 import type { StatusLightState } from '@/components/status-light/protocol';
+import type { FleetAgent } from './fleet-model';
 
 type StageId = 'landing' | 'working' | 'needs-you' | 'third' | 'fleet';
 
@@ -42,6 +44,9 @@ export interface Stage {
   panel: 'center-top' | 'right' | 'left';
   /** Which signal the visual lifts and the panel points at, if any. */
   highlight: Partial<Record<CopySetId, StatusLightState>>;
+  /** The harness the card's agent runs, where the scene is about the kind
+   *  of agent rather than its signal alone. */
+  exemplarSource?: Partial<Record<CopySetId, string>>;
   /** Whether the agent card is shown: the stage's exemplar until the reader
    *  picks another agent, which it then shows instead (W15i). */
   card: boolean;
@@ -75,7 +80,9 @@ export const STAGES: Stage[] = [
     labels: false,
     count: 10,
     // The promise, then what it is (operator 2026-10-14, choosing the
-    // scale angle for the homepage: "Control 500 like 5"). The deck keeps
+    // scale angle for the homepage: "Control 500 like 5"; and on the line
+    // under it, which read as a list: "Maybe in scene 1 it should be:
+    // Exawatt is the command surface for your agent fleet"). The deck keeps
     // the line it had, to compare.
     copy: {
       deck: {
@@ -84,10 +91,7 @@ export const STAGES: Stage[] = [
       },
       canon: {
         headline: ['Control 500 agents like you control 5.'],
-        body: [
-          'Every agent, every harness, every project in one Mac app.',
-          'See what each one is doing, which ones need you, and what it spends.',
-        ],
+        body: ['Exawatt is the command surface for your agent fleet.'],
       },
     },
   },
@@ -128,11 +132,14 @@ export const STAGES: Stage[] = [
         headline: ['The agents that need', 'you, surfaced.'],
         body: ['Flags the moment an agent needs a human to take actions.'],
       },
+      // why it matters, not what happens (operator 2026-10-14: "the ones
+      // waiting on you light up... change the word ones to something more
+      // specific or... mention why that matters")
       canon: {
-        headline: ['The ones waiting on you', 'light up.'],
+        headline: ['Never leave an agent waiting.'],
         body: [
-          'A question, a permission, a decision.',
-          'The rest keep working.',
+          'When one needs an answer, a permission, or a decision, it lights up.',
+          'Answer it and it gets straight back to work.',
         ],
       },
     },
@@ -140,7 +147,9 @@ export const STAGES: Stage[] = [
   {
     id: 'third',
     panel: 'right',
-    highlight: { deck: 'off', canon: 'result' },
+    highlight: { deck: 'off', canon: 'active' },
+    // the agent in the card runs another harness than the one before it
+    exemplarSource: { canon: 'Codex' },
     card: true,
     cta: false,
     focus: 'project',
@@ -153,11 +162,14 @@ export const STAGES: Stage[] = [
           'Work that is waiting stays in plain sight, and drops into the fleet the moment capacity frees up.',
         ],
       },
+      // any harness, side by side (operator 2026-10-14: "a huge value prop
+      // of Exawatt to be able to bring your own agents of any type, run
+      // them all together, and see them all executing in the same place")
       canon: {
-        headline: ['Finished is not', 'an interruption.'],
+        headline: ['Every kind of agent,', 'side by side.'],
         body: [
-          'Results wait in plain sight until you are ready to look.',
-          'Never a green check that lies.',
+          'Bring Claude Code, Codex, OpenClaw, or one you built yourself.',
+          'Run them together and watch them all work in one place.',
         ],
       },
     },
@@ -178,12 +190,11 @@ export const STAGES: Stage[] = [
           'Zoom out and every project is there. Zoom in and nothing is hidden.',
         ],
       },
-      // the close: the trajectory, and what it costs to start (operator
-      // 2026-10-14)
-      // A narrow screen breaks the line at the full stop, never inside
-      // "ten thousand tomorrow".
+      // the close: what it is at scale, and what it costs to start
+      // (operator 2026-10-14: "Maybe say Fleet command for thousands of
+      // agents")
       canon: {
-        headline: ['Ten today. Ten\u00a0thousand\u00a0tomorrow.'],
+        headline: ['Fleet command for thousands of agents.'],
         body: [
           'Free and open source. Works with the plans you already pay for.',
         ],
@@ -291,4 +302,23 @@ export function stageAt(progress: number): number {
 
 export function panelSide(stage: Stage): -1 | 0 | 1 {
   return stage.panel === 'right' ? 1 : stage.panel === 'left' ? -1 : 0;
+}
+
+/** The agent a scene's card shows until the reader picks one: the first
+ *  in the first Project with the scene's signal (and the scene's harness,
+ *  where it names one), so it is always in the frame the camera fits. */
+export function exemplarFor(
+  agents: FleetAgent[],
+  count: number,
+  status: StatusLightState | null,
+  source?: string
+): number {
+  if (!status) return -1;
+  const n = Math.min(count, agents.length);
+  const fits = (agent: FleetAgent) =>
+    agent.status === status && (!source || agent.source === source);
+  for (let i = 0; i < n; i += 1)
+    if (fits(agents[i]) && agents[i].project === 0) return i;
+  for (let i = 0; i < n; i += 1) if (fits(agents[i])) return i;
+  return source ? exemplarFor(agents, count, status) : -1;
 }

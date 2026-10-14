@@ -349,3 +349,25 @@ deliberately not reproduced here: this repository's public-content scanner refus
 and an address copied into a file goes stale faster than the page that owns it. Read the contact
 off `anthropic.com/legal/trademark-guidelines`, `openai.com/brand/`, or
 `x.ai/legal/brand-guidelines` at the time you need it.
+
+---
+
+## GitHub, `GitHubMark` (fetched as `GitHub_Invertocat_White.svg`)
+
+Not a harness: the homepage's close links to the repository with GitHub's mark beside the words
+(ENG-031 W15o, 2026-10-14), in `src/components/site/github-mark.tsx`.
+
+- **Vendor / product:** GitHub, Inc. The Invertocat, GitHub's primary logo.
+- **Origin URL:** `https://brand.github.com/GitHub_Logos.zip`, linked from
+  `https://github.com/logos`; the file `GitHub Logos/SVG/GitHub_Invertocat_White.svg`.
+- **Changes:** none to the path or its colour. The path is reproduced byte for byte in the white it
+  is supplied in. The file's `clip-path`, a rectangle the size of the `viewBox`, is a no-op and was
+  removed with its `id`.
+- **Trademark terms:** `https://github.com/logos`. Operative sentences: "Use the Invertocat logo as a
+  social button to link to your GitHub profile or project." and "Do not modify the permitted GitHub
+  logos, including changing the color, dimensions, or combining with other words or design
+  elements."
+- **Recolouring permitted?** **No**, and it is not recoloured: it is drawn in the supplied white on
+  the page's dark ground.
+- **Date fetched:** 2026-10-14.
+- **Use here:** a link to the project's own repository, the use GitHub names.

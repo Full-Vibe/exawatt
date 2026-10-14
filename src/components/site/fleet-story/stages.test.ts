@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { READER_AS_BOTTLENECK } from '@/components/site/bands/fold-copy';
 import { fleetModel } from './fleet-model';
-import { leanBlend, STAGES, stageAt, stageBlend } from './stages';
+import { exemplarFor, leanBlend, STAGES, stageAt, stageBlend } from './stages';
 
 const prose = (lines: (string | undefined)[]) =>
   lines.filter(Boolean).join(' ');
@@ -46,6 +46,31 @@ describe('homepage study copy', () => {
         const present = agents.slice(0, stage.count);
         expect(present.some(agent => agent.status === status)).toBe(true);
       }
+  });
+
+  it('shows another kind of agent in the card where the scene is about kinds', () => {
+    const agents = fleetModel().agents;
+    const card = (index: number) => {
+      const stage = STAGES[index];
+      return exemplarFor(
+        agents,
+        stage.count,
+        stage.highlight.canon ?? null,
+        stage.exemplarSource?.canon
+      );
+    };
+    const kinds = STAGES.findIndex(stage => stage.exemplarSource?.canon);
+    expect(kinds).toBeGreaterThan(0);
+    const agent = agents[card(kinds)];
+    // present, in the first Project the camera fits, on the scene's signal,
+    // and on the harness the scene names
+    expect(card(kinds)).toBeLessThan(STAGES[kinds].count);
+    expect(agent.project).toBe(0);
+    expect(agent.status).toBe(STAGES[kinds].highlight.canon);
+    expect(agent.source).toBe(STAGES[kinds].exemplarSource?.canon);
+    // and it is not the harness the one-agent scene showed
+    const one = STAGES.findIndex(stage => stage.count === 1);
+    expect(agents[card(one)].source).not.toBe(agent.source);
   });
 
   it('opens on ten agents, closes in on one, and ends on the whole fleet', () => {

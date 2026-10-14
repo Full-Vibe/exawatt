@@ -39,9 +39,9 @@ import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import { ArrowUpRight } from 'lucide-react';
 import { DownloadCta } from '@/components/site/bands/download-cta';
-import { ADD_HARNESS_HREF } from '@/components/site/site-links';
+import { GITHUB_URL } from '@/components/site/site-links';
+import { GitHubMark } from '@/components/site/github-mark';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { AgentCard } from './agent-card';
 import { StoryCanvas } from './canvas-boundary';
@@ -50,6 +50,7 @@ import { facingFade, nameShown, nameStyleOf, type NamesId } from './names';
 import { isNarrow } from './narrow';
 import { PinnedAgentPanel } from './pinned-agent-panel';
 import {
+  exemplarFor,
   leanBlend,
   leanCurve,
   panelSide,
@@ -112,22 +113,9 @@ const STEP_PUSH = 0.4;
  *  frame, in stages, a scene's column has gone from sight. */
 const FOLLOW = 0.7;
 const REVEAL_SPAN = 0.45;
-/** The "synthetic fleet" stamp runs across the top of a portrait stage,
- *  under the scene steps; an open sheet starts below it. */
-const STAMP_CLEAR = 34;
-
-function exemplarFor(
-  agents: FleetAgent[],
-  count: number,
-  status: StatusLightState | null
-): number {
-  if (!status) return -1;
-  for (let i = 0; i < Math.min(count, agents.length); i += 1)
-    if (agents[i].status === status && agents[i].project === 0) return i;
-  for (let i = 0; i < Math.min(count, agents.length); i += 1)
-    if (agents[i].status === status) return i;
-  return -1;
-}
+/** The scene steps run across the top of a portrait stage; an open sheet
+ *  starts below them. */
+const STEPS_CLEAR = 32;
 
 export function ScrollExperience({
   Visual,
@@ -215,7 +203,12 @@ export function ScrollExperience({
   // on an agent to select it, that thing changes to show the selected agent
   // information and does not have duplicate modals on screen at one time").
   const exemplar = STAGES[stage].card
-    ? exemplarFor(model.agents, STAGES[stage].count, highlights[stage])
+    ? exemplarFor(
+        model.agents,
+        STAGES[stage].count,
+        highlights[stage],
+        STAGES[stage].exemplarSource?.[copySet]
+      )
     : -1;
   const focused = selected >= 0 ? selected : exemplar;
   useEffect(() => {
@@ -259,11 +252,16 @@ export function ScrollExperience({
     const current = STAGES[index];
     d.count = current.count;
     d.exemplar = current.card
-      ? exemplarFor(model.agents, d.count, highlights[index])
+      ? exemplarFor(
+          model.agents,
+          d.count,
+          highlights[index],
+          current.exemplarSource?.[copySet]
+        )
       : -1;
     stageNow.current = index;
     setStage(previous => (previous === index ? previous : index));
-  }, [highlights, model]);
+  }, [highlights, model, copySet]);
 
   useEffect(() => {
     sync();
@@ -550,15 +548,10 @@ export function ScrollExperience({
           anchor={anchor.current}
           column={panelSide(current)}
           insetTop={insetTop + 12}
-          insetTopNarrow={insetTop + 12 + STAMP_CLEAR}
+          insetTopNarrow={insetTop + STEPS_CLEAR}
           narrowOnly={current.card}
           reducedMotion={reducedMotion}
         />
-
-        {/* Synthetic fleet stamp, always inside the frame. */}
-        <p className="pointer-events-none absolute right-4 top-[3.75rem] font-mono text-[10px] uppercase tracking-[0.18em] text-white/35 landscape:bottom-3 landscape:left-4 landscape:right-auto landscape:top-auto">
-          Demo workspace · synthetic fleet
-        </p>
 
         {/* Where the story is, one step per scene: the current one full, the
             next filling as a push builds or a move runs. A step takes the
@@ -932,18 +925,22 @@ function PanelBody({
       ) : null}
       {stage.cta ? (
         <>
-          <DownloadCta align="center" className="pointer-events-auto pt-1" />
-          {/* the way in for a contributor, under the download rather than
-              beside it: nothing sits beside the button (`download-cta.tsx`) */}
+          <DownloadCta
+            align="center"
+            requirement={false}
+            className="pointer-events-auto pt-1"
+          />
+          {/* the source, under the download rather than beside it: nothing
+              sits beside the button (`download-cta.tsx`) */}
           <a
-            href={ADD_HARNESS_HREF}
+            href={GITHUB_URL}
             target="_blank"
             rel="noreferrer"
-            className="pointer-events-auto inline-flex items-center gap-1 text-[14px] font-medium text-white/65 underline-offset-4 transition-colors hover:text-white hover:underline"
-            data-story-add-harness
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-md px-2 py-1 text-[14px] font-medium text-white/70 transition-colors hover:text-white"
+            data-story-github
           >
-            Add your harness
-            <ArrowUpRight aria-hidden className="h-3.5 w-3.5" />
+            <GitHubMark className="h-4 w-4" />
+            View on GitHub
           </a>
         </>
       ) : null}
