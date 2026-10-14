@@ -83,21 +83,18 @@ export function siteMenuLinks(): SiteNavLink[] {
 export interface SiteFooterColumn {
   heading: string;
   links: SiteNavLink[];
-  /** One plain sentence under the column, or none. */
-  note?: string;
 }
 
 /**
  * The footer, including the open-source column W6 owns.
  *
- * The two-license split is stated ONCE, in a person's voice, and it is stated
- * here rather than in the headline because the research is explicit that open
- * source belongs in a band and a footer column: four competitors already claim
- * it above the fold, so it differentiates nothing there.
- *
- * The wording is read off `LICENSING.md`, which is the canonical boundary:
- * everything except the listed compatibility paths is AGPL-3.0-or-later, and
- * `contracts/**`, `schemas/**` and the roadmap convention are Apache-2.0.
+ * Open source belongs in a footer column rather than the headline (the
+ * research: four competitors already claim it above the fold, so it
+ * differentiates nothing there). The column is two links, the repository and
+ * `LICENSING.md`, the canonical licence boundary. The sentence that spelled
+ * the AGPL-3.0 and Apache-2.0 split out under them is gone (operator
+ * 2026-10-14: "useless copy... doesn't need to be on the home page"):
+ * `Licensing` takes a reader who wants the split to the whole of it.
  */
 export const SITE_FOOTER_COLUMNS: SiteFooterColumn[] = [
   {
@@ -122,13 +119,6 @@ export const SITE_FOOTER_COLUMNS: SiteFooterColumn[] = [
         external: true,
       },
     ],
-    // W6c: the FACTS and the sting are untouched; the middle clause stopped
-    // being written in our own vocabulary. "The compatibility spec that lets
-    // any harness become Exawatt ready" is three internal nouns in a row, and
-    // the page's own reader-facing word for a harness is already in the
-    // `any-lab` panel. A licence sentence a stranger has to decode is a
-    // licence sentence nobody reads.
-    note: 'The app is AGPL-3.0. The spec that lets any agent tool work with Exawatt is Apache-2.0, so anyone can build against it, including people who compete with us.',
   },
   {
     heading: 'Legal',

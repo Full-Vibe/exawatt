@@ -19,14 +19,19 @@ import { cn } from '@/lib/utils';
  *
  * TWO SHAPES, ONE COMPONENT (ENG-031 W6). Every marketing route keeps the
  * quiet legal row it has always had. The surfaces that carry the proposed site
- * chrome get the full footer, whose reason for existing is the OPEN SOURCE
- * COLUMN: the AGPL app and the Apache-2.0 compatibility spec, stated once, in
- * plain language, where the research says the claim belongs. It also takes
- * `Architecture` and `Leaderboard`, which W6 drops out of the nav because no
- * site in the reference corpus carries a project artifact there.
+ * chrome get the full footer: the open-source column (the repository and the
+ * licence boundary), and `Architecture` and `Leaderboard`, which W6 drops out
+ * of the nav because no site in the reference corpus carries a project
+ * artifact there.
  *
  * The split is a predicate, not a route list, so promoting the homepage
  * promotes its footer in the same edit.
+ *
+ * On the homepage the full footer keeps its ordinary size and stands over the
+ * gesture photograph (`footer-gesture.tsx`), a backdrop to the links rather
+ * than a scene of its own (operator 2026-10-14: "more subtly behind the
+ * footer section as the footer section would otherwise normally be laid
+ * out").
  */
 export function SiteFooter() {
   const pathname = usePathname() ?? '';
@@ -68,48 +73,38 @@ export function SiteFooter() {
       data-site-footer="full"
       className={cn(
         'border-t px-6 py-14 text-sm text-muted-foreground sm:px-10',
-        // the homepage's footer stands over the gesture photograph, with room
-        // above the links for the figure
-        gesture &&
-          'relative isolate overflow-hidden pt-[64vw] md:pt-[min(48vw,26rem)]'
+        // the homepage's footer is laid out as every full footer is, over the
+        // gesture photograph; no rule at its top, where the story's ground runs
+        // into it
+        gesture && 'relative isolate overflow-hidden border-t-0'
       )}
     >
       {gesture ? <FooterGesture /> : null}
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
-          {SITE_FOOTER_COLUMNS.map(column => (
-            <div
-              className="flex flex-col gap-3"
-              key={column.heading}
-              data-footer-column={column.heading}
-            >
-              <p className="text-chrome-label font-semibold">
-                {column.heading}
-              </p>
-              <ul className="flex flex-col gap-2">
-                {column.links.map(link => (
-                  <li key={link.label}>
-                    <Link
-                      href={link.href}
-                      className="hover:text-foreground transition-colors"
-                      {...(link.external
-                        ? { target: '_blank', rel: 'noreferrer' }
-                        : {})}
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              {column.note ? (
-                <p className="max-w-sm text-xs leading-relaxed">
-                  {column.note}
-                </p>
-              ) : null}
-            </div>
-          ))}
-        </div>
-        <p className="text-xs">Exawatt</p>
+      <div className="mx-auto grid w-full max-w-6xl gap-10 sm:grid-cols-2 lg:grid-cols-3">
+        {SITE_FOOTER_COLUMNS.map(column => (
+          <div
+            className="flex flex-col gap-3"
+            key={column.heading}
+            data-footer-column={column.heading}
+          >
+            <p className="text-chrome-label font-semibold">{column.heading}</p>
+            <ul className="flex flex-col gap-2">
+              {column.links.map(link => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="hover:text-foreground transition-colors"
+                    {...(link.external
+                      ? { target: '_blank', rel: 'noreferrer' }
+                      : {})}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
     </footer>
   );
