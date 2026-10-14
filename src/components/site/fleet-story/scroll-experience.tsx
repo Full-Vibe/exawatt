@@ -635,7 +635,8 @@ function SceneSteps({
     <nav
       aria-label="Scenes"
       className="pointer-events-auto absolute z-20 flex landscape:right-2 landscape:top-1/2 landscape:-translate-y-1/2 landscape:flex-col landscape:items-end md:landscape:right-4 portrait:inset-x-3 portrait:top-[var(--steps-top)] portrait:flex-row portrait:gap-1"
-      style={{ '--steps-top': `${insetTop + 2}px` } as React.CSSProperties}
+      // a phone's steps are a fingertip tall with the bar where it was
+      style={{ '--steps-top': `${insetTop - 2}px` } as React.CSSProperties}
     >
       {/* below the steps, on the landing only: the invitation to scroll */}
       <div className="absolute right-0 top-full flex w-9 justify-end portrait:hidden">
@@ -661,7 +662,7 @@ function SceneSteps({
           onClick={() => onStep(index)}
           aria-label={`Scene ${index + 1} of ${STAGES.length}: ${item.copy[copySet].headline.join(' ')}`}
           aria-current={index === stage ? 'step' : undefined}
-          className="group/step flex items-center landscape:h-7 landscape:w-9 landscape:justify-end portrait:h-5 portrait:flex-1"
+          className="group/step flex items-center landscape:h-7 landscape:w-9 landscape:justify-end portrait:h-7 portrait:flex-1"
         >
           <span
             className={cn(
@@ -936,7 +937,7 @@ function PanelBody({
             // on the landing the lines under the title say what it is, each
             // sentence on its own line where the screen allows
             isLanding &&
-              'text-balance text-[17px] text-white/75 md:max-w-[44rem] md:text-[21px]'
+              'text-balance text-[17px] text-white/80 md:max-w-[44rem] md:text-[21px]'
           )}
         >
           {copy.body.map(line => (
@@ -959,7 +960,9 @@ function PanelBody({
             href={GITHUB_URL}
             target="_blank"
             rel="noreferrer"
-            className="pointer-events-auto inline-flex items-center gap-2 rounded-md px-2 py-1 text-[14px] font-medium text-white/70 transition-colors hover:text-white"
+            // a whole fingertip tall, without moving the words off the
+            // column's rhythm
+            className="pointer-events-auto -my-2 inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-[14px] font-medium text-white/70 transition-colors hover:text-white"
             data-story-github
           >
             <GitHubMark className="h-4 w-4" />
