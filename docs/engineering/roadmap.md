@@ -4156,3 +4156,21 @@ child environment without them, so each exits with "missing EXAWATT_RELEASE_TAG"
 The tests' premise predates the script: supply the two values in the fixture
 environment (they are validation inputs, not custody), the same repair BUG-047
 made for the contract.
+
+### BUG-278 `test:agent-delivery` is flaky: a landing dev-server test sees `kill EPERM` under load
+
+Status: bug · agent delivery · found 2026-10-14 while landing ENG-031 W15j
+(`db722d9a`); the test passes alone (`node --test --test-name-pattern="does
+not come back" scripts/landing-dev-server.test.mjs`) and failed once inside
+the full landing. Not caused by and not owned by the change that found it.
+
+In `scripts/landing-dev-server.test.mjs`, "a dev server that does not come
+back stops the landing with a named cause" expects the landing to report
+"`pnpm dev` exited 1 before it served"; instead the stop of the pre-rebase
+server threw `kill EPERM` (`signal` and `targetExists` in
+`scripts/lib/landing-dev-server.mjs` treat only `ESRCH` as gone). The
+servers are signalled by process group. Suspected, not confirmed: on macOS a
+group whose last members are still exiting can answer `kill` with `EPERM`,
+which only a loaded machine makes the exit straddle. Next step: capture
+`ps -o pid,pgid,stat` for the group at the moment of the `EPERM`. A retry
+passes, which under the no-flaky-tests rule is a defect, not a pass.
