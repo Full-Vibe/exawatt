@@ -7,8 +7,10 @@
  * never its name.
  */
 
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
+import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { formatMinutes, STATUS_LABEL, type FleetAgent } from './fleet-model';
 import { MarkGlyph } from './mark-glyph';
 
@@ -71,7 +73,13 @@ export function AgentCard({
         </span>
       </div>
       <p className="mt-2 truncate text-[15px] font-semibold">{agent.name}</p>
-      <p className="truncate text-[12px] text-white/55">{agent.doing}</p>
+      {agent.status === 'active' && agent.steps && agent.steps.length > 1 ? (
+        <StepTicker key={agent.id} agent={agent} steps={agent.steps} />
+      ) : (
+        <p className="truncate text-[12px] leading-[18px] text-white/55">
+          {agent.doing}
+        </p>
+      )}
       {compact ? null : (
         <>
           <dl className="mt-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-[12px]">
@@ -125,5 +133,104 @@ export function AgentCard({
         </>
       )}
     </div>
+  );
+}
+
+/** How long a working agent stays on a step, in milliseconds, and how far
+ *  one agent's pace is from another's, so two cards never step together. */
+const STEP_MS = 2600;
+const STEP_SPREAD_MS = 700;
+/** The roll from one step to the next. */
+const ROLL_MS = 420;
+const ROLL_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+const STEP_KEYFRAMES = `
+@keyframes agent-step-in { from { transform: translateY(100%); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes agent-step-out { from { transform: none; opacity: 1 } to { transform: translateY(-100%); opacity: 0 } }
+@keyframes agent-step-shimmer { 0%, 14% { background-position: 100% 0 } 78%, 100% { background-position: 0% 0 } }
+`;
+
+/**
+ * A working agent's line (operator 2026-10-14: "show that text scrolling
+ * by... just like how ChatGPT or Claude clients show thinking and the
+ * current little micro-goal"): the step it is on, a light passing over it
+ * once a step, and at each change the old step rolling up and out as the
+ * next rolls in from below, through its goal's steps and round again. The
+ * line keeps its height, so the card never moves. Under reduced motion it
+ * is the step it is on, still.
+ */
+function StepTicker({
+  agent,
+  steps,
+}: {
+  agent: FleetAgent;
+  /** Its goal's steps, two or more. */
+  steps: string[];
+}) {
+  const reducedMotion = usePrefersReducedMotion();
+  // from the step it says it is on
+  const [at, setAt] = useState(() => ({
+    step: Math.max(0, steps.indexOf(agent.doing)),
+    previous: -1,
+    turn: 0,
+  }));
+  // every agent keeps its own pace
+  const period =
+    STEP_MS + ((agent.id * 397) % STEP_SPREAD_MS) - STEP_SPREAD_MS / 2;
+  useEffect(() => {
+    if (reducedMotion || steps.length < 2) return;
+    let timer = 0;
+    const advance = () => {
+      setAt(current => ({
+        step: (current.step + 1) % steps.length,
+        previous: current.step,
+        turn: current.turn + 1,
+      }));
+      timer = window.setTimeout(advance, period);
+    };
+    timer = window.setTimeout(advance, period);
+    return () => window.clearTimeout(timer);
+  }, [reducedMotion, steps, period]);
+
+  if (reducedMotion)
+    return (
+      <p className="truncate text-[12px] leading-[18px] text-white/55">
+        {agent.doing}
+      </p>
+    );
+  return (
+    <p className="relative h-[18px] overflow-hidden text-[12px] leading-[18px]">
+      <style>{STEP_KEYFRAMES}</style>
+      {at.previous >= 0 ? (
+        <span
+          key={`out-${at.turn}`}
+          aria-hidden
+          className="absolute inset-x-0 top-0 truncate text-white/55"
+          style={{ animation: `agent-step-out ${ROLL_MS}ms ${ROLL_EASE} both` }}
+        >
+          {steps[at.previous]}
+        </span>
+      ) : null}
+      {/* the light passes over the words, not the line's whole width */}
+      <span
+        key={`in-${at.turn}`}
+        className="absolute inset-x-0 top-0"
+        style={
+          at.turn > 0
+            ? { animation: `agent-step-in ${ROLL_MS}ms ${ROLL_EASE} both` }
+            : undefined
+        }
+      >
+        <span
+          className="inline-block max-w-full truncate bg-gradient-to-r from-white/55 from-35% via-white via-50% to-white/55 to-65% bg-clip-text align-top text-transparent"
+          style={{
+            backgroundSize: '250% 100%',
+            animation: `agent-step-shimmer ${period}ms linear infinite`,
+          }}
+        >
+          {steps[at.step]}
+        </span>
+      </span>
+    </p>
   );
 }

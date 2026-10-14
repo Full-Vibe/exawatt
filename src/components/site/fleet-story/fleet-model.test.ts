@@ -97,6 +97,34 @@ describe('study fleet model', () => {
     }
   });
 
+  // The card of an agent at work steps through its goal's way there (W15o).
+  it("gives every agent its goal's steps, and a working agent a step on its way", () => {
+    for (const agent of model.agents) {
+      const steps = agent.steps ?? [];
+      expect(steps.length).toBeGreaterThanOrEqual(4);
+      expect(steps.length).toBeLessThanOrEqual(6);
+      expect(new Set(steps).size).toBe(steps.length);
+      for (const step of steps) {
+        expect(step.trim().length).toBeGreaterThan(0);
+        expect(step).not.toContain('\u2014');
+      }
+      if (agent.status === 'active' || agent.status === 'fault')
+        expect(steps).toContain(agent.doing);
+      else expect(steps).not.toContain(agent.doing);
+    }
+  });
+
+  it('hands every Project a spread of goals, not a couple', () => {
+    for (const project of model.projects) {
+      const goals = new Set(
+        model.agents
+          .filter(agent => agent.project === project.id)
+          .map(agent => agent.name)
+      );
+      expect(goals.size).toBeGreaterThanOrEqual(6);
+    }
+  });
+
   it('hugs a small fleet with one ring of territory and a ring of ghosts', () => {
     const one = fleetAt(model, 1);
     const present = model.tiles.filter(one.tilePresent);
