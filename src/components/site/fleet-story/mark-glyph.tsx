@@ -6,7 +6,7 @@
  * 2026-10-12). Parts are drawn in the vendor's own order.
  */
 
-import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
+import { STORY_MARK_PATHS } from './concept-marks';
 import { sourceAdapterId } from './fleet-model';
 import { markIdFor, markToneHex } from './mark-tones';
 
@@ -22,7 +22,7 @@ export function MarkGlyph({
 }) {
   const id = markIdFor(sourceAdapterId(source));
   if (!id) return null;
-  const mark = HARNESS_MARK_PATHS[id];
+  const mark = STORY_MARK_PATHS[id];
   return (
     <svg
       data-slot="harness-glyph"

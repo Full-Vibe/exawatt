@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
+import { STORY_MARK_PATHS } from './concept-marks';
 import { fleetModel, sourceAdapterId } from './fleet-model';
 import { markIdFor, markToneHex } from './mark-tones';
 import { makeMarkParts, MARK_COUNT, markIndexFor } from './visuals/crust-marks';
@@ -17,6 +18,17 @@ describe('harness marks', () => {
     for (const index of bySource.values()) {
       expect(index).toBeGreaterThanOrEqual(0);
       expect(index).toBeLessThan(MARK_COUNT);
+    }
+  });
+
+  it('keep the concept marks out of the product registry', () => {
+    // the product draws a mark only for a harness it runs; the story draws
+    // the concepts from its own registry, after the product's
+    const product = Object.keys(HARNESS_MARK_PATHS);
+    for (const id of ['grok-bot', 'muse', 'instinct', 'dots']) {
+      expect(product).not.toContain(id);
+      expect(markIdFor(id)).toBe(id);
+      expect(markIndexFor(id)).toBeGreaterThanOrEqual(product.length);
     }
   });
 
@@ -114,13 +126,10 @@ describe('the paint of a mark', () => {
     expect(markToneHex('opencode', 'ink')).toBeNull();
   });
 
-  it('resolves every tone the registry names', () => {
-    for (const [id, mark] of Object.entries(HARNESS_MARK_PATHS))
+  it('resolves every tone the registries name', () => {
+    for (const [id, mark] of Object.entries(STORY_MARK_PATHS))
       for (const part of mark.parts) {
-        const hex = markToneHex(
-          id as keyof typeof HARNESS_MARK_PATHS,
-          part.tone
-        );
+        const hex = markToneHex(id as keyof typeof STORY_MARK_PATHS, part.tone);
         if (part.tone === 'ink') expect(hex).toBeNull();
         else expect(hex).toMatch(/^#[0-9a-fA-F]{6}$/);
       }

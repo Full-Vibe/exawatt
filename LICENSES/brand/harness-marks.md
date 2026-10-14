@@ -192,8 +192,8 @@ Every URL below was fetched on **2026-08-18**.
 - **Date fetched:** 2026-08-18.
 - **Use here:** Nominative use to identify a third-party product inside a product UI, rendered at
   16 to 20px.
-- **Homepage study, the mascot (2026-10-13):** the homepage study
-  (`src/app/hud-gallery/homepage-study/`) draws the project's mascot, "molty", and not the pixel
+- **Homepage study, the mascot (2026-10-13):** the homepage's fleet story
+  (`src/components/site/fleet-story/`) draws the project's mascot, "molty", and not the pixel
   lobster above, as a flat glyph in its panels and as 3D geometry on its agent tiles. Origin:
   `https://github.com/openclaw/openclaw/blob/main/apps/macos/Icon.icon/Assets/molty.svg`, the
   character on the project's own macOS app icon. Licence: MIT, "Copyright (c) 2026 OpenClaw
@@ -203,7 +203,7 @@ Every URL below was fetched on **2026-08-18**.
   width when extruded. It is drawn in the vendor's own tones, its coral gradient (`#ff4d4d` to
   `#e43d36`) flattened to `#ff4d4d`, the claws a shade deeper, near-black eyes with the teal glint
   (`#00e5cc`). The geometry is in `HARNESS_MARK_PATHS` (`src/components/workspace/harness-icons.tsx`)
-  and the paint is resolved in `homepage-study/mark-tones.ts`. The product's own chrome icon
+  and the paint is resolved in `fleet-story/mark-tones.ts`. The product's own chrome icon
   (`OpenClawIcon`: the launcher, the ribbons, Agent Sources settings, the hero board) is unchanged and
   is still the pixel lobster described above. The trademark position recorded above is unchanged.
 
@@ -255,10 +255,94 @@ Every URL below was fetched on **2026-08-18**.
 
 ---
 
+## Concept marks on the homepage (Grok Bot, Muse, Instinct, dots)
+
+The homepage's fleet story also draws four agents Exawatt does not run yet, so the fleet reads as
+every kind of agent in one place. Their marks live in
+`src/components/site/fleet-story/concept-marks.ts`, in the same shape as the product's registry but
+outside it: no product chrome draws them, and `HARNESS_MARK_PATHS` gains a mark only when Exawatt
+ships an adapter for that harness, at which point the concept entry is deleted. They are drawn as a
+flat glyph in the story's agent card and as 3D geometry on its agent tiles, and the agents wearing
+them are labelled synthetic on the page ("Demo workspace · synthetic fleet").
+
+**Operator decision, 2026-10-14 (accepted risk).** Told that Exawatt can launch none of the four
+today, and that their vendors' terms forbid altered marks and implied endorsement, the operator
+chose to show all four as concepts: "that's fine, it's on the roadmap. Homepage is aspirational and
+illustrative and I'll add support for them soon." Accepted: drawing these four marks, as recorded
+below (traced, recoloured to the surrounding ink or one brand colour, extruded), on the homepage's
+synthetic fleet. The path data also ships in the public source, as the five marks above do, on the
+same nominative footing; the remedy if a vendor objects is the one at the end of this file. Not
+decided here: drawing them in the product's own chrome, which waits for each adapter.
+
+Every source below was retrieved on **2026-10-14**.
+
+### Grok Bot
+
+- **Vendor / product:** xAI (SpaceXAI). Grok Bot, always-on agents with their own cloud computers,
+  in beta since 2026-08-11 (`https://x.ai/news/introducing-grok-bot`).
+- **Origin:** the app's 1024 px App Store icon, found through Apple's lookup API
+  (`https://itunes.apple.com/lookup?id=6794501026`). No vector mark was found: `https://x.ai/bot`
+  refuses automated fetches.
+- **What was drawn:** a trace, not the vendor's bytes. The face is a circle: fitted to the icon's
+  visible edge, it holds to a quarter of a pixel at 1024. The two eyes are capsules fitted to their
+  cut-outs. The icon crops the face with its tile, so the circle is drawn whole and the eyes keep
+  their place on it, in a 100 box, eyes cut out (`fillRule: evenodd`). The icon's grey face and
+  bevel are flattened to the surrounding ink.
+- **Trademark terms:** the xAI Brand Guidelines quoted under Grok Build apply: marks "only to
+  accurately refer to us or our services", logos "exactly as provided... without any alteration or
+  adjustment". Tracing and recolouring are alterations, covered by the decision above.
+
+### Muse
+
+- **Vendor / product:** Meta. Muse, Meta's personal agent, launched in the US on 2026-09-08
+  (`https://muse.ai`).
+- **Origin URL:** `https://muse.ai/images/hatch/muse-logo.svg`, the single-path scribbled "M" in the
+  site's own assets.
+- **What was drawn:** the path, byte for byte, in its own 100 box. Meta draws it in a gradient
+  (`#0082FB`, `#0064E0`, `#0040DC`); the story paints the middle stop, `#0064E0`, as Anthropic's
+  terracotta is painted for Claude (`fleet-story/mark-tones.ts`).
+- **Trademark terms:** no Muse-specific guidelines were found. Meta's trademark page
+  (`https://www.meta.com/brand/resources/meta/our-trademarks/`): "You may only use our trademarks
+  with our permission, including as authorized by any brand guidelines we may publish." Muse is not
+  listed there; the page says a name's absence does not waive Meta's rights. Covered by the decision
+  above.
+
+### Instinct
+
+- **Vendor / product:** Spear Street Technology, Inc. Instinct, a personal agent reached by text
+  and call, invite-only since 2026-08 (`https://instinct.com`).
+- **Origin URL:** `https://instinct.com/favicon.svg`, a flared serif "I" on a white card.
+- **What was drawn:** the "I" path, byte for byte, in the 40 box the favicon draws it in (the
+  favicon scales that box onto its card). The white card is dropped and the glyph takes the
+  surrounding ink. The site's hand-drawn header figure was not used.
+- **Trademark terms:** no brand guidelines or press kit were found. Terms of Service
+  (`https://instinct.com/terms`, section 7): "The Company's name, the Company's logo and all related
+  names, logos, product and service names, designs and slogans are trademarks of the Company or its
+  affiliates or licensors." Covered by the decision above. For a future adapter, not the mark: the
+  same terms bar driving the service with "automation software (bots)".
+
+### dots
+
+- **Vendor / product:** OpenAI. dots, always-on agents in ChatGPT, announced 2026-09-29
+  (`https://openai.com/index/introducing-dots/`).
+- **Origin:** none. OpenAI publishes no mark for dots, and each dot is a character its user
+  customises. The only logo file found, a glowing "dots" wordmark on the Product Hunt listing
+  (`https://www.producthunt.com/products/dots-by-openai`), was uploaded by whoever posted the
+  listing and reads poorly at tile size; it was not used.
+- **What was drawn:** Exawatt's own drawing, three dots of three sizes in a 24 box, in the
+  surrounding ink. It is not OpenAI's artwork and does not imitate OpenAI's logo; it stands beside
+  the product's name, "dots", which is OpenAI's.
+- **Trademark terms:** OpenAI's brand guidelines (`https://openai.com/brand/`) govern OpenAI's own
+  logos ("Use the logo exactly as provided"); none of them is drawn here.
+
+---
+
 ## If a vendor objects
 
 Delete the component and fall back to the text label beside it. Nothing in the UI depends on a
-mark being present: `harnessMarkExists` gates every render site, and the label stands alone.
+mark being present: `harnessMarkExists` gates every render site, and the label stands alone. For a
+concept mark, delete its entry in `concept-marks.ts`; the type checker then leads to its id in
+`fleet-story/mark-tones.ts`, and its agents fall back to no mark.
 
 Each vendor publishes a contact for logo permission questions on the page quoted above. They are
 deliberately not reproduced here: this repository's public-content scanner refuses real addresses,

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { FLEET_MAX, fleetAt, fleetModel } from './fleet-model';
+import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
+import {
+  FLEET_MAX,
+  fleetAt,
+  fleetModel,
+  sourceAdapterId,
+  type FleetAgent,
+} from './fleet-model';
 import { axialKey } from './hex';
 
 describe('study fleet model', () => {
@@ -47,6 +54,45 @@ describe('study fleet model', () => {
     expect(statuses.has('needs-you')).toBe(true);
     expect(statuses.has('result')).toBe(true);
     expect(statuses.has('off')).toBe(true);
+  });
+
+  // The landing and the close-ups were tuned on these ten (W15n keeps them):
+  // the product's own five harnesses, two of each.
+  it('opens on the ten agents the first scenes were tuned on', () => {
+    expect(model.agents.slice(0, 10).map(agent => agent.source)).toEqual([
+      'Claude Code',
+      'OpenCode',
+      'OpenClaw',
+      'Codex',
+      'Grok Build',
+      'Claude Code',
+      'OpenCode',
+      'OpenClaw',
+      'Codex',
+      'Grok Build',
+    ]);
+  });
+
+  const isConcept = (agent: FleetAgent) =>
+    !(sourceAdapterId(agent.source) in HARNESS_MARK_PATHS);
+
+  it('runs only the product harnesses in the first Project', () => {
+    const first = model.projects[0];
+    const agents = model.agents.slice(first.first, first.first + first.count);
+    expect(agents.some(isConcept)).toBe(false);
+  });
+
+  it('has every concept harness on the board by the hundred, a minority in Projects of their own', () => {
+    const hundred = model.agents.slice(0, 100).filter(isConcept);
+    expect(new Set(hundred.map(agent => agent.source)).size).toBe(4);
+    expect(model.agents.filter(isConcept).length).toBeLessThan(FLEET_MAX / 2);
+    for (const project of model.projects) {
+      const agents = model.agents.filter(agent => agent.project === project.id);
+      if (!agents.some(isConcept)) continue;
+      // a Project settles on one or two harnesses, not confetti
+      expect(agents.every(isConcept)).toBe(true);
+      expect(new Set(agents.map(agent => agent.source)).size).toBe(2);
+    }
   });
 
   it('hugs a small fleet with one ring of territory and a ring of ghosts', () => {

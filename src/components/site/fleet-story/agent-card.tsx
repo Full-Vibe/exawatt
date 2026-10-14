@@ -98,8 +98,12 @@ export function AgentCard({
             <dd className="font-mono text-white/85">
               {formatMinutes(resetMinutes)}
             </dd>
-            <dt className="text-white/50">Model</dt>
-            <dd className="text-white/85">{agent.model}</dd>
+            {agent.model ? (
+              <>
+                <dt className="text-white/50">Model</dt>
+                <dd className="text-white/85">{agent.model}</dd>
+              </>
+            ) : null}
           </dl>
           <div className="mt-4 flex justify-end gap-2">
             {agent.status === 'needs-you' ? (

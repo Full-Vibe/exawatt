@@ -52,7 +52,8 @@ export interface FleetAgent {
   doing: string;
   status: StatusLightState;
   source: string;
-  model: string;
+  /** The model it runs, or null where its vendor names none. */
+  model: string | null;
   /** 0..1 share of the plan window this agent has spent. */
   burn: number;
   /** Minutes at work this session. */
@@ -234,17 +235,59 @@ const SOURCES: { id: string; label: string }[] = [
   { id: 'openclaw', label: 'OpenClaw' },
 ];
 
-/** The adapter id behind a study agent's harness label, for the mark. */
-export function sourceAdapterId(label: string): string {
-  return SOURCES.find(source => source.label === label)?.id ?? label;
+/**
+ * Agents the product does not run yet (ENG-031 W15n, operator 2026-10-14:
+ * "Homepage is aspirational and illustrative and I'll add support for them
+ * soon"), each with the id its mark has in `concept-marks.ts`. They work in
+ * Projects of their own kind, two harnesses to a Project as a team would
+ * settle on: Muse and Grok Bot write and post for Marketing, dots and
+ * Instinct book and chase for Sales. Both Projects are inside the hundred,
+ * so all four are on the board from that scene on, and the first Project,
+ * which the landing and the close-ups show, runs the product's own five.
+ */
+const CONCEPT_SOURCES: { id: string; label: string }[] = [
+  { id: 'grok-bot', label: 'Grok Bot' },
+  { id: 'muse', label: 'Muse' },
+  { id: 'instinct', label: 'Instinct' },
+  { id: 'dots', label: 'dots' },
+];
+
+/** The concept harnesses a Project runs: the first its core, the second
+ *  the rest. */
+const CONCEPT_PROJECTS: Partial<Record<number, readonly [string, string]>> = {
+  1: ['Muse', 'Grok Bot'],
+  2: ['dots', 'Instinct'],
+};
+/** The share of a concept Project its first harness takes. */
+const CONCEPT_CORE = 0.6;
+
+function sourceFor(project: FleetProject, local: number, index: number) {
+  const pair = CONCEPT_PROJECTS[project.id];
+  if (pair)
+    return pair[local < Math.round(project.count * CONCEPT_CORE) ? 0 : 1];
+  return SOURCES[(index * 7 + project.id) % SOURCES.length].label;
 }
 
+const ALL_SOURCES = [...SOURCES, ...CONCEPT_SOURCES];
+
+/** The adapter id behind a study agent's harness label, for the mark. */
+export function sourceAdapterId(label: string): string {
+  return ALL_SOURCES.find(source => source.label === label)?.id ?? label;
+}
+
+/** What each harness runs. For the concepts, only what the vendors say,
+ *  and no version they have not named: Grok Bot runs xAI's Grok, Muse
+ *  Meta's Muse Spark, each of OpenAI's dots GPT-6 Astra, and Instinct names
+ *  no model. */
 const MODELS: Record<string, string[]> = {
   'Claude Code': ['Fable 5.1', 'Opus 5.5', 'Sonnet 5.5'],
   Codex: ['GPT-6', 'GPT-6 mini'],
   OpenCode: ['Sonnet 5.5', 'Haiku 5.5'],
   'Grok Build': ['Grok 5'],
   OpenClaw: ['Opus 5.5'],
+  'Grok Bot': ['Grok'],
+  Muse: ['Muse Spark'],
+  dots: ['GPT-6 Astra'],
 };
 
 /** Mulberry32: tiny, seeded, deterministic. */
@@ -370,8 +413,8 @@ export function fleetModel(): FleetModel {
     for (let local = 0; local < project.count; local += 1) {
       const index = project.first + local;
       const tile = spiral[local];
-      const source = SOURCES[(index * 7 + project.id) % SOURCES.length].label;
-      const models = MODELS[source];
+      const source = sourceFor(project, local, index);
+      const models = MODELS[source] as string[] | undefined;
       const status = statusFor(index, local, random);
       const tasks = TASKS[project.id];
       const purpose = tasks[(local * 5 + project.id) % tasks.length];
@@ -390,7 +433,7 @@ export function fleetModel(): FleetModel {
         doing,
         status,
         source,
-        model: models[index % models.length],
+        model: models ? models[index % models.length] : null,
         burn: Math.min(0.96, 0.08 + random() * 0.8),
         minutes: Math.round(6 + random() * 420),
         tile: tile.axial,

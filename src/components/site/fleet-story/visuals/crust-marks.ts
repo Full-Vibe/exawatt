@@ -5,10 +5,11 @@
  * the logo onto the 3D surface... make sure it appears first class on the
  * 3D agent itself").
  *
- * The marks are the vendors' own path data, the same bytes the product's
- * chrome draws (`harness-icons.tsx`), extruded into real geometry: no
- * texture and no decal, so a mark is lit by the light that lights the tile
- * and can take the tile's material. Three ways to carry it, all a study
+ * The marks are path data: the vendors' own, the same bytes the product's
+ * chrome draws (`harness-icons.tsx`), and for the agents the product does
+ * not run yet, the concept marks (`concept-marks.ts`). Each is extruded into
+ * real geometry: no texture and no decal, so a mark is lit by the light that
+ * lights the tile and can take the tile's material. Three ways to carry it, all a study
  * switch:
  *
  * - Lit: a thin inlay, in the vendor's own colour where it has one and in
@@ -32,11 +33,8 @@
 
 import * as THREE from 'three';
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
-import {
-  HARNESS_MARK_PATHS,
-  type HarnessMarkId,
-  type HarnessMarkPart,
-} from '@/components/workspace/harness-icons';
+import type { HarnessMarkPart } from '@/components/workspace/harness-icons';
+import { STORY_MARK_PATHS, type StoryMarkId } from '../concept-marks';
 import { markToneHex } from '../mark-tones';
 
 export type CrustMarkId = 'off' | 'lit' | 'relief' | 'coin';
@@ -60,7 +58,7 @@ export const CRUST_MARKS: { id: CrustMarkId; name: string; note: string }[] = [
   },
 ];
 
-const MARK_IDS = Object.keys(HARNESS_MARK_PATHS) as HarnessMarkId[];
+const MARK_IDS = Object.keys(STORY_MARK_PATHS) as StoryMarkId[];
 
 export const MARK_COUNT = MARK_IDS.length;
 
@@ -161,7 +159,7 @@ export function makeMarkParts(): MarkPart[] {
   const loader = new SVGLoader();
   const out: MarkPart[] = [];
   MARK_IDS.forEach((id, index) => {
-    const mark = HARNESS_MARK_PATHS[id];
+    const mark = STORY_MARK_PATHS[id];
     const [dx, dy] = mark.translate ?? [0, 0];
     for (const part of mark.parts) {
       const g = new THREE.ExtrudeGeometry(
