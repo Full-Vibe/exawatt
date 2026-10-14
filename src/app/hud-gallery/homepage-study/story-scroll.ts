@@ -71,3 +71,19 @@ export function frameProgress(index: number, last: number) {
 export function nearestFrame(progress: number, last: number) {
   return clamp(Math.round(progress), 0, last);
 }
+
+/**
+ * How far the scroll has gone from the frame it is nearest, as a share of
+ * the hold around that frame, -1 to 1 (W15l). Around every frame the story
+ * holds the scene still for a quarter of a screen; this is how far into
+ * that hold the scroll has gone, so the page can answer the finger from its
+ * first pixel (a lean toward the next scene, the type following) instead of
+ * an inch and a half of nothing (operator 2026-10-14: "I have to move my
+ * finger a good inch and a half, maybe two inches, before the bar at the
+ * top... even begins responding"). Past the hold it stays at its end, where
+ * the move itself has taken over.
+ */
+export function scrollIntent(progress: number, last: number): number {
+  const frame = frameProgress(nearestFrame(progress, last), last);
+  return clamp((progress - frame) / RAIL_DWELL, -1, 1);
+}

@@ -32,6 +32,7 @@ import { axialToPlane } from '../fleet-model';
 import { planeToSphere } from '../sphere';
 import { isNarrow } from '../narrow';
 import { leanBlend, leanCurve, panelSide, stageBlend, STAGES } from '../stages';
+import { scrollIntent } from '../story-scroll';
 import type { StoryDrive } from '../visual-contract';
 
 interface StageFraming {
@@ -197,6 +198,9 @@ const DRIFT_RATE = 0.021;
  *  (operator 2026-10-13: "when I'm beginning my scroll gesture but before
  *  it begins the scene transition, there's no visible feedback"). */
 const LEAN_MAX = 0.12;
+/** How far a finger travels before its drag is taken as a turn or left to
+ *  the page. */
+const TOUCH_DECIDE_PX = 8;
 const LEAN_RATE = 14;
 /** A light second pass on distance and target, so a ghost click or a
  *  fleet-size change arrives as a glide and not a cut. */
@@ -231,6 +235,12 @@ export function CameraRig({
     moved: 0,
     lastX: 0,
     lastY: 0,
+    /** Where a drag began, and which way it was taken: a finger's drag turns
+     *  the world only once it has gone sideways; up and down is the page's
+     *  (W15l: "a weird mix of panning and scrolling"). */
+    startX: 0,
+    startY: 0,
+    lock: 'none' as 'none' | 'turn' | 'page',
     polarVelocity: 0,
     userAzimuth: 0,
     userPolar: 0,
@@ -258,10 +268,24 @@ export function CameraRig({
       s.moved = 0;
       s.lastX = e.clientX;
       s.lastY = e.clientY;
+      s.startX = e.clientX;
+      s.startY = e.clientY;
+      // a mouse turns the world at once; a finger or a pen waits to see
+      s.lock = e.pointerType === 'mouse' ? 'turn' : 'none';
       el.setPointerCapture(e.pointerId);
     };
     const move = (e: PointerEvent) => {
       if (!s.dragging) return;
+      if (s.lock === 'none') {
+        const tx = e.clientX - s.startX;
+        const ty = e.clientY - s.startY;
+        if (Math.hypot(tx, ty) < TOUCH_DECIDE_PX) return;
+        s.lock = Math.abs(tx) > Math.abs(ty) ? 'turn' : 'page';
+        s.lastX = e.clientX;
+        s.lastY = e.clientY;
+        return;
+      }
+      if (s.lock === 'page') return;
       const dx = e.clientX - s.lastX;
       const dy = e.clientY - s.lastY;
       s.lastX = e.clientX;
@@ -314,8 +338,18 @@ export function CameraRig({
     // The lean: eased toward what the push asks for; held once the move it
     // asked for starts, until the move has carried the camera past it, so
     // the move goes on from the lean and never dips back first.
+    // A push on the wheel before the page moves, and a scroll (a finger on
+    // glass, a wheel in the other modes) into the hold around a frame: both
+    // lean the camera toward where they are going (W15i, W15l).
     const intent =
-      !reducedMotion && !closeUp && d.intent ? d.intent(performance.now()) : 0;
+      reducedMotion || closeUp
+        ? 0
+        : THREE.MathUtils.clamp(
+            (d.intent ? d.intent(performance.now()) : 0) +
+              scrollIntent(d.progress, STAGES.length - 1),
+            -1,
+            1
+          );
     const holding = d.moving !== 0 && Math.sign(s.lean) === d.moving;
     if (!holding)
       s.lean = THREE.MathUtils.damp(

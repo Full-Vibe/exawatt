@@ -51,7 +51,14 @@ import {
   type CopySetId,
   type Stage,
 } from './stages';
-import { pinnedAt, PIN_TOP, progressAt, storyTravel } from './story-scroll';
+import {
+  frameProgress,
+  pinnedAt,
+  PIN_TOP,
+  progressAt,
+  scrollIntent,
+  storyTravel,
+} from './story-scroll';
 import { useSceneScroll, type SnapMode } from './use-scene-scroll';
 import {
   VisualAnchor,
@@ -90,6 +97,12 @@ const stepLean = { from: 0, to: 0, t: 0 };
  *  much of the next step a whole push fills. */
 const PUSH_RATE = 14;
 const STEP_PUSH = 0.4;
+/** The reading column follows the scroll (W15l, operator 2026-10-14: "there
+ *  isn't really a response under my finger and it feels pretty
+ *  disconnected"): a share of the finger's travel, and how far from its
+ *  frame, in stages, a scene's column has gone from sight. */
+const FOLLOW = 0.7;
+const REVEAL_SPAN = 0.45;
 /** The "synthetic fleet" stamp runs across the top of a portrait stage,
  *  under the scene steps; an open sheet starts below it. */
 const STAMP_CLEAR = 34;
@@ -148,6 +161,8 @@ export function ScrollExperience({
     () => STAGES.map(item => item.highlight[copySet] ?? null),
     [copySet]
   );
+  const pxPerProgressRef = useRef(1);
+  const panelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const drive = useRef<StoryDrive>({
     progress: 0,
     base: STAGES[0].count,
@@ -228,6 +243,8 @@ export function ScrollExperience({
     const d = drive.current;
     d.progress = progress;
     d.highlights = highlights;
+    pxPerProgressRef.current =
+      travel / Math.max(0.001, STAGES.length - 1 - 2 * RAIL_DWELL);
     const index = stageAt(progress);
     const current = STAGES[index];
     d.count = current.count;
@@ -279,6 +296,10 @@ export function ScrollExperience({
   }, [names]);
   // The scene steps' fills, and the push as the page shows it.
   const stepRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const reducedMotionRef = useRef(reducedMotion);
+  useEffect(() => {
+    reducedMotionRef.current = reducedMotion;
+  }, [reducedMotion]);
   useEffect(() => {
     labelTopRef.current = insetTop + 22;
   }, [insetTop]);
@@ -299,8 +320,35 @@ export function ScrollExperience({
       const now = performance.now();
       const dt = Math.min(0.05, (now - then) / 1000);
       then = now;
-      const intent = drive.current.intent?.(now) ?? 0;
+      // the wheel's push before the page moves, and the scroll's way into
+      // the hold around a frame (a finger on glass), as the camera reads them
+      const last = STAGES.length - 1;
+      const progress = drive.current.progress;
+      const intent = Math.max(
+        -1,
+        Math.min(
+          1,
+          (drive.current.intent?.(now) ?? 0) + scrollIntent(progress, last)
+        )
+      );
       const pushTarget = Math.sign(intent) * leanCurve(intent);
+      // every scene's column follows the scroll and fades as it leaves its
+      // frame, so the type moves under the finger and the next scene's
+      // comes up after it
+      for (let i = 0; i < panelRefs.current.length; i += 1) {
+        const panel = panelRefs.current[i];
+        if (!panel) continue;
+        const away = progress - frameProgress(i, last);
+        const r = Math.max(0, 1 - Math.abs(away) / REVEAL_SPAN);
+        const reveal = (r * r * (3 - 2 * r)).toFixed(3);
+        const follow = reducedMotionRef.current
+          ? '0px'
+          : `${(-away * pxPerProgressRef.current * FOLLOW).toFixed(1)}px`;
+        if (panel.style.getPropertyValue('--reveal') !== reveal)
+          panel.style.setProperty('--reveal', reveal);
+        if (panel.style.getPropertyValue('--follow') !== follow)
+          panel.style.setProperty('--follow', follow);
+      }
       // held into the move it asked for, as the camera holds its lean, so
       // the next step never drains before the move fills it
       const moving = drive.current.moving;
@@ -431,7 +479,7 @@ export function ScrollExperience({
         : null}
       <div
         ref={stageRef}
-        className="group/stage sticky top-12 z-10 h-[calc(100svh-3rem)] overflow-hidden bg-[#04060b]"
+        className="group/stage sticky top-12 z-10 h-[calc(100svh-3rem)] select-none overflow-hidden bg-[#04060b] [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none]"
         // the study's own controls cover the stage's top; the reading column
         // keeps clear of them (on the homepage there are none)
         style={{ '--inset-top': `${insetTop}px` } as React.CSSProperties}
@@ -519,6 +567,9 @@ export function ScrollExperience({
           {STAGES.map((item, index) => (
             <Panel
               key={item.id}
+              panelRef={el => {
+                panelRefs.current[index] = el;
+              }}
               stage={item}
               copySet={copySet}
               active={index === stage}
@@ -702,6 +753,7 @@ function Scrim({ stage, active }: { stage: Stage; active: boolean }) {
 }
 
 function Panel({
+  panelRef,
   stage,
   copySet,
   active,
@@ -709,6 +761,9 @@ function Panel({
   accent,
   reducedMotion,
 }: {
+  /** The frame loop writes how far this scene's column has followed the
+   *  scroll and how much of it shows. */
+  panelRef: (el: HTMLDivElement | null) => void;
   stage: Stage;
   copySet: CopySetId;
   active: boolean;
@@ -730,8 +785,9 @@ function Panel({
         : 'inset-x-5 top-[14vh] items-center text-center landscape:inset-x-auto landscape:left-1/2 landscape:top-[max(13vh,calc(var(--inset-top,0px)+1.25rem))] landscape:-translate-x-1/2';
   return (
     <div
+      ref={panelRef}
       className={cn(
-        'absolute flex flex-col gap-4 transition-opacity duration-500 md:gap-5',
+        'absolute flex flex-col gap-4 md:gap-5',
         // The centred headlines are long lines; the rest read in a column. A
         // centred absolute box shrinks to fit half the stage unless it is
         // sized to its content, which wrapped a two-line headline onto three.
@@ -741,7 +797,7 @@ function Panel({
         placement,
         // an invisible panel from another stage must never swallow a click
         // meant for the world under it
-        active ? 'opacity-100' : 'opacity-0 [&_*]:!pointer-events-none',
+        !active && '[&_*]:!pointer-events-none',
         // on a portrait screen the open agent's sheet takes the end of the
         // stage the type is not at, unless the agent is there; then the type
         // steps aside, so the sheet is never under it
@@ -752,12 +808,14 @@ function Panel({
       data-study-panel={stage.id}
       aria-hidden={!active}
     >
-      {/* the column gives a little to a push, and comes back if it is let go */}
+      {/* the column follows the scroll and gives a little to a push, and
+          comes back if the push is let go */}
       <div
         className="flex flex-col gap-4 md:gap-5"
         style={{
-          transform: 'translate3d(0, calc(var(--push-signed, 0) * -10px), 0)',
-          opacity: 'calc(1 - var(--push, 0) * 0.16)',
+          transform:
+            'translate3d(0, calc(var(--follow, 0px) + var(--push-signed, 0) * -16px), 0)',
+          opacity: `calc(var(--reveal, ${active ? 1 : 0}) * (1 - var(--push, 0) * 0.16))`,
           alignItems: 'inherit',
         }}
       >

@@ -51,8 +51,10 @@ export function AgentCard({
       style={accent ? { borderColor: accent } : undefined}
       data-study-agent-card
     >
+      {/* its status and its harness's mark: the card is an agent, so it does
+          not need to say so (operator 2026-10-14: "we don't need the
+          redundant phrase 'agent status'") */}
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[13px] font-medium text-white/80">Agent status</p>
         <p
           className={cn(
             'flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em]',
@@ -64,6 +66,9 @@ export function AgentCard({
           />
           {STATUS_LABEL[agent.status]}
         </p>
+        <span className="flex items-center text-white/85" title={agent.source}>
+          <MarkGlyph source={agent.source} size={15} />
+        </span>
       </div>
       <p className="mt-2 truncate text-[15px] font-semibold">{agent.name}</p>
       <p className="truncate text-[12px] text-white/55">{agent.doing}</p>
@@ -95,13 +100,6 @@ export function AgentCard({
             </dd>
             <dt className="text-white/50">Model</dt>
             <dd className="text-white/85">{agent.model}</dd>
-            <dt className="text-white/50">Source</dt>
-            <dd
-              className="flex items-center text-white/85"
-              title={agent.source}
-            >
-              <MarkGlyph source={agent.source} size={15} />
-            </dd>
           </dl>
           <div className="mt-4 flex justify-end gap-2">
             {agent.status === 'needs-you' ? (

@@ -395,7 +395,7 @@ export function AgentMaterialStudy() {
         </div>
 
         <div
-          className="sticky top-12 z-10 order-1 h-[52svh] min-h-[240px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#04060b] lg:relative lg:top-auto lg:z-auto lg:order-2 lg:h-[calc(100svh-5rem)] lg:min-h-[420px]"
+          className="sticky top-12 z-10 order-1 h-[52svh] min-h-[240px] w-full select-none overflow-hidden rounded-xl border border-white/10 bg-[#04060b] [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] lg:relative lg:top-auto lg:z-auto lg:order-2 lg:h-[calc(100svh-5rem)] lg:min-h-[420px]"
           data-agent-material-stage
         >
           <VisualCanvas

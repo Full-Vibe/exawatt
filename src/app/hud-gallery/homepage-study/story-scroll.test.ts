@@ -8,6 +8,7 @@ import {
   pinnedAt,
   pinnedFor,
   progressAt,
+  scrollIntent,
   storyTravel,
 } from './story-scroll';
 import { RAIL_DWELL, STAGES } from './stages';
@@ -72,5 +73,19 @@ describe('the story scroll', () => {
     expect(isBeyond(48 - travel, travel)).toBe(false);
     expect(isBeyond(48 - travel - 2, travel)).toBe(true);
     expect(isBeyond(48 - travel - 400, travel)).toBe(true);
+  });
+
+  it('answers a scroll into the hold around a frame from its first pixel', () => {
+    const frame = frameProgress(2, LAST);
+    expect(scrollIntent(frame, LAST)).toBe(0);
+    // a few pixels in either direction already register, in proportion
+    expect(scrollIntent(frame + 0.01, LAST)).toBeCloseTo(0.01 / RAIL_DWELL, 6);
+    expect(scrollIntent(frame - 0.01, LAST)).toBeCloseTo(-0.01 / RAIL_DWELL, 6);
+    // at the edge of the hold it is whole, and stays whole into the move
+    expect(scrollIntent(frame + RAIL_DWELL, LAST)).toBe(1);
+    expect(scrollIntent(frame + 0.4, LAST)).toBe(1);
+    // the first and last frames rest at the ends of the scroll
+    expect(scrollIntent(frameProgress(0, LAST), LAST)).toBe(0);
+    expect(scrollIntent(frameProgress(LAST, LAST), LAST)).toBe(0);
   });
 });
