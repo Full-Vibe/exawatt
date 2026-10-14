@@ -262,8 +262,11 @@ every kind of agent in one place. Their marks live in
 `src/components/site/fleet-story/concept-marks.ts`, in the same shape as the product's registry but
 outside it: no product chrome draws them, and `HARNESS_MARK_PATHS` gains a mark only when Exawatt
 ships an adapter for that harness, at which point the concept entry is deleted. They are drawn as a
-flat glyph in the story's agent card and as 3D geometry on its agent tiles, and the agents wearing
-them are labelled synthetic on the page ("Demo workspace · synthetic fleet").
+flat glyph in the story's agent card and as 3D geometry on its agent tiles. Until W15o the page
+labelled its fleet synthetic ("Demo workspace · synthetic fleet"); the operator removed that stamp on
+2026-10-14 ("useless, doesn't support any of our goals, and only gets in the way"), so the page
+carries no such label now. The decision below was taken with the page's own framing, aspirational
+and illustrative, and stands as recorded.
 
 **Operator decision, 2026-10-14 (accepted risk).** Told that Exawatt can launch none of the four
 today, and that their vendors' terms forbid altered marks and implied endorsement, the operator

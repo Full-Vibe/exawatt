@@ -49,12 +49,7 @@ import {
   releaseGlide,
   releaseStop,
 } from './touch-pager';
-import {
-  setIntent,
-  setMoving,
-  setRestFrame,
-  type StoryDrive,
-} from './visual-contract';
+import { setIntent, setMoving, type StoryDrive } from './visual-contract';
 
 export type SnapMode = 'off' | 'soft' | 'page';
 
@@ -165,6 +160,8 @@ export function useSceneScroll({
 
     let frame = 0;
     let animating = false;
+    /** Where the move under way is going, for a finger that catches it. */
+    let runTo = 0;
     /** What to do if a move is stopped before it lands (a finger catching
      *  it): a wheel move must still let its pager go. */
     let onCancel: (() => void) | undefined;
@@ -231,6 +228,7 @@ export function useSceneScroll({
         return;
       }
       animating = true;
+      runTo = to;
       onCancel = cancelled;
       const start = performance.now();
       const step = (now: number) => {
@@ -257,24 +255,22 @@ export function useSceneScroll({
       const current = nearestFrame(here, last);
       const onFrame = Math.abs(here - frameProgress(current, last)) < ON_FRAME;
       const to = topFor(frameProgress(index, last));
-      const arrived = () => {
-        setRestFrame(story, index);
-        landed?.();
-      };
       if (onFrame && Math.abs(index - current) === 1) {
         const move = railMove(current, index, last);
         const span = move.to - move.from;
         run(
           to,
           tau => (pagedProgress(tau, move) - move.from) / span,
-          arrived,
+          landed,
           MOVE_MS,
           cancelled
         );
-      } else run(to, easeInOutCubic, arrived, MOVE_MS, cancelled);
+      } else run(to, easeInOutCubic, landed, MOVE_MS, cancelled);
     };
+    // a step pressed while the page moves goes there from where it is
     goToRef.current = index => {
-      if (!animating) goTo(Math.max(0, Math.min(last, index)));
+      cancelRun();
+      goTo(Math.max(0, Math.min(last, index)));
     };
     if (mode === 'off') {
       return () => {
@@ -297,12 +293,18 @@ export function useSceneScroll({
       /** The scroll position the drag moves from. */
       top: number;
       axis: 'none' | 'page' | 'turn';
-      /** The stop a glide this finger caught was heading for, or -1. */
-      resume: number;
+      /** Where a move this finger caught was going, or null. */
+      resume: number | null;
       samples: { t: number; y: number }[];
+      /** What the finger went down on: on an iPhone its moves keep going
+       *  there even if it leaves the page (the card's step line re-renders
+       *  under it), so they are listened for there as well as on the page. */
+      target: EventTarget | null;
     } | null = null;
-    /** The stop the glide under way is heading for, or -1. */
-    let glideTarget = -1;
+    /** A second finger came down: the browser's pinch. The page settles when
+     *  the last finger lifts, never under a pinch. */
+    let pinched = false;
+    const zoomed = () => (window.visualViewport?.scale ?? 1) > 1.01;
     const maxScroll = () => Math.max(0, root.scrollHeight - window.innerHeight);
     const stopsNow = () => {
       const tops: number[] = [];
@@ -310,28 +312,18 @@ export function useSceneScroll({
         tops.push(topFor(frameProgress(i, last)));
       return pageStops(tops, maxScroll(), window.innerHeight);
     };
-    /** Glide to a stop from the speed the page is going: a scene, or the
-     *  page below the story. */
-    const glideTo = (stops: number[], index: number, velocity: number) => {
-      const to = stops[index];
+    /** Glide to a scroll position from the speed the page is going. */
+    const glideTo = (to: number, velocity: number) => {
       const glide = releaseGlide(
         to - window.scrollY,
         velocity,
         window.innerHeight
       );
-      glideTarget = index;
-      run(
-        to,
-        glide.ease,
-        () => {
-          glideTarget = -1;
-          if (index <= last) setRestFrame(story, index);
-        },
-        glide.duration,
-        () => {
-          glideTarget = -1;
-        }
-      );
+      run(to, glide.ease, undefined, glide.duration);
+    };
+    const settleSoon = () => {
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(settle, SETTLE_MS);
     };
     const ownsTouch = (target: EventTarget | null) => {
       if (document.body.hasAttribute('data-scroll-locked')) return true;
@@ -347,28 +339,48 @@ export function useSceneScroll({
       }
       return false;
     };
+    // An event reaches both the finger's own element and the page; it is
+    // handled once.
+    let handled: Event | null = null;
+    const listenOn = (target: EventTarget | null, on: boolean) => {
+      if (!target || target === window) return;
+      const method = on ? 'addEventListener' : 'removeEventListener';
+      target[method](
+        'touchmove',
+        onTouchMove as EventListener,
+        {
+          passive: false,
+        } as AddEventListenerOptions
+      );
+      target[method](
+        'touchend',
+        onTouchEnd as EventListener,
+        {
+          passive: false,
+        } as AddEventListenerOptions
+      );
+      target[method]('touchcancel', onTouchEnd as EventListener);
+    };
     const letGo = () => {
+      if (finger) listenOn(finger.target, false);
       finger = null;
       touching = false;
     };
     const onTouchStart = (event: TouchEvent) => {
       stopHints();
       // a second finger is a pinch, which is the browser's: the page stays
-      // where the first one left it, and settles if that is between scenes
+      // where the first one left it until every finger is up
       if (event.touches.length !== 1) {
-        if (finger) {
-          letGo();
-          window.clearTimeout(settleTimer);
-          settleTimer = window.setTimeout(settle, SETTLE_MS);
-        }
+        if (finger) letGo();
+        pinched = true;
+        window.clearTimeout(settleTimer);
         return;
       }
-      if ((window.visualViewport?.scale ?? 1) > 1.01) return;
-      if (ownsTouch(event.target)) return;
+      if (zoomed() || ownsTouch(event.target)) return;
       if (!isAtOrPast(read().rect.top)) return;
       const touch = event.touches[0];
-      // a finger catches a glide where it is
-      const resume = animating ? glideTarget : -1;
+      // a finger catches a move where it is
+      const resume = animating ? runTo : null;
       cancelRun();
       finger = {
         id: touch.identifier,
@@ -378,14 +390,17 @@ export function useSceneScroll({
         axis: 'none',
         resume,
         samples: [],
+        target: event.target,
       };
+      listenOn(event.target, true);
       touching = true;
     };
-    const onTouchMove = (event: TouchEvent) => {
+    function onTouchMove(event: TouchEvent) {
+      if (event === handled) return;
+      handled = event;
       if (!finger) return;
-      const touch = Array.from(event.touches).find(
-        item => item.identifier === finger?.id
-      );
+      const id = finger.id;
+      const touch = Array.from(event.touches).find(t => t.identifier === id);
       if (!touch || event.touches.length !== 1) return;
       // the page never moves under the finger by itself
       if (event.cancelable) event.preventDefault();
@@ -407,18 +422,31 @@ export function useSceneScroll({
           Math.min(maxScroll(), finger.top - (touch.clientY - finger.y))
         )
       );
-    };
-    const onTouchEnd = (event: TouchEvent) => {
-      if (!finger) return;
+    }
+    function onTouchEnd(event: TouchEvent) {
+      if (event === handled) return;
+      handled = event;
+      // the last finger of a pinch is up: the page may settle again
+      if (!finger) {
+        if (pinched && event.touches.length === 0) {
+          pinched = false;
+          if (!zoomed()) settleSoon();
+        }
+        return;
+      }
       const id = finger.id;
       if (!Array.from(event.changedTouches).some(t => t.identifier === id))
         return;
       const gesture = finger;
       letGo();
-      const stops = stopsNow();
       if (gesture.axis !== 'page') {
-        // a tap or a turn: a glide it caught goes on where it was going
-        if (gesture.resume >= 0) glideTo(stops, gesture.resume, 0);
+        // a tap or a turn: a move it caught goes on where it was going, and
+        // a tap that only stopped the page presses nothing under it
+        if (gesture.resume !== null) {
+          if (gesture.axis === 'none' && event.cancelable)
+            event.preventDefault();
+          glideTo(gesture.resume, 0);
+        } else settleSoon();
         return;
       }
       // the page's speed is the finger's, the other way up; a cancelled
@@ -427,13 +455,13 @@ export function useSceneScroll({
         event.type === 'touchcancel'
           ? 0
           : -fingerVelocity(gesture.samples, event.timeStamp);
+      const stops = stopsNow();
       const position = window.scrollY;
       glideTo(
-        stops,
-        releaseStop(stops, position, velocity, gesture.top),
+        stops[releaseStop(stops, position, velocity, gesture.top)],
         velocity
       );
-    };
+    }
 
     // The pager controls the story and the page below it, so a flick up from
     // the footer is the pager's: the browser lets a wheel sequence whose first
@@ -527,7 +555,7 @@ export function useSceneScroll({
     // a jump, a restored position), glide to the nearest one.
     let settleTimer = 0;
     const settle = () => {
-      if (animating || touching || !inStory()) return;
+      if (animating || touching || zoomed() || !inStory()) return;
       const here = read().progress;
       const frameIndex = nearestFrame(here, last);
       const away = Math.abs(here - frameProgress(frameIndex, last));
@@ -535,7 +563,7 @@ export function useSceneScroll({
       goTo(frameIndex);
     };
     const onScroll = () => {
-      if (animating || touching) return;
+      if (animating || touching || zoomed()) return;
       if (!onLanding()) stopHints();
       window.clearTimeout(settleTimer);
       settleTimer = window.setTimeout(settle, SETTLE_MS);
@@ -552,7 +580,8 @@ export function useSceneScroll({
       // may not be passive; the rest only listen
       window.addEventListener('touchstart', onTouchStart, { passive: true });
       window.addEventListener('touchmove', onTouchMove, { passive: false });
-      window.addEventListener('touchend', onTouchEnd, { passive: true });
+      // a tap that only stops a moving page must not press what is under it
+      window.addEventListener('touchend', onTouchEnd, { passive: false });
       window.addEventListener('touchcancel', onTouchEnd, { passive: true });
       // how far a push has got before it pages, for the camera and the page,
       // and the landing's invitation, which is shown the same way
@@ -572,6 +601,7 @@ export function useSceneScroll({
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', onTouchEnd);
       window.removeEventListener('touchcancel', onTouchEnd);
+      letGo();
       window.removeEventListener('touchstart', stopHints);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('pointerdown', stopHints);

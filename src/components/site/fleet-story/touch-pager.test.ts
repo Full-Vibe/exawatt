@@ -25,6 +25,15 @@ describe('the stops a finger pages between', () => {
       expect(stops[i] - stops[i - 1]).toBeLessThanOrEqual(800);
   });
 
+  it('split a footer that does not divide evenly into steps under a screen', () => {
+    // a screen and a quarter below the last scene: two even steps
+    expect(pageStops(FRAMES, 3200 + 1000, 800)).toEqual([
+      ...FRAMES,
+      3700,
+      4200,
+    ]);
+  });
+
   it('never ask for a scroll past the end of the page', () => {
     expect(pageStops([0, 500, 900], 800, 800)).toEqual([0, 500, 800]);
   });
@@ -59,6 +68,28 @@ describe('where the page goes when the finger lifts', () => {
     expect(releaseStop(FRAMES, 700 + 900 * 0.24, 0, 700)).toBe(2);
     expect(releaseStop(FRAMES, 1600 - 900 * 0.2, 0, 1600)).toBe(2);
     expect(releaseStop(FRAMES, 1600 - 900 * 0.24, 0, 1600)).toBe(1);
+  });
+
+  it('commits a slow drag at 22% of the way and not before', () => {
+    expect(releaseStop(FRAMES, 700 + 900 * 0.215, 0, 700)).toBe(1);
+    expect(releaseStop(FRAMES, 700 + 900 * 0.225, 0, 700)).toBe(2);
+    expect(releaseStop(FRAMES, 1600 - 900 * 0.215, 0, 1600)).toBe(2);
+    expect(releaseStop(FRAMES, 1600 - 900 * 0.225, 0, 1600)).toBe(1);
+  });
+
+  it('settles a release where the drag began on the nearer scene', () => {
+    // a finger that caught a glide and lifted where it caught it
+    expect(releaseStop(FRAMES, 700 + 900 * 0.4, 0, 700 + 900 * 0.4)).toBe(1);
+    expect(releaseStop(FRAMES, 700 + 900 * 0.6, 0, 700 + 900 * 0.6)).toBe(2);
+  });
+
+  it('is on a scene within a pixel of it, and only within a pixel', () => {
+    // half a pixel past the third scene: on it, so a flick back goes to
+    // the scene before it
+    expect(releaseStop(FRAMES, 1600.5, -0.5, 1600)).toBe(1);
+    // two pixels past it: between it and the next, so a flick back
+    // returns to it
+    expect(releaseStop(FRAMES, 1602, -0.5, 1610)).toBe(2);
   });
 
   it('reads a slow drag by the way the finger went', () => {
@@ -151,6 +182,31 @@ describe('the glide to a stop', () => {
     const { ease } = releaseGlide(600, -0.8, 800);
     const h = 1e-4;
     expect((ease(h) - ease(0)) / h).toBeCloseTo(0, 3);
+  });
+
+  it('takes its time from the distance it has to go', () => {
+    // a quarter screen in 375 ms, half a screen in 490 ms: 260 ms and
+    // 460 ms a screen
+    expect(releaseGlide(200, 0, 800).duration).toBeCloseTo(375, 6);
+    expect(releaseGlide(-400, 0, 800).duration).toBeCloseTo(490, 6);
+  });
+
+  it('takes no longer than 720 ms however far it goes', () => {
+    expect(releaseGlide(1600, 0, 800).duration).toBe(720);
+  });
+
+  it('takes 240 ms at least, however fast the finger', () => {
+    expect(releaseGlide(100, 5, 800).duration).toBe(240);
+  });
+
+  it("leaves at a fast finger's own speed, and lands sooner", () => {
+    // 3 px/ms with 600 px to go: it starts at 3 px/ms and lands in 520 ms,
+    // sooner than the 605 ms a still finger's glide takes
+    const { duration, ease } = releaseGlide(600, 3, 800);
+    const h = 1e-5;
+    expect(((ease(h) - ease(0)) / h) * (600 / duration)).toBeCloseTo(3, 2);
+    expect(duration).toBeCloseTo(520, 6);
+    expect(releaseGlide(600, 0, 800).duration).toBeCloseTo(605, 6);
   });
 
   it('is quicker for a short return and for a fast finger', () => {

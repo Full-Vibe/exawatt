@@ -63,7 +63,7 @@ import {
 import {
   frameCoord,
   frameProgress,
-  frameReached,
+  nearestFrame,
   pinnedAt,
   progressAt,
   scrollIntent,
@@ -172,7 +172,6 @@ export function ScrollExperience({
     rate: HAND_RATE,
     rail: 0,
     moving: 0,
-    restFrame: 0,
   });
   const anchor = useRef<VisualAnchor>(new VisualAnchor());
   const [stage, setStage] = useState(0);
@@ -246,10 +245,6 @@ export function ScrollExperience({
       STAGES.length - 1
     );
     const d = drive.current;
-    // the frame the scroll last reached or passed is where a scroll leans
-    // from (`scrollIntent`)
-    const reached = frameReached(d.progress, progress, STAGES.length - 1);
-    if (reached >= 0) d.restFrame = reached;
     d.progress = progress;
     d.highlights = highlights;
     pxPerProgressRef.current =
@@ -325,6 +320,9 @@ export function ScrollExperience({
      *  story, eased. */
     let stepPush = 0;
     let stepAt = Number.NaN;
+    /** The scene a wheel's push leans the steps from: where the page rests,
+     *  held through the move the push asks for. */
+    let stepBase = 0;
     let then = performance.now();
     const tick = () => {
       frame = requestAnimationFrame(tick);
@@ -339,15 +337,14 @@ export function ScrollExperience({
       const dt = Math.min(0.05, (now - then) / 1000);
       then = now;
       // the wheel's push before the page moves, and the scroll's way into
-      // the hold around the frame it set out from (a finger on glass), as
-      // the camera reads them
+      // the hold around a frame (a finger on glass), as the camera reads them
       const d = drive.current;
       const last = STAGES.length - 1;
       const progress = d.progress;
       const pending = d.intent?.(now) ?? 0;
       const intent = Math.max(
         -1,
-        Math.min(1, pending + scrollIntent(progress, d.restFrame, last))
+        Math.min(1, pending + scrollIntent(progress, last))
       );
       const pushTarget = Math.sign(intent) * leanCurve(intent);
       // every scene's column follows the scroll and fades as it leaves its
@@ -389,14 +386,16 @@ export function ScrollExperience({
       // the move it asks for until the move has filled past it.
       const moving = d.moving;
       const holding = moving !== 0 && Math.sign(stepPush) === moving;
-      if (!holding)
+      if (!holding) {
         stepPush +=
           (Math.sign(pending) * leanCurve(pending) - stepPush) *
           (1 - Math.exp(-PUSH_RATE * dt));
+        stepBase = nearestFrame(progress, last);
+      }
       if (Math.abs(stepPush) < 0.002) stepPush = 0;
       const coord = frameCoord(progress, last);
       const lean = stepPush * STEP_PUSH;
-      const leanTo = Math.max(0, Math.min(last, d.restFrame + lean));
+      const leanTo = Math.max(0, Math.min(last, stepBase + lean));
       const stepTarget =
         lean > 0
           ? Math.max(coord, leanTo)

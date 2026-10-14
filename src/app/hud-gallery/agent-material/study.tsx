@@ -225,7 +225,6 @@ export function AgentMaterialStudy() {
     rate: 4.5,
     rail: 1,
     moving: 0,
-    restFrame: 0,
   });
   useEffect(() => {
     drive.current.base = count;
