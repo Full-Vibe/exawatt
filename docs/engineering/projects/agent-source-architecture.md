@@ -1217,3 +1217,45 @@ Next, each needing the operator:
 - S5.3 Antigravity CLI needs one signed-in 1.2.x run to verify the `--add-dir`
   hook seam before building.
 - Qwen's mark needs Alibaba's written consent before it can be drawn.
+
+### 2026-10-14: Four concept harnesses and what each offers today
+
+Decision `0047` puts four marks on the homepage's synthetic fleet as concept,
+ahead of support: Grok Bot, Muse, Instinct and dots. The operator intends to
+add support soon. This records what each product offers an outside app as of
+2026-10-14, for the design pass that shapes the work (roadmap ENG-003,
+"Concept harnesses", deliberately unshaped).
+
+It corrects one earlier note. The 2026-09-23 record found no integration path
+for Muse, and that still holds for Meta's consumer agent. Muse Code, Meta's
+terminal coding agent under the same brand, has one. Its installer
+(`curl -fsSL https://dev.meta.ai/install.sh | bash`) puts a `muse` binary on
+the path.
+
+| Product   | Maker                                                           | What it is                                                                                                                                                         | Interface an outside app can use                                                                                                                      | Launchable by Exawatt today                                                                    |
+| --------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Grok Bot  | SpaceXAI (xAI's name since July 2026) with Anysphere, Cursor's maker | Always-on agents, each with its own persistent cloud computer, messaged from desktop and mobile apps. Sign-in is a Cursor account. In beta since 2026-08-11.        | None found. Cursor's admin API configures it and nothing more.                                                                                        | No. Grok Build (S4), which Exawatt runs, is a different product.                               |
+| Muse Code | Meta                                                            | A terminal coding agent, released 2026-08-05.                                                                                                                      | An interactive TUI, `muse exec` for headless runs, and `muse serve` for a session protocol with an MIT-licensed SDK. Needs a Meta sign-in or API key; usage is paid. | In principle: it has the terminal shape of the S5 sources. Untested.                            |
+| Muse      | Meta                                                            | The consumer personal agent (2026-09-08, US only), working on its own cloud Linux machine and reached from iOS, Android, the web, a Mac app and WhatsApp.            | None found.                                                                                                                                           | No.                                                                                            |
+| Instinct  | Spear Street Technology                                         | An invite-only agent you text or call, which "can use a phone and computer" to run errands.                                                                        | None. Its terms bar "automation software (bots)... or any other unauthorized third-party software".                                                   | No. The 2026-09-23 verdict stands: reachable only as a text thread, and the bridge is deferred. |
+| dots      | OpenAI                                                          | Always-on agents with their own cloud computers, announced at DevDay on 2026-09-29, in ChatGPT, Slack and Teams on the Pro and Business Premium plans.            | None. A dot can start Codex tasks, but nothing lets an outside app start or drive a dot.                                                              | No.                                                                                            |
+
+Marks: the homepage draws each as concept. Where each mark came from, and each
+vendor's terms, are recorded in `LICENSES/brand/harness-marks.md`. dots has no
+official glyph, so its mark is drawn for Exawatt.
+
+**UNVERIFIED:** a reported Instinct Mac app and web workspace (one third-party
+review), and whether Muse Code wears the consumer Muse mark.
+
+Sources, fetched 2026-10-14:
+
+- Grok Bot:
+  [announcement](https://x.ai/news/introducing-grok-bot),
+  [getting started](https://cursor.com/docs/grok-bot/get-started) and
+  [Cursor admin API](https://cursor.com/docs/account/teams/admin-api).
+- Muse: [Muse](https://muse.ai),
+  [Muse Code docs](https://dev.meta.ai/docs/muse-code/) and the
+  [Muse Code SDK](https://github.com/meta-models/muse-code-sdk).
+- Instinct: [Instinct](https://instinct.com) and its
+  [terms](https://instinct.com/terms).
+- dots: [Introducing dots](https://openai.com/index/introducing-dots/).
