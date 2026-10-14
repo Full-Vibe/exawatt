@@ -578,11 +578,11 @@ export default function HudGallery() {
                   Open the agent material study (one cluster, close) →
                 </a>{' '}
                 <a
-                  href="/v2"
+                  href="/old"
                   className="underline underline-offset-2"
                   style={{ color: HUD.cyan }}
                 >
-                  Open the proposed homepage at /v2 →
+                  Open the previous homepage at /old →
                 </a>{' '}
                 <a
                   href="/hud-gallery/usage-scenarios"

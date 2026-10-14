@@ -292,6 +292,23 @@ html:has(main[data-home-arrangement='proposed']) body {
   background: #0e1216 !important;
 }
 
+/* THE FLEET STORY'S NIGHT REACHES THE DOCUMENT (ENG-031 W15m), for the
+   reason the band homepage's ground does above: the homepage is all dark, and
+   overscroll must never pull the app's light `--background` into frame. The
+   literal is the story's own stage ground (`scroll-experience.tsx`).
+
+   Under Page on a touch screen the browser snaps to each scene and may not
+   skip one; the page's own end is a snap point too, so the footer stays
+   reachable. */
+html:has(main[data-fleet-story]),
+html:has(main[data-fleet-story]) body {
+  background: #04060b !important;
+}
+
+html:has(main[data-fleet-story]) #site-footer {
+  scroll-snap-align: end;
+}
+
 /* The Architecture map is the same kind of all-dark page, and its document
    stayed on the app's light `--background` (BUG-212): an overscroll showed a
    light band past either end, and `eval:navigation-paint` read that canvas.
@@ -1204,7 +1221,7 @@ html:has([data-architecture-loading]) body {
 
    Scoped the same way this file already scopes the proposed homepage's ground:
    `:has()` on the arrangement, so it is route-stable, JS-free, and follows the
-   page when `HOMEPAGE_ARRANGEMENT` flips onto `/`. The snap TARGETS are one
+   page to wherever it renders (`/old` since W15m). The snap TARGETS are one
    zero-height sentinel per panel in `pinned-board-sequence.tsx`, placed on the
    camera keyframe rather than on the panel box.
 
@@ -1243,9 +1260,9 @@ html:has([data-architecture-loading]) body {
    this page still calls no `scrollTo` and binds no wheel handler.
 
    Scoped like the snap rules above, by `:has()` on the arrangement, so it is
-   route-stable and follows the page when `HOMEPAGE_ARRANGEMENT` flips onto
-   `/`. Stated as a base rule with a REDUCE override, exactly the shape the
-   snap rules above use, rather than as a rule nested inside a
+   route-stable and follows the page to wherever it renders. Stated as a base
+   rule with a REDUCE override, exactly the shape the snap rules above use,
+   rather than as a rule nested inside a
    `no-preference` query: Lightning CSS dropped the nested form outright in
    this pipeline (compiled sheet carried the keyframe below and no
    `scroll-behavior` at all), and the two-rule shape is what the rest of this

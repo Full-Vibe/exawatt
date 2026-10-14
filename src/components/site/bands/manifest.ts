@@ -155,9 +155,9 @@ export type BandId =
 /**
  * How close a band is to the live homepage.
  *
- * - `shipped`  renders at `/`.
- * - `proposed` renders at `/v2`, the review address, and at `/` the moment
- *   `HOMEPAGE_ARRANGEMENT` flips. Written, reviewable, and one word away.
+ * - `shipped`  the fold alone, as `/` rendered it from W1 until 2026-08-19.
+ * - `proposed` the assembled arc, which `/` rendered until the fleet story
+ *   took the homepage (W15m) and `/old` renders now.
  * - `reserved` renders nowhere and says what would earn it.
  */
 export type BandStatus = 'shipped' | 'proposed' | 'reserved';
@@ -802,43 +802,35 @@ export const HOMEPAGE_BANDS: HomepageBand[] = [
 ];
 
 /**
- * WHICH ARRANGEMENT THE HOMEPAGE RENDERS, and the one-line switch that
- * promotes the proposal (ENG-031 W8).
+ * The band homepage's two arrangements (ENG-031 W8). `/` rendered `proposed`
+ * from 2026-08-19 until the fleet story took the homepage (W15m,
+ * 2026-10-14); `/old` renders it now. The constant that once promoted one to
+ * `/` retired with that move.
  *
- * `shipped`  — `/` renders only bands at `status: 'shipped'`. Today that is
- *              the fold, exactly as it has rendered since W1.
- * `proposed` — `/` renders the whole assembled arc, which is what `/v2` shows
- *              today.
- *
- * CHANGING THIS ONE VALUE IS THE PROMOTION. It moves the arc onto `/`, swaps
- * the fold's interior to `FoldHero`, and switches the site chrome to the W6
- * nav and footer, because all three derive from it. `/v2` then retires: it is
- * a review address, and leaving a second copy of the homepage at a memorable
- * URL is how a stale front door happens.
+ * `shipped`  — only bands at `status: 'shipped'`: the fold, as it rendered
+ *              since W1.
+ * `proposed` — the whole assembled arc.
  */
 export type HomepageArrangement = 'shipped' | 'proposed';
-
-export const HOMEPAGE_ARRANGEMENT: HomepageArrangement = 'proposed';
 
 export function bandById(id: BandId): HomepageBand {
   // ids are a closed union, so a miss is a programming error, not a state.
   return HOMEPAGE_BANDS.find(band => band.id === id)!;
 }
 
-/** The bands `/` renders today, in page order. */
+/** The bands at `status: 'shipped'`, in page order. */
 export function shippedBands(): HomepageBand[] {
   return HOMEPAGE_BANDS.filter(band => band.status === 'shipped');
 }
 
-/** The whole assembled arc: what `/v2` renders, and what `/` renders the
- *  moment `HOMEPAGE_ARRANGEMENT` flips. */
+/** The whole assembled arc, which `/old` renders. */
 export function proposedBands(): HomepageBand[] {
   return HOMEPAGE_BANDS.filter(band => band.status !== 'reserved');
 }
 
 /** The bands an arrangement renders, in page order. */
 export function arrangementBands(
-  arrangement: HomepageArrangement = HOMEPAGE_ARRANGEMENT
+  arrangement: HomepageArrangement
 ): HomepageBand[] {
   return arrangement === 'proposed' ? proposedBands() : shippedBands();
 }

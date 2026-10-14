@@ -774,7 +774,7 @@ export const OPEN_ITEMS: OpenItem[] = [
     title: 'Homepage positioning',
     detail:
       'It communicates a feeling, not a what and why. Read cold by developers, VCs, founders.',
-    where: '/v2',
+    where: '/',
   },
   {
     title: 'Visualising thousands',
@@ -816,6 +816,7 @@ export const WORKBENCH_ROUTES: WorkbenchRoute[] = [
   { href: '/hud-gallery/agent-launcher', title: 'New Agent launcher' },
   { href: '/hud-gallery/fold-close', title: 'Fold and close copy' },
   { href: '/hud-gallery/altitude-scroll', title: 'The pinned altitude scroll' },
-  { href: '/v2', title: 'The proposed homepage' },
+  { href: '/', title: 'The homepage' },
+  { href: '/old', title: 'The previous homepage' },
   { href: '/architecture', title: 'The architecture map' },
 ];

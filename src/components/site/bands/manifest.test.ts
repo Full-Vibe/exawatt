@@ -10,7 +10,6 @@ import {
   bandRuns,
   countWords,
   heroCameraAnchors,
-  HOMEPAGE_ARRANGEMENT,
   arrangementBands,
   pageCopyCeiling,
   pageScreens,
@@ -412,7 +411,7 @@ describe('the pinned board run', () => {
 });
 
 describe('the two arrangements', () => {
-  it('keeps `/` on the shipped fold and `/v2` on the whole arc', () => {
+  it('keeps the shipped fold alone and the whole arc together', () => {
     expect(shippedBands().map(band => band.id)).toEqual(['fold']);
     expect(proposedBands().map(band => band.id)).toContain('close');
     // `proof` is RESERVED after W10 and renders nowhere. Its component and
@@ -421,14 +420,6 @@ describe('the two arrangements', () => {
     expect(proposedBands().map(band => band.id)).not.toContain('proof');
     expect(arrangementBands('shipped')).toEqual(shippedBands());
     expect(arrangementBands('proposed')).toEqual(proposedBands());
-  });
-
-  it('promotes the proposal with ONE value', () => {
-    // The whole point of the constant: `/` follows it, the fold's interior
-    // follows it, and the W6 site chrome follows it. Nothing else has to move.
-    expect(arrangementBands(HOMEPAGE_ARRANGEMENT)).toEqual(
-      HOMEPAGE_ARRANGEMENT === 'proposed' ? proposedBands() : shippedBands()
-    );
   });
 
   it('declares the page copy inside the measured band, at BOTH ends', () => {

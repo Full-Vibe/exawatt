@@ -32,6 +32,10 @@
 /** The repository, from `package.json`'s own `repository.url`. */
 export const GITHUB_URL = 'https://github.com/Full-Vibe/exawatt';
 
+/** Where a harness author starts: CONTRIBUTING's first lanes, adapters
+ *  first (the homepage's close, ENG-031 W15m). */
+export const ADD_HARNESS_HREF = `${GITHUB_URL}/blob/master/CONTRIBUTING.md#good-first-contribution-lanes`;
+
 export interface SiteNavLink {
   label: string;
   href: string;

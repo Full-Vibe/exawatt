@@ -17,8 +17,8 @@ import type { HomepageBand } from './manifest';
  * `Architecture` button that briefly replaced it came off too, and the sticky
  * header is now the only route from here to `/architecture`. That converges
  * with the proposed fold on ONE point and no more — the proposed fold spends
- * the slot on `DownloadCta` rather than leaving it empty, so flipping
- * `HOMEPAGE_ARRANGEMENT` to `proposed` is still a real change to this band.
+ * the slot on `DownloadCta` rather than leaving it empty, so the two
+ * arrangements still differ in this band.
  *
  * The `t8-home-keyswitch` R3F battery retired with the key switch. `t7`
  * (material workbench) and `t9` (agent-start eval) stay, along with the

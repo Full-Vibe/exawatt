@@ -1,6 +1,5 @@
 import { BAND_COMPONENTS } from './registry';
 import {
-  HOMEPAGE_ARRANGEMENT,
   arrangementBands,
   bandRuns,
   type HomepageArrangement,
@@ -21,21 +20,19 @@ import { PinnedBoardSequence } from './pinned-board-sequence';
  * eight panels long and starts at section two, so most of the page is one
  * graphic being re-read through a different lens.
  *
- * TWO ARRANGEMENTS, ONE COMPONENT (W8). `/` renders `shipped`; `/v2` renders
- * `proposed`. Nothing about the page is duplicated to serve the review
- * address: the review page and the live page are the same code walking the
- * same manifest, and promoting the proposal is flipping
- * `HOMEPAGE_ARRANGEMENT`.
+ * TWO ARRANGEMENTS, ONE COMPONENT (W8). `/old` renders `proposed`, the arc
+ * `/` carried until the fleet story took the homepage (W15m); `shipped` is
+ * the fold alone. Both walk the same manifest.
  *
  * W6b: the fold JOINS that run whenever a run follows it, which is what makes
- * the page's own "one continuous board" claim literally true. `/` still gets
- * the shipped fold as its own band, because nothing follows it there.
+ * the page's own "one continuous board" claim literally true. The shipped
+ * fold stays its own band, because nothing follows it there.
  */
 export function HomeBands({
-  arrangement = HOMEPAGE_ARRANGEMENT,
+  arrangement,
 }: {
-  arrangement?: HomepageArrangement;
-} = {}) {
+  arrangement: HomepageArrangement;
+}) {
   return (
     <main
       data-home-bands

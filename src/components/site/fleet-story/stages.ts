@@ -9,7 +9,7 @@
  * download scene is folded into the fleet: "Combine the last two slides. We
  * don't need zoom level 6. Instead end at zoom level 5. With the CTA overlay
  * atop.") Her order starts inside one Project and
- * arrives at the Fleet last; the shipped `/v2` runs the other way. Per the
+ * arrives at the Fleet last; the band homepage (now `/old`) ran the other way. Per the
  * operator (2026-09-13) the order was hers to resolve, so this study follows
  * the deck.
  *
@@ -74,17 +74,20 @@ export const STAGES: Stage[] = [
     focus: 'fleet',
     labels: false,
     count: 10,
-    // The title says what it is, the line under it why now (operator
-    // 2026-10-13: "Swap the H1 and H2 copies in slide 1 - title should be
-    // 'The command interface for...'").
+    // The promise, then what it is (operator 2026-10-14, choosing the
+    // scale angle for the homepage: "Control 500 like 5"). The deck keeps
+    // the line it had, to compare.
     copy: {
       deck: {
         headline: ['The command interface for your agent fleet.'],
         body: ['Today you run 10 agents.', 'Tomorrow you will run 10,000.'],
       },
       canon: {
-        headline: ['The command interface for your agent fleet.'],
-        body: ['Today you run 10 agents.', 'Tomorrow you will run 10,000.'],
+        headline: ['Control 500 agents like you control 5.'],
+        body: [
+          'Every agent, every harness, every project in one Mac app.',
+          'See what each one is doing, which ones need you, and what it spends.',
+        ],
       },
     },
   },
@@ -175,9 +178,15 @@ export const STAGES: Stage[] = [
           'Zoom out and every project is there. Zoom in and nothing is hidden.',
         ],
       },
+      // the close: the trajectory, and what it costs to start (operator
+      // 2026-10-14)
+      // A narrow screen breaks the line at the full stop, never inside
+      // "ten thousand tomorrow".
       canon: {
-        headline: ['Every project. One board.'],
-        body: ['This is how ten becomes ten thousand.'],
+        headline: ['Ten today. Ten\u00a0thousand\u00a0tomorrow.'],
+        body: [
+          'Free and open source. Works with the plans you already pay for.',
+        ],
       },
     },
   },

@@ -1,6 +1,5 @@
 import { spatialReturnHref } from './spatial-return';
 import { CONSUMPTION_SURFACE_NAME } from '@exawatt/core';
-import { HOMEPAGE_ARRANGEMENT } from '@/components/site/bands/manifest';
 
 /**
  * Navigation manifest (ENG-016 D8).
@@ -354,10 +353,10 @@ const MARKETING_ROUTES = [
   '/architecture',
   '/operator',
   '/run',
-  // ENG-031 W8: `/v2` is the proposed homepage at a review address. It is a
-  // real marketing route with the real chrome, not an internal preview: the
-  // whole point is that the operator can send it to somebody.
-  '/v2',
+  // ENG-031 W15m: `/old` keeps the band homepage at an address after the
+  // fleet story took `/`. A real marketing route with the real chrome, not
+  // an internal preview.
+  '/old',
   ...NAVIGATION_SURFACES.filter(
     surface => surface.routeClass === 'marketing'
   ).map(surface => surface.href.split('?')[0]),
@@ -376,7 +375,7 @@ export function isMarketingRoute(pathname: string): boolean {
 export function usesDarkPublicChrome(pathname: string): boolean {
   return (
     pathname === '/' ||
-    pathname === '/v2' ||
+    pathname === '/old' ||
     pathname.startsWith('/architecture') ||
     // The ENG-031 W3 fold study renders the real fold band, which bleeds up
     // under this header. Judging the copy against a light frame it will never
@@ -395,16 +394,19 @@ export function usesDarkPublicChrome(pathname: string): boolean {
  * Surfaces that carry the W6 marketing chrome (ENG-031 W6, W8).
  *
  * W6's nav is Docs, Changelog, GitHub, and `Download for Mac` as the only
- * button, with Architecture dropped to the footer. That is the chrome the
- * PROPOSED homepage ships with, so it follows the arrangement rather than
- * being switched on by hand: `/v2` always has it, and `/` gets it the moment
- * `HOMEPAGE_ARRANGEMENT` flips. One constant promotes the page and its chrome
- * together, which is the whole reason the predicate reads the manifest instead
- * of listing routes.
+ * button, with Architecture dropped to the footer. The homepage carries it,
+ * and so does `/old`, the band homepage kept at an address after the fleet
+ * story took `/` (W15m).
  */
 export function usesProposedSiteChrome(pathname: string): boolean {
-  return (
-    pathname === '/v2' ||
-    (pathname === '/' && HOMEPAGE_ARRANGEMENT === 'proposed')
-  );
+  return pathname === '/' || pathname === '/old';
+}
+
+/**
+ * The homepage's footer stands over the gesture photograph that opened the
+ * band homepage (ENG-031 W15m, operator 2026-10-14: "Maybe we can keep Tom
+ * Cruise but put him under / behind the footer content at the bottom").
+ */
+export function usesFooterGesture(pathname: string): boolean {
+  return pathname === '/';
 }

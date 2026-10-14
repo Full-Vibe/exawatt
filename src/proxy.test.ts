@@ -109,18 +109,19 @@ describe('proxy offline authority', () => {
     expect(response.status).toBe(200);
   });
 
-  it('serves the review homepage signed out, and never bounces it to sign-in', async () => {
-    // Regression, reported by the operator: `/v2` answered 307 to /sign-in
+  it('serves the previous homepage signed out, and never bounces it to sign-in', async () => {
+    // Regression, reported by the operator: `/v2`, the band homepage's review
+    // address before it moved to `/old`, answered 307 to /sign-in
     // because the route existed nowhere and the gate caught the prefix. A
     // marketing surface that redirects a reviewer into an account flow fails
     // twice over: it is not the page they were sent, and public surfaces do
     // not promote sign-in at all (`marketing.md`, "Current Positioning").
     const fetchSpy = vi.fn(() => {
-      throw new Error('network call while serving the review homepage');
+      throw new Error('network call while serving the previous homepage');
     });
     vi.stubGlobal('fetch', fetchSpy);
 
-    const response = await proxy(request('/v2'));
+    const response = await proxy(request('/old'));
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(response.status).toBe(200);

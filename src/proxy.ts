@@ -51,13 +51,12 @@ const PUBLIC_PREFIXES = [
   // the routes it serves
   '/fleet/spatial',
   '/hud-gallery',
-  // ENG-031 W5. The next homepage, at an address the operator can send someone
-  // while it is under review. Signed-out by definition: it is a marketing
-  // surface, and bouncing a reviewer to /sign-in is both the bug that produced
-  // this route and a thing public surfaces must never do. Noindexed in its own
-  // segment metadata; retires when the bands flip to `shipped` and `/` renders
-  // them.
-  '/v2',
+  // ENG-031 W15m. The band homepage, kept at an address after the fleet
+  // story took `/`. Signed-out by definition: it is a marketing surface, and
+  // bouncing a visitor to /sign-in is a thing public surfaces must never do
+  // (the bug that first listed its old address, `/v2`). Noindexed in its own
+  // segment metadata.
+  '/old',
   '/workspace',
   '/settings',
   // ENG-008. Electron-navigable and demo-sourced: it reads nothing but its

@@ -39,10 +39,12 @@ import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
+import { ArrowUpRight } from 'lucide-react';
 import { DownloadCta } from '@/components/site/bands/download-cta';
+import { ADD_HARNESS_HREF } from '@/components/site/site-links';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { AgentCard } from './agent-card';
-import { CanvasBoundary } from './canvas-boundary';
+import { StoryCanvas } from './canvas-boundary';
 import { fleetModel, STATUS_LABEL, type FleetAgent } from './fleet-model';
 import { facingFade, nameShown, nameStyleOf, type NamesId } from './names';
 import { isNarrow } from './narrow';
@@ -151,7 +153,7 @@ export function ScrollExperience({
   signal: CrustSignalId;
   light: EnvironmentKind;
   /** Off: the browser scrolls. Soft: a glide to the nearest frame when the
-   *  scroll stops near one. Page: one scene per gesture. */
+   *  scroll stops. Page: one scene per gesture. */
   snap: SnapMode;
   /** Pressing an agent clicks like a key. */
   sound: boolean;
@@ -493,7 +495,7 @@ export function ScrollExperience({
         style={{ '--inset-top': `${insetTop}px` } as React.CSSProperties}
         data-homepage-study-stage
       >
-        <CanvasBoundary>
+        <StoryCanvas>
           <VisualCanvas
             Visual={Visual}
             model={model}
@@ -513,7 +515,7 @@ export function ScrollExperience({
             onHoverChange={onHoverChange}
             onSelect={onSelect}
           />
-        </CanvasBoundary>
+        </StoryCanvas>
 
         {/* A soft dark wash behind the reading column on its side, under the
             names and the type, so type stays legible over tile art. */}
@@ -860,6 +862,8 @@ function PanelBody({
   const copy = stage.copy[copySet];
   const isLanding = stage.id === 'landing';
   const last = copy.headline.length - 1;
+  // the landing's promise is the page's title
+  const Heading = isLanding ? 'h1' : 'h2';
   return (
     <>
       {stage.card && agent ? (
@@ -886,7 +890,7 @@ function PanelBody({
       {copy.kicker ? (
         <p className="text-base text-white/55">{copy.kicker}</p>
       ) : null}
-      <h2
+      <Heading
         className={cn(
           'text-balance font-semibold tracking-tight text-white',
           interactive ? 'pointer-events-auto' : 'pointer-events-none',
@@ -905,13 +909,15 @@ function PanelBody({
             {line}
           </span>
         ))}
-      </h2>
+      </Heading>
       {copy.body ? (
         <p
           className={cn(
             'pointer-events-auto max-w-[32rem] text-pretty text-[15px] leading-relaxed text-white/70 md:text-[17px]',
-            // on the landing the line under the title is the promise
-            isLanding && 'text-[17px] text-white/75 md:text-[21px]'
+            // on the landing the lines under the title say what it is, each
+            // sentence on its own line where the screen allows
+            isLanding &&
+              'text-balance text-[17px] text-white/75 md:max-w-[44rem] md:text-[21px]'
           )}
         >
           {copy.body.map(line => (
@@ -922,7 +928,21 @@ function PanelBody({
         </p>
       ) : null}
       {stage.cta ? (
-        <DownloadCta align="center" className="pointer-events-auto pt-1" />
+        <>
+          <DownloadCta align="center" className="pointer-events-auto pt-1" />
+          {/* the way in for a contributor, under the download rather than
+              beside it: nothing sits beside the button (`download-cta.tsx`) */}
+          <a
+            href={ADD_HARNESS_HREF}
+            target="_blank"
+            rel="noreferrer"
+            className="pointer-events-auto inline-flex items-center gap-1 text-[14px] font-medium text-white/65 underline-offset-4 transition-colors hover:text-white hover:underline"
+            data-story-add-harness
+          >
+            Add your harness
+            <ArrowUpRight aria-hidden className="h-3.5 w-3.5" />
+          </a>
+        </>
       ) : null}
       {stage.id === 'third' && copySet === 'deck' ? (
         <p className="text-[12px] text-white/40">

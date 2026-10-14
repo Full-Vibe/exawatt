@@ -5,19 +5,19 @@
  * modes the study lets the operator feel:
  *
  * - `off`   the page scrolls as the browser scrolls it.
- * - `soft`  native scroll, and when it stops within a third of a screen of a
- *           frame, a glide to that frame.
+ * - `soft`  native scroll, and when it stops, a glide to the nearest frame.
  * - `page`  one scene per gesture. A wheel gesture inside the story is taken
  *           and turned into one move (`page-gesture.ts` decides what a
  *           gesture is, `page-curve.ts` shapes the move), arrow, page and
  *           space keys page the same way, and a touch screen gets one native
  *           snap point per frame that it may not skip.
  *
- * Page mode takes the wheel. The shipped homepage's rule is no scroll-jacking
+ * Page mode takes the wheel. The band homepage's rule was no scroll-jacking
  * (W9, W12: native CSS snap, no wheel handler, no `scrollTo`), and native snap
  * cannot do this: a Mac trackpad's momentum is the system's, and the browser
  * lets it carry the page past the next snap point before it settles. The
- * study is where that trade is felt; it is not a decision for `/`.
+ * operator chose Page for `/` (W15m, 2026-10-14), and keeps Soft in the
+ * study to compare.
  *
  * Everything that is not a plain vertical wheel is left alone: pinch zoom,
  * horizontal swipes, something under the pointer that scrolls itself, any
@@ -45,8 +45,6 @@ export type SnapMode = 'off' | 'soft' | 'page';
 
 /** How long the scroll must be still before it settles on a frame. */
 const SETTLE_MS = 180;
-/** How far from a frame, in stages, Soft will still pull. */
-const SOFT_REACH = 0.3;
 /** Closer than this to a frame, in stages, is on it. */
 const ON_FRAME = 0.02;
 /** A wheel event this soon after the last one, from outside the story, is
@@ -340,7 +338,6 @@ export function useSceneScroll({
       const frameIndex = nearestFrame(here, last);
       const away = Math.abs(here - frameProgress(frameIndex, last));
       if (away < ON_FRAME) return;
-      if (mode === 'soft' && away > SOFT_REACH) return;
       goTo(frameIndex);
     };
     const onScroll = () => {

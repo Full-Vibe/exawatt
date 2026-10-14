@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import V2Page, { metadata } from './page';
+import OldHomePage, { metadata } from './page';
 import { HomeBands } from '@/components/site/bands/band-stack';
 
 /**
- * `/v2` is the review address for the next homepage (ENG-031 W5, W8). Three
- * properties have to hold or it stops being safe to hand out.
+ * `/old` keeps the band homepage at an address after the fleet story took
+ * `/` (ENG-031 W15m). Three properties have to hold or it stops being safe
+ * to keep up.
  */
-describe('the review homepage at /v2', () => {
+describe('the previous homepage at /old', () => {
   it('is never indexed, because it is not the homepage', () => {
     // A crawler that indexes this puts a second Exawatt front door in search
     // results and splits whatever the real one earns.
@@ -18,10 +19,10 @@ describe('the review homepage at /v2', () => {
     expect(metadata.description).toContain('command interface');
   });
 
-  it('renders the SAME composer as the homepage, on the proposed arrangement', () => {
-    // One page, two arrangements. If this ever forked into its own component,
-    // the thing the operator reviews and the thing that ships would drift.
-    const element = V2Page();
+  it('renders the band composer on the arrangement `/` carried', () => {
+    // The page it was, not a copy of it: the same composer on the same
+    // arrangement, so `/old` is what the homepage was until W15m.
+    const element = OldHomePage();
     expect(element.type).toBe(HomeBands);
     expect(element.props).toEqual({ arrangement: 'proposed' });
   });

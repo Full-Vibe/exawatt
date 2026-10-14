@@ -57,6 +57,7 @@ import {
   type CrustSignalId,
 } from '@/components/site/fleet-story/visuals/crust-signal';
 import type { EnvironmentKind } from '@/components/site/fleet-story/visuals/environment';
+import { HOMEPAGE_STORY } from '@/components/site/fleet-story/homepage-settings';
 import { DomeVisual } from './visuals/dome-visual';
 import { LidarVisual } from './visuals/lidar-visual';
 import { MercuryVisual } from './visuals/mercury-visual';
@@ -103,6 +104,8 @@ const VISUALS: {
   },
 ];
 
+const SNAPS: SnapMode[] = ['page', 'soft', 'off'];
+
 interface StudyState {
   visual: VisualId;
   copy: CopySetId;
@@ -127,26 +130,34 @@ function readState(params: URLSearchParams): StudyState {
   return {
     signal: CRUST_SIGNALS.some(x => x.id === signal)
       ? (signal as CrustSignalId)
-      : 'paint',
-    light: params.get('light') === 'room' ? 'room' : 'studio',
-    snap:
-      params.get('snap') === 'soft' || params.get('snap') === 'off'
-        ? (params.get('snap') as SnapMode)
-        : 'page',
+      : HOMEPAGE_STORY.signal,
+    light:
+      params.get('light') === 'room' || params.get('light') === 'studio'
+        ? (params.get('light') as EnvironmentKind)
+        : HOMEPAGE_STORY.light,
+    snap: SNAPS.some(x => x === params.get('snap'))
+      ? (params.get('snap') as SnapMode)
+      : HOMEPAGE_STORY.snap,
     material: CRUST_MATERIALS.some(m => m.id === material)
       ? (material as CrustMaterialId)
-      : 'acrylic',
+      : HOMEPAGE_STORY.material,
     mark: CRUST_MARKS.some(m => m.id === mark)
       ? (mark as CrustMarkId)
-      : 'relief',
+      : HOMEPAGE_STORY.mark,
     shape: CRUST_SHAPES.some(m => m.id === shape)
       ? (shape as CrustShapeId)
-      : 'rounded',
-    motion: parseMotion(params.get('motion')),
-    sound: params.get('sound') !== 'off',
-    names: parseNames(params.get('names')),
+      : HOMEPAGE_STORY.shape,
+    motion: params.has('motion')
+      ? parseMotion(params.get('motion'))
+      : HOMEPAGE_STORY.motion,
+    sound: params.has('sound')
+      ? params.get('sound') !== 'off'
+      : HOMEPAGE_STORY.sound,
+    names: params.has('names')
+      ? parseNames(params.get('names'))
+      : HOMEPAGE_STORY.names,
     visual: VISUALS.some(v => v.id === visual) ? (visual as VisualId) : 'crust',
-    copy: copy === 'deck' ? 'deck' : 'canon',
+    copy: copy === 'deck' || copy === 'canon' ? copy : HOMEPAGE_STORY.copySet,
   };
 }
 
@@ -385,7 +396,7 @@ export function HomepageStudy() {
             <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
               Snap
             </span>
-            {(['page', 'soft', 'off'] as SnapMode[]).map(mode => (
+            {SNAPS.map(mode => (
               <Option
                 key={mode}
                 active={state.snap === mode}

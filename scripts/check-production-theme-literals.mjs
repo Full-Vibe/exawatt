@@ -62,6 +62,10 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     max: 6,
     reason: "the story's fixed night ground behind the world and its type",
   },
+  'src/components/site/fleet-story/footer-gesture.tsx': {
+    max: 1,
+    reason: "the photograph's wash into the story's fixed night ground",
+  },
   'src/components/site/fleet-story/agent-card.tsx': {
     max: 1,
     reason: "the agent card's glass over the story's fixed night ground",

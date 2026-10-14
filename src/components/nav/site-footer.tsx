@@ -5,9 +5,12 @@ import { usePathname } from 'next/navigation';
 import {
   isMarketingRoute,
   usesDarkPublicChrome,
+  usesFooterGesture,
   usesProposedSiteChrome,
 } from './surfaces';
+import { FooterGesture } from '@/components/site/fleet-story/footer-gesture';
 import { SITE_FOOTER_COLUMNS } from '@/components/site/site-links';
+import { cn } from '@/lib/utils';
 
 /**
  * Marketing footer. Renders only on the public website routes (navigation
@@ -31,6 +34,7 @@ export function SiteFooter() {
 
   const dark = usesDarkPublicChrome(pathname);
   const full = usesProposedSiteChrome(pathname);
+  const gesture = usesFooterGesture(pathname);
 
   if (!full) {
     return (
@@ -62,8 +66,15 @@ export function SiteFooter() {
       id="site-footer"
       data-public-dark-chrome={dark ? 'true' : undefined}
       data-site-footer="full"
-      className="border-t px-6 py-14 text-sm text-muted-foreground sm:px-10"
+      className={cn(
+        'border-t px-6 py-14 text-sm text-muted-foreground sm:px-10',
+        // the homepage's footer stands over the gesture photograph, with room
+        // above the links for the figure
+        gesture &&
+          'relative isolate overflow-hidden pt-[64vw] md:pt-[min(48vw,26rem)]'
+      )}
     >
+      {gesture ? <FooterGesture /> : null}
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
           {SITE_FOOTER_COLUMNS.map(column => (
