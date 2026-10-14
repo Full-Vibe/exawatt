@@ -816,7 +816,10 @@ function Panel({
           : 'portrait:group-data-[sheet=foot]/stage:opacity-0 portrait:group-data-[sheet=foot]/stage:[&_*]:!pointer-events-none'
       )}
       data-study-panel={stage.id}
-      aria-hidden={!active}
+      // a scene off screen is out of the tab order and the accessibility
+      // tree, not only out of sight: its download and its card's controls
+      // must never take focus unseen
+      inert={!active}
     >
       {/* the column follows the scroll and gives a little to a push, and
           comes back if the push is let go */}

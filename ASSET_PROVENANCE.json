@@ -29,14 +29,6 @@
       "exclusionReason": "The official Exawatt package icon remains private distribution custody; public source builds package electron/resources/icon-community.icns."
     },
     {
-      "path": "public/fonts/Exo2-Medium.ttf",
-      "status": "included",
-      "kind": "vendored typeface",
-      "sha256": "956d939727817620d6b8c3b459d8086151bd6c2b6a48258d134f60a0dcb2b6d2",
-      "origin": "Exo 2 Medium, vendored for Troika/WebGL rendering. Exact source provenance is recorded in LICENSES/fonts/README.md.",
-      "distributionBasis": "SIL Open Font License 1.1; license text is LICENSES/fonts/Exo-2-OFL-1.1.txt."
-    },
-    {
       "path": "public/icon-community.png",
       "status": "included",
       "kind": "community browser and brand mark",
@@ -60,6 +52,14 @@
       "sha256": "a56a06f3c11c29201f1acbba756909f4f74866a5ab7a12dfbbbd9a71491503b6",
       "origin": "Generated from Exawatt's synthetic Demo Workspace hero-board capture by EXA_BASE=<worktree-server> pnpm eval:hero-board -- --poster. The generator and regeneration contract live in scripts/hero-board-idle-eval.mjs and docs/engineering/projects/website-overhaul.md.",
       "distributionBasis": "First-party generated asset derived only from repository code and synthetic Demo Mode fixtures; distributed under the repository license."
+    },
+    {
+      "path": "public/images/og-home.png",
+      "status": "included",
+      "kind": "generated homepage link preview",
+      "sha256": "ea88064e6013f5ebb7d741740a546ec0f7bdf3387a083f6d0bdb472231bc0ba3",
+      "origin": "Captured at 1200 by 630 from the homepage's landing scene (src/components/site/fleet-story, its synthetic fleet) in headless Chromium against a worktree server, with the scene steps hidden and the site header clipped out (ENG-031 W15m; docs/engineering/projects/website-overhaul.md).",
+      "distributionBasis": "First-party generated asset derived only from repository code and the story's synthetic fleet; distributed under the repository license. The harness marks on its tiles are the vendors' own artwork, used to name the products that run each agent; their provenance and terms are recorded in LICENSES/brand/harness-marks.md."
     },
     {
       "path": "public/images/readme/fleet.png",

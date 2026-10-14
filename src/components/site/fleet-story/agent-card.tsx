@@ -105,25 +105,22 @@ export function AgentCard({
               </>
             ) : null}
           </dl>
-          <div className="mt-4 flex justify-end gap-2">
+          {/* the actions the product's card offers, drawn as a picture of
+              them: on the homepage they have nothing to act on, so they
+              are not controls a reader could press or tab to */}
+          <div className="mt-4 flex justify-end gap-2" aria-hidden>
             {agent.status === 'needs-you' ? (
-              <button
-                type="button"
-                className="rounded-md border border-white/15 px-3 py-1.5 text-[12px] font-medium text-white/80 hover:bg-white/5"
-              >
+              <span className="rounded-md border border-white/15 px-3 py-1.5 text-[12px] font-medium text-white/80">
                 Pause agent
-              </button>
+              </span>
             ) : null}
-            <button
-              type="button"
-              className="rounded-md bg-white px-3 py-1.5 text-[12px] font-semibold text-black hover:bg-white/90"
-            >
+            <span className="rounded-md bg-white px-3 py-1.5 text-[12px] font-semibold text-black">
               {agent.status === 'needs-you'
                 ? 'Answer'
                 : agent.status === 'result'
                   ? 'Review'
                   : 'View task'}
-            </button>
+            </span>
           </div>
         </>
       )}

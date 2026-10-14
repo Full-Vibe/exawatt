@@ -405,7 +405,7 @@ export function HomepageStudy() {
                   mode === 'off'
                     ? 'Park anywhere.'
                     : mode === 'soft'
-                      ? 'A pull to the nearest frame when the scroll stops near one.'
+                      ? 'A glide to the nearest frame wherever the scroll stops.'
                       : 'One scene per gesture: a wheel flick, a key or a swipe moves one scene and lands.'
                 }
               >
