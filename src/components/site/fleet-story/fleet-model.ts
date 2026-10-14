@@ -240,10 +240,11 @@ const SOURCES: { id: string; label: string }[] = [
  * "Homepage is aspirational and illustrative and I'll add support for them
  * soon"), each with the id its mark has in `concept-marks.ts`. They work in
  * Projects of their own kind, two harnesses to a Project as a team would
- * settle on: Muse and Grok Bot write and post for Marketing, dots and
- * Instinct book and chase for Sales. Both Projects are inside the hundred,
- * so all four are on the board from that scene on, and the first Project,
- * which the landing and the close-ups show, runs the product's own five.
+ * settle on: dots and Instinct book and chase for Sales, inside the
+ * hundred, and Muse and Grok Bot answer for Support, the large Project the
+ * close faces, so the scene with the download shows all four (W15m: in
+ * Marketing they sat behind the globe there). The first Project, which the
+ * landing and the close-ups show, runs the product's own five.
  */
 const CONCEPT_SOURCES: { id: string; label: string }[] = [
   { id: 'grok-bot', label: 'Grok Bot' },
@@ -255,8 +256,8 @@ const CONCEPT_SOURCES: { id: string; label: string }[] = [
 /** The concept harnesses a Project runs: the first its core, the second
  *  the rest. */
 const CONCEPT_PROJECTS: Partial<Record<number, readonly [string, string]>> = {
-  1: ['Muse', 'Grok Bot'],
   2: ['dots', 'Instinct'],
+  5: ['Muse', 'Grok Bot'],
 };
 /** The share of a concept Project its first harness takes. */
 const CONCEPT_CORE = 0.6;

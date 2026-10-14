@@ -82,10 +82,12 @@ describe('study fleet model', () => {
     expect(agents.some(isConcept)).toBe(false);
   });
 
-  it('has every concept harness on the board by the hundred, a minority in Projects of their own', () => {
+  it('brings concept harnesses in by the hundred and all four by the whole fleet, a minority in Projects of their own', () => {
     const hundred = model.agents.slice(0, 100).filter(isConcept);
-    expect(new Set(hundred.map(agent => agent.source)).size).toBe(4);
-    expect(model.agents.filter(isConcept).length).toBeLessThan(FLEET_MAX / 2);
+    expect(new Set(hundred.map(agent => agent.source)).size).toBe(2);
+    const fleet = model.agents.filter(isConcept);
+    expect(new Set(fleet.map(agent => agent.source)).size).toBe(4);
+    expect(fleet.length).toBeLessThan(FLEET_MAX / 2);
     for (const project of model.projects) {
       const agents = model.agents.filter(agent => agent.project === project.id);
       if (!agents.some(isConcept)) continue;
