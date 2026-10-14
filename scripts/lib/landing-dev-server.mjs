@@ -24,7 +24,7 @@
 // local port with no listener, or whose listeners run from this worktree.
 // Any other server is verified and never touched, and a gate is refused
 // rather than run against a server that cannot show it serves HEAD.
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import {
   closeSync,
   existsSync,
@@ -175,11 +175,34 @@ async function processGroup(pid) {
   }
 }
 
+/**
+ * Whether a process group still has a running member (BUG-281). macOS
+ * answers `kill` on a group whose members have all exited but are not yet
+ * reaped (zombies, which a busy parent reaps late) with EPERM, not ESRCH, so
+ * a group with nothing left to stop reads as one we may not signal. `ps`
+ * tells the two apart; a `ps` that fails throws rather than reading as gone.
+ */
+function groupHasLiveMembers(pgid) {
+  const table = execFileSync('ps', ['-A', '-o', 'pgid=,stat='], {
+    encoding: 'utf8',
+  });
+  return table.split('\n').some(line => {
+    const [group, stat] = line.trim().split(/\s+/);
+    return Number(group) === pgid && Boolean(stat) && !stat.startsWith('Z');
+  });
+}
+
+/** EPERM from a group of exited, unreaped processes: nothing left to stop. */
+function onlyZombies(target, error) {
+  return error?.code === 'EPERM' && target < 0 && !groupHasLiveMembers(-target);
+}
+
 function signal(target, name) {
   try {
     process.kill(target, name);
   } catch (error) {
-    if (error?.code !== 'ESRCH') throw error;
+    if (error?.code === 'ESRCH' || onlyZombies(target, error)) return;
+    throw error;
   }
 }
 
@@ -190,7 +213,7 @@ function targetExists(target) {
     process.kill(target, 0);
     return true;
   } catch (error) {
-    if (error?.code === 'ESRCH') return false;
+    if (error?.code === 'ESRCH' || onlyZombies(target, error)) return false;
     throw error;
   }
 }

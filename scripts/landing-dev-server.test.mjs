@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import {
   existsSync,
@@ -84,6 +84,35 @@ test('a closed listener does not finish shutdown while its owned group can still
     true,
     'cache cleanup cannot overtake the writer'
   );
+});
+
+test('a group whose members have exited but are not yet reaped is stopped, not refused (BUG-281)', async () => {
+  // A busy landing reaps a stopped server late, and macOS answers `kill` on
+  // a group of zombies with EPERM. Hold this process's loop until the child
+  // is a zombie, so nothing can reap it before the stop runs.
+  const child = spawn('sh', ['-c', 'exit 0'], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  const pgid = child.pid;
+  const reaped = once(child, 'exit');
+  const deadline = Date.now() + 10_000;
+  const stat = () =>
+    execFileSync('ps', ['-o', 'stat=', '-p', String(pgid)], {
+      encoding: 'utf8',
+    }).trim();
+  while (!stat().startsWith('Z')) {
+    if (Date.now() > deadline) throw new Error('the child never exited');
+  }
+  if (process.platform === 'darwin') {
+    assert.throws(() => process.kill(-pgid, 0), { code: 'EPERM' });
+  }
+  await stopServerTargets(0, [-pgid], {
+    portFree: async () => true,
+    wait: async () => {
+      await reaped;
+    },
+  });
 });
 
 test('shutdown escalates only surviving owned targets, even with a free port', async () => {

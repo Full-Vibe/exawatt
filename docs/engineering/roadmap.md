@@ -4164,19 +4164,29 @@ made for the contract.
 
 ### BUG-281 `test:agent-delivery` is flaky: a landing dev-server test sees `kill EPERM` under load
 
-Status: bug · agent delivery · found 2026-10-14 while landing ENG-031 W15j
-(`db722d9a`; first filed by hand as BUG-278, which an unlanded branch had
-already allocated, and renumbered from `pnpm id:next`); the test passes alone (`node --test --test-name-pattern="does
-not come back" scripts/landing-dev-server.test.mjs`) and failed once inside
-the full landing. Not caused by and not owned by the change that found it.
+Status: fixed 2026-10-14 · agent delivery · found 2026-10-14 while landing
+ENG-031 W15j (`db722d9a`; first filed by hand as BUG-278, which an unlanded
+branch had already allocated, and renumbered from `pnpm id:next`); hit a
+second time the same day landing the W15m review fixes, and fixed there.
 
 In `scripts/landing-dev-server.test.mjs`, "a dev server that does not come
-back stops the landing with a named cause" expects the landing to report
-"`pnpm dev` exited 1 before it served"; instead the stop of the pre-rebase
-server threw `kill EPERM` (`signal` and `targetExists` in
-`scripts/lib/landing-dev-server.mjs` treat only `ESRCH` as gone). The
-servers are signalled by process group. Suspected, not confirmed: on macOS a
-group whose last members are still exiting can answer `kill` with `EPERM`,
-which only a loaded machine makes the exit straddle. Next step: capture
-`ps -o pid,pgid,stat` for the group at the moment of the `EPERM`. A retry
-passes, which under the no-flaky-tests rule is a defect, not a pass.
+back stops the landing with a named cause" (and, the second time, "an
+author who rebased under a running server gets it restarted before the
+first gate") failed with `kill EPERM` while the landing stopped a server.
+`signal` and `targetExists` in `scripts/lib/landing-dev-server.mjs` signal
+servers by process group and treated only `ESRCH` as gone.
+
+Root cause, confirmed: macOS answers `kill` on a process group whose members
+have all exited but are not yet reaped (zombies) with `EPERM`, and with
+`ESRCH` only after the reap. Reproduced directly: a detached `sh -c 'exit
+0'` held unreaped by a blocked event loop shows `ps` state `Z`, its group
+answers `kill(-pgid, 0)` with `EPERM` while its pid answers `0`, and after
+the reap the group answers `ESRCH`. A loaded machine reaps a stopped server
+late, so the stop straddled that window.
+
+Fix: an `EPERM` on a group target asks `ps` whether the group still has a
+running member; a group of zombies has nothing left to stop and reads as
+gone, any live member keeps `EPERM` a real refusal, and a `ps` that fails
+throws rather than reading as gone. The test "a group whose members have
+exited but are not yet reaped is stopped, not refused (BUG-281)" holds a
+real zombie group and fails with `kill EPERM` on the old code.
