@@ -4157,10 +4157,11 @@ The tests' premise predates the script: supply the two values in the fixture
 environment (they are validation inputs, not custody), the same repair BUG-047
 made for the contract.
 
-### BUG-278 `test:agent-delivery` is flaky: a landing dev-server test sees `kill EPERM` under load
+### BUG-281 `test:agent-delivery` is flaky: a landing dev-server test sees `kill EPERM` under load
 
 Status: bug · agent delivery · found 2026-10-14 while landing ENG-031 W15j
-(`db722d9a`); the test passes alone (`node --test --test-name-pattern="does
+(`db722d9a`; first filed by hand as BUG-278, which an unlanded branch had
+already allocated, and renumbered from `pnpm id:next`); the test passes alone (`node --test --test-name-pattern="does
 not come back" scripts/landing-dev-server.test.mjs`) and failed once inside
 the full landing. Not caused by and not owned by the change that found it.
 
