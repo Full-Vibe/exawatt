@@ -1,5 +1,7 @@
 /**
- * What every visual option receives and what it owes back (ENG-031 W15).
+ * What a visual receives and what it owes back (ENG-031 W15). The homepage
+ * draws Crust; the study at /hud-gallery/homepage-study passes its other
+ * candidates through the same seam.
  *
  * The scroll experience owns the story; a visual owns the pixels. The seam
  * between them is a handful of refs written at scroll frequency and read in
@@ -17,36 +19,6 @@ import type { CrustMotion } from './visuals/crust-motion';
 import type { CrustShapeId } from './visuals/crust-shape';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
-
-export type VisualId = 'crust' | 'lidar' | 'dome' | 'prism' | 'mercury';
-
-export const VISUALS: { id: VisualId; name: string; note: string }[] = [
-  {
-    id: 'crust',
-    name: 'Crust',
-    note: 'Hex territory on a section of a sphere. Grows with the fleet.',
-  },
-  {
-    id: 'lidar',
-    name: 'LiDAR',
-    note: 'The same world as a scanned point cloud with a live sweep.',
-  },
-  {
-    id: 'dome',
-    name: 'Dome',
-    note: "Today's board, bent onto the sphere. The nearest step from what ships.",
-  },
-  {
-    id: 'prism',
-    name: 'Prism',
-    note: 'Crystal glass with a status light inside each agent. Dispersion and iridescence.',
-  },
-  {
-    id: 'mercury',
-    name: 'Mercury',
-    note: 'Liquid metal. Agents are droplets that merge into a pool as a Project fills.',
-  },
-];
 
 /**
  * The story drive. The scroll experience writes the scroll-side fields every

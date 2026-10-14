@@ -38,8 +38,8 @@ The only changes applied are:
    and no-op `clip-path` wrappers were removed. No `id` attributes remain. No scripts, no external
    references.
 
-The homepage study (`src/app/hud-gallery/homepage-study/visuals/crust-marks.ts`) draws the same
-path data as 3D geometry on the study's agent tiles. There Claude's mark is tinted Anthropic's own
+The homepage's fleet story (`src/components/site/fleet-story/visuals/crust-marks.ts`) draws the
+same path data as 3D geometry on its agent tiles. There Claude's mark is tinted Anthropic's own
 terracotta (#D97757, the colour Anthropic itself draws the mark in) and OpenClaw's lobster keeps the
 artwork's own pixel colours; the three marks supplied in black and white only take the surrounding
 ink, as everywhere else. Recorded 2026-10-13.

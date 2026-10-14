@@ -27,7 +27,14 @@
  * it never sits over a scene it is not about.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from 'react';
 import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
@@ -63,7 +70,7 @@ import { useSceneScroll, type SnapMode } from './use-scene-scroll';
 import {
   VisualAnchor,
   type StoryDrive,
-  type VisualId,
+  type VisualProps,
 } from './visual-contract';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
@@ -121,7 +128,7 @@ function exemplarFor(
 }
 
 export function ScrollExperience({
-  visual,
+  Visual,
   copySet,
   material,
   mark,
@@ -134,7 +141,8 @@ export function ScrollExperience({
   names,
   insetTop = 0,
 }: {
-  visual: VisualId;
+  /** The study's candidate visual; the homepage draws Crust. */
+  Visual?: ComponentType<VisualProps>;
   copySet: CopySetId;
   material: CrustMaterialId;
   mark: CrustMarkId;
@@ -487,7 +495,7 @@ export function ScrollExperience({
       >
         <CanvasBoundary>
           <VisualCanvas
-            visual={visual}
+            Visual={Visual}
             model={model}
             theme={theme}
             drive={drive}

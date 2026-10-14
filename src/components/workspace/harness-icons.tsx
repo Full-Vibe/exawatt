@@ -94,9 +94,9 @@ interface HarnessMarkPaths {
 
 /**
  * The marks' path data in one place. The components below draw it as SVG;
- * the homepage study draws the same bytes as a 2D glyph in its panels and
- * extrudes them into 3D on its tiles
- * (`src/app/hud-gallery/homepage-study/visuals/crust-marks.ts`), so a mark
+ * the homepage's fleet story draws the same bytes as a 2D glyph in its
+ * panels and extrudes them into 3D on its tiles
+ * (`src/components/site/fleet-story/visuals/crust-marks.ts`), so a mark
  * on a tile is the vendor's own geometry and not a drawing of it. Nothing
  * is redrawn here: `viewBox` is the vendor's box, `fillRule` the mark's
  * own, and a mark is its parts, each named for the tone it takes.

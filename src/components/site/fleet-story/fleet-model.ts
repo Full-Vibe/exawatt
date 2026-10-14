@@ -28,7 +28,7 @@ export const FLEET_MAX = 300;
 
 /** Fleet sizes the study is judged at (operator, 2026-09-11: a first user
  *  has one to ten, not ten thousand). */
-export const FLEET_COUNTS = [1, 10, 100, 300] as const;
+const FLEET_COUNTS = [1, 10, 100, 300] as const;
 type FleetCount = (typeof FLEET_COUNTS)[number];
 
 interface FleetProject {

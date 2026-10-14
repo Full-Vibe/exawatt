@@ -10,11 +10,11 @@
  */
 
 import { Canvas } from '@react-three/fiber';
-import { useRef, type RefObject } from 'react';
+import { useRef, type ComponentType, type RefObject } from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
 import type { NamesId } from './names';
-import type { StoryDrive, VisualAnchor, VisualId } from './visual-contract';
+import type { StoryDrive, VisualAnchor, VisualProps } from './visual-contract';
 import { CameraRig } from './visuals/camera-rig';
 import type { CrustMarkId } from './visuals/crust-marks';
 import type { CrustMaterialId } from './visuals/crust-materials';
@@ -23,21 +23,9 @@ import type { CrustShapeId } from './visuals/crust-shape';
 import type { CrustSignalId } from './visuals/crust-signal';
 import type { EnvironmentKind } from './visuals/environment';
 import { CrustVisual } from './visuals/crust-visual';
-import { DomeVisual } from './visuals/dome-visual';
-import { LidarVisual } from './visuals/lidar-visual';
-import { MercuryVisual } from './visuals/mercury-visual';
-import { PrismVisual } from './visuals/prism-visual';
-
-const VISUAL_COMPONENTS = {
-  crust: CrustVisual,
-  lidar: LidarVisual,
-  dome: DomeVisual,
-  prism: PrismVisual,
-  mercury: MercuryVisual,
-} as const;
 
 export function VisualCanvas({
-  visual,
+  Visual = CrustVisual,
   model,
   theme,
   drive,
@@ -58,7 +46,10 @@ export function VisualCanvas({
   onHoverChange,
   onSelect,
 }: {
-  visual: VisualId;
+  /** What draws the fleet: Crust, unless the study swaps in a candidate. A
+   *  different visual is a different component, so it mounts fresh while
+   *  the camera above it keeps its place. */
+  Visual?: ComponentType<VisualProps>;
   material: CrustMaterialId;
   mark: CrustMarkId;
   shape: CrustShapeId;
@@ -79,7 +70,6 @@ export function VisualCanvas({
   onHoverChange: (agent: number) => void;
   onSelect: (agent: number) => void;
 }) {
-  const Visual = VISUAL_COMPONENTS[visual];
   const shownRef = useRef(1);
   return (
     <Canvas
@@ -103,7 +93,6 @@ export function VisualCanvas({
         closeUp={closeUp}
       />
       <Visual
-        key={visual}
         model={model}
         shownRef={shownRef}
         material={material}

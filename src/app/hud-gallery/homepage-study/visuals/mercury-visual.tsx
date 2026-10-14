@@ -20,17 +20,21 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
-import { axialToPlane, fleetAt, type FleetModel } from '../fleet-model';
+import {
+  axialToPlane,
+  fleetAt,
+  type FleetModel,
+} from '@/components/site/fleet-story/fleet-model';
 import {
   SPHERE_CENTER,
   SPHERE_RADIUS,
   planeToSphere,
   tileQuaternion,
-} from '../sphere';
-import { stageAt } from '../stages';
-import type { VisualProps } from '../visual-contract';
-import { useRoomEnvironment } from './environment';
-import { keepPickable } from './pick-bounds';
+} from '@/components/site/fleet-story/sphere';
+import { stageAt } from '@/components/site/fleet-story/stages';
+import type { VisualProps } from '@/components/site/fleet-story/visual-contract';
+import { useRoomEnvironment } from '@/components/site/fleet-story/visuals/environment';
+import { keepPickable } from '@/components/site/fleet-story/visuals/pick-bounds';
 import {
   clearPoolField,
   makePoolField,
@@ -46,7 +50,7 @@ import {
   projectToCanvas,
   RIM_NOW,
   writeLabelAnchors,
-} from './shared';
+} from '@/components/site/fleet-story/visuals/shared';
 
 const RESOLUTION = 56;
 const POOL_FLOOR = 0.5;

@@ -10,19 +10,36 @@
  * Click an agent to open it. On a phone the bar folds to one button.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { NAMES, parseNames, type NamesId } from './names';
-import { ScrollExperience, type SnapMode } from './scroll-experience';
-import type { CopySetId } from './stages';
-import { VISUALS, type VisualId } from './visual-contract';
-import { CRUST_MARKS, type CrustMarkId } from './visuals/crust-marks';
+import {
+  NAMES,
+  parseNames,
+  type NamesId,
+} from '@/components/site/fleet-story/names';
+import {
+  ScrollExperience,
+  type SnapMode,
+} from '@/components/site/fleet-story/scroll-experience';
+import type { CopySetId } from '@/components/site/fleet-story/stages';
+import type { VisualProps } from '@/components/site/fleet-story/visual-contract';
+import { CrustVisual } from '@/components/site/fleet-story/visuals/crust-visual';
+import {
+  CRUST_MARKS,
+  type CrustMarkId,
+} from '@/components/site/fleet-story/visuals/crust-marks';
 import {
   CRUST_MATERIALS,
   type CrustMaterialId,
-} from './visuals/crust-materials';
+} from '@/components/site/fleet-story/visuals/crust-materials';
 import {
   CRUST_GLOWS,
   CRUST_LIFTS,
@@ -30,10 +47,61 @@ import {
   parseMotion,
   toggleGlow,
   type CrustMotion,
-} from './visuals/crust-motion';
-import { CRUST_SHAPES, type CrustShapeId } from './visuals/crust-shape';
-import { CRUST_SIGNALS, type CrustSignalId } from './visuals/crust-signal';
-import type { EnvironmentKind } from './visuals/environment';
+} from '@/components/site/fleet-story/visuals/crust-motion';
+import {
+  CRUST_SHAPES,
+  type CrustShapeId,
+} from '@/components/site/fleet-story/visuals/crust-shape';
+import {
+  CRUST_SIGNALS,
+  type CrustSignalId,
+} from '@/components/site/fleet-story/visuals/crust-signal';
+import type { EnvironmentKind } from '@/components/site/fleet-story/visuals/environment';
+import { DomeVisual } from './visuals/dome-visual';
+import { LidarVisual } from './visuals/lidar-visual';
+import { MercuryVisual } from './visuals/mercury-visual';
+import { PrismVisual } from './visuals/prism-visual';
+
+type VisualId = 'crust' | 'lidar' | 'dome' | 'prism' | 'mercury';
+
+/** The candidates the homepage chose Crust from (W15), kept to compare. */
+const VISUALS: {
+  id: VisualId;
+  name: string;
+  note: string;
+  component: ComponentType<VisualProps>;
+}[] = [
+  {
+    id: 'crust',
+    name: 'Crust',
+    note: 'Hex territory on a section of a sphere. Grows with the fleet.',
+    component: CrustVisual,
+  },
+  {
+    id: 'lidar',
+    name: 'LiDAR',
+    note: 'The same world as a scanned point cloud with a live sweep.',
+    component: LidarVisual,
+  },
+  {
+    id: 'dome',
+    name: 'Dome',
+    note: "Today's board, bent onto the sphere. The nearest step from what ships.",
+    component: DomeVisual,
+  },
+  {
+    id: 'prism',
+    name: 'Prism',
+    note: 'Crystal glass with a status light inside each agent. Dispersion and iridescence.',
+    component: PrismVisual,
+  },
+  {
+    id: 'mercury',
+    name: 'Mercury',
+    note: 'Liquid metal. Agents are droplets that merge into a pool as a Project fills.',
+    component: MercuryVisual,
+  },
+];
 
 interface StudyState {
   visual: VisualId;
@@ -373,7 +441,7 @@ export function HomepageStudy() {
       </div>
 
       <ScrollExperience
-        visual={state.visual}
+        Visual={VISUALS.find(option => option.id === state.visual)?.component}
         copySet={state.copy}
         material={state.material}
         mark={state.mark}

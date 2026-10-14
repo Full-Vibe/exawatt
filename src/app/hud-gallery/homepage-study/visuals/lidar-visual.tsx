@@ -18,11 +18,17 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { fleetAt, type FleetModel } from '../fleet-model';
-import { SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
-import { stageAt } from '../stages';
-import type { VisualProps } from '../visual-contract';
-import { fleetExtent } from './camera-rig';
+import {
+  fleetAt,
+  type FleetModel,
+} from '@/components/site/fleet-story/fleet-model';
+import {
+  SPHERE_CENTER,
+  SPHERE_RADIUS,
+} from '@/components/site/fleet-story/sphere';
+import { stageAt } from '@/components/site/fleet-story/stages';
+import type { VisualProps } from '@/components/site/fleet-story/visual-contract';
+import { fleetExtent } from '@/components/site/fleet-story/visuals/camera-rig';
 import {
   highlightWeight,
   type Palette,
@@ -32,7 +38,7 @@ import {
   RIM_NOW,
   type TilePlacement,
   writeLabelAnchors,
-} from './shared';
+} from '@/components/site/fleet-story/visuals/shared';
 
 const VERT = /* glsl */ `
   attribute vec3 pointColor;

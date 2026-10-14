@@ -16,12 +16,15 @@
 import { useMemo, useRef } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import { fleetAt } from '../fleet-model';
-import { SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
-import { stageAt } from '../stages';
-import type { VisualProps } from '../visual-contract';
-import { useRoomEnvironment } from './environment';
-import { keepPickable } from './pick-bounds';
+import { fleetAt } from '@/components/site/fleet-story/fleet-model';
+import {
+  SPHERE_CENTER,
+  SPHERE_RADIUS,
+} from '@/components/site/fleet-story/sphere';
+import { stageAt } from '@/components/site/fleet-story/stages';
+import type { VisualProps } from '@/components/site/fleet-story/visual-contract';
+import { useRoomEnvironment } from '@/components/site/fleet-story/visuals/environment';
+import { keepPickable } from '@/components/site/fleet-story/visuals/pick-bounds';
 import {
   highlightWeight,
   paletteFrom,
@@ -29,7 +32,7 @@ import {
   projectToCanvas,
   RIM_NOW,
   writeLabelAnchors,
-} from './shared';
+} from '@/components/site/fleet-story/visuals/shared';
 
 const dummy = new THREE.Object3D();
 const color = new THREE.Color();

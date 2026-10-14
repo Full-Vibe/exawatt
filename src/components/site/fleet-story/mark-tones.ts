@@ -46,8 +46,3 @@ export function markIdFor(adapterId: string): HarnessMarkId | null {
 export function markToneHex(mark: HarnessMarkId, tone: string): string | null {
   return TONES[mark]?.[tone] ?? null;
 }
-
-/** The vendor's own colour for the mark as a whole, where it supplies one. */
-export function markBrandHex(mark: HarnessMarkId): string | null {
-  return TONES[mark]?.brand ?? null;
-}

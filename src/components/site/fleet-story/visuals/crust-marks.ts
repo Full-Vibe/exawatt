@@ -37,7 +37,7 @@ import {
   type HarnessMarkId,
   type HarnessMarkPart,
 } from '@/components/workspace/harness-icons';
-import { markBrandHex, markToneHex } from '../mark-tones';
+import { markToneHex } from '../mark-tones';
 
 export type CrustMarkId = 'off' | 'lit' | 'relief' | 'coin';
 
@@ -79,12 +79,6 @@ interface MarkPart {
   tone: 'ink' | THREE.Color;
   /** Stacking layer: a higher layer stands on a lower one. */
   layer: number;
-}
-
-/** The vendor's colour for a mark, or null where it supplies none. */
-export function markBrand(index: number): THREE.Color | null {
-  const hex = markBrandHex(MARK_IDS[index]);
-  return hex ? new THREE.Color(hex) : null;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

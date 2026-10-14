@@ -13,7 +13,7 @@
  * Pure functions over typed arrays; no three.js here.
  */
 
-import { SPHERE_RADIUS } from '../sphere';
+import { SPHERE_RADIUS } from '@/components/site/fleet-story/sphere';
 
 interface PoolField {
   size: number;

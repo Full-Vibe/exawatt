@@ -15,12 +15,18 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import { axialToPlane, fleetAt } from '../fleet-model';
-import { SPHERE_CENTER, planeToSphere } from '../sphere';
-import { stageAt } from '../stages';
-import type { VisualProps } from '../visual-contract';
-import { GlobeBody } from './globe-body';
-import { keepPickable } from './pick-bounds';
+import {
+  axialToPlane,
+  fleetAt,
+} from '@/components/site/fleet-story/fleet-model';
+import {
+  SPHERE_CENTER,
+  planeToSphere,
+} from '@/components/site/fleet-story/sphere';
+import { stageAt } from '@/components/site/fleet-story/stages';
+import type { VisualProps } from '@/components/site/fleet-story/visual-contract';
+import { GlobeBody } from '@/components/site/fleet-story/visuals/globe-body';
+import { keepPickable } from '@/components/site/fleet-story/visuals/pick-bounds';
 import {
   highlightWeight,
   paletteFrom,
@@ -28,7 +34,7 @@ import {
   projectToCanvas,
   RIM_NOW,
   writeLabelAnchors,
-} from './shared';
+} from '@/components/site/fleet-story/visuals/shared';
 
 const RING_SEGMENTS = 96;
 const dummy = new THREE.Object3D();

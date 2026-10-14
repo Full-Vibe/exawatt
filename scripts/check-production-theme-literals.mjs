@@ -55,6 +55,29 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     max: 7,
     reason: 'public home art direction outside the command-app theme surface',
   },
+  // The homepage's fleet story (ENG-031 W15m) is one fixed night register
+  // that no app theme may repaint (`--exa-hud-void` turns light under Air),
+  // with the vendors' own mark colours and two pieces of alpha math.
+  'src/components/site/fleet-story/scroll-experience.tsx': {
+    max: 6,
+    reason: "the story's fixed night ground behind the world and its type",
+  },
+  'src/components/site/fleet-story/agent-card.tsx': {
+    max: 1,
+    reason: "the agent card's glass over the story's fixed night ground",
+  },
+  'src/components/site/fleet-story/mark-tones.ts': {
+    max: 5,
+    reason: 'third-party harness brand artwork',
+  },
+  'src/components/site/fleet-story/visuals/crust-marks.ts': {
+    max: 1,
+    reason: "an SVG rasterised as a mark's alpha mask, not rendered colour",
+  },
+  'src/components/site/fleet-story/visuals/crust-visual.tsx': {
+    max: 3,
+    reason: 'alpha stops of a glow sprite drawn to a canvas, not theme paint',
+  },
 
   // /architecture uses persistent layer/status identity as data. Its canvas
   // is legacy design-system debt; the cap prevents that private palette from

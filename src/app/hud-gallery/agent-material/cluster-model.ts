@@ -9,8 +9,11 @@
  */
 
 import type { StatusLightState } from '@/components/status-light/protocol';
-import { hexSpiral } from '../homepage-study/hex';
-import type { FleetAgent, FleetModel } from '../homepage-study/fleet-model';
+import { hexSpiral } from '@/components/site/fleet-story/hex';
+import type {
+  FleetAgent,
+  FleetModel,
+} from '@/components/site/fleet-story/fleet-model';
 
 export const CLUSTER_SOURCES = [
   'Claude Code',

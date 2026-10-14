@@ -21,23 +21,23 @@ import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import { STATUS_LABEL } from '../homepage-study/fleet-model';
-import { PinnedAgentPanel } from '../homepage-study/pinned-agent-panel';
-import { STAGES } from '../homepage-study/stages';
+import { STATUS_LABEL } from '@/components/site/fleet-story/fleet-model';
+import { PinnedAgentPanel } from '@/components/site/fleet-story/pinned-agent-panel';
+import { STAGES } from '@/components/site/fleet-story/stages';
 import {
   STATUS_ORDER,
   VisualAnchor,
   type StoryDrive,
-} from '../homepage-study/visual-contract';
-import { VisualCanvas } from '../homepage-study/visual-canvas';
+} from '@/components/site/fleet-story/visual-contract';
+import { VisualCanvas } from '@/components/site/fleet-story/visual-canvas';
 import {
   CRUST_MARKS,
   type CrustMarkId,
-} from '../homepage-study/visuals/crust-marks';
+} from '@/components/site/fleet-story/visuals/crust-marks';
 import {
   CRUST_MATERIALS,
   type CrustMaterialId,
-} from '../homepage-study/visuals/crust-materials';
+} from '@/components/site/fleet-story/visuals/crust-materials';
 import {
   CRUST_GLOWS,
   CRUST_LIFTS,
@@ -45,16 +45,16 @@ import {
   parseMotion,
   toggleGlow,
   type CrustMotion,
-} from '../homepage-study/visuals/crust-motion';
+} from '@/components/site/fleet-story/visuals/crust-motion';
 import {
   CRUST_SHAPES,
   type CrustShapeId,
-} from '../homepage-study/visuals/crust-shape';
+} from '@/components/site/fleet-story/visuals/crust-shape';
 import {
   CRUST_SIGNALS,
   type CrustSignalId,
-} from '../homepage-study/visuals/crust-signal';
-import type { EnvironmentKind } from '../homepage-study/visuals/environment';
+} from '@/components/site/fleet-story/visuals/crust-signal';
+import type { EnvironmentKind } from '@/components/site/fleet-story/visuals/environment';
 import { CLUSTER_SOURCES, clusterModel } from './cluster-model';
 
 interface StudyState {
@@ -399,7 +399,6 @@ export function AgentMaterialStudy() {
           data-agent-material-stage
         >
           <VisualCanvas
-            visual="crust"
             model={model}
             theme={theme}
             drive={drive}
