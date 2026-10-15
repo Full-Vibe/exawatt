@@ -16,8 +16,16 @@ import { createRequire } from 'node:module';
 import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
 import { ensurePackagedApp } from './lib/packaged-app.mjs';
 import { ConnectedGatewayFixture } from './lib/connected-gateway-fixture.mjs';
+import {
+  runFleetViewMatrix,
+  assertFleetView,
+  fleetView,
+} from './lib/fleet-view-eval.mjs';
 
 const LIVE = process.env.EXAWATT_FLEET_PACKAGED_LIVE === '1';
+// Never multiply explicitly authorized live-source operations. Fixture delivery
+// evidence covers both views against the same exact-SHA package.
+if (!LIVE) await runFleetViewMatrix(import.meta.url);
 const LIVE_CONFIRMATION = 'two-customer-hosted-sources';
 const EXPECTED_AGENTS = 3;
 const FIXTURE_MESSAGE = 'Packaged fleet acceptance check';
@@ -180,10 +188,22 @@ async function snapshotLivePairedDevices(sources) {
   return new Map(entries);
 }
 
-async function preparePage(page) {
+async function preparePage(page, { restore = false } = {}) {
   page.setDefaultTimeout(30_000);
   await page.locator('[data-command-altitude]').waitFor({ timeout: 60_000 });
   await page.waitForURL(url => url.pathname === '/workspace');
+  await page.evaluate(
+    async ({ view, restore }) => {
+      const settings = window.electron.settings;
+      if (!restore)
+        await settings.setPresentation({ schemaVersion: 1, fleetView: view });
+      if ((await settings.get()).presentation?.fleetView !== view)
+        throw new Error(
+          'Packaged Fleet presentation did not persist across launch'
+        );
+    },
+    { view: fleetView, restore }
+  );
   const bridge = await page.evaluate(() => ({
     electron: window.electron?.isElectron === true,
     connected: Boolean(window.electron?.connectedSources),
@@ -412,6 +432,7 @@ async function openFromFleet(page, agent) {
   });
   await page.goto(`${origin}/fleet/spatial?${query}`);
   await page.locator('[data-spatial-command]').waitFor({ timeout: 60_000 });
+  await assertFleetView(page);
   await page.waitForFunction(
     expected =>
       Number(
@@ -428,7 +449,20 @@ async function openFromFleet(page, agent) {
   await open.click();
   await page.waitForURL(url => url.pathname === '/workspace');
   await page.locator(`[data-remote-agent-pane="${agent.id}"]`).waitFor();
-  check('Fleet opens the remote Agent in the shared workspace', true);
+  check(
+    `Fleet ${fleetView} opens the remote Agent in the shared workspace`,
+    true
+  );
+  await page.keyboard.press('Control+Meta+3');
+  await page.waitForURL(url => url.pathname === '/fleet/spatial');
+  await assertFleetView(page);
+  await page.keyboard.press('Control+Meta+1');
+  await page.waitForURL(url => url.pathname === '/workspace');
+  await page.locator(`[data-remote-agent-pane="${agent.id}"]`).waitFor();
+  check(
+    `Fleet ${fleetView} return retains the exact connected Agent pane`,
+    true
+  );
 }
 
 async function grantAndSend(page, gateway, sourceId, agent) {
@@ -570,7 +604,7 @@ async function secondLaunch({ packaged, env, expected }) {
   return withElectronApp(
     { packaged, cwd: process.cwd(), env },
     async (_app, page) => {
-      await preparePage(page);
+      await preparePage(page, { restore: true });
       const roster = await waitForRoster(page);
       assert.deepEqual(stableIdentities(roster), expected.identities);
       check(

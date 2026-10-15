@@ -5,6 +5,12 @@ import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 import {
+  runFleetViewMatrix,
+  prepareFleetViewPage,
+  assertFleetView,
+  fleetView,
+} from './lib/fleet-view-eval.mjs';
+import {
   resolveQaBrowserLaunchOptions,
   primeEvalBrowserPage,
 } from './lib/qa-browser.mjs';
@@ -14,8 +20,9 @@ const {
   demoWorkspaceAgent,
   orderedAttentionTargets,
 } = require('@exawatt/core');
+await runFleetViewMatrix(import.meta.url);
 const base = process.env.EXA_BASE ?? 'http://localhost:7183';
-const out = '/tmp/exawatt-fleet-attention';
+const out = `/tmp/exawatt-fleet-attention/${fleetView}`;
 mkdirSync(out, { recursive: true });
 const fixtures = demoFleetAgents('scale').map(demoWorkspaceAgent);
 const signals = Object.fromEntries(
@@ -34,6 +41,7 @@ try {
     reducedMotion: 'reduce',
   });
   await primeEvalBrowserPage(page);
+  await prepareFleetViewPage(page);
   await page.addInitScript(() =>
     localStorage.setItem('exawatt:active-workspace:v1', 'demo')
   );
@@ -41,6 +49,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${base}/fleet/spatial`, { waitUntil: 'load' });
   await page.locator('[data-spatial-board]').waitFor();
+  await assertFleetView(page);
   const selected = () => page.locator('[data-open-agent]');
   for (const id of order.slice(0, 3)) {
     await page.keyboard.press('Meta+j');
@@ -65,6 +74,7 @@ try {
   // by app navigation, so the existing transport remains the source owner.
   await page.keyboard.press('Control+Meta+3');
   await page.waitForURL('**/fleet/spatial*');
+  await assertFleetView(page);
   await page.keyboard.press('0');
   await page.getByPlaceholder('Search agents…').fill(result.name);
   await page.waitForURL(url => url.searchParams.get('q') === result.name);
@@ -81,6 +91,7 @@ try {
   await page.locator(`[data-demo-session-pane="${result.id}"]`).waitFor();
   await page.keyboard.press('Control+Meta+3');
   await page.waitForURL('**/fleet/spatial*');
+  await assertFleetView(page);
   await page.keyboard.press('0');
   await page.getByPlaceholder('Search agents…').fill(result.name);
   await page.waitForURL(url => url.searchParams.get('q') === result.name);

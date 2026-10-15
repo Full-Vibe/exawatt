@@ -10,15 +10,25 @@ import {
   withElectronApp,
 } from './lib/electron-eval.mjs';
 import { ensurePackagedApp } from './lib/packaged-app.mjs';
+import {
+  runFleetViewMatrix,
+  assertFleetView,
+  fleetView,
+} from './lib/fleet-view-eval.mjs';
+
+await runFleetViewMatrix(import.meta.url);
 
 // This tree's package, built when absent or stale (BUG-217).
 const packaged = await ensurePackagedApp({ label: 'session-parity' });
 const root = mkdtempSync(join(tmpdir(), 'exawatt-session-spatial-parity-'));
 const userData = join(root, 'userData');
 const projectDir = join(root, 'project');
-const screenshots = resolve(
-  process.env.SESSION_PARITY_SCREENSHOT_DIR ??
-    join(tmpdir(), 'exawatt-session-spatial-parity')
+const screenshots = join(
+  resolve(
+    process.env.SESSION_PARITY_SCREENSHOT_DIR ??
+      join(tmpdir(), 'exawatt-session-spatial-parity')
+  ),
+  fleetView
 );
 mkdirSync(userData, { recursive: true });
 mkdirSync(projectDir, { recursive: true });
@@ -75,6 +85,17 @@ try {
       );
 
       await waitForWorkspaceReady(page);
+      // Use the packaged main/preload persistence boundary, not browser storage.
+      await page.evaluate(async view => {
+        const saved = await window.electron.settings.setPresentation({
+          schemaVersion: 1,
+          fleetView: view,
+        });
+        if (saved.presentation?.fleetView !== view)
+          throw new Error(
+            'Fleet view did not persist through the desktop bridge'
+          );
+      }, fleetView);
       await page.evaluate(dir => {
         window.dispatchEvent(
           new CustomEvent('exawatt:open-project', { detail: dir })
@@ -149,6 +170,7 @@ try {
       }
       await page.keyboard.press('Control+Meta+3');
       await page.waitForURL('**/fleet/spatial**');
+      await assertFleetView(page);
       await page.waitForFunction(
         () =>
           document
@@ -171,7 +193,7 @@ try {
       // otherwise the evidence image can catch its intentional blackout.
       await page.waitForTimeout(1_300);
       await page.screenshot({
-        path: join(screenshots, 'stopped-agent-dotted.png'),
+        path: join(screenshots, 'stopped-agent.png'),
         fullPage: true,
       });
 
@@ -200,11 +222,26 @@ try {
         );
       }
 
+      await page.keyboard.press('Control+Meta+3');
+      await page.waitForURL('**/fleet/spatial**');
+      await assertFleetView(page);
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-agent-count]')
+            ?.getAttribute('data-agent-count') === '2'
+      );
+      await page.keyboard.press('Control+Meta+1');
+      await page.waitForURL(url => url.pathname === '/workspace');
+      await page
+        .locator(`[data-session-durable="${firstSession.durableSessionId}"]`)
+        .waitFor();
+
       if (errors.length > 0) {
         throw new Error(`Electron page errors: ${errors.join(' | ')}`);
       }
       console.log(
-        'PASS Session parity: Cmd-Shift-[ selects stopped tab; Spatial keeps dotted interactive Agent; handoff opens exact restore surface'
+        `PASS Fleet ${fleetView} Session parity: stopped Agent remains interactive; exact restore surface survives Fleet return`
       );
       console.log(`Screenshot: ${screenshots}`);
     },

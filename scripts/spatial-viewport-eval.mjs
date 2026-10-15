@@ -3,10 +3,17 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright-core';
 import {
+  runFleetViewMatrix,
+  prepareFleetViewPage,
+  assertFleetView,
+  fleetView,
+} from './lib/fleet-view-eval.mjs';
+import {
   primeEvalBrowserPage,
   resolveQaBrowserLaunchOptions,
 } from './lib/qa-browser.mjs';
 
+await runFleetViewMatrix(import.meta.url);
 const base = process.env.EXA_BASE || 'http://localhost:7000';
 const browser = await chromium.launch({
   ...(await resolveQaBrowserLaunchOptions(chromium)),
@@ -14,6 +21,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ reducedMotion: 'reduce' });
 await primeEvalBrowserPage(page);
+await prepareFleetViewPage(page);
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => {
@@ -162,7 +170,7 @@ async function checkViewport(label) {
     geometry.surface.height > 0 && geometry.surface.width > 0,
     `${label}: board collapsed`
   );
-  console.log(`PASS ${label}`);
+  console.log(`PASS Fleet ${fleetView}: ${label}`);
 }
 
 try {
@@ -171,6 +179,7 @@ try {
   await page.setViewportSize({ width: 1312, height: 821 });
   await page.goto(`${base}/fleet/spatial`, { waitUntil: 'load' });
   await page.locator('[data-spatial-board]').waitFor();
+  await assertFleetView(page);
   await checkViewport('direct Fleet');
   await page.locator('button[aria-label^="Open Project "]').first().click();
   await page.waitForURL(/altitude=project/);
@@ -193,6 +202,7 @@ try {
     await page.setViewportSize({ width: 1100, height: 821 });
     await page.goto(url, { waitUntil: 'load' });
     await page.locator('[data-spatial-board]').waitFor();
+    await assertFleetView(page);
     await checkViewport(`direct ${name}, narrow`);
     for (const viewport of [
       { width: 1312, height: 821 },
