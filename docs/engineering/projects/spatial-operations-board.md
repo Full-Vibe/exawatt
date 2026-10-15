@@ -2693,8 +2693,10 @@ reading.
   after captures at five scenes and 390px). The homepage W15p pass that
   edited the same files landed the same day, so nothing blocks it. About a
   day.
-- P2 the preference and its Settings row, in parallel with P1. About half a
-  day.
+- P2 the preference and its Settings row, in parallel with P1. Settings is
+  the flag: until P5 the Tiles option is offered only in development builds
+  (and the bench selects it by prop), so no released build can pick an
+  unfinished view; Dots is the default throughout. About half a day.
 - P3 the Tiles greybox, then the look on the board bench
   (`/hud-gallery/board-study`, a view knob) with the Demo Workspace and 10,
   100 and 1k fixtures in Classic, Air and Night, Gummy, Acrylic and Anodized
@@ -2706,7 +2708,8 @@ reading.
   Tiles' modules in `BOARD_CANVAS_MODULES`, and the design-system amendment.
   The `agent/delegation-build` branch ("pending Fleet review") lands or is
   rebased first. One to two days.
-- P5 Tiles ships as an opt-in Preview. The default stays Dots until the
+- P5 Tiles ships as an opt-in Preview: every build's Settings offers it.
+  The default stays Dots until the
   operator calls it.
 
 **Calls made, the operator's to overturn:** the names Dots and Tiles

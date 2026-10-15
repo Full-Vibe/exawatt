@@ -65,7 +65,13 @@ The investigation found the two boards closer than they look:
    fleetView?: 'v1' | 'v2' }`, never inside `appearance`. Its parser is total:
    an unknown version reads as absent, so an older build never quarantines the
    settings file. Only an explicit choice is stored; absent resolves to the
-   runtime default, so a later default change moves everyone who never chose.
+   runtime default, `v1` (Dots), so a later default change moves everyone who
+   never chose.
+6. **Settings is the flag, and it only offers what works.** No separate
+   feature-flag system is built. Until Tiles reaches parity (V4.1 P5), the
+   Tiles option appears only in development builds and on the board bench;
+   no released build can select it. At P5 every build offers it, labelled
+   Preview, and a stored `v2` from a development build stays honoured.
    Future material, motion, camera or sound choices are added to this record
    when users ask for them, not before.
 5. **The product's rules bind Tiles.** The demand frameloop, the ambient power
