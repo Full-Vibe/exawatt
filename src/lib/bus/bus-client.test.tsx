@@ -30,6 +30,7 @@ import {
   upsertMessage,
 } from './selectors';
 import type { BusDeliveryState, BusMessage } from './types';
+import { busMessage } from './bus.test-support';
 import {
   BusClientProvider,
   useAgentUnread,
@@ -46,41 +47,45 @@ function message(
   from: string,
   to: string,
   at: number,
-  overrides: Partial<BusMessage> = {}
+  options: Parameters<typeof busMessage>[4] = {}
 ): BusMessage {
-  return {
-    id,
+  return busMessage(id, from, to, at, {
     projectId: PROJECT,
-    from: { sessionId: from, name: from, harness: 'claude' },
-    to: { sessionId: to, name: to, harness: 'codex' },
-    kind: 'agent',
-    at,
     text: `${id} text`,
-    delivery: { state: 'delivered' },
-    ...overrides,
-  };
+    ...options,
+  });
 }
 
 function fakeBridge(messages: BusMessage[] = []) {
   const handlers = new Set<(message: BusMessage) => void>();
   const bridge: BusBridge = {
-    list: async projectId => messages.filter(m => m.projectId === projectId),
-    thread: async (projectId, a, b) =>
-      messages.filter(
+    list: async projectId => ({
+      ok: true,
+      records: messages.filter(m => m.projectId === projectId),
+    }),
+    thread: async (projectId, a, b) => ({
+      ok: true,
+      records: messages.filter(
         m =>
           m.projectId === projectId &&
           [a, b].includes(m.from.sessionId) &&
           [a, b].includes(m.to.sessionId)
       ),
-    send: async request => ({
-      status: 'sent',
-      message: message('sent-1', BUS_OPERATOR.sessionId, request.to, NOW, {
-        projectId: request.projectId,
-        kind: request.kind,
-        text: request.text,
-        from: BUS_OPERATOR,
-      }),
     }),
+    send: async request => {
+      const record = message(
+        'sent-1',
+        BUS_OPERATOR.sessionId,
+        request.to,
+        NOW,
+        {
+          projectId: request.projectId,
+          operator: true,
+          text: request.text,
+        }
+      );
+      return { delivery: record.delivery, record };
+    },
     onMessage: handler => {
       handlers.add(handler);
       return () => handlers.delete(handler);
@@ -105,8 +110,8 @@ describe('live client', () => {
           text: 'hi',
           kind: 'operator',
         })
-      ).status
-    ).toBe('refused');
+      ).record
+    ).toBeNull();
     expect(() => client.subscribe(() => {})()).not.toThrow();
   });
 
@@ -139,7 +144,14 @@ describe('live client', () => {
         text: 'x',
         kind: 'operator',
       })
-    ).toEqual({ status: 'refused', reason: 'recipient ended' });
+    ).toEqual({
+      delivery: {
+        state: 'undeliverable',
+        reason: 'recipient ended',
+        adapter: 'bus',
+      },
+      record: null,
+    });
   });
 });
 
@@ -168,7 +180,7 @@ describe('demo client', () => {
       const projectKey = projectByDir.get(m.projectId);
       expect(projectKey).toBeDefined();
       expect(agents.get(m.to.sessionId)?.projectKey).toBe(projectKey);
-      if (m.kind === 'agent') {
+      if (m.from.kind === 'agent') {
         expect(agents.get(m.from.sessionId)?.projectKey).toBe(projectKey);
       } else {
         expect(m.from).toEqual(BUS_OPERATOR);
@@ -197,7 +209,14 @@ describe('demo client', () => {
         text: 'x',
         kind: 'operator',
       })
-    ).toEqual({ status: 'refused', reason: DEMO_CANNOT_SEND });
+    ).toEqual({
+      delivery: {
+        state: 'undeliverable',
+        reason: DEMO_CANNOT_SEND,
+        adapter: 'demo',
+      },
+      record: null,
+    });
   });
 });
 
@@ -205,16 +224,13 @@ describe('selectors', () => {
   const a = message('1', 'a', 'b', 10);
   const b = message('2', 'b', 'a', 20);
   const op = message('3', BUS_OPERATOR.sessionId, 'a', 30, {
-    kind: 'operator',
-    from: BUS_OPERATOR,
+    operator: true,
   });
   const other = message('4', 'c', 'd', 40);
 
   it('replaces a record by id instead of adding a second row', () => {
-    const queued = message('9', 'a', 'b', 50, {
-      delivery: { state: 'queued' },
-    });
-    const delivered = { ...queued, delivery: { state: 'delivered' as const } };
+    const queued = message('9', 'a', 'b', 50, { state: 'queued' });
+    const delivered = message('9', 'a', 'b', 50);
     const list = upsertMessage(upsertMessage([a], queued), delivered);
     expect(list).toHaveLength(2);
     expect(list[1].delivery.state).toBe('delivered');
@@ -291,14 +307,14 @@ describe('hooks', () => {
   });
 
   it('merges pushed messages and delivery updates for its Project only', async () => {
-    const first = message('1', 'a', 'b', 10, { delivery: { state: 'queued' } });
+    const first = message('1', 'a', 'b', 10, { state: 'queued' });
     const { bridge, push } = fakeBridge([first]);
     const { result } = renderHook(() => useBusMessages(PROJECT), {
       wrapper: wrapper(createLiveBusClient(() => bridge)),
     });
     await waitFor(() => expect(result.current.state.status).toBe('ok'));
     act(() => {
-      push({ ...first, delivery: { state: 'delivered' } });
+      push(message('1', 'a', 'b', 10));
       push(message('2', 'b', 'a', 20));
       push(message('3', 'x', 'y', 30, { projectId: '/elsewhere' }));
     });
@@ -318,7 +334,7 @@ describe('hooks', () => {
     });
     await waitFor(() => expect(result.current.state.status).toBe('ok'));
     await act(async () => {
-      await result.current.send({ to: 'a', text: 'hold on', kind: 'operator' });
+      await result.current.send('a', 'hold on');
     });
     const state = result.current.state;
     expect(state.status === 'ok' && state.messages.map(m => m.text)).toEqual([

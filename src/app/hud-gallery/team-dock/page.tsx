@@ -22,6 +22,7 @@ import { ChatterView } from '@/components/team/chatter/chatter-view';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { createDemoBusClient, demoBusMessages } from '@/lib/bus/demo-client';
 import { latestAt } from '@/lib/bus/selectors';
+import { refusedSend } from '@/lib/bus/client';
 import type { BusDeliveryState } from '@/lib/bus/types';
 import {
   BusClientProvider,
@@ -48,7 +49,7 @@ const DELIVERY_STATES: BusDeliveryState[] = [
   'expired',
   'unknown',
 ];
-const noSend = async () => ({ status: 'refused', reason: 'Specimen' }) as const;
+const noSend = async () => refusedSend('Specimen');
 
 function Frame({
   label,
@@ -149,9 +150,7 @@ function DockSpecimen() {
                   projectName={project.name}
                   projectColor={project.color}
                   state={chatter.state}
-                  send={(to, text) =>
-                    chatter.send({ to, text, kind: 'operator' })
-                  }
+                  send={chatter.send}
                   participants={PARTICIPANTS}
                   visible={tab === 'chatter'}
                   onSelectSession={() => {}}
@@ -221,10 +220,7 @@ export default function TeamDockSpecimenPage() {
       <h2 className="mb-3 mt-10 font-display text-lg font-semibold">
         Every delivery result
       </h2>
-      <Frame
-        label="One row per result"
-        height={byState.length * 46 + 8}
-      >
+      <Frame label="One row per result" height={byState.length * 46 + 8}>
         <div className="py-1">
           {byState.map(message => (
             <ChatterRow

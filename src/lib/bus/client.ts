@@ -9,7 +9,7 @@
  * `unavailable` with the reason. It never returns an empty list, because an
  * empty list means "no Agent has said anything", which is a different fact.
  */
-import type { BusMessage, BusSendRequest } from './types';
+import type { BusMessage, BusSendRequest, BusSendResult } from './types';
 
 type BusClientKind = 'live' | 'demo';
 
@@ -20,18 +20,13 @@ export type BusReadResult =
   /** the bus exists and the read failed */
   | { status: 'error'; message: string };
 
-export type BusSendResult =
-  /** the bus took it; `message.delivery` says what the recipient's door did */
-  | { status: 'sent'; message: BusMessage }
-  /** refused at the sender (unknown or ended recipient, no bus, Demo) */
-  | { status: 'refused'; reason: string };
-
 export interface BusClient {
   readonly kind: BusClientKind;
   /** every message in one Project, in ledger order */
   list(projectId: string): Promise<BusReadResult>;
-  /** every message between two Sessions of one Project, in ledger order */
+  /** every message between two addresses of one Project, in ledger order */
   thread(projectId: string, a: string, b: string): Promise<BusReadResult>;
+  /** `record` null is a refusal at the sender, with the reason */
   send(request: BusSendRequest): Promise<BusSendResult>;
   /**
    * New messages and delivery updates, as they happen. A later record with an
@@ -39,4 +34,12 @@ export interface BusClient {
    * Returns the unsubscribe.
    */
   subscribe(listener: (message: BusMessage) => void): () => void;
+}
+
+/** A refusal before anything was logged. */
+export function refusedSend(reason: string, adapter = 'bus'): BusSendResult {
+  return {
+    delivery: { state: 'undeliverable', reason, adapter },
+    record: null,
+  };
 }

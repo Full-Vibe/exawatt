@@ -441,21 +441,21 @@ interface BusClient {
 }
 ```
 
-- `types.ts` carries the packets' agreed message record (`at` is epoch
-  milliseconds; `projectId` is the workspace Project's `dir`, the key Team
-  groups tiles by). When `packages/core/src/bus/` lands, this file becomes a
-  re-export of the core types in one edit.
-- `live-client.ts` expects the preload namespace `window.electron.bus` with
-  `list(projectId) → BusMessage[]`, `thread(projectId, a, b) → BusMessage[]`,
-  `send({projectId, to, text, kind}) → {status: 'sent', message} | {status:
-  'refused', reason}` and `onMessage(handler) → unsubscribe`, where a pushed
-  record whose id was already seen replaces it (a `queued` message becoming
-  `delivered`). With the namespace absent every read is `unavailable` with one
-  line of reason, never an empty list; a throwing read is `error`.
+- `types.ts` mirrors the renderer's subset of the B1 contract name for name
+  (`MessageRecord` with `from.kind`, `DeliveryEvent` with `adapter` and
+  `at`, `BusSendRequest` with `kind: 'operator'`, `BusSendResult {delivery,
+  record}`, `BusLedgerRead`, `BUS_OPERATOR_ID`); when
+  `packages/core/src/bus/` reaches master it becomes one re-export. (The
+  first landing carried the packets' earlier draft shapes; the second
+  landing reconciled them with the published contract.)
+- `live-client.ts` reads `window.electron.bus` (`DesktopBusApi`) and maps
+  `BusLedgerRead` `ok: false` to an `error` read. With the namespace absent
+  every read is `unavailable` with one line of reason, never an empty list,
+  and a send is refused with that reason (`record: null`).
 - `demo-client.ts` stamps Voltaic's authored chatter
   (`packages/core/src/demo/chatter.ts`, every delivery state represented, on
   the Demo tabs' own Session ids) on the shell clock; send answers "Demo
-  cannot send".
+  cannot send" (undeliverable, adapter `demo`, no record).
 - `operator.ts` is the operator as a sender (`sessionId: 'operator'`).
 - `selectors.ts` holds the pure reads: ledger-order upsert, newest first, a
   pair's thread (what the two said to each other plus the operator's messages
@@ -649,6 +649,10 @@ client.** The first landing (`0364bb14`) put the renderer bus client in
 - **Demo.** The Demo Workspace provides the Demo client to Team, and its
   palette and menu Roadmap verb now opens the dock (it had no listener, so
   the row did nothing in Demo).
+- **Contract.** The client now speaks P3's published B1 contract (records
+  with `from.kind`, delivery events with `adapter`, `BusLedgerRead`, sends
+  answered `{delivery, record}`); `src/lib/bus/types.ts` mirrors it until the
+  core reaches master, then re-exports it.
 - **Specimen.** `/hud-gallery/team-dock` renders the production dock with
   both panels over Demo data, every delivery result as a row, and the four
   panel states.

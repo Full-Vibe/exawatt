@@ -8,9 +8,8 @@
 import { useRef, useState } from 'react';
 import { sessionSource } from '@/components/workspace/harnesses';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
-import type { BusSendResult } from '@/lib/bus/client';
 import { firstLine } from '@/lib/bus/selectors';
-import type { BusEndpoint, BusMessage } from '@/lib/bus/types';
+import type { BusEndpoint, BusMessage, BusSendResult } from '@/lib/bus/types';
 import { DELIVERY_LABEL, chatterAge, chatterStamp } from './chatter-format';
 import {
   ChatterEndpoint,
@@ -180,7 +179,7 @@ export function ChatterComposer({
       result,
       to: endpointLabel(recipient, participants),
     });
-    if (result.status === 'sent') setText('');
+    if (result.record) setText('');
   };
 
   return (
@@ -265,8 +264,8 @@ export function ChatterComposer({
         <span
           data-chatter-send-result={
             state.phase === 'done'
-              ? state.result.status === 'sent'
-                ? state.result.message.delivery.state
+              ? state.result.record
+                ? state.result.record.delivery.state
                 : 'refused'
               : undefined
           }
@@ -274,22 +273,23 @@ export function ChatterComposer({
           className="min-w-0 flex-1 truncate font-ui text-chrome-meta"
           style={{
             color:
-              state.phase === 'done' && state.result.status === 'refused'
+              state.phase === 'done' && !state.result.record
                 ? HUD.amber
                 : HUD.textDim,
           }}
           title={
-            state.phase === 'done' && state.result.status === 'sent'
-              ? state.result.message.delivery.reason
+            state.phase === 'done'
+              ? (state.result.record?.delivery.reason ??
+                state.result.delivery.reason)
               : undefined
           }
         >
           {state.phase === 'sending'
             ? 'Sending…'
             : state.phase === 'done'
-              ? state.result.status === 'sent'
-                ? `${DELIVERY_LABEL[state.result.message.delivery.state]} · ${state.to}`
-                : state.result.reason
+              ? state.result.record
+                ? `${DELIVERY_LABEL[state.result.record.delivery.state]} · ${state.to}`
+                : (state.result.delivery.reason ?? 'Not sent')
               : null}
         </span>
         <button

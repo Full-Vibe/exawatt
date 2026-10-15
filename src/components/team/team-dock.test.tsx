@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BUS_OPERATOR } from '@/lib/bus/operator';
+import { busMessage } from '@/lib/bus/bus.test-support';
+import { refusedSend } from '@/lib/bus/client';
 import { resetSeenThroughForTest, seenThrough } from '@/lib/bus/read-state';
 import type { BusDeliveryState, BusMessage } from '@/lib/bus/types';
 import type { BusMessagesState } from '@/lib/bus/use-bus';
@@ -29,21 +30,14 @@ function message(
   to: string,
   at: number,
   state: BusDeliveryState = 'delivered',
-  kind: BusMessage['kind'] = 'agent'
+  kind: 'agent' | 'operator' = 'agent'
 ): BusMessage {
-  return {
-    id,
+  return busMessage(id, from, to, at, {
+    state,
+    reason: `${state} because`,
+    operator: kind === 'operator',
     projectId: PROJECT,
-    from:
-      kind === 'operator'
-        ? BUS_OPERATOR
-        : { sessionId: from, name: from, harness: 'claude' },
-    to: { sessionId: to, name: to, harness: 'codex' },
-    kind,
-    at,
-    text: `${id} first line\nsecond line`,
-    delivery: { state, reason: `${state} because` },
-  };
+  });
 }
 
 function renderChatter(
@@ -56,7 +50,7 @@ function renderChatter(
       projectName="Alpha"
       projectColor="#50e6ff"
       state={state}
-      send={async () => ({ status: 'refused', reason: 'Demo cannot send' })}
+      send={async () => refusedSend('Demo cannot send', 'demo')}
       participants={new Map()}
       visible={false}
       onSelectSession={() => {}}
@@ -140,7 +134,7 @@ describe('Chatter states', () => {
         projectName="Alpha"
         projectColor={null}
         state={{ status: 'ok', messages }}
-        send={async () => ({ status: 'refused', reason: 'x' })}
+        send={async () => refusedSend('x')}
         participants={new Map()}
         visible
         onSelectSession={() => {}}
@@ -183,10 +177,13 @@ describe('Chatter keyboard and thread', () => {
   });
 
   it('sends as operator to the chosen Session and shows the result', async () => {
-    const send = vi.fn(async (to: string, text: string) => ({
-      status: 'sent' as const,
-      message: { ...message('sent', 'op', to, 40, 'queued', 'operator'), text },
-    }));
+    const send = vi.fn(async (to: string, text: string) => {
+      const record = {
+        ...message('sent', 'op', to, 40, 'queued', 'operator'),
+        text,
+      };
+      return { delivery: record.delivery, record };
+    });
     const messages = [message('q', 'a', 'b', 10)];
     const { container } = renderChatter({ status: 'ok', messages }, { send });
     fireEvent.click(container.querySelector('[data-chatter-row="q"]')!);

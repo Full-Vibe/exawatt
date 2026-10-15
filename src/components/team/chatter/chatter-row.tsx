@@ -44,7 +44,7 @@ export function ChatterRow({
       type="button"
       tabIndex={-1}
       data-chatter-row={message.id}
-      data-chatter-kind={message.kind}
+      data-chatter-kind={message.from.kind}
       data-delivery={message.delivery.state}
       data-unread={unread || undefined}
       data-selected={selected || undefined}

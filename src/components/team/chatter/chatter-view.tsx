@@ -16,10 +16,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
-import type { BusSendResult } from '@/lib/bus/client';
 import { markSeenThrough, seenThrough } from '@/lib/bus/read-state';
 import { latestAt, newestFirst, threadOf } from '@/lib/bus/selectors';
-import type { BusEndpoint, BusMessage } from '@/lib/bus/types';
+import type { BusEndpoint, BusMessage, BusSendResult } from '@/lib/bus/types';
 import type { BusMessagesState } from '@/lib/bus/use-bus';
 import {
   ChatterEndpoint,
@@ -205,7 +204,7 @@ export function ChatterView({
     mode.kind === 'thread' ? [mode.a, mode.b].filter(e => !isOperator(e)) : [];
   const lastAgentSender = [...thread]
     .reverse()
-    .find((m: BusMessage) => m.kind === 'agent')?.from.sessionId;
+    .find((m: BusMessage) => m.from.kind === 'agent')?.from.sessionId;
 
   return (
     <div
@@ -368,7 +367,9 @@ export function ChatterView({
                 message={message}
                 participants={participants}
                 now={now}
-                unread={message.kind !== 'operator' && message.at > baseline}
+                unread={
+                  message.from.kind !== 'operator' && message.at > baseline
+                }
                 selected={index === sel}
                 onOpen={() => {
                   setSel(index);

@@ -10,12 +10,11 @@ import {
   DEMO_CHATTER,
   DEMO_PROJECTS_BY_KEY,
 } from '@exawatt/core';
-import type { BusClient } from './client';
+import { refusedSend, type BusClient } from './client';
 import type { BusEndpoint, BusMessage } from './types';
 import { BUS_OPERATOR } from './operator';
 
 function endpointFor(agentId: string): BusEndpoint {
-  if (agentId === BUS_OPERATOR.sessionId) return BUS_OPERATOR;
   const agent = DEMO_BASE_AGENTS.find(candidate => candidate.id === agentId);
   if (!agent) throw new Error(`Unknown demo chatter Agent ${agentId}`);
   return {
@@ -30,15 +29,20 @@ export function demoBusMessages(nowMs: number): BusMessage[] {
   return DEMO_CHATTER.map(entry => {
     const project = DEMO_PROJECTS_BY_KEY.get(entry.projectKey);
     if (!project) throw new Error(`Unknown demo Project ${entry.projectKey}`);
+    const at = nowMs - entry.minutesAgo * 60_000;
+    const delivery = { ...entry.delivery, adapter: 'demo', at };
     return {
       id: entry.id,
       projectId: project.dir,
-      from: endpointFor(entry.from),
+      from:
+        entry.from === BUS_OPERATOR.sessionId
+          ? BUS_OPERATOR
+          : { ...endpointFor(entry.from), kind: 'agent' },
       to: endpointFor(entry.to),
-      kind: entry.from === BUS_OPERATOR.sessionId ? 'operator' : 'agent',
-      at: nowMs - entry.minutesAgo * 60_000,
+      at,
       text: entry.text,
-      delivery: { ...entry.delivery },
+      delivery,
+      history: [delivery],
     } satisfies BusMessage;
   }).sort((a, b) => a.at - b.at);
 }
@@ -67,7 +71,7 @@ export function createDemoBusClient(nowMs: number): BusClient {
       };
     },
     async send() {
-      return { status: 'refused', reason: DEMO_CANNOT_SEND };
+      return refusedSend(DEMO_CANNOT_SEND, 'demo');
     },
     subscribe() {
       return () => {};

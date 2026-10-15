@@ -46,7 +46,7 @@ export function threadOf(
     const to = message.to.sessionId;
     if (pair.has(from) && pair.has(to) && from !== to) return true;
     return (
-      message.kind === 'operator' &&
+      message.from.kind === 'operator' &&
       from === BUS_OPERATOR.sessionId &&
       pair.has(to)
     );
@@ -61,7 +61,7 @@ export function firstLine(text: string): string {
 /** A message counts as unread when it arrived after the operator's reading
  *  position. The operator's own messages are never unread. */
 function isUnread(message: BusMessage, seenThrough: number): boolean {
-  return message.kind !== 'operator' && message.at > seenThrough;
+  return message.from.kind !== 'operator' && message.at > seenThrough;
 }
 
 export function unreadCount(

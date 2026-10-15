@@ -1,12 +1,13 @@
-import type { BusEndpoint } from './types';
+import { BUS_OPERATOR_ID, type BusSender } from './types';
 
 /**
- * The operator as a bus endpoint: the sender of every `kind: operator`
- * message (Send as operator in Chatter, Direct on the Fleet board). Not a
- * Session, so it is never a recipient and never carries unread.
+ * The operator as a sender: every `kind: operator` message (Send as operator
+ * in Chatter, Direct on the Fleet board). Not a Session, so never a
+ * recipient and never unread.
  */
-export const BUS_OPERATOR: BusEndpoint = Object.freeze({
-  sessionId: 'operator',
+export const BUS_OPERATOR: BusSender = Object.freeze({
+  sessionId: BUS_OPERATOR_ID,
   name: 'You',
-  harness: 'operator',
+  harness: BUS_OPERATOR_ID,
+  kind: 'operator' as const,
 });

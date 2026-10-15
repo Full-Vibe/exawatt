@@ -1,37 +1,44 @@
 /**
  * The bus message contract as the renderer reads it (ENG-029 C4, decision
- * `0052`). These are the shapes the friend-cohort packets agreed to build
- * against until P3 publishes the real ones in `packages/core/src/bus/`; when
- * that lands, this file becomes a re-export of the core types in one edit and
- * every consumer keeps compiling.
+ * `0052`). These mirror P3's published B1 contract (substrate doc, "B1
+ * contract", `packages/core/src/bus/types.ts`) name for name, so that when
+ * the core lands on master this file becomes one re-export from
+ * `@exawatt/core` and every consumer keeps compiling. Only the renderer's
+ * subset is mirrored; the transport plugin interface stays main's business.
  *
- * `projectId` is the Project's key in the workspace store, its `dir`: the
- * Chatter view and the Direct composer address a Project by the same value the
- * Team tiles group by. Scope is the Project (operator, 2026-10-15: "Within a
- * project only, for now").
+ * `projectId` is the Project's directory, the key Team groups tiles by.
+ * Scope is the Project (operator, 2026-10-15: "Within a project only, for
+ * now").
  */
 
-/** One end of a message: the Session's stable address plus how it reads. */
+/** `agent`: a peer's note. `operator`: the user's own turn. */
+type BusMessageKind = 'agent' | 'operator';
+
+/** The operator's address; Exawatt Session ids are `session-<uuid>`, so the
+ *  two never collide. */
+export const BUS_OPERATOR_ID = 'operator';
+
+/** One end of a message: the durable Session id (the address), the display
+ *  name at send time, and the harness (or `operator`). */
 export interface BusEndpoint {
-  /** the Exawatt Session id: the address */
   sessionId: string;
-  /** the operator-facing name at send time (stamped by Exawatt) */
   name: string;
-  /** the harness id (`claude`, `codex`, `antigravity`, …) or `operator` */
   harness: string;
 }
 
-/** Who wrote it. An `operator` message is the human's own turn. */
-type BusMessageKind = 'agent' | 'operator';
+/** The sender, as Exawatt stamped it. */
+export interface BusSender extends BusEndpoint {
+  kind: BusMessageKind;
+}
 
 /**
  * What became of a message, in the ledger's vocabulary (B0 verdicts):
  * `delivered` — accepted by the recipient harness's own door;
- * `queued` — waiting for the recipient's turn boundary (Codex);
+ * `queued` — waiting for the recipient's turn boundary;
  * `held` / `expired` — the recipient harness's own inbound rule held it, then
- *   let it lapse (reported only where a harness says so);
- * `terminal` — typed into the recipient's terminal (Antigravity, others);
- * `undeliverable` — Exawatt could not hand it over, with the reason;
+ *   let it lapse (only where a harness reports it);
+ * `terminal` — typed into the recipient's terminal;
+ * `undeliverable` — not handed over, with the reason;
  * `unknown` — handed over with no evidence either way.
  */
 export type BusDeliveryState =
@@ -43,28 +50,52 @@ export type BusDeliveryState =
   | 'expired'
   | 'unknown';
 
-interface BusDelivery {
+/** One delivery outcome; `adapter` is the transport's declared kind, `bus`
+ *  when the bus refused before any transport ran, `demo` in the Demo. */
+interface DeliveryResult {
   state: BusDeliveryState;
   reason?: string;
+  adapter: string;
 }
 
-export interface BusMessage {
+interface DeliveryEvent extends DeliveryResult {
+  at: number;
+}
+
+/** One logged message: Exawatt's envelope plus its delivery history, oldest
+ *  first; `delivery` is the newest entry. */
+interface MessageRecord {
   id: string;
   projectId: string;
-  from: BusEndpoint;
+  from: BusSender;
   to: BusEndpoint;
-  kind: BusMessageKind;
-  /** epoch milliseconds, stamped by Exawatt */
+  /** epoch milliseconds when Exawatt accepted the send */
   at: number;
   text: string;
-  delivery: BusDelivery;
+  delivery: DeliveryEvent;
+  history: DeliveryEvent[];
 }
 
-/** What the operator (or an Agent tool) asks the bus to send. */
+/** The renderer's name for a logged message. */
+export type BusMessage = MessageRecord;
+
+/** `bus:send`. The renderer is always the operator. */
 export interface BusSendRequest {
   projectId: string;
-  /** recipient Session id */
+  /** the recipient's durable Session id, or `@handle` */
   to: string;
   text: string;
-  kind: BusMessageKind;
+  kind: 'operator';
 }
+
+/** What a send answers. `record` is null when the bus refused before
+ *  logging; `delivery.reason` then says why. */
+export interface BusSendResult {
+  delivery: DeliveryResult;
+  record: MessageRecord | null;
+}
+
+/** A ledger read: a damaged ledger is `ok: false`, never an empty list. */
+export type BusLedgerRead =
+  | { ok: true; records: MessageRecord[] }
+  | { ok: false; reason: string };

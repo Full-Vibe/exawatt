@@ -586,11 +586,6 @@ export function ExposeOverlay({
   const chatterProjectId = dockVisible ? selectedDir : null;
   const chatter = useBusMessages(chatterProjectId);
   const chatterUnread = useProjectUnread(chatterProjectId, chatter.state);
-  const sendChatter = chatter.send;
-  const sendAsOperator = useCallback(
-    (to: string, text: string) => sendChatter({ to, text, kind: 'operator' }),
-    [sendChatter]
-  );
   // Chatter names a Session the way its tile does, and opens its tab
   const chatterParticipants = useMemo(() => {
     const map = new Map<string, ChatterParticipant>();
@@ -1528,7 +1523,7 @@ export function ExposeOverlay({
                   projectName={selectedProject?.name ?? null}
                   projectColor={selectedProject?.color ?? null}
                   state={chatter.state}
-                  send={sendAsOperator}
+                  send={chatter.send}
                   participants={chatterParticipants}
                   visible={dockTab === 'chatter'}
                   onSelectSession={selectSessionTab}

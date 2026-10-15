@@ -4,18 +4,19 @@
  * web browser, or a desktop build from before the bus) every read reports
  * `unavailable`, never an empty list.
  */
-import type { BusClient, BusReadResult, BusSendResult } from './client';
-import type { BusMessage, BusSendRequest } from './types';
+import { refusedSend, type BusClient, type BusReadResult } from './client';
+import type {
+  BusLedgerRead,
+  BusMessage,
+  BusSendRequest,
+  BusSendResult,
+} from './types';
 
-/**
- * The preload surface this client expects: IPC `bus:list`, `bus:thread`,
- * `bus:send` and the push `bus:message`. Declared here until P3 adds `bus` to
- * the desktop bridge contract; then this becomes that type.
- */
+/** The preload's `bus` namespace (`DesktopBusApi` in the B1 contract). */
 export interface BusBridge {
-  list(projectId: string): Promise<BusMessage[]>;
-  thread(projectId: string, a: string, b: string): Promise<BusMessage[]>;
   send(request: BusSendRequest): Promise<BusSendResult>;
+  list(projectId: string): Promise<BusLedgerRead>;
+  thread(projectId: string, a: string, b: string): Promise<BusLedgerRead>;
   onMessage(handler: (message: BusMessage) => void): () => void;
 }
 
@@ -32,14 +33,24 @@ function bridgeOf(): BusBridge | null {
   return electron?.bus ?? null;
 }
 
-function readFailure(reason: unknown): BusReadResult {
-  return {
-    status: 'error',
-    message:
-      reason instanceof Error && reason.message
-        ? reason.message
-        : 'Could not read agent messages',
-  };
+function failureMessage(reason: unknown, fallback: string): string {
+  return reason instanceof Error && reason.message ? reason.message : fallback;
+}
+
+async function read(
+  load: () => Promise<BusLedgerRead>
+): Promise<BusReadResult> {
+  try {
+    const result = await load();
+    return result.ok
+      ? { status: 'ok', messages: result.records }
+      : { status: 'error', message: result.reason };
+  } catch (reason) {
+    return {
+      status: 'error',
+      message: failureMessage(reason, 'Could not read agent messages'),
+    };
+  }
 }
 
 /**
@@ -56,38 +67,21 @@ export function createLiveBusClient(
       const bridge = resolve();
       if (!bridge)
         return { status: 'unavailable', reason: unavailableReason() };
-      try {
-        return { status: 'ok', messages: await bridge.list(projectId) };
-      } catch (reason) {
-        return readFailure(reason);
-      }
+      return read(() => bridge.list(projectId));
     },
     async thread(projectId, a, b) {
       const bridge = resolve();
       if (!bridge)
         return { status: 'unavailable', reason: unavailableReason() };
-      try {
-        return {
-          status: 'ok',
-          messages: await bridge.thread(projectId, a, b),
-        };
-      } catch (reason) {
-        return readFailure(reason);
-      }
+      return read(() => bridge.thread(projectId, a, b));
     },
     async send(request) {
       const bridge = resolve();
-      if (!bridge) return { status: 'refused', reason: unavailableReason() };
+      if (!bridge) return refusedSend(unavailableReason());
       try {
         return await bridge.send(request);
       } catch (reason) {
-        return {
-          status: 'refused',
-          reason:
-            reason instanceof Error && reason.message
-              ? reason.message
-              : 'The message was not sent',
-        };
+        return refusedSend(failureMessage(reason, 'The message was not sent'));
       }
     },
     subscribe(listener) {

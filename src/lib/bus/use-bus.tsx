@@ -15,11 +15,11 @@ import {
   type ReactNode,
 } from 'react';
 import { useLatestRequest } from '@/hooks/use-latest-request';
-import type { BusClient, BusSendResult } from './client';
+import { refusedSend, type BusClient } from './client';
 import { createLiveBusClient } from './live-client';
 import { useSeenThrough } from './read-state';
 import { agentUnreadCount, unreadCount, upsertMessage } from './selectors';
-import type { BusMessage, BusSendRequest } from './types';
+import type { BusMessage, BusSendResult } from './types';
 
 let liveClient: BusClient | null = null;
 function defaultClient(): BusClient {
@@ -59,7 +59,8 @@ export type BusMessagesState =
  */
 export function useBusMessages(projectId: string | null): {
   state: BusMessagesState;
-  send: (request: Omit<BusSendRequest, 'projectId'>) => Promise<BusSendResult>;
+  /** Send as operator to one Session of this Project. */
+  send: (to: string, text: string) => Promise<BusSendResult>;
 } {
   const client = useBusClient();
   const reads = useLatestRequest();
@@ -109,13 +110,16 @@ export function useBusMessages(projectId: string | null): {
   }, [client, projectId, reads]);
 
   const send = useCallback(
-    async (request: Omit<BusSendRequest, 'projectId'>) => {
-      if (!projectId) {
-        return { status: 'refused', reason: 'No Project' } as const;
-      }
-      const result = await client.send({ ...request, projectId });
-      if (result.status === 'sent' && result.message.projectId === projectId) {
-        const sent = result.message;
+    async (to: string, text: string) => {
+      if (!projectId) return refusedSend('Open a Project first');
+      const result = await client.send({
+        projectId,
+        to,
+        text,
+        kind: 'operator',
+      });
+      const sent = result.record;
+      if (sent && sent.projectId === projectId) {
         setState(current =>
           current.status === 'ok'
             ? { status: 'ok', messages: upsertMessage(current.messages, sent) }
