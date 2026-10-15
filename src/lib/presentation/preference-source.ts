@@ -7,7 +7,7 @@ export const PRESENTATION_STORAGE_KEY = 'exawatt.presentation.v1';
 const CHANGE_EVENT = 'exawatt:presentation-changed';
 type Preference = PresentationPreferencesV1 | undefined;
 
-export interface PresentationPreferenceSource {
+interface PresentationPreferenceSource {
   load: () => Promise<Preference>;
   save: (preference: Preference) => Promise<Preference>;
   subscribe: (handler: (preference: Preference) => void) => () => void;
