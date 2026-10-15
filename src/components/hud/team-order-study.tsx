@@ -18,6 +18,8 @@
  * the array as written.
  */
 import { ExposeOverlay } from '@/components/workspace/expose-overlay';
+import { assignAgentNames } from '@exawatt/core';
+import { isSessionTab } from '@/components/workspace/use-workspace-state';
 import type {
   Project,
   SessionTab,
@@ -46,7 +48,7 @@ const tab = (
   sessionId: `session-${id}`,
   harness: 'claude',
   title,
-  titleKind: 'operator',
+  titleKind: 'default',
   cwd: '/workspace',
   resumeState: 'live',
   lifecycle: 'running',
@@ -132,6 +134,39 @@ const SUMMARIES: Record<string, string> = {
   'durable-photo-1': 'Sweeping sharpen radius against the eval set',
 };
 
+/** Every tile's context label: its live summary, or the task it began on. */
+const CONTEXT: Record<string, string> = {
+  ...Object.fromEntries(
+    FLEET.flatMap(project =>
+      project.tabs.flatMap(item =>
+        isSessionTab(item) ? [[item.durableSessionId, item.title]] : []
+      )
+    )
+  ),
+  ...SUMMARIES,
+};
+
+/** Names dealt by the same allocation main runs (ENG-029 C4). */
+const NAMES = new Map(
+  assignAgentNames(
+    [],
+    FLEET.flatMap(project =>
+      project.tabs.flatMap(item =>
+        isSessionTab(item)
+          ? [
+              {
+                durableSessionId: item.durableSessionId,
+                projectKey: project.dir,
+                harness: item.harness,
+              },
+            ]
+          : []
+      )
+    ),
+    0
+  ).records.map(record => [record.durableSessionId, record])
+);
+
 export function TeamOrderStudy() {
   return (
     <section data-team-order-study className="flex flex-col gap-4">
@@ -144,7 +179,8 @@ export function TeamOrderStudy() {
       >
         <ExposeOverlay
           projects={FLEET}
-          summaries={SUMMARIES}
+          summaries={CONTEXT}
+          agentNames={NAMES}
           attention={ATTENTION}
           activity={ACTIVITY}
           activeTabId="exa-1"

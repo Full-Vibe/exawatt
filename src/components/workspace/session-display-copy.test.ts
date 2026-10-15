@@ -6,6 +6,32 @@ import {
 } from './session-display-copy';
 
 describe('sessionDisplayCopy', () => {
+  it('names an Agent by its name and carries the context label beside it', () => {
+    const display = sessionDisplayCopy({
+      harness: 'codex',
+      title: 'Login fix',
+      titleKind: 'operator',
+      lifecycle: 'stopped-clean',
+      summary: 'Fix the login redirect',
+      name: 'codex-2',
+    });
+    expect(display).toEqual({
+      primary: 'codex-2',
+      context: 'Fix the login redirect',
+      primaryKind: 'name',
+    });
+    // A draft and a shell are not named Agents, whatever is passed.
+    expect(
+      sessionDisplayCopy({
+        harness: 'claude',
+        title: 'Claude Code',
+        titleKind: 'default',
+        lifecycle: 'draft',
+        name: 'claude-1',
+      }).primaryKind
+    ).toBe('fallback');
+  });
+
   it('keeps purpose independent of execution lifecycle and source identity', () => {
     const purpose = 'Make updates safe to install';
     for (const lifecycle of [

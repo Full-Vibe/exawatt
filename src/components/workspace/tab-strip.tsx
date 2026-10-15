@@ -14,6 +14,11 @@
  */
 
 import { sessionTabSource } from './harnesses';
+import { renameAgentName } from '@exawatt/core';
+import {
+  agentNameOf,
+  type AgentNames,
+} from '@/lib/agent-names/agent-name-store';
 import {
   useCallback,
   useEffect,
@@ -110,6 +115,7 @@ import {
   tabIsLive,
   tabCanResumeAsAgent,
   type Project,
+  type WorkspaceTab,
 } from './use-workspace-state';
 import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
@@ -117,6 +123,39 @@ interface Editing {
   kind: 'group' | 'tab';
   id: string;
   value: string;
+  /** Main's answer to the last commit, when it refused the name. */
+  refusal?: string | null;
+}
+
+const EMPTY_AGENT_NAMES: AgentNames = new Map();
+
+/**
+ * What a tab's rename edits: a named Agent's name (ENG-029 C4), the only
+ * name it has; a shell's or a not-yet-named Session's title otherwise.
+ */
+function tabEditValue(tab: WorkspaceTab, agentNames: AgentNames): string {
+  if (!isSessionTab(tab)) return tab.title;
+  return agentNameOf(agentNames, tab.durableSessionId) ?? tab.title;
+}
+
+/**
+ * Why the typed name would be refused, read from the same rules main applies
+ * so the reason shows while typing; main stays the authority on commit.
+ */
+function renameRefusal(
+  tab: WorkspaceTab | undefined,
+  value: string,
+  agentNames: AgentNames
+): string | null {
+  if (!tab || !isSessionTab(tab)) return null;
+  if (!agentNames.has(tab.durableSessionId)) return null;
+  const result = renameAgentName(
+    [...agentNames.values()],
+    tab.durableSessionId,
+    value,
+    0
+  );
+  return result.ok ? null : result.reason;
 }
 
 /**
@@ -164,6 +203,7 @@ export function TabStrip({
   activeDir,
   pinnedTabId,
   summaries,
+  agentNames = EMPTY_AGENT_NAMES,
   attention,
   activity = EMPTY_ACTIVITY,
   engaged = EMPTY_ACTIVITY,
@@ -196,6 +236,8 @@ export function TabStrip({
   activeDir: string | null;
   pinnedTabId: string | null;
   summaries: Record<string, string>;
+  /** Every Agent's name by durable Session id (ENG-029 C4). */
+  agentNames?: AgentNames;
   attention: FleetAttentionSignals;
   activity?: Record<string, boolean>;
   engaged?: Record<string, boolean>;
@@ -212,7 +254,9 @@ export function TabStrip({
   onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;
-  onRenameTab: (tabId: string, title: string) => void;
+  /** Resolves the reason when the name is refused; the editor then stays
+   *  open on what was typed. */
+  onRenameTab: (tabId: string, title: string) => Promise<string | null> | void;
   onMarkUnread?: (tabId: string) => void;
   onRenameProject: (dir: string, name: string) => void;
   onSetProjectColor: (dir: string, color: string) => void;
@@ -385,13 +429,19 @@ export function TabStrip({
       // string on screen. A coworker's is its own name: the source configured
       // it, so there is no default-title fallback to resolve.
       const visibleLabel = isSessionTab(token.tab)
-        ? sessionDisplayCopy({
-            harness: token.tab.harness,
-            title: token.tab.title,
-            titleKind: token.tab.titleKind,
-            lifecycle: token.tab.lifecycle,
-            summary: summaries[token.tab.durableSessionId],
-          }).primary
+        ? (display =>
+            display.primaryKind === 'name' && display.context
+              ? `${display.primary}  ${display.context}`
+              : display.primary)(
+            sessionDisplayCopy({
+              harness: token.tab.harness,
+              title: token.tab.title,
+              titleKind: token.tab.titleKind,
+              lifecycle: token.tab.lifecycle,
+              summary: summaries[token.tab.durableSessionId],
+              name: agentNameOf(agentNames, token.tab.durableSessionId),
+            })
+          )
         : token.tab.title;
       block.tabs.push({
         id: token.tab.id,
@@ -408,6 +458,7 @@ export function TabStrip({
     layoutEntries,
     layoutPolicy,
     summaries,
+    agentNames,
   ]);
   const presentationFor = useCallback(
     (dir: string): ProjectPresentation =>
@@ -732,6 +783,8 @@ export function TabStrip({
 
   const activeRef = useRef({ projects, activeDir });
   activeRef.current = { projects, activeDir };
+  const agentNamesRef = useRef(agentNames);
+  agentNamesRef.current = agentNames;
   useEffect(() => {
     const renameActive = () => {
       const group = activeRef.current.projects.find(
@@ -740,7 +793,12 @@ export function TabStrip({
       const tab = group?.tabs.find(
         candidate => candidate.id === group.activeTabId
       );
-      if (tab) setEditing({ kind: 'tab', id: tab.id, value: tab.title });
+      if (tab)
+        setEditing({
+          kind: 'tab',
+          id: tab.id,
+          value: tabEditValue(tab, agentNamesRef.current),
+        });
     };
     const editProject = () => {
       const group = activeRef.current.projects.find(
@@ -761,11 +819,39 @@ export function TabStrip({
     setEditing(null);
     window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
   };
+  const editingTab =
+    editing?.kind === 'tab'
+      ? projects
+          .flatMap(project => project.tabs)
+          .find(tab => tab.id === editing.id)
+      : undefined;
+  // A refusal main answered stands until the operator types again.
+  const editingRefusal =
+    editing?.kind === 'tab'
+      ? (editing.refusal ??
+        renameRefusal(editingTab, editing.value, agentNames))
+      : null;
   const commitEditing = () => {
     if (!editing) return;
-    if (editing.kind === 'group') onRenameProject(editing.id, editing.value);
-    else onRenameTab(editing.id, editing.value);
+    if (editing.kind === 'group') {
+      onRenameProject(editing.id, editing.value);
+      settleEditing();
+      return;
+    }
+    const unchanged =
+      editingTab &&
+      editing.value.trim() === tabEditValue(editingTab, agentNames);
+    if (unchanged) {
+      settleEditing();
+      return;
+    }
+    const pending = onRenameTab(editing.id, editing.value);
     settleEditing();
+    if (!pending) return;
+    const attempt = editing;
+    void pending.then(reason => {
+      if (reason) setEditing({ ...attempt, refusal: reason });
+    });
   };
 
   const ordinalByTabId = useMemo(() => {
@@ -1559,6 +1645,7 @@ export function TabStrip({
                   titleKind: session.titleKind,
                   lifecycle: session.lifecycle,
                   summary,
+                  name: agentNameOf(agentNames, session.durableSessionId),
                 })
               : // The source configured the coworker's name and Exawatt shows
                 // it. There is no default-title fallback to apply, because
@@ -1645,7 +1732,7 @@ export function TabStrip({
                           setEditing({
                             kind: 'tab',
                             id: tab.id,
-                            value: session.title,
+                            value: tabEditValue(session, agentNames),
                           }),
                       },
                       ...(onCloneTab &&
@@ -1833,7 +1920,11 @@ export function TabStrip({
                   tabIndex={visible ? 0 : -1}
                   onClick={() => onSelectTab(project.dir, tab.id)}
                   onDoubleClick={() =>
-                    setEditing({ kind: 'tab', id: tab.id, value: tab.title })
+                    setEditing({
+                      kind: 'tab',
+                      id: tab.id,
+                      value: tabEditValue(tab, agentNames),
+                    })
                   }
                   onKeyDown={event => {
                     if (!isContextMenuKey(event)) return;
@@ -1946,7 +2037,10 @@ export function TabStrip({
                       <RenameInput
                         value={editing.value}
                         color={color}
-                        onChange={value => setEditing({ ...editing, value })}
+                        refusal={editingRefusal}
+                        onChange={value =>
+                          setEditing({ ...editing, value, refusal: null })
+                        }
                         onCommit={commitEditing}
                         onCancel={settleEditing}
                       />
@@ -1967,13 +2061,37 @@ export function TabStrip({
                       className="block min-w-0 flex-1 truncate font-sans leading-tight transition-opacity duration-150 motion-reduce:transition-none"
                       style={{ opacity: condensed ? 0 : 1 }}
                     >
-                      <span
-                        data-subtitle={
-                          display.primaryKind === 'context' || undefined
-                        }
-                      >
-                        {display.primary}
-                      </span>
+                      {display.primaryKind === 'name' ? (
+                        // The name is the address and never yields; the
+                        // context label beside it truncates first and leaves
+                        // before the name does (design-system "Agent name").
+                        <span className="flex min-w-0 items-baseline gap-1.5">
+                          <span
+                            data-agent-name
+                            className="min-w-0 shrink-0 truncate"
+                            style={{ maxWidth: '100%' }}
+                          >
+                            {display.primary}
+                          </span>
+                          {display.context && (
+                            <span
+                              data-tab-context
+                              className="min-w-0 truncate font-normal"
+                              style={{ color: HUD.textDim, opacity: 0.85 }}
+                            >
+                              {display.context}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span
+                          data-subtitle={
+                            display.primaryKind === 'context' || undefined
+                          }
+                        >
+                          {display.primary}
+                        </span>
+                      )}
                     </span>
                   )}
                   {session && dead && !isDraft && condensed && (

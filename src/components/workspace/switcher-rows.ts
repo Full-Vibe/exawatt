@@ -242,6 +242,7 @@ export function buildSessionRows(
           (isDefaultHarnessTitle(s.harness, s.title) ? 'default' : 'operator'),
         lifecycle: s.exited ? 'stopped-clean' : 'running',
         summary: s.contextSummary?.trim() || persisted?.summary,
+        name: s.agentName,
       });
       const subtitle = display.context;
       const status = sessionRowStatus(s);
@@ -255,8 +256,9 @@ export function buildSessionRows(
         color: colors[s.projectDir] ?? projectColor(s.projectDir),
         status,
         roadmapItemId,
+        // ⌘K finds an Agent by its name and by its address (`@codex-2`).
         searchValue:
-          `${display.primary} ${s.title} ${s.projectName} ${subtitle ?? ''} ${roadmapItemId ?? ''}`.trim(),
+          `${display.primary} ${s.agentName ? `@${s.agentName}` : ''} ${s.title} ${s.projectName} ${subtitle ?? ''} ${roadmapItemId ?? ''}`.trim(),
       };
       // within needs-you: oldest flag first (queue order); every other
       // rank (incl. exited-with-stale-flag) sorts by output recency

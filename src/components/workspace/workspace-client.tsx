@@ -384,6 +384,7 @@ export function WorkspaceClient() {
     activeTab,
     pinnedTabId,
     summaries,
+    agentNames,
     goalVisuals,
     attention,
     markSessionUnread,
@@ -1925,6 +1926,7 @@ export function WorkspaceClient() {
               activeDir={activeProject?.dir ?? null}
               pinnedTabId={pinnedTabId}
               summaries={summaries}
+              agentNames={agentNames}
               attention={mergedAttention}
               activity={activity}
               engaged={engaged}
@@ -2494,6 +2496,7 @@ export function WorkspaceClient() {
           roadmapByTab={roadmapByTab}
           projects={projects}
           summaries={summaries}
+          agentNames={agentNames}
           consumptionByTab={consumptionByTab}
           goalVisuals={goalVisuals}
           attention={mergedAttention}

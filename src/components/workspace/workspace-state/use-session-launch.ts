@@ -190,11 +190,20 @@ export function useSessionLaunch({
           restoredEntry?.initialTask ?? opts.statedTask?.trim() ?? null;
         const restoredSubtitle =
           restoredEntry?.goal ?? opts.restoredSubtitle?.trim() ?? null;
+        // The Project the Agent's name is unique within (ENG-029 C4): the
+        // draft's own group. A launch with no draft lands where main groups
+        // it, which is main's default too.
+        const projectKey = opts.reuseTabId
+          ? stateRef.current.projects.find(group =>
+              group.tabs.some(tab => tab.id === opts.reuseTabId)
+            )?.dir
+          : undefined;
         const res = await api.create({
           harness: opts.harness,
           cwd,
           title: HARNESS_META[opts.harness].label,
           durableSessionId,
+          ...(projectKey ? { projectKey } : {}),
           ...(opts.permissionMode
             ? { permissionMode: opts.permissionMode }
             : {}),

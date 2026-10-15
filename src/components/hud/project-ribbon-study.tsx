@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from '@/components/workspace/tab-strip';
+import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import {
   fleetAttention,
   mergeFleetAttention,
@@ -12,6 +13,7 @@ import type {
   SessionTab,
 } from '@/components/workspace/use-workspace-state';
 import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
+import { assignAgentNames, renameAgentName } from '@exawatt/core';
 
 const COLORS = [
   '#19E6FF',
@@ -23,20 +25,30 @@ const COLORS = [
 ];
 
 let studyTab = 0;
+/** The study's context labels, by durable Session id. */
+const STUDY_TASKS = new Map<string, string>();
+
 function tab(
-  title: string,
+  task: string,
   cwd: string,
   state: 'working' | 'done' | 'fresh' = 'done'
 ): SessionTab {
   studyTab += 1;
   const id = `ribbon-study-${studyTab}`;
+  const harness =
+    studyTab % 5 === 0
+      ? 'antigravity'
+      : studyTab % 3 === 0
+        ? 'claude'
+        : 'codex';
+  STUDY_TASKS.set(`durable-${id}`, task);
   return {
     kind: 'session',
     id,
     durableSessionId: `durable-${id}`,
-    harness: studyTab % 3 === 0 ? 'claude' : 'codex',
-    title,
-    titleKind: 'operator',
+    harness,
+    title: harness,
+    titleKind: 'default',
     cwd,
     sessionId: `session-${id}`,
     harnessSessionId: `provider-${id}`,
@@ -44,7 +56,7 @@ function tab(
     lifecycle: 'running',
     exitCode: null,
     roadmapItemId: null,
-    initialTask: state === 'fresh' ? null : title,
+    initialTask: state === 'fresh' ? null : task,
   };
 }
 
@@ -107,10 +119,36 @@ export function ProjectRibbonStudy() {
     () =>
       Object.fromEntries(
         projects.flatMap(project =>
-          project.tabs.map(item => [item.durableSessionId, item.title])
+          project.tabs.map(item => [
+            item.durableSessionId,
+            STUDY_TASKS.get(item.durableSessionId) ?? '',
+          ])
         )
       ),
     [projects]
+  );
+  // Names come from the same allocation main runs (ENG-029 C4), so the
+  // study shows what a real strip deals: claude-1, codex-2, gemini-1.
+  const [agentNameRecords, setAgentNameRecords] = useState(
+    () =>
+      assignAgentNames(
+        [],
+        INITIAL_PROJECTS.flatMap(project =>
+          project.tabs.map(item => ({
+            durableSessionId: item.durableSessionId,
+            projectKey: project.dir,
+            harness: item.harness,
+          }))
+        ),
+        0
+      ).records
+  );
+  const agentNames = useMemo(
+    () =>
+      new Map(
+        agentNameRecords.map(record => [record.durableSessionId, record])
+      ),
+    [agentNameRecords]
   );
   const workingSession = projects
     .find(project => project.dir === '/workspace/exawatt')
@@ -124,7 +162,8 @@ export function ProjectRibbonStudy() {
   const delegation: Record<string, SessionDelegation> = delegatedSession
     ? {
         [delegatedSession]: {
-          ownTurn: 'available', blockedOn: null,
+          ownTurn: 'available',
+          blockedOn: null,
           children: [
             {
               id: 'study-child-a',
@@ -148,16 +187,21 @@ export function ProjectRibbonStudy() {
       <div className="flex w-full max-w-7xl flex-col gap-3">
         <p className="max-w-[78ch] text-xs leading-relaxed text-muted-foreground">
           Production component in representative 8-Project / 15-Initiative
-          state. Select a Project to expand it; every other Project shows glyph chips, and folds to a counted container when the row runs out of room.
+          state. Select a Project to expand it; every other Project shows glyph
+          chips, and folds to a counted container when the row runs out of room.
           The two empty Projects are in the stable dormant tail. Resize the
           window to exercise the two-row overflow contract.
         </p>
-        <div className="rounded-lg border border-white/10 bg-[#080d16] p-2">
+        <div
+          className="rounded-lg border p-2"
+          style={{ borderColor: HUD.strokeFaint, background: HUD.bg.panel }}
+        >
           <TabStrip
             projects={projects}
             activeDir={activeDir}
             pinnedTabId={null}
             summaries={summaries}
+            agentNames={agentNames}
             attention={mergeFleetAttention(
               fleetAttention(
                 'ribbon-study',
@@ -209,7 +253,27 @@ export function ProjectRibbonStudy() {
                 })
               )
             }
-            onRenameTab={() => undefined}
+            onRenameTab={async (tabId, name) => {
+              const durableSessionId = projects
+                .flatMap(project => project.tabs)
+                .find(item => item.id === tabId)?.durableSessionId;
+              if (!durableSessionId) return null;
+              const result = renameAgentName(
+                agentNameRecords,
+                durableSessionId,
+                name,
+                Date.now()
+              );
+              if (!result.ok) return result.reason;
+              setAgentNameRecords(current =>
+                current.map(record =>
+                  record.durableSessionId === durableSessionId
+                    ? result.record
+                    : record
+                )
+              );
+              return null;
+            }}
             onRenameProject={() => undefined}
             onSetProjectColor={() => undefined}
           />

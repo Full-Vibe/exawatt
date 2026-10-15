@@ -353,6 +353,21 @@ describe('extractRoadmapItemIds', () => {
     expect(rows[0].roadmapItemId).toBe('APP-018');
     expect(rows[0].searchValue).toContain('APP-018');
   });
+
+  it('finds an Agent by its name and address, with its context beside it', () => {
+    const [row] = buildSessionRows(
+      [
+        session({
+          agentName: 'codex-2',
+          contextSummary: 'Fix the login redirect',
+        }),
+      ],
+      null
+    );
+    expect(row.title).toBe('codex-2');
+    expect(row.subtitle).toBe('Fix the login redirect');
+    expect(row.searchValue).toContain('@codex-2');
+  });
 });
 
 /**

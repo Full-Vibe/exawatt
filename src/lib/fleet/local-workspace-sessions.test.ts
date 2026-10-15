@@ -33,6 +33,36 @@ const live = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
 });
 
 describe('mergeLocalWorkspaceSessions', () => {
+  it('names every Fleet Agent by its Agent name, live or restored (ENG-029 C4)', () => {
+    const layout = {
+      projects: [
+        {
+          dir: '/code/exawatt',
+          tabs: [
+            {
+              id: 'restored-tab',
+              durableSessionId: 'durable-2',
+              harness: 'codex',
+              title: 'Codex',
+              cwd: '/code/exawatt',
+              lifecycle: 'stopped-clean',
+            },
+          ],
+        },
+      ],
+    };
+    const merged = mergeLocalWorkspaceSessions(
+      [live({ agentName: 'claude-1', contextSummary: 'Fix login' })],
+      layout,
+      new Map([['durable-2', 'reviewer']])
+    );
+    const agents = merged.map(session => sessionToAgent(session, 0, 0, 1));
+    expect(agents.map(agent => [agent.name, agent.goal])).toEqual([
+      ['claude-1', 'Fix login'],
+      ['reviewer', expect.any(String)],
+    ]);
+  });
+
   it('keeps the same purpose through live, exited and restored Fleet snapshots', () => {
     const purpose = 'Make updates safe to install';
     const session = live({ contextSummary: purpose });

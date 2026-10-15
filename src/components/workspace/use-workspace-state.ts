@@ -57,6 +57,13 @@ import { useSessionRuntime } from './workspace-state/use-session-runtime';
 import { useWorkspaceNavigation } from './workspace-state/use-workspace-navigation';
 import { useWorkspaceRequests } from './workspace-state/use-workspace-requests';
 import { useAttentionFocus } from './workspace-state/use-attention-focus';
+import { agentNameRequests } from './workspace-state/agent-name-requests';
+import {
+  ensureAgentNames,
+  renameAgent,
+  useAgentNames,
+} from '@/lib/agent-names/agent-name-store';
+import { harnessCarriesAgentName } from '@exawatt/core';
 
 // The workspace model, its persisted shapes, and its verbs live in
 // `workspace-state/`; this module composes them and stays the one entry point
@@ -186,6 +193,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const observedIdentitiesRef = useSessionScopedMap<string>(sessionScope);
   const { closedSessionCount, beginPendingClose } =
     useClosedSessionCount(ready);
+  // Agent names (ENG-029 C4): main names every launch; this asks it to name
+  // what the layout holds without one, which is also how a layout saved
+  // before names existed is named on its first read.
+  const agentNames = useAgentNames();
+  useEffect(() => {
+    if (!ready) return;
+    const requests = agentNameRequests(projects, agentNames);
+    if (requests.length > 0) void ensureAgentNames(requests);
+  }, [ready, projects, agentNames]);
   // The single release moment: the layout is the renderer's authority on which
   // Sessions exist, so an identity it has stopped naming is unreachable and is
   // released here — whatever removed the tab, and in both identity spaces.
@@ -462,25 +478,32 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   });
 
   const activeProject = projects.find(g => g.dir === activeDir) ?? null;
-  /** operator naming (W0.4): titles/names persist via the layout save; the
-   *  PTY session is renamed too so fleet/spatial show the same identity.
+  /** The operator's rename. An Agent's name is main's (ENG-029 C4): the
+   *  rename goes there, and every surface and the bus read it back; a
+   *  refusal resolves its reason for the editor to show. A shell keeps a
+   *  title, persisted with the layout and mirrored to main for Fleet.
    *
    *  A coworker is not renamed here. Its name is its source's, carried
    *  through the projection mapping, so an Exawatt-local override would be a
    *  second name for the same worker that the source never hears about;
    *  renaming lives with the mapping, in Connect and source detail. */
   const renameTab = useCallback(
-    (tabId: string, title: string) => {
+    async (tabId: string, title: string): Promise<string | null> => {
       const next = title.trim();
-      if (!next) return;
+      if (!next) return null;
       const tab = stateRef.current.projects
         .flatMap(g => g.tabs)
         .find(t => t.id === tabId);
-      if (!tab || isRemoteAgentTab(tab)) return;
+      if (!tab || isRemoteAgentTab(tab)) return null;
+      if (tab.lifecycle !== 'draft' && harnessCarriesAgentName(tab.harness)) {
+        const result = await renameAgent(tab.durableSessionId, next);
+        return result.ok ? null : result.reason;
+      }
       updateTab(tabId, { title: next, titleKind: 'operator' });
       if (tab.sessionId) {
         void window.electron?.pty?.rename(tab.sessionId, next);
       }
+      return null;
     },
     [updateTab]
   );
@@ -547,6 +570,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     pinnedTabId,
     lastUsedDir,
     summaries,
+    agentNames,
     goalVisuals,
     attention: projectedAttention,
     markSessionUnread,

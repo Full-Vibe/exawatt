@@ -157,10 +157,14 @@ export function useSessionRuntime({
           tab,
           attentionRef.current
         );
+        const projectKey = stateRef.current.projects.find(project =>
+          project.tabs.some(candidate => candidate.id === tabId)
+        )?.dir;
         const result = await api.create({
           harness,
           cwd: tab.cwd,
           title: tab.title,
+          ...(projectKey ? { projectKey } : {}),
           roadmapItemId: tab.roadmapItemId,
           durableSessionId: tab.durableSessionId,
           ...(retainedAttention

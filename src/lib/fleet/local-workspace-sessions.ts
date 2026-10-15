@@ -64,11 +64,16 @@ export function extractLocalWorkspaceProjects(
  */
 export function mergeLocalWorkspaceSessions(
   live: PtySessionInfo[],
-  layout: unknown
+  layout: unknown,
+  /** Agent names by durable Session id (ENG-029 C4); main's, as read. */
+  agentNames: ReadonlyMap<string, string> = new Map()
 ): LocalSessionSnapshot[] {
+  const nameOf = (durableSessionId: string, own?: string | null) =>
+    agentNames.get(durableSessionId) ?? own ?? null;
   const rawLive = () =>
     live.map(session => ({
       ...session,
+      agentName: nameOf(session.durableSessionId, session.agentName),
       ...(session.exited
         ? { sessionKey: session.durableSessionId }
         : { sessionKey: session.id }),
@@ -102,6 +107,7 @@ export function mergeLocalWorkspaceSessions(
 
   const merged: LocalSessionSnapshot[] = live.map(session => ({
     ...session,
+    agentName: nameOf(session.durableSessionId, session.agentName),
     sessionKey: session.exited
       ? (tabByDurableId.get(session.durableSessionId) ??
         tabByRuntimeId.get(session.id) ??
@@ -185,6 +191,7 @@ export function mergeLocalWorkspaceSessions(
           typeof tab.title === 'string' && tab.title.trim()
             ? tab.title
             : tab.harness,
+        agentName: tab.lifecycle === 'draft' ? null : nameOf(durableSessionId),
         cwd: tab.cwd,
         projectDir: group.dir,
         projectName,

@@ -514,7 +514,7 @@ export const AgentControls = memo(function AgentControls({
                 ? (multiSelection?.has(piece.agentId!) ?? false)
                 : undefined
             }
-            aria-label={`${piece.label}${piece.activity ? `, ${piece.activity}` : ''}, ${STATUS_LIGHT_META[lightState].label}${piece.attentionLabel ? `, ${piece.attentionLabel}` : ''}${piece.sessionState === 'stopped' ? `, ${SESSION_STOPPED_OUTLINE.description}` : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
+            aria-label={`${piece.summary && piece.summary !== piece.label ? `${piece.summary}, ` : ''}${piece.label}${piece.activity ? `, ${piece.activity}` : ''}, ${STATUS_LIGHT_META[lightState].label}${piece.attentionLabel ? `, ${piece.attentionLabel}` : ''}${piece.sessionState === 'stopped' ? `, ${SESSION_STOPPED_OUTLINE.description}` : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
             onClick={event => {
               // Shift-activate (pointer or keyboard) toggles the Agent in
               // the multi-selection (V3.2); plain activate inspects it.
@@ -576,7 +576,20 @@ export const AgentControls = memo(function AgentControls({
                 boxShadow: `0 8px 22px ${theme.shadow}`,
               }}
             >
-              <span className="block truncate">{piece.label}</span>
+              {/* The Agent's name leads (ENG-029 C4); its goal, the
+                  changing context label, sits beneath it. */}
+              <span data-board-agent-name className="block truncate">
+                {piece.summary || piece.label}
+              </span>
+              {piece.summary && piece.summary !== piece.label && (
+                <span
+                  data-board-agent-context
+                  className="block truncate text-chrome-nano font-normal"
+                  style={{ color: theme.label }}
+                >
+                  {piece.label}
+                </span>
+              )}
               <span
                 className="mt-0.5 block truncate text-chrome-nano font-normal"
                 style={{ color: theme.labelMuted }}

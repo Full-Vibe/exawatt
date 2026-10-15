@@ -43,6 +43,8 @@ export interface LocalSessionSnapshot {
   id: string;
   harness: string;
   title: string;
+  /** The Agent's short, stable name (ENG-029 C4); absent for a shell. */
+  agentName?: string | null;
   cwd: string;
   projectDir: string;
   projectName: string;
@@ -176,7 +178,7 @@ function sessionBlocker(
   return {
     type: 'input_needed',
     title: 'Session rang the bell',
-    description: `${session.title} in ${basename(session.cwd)} needs the operator.`,
+    description: `${session.agentName || session.title} in ${basename(session.cwd)} needs the operator.`,
     createdAt: session.attention.since,
   };
 }
@@ -192,7 +194,9 @@ export function sessionToAgent(
     ...(isAgentSourceAdapterId(session.harness)
       ? { sourceAdapterId: session.harness }
       : {}),
-    name: `${basename(session.cwd)} · ${session.title}`,
+    // The Agent's name is its identity on every altitude (ENG-029 C4); a
+    // shell, which has none, still reads by where it runs.
+    name: session.agentName || `${basename(session.cwd)} · ${session.title}`,
     status: sessionStatus(session, lastActivityAt, now, workingWindowMs),
     goal:
       session.contextSummary?.trim() ||

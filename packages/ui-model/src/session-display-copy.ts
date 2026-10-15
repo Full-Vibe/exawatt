@@ -6,14 +6,17 @@ export interface SessionDisplayCopyInput {
   titleKind: 'default' | 'operator';
   lifecycle: string;
   summary?: string | null;
+  /** The Agent's short, stable name (`claude-1`, ENG-029 C4). Absent for a
+   *  shell, a draft, and a Session main has not named yet. */
+  name?: string | null;
 }
 
 interface SessionDisplayCopy {
   /** The copy every Session surface must render as its visible identity. */
   primary: string;
-  /** A durable context cue beneath an operator-authored title, when distinct. */
+  /** The changing context label beside or beneath the identity, when distinct. */
   context: string | null;
-  primaryKind: 'context' | 'fallback' | 'operator' | 'shell';
+  primaryKind: 'name' | 'context' | 'fallback' | 'operator' | 'shell';
 }
 
 function clean(value: string | null | undefined): string | null {
@@ -24,10 +27,13 @@ function clean(value: string | null | undefined): string | null {
 /**
  * Total Session identity projection.
  *
- * Agent Source already has its glyph, so provider labels such as `Codex` and
- * `Claude Code` are not useful primary copy. A server-owned context label wins;
- * an explicit operator rename stays primary; and the final fallback is always
- * `New agent`. No tab or Sessions card is allowed to collapse to icons alone.
+ * An Agent's name (`claude-1`, or what the operator renamed it to) is its
+ * identity on every surface, with the changing context label as the second
+ * line of copy (ENG-029 C4). Until main has named a Session, a title the
+ * operator gave it under an older build stays primary, then the context
+ * label, and the final fallback is always `New agent`. Provider labels such
+ * as `Codex` are never primary copy: Agent Source already has its glyph. No
+ * tab or Sessions card is allowed to collapse to icons alone.
  */
 export function sessionDisplayCopy(
   input: SessionDisplayCopyInput
@@ -48,6 +54,15 @@ export function sessionDisplayCopy(
       primary: title ?? 'Shell',
       context: summary && summary !== title ? summary : null,
       primaryKind: 'shell',
+    };
+  }
+
+  const name = clean(input.name);
+  if (name) {
+    return {
+      primary: name,
+      context: summary && summary !== name ? summary : null,
+      primaryKind: 'name',
     };
   }
 

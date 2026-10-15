@@ -280,9 +280,10 @@ export function FleetProvider({
           const workspace = window.electron?.workspace;
           const localTransport = new LocalSessionsTransport({
             list: async () => {
-              const [live, layout] = await Promise.all([
+              const [live, layout, names] = await Promise.all([
                 pty.list(),
                 workspace?.load() ?? Promise.resolve(null),
+                pty.agentNames?.().catch(() => []) ?? Promise.resolve([]),
               ]);
               if (mounted) {
                 const next = extractLocalWorkspaceProjects(layout);
@@ -295,7 +296,13 @@ export function FleetProvider({
               // AgentMetrics fields the Demo transport fills. Absent stays
               // absent, exactly like an unreporting Demo Agent.
               return attachLiveSessionBurn(
-                mergeLocalWorkspaceSessions(live, layout),
+                mergeLocalWorkspaceSessions(
+                  live,
+                  layout,
+                  new Map(
+                    names.map(record => [record.durableSessionId, record.name])
+                  )
+                ),
                 live,
                 layout,
                 getLiveConsumption().burnByProviderId

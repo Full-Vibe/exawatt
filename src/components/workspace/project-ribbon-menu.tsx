@@ -1,4 +1,11 @@
-import { useRef } from 'react';
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { WORKSPACE_FOUNDATION, WORKSPACE_HUD as HUD } from './workspace-theme';
 import { ActionMenu, type ActionMenuItem } from '@/components/ui/option-menu';
 import { PROJECT_PALETTE } from './project-colors';
@@ -31,12 +38,19 @@ export function OrdinalKeycap({
 export function RenameInput({
   value,
   color,
+  refusal = null,
   onChange,
   onCommit,
   onCancel,
 }: {
   value: string;
   color: string;
+  /**
+   * Why the typed value cannot be committed (an Agent name another Agent in
+   * the Project wears, ENG-029 C4). Enter keeps the editor open on it, a blur
+   * abandons the edit, and the reason shows beneath the field.
+   */
+  refusal?: string | null;
   onChange: (value: string) => void;
   onCommit: () => void;
   onCancel: () => void;
@@ -44,30 +58,91 @@ export function RenameInput({
   // Escape unmounts the input and can cause a blur; remember that the edit has
   // already settled so cancellation can never accidentally commit.
   const settled = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const refusalId = useId();
+  const invalid = !!refusal;
   return (
-    <input
-      value={value}
-      autoFocus
-      aria-label="Rename"
-      onFocus={event => event.currentTarget.select()}
-      onChange={event => onChange(event.target.value)}
-      onBlur={() => {
-        if (!settled.current) onCommit();
+    <>
+      <input
+        ref={inputRef}
+        value={value}
+        autoFocus
+        aria-label="Rename"
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? refusalId : undefined}
+        onFocus={event => event.currentTarget.select()}
+        onChange={event => onChange(event.target.value)}
+        onBlur={() => {
+          if (settled.current) return;
+          if (invalid) onCancel();
+          else onCommit();
+        }}
+        onKeyDown={event => {
+          event.stopPropagation();
+          if (event.key === 'Enter') {
+            if (invalid) return;
+            settled.current = true;
+            onCommit();
+          } else if (event.key === 'Escape') {
+            settled.current = true;
+            onCancel();
+          }
+        }}
+        onClick={event => event.stopPropagation()}
+        className="w-28 bg-transparent font-mono text-chrome-title font-medium outline-none"
+        style={{
+          color,
+          borderBottom: `1px solid ${invalid ? HUD.red : `${color}99`}`,
+        }}
+      />
+      {invalid && (
+        <RenameRefusal id={refusalId} anchor={inputRef} reason={refusal} />
+      )}
+    </>
+  );
+}
+
+/**
+ * The refusal under a rename field. Portaled and fixed to the field, because
+ * the chip around it clips its own overflow; it never moves the strip.
+ */
+function RenameRefusal({
+  id,
+  anchor,
+  reason,
+}: {
+  id: string;
+  anchor: RefObject<HTMLInputElement | null>;
+  reason: string;
+}) {
+  const [box, setBox] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const place = () => {
+      const rect = anchor.current?.getBoundingClientRect();
+      if (rect) setBox({ left: rect.left, top: rect.bottom + 6 });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [anchor]);
+  if (!box || typeof document === 'undefined') return null;
+  return createPortal(
+    <span
+      id={id}
+      role="status"
+      data-rename-refusal
+      className="pointer-events-none fixed z-[90] max-w-72 rounded border px-2 py-1 font-sans text-chrome-meta leading-snug shadow-lg"
+      style={{
+        left: box.left,
+        top: box.top,
+        color: HUD.text,
+        borderColor: HUD.red,
+        background: HUD.bg.panelFill,
       }}
-      onKeyDown={event => {
-        event.stopPropagation();
-        if (event.key === 'Enter') {
-          settled.current = true;
-          onCommit();
-        } else if (event.key === 'Escape') {
-          settled.current = true;
-          onCancel();
-        }
-      }}
-      onClick={event => event.stopPropagation()}
-      className="w-28 bg-transparent font-mono text-chrome-title font-medium outline-none"
-      style={{ color, borderBottom: `1px solid ${color}99` }}
-    />
+    >
+      {reason}
+    </span>,
+    document.body
   );
 }
 

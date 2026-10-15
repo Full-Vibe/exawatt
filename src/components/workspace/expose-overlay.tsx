@@ -9,6 +9,10 @@
  * Enter/click drops into the session, Escape closes. DOM-rendered per the
  * decision `0003` hybrid rule; motion respects prefers-reduced-motion.
  */
+import {
+  agentNameOf,
+  type AgentNames,
+} from '@/lib/agent-names/agent-name-store';
 import { sessionTabSource } from './harnesses';
 import {
   useCallback,
@@ -175,9 +179,12 @@ const COWORKER_PLACEMENT_GLYPH: Record<AgentSourcePlacement, typeof Monitor> = {
   'exawatt-hosted': Cloud,
 };
 
+const EMPTY_AGENT_NAMES: AgentNames = new Map();
+
 export function ExposeOverlay({
   projects,
   summaries,
+  agentNames = EMPTY_AGENT_NAMES,
   attention,
   activity = EMPTY_MAP,
   engaged = EMPTY_MAP,
@@ -205,6 +212,8 @@ export function ExposeOverlay({
 }: {
   projects: Project[];
   summaries: Record<string, string>;
+  /** Every Agent's name by durable Session id (ENG-029 C4). */
+  agentNames?: AgentNames;
   /** presence-only (S8 merges roadmap-derived entries) */
   attention: FleetAttentionSignals;
   /** sessions actively producing output, keyed by sessionId (D18) */
@@ -937,6 +946,7 @@ export function ExposeOverlay({
       titleKind: tile.titleKind,
       lifecycle: tile.lifecycle,
       summary: subtitle,
+      name: agentNameOf(agentNames, tile.durableSessionId),
     });
     // same three-state truth as the tab strip (D22): started = main-truth
     // engaged bit, or a goal subtitle for sessions predating the channel
