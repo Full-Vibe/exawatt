@@ -97,7 +97,11 @@ const OperationsBoardSurface = dynamic(
 );
 
 export function SpatialFleetClient() {
-  const { fleetView, fleetMaterial } = usePresentation();
+  const {
+    fleetView,
+    fleetMaterial,
+    ready: presentationReady,
+  } = usePresentation();
   const { resolved: resolvedAppearance } = useAppearance();
   const now = useMinuteClock();
   const spatialTheme = useMemo(
@@ -876,27 +880,31 @@ export function SpatialFleetClient() {
           className="relative min-h-0 min-w-0 overflow-hidden"
           aria-label="Fleet surface"
         >
-          <OperationsBoardSurface
-            fleetView={fleetView}
-            material={fleetMaterial}
-            sourceMarks={sourceMarks}
-            layout={boardLayout}
-            projection={projection}
-            onDrillProject={drillToProject}
-            onSelectAgent={handleSelectAgent}
-            onMoveAgentSelection={moveAgentSelection}
-            onOverview={overview}
-            onProjectionChange={changeProjection}
-            multiSelection={multiSelection}
-            onToggleAgentSelect={toggleAgentSelect}
-            onToggleZoneSelect={toggleZoneSelect}
-            onBandSelect={bandSelect}
-            onSelectDelegationChild={selectDelegationChild}
-            selectedChildTarget={selectedChildTarget}
-            delegationUnits={delegationUnits}
-            sessionTransitionAgentId={sessionHandoffAgentId}
-            viewportStorageKey={viewportStorageKey}
-          />
+          {presentationReady ? (
+            <OperationsBoardSurface
+              fleetView={fleetView}
+              material={fleetMaterial}
+              sourceMarks={sourceMarks}
+              layout={boardLayout}
+              projection={projection}
+              onDrillProject={drillToProject}
+              onSelectAgent={handleSelectAgent}
+              onMoveAgentSelection={moveAgentSelection}
+              onOverview={overview}
+              onProjectionChange={changeProjection}
+              multiSelection={multiSelection}
+              onToggleAgentSelect={toggleAgentSelect}
+              onToggleZoneSelect={toggleZoneSelect}
+              onBandSelect={bandSelect}
+              onSelectDelegationChild={selectDelegationChild}
+              selectedChildTarget={selectedChildTarget}
+              delegationUnits={delegationUnits}
+              sessionTransitionAgentId={sessionHandoffAgentId}
+              viewportStorageKey={viewportStorageKey}
+            />
+          ) : (
+            <BoardLoadingGround />
+          )}
         </section>
 
         {showSelectionPanel && (
