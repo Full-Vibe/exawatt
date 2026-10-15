@@ -1437,7 +1437,7 @@ export class AntigravityConversationAdapter implements ConversationCatalogAdapte
   }
 }
 
-export interface RecentFile {
+interface RecentFile {
   file: string;
   mtimeMs: number;
 }

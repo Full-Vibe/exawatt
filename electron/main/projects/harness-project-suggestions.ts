@@ -105,7 +105,7 @@ const HARNESS_ORDER: readonly ProjectSuggestionHarness[] = [
   'antigravity',
 ];
 
-export interface HarnessProjectSuggestionOptions {
+interface HarnessProjectSuggestionOptions {
   /** The environment the harnesses resolve their homes from. */
   env?: NodeJS.ProcessEnv;
   home?: string;
@@ -777,7 +777,7 @@ export async function readHarnessProjectSuggestions(
 /* -------------------------------------------------------------------------- */
 
 /** How long a read answers a plain request; a refresh always re-reads. */
-export const SUGGESTIONS_FRESH_MS = 30_000;
+const SUGGESTIONS_FRESH_MS = 30_000;
 
 /**
  * The stores are read when a surface asks and on an explicit refresh; nothing
