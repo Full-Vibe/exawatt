@@ -4420,3 +4420,20 @@ inspected Agent outside Electron pushes `/fleet/<agentId>`
 (`spatial-fleet-client.tsx`). Both land on a missing page exactly when the
 board has already failed the operator once. Fix: point each at a surface
 that exists, and add no redirect for the old path.
+
+### BUG-288 `test:agent-delivery` fails under load: the deterministic-latch hold test goes silent for a minute
+
+Status: open · agent delivery · found 2026-10-15 while landing ENG-031 W15q.
+
+`scripts/queue-hold.test.mjs` "a deterministic latch fails only past its
+bound, with the latch in its terminal record, and a maintenance hold
+releases a held head" failed the landing floor twice in a row, at 75 s and
+100 s, on the harness's no-progress watchdog (`NO_PROGRESS_MS`, 60 s of
+silence, `scripts/agent-land.test.mjs`): "The landing printed nothing for
+60000ms and never reached what the test waited for". The machine's load
+average was 220 to 330 with the friend-cohort packets landing in parallel.
+Run alone on the same tree it passes in 17.5 s. Not diagnosed: which step of
+the fixture landing stays silent past a minute under load (the output ends
+at a fixture `git fetch`), and whether the step needs a heartbeat or the
+fixture does work it should not. The second attempt, at the same load,
+failed the same way; the landing then waited for the load to fall.
