@@ -67,8 +67,9 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     reason: "the agent card's glass over the story's fixed night ground",
   },
   'src/components/site/fleet-story/mark-tones.ts': {
-    max: 1,
-    reason: 'site-only concept brand artwork; product vendor tones moved to the shared owner',
+    max: 5,
+    reason:
+      "site-only brand artwork: Muse's concept blue and the Gemini spark's four colours (ENG-031 W15q), which the product's chrome does not draw",
   },
   'src/components/workspace/harness-mark-tones.ts': {
     max: 5,
