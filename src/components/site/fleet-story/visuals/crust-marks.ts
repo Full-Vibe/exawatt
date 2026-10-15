@@ -1,11 +1,12 @@
-/** Homepage adapter: concept artwork never enters the shared tile module. */
+/** Homepage adapter: the story's own marks (Gemini, the concepts) never
+ *  enter the shared tile module. */
 import {
   makeMarkParts as makeParts,
   markIndexFor as indexFor,
 } from '@/components/tiles/crust-marks';
-import { STORY_MARK_PATHS } from '../concept-marks';
+import { STORY_MARK_PATHS } from '../story-marks';
 import { markToneHex } from '../mark-tones';
-import type { StoryMarkId } from '../concept-marks';
+import type { StoryMarkId } from '../story-marks';
 import type { TileMarkRegistry } from '@/components/tiles/tile-contract';
 export { CRUST_MARKS, type CrustMarkId } from '@/components/tiles/crust-marks';
 export const STORY_TILE_MARKS: TileMarkRegistry = {

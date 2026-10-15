@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
 import { describe, expect, it } from 'vitest';
 import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
-import { STORY_MARK_PATHS } from './concept-marks';
+import { isConceptMark, STORY_MARK_PATHS } from './story-marks';
 import { fleetModel, sourceAdapterId } from './fleet-model';
 import { markIdFor, markToneHex } from './mark-tones';
 import { makeMarkParts, MARK_COUNT, markIndexFor } from './visuals/crust-marks';
@@ -22,21 +22,22 @@ describe('harness marks', () => {
     }
   });
 
-  it('keep the concept marks out of the product registry', () => {
-    // the product draws a mark only for a harness it runs; the story draws
-    // the concepts from its own registry, after the product's
+  it("keep the story's own marks out of the product registry", () => {
+    // the product draws a mark only for a harness it runs, and none for
+    // Antigravity (ENG-003 S5.3); the story draws Gemini and the concepts
+    // from its own registry, after the product's
     const product = Object.keys(HARNESS_MARK_PATHS);
-    for (const id of ['grok-bot', 'muse', 'instinct', 'dots']) {
+    for (const id of ['antigravity', 'grok-bot', 'muse', 'instinct', 'dots']) {
       expect(product).not.toContain(id);
       expect(markIdFor(id)).toBe(id);
       expect(markIndexFor(id)).toBeGreaterThanOrEqual(product.length);
     }
+    expect(isConceptMark('antigravity')).toBe(false);
+    expect(isConceptMark('grok-bot')).toBe(true);
   });
 
-  it('have no mark for a harness the product may not draw', () => {
-    expect(markIndexFor('antigravity')).toBe(-1);
+  it('have no mark for a harness the story may not draw', () => {
     expect(markIndexFor('Something new')).toBe(-1);
-    expect(markIdFor('antigravity')).toBeNull();
     expect(markIdFor('qwen')).toBeNull();
   });
 });
@@ -125,6 +126,27 @@ describe('the marks as geometry', () => {
     const b = box(head.geometry);
     expect((b.min.x + b.max.x) / 2).toBeCloseTo(0, 2);
     expect((b.min.z + b.max.z) / 2).toBeCloseTo(0, 2);
+  });
+
+  it("stands Gemini's colours on its spark, inside its outline", () => {
+    // the spark is Google's outline; the zones are cut from it (W15q), so
+    // none reaches past it and each stands above it
+    const index = markIndexFor('antigravity');
+    const mine = parts.filter(part => part.mark === index);
+    const [spark, ...zones] = mine;
+    const outline = box(spark.geometry);
+    expect(zones).toHaveLength(3);
+    for (const zone of zones) {
+      expect(zone.layer).toBeGreaterThan(spark.layer);
+      const b = box(zone.geometry);
+      expect(b.min.x).toBeGreaterThanOrEqual(outline.min.x - 1e-6);
+      expect(b.max.x).toBeLessThanOrEqual(outline.max.x + 1e-6);
+      expect(b.min.z).toBeGreaterThanOrEqual(outline.min.z - 1e-6);
+      expect(b.max.z).toBeLessThanOrEqual(outline.max.z + 1e-6);
+    }
+    // the spark is centred on its tile
+    expect((outline.min.x + outline.max.x) / 2).toBeCloseTo(0, 2);
+    expect((outline.min.z + outline.max.z) / 2).toBeCloseTo(0, 2);
   });
 
   it('gives a stroked antenna a real width, not a hairline', () => {

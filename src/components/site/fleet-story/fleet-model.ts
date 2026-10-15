@@ -936,14 +936,25 @@ const WAITING = [
 const FINISHED = ['Ready for your review', 'Finished, waiting for you'];
 const IDLE = 'Idle until the next turn';
 
-/** The harnesses in the study fleet: the five the site names, each with
- *  the product's own adapter id so a surface can draw the vendor's mark. */
-const SOURCES: { id: string; label: string }[] = [
+/** The harnesses the fleet deals round its Projects: the five the site
+ *  names, each with the product's own adapter id so a surface can draw the
+ *  vendor's mark. */
+const ROTATION: { id: string; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'codex', label: 'Codex' },
   { id: 'opencode', label: 'OpenCode' },
   { id: 'grok', label: 'Grok Build' },
   { id: 'openclaw', label: 'OpenClaw' },
+];
+
+/**
+ * Harnesses Exawatt ships that the rotation does not deal, so they appear
+ * only where `PROJECT_GUESTS` places them (ENG-031 W15q). Gemini is the
+ * product's Google source, the Antigravity CLI, named as the product names it
+ * (ENG-003 S5.3.1), and wears the Gemini spark (`gemini-mark.ts`).
+ */
+const SHIPPED_GUESTS: { id: string; label: string }[] = [
+  { id: 'antigravity', label: 'Gemini' },
 ];
 
 /**
@@ -956,7 +967,8 @@ const SOURCES: { id: string; label: string }[] = [
  * close faces, so the scene with the download shows all four (W15m: in
  * Marketing they sat behind the globe there). The first Project, which the
  * landing and the close-ups show, runs the product's own five, and from the
- * hundred-agent scene on two Grok Bots work among them (`PROJECT_GUESTS`).
+ * hundred-agent scene on two Grok Bots and two Gemini agents work among them
+ * (`PROJECT_GUESTS`).
  */
 const CONCEPT_SOURCES: { id: string; label: string }[] = [
   { id: 'grok-bot', label: 'Grok Bot' },
@@ -975,20 +987,23 @@ const CONCEPT_PROJECTS: Partial<Record<number, readonly [string, string]>> = {
 const CONCEPT_CORE = 0.6;
 
 /**
- * Concept agents at work in a Project of the product's harnesses, by
- * Project and the agent's place in it. Two Grok Bots work in the first
- * Project (operator 2026-10-14, on the scene that puts every species of
- * agent side by side: "add in a couple of Grok Bot agents"), so the close-up
- * that says so shows them among the product's five. Both are past the first
- * ten, which the landing and the close-ups were tuned on, so they arrive with
- * the hundred; both are at work, so the scene that lifts the agents at work
- * lifts them; and they stand one to a side of the Project's near edge, clear
- * of the Codex agent the scene's card points at and of the reading column.
+ * Guests at work in a Project of the rotation's harnesses, by Project and
+ * the agent's place in it. Two Grok Bots work in the first Project
+ * (operator 2026-10-14, on the scene that puts every species of agent side
+ * by side: "add in a couple of Grok Bot agents"), and two Gemini agents
+ * (W15q, operator 2026-10-15), so the close-up that says so shows them
+ * among the product's five. All four are past the first ten, which the
+ * landing and the close-ups were tuned on, so they arrive with the hundred;
+ * all are at work, so the scene that lifts the agents at work lifts them.
+ * The Grok Bots stand one to a side of the Project's near edge, clear of
+ * the Codex agent the scene's card points at and of the reading column;
+ * the Gemini agents stand apart, from each other and from the Grok Bots,
+ * both in the third scene's frame and clear of its reading column.
  */
 const PROJECT_GUESTS: Partial<
   Record<number, Readonly<Record<number, string>>>
 > = {
-  0: { 22: 'Grok Bot', 26: 'Grok Bot' },
+  0: { 14: 'Gemini', 20: 'Gemini', 22: 'Grok Bot', 26: 'Grok Bot' },
 };
 
 function sourceFor(project: FleetProject, local: number, index: number) {
@@ -997,27 +1012,28 @@ function sourceFor(project: FleetProject, local: number, index: number) {
     return pair[local < Math.round(project.count * CONCEPT_CORE) ? 0 : 1];
   return (
     PROJECT_GUESTS[project.id]?.[local] ??
-    SOURCES[(index * 7 + project.id) % SOURCES.length].label
+    ROTATION[(index * 7 + project.id) % ROTATION.length].label
   );
 }
 
-const ALL_SOURCES = [...SOURCES, ...CONCEPT_SOURCES];
+const ALL_SOURCES = [...ROTATION, ...SHIPPED_GUESTS, ...CONCEPT_SOURCES];
 
 /** The adapter id behind a study agent's harness label, for the mark. */
 export function sourceAdapterId(label: string): string {
   return ALL_SOURCES.find(source => source.label === label)?.id ?? label;
 }
 
-/** What each harness runs. For the concepts, only what the vendors say,
- *  and no version they have not named: Grok Bot runs xAI's Grok, Muse
- *  Meta's Muse Spark, each of OpenAI's dots GPT-6 Astra, and Instinct names
- *  no model. */
+/** What each harness runs. Gemini, the models Antigravity's own catalog
+ *  lists. For the concepts, only what the vendors say, and no version they
+ *  have not named: Grok Bot runs xAI's Grok, Muse Meta's Muse Spark, each
+ *  of OpenAI's dots GPT-6 Astra, and Instinct names no model. */
 const MODELS: Record<string, string[]> = {
   'Claude Code': ['Fable 5.1', 'Opus 5.5', 'Sonnet 5.5'],
   Codex: ['GPT-6', 'GPT-6 mini'],
   OpenCode: ['Sonnet 5.5', 'Haiku 5.5'],
   'Grok Build': ['Grok 5'],
   OpenClaw: ['Opus 5.5'],
+  Gemini: ['Gemini 3.1 Pro', 'Gemini 3.8 Flash'],
   'Grok Bot': ['Grok'],
   Muse: ['Muse Spark'],
   dots: ['GPT-6 Astra'],

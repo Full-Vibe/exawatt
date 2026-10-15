@@ -6,7 +6,7 @@
  * 2026-10-12). Parts are drawn in the vendor's own order.
  */
 
-import { STORY_MARK_PATHS } from './concept-marks';
+import { STORY_MARK_PATHS } from './story-marks';
 import { sourceAdapterId } from './fleet-model';
 import { markIdFor, markToneHex } from './mark-tones';
 

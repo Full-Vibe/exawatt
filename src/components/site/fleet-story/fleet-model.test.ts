@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
 import {
   FLEET_MAX,
   fleetAt,
@@ -7,6 +6,7 @@ import {
   sourceAdapterId,
   type FleetAgent,
 } from './fleet-model';
+import { isConceptMark } from './story-marks';
 import { axialKey } from '@/components/tiles/hex';
 
 describe('study fleet model', () => {
@@ -74,22 +74,34 @@ describe('study fleet model', () => {
   });
 
   const isConcept = (agent: FleetAgent) =>
-    !(sourceAdapterId(agent.source) in HARNESS_MARK_PATHS);
+    isConceptMark(sourceAdapterId(agent.source));
 
-  // Two Grok Bots work among the product's five in the first Project (W15p,
-  // operator 2026-10-14: "add in a couple of Grok Bot agents"), arriving
-  // with the hundred and at work, so the scene that lifts work lifts them.
-  it('runs the product harnesses in the first Project, with two Grok Bots at work past its first ten', () => {
+  // Two Grok Bots (W15p, operator 2026-10-14: "add in a couple of Grok Bot
+  // agents") and two Gemini agents (W15q) work among the product's five in
+  // the first Project, arriving with the hundred and at work, so the scene
+  // that lifts work lifts them.
+  it('runs the product harnesses in the first Project, with two Grok Bots and two Gemini agents at work past its first ten', () => {
     const first = model.projects[0];
     const agents = model.agents.slice(first.first, first.first + first.count);
-    const guests = agents.filter(isConcept);
-    expect(guests.map(agent => agent.source)).toEqual(['Grok Bot', 'Grok Bot']);
+    const counts = new Map<string, number>();
+    for (const agent of agents)
+      counts.set(agent.source, (counts.get(agent.source) ?? 0) + 1);
+    expect(counts.get('Grok Bot')).toBe(2);
+    expect(counts.get('Gemini')).toBe(2);
+    const guests = agents.filter(
+      agent => agent.source === 'Grok Bot' || agent.source === 'Gemini'
+    );
     for (const guest of guests) {
       expect(guest.id - first.first).toBeGreaterThanOrEqual(10);
       expect(guest.status).toBe('active');
     }
-    const product = agents.filter(agent => !isConcept(agent));
-    expect(new Set(product.map(agent => agent.source)).size).toBe(5);
+    // Gemini is a harness the product runs, not a concept
+    expect(guests.filter(isConcept).map(agent => agent.source)).toEqual([
+      'Grok Bot',
+      'Grok Bot',
+    ]);
+    const rotation = agents.filter(agent => !guests.includes(agent));
+    expect(new Set(rotation.map(agent => agent.source)).size).toBe(5);
   });
 
   it('brings concept harnesses in by the hundred and all four by the whole fleet, a minority in Projects of their own', () => {

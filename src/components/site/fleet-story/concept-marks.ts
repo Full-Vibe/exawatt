@@ -8,10 +8,10 @@
  * aspirational and illustrative and I'll add support for them soon").
  *
  * Same shape as the product's registry (`HARNESS_MARK_PATHS` in
- * `harness-icons.tsx`), and the story's mark lookups read both, but these
- * live here and not there: the product draws a mark only for a harness it
- * runs. When an adapter for one of these ships, its mark moves into the
- * product's registry and its entry here is deleted.
+ * `harness-icons.tsx`), and the story's one registry (`story-marks.ts`)
+ * reads both, but these live here and not there: the product draws a mark
+ * only for a harness it runs. When an adapter for one of these ships, its
+ * mark moves into the product's registry and its entry here is deleted.
  *
  * - Grok Bot: xAI's own mark from the Grok Bot page, byte for byte, a head
  *   and two eyes in the page's box (-15 -15 259 259: the 259 box moved by
@@ -35,7 +35,8 @@ import {
   type HarnessMarkId,
 } from '@/components/workspace/harness-icons';
 
-type MarkPaths = (typeof HARNESS_MARK_PATHS)[HarnessMarkId];
+/** One mark's path data, in the product registry's shape. */
+export type MarkPaths = (typeof HARNESS_MARK_PATHS)[HarnessMarkId];
 
 const GROK_BOT_HEAD_D =
   'M228.541 114.228C228.541 130.133 225.184 145.994 218.738 160.534C212.674 174.217 203.904 186.669 193.065 196.988C155.933 232.34 99.497 238.596 55.5255 212.24C45.097 205.99 35.6851 198.072 27.7451 188.866C19.1926 178.953 12.3686 167.569 7.65781 155.351C2.60712 142.264 0 128.257 0 114.228C0 98.3219 3.35751 82.4611 9.80315 67.9215C15.8672 54.2382 24.6377 41.7862 35.4767 31.4668C72.6081 -3.88483 129.044 -10.1413 173.016 16.2153C183.444 22.4653 192.856 30.3829 200.796 39.5896C209.349 49.5018 216.173 60.8859 220.883 73.1037C225.934 86.1906 228.541 100.198 228.541 114.228Z';
@@ -50,9 +51,9 @@ const INSTINCT_D =
 const DOTS_D =
   'M2.6 15.35a5.2 5.2 0 1 0 10.4 0a5.2 5.2 0 1 0 -10.4 0ZM11.7 7.35a4.1 4.1 0 1 0 8.2 0a4.1 4.1 0 1 0 -8.2 0ZM15.4 17.75a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z';
 
-type ConceptMarkId = 'grok-bot' | 'muse' | 'instinct' | 'dots';
+export type ConceptMarkId = 'grok-bot' | 'muse' | 'instinct' | 'dots';
 
-const CONCEPT_MARK_PATHS: Record<ConceptMarkId, MarkPaths> = {
+export const CONCEPT_MARK_PATHS: Record<ConceptMarkId, MarkPaths> = {
   'grok-bot': {
     viewBox: 259,
     fillRule: 'evenodd',
@@ -80,13 +81,4 @@ const CONCEPT_MARK_PATHS: Record<ConceptMarkId, MarkPaths> = {
     fillRule: 'nonzero',
     parts: [{ d: DOTS_D, tone: 'ink', layer: 0 }],
   },
-};
-
-/** A mark the story can draw: the product's, or a concept's. */
-export type StoryMarkId = HarnessMarkId | ConceptMarkId;
-
-/** Every mark the story draws, the product's first, in one registry. */
-export const STORY_MARK_PATHS: Record<StoryMarkId, MarkPaths> = {
-  ...HARNESS_MARK_PATHS,
-  ...CONCEPT_MARK_PATHS,
 };
