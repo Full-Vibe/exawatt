@@ -248,10 +248,11 @@ await withElectronApp(
       (await rail(page, healthy)
         .locator('[data-roadmap-readiness]')
         .textContent()) === 'Ready · v2';
+    // the dock owns the frame (ENG-029 B3): it widens while it holds focus
     results.focusExpandsRail =
       Math.round(
         await rail(page, healthy).evaluate(
-          el => el.getBoundingClientRect().width
+          el => el.closest('[data-team-dock]')?.getBoundingClientRect().width ?? 0
         )
       ) === 420;
     const text = await railText(page, healthy);
