@@ -12,7 +12,7 @@ import {
   isAgentHarness,
 } from '@exawatt/core';
 import { refusedSend, type BusClient } from './client';
-import type { BusEndpoint, BusMessage } from './types';
+import type { BusEndpoint, MessageRecord } from '@exawatt/core';
 import { BUS_OPERATOR } from './operator';
 
 function endpointFor(agentId: string): BusEndpoint {
@@ -30,7 +30,7 @@ function endpointFor(agentId: string): BusEndpoint {
 }
 
 /** The authored chatter as stamped messages, oldest first (ledger order). */
-export function demoBusMessages(nowMs: number): BusMessage[] {
+export function demoBusMessages(nowMs: number): MessageRecord[] {
   return DEMO_CHATTER.map(entry => {
     const project = DEMO_PROJECTS_BY_KEY.get(entry.projectKey);
     if (!project) throw new Error(`Unknown demo Project ${entry.projectKey}`);
@@ -48,7 +48,7 @@ export function demoBusMessages(nowMs: number): BusMessage[] {
       text: entry.text,
       delivery,
       history: [delivery],
-    } satisfies BusMessage;
+    } satisfies MessageRecord;
   }).sort((a, b) => a.at - b.at);
 }
 
@@ -60,14 +60,14 @@ export function createDemoBusClient(nowMs: number): BusClient {
     kind: 'demo',
     async list(projectId) {
       return {
-        status: 'ok',
-        messages: messages.filter(message => message.projectId === projectId),
+        ok: true,
+        records: messages.filter(message => message.projectId === projectId),
       };
     },
     async thread(projectId, a, b) {
       return {
-        status: 'ok',
-        messages: messages.filter(
+        ok: true,
+        records: messages.filter(
           message =>
             message.projectId === projectId &&
             ((message.from.sessionId === a && message.to.sessionId === b) ||

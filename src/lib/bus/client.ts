@@ -9,16 +9,23 @@
  * `unavailable` with the reason. It never returns an empty list, because an
  * empty list means "no Agent has said anything", which is a different fact.
  */
-import type { BusMessage, BusSendRequest, BusSendResult } from './types';
+import type {
+  BusLedgerRead,
+  BusSendRequest,
+  BusSendResult,
+  MessageRecord,
+} from '@exawatt/core';
 
 type BusClientKind = 'live' | 'demo';
 
+/**
+ * A read is the bus's own `BusLedgerRead`, passed through, plus the one case
+ * only the client can know: there is no bus here at all.
+ */
 export type BusReadResult =
-  | { status: 'ok'; messages: BusMessage[] }
+  | BusLedgerRead
   /** no bus in this build or source; `reason` is one honest line */
-  | { status: 'unavailable'; reason: string }
-  /** the bus exists and the read failed */
-  | { status: 'error'; message: string };
+  | { ok: false; unavailable: true; reason: string };
 
 export interface BusClient {
   readonly kind: BusClientKind;
@@ -33,7 +40,7 @@ export interface BusClient {
    * id already seen replaces it (a `queued` message becoming `delivered`).
    * Returns the unsubscribe.
    */
-  subscribe(listener: (message: BusMessage) => void): () => void;
+  subscribe(listener: (message: MessageRecord) => void): () => void;
 }
 
 /** A refusal before anything was logged. */

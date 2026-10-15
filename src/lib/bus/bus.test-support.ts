@@ -4,7 +4,7 @@
  * capable than the bridge it stands in for.
  */
 import { BUS_OPERATOR } from './operator';
-import type { BusDeliveryState, BusMessage } from './types';
+import type { BusDeliveryState, MessageRecord } from '@exawatt/core';
 
 export function busMessage(
   id: string,
@@ -18,7 +18,7 @@ export function busMessage(
     projectId?: string;
     text?: string;
   } = {}
-): BusMessage {
+): MessageRecord {
   const delivery = {
     state: options.state ?? 'delivered',
     ...(options.reason ? { reason: options.reason } : {}),

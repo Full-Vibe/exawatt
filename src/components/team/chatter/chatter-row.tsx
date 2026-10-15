@@ -7,7 +7,7 @@
  */
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { firstLine } from '@/lib/bus/selectors';
-import type { BusMessage } from '@/lib/bus/types';
+import type { MessageRecord } from '@exawatt/core';
 import { chatterAge } from './chatter-format';
 import {
   ChatterEndpoint,
@@ -25,7 +25,7 @@ export function ChatterRow({
   onOpen,
   onHover,
 }: {
-  message: BusMessage;
+  message: MessageRecord;
   participants: ChatterParticipants;
   now: number;
   unread: boolean;

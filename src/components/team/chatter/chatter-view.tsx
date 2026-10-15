@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { markSeenThrough, seenThrough } from '@/lib/bus/read-state';
 import { latestAt, newestFirst, threadOf } from '@/lib/bus/selectors';
-import type { BusEndpoint, BusMessage, BusSendResult } from '@/lib/bus/types';
+import type { BusEndpoint, MessageRecord, BusSendResult } from '@exawatt/core';
 import type { BusMessagesState } from '@/lib/bus/use-bus';
 import {
   ChatterEndpoint,
@@ -204,7 +204,7 @@ export function ChatterView({
     mode.kind === 'thread' ? [mode.a, mode.b].filter(e => !isOperator(e)) : [];
   const lastAgentSender = [...thread]
     .reverse()
-    .find((m: BusMessage) => m.from.kind === 'agent')?.from.sessionId;
+    .find((m: MessageRecord) => m.from.kind === 'agent')?.from.sessionId;
 
   return (
     <div

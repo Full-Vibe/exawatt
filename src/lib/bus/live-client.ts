@@ -6,7 +6,7 @@
  */
 import { refusedSend, type BusClient, type BusReadResult } from './client';
 import type { DesktopBridge } from '@exawatt/core/desktop-bridge';
-import type { BusLedgerRead } from './types';
+import type { BusLedgerRead } from '@exawatt/core';
 
 /** The preload's `bus` namespace (`DesktopBusApi`). */
 export type BusBridge = NonNullable<DesktopBridge['bus']>;
@@ -32,13 +32,11 @@ async function read(
 ): Promise<BusReadResult> {
   try {
     const result = await load();
-    return result.ok
-      ? { status: 'ok', messages: result.records }
-      : { status: 'error', message: result.reason };
+    return result;
   } catch (reason) {
     return {
-      status: 'error',
-      message: failureMessage(reason, 'Could not read agent messages'),
+      ok: false,
+      reason: failureMessage(reason, 'Could not read agent messages'),
     };
   }
 }
@@ -56,13 +54,13 @@ export function createLiveBusClient(
     async list(projectId) {
       const bridge = resolve();
       if (!bridge)
-        return { status: 'unavailable', reason: unavailableReason() };
+        return { ok: false, unavailable: true, reason: unavailableReason() };
       return read(() => bridge.list(projectId));
     },
     async thread(projectId, a, b) {
       const bridge = resolve();
       if (!bridge)
-        return { status: 'unavailable', reason: unavailableReason() };
+        return { ok: false, unavailable: true, reason: unavailableReason() };
       return read(() => bridge.thread(projectId, a, b));
     },
     async send(request) {

@@ -2,7 +2,7 @@ import { UserRound } from 'lucide-react';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { BUS_OPERATOR } from '@/lib/bus/operator';
-import type { BusEndpoint } from '@/lib/bus/types';
+import type { BusEndpoint } from '@exawatt/core';
 
 /** How Team names a Session: its tile's label, and its tab when open. */
 export interface ChatterParticipant {

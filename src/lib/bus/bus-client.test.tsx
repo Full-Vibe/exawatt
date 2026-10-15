@@ -29,7 +29,7 @@ import {
   unreadCount,
   upsertMessage,
 } from './selectors';
-import type { BusDeliveryState, BusMessage } from './types';
+import type { BusDeliveryState, MessageRecord } from '@exawatt/core';
 import { busMessage } from './bus.test-support';
 import {
   BusClientProvider,
@@ -48,7 +48,7 @@ function message(
   to: string,
   at: number,
   options: Parameters<typeof busMessage>[4] = {}
-): BusMessage {
+): MessageRecord {
   return busMessage(id, from, to, at, {
     projectId: PROJECT,
     text: `${id} text`,
@@ -56,8 +56,8 @@ function message(
   });
 }
 
-function fakeBridge(messages: BusMessage[] = []) {
-  const handlers = new Set<(message: BusMessage) => void>();
+function fakeBridge(messages: MessageRecord[] = []) {
+  const handlers = new Set<(message: MessageRecord) => void>();
   const bridge: BusBridge = {
     list: async projectId => ({
       ok: true,
@@ -91,7 +91,7 @@ function fakeBridge(messages: BusMessage[] = []) {
       return () => handlers.delete(handler);
     },
   };
-  return { bridge, push: (m: BusMessage) => handlers.forEach(h => h(m)) };
+  return { bridge, push: (m: MessageRecord) => handlers.forEach(h => h(m)) };
 }
 
 describe('live client', () => {
@@ -99,9 +99,9 @@ describe('live client', () => {
     const client = createLiveBusClient(() => null);
     const list = await client.list(PROJECT);
     const thread = await client.thread(PROJECT, 'a', 'b');
-    expect(list.status).toBe('unavailable');
-    expect(thread.status).toBe('unavailable');
-    expect(list).not.toHaveProperty('messages');
+    expect(list).toMatchObject({ ok: false, unavailable: true });
+    expect(thread).toMatchObject({ ok: false, unavailable: true });
+    expect(list).not.toHaveProperty('records');
     expect(
       (
         await client.send({
@@ -117,7 +117,7 @@ describe('live client', () => {
 
   it('separates an empty ledger from a failed read', async () => {
     const empty = createLiveBusClient(() => fakeBridge().bridge);
-    expect(await empty.list(PROJECT)).toEqual({ status: 'ok', messages: [] });
+    expect(await empty.list(PROJECT)).toEqual({ ok: true, records: [] });
     const failing = createLiveBusClient(() => ({
       ...fakeBridge().bridge,
       list: async () => {
@@ -125,9 +125,15 @@ describe('live client', () => {
       },
     }));
     expect(await failing.list(PROJECT)).toEqual({
-      status: 'error',
-      message: 'ledger unreadable',
+      ok: false,
+      reason: 'ledger unreadable',
     });
+    const damaged = { ok: false as const, reason: 'line 4 is not JSON' };
+    const passthrough = createLiveBusClient(() => ({
+      ...fakeBridge().bridge,
+      list: async () => damaged,
+    }));
+    expect(await passthrough.list(PROJECT)).toBe(damaged);
   });
 
   it('turns a thrown send into a refusal with the reason', async () => {
@@ -198,9 +204,9 @@ describe('demo client', () => {
     );
     const project = messages[0].projectId;
     const list = await client.list(project);
-    expect(list.status).toBe('ok');
-    if (list.status === 'ok') {
-      expect(list.messages.every(m => m.projectId === project)).toBe(true);
+    expect(list.ok).toBe(true);
+    if (list.ok) {
+      expect(list.records.every(m => m.projectId === project)).toBe(true);
     }
     expect(
       await client.send({

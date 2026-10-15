@@ -23,7 +23,7 @@ import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { createDemoBusClient, demoBusMessages } from '@/lib/bus/demo-client';
 import { latestAt } from '@/lib/bus/selectors';
 import { refusedSend } from '@/lib/bus/client';
-import type { BusDeliveryState } from '@/lib/bus/types';
+import type { BusDeliveryState } from '@exawatt/core';
 import {
   BusClientProvider,
   useBusMessages,

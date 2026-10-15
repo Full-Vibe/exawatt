@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { busMessage } from '@/lib/bus/bus.test-support';
 import { refusedSend } from '@/lib/bus/client';
 import { resetSeenThroughForTest, seenThrough } from '@/lib/bus/read-state';
-import type { BusDeliveryState, BusMessage } from '@/lib/bus/types';
+import type { BusDeliveryState, MessageRecord } from '@exawatt/core';
 import type { BusMessagesState } from '@/lib/bus/use-bus';
 import { ChatterView } from './chatter/chatter-view';
 import { TeamDock, resetTeamDockTabForTest, useTeamDockTab } from './team-dock';
@@ -31,7 +31,7 @@ function message(
   at: number,
   state: BusDeliveryState = 'delivered',
   kind: 'agent' | 'operator' = 'agent'
-): BusMessage {
+): MessageRecord {
   return busMessage(id, from, to, at, {
     state,
     reason: `${state} because`,

@@ -4,14 +4,14 @@
  * unread, which is the operator's own reading position.
  */
 import { BUS_OPERATOR } from './operator';
-import type { BusMessage } from './types';
+import type { MessageRecord } from '@exawatt/core';
 
 /** Ledger order (oldest first), with a later record for an id replacing it:
  *  how a `queued` message becomes `delivered` without a second row. */
 export function upsertMessage(
-  messages: readonly BusMessage[],
-  message: BusMessage
-): BusMessage[] {
+  messages: readonly MessageRecord[],
+  message: MessageRecord
+): MessageRecord[] {
   const index = messages.findIndex(existing => existing.id === message.id);
   if (index >= 0) {
     const next = messages.slice();
@@ -26,7 +26,9 @@ export function upsertMessage(
   return next;
 }
 
-export function newestFirst(messages: readonly BusMessage[]): BusMessage[] {
+export function newestFirst(
+  messages: readonly MessageRecord[]
+): MessageRecord[] {
   return messages.slice().sort((a, b) => b.at - a.at);
 }
 
@@ -36,10 +38,10 @@ export function newestFirst(messages: readonly BusMessage[]): BusMessage[] {
  * from the thread stays in the thread.
  */
 export function threadOf(
-  messages: readonly BusMessage[],
+  messages: readonly MessageRecord[],
   a: string,
   b: string
-): BusMessage[] {
+): MessageRecord[] {
   const pair = new Set([a, b]);
   return messages.filter(message => {
     const from = message.from.sessionId;
@@ -60,12 +62,12 @@ export function firstLine(text: string): string {
 
 /** A message counts as unread when it arrived after the operator's reading
  *  position. The operator's own messages are never unread. */
-function isUnread(message: BusMessage, seenThrough: number): boolean {
+function isUnread(message: MessageRecord, seenThrough: number): boolean {
   return message.from.kind !== 'operator' && message.at > seenThrough;
 }
 
 export function unreadCount(
-  messages: readonly BusMessage[],
+  messages: readonly MessageRecord[],
   seenThrough: number
 ): number {
   let count = 0;
@@ -78,7 +80,7 @@ export function unreadCount(
 /** Unread messages one Agent sent or received: the count Fleet's selection
  *  panel shows on a selected Agent (ENG-004 V4.2). */
 export function agentUnreadCount(
-  messages: readonly BusMessage[],
+  messages: readonly MessageRecord[],
   seenThrough: number,
   sessionId: string
 ): number {
@@ -96,7 +98,7 @@ export function agentUnreadCount(
 }
 
 /** The newest stamp in a list, the position "I have read all of this" marks. */
-export function latestAt(messages: readonly BusMessage[]): number {
+export function latestAt(messages: readonly MessageRecord[]): number {
   let latest = 0;
   for (const message of messages) latest = Math.max(latest, message.at);
   return latest;

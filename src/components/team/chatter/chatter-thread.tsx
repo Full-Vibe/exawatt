@@ -9,7 +9,7 @@ import { useRef, useState } from 'react';
 import { sessionSource } from '@/components/workspace/harnesses';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { firstLine } from '@/lib/bus/selectors';
-import type { BusEndpoint, BusMessage, BusSendResult } from '@/lib/bus/types';
+import type { BusEndpoint, MessageRecord, BusSendResult } from '@exawatt/core';
 import { DELIVERY_LABEL, chatterAge, chatterStamp } from './chatter-format';
 import {
   ChatterEndpoint,
@@ -35,7 +35,7 @@ export function ChatterThreadMessage({
   onToggle,
   onHover,
 }: {
-  message: BusMessage;
+  message: MessageRecord;
   participants: ChatterParticipants;
   projectName: string | null;
   now: number;

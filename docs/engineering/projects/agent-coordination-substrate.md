@@ -441,10 +441,13 @@ interface BusClient {
 }
 ```
 
-- `types.ts` re-exports P3's B1 contract from `@exawatt/core` under the
-  renderer's names (`BusMessage` is a `MessageRecord`). (The first landing
-  carried the packets' earlier draft shapes; the second landing moved to the
-  published contract.)
+- The types are P3's B1 contract, imported from `@exawatt/core`
+  (`MessageRecord`, `BusSendResult`, `BusLedgerRead`, `BUS_OPERATOR_ID`);
+  the renderer keeps no copy. (The first landing carried a local draft,
+  `src/lib/bus/types.ts`; the second landing deleted it.) A read is the
+  bus's own `BusLedgerRead` passed through, plus `{ok: false, unavailable:
+  true, reason}` when there is no bus at all; a send is the bus's own
+  `BusSendResult`.
 - `live-client.ts` reads `window.electron.bus` (`DesktopBusApi`) and maps
   `BusLedgerRead` `ok: false` to an `error` read. With the namespace absent
   every read is `unavailable` with one line of reason, never an empty list,
@@ -648,8 +651,9 @@ client.** The first landing (`0364bb14`) put the renderer bus client in
   the row did nothing in Demo).
 - **Contract and names.** The client speaks P3's published B1 contract
   (records with `from.kind`, delivery events with `adapter`, `BusLedgerRead`,
-  sends answered `{delivery, record}`); `src/lib/bus/types.ts` re-exports it
-  and the live client types the preload by the bridge's own `DesktopBusApi`.
+  sends answered `{delivery, record}`) straight from `@exawatt/core`, with no
+  renderer copy, and the live client types the preload by the bridge's own
+  `DesktopBusApi` and passes its answers through unreshaped.
   Chatter names a Session by its Agent name (`claude-1`, from the agent-names
   mirror) and falls back to the tile's label until main names it. The Demo
   chatter addresses only launched Sessions, as the bus does.

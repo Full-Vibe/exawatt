@@ -19,7 +19,7 @@ import { refusedSend, type BusClient } from './client';
 import { createLiveBusClient } from './live-client';
 import { useSeenThrough } from './read-state';
 import { agentUnreadCount, unreadCount, upsertMessage } from './selectors';
-import type { BusMessage, BusSendResult } from './types';
+import type { MessageRecord, BusSendResult } from '@exawatt/core';
 
 let liveClient: BusClient | null = null;
 function defaultClient(): BusClient {
@@ -49,7 +49,7 @@ export function useBusClient(): BusClient {
 
 export type BusMessagesState =
   | { status: 'loading' }
-  | { status: 'ok'; messages: BusMessage[] }
+  | { status: 'ok'; messages: MessageRecord[] }
   | { status: 'unavailable'; reason: string }
   | { status: 'error'; message: string };
 
@@ -75,8 +75,8 @@ export function useBusMessages(projectId: string | null): {
     const ticket = reads.begin();
     setState({ status: 'loading' });
     // a push that lands while the read is in flight is kept and merged
-    let loaded: BusMessage[] | null = null;
-    const early: BusMessage[] = [];
+    let loaded: MessageRecord[] | null = null;
+    const early: MessageRecord[] = [];
     const unsubscribe = client.subscribe(message => {
       if (message.projectId !== projectId) return;
       if (loaded === null) {
@@ -91,16 +91,16 @@ export function useBusMessages(projectId: string | null): {
     });
     void client.list(projectId).then(result => {
       if (!ticket.current) return;
-      if (result.status === 'ok') {
-        loaded = early.reduce<BusMessage[]>(
+      if (result.ok) {
+        loaded = early.reduce<MessageRecord[]>(
           (messages, message) => upsertMessage(messages, message),
-          result.messages
+          result.records
         );
         setState({ status: 'ok', messages: loaded });
-      } else if (result.status === 'unavailable') {
+      } else if ('unavailable' in result) {
         setState({ status: 'unavailable', reason: result.reason });
       } else {
-        setState({ status: 'error', message: result.message });
+        setState({ status: 'error', message: result.reason });
       }
     });
     return () => {

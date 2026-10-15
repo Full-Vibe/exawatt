@@ -1,4 +1,4 @@
-import type { BusDeliveryState } from '@/lib/bus/types';
+import type { BusDeliveryState } from '@exawatt/core';
 
 /** Compact age for a list row: `now`, `4m`, `3h`, `2d`. */
 export function chatterAge(at: number, now: number): string {

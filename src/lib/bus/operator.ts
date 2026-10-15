@@ -1,4 +1,4 @@
-import { BUS_OPERATOR_ID, type BusSender } from './types';
+import { BUS_OPERATOR_ID, type BusSender } from '@exawatt/core';
 
 /**
  * The operator as a sender: every `kind: operator` message (Send as operator
