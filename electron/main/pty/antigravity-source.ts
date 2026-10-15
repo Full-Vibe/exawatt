@@ -16,7 +16,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { DatabaseSync } from 'node:sqlite';
+import { readSqliteSnapshot } from './sqlite-snapshot';
 import {
   asConfigObject,
   readConfigFileSync,
@@ -49,8 +49,8 @@ export function parseAntigravityVersion(
 /** Antigravity CLI's state directory. There is no supported override: the
  *  hidden `--gemini_dir` flag relocates settings and history and is never
  *  passed. */
-export function antigravityHome(): string {
-  return path.join(os.homedir(), '.gemini', 'antigravity-cli');
+export function antigravityHome(home = os.homedir()): string {
+  return path.join(home, '.gemini', 'antigravity-cli');
 }
 
 export type AntigravitySettingsRead = ConfigFileRead<Record<string, unknown>>;
@@ -88,7 +88,9 @@ interface AntigravityModelRow {
  * Read defensively: a line is a row only when it has an id and a label, the
  * id is deduplicated, and nothing else is promoted into the catalog.
  */
-export function parseAntigravityModelRows(output: string): AntigravityModelRow[] {
+export function parseAntigravityModelRows(
+  output: string
+): AntigravityModelRow[] {
   const rows: AntigravityModelRow[] = [];
   const seen = new Set<string>();
   for (const raw of output.split('\n')) {
@@ -170,37 +172,38 @@ export function readAntigravityConversationSummaries(
   limit = 200
 ): AntigravityConversationSummary[] {
   if (!fs.existsSync(file)) return [];
-  const database = new DatabaseSync(file, { readOnly: true });
-  try {
-    const rows = database
-      .prepare(
-        'SELECT conversation_id, title, workspace_uris, step_count, ' +
-          'last_modified_time, last_user_input_time ' +
-          'FROM conversation_summaries ' +
-          "WHERE parent_conversation_id = '' AND step_count > 0 " +
-          'ORDER BY last_modified_time DESC LIMIT ?'
-      )
-      .all(limit) as Array<Record<string, unknown>>;
-    const summaries: AntigravityConversationSummary[] = [];
-    for (const row of rows) {
-      const id = row['conversation_id'];
-      if (typeof id !== 'string' || !id) continue;
-      const updatedAt = parseAntigravityTimestamp(row['last_modified_time']);
-      if (updatedAt === null) continue;
-      const startedAt =
-        parseAntigravityTimestamp(row['last_user_input_time']) ?? updatedAt;
-      const title = row['title'];
-      summaries.push({
-        id,
-        title: typeof title === 'string' && title.trim() ? title.trim() : null,
-        workspacePaths: parseAntigravityWorkspaceUris(row['workspace_uris']),
-        startedAt: Math.min(startedAt, updatedAt),
-        updatedAt,
-        steps: typeof row['step_count'] === 'number' ? row['step_count'] : 0,
-      });
-    }
-    return summaries;
-  } finally {
-    database.close();
+  // A private copy: opening Antigravity's WAL database in place creates its
+  // `-shm` and `-wal` beside it (BUG-287).
+  const rows = readSqliteSnapshot(
+    file,
+    database =>
+      database
+        .prepare(
+          'SELECT conversation_id, title, workspace_uris, step_count, ' +
+            'last_modified_time, last_user_input_time ' +
+            'FROM conversation_summaries ' +
+            "WHERE parent_conversation_id = '' AND step_count > 0 " +
+            'ORDER BY last_modified_time DESC LIMIT ?'
+        )
+        .all(limit) as Array<Record<string, unknown>>
+  );
+  const summaries: AntigravityConversationSummary[] = [];
+  for (const row of rows) {
+    const id = row['conversation_id'];
+    if (typeof id !== 'string' || !id) continue;
+    const updatedAt = parseAntigravityTimestamp(row['last_modified_time']);
+    if (updatedAt === null) continue;
+    const startedAt =
+      parseAntigravityTimestamp(row['last_user_input_time']) ?? updatedAt;
+    const title = row['title'];
+    summaries.push({
+      id,
+      title: typeof title === 'string' && title.trim() ? title.trim() : null,
+      workspacePaths: parseAntigravityWorkspaceUris(row['workspace_uris']),
+      startedAt: Math.min(startedAt, updatedAt),
+      updatedAt,
+      steps: typeof row['step_count'] === 'number' ? row['step_count'] : 0,
+    });
   }
+  return summaries;
 }

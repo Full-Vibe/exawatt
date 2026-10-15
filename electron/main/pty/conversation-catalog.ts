@@ -37,6 +37,7 @@ import {
   readAntigravityConversationSummaries,
 } from './antigravity-source';
 import { planLoginShell, shellQuote } from './login-shell';
+import { readSqliteSnapshot } from './sqlite-snapshot';
 import type {
   ClosedSessionEntry,
   RecentConversation,
@@ -85,16 +86,34 @@ const MAX_TITLE_CHARS = 72;
 const MAX_DESCRIPTION_CHARS = 220;
 const MAX_GENERATED_TITLE_WORDS = 6;
 const MAX_GENERATED_DESCRIPTION_WORDS = 18;
-const DEFAULT_CODEX_SESSIONS_ROOT = path.join(
-  os.homedir(),
-  '.codex',
-  'sessions'
-);
-const DEFAULT_CODEX_STATE_DATABASE = path.join(
-  os.homedir(),
-  '.codex',
-  'state_5.sqlite'
-);
+/** Claude Code's configuration directory, as Claude Code itself resolves
+ *  it: `CLAUDE_CONFIG_DIR` when set, `~/.claude` otherwise. */
+export function claudeConfigDir(
+  env: NodeJS.ProcessEnv = process.env,
+  home = os.homedir()
+): string {
+  return env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
+}
+
+/** Codex's home, as Codex resolves it: `CODEX_HOME` when set, `~/.codex`
+ *  otherwise. Its sessions and its state database both live here. */
+export function codexHome(
+  env: NodeJS.ProcessEnv = process.env,
+  home = os.homedir()
+): string {
+  return env.CODEX_HOME || path.join(home, '.codex');
+}
+
+/** The Codex state database the catalog and the project suggestions read. */
+export function codexStateDatabase(
+  env: NodeJS.ProcessEnv = process.env,
+  home = os.homedir()
+): string {
+  return path.join(codexHome(env, home), 'state_5.sqlite');
+}
+
+const DEFAULT_CODEX_SESSIONS_ROOT = path.join(codexHome(), 'sessions');
+const DEFAULT_CODEX_STATE_DATABASE = codexStateDatabase();
 
 async function canonicalDirectory(directory: string): Promise<string> {
   try {
@@ -445,22 +464,20 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
   private async readIndexed(
     scope: ProjectDirectoryScope
   ): Promise<ConversationDraft[] | null> {
-    if (!this.stateDatabase) return null;
-    let database: import('node:sqlite').DatabaseSync | null = null;
+    const stateDatabase = this.stateDatabase;
+    if (!stateDatabase) return null;
     try {
-      // Runtime require keeps this Electron/Node-only capability out of the
-      // renderer-oriented Vite transform used by the shared test suite.
-      const { DatabaseSync } =
-        require('node:sqlite') as typeof import('node:sqlite');
-      database = new DatabaseSync(this.stateDatabase, { readOnly: true });
-      const predicates = scope.roots.map(
-        () => `(cwd = ? OR cwd LIKE ? ESCAPE '\\')`
-      );
-      const parameters = scope.roots.flatMap(root => [
-        root,
-        `${escapeSqlLike(`${root}${path.sep}`)}%`,
-      ]);
-      const statement = database.prepare(`
+      // A private copy: opening Codex's WAL database in place writes its
+      // `-shm` and `-wal` (BUG-287).
+      const records = readSqliteSnapshot(stateDatabase, database => {
+        const predicates = scope.roots.map(
+          () => `(cwd = ? OR cwd LIKE ? ESCAPE '\\')`
+        );
+        const parameters = scope.roots.flatMap(root => [
+          root,
+          `${escapeSqlLike(`${root}${path.sep}`)}%`,
+        ]);
+        const statement = database.prepare(`
         SELECT id, cwd, rollout_path, title, first_user_message, preview,
                created_at_ms, updated_at_ms, recency_at_ms
           FROM threads
@@ -469,10 +486,10 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
          ORDER BY recency_at_ms DESC
          LIMIT ?
       `);
-      const records = statement.all(
-        ...parameters,
-        MAX_PROJECT_RESULTS
-      ) as Array<Record<string, unknown>>;
+        return statement.all(...parameters, MAX_PROJECT_RESULTS) as Array<
+          Record<string, unknown>
+        >;
+      });
       const rows: ConversationDraft[] = [];
       for (const record of records) {
         if (typeof record.id !== 'string' || typeof record.cwd !== 'string') {
@@ -521,8 +538,6 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
       return rows;
     } catch {
       return null;
-    } finally {
-      database?.close();
     }
   }
 
@@ -656,10 +671,7 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
 
   constructor(
     private readonly projectsRoot = process.env.EXAWATT_CLAUDE_PROJECTS_ROOT ??
-      path.join(
-        process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
-        'projects'
-      ),
+      path.join(claudeConfigDir(), 'projects'),
     private readonly projectDirectories: (
       projectDir: string
     ) => Promise<string[]> = listProjectWorktrees
@@ -1425,7 +1437,7 @@ export class AntigravityConversationAdapter implements ConversationCatalogAdapte
   }
 }
 
-interface RecentFile {
+export interface RecentFile {
   file: string;
   mtimeMs: number;
 }
@@ -1438,7 +1450,7 @@ interface RecentFile {
  * null to skip it. A missing directory is an empty history; one that cannot
  * be read throws.
  */
-async function datedEntries(
+export async function datedEntries(
   directory: string,
   pick: (entry: string) => string | null
 ): Promise<RecentFile[]> {
@@ -1467,13 +1479,13 @@ async function datedEntries(
   return stats.filter((stat): stat is RecentFile => stat !== null);
 }
 
-function newestFirst<T extends RecentFile>(files: readonly T[]): T[] {
+export function newestFirst<T extends RecentFile>(files: readonly T[]): T[] {
   return [...files].sort(
     (a, b) => b.mtimeMs - a.mtimeMs || a.file.localeCompare(b.file)
   );
 }
 
-async function readHead(file: string, bytes: number): Promise<string> {
+export async function readHead(file: string, bytes: number): Promise<string> {
   const handle = await fs.promises.open(file, 'r');
   try {
     const buffer = Buffer.alloc(bytes);

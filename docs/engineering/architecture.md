@@ -1272,6 +1272,21 @@ Built:
   common credential patterns are redacted locally, Supabase enforces durable per-user hourly/daily
   quota, and the Anthropic credential is never exposed to the desktop renderer
   (decision `0017`)
+- harness project suggestions in Electron main
+  (`electron/main/projects/harness-project-suggestions.ts`, ENG-046 O1). One
+  reader per store (Claude Code's user config and transcript directories,
+  Codex's trust table and thread index or rollouts, Antigravity's project
+  files and conversation index) yields directory evidence; every directory
+  joins through `joinProjectFolder` in `project-resolve.ts`, the same rule
+  Browse and Session grouping use, with worktree folding behind one flag. A
+  strict filter drops home, Downloads, temporary, Library, missing, unmarked
+  and non-git parent folders; rows rank by last activity. Each store answers
+  read, missing or unreadable with a named reason, never an empty list for a
+  failed read. SQLite stores are read from a private copy
+  (`pty/sqlite-snapshot.ts`, BUG-287) because opening a WAL database in place
+  writes its `-shm`/`-wal`. `projects:suggestions` answers from one shared
+  read for 30 seconds and re-reads on refresh; nothing watches the stores
+  (decision `0013`), and nothing becomes a Project until it is opened
 - serialized workspace persistence and bounded terminal-history snapshots with
   append journals; steady-state disk work scales with new terminal output and
   compacts without exposing partial state

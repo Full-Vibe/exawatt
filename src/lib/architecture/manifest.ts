@@ -918,6 +918,7 @@ export const architectureManifest = {
     'A Launch Configuration is one exact configured source/model/effort choice; only successful launches train per-Project frecency, Project pins stay local, and unavailable choices never silently substitute.',
     'Shell is a distinct peer launch target with no Agent identity or composer task; Clone creates a fresh Agent Session with bounded handoff text, preserves the original, and carries no provider resume identity.',
     'Recent conversation discovery is Project-scoped, local-first, and source-neutral; exact identity reconciles Exawatt Session history with harness history before optional hosted title augmentation.',
+    'Harness project stores are discovery evidence, read from a private copy and never written: suggestions join through the one folder join rule Browse uses, a Project row exists only once a suggestion is opened, and a store that cannot be read is named rather than shown as empty.',
     'Launch permission policy is source-agnostic and provider-enforced today; adapters translate visible personal Project defaults without silent escalation.',
     'Activity assurance is composable: reported, observed, authorized, enforced, and verified are independent claims, and unknowns stay visible.',
     'Future managed Workspace ceilings cannot be bypassed by personal settings or YOLO; later mediation fits behind existing source and coordination contracts.',

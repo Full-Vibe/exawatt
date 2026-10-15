@@ -74,6 +74,7 @@
     "test:scripts-layout": "node --test scripts/script-layout.test.mjs",
     "qa:browser:doctor": "node scripts/qa-browser-doctor.mjs",
     "qa:browser:smoke": "node scripts/qa-browser-smoke.mjs",
+    "eval:projects:suggestions": "vitest run --config vitest.config.app-node.ts electron/main/projects/harness-project-suggestions.test.ts --maxWorkers=1",
     "eval:consumption-scan": "node --expose-gc scripts/consumption-scan-eval.mjs",
     "eval:gallery:labels": "node scripts/gallery-labels-eval.mjs",
     "eval:r3f": "node scripts/r3f-eval/run.mjs",

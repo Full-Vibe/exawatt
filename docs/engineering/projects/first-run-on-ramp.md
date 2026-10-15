@@ -458,3 +458,53 @@ with its three questions. His answers, verbatim in the brief:
   Conductor bind one. `bindings[]` keeps the door open without building it.
 
 The study is revised to these answers before O2/O5 copy anything from it.
+### 2026-10-15 — O1 landed
+
+**Harness project suggestions ship in main, read-only and proven so.**
+`electron/main/projects/harness-project-suggestions.ts` reads six stores
+behind the bridge contract (`HarnessProjectSuggestion`, `HarnessStoreRead`;
+IPC `projects:suggestions`, preload `projects.suggestions({ refresh })`):
+Claude Code's `projects` map (`$CLAUDE_CONFIG_DIR/.claude.json` or
+`~/.claude.json`, `lastStartTime` when present) and its transcript
+directories (the newest transcript's own `cwd`, never the encoded name);
+Codex's `config.toml` trust table and its threads (`state_5.sqlite`
+grouped by `cwd`, falling back to the newest 400 rollouts' first line),
+both under `CODEX_HOME`; Antigravity's project files (`folderUri`, `name`
+kept as a label, never the row's name) and its conversation index. Each
+store answers `read`, `missing` or `unreadable` with a named reason, and one
+failing store never stops the others.
+
+The join is one function: `joinProjectFolder` in `pty/project-resolve.ts`,
+which `resolveProject` (Browse, Import, Session grouping) now delegates to,
+with `FOLD_WORKTREES = true` as the two-way door. A suggestion's `path` is
+therefore exactly the folder `projects:resolve` returns for it. The filter
+is the one in "Fixed decisions"; `~/Downloads` itself is dropped, not its
+children, as written. Rows rank by newest activity; `harnesses` is ordered
+by each harness's newest evidence, so the first badge is the suggesting
+harness. `projects:suggestions` answers from one shared read for 30 seconds
+and re-reads on `refresh`; nothing watches the stores.
+
+Measured on the operator's Mac, read-only: 177 directory entries across the
+six stores (Claude Code config 85, transcripts 15 of 27 directories (the
+rest hold only memory), Codex trust table 35, Codex threads 28 distinct
+`cwd`s, Antigravity projects 2, Antigravity conversations 12) become 23
+rows, 9 inside 30 days and 14 behind "Show older"; 15 rows carry more than
+one badge. A read took 1.1 to 1.8 s with the host at load average 150 (39
+`git rev-parse` joins dominate; the stores themselves read in about 0.2 s).
+
+**Surprise, fixed (BUG-287).** Opening a WAL-mode SQLite file with
+`readOnly: true` is not read-only on disk: with the owner stopped, SQLite
+creates `-shm` and `-wal` beside the database and leaves them; with the
+owner running, the reader marks its slot in the owner's `-shm`. Codex's
+`state_5.sqlite` and Antigravity's `conversation_summaries.db` are both WAL,
+so the D31 recent-conversation catalog had been leaving files in both
+stores. Every harness SQLite read (the catalog's Codex index, Antigravity's
+summaries, these suggestions) now runs on a private copy of the database
+and its log (`pty/sqlite-snapshot.ts`). The no-write proof
+(`pnpm eval:projects:suggestions`) builds every store in its real shape,
+holds Codex's database open with a live log, hashes every file under every
+store root, reads twice (once with `refresh`) and compares; restoring the
+in-place open makes it fail.
+
+Boy Scout: the catalog's Codex roots now honor `CODEX_HOME` through the
+same `codexHome()` the suggestions use.

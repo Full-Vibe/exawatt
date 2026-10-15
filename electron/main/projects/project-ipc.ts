@@ -1,4 +1,5 @@
 import { handleTrusted } from '../ipc-security';
+import { createSuggestionsSource } from './harness-project-suggestions';
 import {
   resolveProjectDirectory,
   scanProjectDirectory,
@@ -12,6 +13,17 @@ function failure(error: unknown) {
 }
 
 export function registerProjectIPC(): void {
+  // ENG-046 O1: read the harness stores when a surface asks, answer repeat
+  // asks from the same read, and re-read on an explicit refresh.
+  const suggestions = createSuggestionsSource();
+  handleTrusted('projects:suggestions', (_event, request) =>
+    suggestions({
+      refresh:
+        typeof request === 'object' && request !== null
+          ? request.refresh === true
+          : false,
+    })
+  );
   handleTrusted('projects:resolve', async (_event, directory: string) => {
     try {
       const project = await resolveProjectDirectory(directory);

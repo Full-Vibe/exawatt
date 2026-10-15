@@ -27,20 +27,72 @@ export interface ProjectRef {
   projectName: string;
 }
 
-export async function resolveProject(cwd: string): Promise<ProjectRef> {
+/**
+ * Whether a linked worktree folds into its repository (ENG-046, operator
+ * 2026-10-15: "Start with 1. We'll shift this around over time."). The
+ * two-way door: flipping it changes which folder a worktree joins, and the
+ * join rule below stays the one place that decides.
+ */
+export const FOLD_WORKTREES = true;
+
+/** A joined folder: the Project's directory and, inside git, the common
+ *  directory that identifies the repository across its worktrees. */
+export interface ProjectFolder extends ProjectRef {
+  /** Absolute git common directory, or null for a folder outside git. */
+  commonDir: string | null;
+}
+
+/**
+ * THE join rule (decision 0037 §3 applied to discovery): every directory a
+ * session, a Browse, an Import or a harness store names resolves here to the
+ * one folder a Project binds. Folding a worktree into its repository is the
+ * `foldWorktrees` flag; a subdirectory always folds to its checkout; a
+ * directory outside git is itself.
+ */
+export async function joinProjectFolder(
+  cwd: string,
+  { foldWorktrees = FOLD_WORKTREES }: { foldWorktrees?: boolean } = {}
+): Promise<ProjectFolder> {
   try {
     const { stdout } = await execFileAsync(
       'git',
-      ['-C', cwd, 'rev-parse', '--git-common-dir'],
+      // Folding asks only for the common directory, exactly as the join
+      // always has; `--show-toplevel` fails inside a bare repository.
+      [
+        '-C',
+        cwd,
+        'rev-parse',
+        '--git-common-dir',
+        ...(foldWorktrees ? [] : ['--show-toplevel']),
+      ],
       { timeout: 5000 }
     );
-    const common = stdout.trim();
-    const abs = path.isAbsolute(common) ? common : path.resolve(cwd, common);
-    const projectDir = path.dirname(abs);
-    return { projectDir, projectName: path.basename(projectDir) };
+    const [common = '', toplevel = ''] = stdout
+      .split('\n')
+      .map(line => line.trim());
+    if (!common) throw new Error('not a repository');
+    const commonDir = path.isAbsolute(common)
+      ? common
+      : path.resolve(cwd, common);
+    const projectDir =
+      foldWorktrees || !toplevel ? path.dirname(commonDir) : toplevel;
+    return {
+      projectDir,
+      projectName: path.basename(projectDir),
+      commonDir,
+    };
   } catch {
-    return { projectDir: cwd, projectName: path.basename(cwd) || cwd };
+    return {
+      projectDir: cwd,
+      projectName: path.basename(cwd) || cwd,
+      commonDir: null,
+    };
   }
+}
+
+export async function resolveProject(cwd: string): Promise<ProjectRef> {
+  const { projectDir, projectName } = await joinProjectFolder(cwd);
+  return { projectDir, projectName };
 }
 
 /**
