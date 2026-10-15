@@ -441,13 +441,10 @@ interface BusClient {
 }
 ```
 
-- `types.ts` mirrors the renderer's subset of the B1 contract name for name
-  (`MessageRecord` with `from.kind`, `DeliveryEvent` with `adapter` and
-  `at`, `BusSendRequest` with `kind: 'operator'`, `BusSendResult {delivery,
-  record}`, `BusLedgerRead`, `BUS_OPERATOR_ID`); when
-  `packages/core/src/bus/` reaches master it becomes one re-export. (The
-  first landing carried the packets' earlier draft shapes; the second
-  landing reconciled them with the published contract.)
+- `types.ts` re-exports P3's B1 contract from `@exawatt/core` under the
+  renderer's names (`BusMessage` is a `MessageRecord`). (The first landing
+  carried the packets' earlier draft shapes; the second landing moved to the
+  published contract.)
 - `live-client.ts` reads `window.electron.bus` (`DesktopBusApi`) and maps
   `BusLedgerRead` `ok: false` to an `error` read. With the namespace absent
   every read is `unavailable` with one line of reason, never an empty list,
@@ -649,10 +646,16 @@ client.** The first landing (`0364bb14`) put the renderer bus client in
 - **Demo.** The Demo Workspace provides the Demo client to Team, and its
   palette and menu Roadmap verb now opens the dock (it had no listener, so
   the row did nothing in Demo).
-- **Contract.** The client now speaks P3's published B1 contract (records
-  with `from.kind`, delivery events with `adapter`, `BusLedgerRead`, sends
-  answered `{delivery, record}`); `src/lib/bus/types.ts` mirrors it until the
-  core reaches master, then re-exports it.
+- **Contract and names.** The client speaks P3's published B1 contract
+  (records with `from.kind`, delivery events with `adapter`, `BusLedgerRead`,
+  sends answered `{delivery, record}`); `src/lib/bus/types.ts` re-exports it
+  and the live client types the preload by the bridge's own `DesktopBusApi`.
+  Chatter names a Session by its Agent name (`claude-1`, from the agent-names
+  mirror) and falls back to the tile's label until main names it. The Demo
+  chatter addresses only launched Sessions, as the bus does.
+- **Not yet live.** Main's bus core is not on master, so the desktop app's
+  Chatter tab reads the one honest unavailable line; the live two-Agent check
+  waits for it.
 - **Specimen.** `/hud-gallery/team-dock` renders the production dock with
   both panels over Demo data, every delivery result as a row, and the four
   panel states.
