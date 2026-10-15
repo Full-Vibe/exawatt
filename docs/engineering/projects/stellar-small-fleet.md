@@ -2202,3 +2202,16 @@ The union currently requires 30 surface gates, the full repository-owned floor
 and dogfood. Final composition review and focused checks precede that run;
 no integration or installation is claimed yet. The root checkpoint in ENG-036
 owns the exact post-integration receipt and contributor cleanup checklist.
+
+### 2026-10-15 — Inspection acknowledgement recurrence evidence
+
+**Verify unread acknowledgement separately from unresolved requests.**
+Operator row `9d6a875a-5b5b-4efa-be22-80fd81ecf9e3`, dogfood
+`19712d6ff5b0` on 2026-10-05, reports switching to a tab with an amber
+attention icon without the icon clearing. This is evidence against the
+existing decision-0046 inspection contract, not a new request to resolve
+source questions on focus. Reproduce whether inspection cleared the unread
+bit, whether an unresolved request remained, and whether the rendered mark
+made those facts distinguishable. The screenshot alone cannot establish
+which state was stale. The same row's independent feedback-caret defect is
+queued as BUG-284 under ENG-025. No diagnosis or implementation is claimed.

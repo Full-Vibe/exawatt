@@ -4033,6 +4033,27 @@ this compatibility slice. [Execution contract](projects/design-system-of-record.
 
 Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full floor and all 31 declared gates passed. Mixed saved sources preserve raw identity, purpose, history, opaque JSON and draft choice; unsupported runtime actions stay unavailable and known exact resume remains correct. [Final receipt](projects/design-system-of-record.md#2026-10-04--everyday-use-execution-checkpoint).
 
+### BUG-283 New-Project Claude configurations appear unavailable
+
+Status: bug · ENG-016 · operator feedback 4acb9b2d, 2026-10-05; triaged 2026-10-15.
+
+Verify Fable/Opus availability against the exact source-owned Project catalog;
+never substitute another model. [Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-15--launcher-availability-and-repeated-update-notice-bug-283-bug-285).
+
+### BUG-284 Feedback screenshot capture loses the draft editing position
+
+Status: bug · ENG-025 · operator feedback 9d6a875a, 2026-10-05; triaged 2026-10-15.
+
+Preserve draft focus, caret and selection across capture and cancellation.
+[Evidence and acceptance](projects/feedback-reinflation.md#2026-10-15--screenshot-capture-loses-the-editing-position-bug-284).
+
+### BUG-285 A dismissed local-build notice returns on app activation
+
+Status: bug · ENG-016 · operator feedback e179e337, 2026-10-05; triaged 2026-10-15.
+
+Keep dismissal stable for the same installation while announcing a new one.
+[Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-15--launcher-availability-and-repeated-update-notice-bug-283-bug-285).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

@@ -7947,3 +7947,44 @@ the two `supabase-release-publisher` failures are a missing
 `eval:electron:delegation` (census section rewritten: an abandoned turn is
 reclaimed with its children standing; the harness census retires them) and
 `eval:electron:turn-truth` run at landing.
+
+### 2026-10-15 — Launcher availability and repeated update notice (BUG-283, BUG-285)
+
+**Two operator reports are queued for reproduction, without an inferred cause.**
+Both reports came from dogfood `19712d6ff5b0` on 2026-10-05; triaged on
+2026-10-15. No implementation or runtime verification occurred in this drain.
+
+- **BUG-283 — new-Project model availability.** Row
+  `4acb9b2d-7c03-4436-9928-7e889a63ba85` reports that Fable or Opus is
+  unavailable after opening a new Project. The inspected attachment shows
+  Claude Code cards for `opus[1m]` and Fable with unavailable explanations,
+  alongside selected Sonnet 5.5 and Start. It establishes the displayed
+  catalog state, not whether the provider actually permits either model.
+  Reproduce against that Project's source-owned catalog and exact configured
+  identities; retain honest unavailable states and never substitute a model.
+  Exit: available exact configurations launch, and genuine unavailability is
+  accurate, understandable and recoverable through the existing source flow.
+- **BUG-285 — dismissed local-build notice returns.** Row
+  `e179e337-7018-41ca-a10f-c8b347545573` reports dismissing the new local-build
+  installed notice, then seeing the same notice when returning to Exawatt a
+  few minutes later. Verify notice identity and dismissal lifetime across
+  app activation before attributing this to polling or remounts. Exit:
+  returning to the app does not reannounce the same dismissed installation;
+  a genuinely different installation still produces its notice.
+
+### 2026-10-15 — Claude API interruption recurrence evidence (BUG-258)
+
+**The parent appears working after a reported API interruption; one child is still active.**
+Operator row `6532e234-2213-4627-a9d1-df119a3269c9`, dogfood
+`2112759d5548`, reports an API error after laptop connectivity returned and
+expects the parent to need intervention. The inspected screenshot shows
+“API Error: The response stopped arriving”, a blue working tab, and “Waiting
+for 1 background agent to finish”. This is additional evidence for the open
+BUG-258 lifecycle diagnosis, not proof that the whole tree has stopped or
+that every API interruption must become a red state. The attached bounded
+main log contains repeated Claude `ownTurn: generating` / `boundary: unblocked`
+observations with child counts; these facts need correlation to the affected
+Session and source failure/Stop evidence before a cause is claimed. Compare
+parent execution, child execution, and source-reported need for intervention
+independently. Do not repair this by parsing displayed terminal prose or
+turning live child work into parent success. No code repair is made here.
