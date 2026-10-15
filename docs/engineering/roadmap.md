@@ -4064,6 +4064,16 @@ Status: bug · ENG-016 · operator feedback e179e337, 2026-10-05; triaged 2026-1
 Keep dismissal stable for the same installation while announcing a new one.
 [Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-15--launcher-availability-and-repeated-update-notice-bug-283-bug-285).
 
+### BUG-286 Restart to Update hangs on "Closing Exawatt…"
+
+Status: fixed in code, unverified against a signed release · ENG-030 · external field report, 2026-10-15.
+
+Squirrel.Mac now accepts or refuses the update before any Session stops; a
+refusal is the update-failed notice with its reason, and a late install
+failure relaunches the current version instead of hanging. Incident `0026`
+step 3 documented this masking without fixing it.
+[Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-15--restart-to-update-hangs-on-closing-exawatt-bug-286).
+
 ## Amendment chain
 
 Later milestones amend earlier ones. These supersessions are load-bearing: an agent reading only the roadmap must not act on a superseded decision. Full narratives for both sides of each pair live in the linked project doc's Roadmap milestone log.

@@ -166,6 +166,9 @@ export interface CheckpointRequest {
 export type ShutdownPhase =
   | 'idle'
   | 'confirming'
+  /** An update restart hands the download to the installer before anything
+   *  stops (BUG-286). */
+  | 'preparing'
   | 'checkpointing'
   | 'stopping'
   | 'finalizing';

@@ -272,6 +272,7 @@ const shutdownSequence = createShutdownSequence({
     () => rendererServer.stop(),
     () => runtime.installedBuildWatch?.stop(),
   ],
+  prepareUpdate: () => runtime.prepareProductUpdate(),
   finalize: {
     installUpdate: () => runtime.installProductUpdate(),
     relaunch: () => app.relaunch(),

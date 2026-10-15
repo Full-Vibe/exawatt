@@ -19,6 +19,9 @@ export interface ShutdownDependencies {
     stage: 'pre-stop' | 'stopped'
   ) => Promise<boolean>;
   confirmWithoutCheckpoint: (intent: ShutdownIntent) => Promise<boolean>;
+  /** An update restart's installer accepts the update, before anything
+   *  stops; false leaves every Session running (BUG-286). */
+  prepareUpdate: () => Promise<boolean>;
   pauseNewWork: () => void;
   resumeNewWork: () => void;
   flushHistory: () => Promise<void>;
@@ -73,6 +76,11 @@ export class ShutdownCoordinator {
     if (counts.agents + counts.shells > 0) {
       this.setPhase('confirming', counts);
       if (!(await this.deps.confirm(intent, counts))) return false;
+    }
+
+    if (intent === 'update') {
+      this.setPhase('preparing', counts);
+      if (!(await this.deps.prepareUpdate())) return false;
     }
 
     this.deps.pauseNewWork();

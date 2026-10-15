@@ -1,6 +1,11 @@
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import path from 'path';
-import { app, BrowserWindow, dialog } from 'electron';
+import {
+  app,
+  autoUpdater as nativeUpdater,
+  BrowserWindow,
+  dialog,
+} from 'electron';
 import { autoUpdater, type UpdateInfo } from 'electron-updater';
 import { handleTrusted } from './ipc-security';
 import {
@@ -12,6 +17,7 @@ import type {
   UpdaterDisabledReason,
 } from '@exawatt/core/desktop-bridge';
 import { broadcastToWindows } from './window-broadcast';
+import { stageNativeUpdate, watchNativeInstall } from './updater-staging';
 
 let status: ProductUpdateStatus = {
   phase: 'idle',
@@ -26,6 +32,8 @@ let status: ProductUpdateStatus = {
 };
 let registered = false;
 let downloaded = false;
+/** Squirrel.Mac has fetched and verified the downloaded update (BUG-286). */
+let staged = false;
 let liveSessionCount = () => 0;
 
 /**
@@ -138,6 +146,7 @@ export function registerProductUpdater(
   });
   autoUpdater.on('update-downloaded', info => {
     downloaded = true;
+    staged = false;
     record('updater.downloaded', { availableVersion: version(info) });
     setStatus({
       phase: 'downloaded',
@@ -198,10 +207,96 @@ export function currentUpdateStatus(): ProductUpdateStatus {
   return { ...status, liveSessions: liveSessionCount() };
 }
 
+/**
+ * The restart's first step, before anything stops: hand the download to
+ * Squirrel.Mac and wait for it to accept or refuse it (BUG-286). A refusal
+ * becomes the "Update failed" notice with the reason, and the shutdown
+ * returns to idle with every agent still running.
+ */
+export async function prepareProductUpdate(): Promise<boolean> {
+  if (!downloaded) throw new Error('No downloaded update is ready');
+  if (process.platform !== 'darwin' || staged) return true;
+  record('updater.staging', { availableVersion: status.availableVersion });
+  const outcome = await stageNativeUpdate(nativeUpdater);
+  if (outcome.ok) {
+    staged = true;
+    record('updater.staged', { availableVersion: status.availableVersion });
+    return true;
+  }
+  record('updater.stage-failed', {
+    availableVersion: status.availableVersion,
+    reason: outcome.reason,
+    timedOut: outcome.timedOut,
+  });
+  setStatus({
+    phase: 'error',
+    error: outcome.reason.slice(0, 300),
+    percent: null,
+  });
+  return false;
+}
+
+function installFailurePath(): string {
+  return path.join(app.getPath('userData'), 'update-install-failure.json');
+}
+
+/**
+ * The shutdown's last step. Everything has already stopped, so if the
+ * install fails anyway the app must not sit on "Closing…": it records why,
+ * relaunches the current version, and the next launch shows the reason.
+ */
 export function installProductUpdate(): void {
   if (!downloaded) throw new Error('No downloaded update is ready');
   record('updater.installing', { availableVersion: status.availableVersion });
-  autoUpdater.quitAndInstall(false, true);
+  void watchNativeInstall(nativeUpdater, {
+    install: () => autoUpdater.quitAndInstall(false, true),
+  }).then(outcome => {
+    if (outcome.ok) return;
+    record('updater.install-failed', {
+      availableVersion: status.availableVersion,
+      reason: outcome.reason,
+      timedOut: outcome.timedOut,
+    });
+    try {
+      writeFileSync(
+        installFailurePath(),
+        JSON.stringify({
+          fromVersion: status.currentVersion,
+          toVersion: status.availableVersion,
+          reason: outcome.reason.slice(0, 300),
+        })
+      );
+    } catch (error) {
+      record('updater.install-failure-unsaved', describeError(error));
+    }
+    app.relaunch();
+    app.quit();
+  });
+}
+
+/**
+ * The previous launch's failed install, once, if this is still the version
+ * it failed to leave. Showing it is the whole point, so the startup check
+ * that would replace it with "ready to install" waits for this launch.
+ */
+function takeInstallFailure(): string | null {
+  const file = installFailurePath();
+  let failure: { fromVersion?: unknown; toVersion?: unknown; reason?: unknown };
+  try {
+    failure = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  try {
+    rmSync(file, { force: true });
+  } catch (error) {
+    record('updater.install-failure-unsaved', describeError(error));
+  }
+  if (failure.fromVersion !== status.currentVersion) return null;
+  record('updater.install-failure-reported', failure);
+  return typeof failure.reason === 'string' && failure.reason
+    ? failure.reason.slice(0, 300)
+    : 'No reason was reported.';
 }
 
 /**
@@ -307,6 +402,11 @@ export function startProductUpdater(enabled: boolean): void {
     ...(reason ? { disabledReason: reason } : {}),
   });
   if (reason !== null) return;
+  const lastFailure = takeInstallFailure();
+  if (lastFailure !== null) {
+    setStatus({ phase: 'error', error: lastFailure, percent: null });
+    return;
+  }
   setTimeout(() => {
     void runCheck('startup');
   }, 5_000).unref?.();

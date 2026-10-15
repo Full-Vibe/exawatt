@@ -73,6 +73,9 @@ export class CommandRuntime {
   isLinkOutcome: ((value: unknown) => boolean) | null = null;
   disposePty: () => Promise<void> = async () => {};
   disposeRoadmapWatchers: () => void = () => {};
+  prepareProductUpdate: () => Promise<boolean> = async () => {
+    throw new Error('Product updates are not ready.');
+  };
   installProductUpdate: () => void = () => {
     throw new Error('Product updates are not ready.');
   };
@@ -253,6 +256,7 @@ export async function bootstrapCommandSurface(
   runtime.disposeRoadmapWatchers =
     modules.roadmapWatcher.disposeRoadmapWatchers;
   if (productUpdateFeedUrl !== null) {
+    runtime.prepareProductUpdate = modules.updater.prepareProductUpdate;
     runtime.installProductUpdate = modules.updater.installProductUpdate;
     runtime.checkForUpdatesFromMenu = modules.updater.checkForUpdatesFromMenu;
     runtime.currentUpdateStatus = () => ({

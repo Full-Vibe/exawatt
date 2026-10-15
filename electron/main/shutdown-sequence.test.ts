@@ -126,6 +126,7 @@ function world(
       },
       () => void log.push('cleanup:renderer-server'),
     ],
+    prepareUpdate: async () => (log.push('prepare-update'), true),
     finalize: {
       installUpdate: () => void log.push('finalize:install-update'),
       relaunch: () => void log.push('finalize:relaunch'),

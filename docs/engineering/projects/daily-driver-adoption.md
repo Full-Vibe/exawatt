@@ -7948,6 +7948,50 @@ the two `supabase-release-publisher` failures are a missing
 reclaimed with its children standing; the harness census retires them) and
 `eval:electron:turn-truth` run at landing.
 
+### 2026-10-15 — Restart to Update hangs on "Closing Exawatt…" (BUG-286)
+
+**Field report, root cause from code, fix landed; the native path is unverified.**
+An external user reported that Restart to Update stays on "Closing Exawatt…".
+Their installed version and `updater.jsonl` were not available when this was
+written, so whether they are the stranded 0.1.10 install of incident `0026`
+or a different Squirrel refusal is unconfirmed.
+
+Cause, read from code (incident `0026` step 3 described it on 2026-09-23 and
+left it unfixed): with `autoInstallOnAppQuit` false, electron-updater 6.8.9's
+`MacUpdater` hands the zip to Squirrel.Mac only inside `quitAndInstall()`,
+after the shutdown has stopped every agent and the renderer server. Any
+Squirrel refusal then arrives as an `error` event the shutdown never hears:
+the coordinator has set `allowsFinalExit` and stays `finalizing`, and the
+notice ranks `finalizing` above the update-failed line. The app stays open
+on "Closing Exawatt…" until ⌘Q.
+
+Fix:
+
+- A `preparing` shutdown phase runs for update restarts after the
+  confirmation and before anything pauses or stops. It calls the native
+  `autoUpdater.checkForUpdates()` (whose feed is still MacUpdater's local
+  proxy) and waits for `update-downloaded` or `error`, with a three-minute
+  deadline (`electron/main/updater-staging.ts`). MacUpdater's own listener
+  marks the update staged, so the later `quitAndInstall()` installs directly.
+  A refusal records `updater.stage-failed`, sets the update status to `error`
+  with Squirrel's reason, and the coordinator returns to idle with every
+  Session running.
+- After `finalize('update')`, a native `error` or a process still alive after
+  30 seconds records `updater.install-failed`, writes
+  `userData/update-install-failure.json`, and relaunches the current version.
+  That launch shows the reason as the update-failed notice and skips the
+  startup check once so the reason stays visible.
+- The notice shows an update error that arrives while finalizing instead of
+  "Closing…"; an older error does not interrupt a plain quit's progress.
+
+Not verified: real Squirrel.Mac staging. It needs two signed, notarized
+releases on one feed; the unit doubles are built from the native updater's
+event surface only. Once staged, Squirrel installs on any quit, so a
+restart the operator cancels after the preparing step still updates at the
+next quit. Exit: the next signed release updates from the previous one
+through Restart to Update, and a deliberately mismatched bundle produces the
+update-failed notice with no agent stopped.
+
 ### 2026-10-15 — Launcher availability and repeated update notice (BUG-283, BUG-285)
 
 **Two operator reports are queued for reproduction, without an inferred cause.**

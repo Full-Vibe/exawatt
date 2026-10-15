@@ -15,6 +15,7 @@ function dependencies(overrides: Partial<ShutdownDependencies> = {}) {
       true
     ),
     confirmWithoutCheckpoint: async () => true,
+    prepareUpdate: async () => (order.push('prepare'), true),
     pauseNewWork: () => undefined,
     resumeNewWork: () => undefined,
     flushHistory: async () => void order.push('flush'),
@@ -42,6 +43,7 @@ describe('ShutdownCoordinator', () => {
     await expect(coordinator.request('update')).resolves.toBe(true);
     expect(order).toEqual([
       'confirm',
+      'prepare',
       'checkpoint:pre-stop',
       'flush',
       'stop',
@@ -52,6 +54,32 @@ describe('ShutdownCoordinator', () => {
       'final:update',
     ]);
     expect(coordinator.allowsFinalExit).toBe(true);
+  });
+
+  // BUG-286: the installer used to see the update only after every agent
+  // had stopped, so its refusal stranded the app on "Closing…".
+  it('stops nothing and returns to idle when the installer refuses the update', async () => {
+    const phases: string[] = [];
+    const resumed = vi.fn();
+    const { deps, order } = dependencies({
+      prepareUpdate: async () => (order.push('prepare'), false),
+      resumeNewWork: resumed,
+      status: phase => void phases.push(phase),
+    });
+    const coordinator = new ShutdownCoordinator(deps);
+    await expect(coordinator.request('update')).resolves.toBe(false);
+    expect(order).toEqual(['confirm', 'prepare']);
+    expect(phases).toEqual(['confirming', 'preparing', 'idle']);
+    expect(coordinator.allowsFinalExit).toBe(false);
+    expect(resumed).toHaveBeenCalledOnce();
+  });
+
+  it('prepares an update only for an update restart', async () => {
+    for (const intent of ['quit', 'restart'] as const) {
+      const { deps, order } = dependencies();
+      await new ShutdownCoordinator(deps).request(intent);
+      expect(order).not.toContain('prepare');
+    }
   });
 
   it('runs an operator restart through the same checkpoint-and-stop path', async () => {

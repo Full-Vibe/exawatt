@@ -6,25 +6,17 @@ import {
   resolveDistributionIdentity,
 } from '@exawatt/core/distribution';
 import { UpdateReadyNotice } from './update-ready-notice';
-import type { ProductUpdateStatus } from '@exawatt/core/desktop-bridge';
+import type {
+  ProductUpdateStatus,
+  ShutdownStatus,
+} from '@exawatt/core/desktop-bridge';
 import {
   installBridgeDouble,
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
 
 let emitStatus: ((status: ProductUpdateStatus) => void) | undefined;
-let emitShutdown:
-  | ((status: {
-      phase:
-        | 'idle'
-        | 'confirming'
-        | 'checkpointing'
-        | 'stopping'
-        | 'finalizing';
-      agents: number;
-      shells: number;
-    }) => void)
-  | undefined;
+let emitShutdown: ((status: ShutdownStatus) => void) | undefined;
 const UPDATE_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
   brand: {
@@ -235,5 +227,52 @@ describe('UpdateReadyNotice', () => {
     expect(restart).not.toHaveBeenCalled();
     act(() => emitShutdown?.({ phase: 'idle', agents: 0, shells: 0 }));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  // BUG-286: the installer's refusal used to sit behind "Closing Orbit…"
+  // forever, with the reason only in updater.jsonl.
+  it('shows an install refusal that arrives while the restart is finalizing', async () => {
+    installApi();
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    const failed: ProductUpdateStatus = {
+      phase: 'error',
+      currentVersion: '1.0.0',
+      availableVersion: '1.1.0',
+      percent: null,
+      liveSessions: 0,
+      error: 'Could not locate update bundle',
+      enabled: true,
+      disabledReason: null,
+      logPath: null,
+    };
+    act(() => emitShutdown?.({ phase: 'finalizing', agents: 0, shells: 0 }));
+    act(() => emitStatus?.(failed));
+    expect(
+      screen.getByText(
+        'Update failed, so Orbit 1.0.0 stays installed. Could not locate update bundle'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('keeps a quit on its own progress when an older failure is showing', async () => {
+    installApi();
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() =>
+      emitStatus?.({
+        phase: 'error',
+        currentVersion: '1.0.0',
+        availableVersion: null,
+        percent: null,
+        liveSessions: 0,
+        error: 'network unavailable',
+        enabled: true,
+        disabledReason: null,
+        logPath: null,
+      })
+    );
+    act(() => emitShutdown?.({ phase: 'finalizing', agents: 0, shells: 0 }));
+    expect(screen.queryByText(/network unavailable/)).not.toBeInTheDocument();
   });
 });

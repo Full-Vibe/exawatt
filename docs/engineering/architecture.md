@@ -1360,9 +1360,13 @@ Built:
   icon, feed, and optional grouped update capability. Developer-ID signing,
   Apple notarization, private source-linked GitHub
   Releases, public Supabase Storage update artifacts, and explicit
-  `electron-updater` restart with live-session impact. Electron 43 includes the
-  macOS 26 Squirrel.Mac helper-activation fix; signed `v0.1.2` to `v0.1.3`
-  update and automatic relaunch are verified
+  `electron-updater` restart with live-session impact. Restart to Update
+  hands the download to Squirrel.Mac and waits for it to accept the bundle
+  before any Session stops (BUG-286); a refusal is the update-failed notice
+  with Squirrel's reason, and an install that still fails after shutdown
+  relaunches the current version and reports the reason on that launch.
+  Electron 43 includes the macOS 26 Squirrel.Mac helper-activation fix;
+  signed `v0.1.2` to `v0.1.3` update and automatic relaunch are verified
 - roadmap lens (ENG-017): a Team-altitude rail rendering each Project's
   repo-canonical roadmap through the convention-v2 `@exawatt/core` parser and
   pure `@exawatt/ui-model` view. Electron main owns validated read/watch/git-

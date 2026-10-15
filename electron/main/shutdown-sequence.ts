@@ -142,6 +142,8 @@ export interface ShutdownSequenceDependencies {
   };
   /** Released in this order, each awaited, once every Session has stopped. */
   cleanup: ReadonlyArray<() => Promise<void> | void>;
+  /** An update restart's first step after the confirmation (BUG-286). */
+  prepareUpdate: () => Promise<boolean>;
   /** The last step, once cleanup has finished. */
   finalize: { installUpdate(): void; relaunch(): void; quit(): void };
   /** For the window-management restart, which is a normal restart. */
@@ -354,6 +356,7 @@ export function createShutdownSequence(
       confirm: confirmShutdown,
       checkpoint: checkpointRenderer,
       confirmWithoutCheckpoint,
+      prepareUpdate: deps.prepareUpdate,
       pauseNewWork: () => ptySessions.pauseCreates(),
       resumeNewWork: () => ptySessions.resumeCreates(),
       flushHistory: () => ptySessions.flushHistory(),
