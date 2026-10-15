@@ -660,10 +660,11 @@ export function SpatialFleetClient() {
       return;
     }
 
-    const detailHref = `/fleet/${encodeURIComponent(inspectedAgent.id)}`;
     const pty = window.electron?.pty;
     if (!pty) {
-      router.push(detailHref);
+      setSessionHandoffError(
+        'Open the desktop app to access this local Session. Your board position is unchanged.'
+      );
       return;
     }
 
@@ -675,7 +676,9 @@ export function SpatialFleetClient() {
           candidate => candidate.id === inspectedAgent.sessionKey
         );
         if (!session) {
-          router.push(detailHref);
+          setSessionHandoffError(
+            'This Session is no longer available. Your board position is unchanged.'
+          );
           return;
         }
         sessionRef = session.id;
@@ -699,13 +702,7 @@ export function SpatialFleetClient() {
         'The live terminal could not be opened. Your board position is unchanged.'
       );
     }
-  }, [
-    inspectedAgent,
-    isDemo,
-    navigateCommandSurface,
-    router,
-    sessionHandoffAgentId,
-  ]);
+  }, [inspectedAgent, isDemo, navigateCommandSurface, sessionHandoffAgentId]);
   return (
     <div
       // The inline appearance bootstrap may intentionally change the root
