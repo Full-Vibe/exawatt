@@ -350,6 +350,9 @@ interface DesktopDialogApi {
 interface DesktopProjectsApi {
   resolve: BridgeInvoke<'projects:resolve'>;
   scanDirectory: BridgeInvoke<'projects:scan-directory'>;
+  /** ENG-046: folders the installed harnesses already work in, read from
+   *  their own stores and never written. */
+  suggestions: BridgeInvoke<'projects:suggestions'>;
 }
 
 interface DesktopMenuApi {

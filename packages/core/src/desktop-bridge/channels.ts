@@ -51,6 +51,8 @@ import type {
   ProductUpdateStatus,
   ProjectResolveResult,
   ProjectScanResult,
+  ProjectSuggestionsRequest,
+  ProjectSuggestionsResult,
   RenderErrorReport,
   SavedDiagnosticsReport,
   ShutdownStatus,
@@ -273,6 +275,10 @@ interface RequestTable {
 
   'projects:resolve': Call<[path: string], ProjectResolveResult>;
   'projects:scan-directory': Call<[path: string], ProjectScanResult>;
+  'projects:suggestions': Call<
+    [request?: ProjectSuggestionsRequest],
+    ProjectSuggestionsResult
+  >;
 
   'pty:create': Call<[options: PtyCreateOptions], PtyCreateResult>;
   'pty:pause-sessions': Call<

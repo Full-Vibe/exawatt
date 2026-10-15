@@ -382,6 +382,7 @@ const bridge = {
   projects: {
     resolve: path => invoke('projects:resolve', path),
     scanDirectory: path => invoke('projects:scan-directory', path),
+    suggestions: request => invoke('projects:suggestions', request),
   },
   menu: {
     onCommand: subscribe('menu:command'),

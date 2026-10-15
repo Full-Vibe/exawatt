@@ -209,6 +209,93 @@ export type ProjectScanResult =
   | { ok: true; candidates: ProjectImportCandidate[] }
   | { ok: false; error: string };
 
+/* ---- Harness project suggestions (ENG-046 O1) ---------------------------- */
+
+/** The harnesses whose own project stores Exawatt reads for suggestions. */
+export type ProjectSuggestionHarness = 'claude' | 'codex' | 'antigravity';
+
+/**
+ * Each store a suggestion can come from. Every one is read, never written
+ * (docs/engineering/projects/first-run-on-ramp.md, "Fixed decisions").
+ */
+export type HarnessProjectStore =
+  /** Claude Code's per-directory entries in its user config (`projects`). */
+  | 'claude-code-config'
+  /** Claude Code's transcript directories; the transcript's own `cwd`. */
+  | 'claude-code-transcripts'
+  /** Codex's `[projects."<path>"]` trust table in `config.toml`. */
+  | 'codex-config'
+  /** Codex's threads: the state database, or each rollout's first line. */
+  | 'codex-sessions'
+  /** Antigravity's project files (`folderUri`s). */
+  | 'antigravity-projects'
+  /** Antigravity's conversation index (workspace URIs and times). */
+  | 'antigravity-conversations';
+
+/** One store's evidence that a harness knows a directory. */
+export interface HarnessProjectEvidence {
+  harness: ProjectSuggestionHarness;
+  store: HarnessProjectStore;
+  /** The directory exactly as the store recorded it, before folding. */
+  directory: string;
+  /** When the store last saw activity there; null when it records none. */
+  observedAt: number | null;
+  /** The store's own display name, when it has one. Never renames a
+   *  Project; shown only as evidence. */
+  label: string | null;
+}
+
+/**
+ * One folder a harness already works in, offered before it is a Project.
+ * Opening it goes through the same path Browse does, so `path` is exactly
+ * the folder `projects:resolve` returns for it.
+ */
+export interface HarnessProjectSuggestion {
+  path: string;
+  /** The git common directory, or null for a folder outside git. */
+  commonDir: string | null;
+  /** The folder's basename; a suggestion has no Project name yet. */
+  name: string;
+  /** Every harness whose store knows the folder, most recent first: the
+   *  first is the suggesting harness the composer recommends. */
+  harnesses: ProjectSuggestionHarness[];
+  /** Newest activity across every store; null when none records a time. */
+  lastActivityAt: number | null;
+  /** Inside the recent window (30 days). Older rows sit behind "Show
+   *  older", ranked the same way. */
+  recent: boolean;
+  evidence: HarnessProjectEvidence[];
+}
+
+/**
+ * What one store answered. `missing` is a fact (the harness never wrote
+ * it); `unreadable` is the absence of one, carried with a named reason and
+ * never folded into an empty list.
+ */
+export interface HarnessStoreRead {
+  harness: ProjectSuggestionHarness;
+  store: HarnessProjectStore;
+  status: 'read' | 'missing' | 'unreadable';
+  /** Directory entries the store yielded before the filter. */
+  entries: number;
+  /** For `unreadable`: what went wrong, in a few words. Never file text. */
+  reason?: string;
+}
+
+export type ProjectSuggestionsResult =
+  | {
+      ok: true;
+      suggestions: HarnessProjectSuggestion[];
+      stores: HarnessStoreRead[];
+      readAt: number;
+    }
+  | { ok: false; error: string };
+
+export interface ProjectSuggestionsRequest {
+  /** Re-read every store now instead of answering from the last read. */
+  refresh?: boolean;
+}
+
 /** What `operator-stats:plan` derives publications from (BUG-164). */
 export interface OperatorStatsPlanRequest {
   /** The immutable first-consent instant. */
