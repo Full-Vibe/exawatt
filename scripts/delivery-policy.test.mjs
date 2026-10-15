@@ -656,6 +656,10 @@ test('every module the Fleet board canvas was split into owes what the canvas ow
   assert.ok(canvas.includes('eval:spatial:emergence'));
   for (const part of [
     'operations-board-views.tsx',
+    'fleet-agent-hit-targets.tsx',
+    'fleet-agent-hit-model.ts',
+    'use-board-project-labels.ts',
+    'status-mark-rendering.ts',
     'operations-board-agent-layer.tsx',
     'operations-board-status-marks.tsx',
     'operations-board-camera-rig.tsx',
@@ -666,11 +670,10 @@ test('every module the Fleet board canvas was split into owes what the canvas ow
     'operations-board-population-layer.tsx',
     'operations-board-zone-layer.tsx',
   ]) {
-    assert.deepEqual(
-      owed(`src/components/fleet/spatial/operations-board/${part}`),
-      canvas,
-      part
-    );
+    const gates = owed(`src/components/fleet/spatial/operations-board/${part}`);
+    // Specialized owners may owe additional evidence; no board gate may vanish.
+    for (const gate of canvas)
+      assert.ok(gates.includes(gate), `${part} owes ${gate}`);
   }
 });
 

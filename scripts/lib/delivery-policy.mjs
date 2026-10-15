@@ -108,6 +108,10 @@ const BOARD_CANVAS_DIR = 'src/components/fleet/spatial/operations-board/';
 const BOARD_CANVAS_MODULES = [
   'operations-board-canvas.tsx',
   'operations-board-views.tsx',
+  'fleet-agent-hit-targets.tsx',
+  'fleet-agent-hit-model.ts',
+  'use-board-project-labels.ts',
+  'status-mark-rendering.ts',
   'operations-board-agent-layer.tsx',
   'operations-board-status-marks.tsx',
   'operations-board-camera-rig.tsx',
@@ -148,6 +152,18 @@ export const SURFACE_GATES = [
       (file.startsWith('src/lib/presentation/') &&
         !/\.test\.tsx?$/.test(file)) ||
       file === 'scripts/settings-navigation-eval.mjs',
+  },
+  {
+    gate: 'eval:spatial:status-visibility',
+    why: 'semantic status glyphs must remain visible over every Fleet material',
+    match: file =>
+      ['operations-board-status-marks.tsx', 'operations-board-population-layer.tsx',
+        'status-mark-rendering.ts'].some(module => file === `${BOARD_CANVAS_DIR}${module}`) ||
+      (file.startsWith(`${BOARD_CANVAS_DIR}tiles/`) && !/\.test\.tsx?$/.test(file)) ||
+      (file.startsWith('src/components/tiles/') && !/\.test\.tsx?$/.test(file)) ||
+      file === 'src/components/hud/board-study-fixtures.ts' ||
+      file === 'src/app/hud-gallery/board-study/page.tsx' ||
+      file === 'scripts/board-status-visibility-eval.mjs',
   },
   {
     gate: 'eval:spatial:tiles-bench',
@@ -1769,6 +1785,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:packaged': GATE,
   'eval:settings:navigation': GATE,
   'eval:spatial:tiles-bench': GATE,
+  'eval:spatial:status-visibility': GATE,
   'eval:spatial:viewport': GATE,
   'eval:spatial:attention': GATE,
   'eval:electron:connected-fleet': GATE,

@@ -2729,7 +2729,7 @@ reading.
   The default stays v1 until the
   operator calls it.
 
-**Review repair architecture (operator-authorized, 2026-10-15; planned before implementation).**
+**Review repair architecture (operator-authorized, 2026-10-15; implemented after the planning pass).**
 
 The post-install review found five gaps: v2 Fleet Shift-click reaches the
 Project instead of the individual Agent; raised materials occlude D40 shapes;
@@ -3704,3 +3704,45 @@ over the live client at a bridge double), the chord test in
 `board-keymap.test.ts`, `eval:spatial` (Shift+arrows, ⌘D, a result row per
 recipient, Escape order) and `eval:electron:fleet-direct` (both Projects'
 Agents selected, ⌘D, a row each on the real bridge).
+
+### 2026-10-15 — V4.1 review repairs: shared behavior and persistence owners
+
+**Five review findings now have architectural repairs and regression coverage.**
+The operator requested a planning pass before fixes and parallel isolated work;
+the review repair architecture above was committed before implementation. Four
+lanes separated shared board controls/labels, status annotations, preference
+authority and renderer recovery. No shared-checkout edits, new dependency, extra
+render loop or generic settings framework were needed.
+
+- Fleet modifier selection now belongs to one bounded invisible instanced hit
+  layer shared by both views. It contributes no draw calls, ignores population
+  and decorative sockets, and preserves Project drilling and drag suppression.
+  A shared label hook measures true minimum Project width rather than capping it
+  at the empty-state fallback. The signed-browser pointer matrix verifies exact
+  selected IDs at visible tile-body centers, ordinary drilling, band selection,
+  pan/pinch, touch and reduced-motion parking in both views.
+- D40 rendering has one explicit depth policy. v1 keeps world depth; v2's
+  existing instanced scene draws backing, signal, cutout and unread in that order
+  above decorative materials. Individual, delegated and aggregate marks share
+  the policy. The new visibility gate compares actual glyph pixels with bodies
+  present/hidden, retains sibling marks, and uses the former depth behavior as
+  a negative control. Homepage geometry/material/motion code is untouched.
+- The registry stores stable loaders and capabilities. Each mounted surface
+  owns lazy attempts; retry replaces only the failed attempt. A real rejected
+  import test verifies recovery with viewport/selection retained and no new
+  loading on ordinary material updates.
+- Presentation mutations are validated field intents applied synchronously by
+  Electron main or as independent browser field writes. Resets suppress legacy
+  fallback without rewriting another field. Snapshot subscriptions remain the
+  read contract; the obsolete full-record mutation API and its callers are
+  retired. Seventy-four focused settings tests cover write ordering, resets,
+  delayed loads/responses, malformed input and blocked storage; actual Settings
+  navigation/persistence/theme checks also pass.
+
+Independent read-only review found no further implementation defect. The
+coordinator combines all four commits before delivery and declares the new
+status-visibility gate alongside the applicable existing surface gates, plus
+motion, scale and theme checks. The immutable landing receipt owns final floor
+and gate evidence; dogfood installation is verified separately from queueing.
+Evidence: `/tmp/exawatt-fleet-repair-*.log`,
+`/tmp/exawatt-status-visibility/`, and `/tmp/exawatt-fleet-v2-settings/`.
