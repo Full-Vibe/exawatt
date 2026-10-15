@@ -77,6 +77,9 @@ export interface TileRendererProps {
   detail?: 'full' | 'adaptive' | 'coarse';
   /** Multiple bounded cohorts share one primary scene light/environment owner. */
   lighting?: boolean;
+  /** Fixed, coarse population: upload only when render inputs change. Requires
+   * reduced motion, no marks and no mesh input; not for host-clock callbacks. */
+  staticInstances?: boolean;
   /** DOM overlays can own all input without paying mesh raycasting cost. */
   interactive?: boolean;
   /** No timer/loop here: the host schedules transition and ambient frames. */

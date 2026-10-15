@@ -407,6 +407,7 @@ export function TileRenderer({
   transmission = true,
   detail = 'full',
   lighting = true,
+  staticInstances = false,
   interactive = true,
   onMotionFrame,
   theme,
@@ -911,7 +912,66 @@ export function TileRenderer({
     onExpand?.();
   };
 
+  // Population transforms are world-space constants. Camera-only paints reuse
+  // their GPU buffers; the ordinary renderer (including the homepage) never
+  // enters this path. Dynamic host-clock callbacks must stay on the full path.
+  const staticDraw =
+    staticInstances &&
+    detail === 'coarse' &&
+    mark === 'off' &&
+    reducedMotion &&
+    !interactive;
+  const staticRevision = useMemo(
+    () => ({
+      tiles,
+      groundSurface,
+      theme,
+      marks,
+      readFrame,
+      readClock,
+      transmission,
+      material,
+      mark,
+      shape,
+      motion,
+      signal,
+      light,
+      lighting,
+      reducedMotion,
+      calmAttention,
+      interactive,
+      detail,
+      staticInstances,
+    }),
+    [
+      tiles,
+      groundSurface,
+      theme,
+      marks,
+      readFrame,
+      readClock,
+      transmission,
+      material,
+      mark,
+      shape,
+      motion,
+      signal,
+      light,
+      lighting,
+      reducedMotion,
+      calmAttention,
+      interactive,
+      detail,
+      staticInstances,
+    ]
+  );
+  const uploadedStaticRevision = useRef<object | null>(null);
+
   useFrame((state, rawDelta) => {
+    if (staticDraw && uploadedStaticRevision.current === staticRevision) {
+      onMotionFrame?.(false, false);
+      return;
+    }
     const delta = Math.min(rawDelta, 0.05);
     // The rig moved the camera this frame; refresh its matrices so every anchor
     // projected below lands on this frame's picture, not the last one's.
@@ -1829,6 +1889,7 @@ export function TileRenderer({
       !reducedMotion && settling,
       !reducedMotion && workingMotion
     );
+    uploadedStaticRevision.current = staticDraw ? staticRevision : null;
     // A demand host schedules motion itself through its ambient cadence.
     // Interaction requests one wake-up; no continuous invalidate pump here.
   });
