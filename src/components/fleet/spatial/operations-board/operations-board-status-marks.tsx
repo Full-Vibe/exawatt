@@ -206,6 +206,7 @@ const StatusMarkInstances = memo(
           pieces={result}
           geometry={geometries.check}
           color={theme.canvas}
+          materialColor={theme.canvas}
           z={0.97}
           opacity={0.98}
         />
@@ -214,6 +215,7 @@ const StatusMarkInstances = memo(
           pieces={needsYou}
           geometry={geometries.dot}
           color={theme.canvas}
+          materialColor={theme.canvas}
           z={0.97}
           opacity={0.98}
         />
@@ -222,6 +224,7 @@ const StatusMarkInstances = memo(
           pieces={fault}
           geometry={geometries.cross}
           color={theme.canvas}
+          materialColor={theme.canvas}
           z={0.97}
           opacity={0.98}
         />
@@ -286,6 +289,7 @@ const MarkInstance = memo(
 type MarkCohortProps = MarkInstancesProps & {
   geometry: THREE.BufferGeometry;
   color?: string;
+  materialColor?: string;
   z?: number;
   rotor?: boolean;
   opacity?: number;
@@ -303,6 +307,7 @@ const MarkCohort = memo(
     collectMark,
     geometry,
     color,
+    materialColor,
     z,
     rotor,
     opacity = 1,
@@ -321,7 +326,7 @@ const MarkCohort = memo(
         {/* Bodies and marks share the transparent pass; layer order keeps the
        contrast plate and glyph above translucent bodies (BUG-250). */}
         <meshBasicMaterial
-          color={z === 0.97 ? color : undefined}
+          color={materialColor}
           toneMapped={false}
           transparent
           opacity={opacity}
@@ -351,6 +356,7 @@ const MarkCohort = memo(
     previous.lens === next.lens &&
     previous.geometry === next.geometry &&
     previous.color === next.color &&
+    previous.materialColor === next.materialColor &&
     previous.z === next.z &&
     previous.rotor === next.rotor &&
     previous.opacity === next.opacity &&
