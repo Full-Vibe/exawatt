@@ -2683,7 +2683,12 @@ reading.
    per instanced part regardless of count, transmission only at Project and
    Agent zoom and never on low power, low-detail geometry below a projected
    size, working motion on the ambient cadence, and `eval:spatial:scale` at
-   150, 1k and 10k.
+   150, 1k and 10k. Operator reinforcement (2026-10-15): excellent CPU and
+   battery behavior is an acceptance requirement. Measure CPU submission, GPU
+   geometry and frame intervals separately; verify no idle animation work and
+   no rendering while hidden, locked or suspended, including live source
+   updates. Battery mode skips transmission and reduces ambient cadence;
+   unrelated provider ticks must not wake a stationary scene.
 5. Status: the D40 glyph, unread corner and Not-reported reading on every
    tile; needs-you and fault never pulse; only Active moves. The design-system
    amendment (status may tint a Tiles body) lands with V4.1.
@@ -3459,3 +3464,10 @@ accepts the look, not a claim that P4 or installation has already passed.
 
 Dependency audit: the delegation census rescue is already on master. The
 old branch is not a prerequisite to revive; its deferred work stays deferred.
+
+Performance acceptance amendment (operator, 2026-10-15): CPU spikes and
+battery drain are part of P4 acceptance, including actual live Demo behavior,
+not only deterministic fixtures. Evidence must distinguish CPU submission
+from GPU load and verify foreground battery cadence plus hidden/locked/
+suspended rendering. No claim of universal zero CPU usage or battery drain
+is made from development-host measurements.

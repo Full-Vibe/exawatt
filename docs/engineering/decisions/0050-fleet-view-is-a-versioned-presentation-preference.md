@@ -103,6 +103,11 @@ as future projects add preferences.
    cadence, one motion owner, reduced motion, the layout budgets and instance
    ceilings, the D40 status glyph with its unread corner and the Not-reported
    reading, and calm attention (needs-you and fault never pulse) all hold.
+   CPU and battery behavior are release acceptance criteria (operator,
+   2026-10-15): no animation repaint while parked, no scene rendering while
+   hidden/locked/suspended even as live data changes, bounded geometry at
+   scale, and no transmission pass on battery. Measure real source updates
+   as well as frozen fixtures; CPU submission alone does not certify GPU cost.
    v2 may tint the agent body with its status, as the homepage does; that
    amends the design-system rule that status colour lives only in each
    Agent's light, for v2 only, when V4.1 ships.
