@@ -42,6 +42,7 @@ import {
   type SpatialBoardTarget,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
+import { createAgentProjectOwnersSelector } from './agent-project-owners';
 import { useFleetAttention } from './use-fleet-attention';
 import { SpatialSelectionPanel } from './spatial-selection-panel';
 import { useMinuteClock } from './use-minute-clock';
@@ -378,6 +379,9 @@ export function SpatialFleetClient() {
     [fleetState, projects]
   );
 
+  const selectAgentProjectOwners = useMemo(() => createAgentProjectOwnersSelector(), []);
+  const agentProjectOwners = selectAgentProjectOwners(fieldZones);
+
   const updateFilters = useCallback(
     (next: { query: string; statuses: typeof statusFilter }) => {
       requestedFiltersRef.current = next;
@@ -491,7 +495,7 @@ export function SpatialFleetClient() {
     (agentId: string | null) => {
       if (agentId) {
         const owner =
-          fieldZones.find(z => z.agentIds.includes(agentId))?.clusterId ?? null;
+          agentProjectOwners.get(agentId) ?? null;
         navigate({ altitude: 'agent', project: owner, agent: agentId });
       } else if (multiSelection.size > 0) {
         clearMultiSelect();
@@ -499,7 +503,7 @@ export function SpatialFleetClient() {
         ascend();
       }
     },
-    [ascend, clearMultiSelect, fieldZones, multiSelection.size, navigate]
+    [ascend, clearMultiSelect, agentProjectOwners, multiSelection.size, navigate]
   );
 
   useFleetAttention({
@@ -511,15 +515,14 @@ export function SpatialFleetClient() {
   const moveAgentSelection = useCallback(
     (agentId: string) => {
       const owner =
-        fieldZones.find(zone => zone.agentIds.includes(agentId))?.clusterId ??
-        null;
+        agentProjectOwners.get(agentId) ?? null;
       navigate({
         altitude: scene.altitude,
         project: scene.altitude === 'fleet' ? null : owner,
         agent: agentId,
       });
     },
-    [fieldZones, navigate, scene.altitude]
+    [agentProjectOwners, navigate, scene.altitude]
   );
 
   // Escape releases the multi-selection first, then ascends one altitude —
