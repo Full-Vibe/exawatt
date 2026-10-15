@@ -30,6 +30,14 @@ App surfaces set `font-ui` on their root; numbers and micro-labels go
 the interface profile. No preset adds a font binary, local-font permission, or
 runtime network fetch.
 
+The homepage typography comparison at `/hud-gallery/homepage-study` is a
+study-only exception, not a fourth app profile. It keeps the existing named
+marketing size rungs while comparing Geist with Manrope and Hanken Grotesk on
+the story's h1/h2, and compares Geist, Hanken, and the existing Geist Mono tab
+face on short product labels. Modal sentences stay in a proportional face;
+selection does not change `/` or application typography. Both additional
+faces are self-hosted and loaded only by the study route.
+
 ### The named scale
 
 The core of the scale is the **D39 chrome type roles**, already tokens in `globals.css` (`--text-chrome-*`, 148 usages), extended by the Tailwind named sizes the app uses correctly. All 12 rungs have named utilities — the four that existed only as bracketed sizes at the audit (nano, reading, surface-title, display) were minted as `@theme` tokens alongside the chrome roles:

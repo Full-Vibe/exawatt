@@ -553,6 +553,7 @@ export function ScrollExperience({
                 labelRefs.current[project.id] = el;
               }}
               className="group/name absolute left-0 top-0 flex flex-col items-center whitespace-nowrap text-center opacity-0 will-change-transform"
+              data-story-project-name
             >
               <ProjectName name={project.name} />
             </div>

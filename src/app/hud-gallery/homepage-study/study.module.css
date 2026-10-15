@@ -1,0 +1,10 @@
+.study :global([data-homepage-study-experience] h1),
+.study :global([data-homepage-study-experience] h2) {
+  font-family: var(--study-headline-font);
+}
+
+.study[data-interface-font='tabs'] .proofLabel,
+.study[data-interface-font='tabs'] :global([data-story-project-name]),
+.study[data-interface-font='tabs'] :global([data-study-agent-card] dt) {
+  font-family: var(--font-geist-mono);
+}

@@ -21,6 +21,16 @@ const FONT_ASSETS = [
     sha256: '684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc',
     magic: 'wOF2',
   },
+  {
+    path: 'src/app/hud-gallery/homepage-study/fonts/Manrope-Variable-Latin.woff2',
+    sha256: 'e310b55a7fd9677f5e3555e6c6c4d064fa1f1d24393f0ddbe217cea12a8c432f',
+    magic: 'wOF2',
+  },
+  {
+    path: 'src/app/hud-gallery/homepage-study/fonts/HankenGrotesk-Variable-Latin.woff2',
+    sha256: '1f21c6eaa0000f3329cfcfac966b43d5bebf5aa610303e33294ac31bc6f4bb59',
+    magic: 'wOF2',
+  },
 ];
 
 const SOURCE_EXTENSIONS = new Set([
@@ -58,6 +68,14 @@ test('the exact licensed font binaries are committed', () => {
   assert.equal(
     sha256(readFileSync('LICENSES/fonts/Geist-OFL-1.1.txt')),
     '942560b236adfa83745b2c64e5fc09ebaf91cb331751b1157eb92187e5d6e930'
+  );
+  assert.equal(
+    sha256(readFileSync('LICENSES/fonts/Manrope-OFL-1.1.txt')),
+    '58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b'
+  );
+  assert.equal(
+    sha256(readFileSync('LICENSES/fonts/HankenGrotesk-OFL-1.1.txt')),
+    'e02ccb89a86839b22feff7872ff5cc355cc0f58318d29eee20e2cf83a612f16d'
   );
 });
 

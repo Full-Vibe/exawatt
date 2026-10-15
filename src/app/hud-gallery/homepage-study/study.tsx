@@ -16,6 +16,7 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type CSSProperties,
 } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -62,6 +63,7 @@ import { DomeVisual } from './visuals/dome-visual';
 import { LidarVisual } from './visuals/lidar-visual';
 import { MercuryVisual } from './visuals/mercury-visual';
 import { PrismVisual } from './visuals/prism-visual';
+import styles from './study.module.css';
 
 type VisualId = 'crust' | 'lidar' | 'dome' | 'prism' | 'mercury';
 
@@ -105,6 +107,48 @@ const VISUALS: {
 ];
 
 const SNAPS: SnapMode[] = ['page', 'soft', 'off'];
+const HEADLINE_FONTS = [
+  {
+    id: 'geist',
+    name: 'Geist',
+    note: 'Current homepage: clean and quiet.',
+    family: 'var(--font-geist-sans)',
+  },
+  {
+    id: 'manrope',
+    name: 'Manrope',
+    note: 'Sleek geometry with a sharper display silhouette.',
+    family: 'var(--study-manrope)',
+  },
+  {
+    id: 'hanken',
+    name: 'Hanken',
+    note: 'A confident grotesk with a more human rhythm.',
+    family: 'var(--study-hanken)',
+  },
+] as const;
+const INTERFACE_FONTS = [
+  {
+    id: 'geist',
+    name: 'Geist',
+    note: 'Current product copy and labels.',
+    family: 'var(--font-geist-sans)',
+  },
+  {
+    id: 'tabs',
+    name: 'Tab labels',
+    note: 'The app tab face, Geist Mono, on short labels; Geist Sans for sentences.',
+    family: 'var(--font-geist-sans)',
+  },
+  {
+    id: 'hanken',
+    name: 'Hanken',
+    note: 'A warmer reading face for product copy and controls.',
+    family: 'var(--study-hanken)',
+  },
+] as const;
+type HeadlineFontId = (typeof HEADLINE_FONTS)[number]['id'];
+type InterfaceFontId = (typeof INTERFACE_FONTS)[number]['id'];
 
 interface StudyState {
   visual: VisualId;
@@ -118,6 +162,8 @@ interface StudyState {
   snap: SnapMode;
   sound: boolean;
   names: NamesId;
+  headlineFont: HeadlineFontId;
+  interfaceFont: InterfaceFontId;
 }
 
 function readState(params: URLSearchParams): StudyState {
@@ -127,7 +173,15 @@ function readState(params: URLSearchParams): StudyState {
   const mark = params.get('mark');
   const shape = params.get('shape');
   const signal = params.get('signal');
+  const headlineFont = params.get('headline');
+  const interfaceFont = params.get('interface');
   return {
+    headlineFont: HEADLINE_FONTS.some(font => font.id === headlineFont)
+      ? (headlineFont as HeadlineFontId)
+      : 'geist',
+    interfaceFont: INTERFACE_FONTS.some(font => font.id === interfaceFont)
+      ? (interfaceFont as InterfaceFontId)
+      : 'geist',
     signal: CRUST_SIGNALS.some(x => x.id === signal)
       ? (signal as CrustSignalId)
       : HOMEPAGE_STORY.signal,
@@ -162,7 +216,7 @@ function readState(params: URLSearchParams): StudyState {
 }
 
 function href(state: StudyState): string {
-  return `/hud-gallery/homepage-study?visual=${state.visual}&copy=${state.copy}&material=${state.material}&mark=${state.mark}&shape=${state.shape}&motion=${motionParam(state.motion)}&signal=${state.signal}&light=${state.light}&snap=${state.snap}&sound=${state.sound ? 'on' : 'off'}&names=${state.names}`;
+  return `/hud-gallery/homepage-study?visual=${state.visual}&copy=${state.copy}&material=${state.material}&mark=${state.mark}&shape=${state.shape}&motion=${motionParam(state.motion)}&signal=${state.signal}&light=${state.light}&snap=${state.snap}&sound=${state.sound ? 'on' : 'off'}&names=${state.names}&headline=${state.headlineFont}&interface=${state.interfaceFont}`;
 }
 
 function Option({
@@ -194,10 +248,17 @@ function Option({
   );
 }
 
-export function HomepageStudy() {
+export function HomepageStudy({ fontVariables }: { fontVariables: string }) {
   const searchParams = useSearchParams();
   const state = useMemo(() => readState(searchParams), [searchParams]);
   const [open, setOpen] = useState(false);
+  const [showTypeProof, setShowTypeProof] = useState(false);
+  const headlineFamily = HEADLINE_FONTS.find(
+    font => font.id === state.headlineFont
+  )!.family;
+  const interfaceFamily = INTERFACE_FONTS.find(
+    font => font.id === state.interfaceFont
+  )!.family;
   // How much of the stage's top the bar covers, for the open panel to clear.
   const barRef = useRef<HTMLDivElement>(null);
   const [barHeight, setBarHeight] = useState(0);
@@ -213,8 +274,20 @@ export function HomepageStudy() {
 
   return (
     <main
-      className="min-h-screen bg-[#04060b] font-ui text-white"
+      className={cn(
+        'min-h-screen bg-[#04060b] font-ui text-white',
+        fontVariables,
+        styles.study
+      )}
+      style={
+        {
+          '--study-headline-font': headlineFamily,
+          '--font-ui': interfaceFamily,
+          fontFamily: 'var(--font-ui)',
+        } as CSSProperties
+      }
       data-homepage-study
+      data-interface-font={state.interfaceFont}
       data-public-exhibition-surface="true"
     >
       {/* The controls float over the pinned stage rather than sitting above
@@ -223,7 +296,7 @@ export function HomepageStudy() {
           fold behind one button so the world keeps the screen. */}
       <div
         ref={barRef}
-        className="fixed inset-x-0 top-12 z-30 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-white/10 bg-[#04060b]/90 px-4 py-2"
+        className="fixed inset-x-0 top-12 z-30 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-white/10 bg-[#04060b] px-4 py-2"
       >
         <p className="font-mono text-chrome-micro text-white/50">
           <Link href="/hud-gallery" className="hover:text-white">
@@ -448,7 +521,97 @@ export function HomepageStudy() {
               Deck
             </Option>
           </div>
+          <div className="flex items-center gap-1">
+            <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+              Headlines
+            </span>
+            {HEADLINE_FONTS.map(font => (
+              <Option
+                key={font.id}
+                active={font.id === state.headlineFont}
+                href={href({ ...state, headlineFont: font.id })}
+                title={font.note}
+              >
+                {font.name}
+              </Option>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="mr-1 font-mono text-chrome-micro uppercase tracking-[0.18em] text-white/40">
+              Product copy
+            </span>
+            {INTERFACE_FONTS.map(font => (
+              <Option
+                key={font.id}
+                active={font.id === state.interfaceFont}
+                href={href({ ...state, interfaceFont: font.id })}
+                title={font.note}
+              >
+                {font.name}
+              </Option>
+            ))}
+            <button
+              type="button"
+              onClick={() => setShowTypeProof(value => !value)}
+              aria-expanded={showTypeProof}
+              aria-controls="homepage-type-proof"
+              className="rounded border border-white/15 px-2 py-1 text-chrome-micro text-white/70 hover:bg-white/10"
+            >
+              {showTypeProof ? 'Hide proof' : 'UI proof'}
+            </button>
+          </div>
         </div>
+        {showTypeProof ? (
+          <aside
+            id="homepage-type-proof"
+            aria-label="Product typography proof"
+            className="absolute right-3 top-full mt-2 w-[min(25rem,calc(100vw-1.5rem))] rounded-xl border border-white/20 bg-[#10151d] p-5 text-white shadow-2xl"
+          >
+            <p className="mb-4 font-mono text-chrome-micro uppercase tracking-[0.16em] text-white/45">
+              Product type ·{' '}
+              {
+                INTERFACE_FONTS.find(font => font.id === state.interfaceFont)
+                  ?.name
+              }
+            </p>
+            <div className="flex gap-5 border-b border-white/15 pb-2 text-chrome-title">
+              <span className={styles.proofLabel}>Product launch</span>
+              <span className="text-white/45">New session</span>
+            </div>
+            <div className="pt-5">
+              <p
+                className={cn(
+                  'mb-2 text-chrome-micro uppercase tracking-[0.12em] text-amber-300',
+                  styles.proofLabel
+                )}
+              >
+                Approval needed
+              </p>
+              <h3 className="text-xl font-semibold">Review agent action</h3>
+              <p className="mt-2 max-w-[32ch] text-base leading-relaxed text-white/65">
+                This agent is waiting for your approval before it continues.
+              </p>
+              <div className="mt-5 flex justify-end gap-3 text-chrome-label font-medium">
+                <span
+                  className={cn(
+                    'rounded border border-white/20 px-3 py-2',
+                    styles.proofLabel
+                  )}
+                >
+                  Cancel
+                </span>
+                <span
+                  className={cn(
+                    'rounded bg-white px-3 py-2 text-black',
+                    styles.proofLabel
+                  )}
+                >
+                  Approve
+                </span>
+              </div>
+            </div>
+          </aside>
+        ) : null}
       </div>
 
       <ScrollExperience
