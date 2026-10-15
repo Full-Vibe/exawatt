@@ -79,18 +79,18 @@ export const STAGES: Stage[] = [
     focus: 'fleet',
     labels: false,
     count: 10,
-    // The promise, then what it is (operator 2026-10-14, choosing the
-    // scale angle for the homepage: "Control 500 like 5"; and on the line
-    // under it, which read as a list: "Maybe in scene 1 it should be:
-    // Exawatt is the command surface for your agent fleet"). The deck keeps
-    // the line it had, to compare.
+    // The promise, then what it is (operator 2026-10-14, keeping the scale
+    // angle for the homepage: "Make the scene 1 H1 'Scale your agent
+    // fleet'"; and on the line under it, which read as a list: "Maybe in
+    // scene 1 it should be: Exawatt is the command surface for your agent
+    // fleet"). The deck keeps the line it had, to compare.
     copy: {
       deck: {
         headline: ['The command interface for your agent fleet.'],
         body: ['Today you run 10 agents.', 'Tomorrow you will run 10,000.'],
       },
       canon: {
-        headline: ['Control 500 agents like you control 5.'],
+        headline: ['Scale your agent fleet.'],
         body: ['Exawatt is the command surface for your agent fleet.'],
       },
     },
@@ -109,12 +109,11 @@ export const STAGES: Stage[] = [
         headline: ["Easily see each agent's", 'working status'],
         body: ['From credit usage, to time spent.'],
       },
+      // what the card shows, and nothing after it (operator 2026-10-14:
+      // "Remove the copy 'Without opening a single one.'")
       canon: {
         headline: ['Every agent, at a glance.'],
-        body: [
-          'What it is doing, on which model, and what it has spent.',
-          'Without opening a single one.',
-        ],
+        body: ['What it is doing, on which model, and what it has spent.'],
       },
     },
   },
@@ -164,9 +163,11 @@ export const STAGES: Stage[] = [
       },
       // any harness, side by side (operator 2026-10-14: "a huge value prop
       // of Exawatt to be able to bring your own agents of any type, run
-      // them all together, and see them all executing in the same place")
+      // them all together, and see them all executing in the same place";
+      // and on its title, "Every kind of agent -> 'Every species of
+      // agent'")
       canon: {
-        headline: ['Every kind of agent,', 'side by side.'],
+        headline: ['Every species of agent,', 'side by side.'],
         body: [
           'Bring Claude Code, Codex, OpenClaw, or your own.',
           'Run them together and watch them all work in one place.',

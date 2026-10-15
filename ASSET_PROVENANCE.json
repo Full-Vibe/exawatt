@@ -57,8 +57,8 @@
       "path": "public/images/og-home.png",
       "status": "included",
       "kind": "generated homepage link preview",
-      "sha256": "220e101a85b5cfb44baa01117dd40dbc8e81749dc7b2fc4f91fe5bbcff054ee7",
-      "origin": "Captured at 1200 by 630 from the homepage's landing scene (src/components/site/fleet-story, its synthetic fleet) in headless Chromium against a worktree server, with the scene steps hidden and the site header clipped out (ENG-031 W15m; recaptured in W15o for the landing's new line and framing; docs/engineering/projects/website-overhaul.md).",
+      "sha256": "a809b959e81875b58afd62b150e96ed58f099b5fcf5da918ea6090cf86d348b4",
+      "origin": "Captured at 1200 by 630 from the homepage's landing scene (src/components/site/fleet-story, its synthetic fleet) in headless Chromium against a worktree server, with the scene steps hidden and the site header clipped out (ENG-031 W15m; recaptured in W15o for the landing's new line and framing, and in W15p for its new title; docs/engineering/projects/website-overhaul.md).",
       "distributionBasis": "First-party generated asset derived only from repository code and the story's synthetic fleet; distributed under the repository license. The harness marks on its tiles are the vendors' own artwork, used to name the products that run each agent; their provenance and terms are recorded in LICENSES/brand/harness-marks.md."
     },
     {
