@@ -4,6 +4,8 @@ import {
   FleetProvider,
   remoteAgentToExawattAgent,
   useFleet,
+  useDemoFleetFrame,
+  useFleetConnection,
 } from './fleet-provider';
 import type {
   ConnectedSourceChange,
@@ -387,5 +389,61 @@ describe('FleetProvider — remote coworkers beside local Agents', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('agent-remote-abc123')).toBeNull();
     });
+  });
+});
+
+describe('Demo frame subscriptions', () => {
+  it('publishes frames only to subscribers and detaches the source on unmount', async () => {
+    removeBridgeDouble();
+    const { DemoWorkspaceTransport } = await import('@exawatt/core');
+    type Frame = NonNullable<ReturnType<
+      InstanceType<typeof DemoWorkspaceTransport>['frame']
+    >>;
+    let publish: ((frame: Frame) => void) | undefined;
+    const unsubscribe = vi.fn();
+    vi.spyOn(DemoWorkspaceTransport.prototype, 'onFrame').mockImplementation(
+      handler => {
+        publish = handler;
+        return unsubscribe;
+      }
+    );
+    const snapshots: Array<Frame | null> = [];
+    let ordinaryRenders = 0;
+    function Subscriber() {
+      const frame = useDemoFleetFrame();
+      snapshots.push(frame);
+      return (
+        <output data-testid="demo-clock">{frame?.elapsedMs ?? 'absent'}</output>
+      );
+    }
+    function OrdinaryFleetConsumer() {
+      useFleetConnection();
+      ordinaryRenders++;
+      return null;
+    }
+    const view = render(
+      <FleetProvider demoSimulationTickMs={0}>
+        <Subscriber />
+        <OrdinaryFleetConsumer />
+      </FleetProvider>
+    );
+    await waitFor(() => expect(publish).toBeDefined());
+    const initial = snapshots.at(-1)!;
+    expect(initial).not.toBeNull();
+    const renders = ordinaryRenders;
+    const next = { ...initial!, elapsedMs: initial!.elapsedMs + 1 };
+    act(() => publish!(next));
+    expect(snapshots.at(-1)).toBe(next);
+    expect(screen.getByTestId('demo-clock').textContent).toBe(
+      String(next.elapsedMs)
+    );
+    expect(ordinaryRenders).toBe(renders);
+    const count = snapshots.length;
+    act(() => publish!(next));
+    expect(snapshots).toHaveLength(count);
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    act(() => publish!({ ...next, elapsedMs: next.elapsedMs + 1 }));
+    expect(snapshots).toHaveLength(count);
   });
 });

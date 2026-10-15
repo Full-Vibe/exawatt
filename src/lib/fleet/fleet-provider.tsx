@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
   useRef,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import {
@@ -65,9 +66,31 @@ const FleetContext = createContext<FleetContextValue | null>(null);
  * The Demo tick's latest frame (ENG-027 W14): the fixture Agents and the
  * landings as the Demo transport last published them. Its own context, so
  * only the Demo shell re-renders on a tick; every other fleet consumer keeps
- * reading the FleetManager it already subscribes to. Null outside Demo.
+ * reading the FleetManager it already subscribes to. The context itself is a
+ * stable store: R3F bridges ancestor contexts, including ones its scene never
+ * reads, so publishing frame objects here repainted every canvas each second.
+ * Null outside Demo.
  */
-const DemoFleetFrameContext = createContext<DemoFleetFrame | null>(null);
+function createDemoFrameStore() {
+  let frame: DemoFleetFrame | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    getSnapshot: () => frame,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    publish: (next: DemoFleetFrame | null) => {
+      if (next === frame) return;
+      frame = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+const EMPTY_DEMO_FRAME_STORE = createDemoFrameStore();
+const DemoFleetFrameContext = createContext(EMPTY_DEMO_FRAME_STORE);
 
 /**
  * A projected remote coworker, shaped exactly like a local one (ENG-010 C2).
@@ -154,7 +177,7 @@ export function FleetProvider({
     OCConnectionStatus | 'initializing'
   >('initializing');
   const [isDemo, setIsDemo] = useState(false);
-  const [demoFrame, setDemoFrame] = useState<DemoFleetFrame | null>(null);
+  const [demoFrames] = useState(createDemoFrameStore);
   const [isLocal, setIsLocal] = useState(false);
   const [projects, setProjects] = useState<ProjectCatalogEntry[]>([]);
   const [attentionOwner, setAttentionOwner] = useState<{
@@ -211,9 +234,9 @@ export function FleetProvider({
       // The tick (W14) publishes a frame whenever the fleet moved; the Demo
       // shell reads it through `useDemoFleetFrame` where it used to read the
       // frozen fixture.
-      setDemoFrame(demoTransport.frame());
+      demoFrames.publish(demoTransport.frame());
       offDemoFrame = demoTransport.onFrame(frame => {
-        if (mounted) setDemoFrame(frame);
+        if (mounted) demoFrames.publish(frame);
       });
       setAttentionOwner({
         manager,
@@ -250,7 +273,7 @@ export function FleetProvider({
           console.log('[Exawatt] Local sessions mode (desktop) active');
           if (!mounted) return;
           setIsDemo(false);
-          setDemoFrame(null);
+          demoFrames.publish(null);
           setIsLocal(true);
           setConnectionStatus('connected');
 
@@ -369,7 +392,13 @@ export function FleetProvider({
       localTransportRef.current?.stop();
       localTransportRef.current = null;
     };
-  }, [manager, tenancyHydrated, demoTenantActive, demoSimulationTickMs]);
+  }, [
+    manager,
+    tenancyHydrated,
+    demoTenantActive,
+    demoSimulationTickMs,
+    demoFrames,
+  ]);
 
   // ENG-010 C2: configured Agent Sources contribute coworkers ALONGSIDE the
   // local fleet, never instead of it. The manager is keyed by source id, so
@@ -448,7 +477,7 @@ export function FleetProvider({
 
   return (
     <FleetContext.Provider value={value}>
-      <DemoFleetFrameContext.Provider value={demoFrame}>
+      <DemoFleetFrameContext.Provider value={demoFrames}>
         {children}
       </DemoFleetFrameContext.Provider>
     </FleetContext.Provider>
@@ -482,7 +511,8 @@ export function useSessionAttentionSource(): SessionAttentionCommands | null {
 /** The Demo tick's latest frame (ENG-027 W14), or null when the fleet source
  *  is not the Demo Workspace. Fixture Agents plus landings, as published. */
 export function useDemoFleetFrame(): DemoFleetFrame | null {
-  return useContext(DemoFleetFrameContext);
+  const store = useContext(DemoFleetFrameContext);
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, () => null);
 }
 
 export function useFleetConnection(): {
