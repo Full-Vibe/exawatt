@@ -19,6 +19,12 @@ export interface ProjectCatalogEntry {
   label: string;
   /** Optional presentation metadata; grouping never depends on it. */
   color?: string;
+  /**
+   * The Project's local folder binding, where the source has the concept.
+   * `null` is a folderless Project (folder-dependent verbs stay absent, per
+   * concepts.md); absent is a source with no folders at all, such as Demo.
+   */
+  rootPath?: string | null;
 }
 
 export type ContextGroupKind =

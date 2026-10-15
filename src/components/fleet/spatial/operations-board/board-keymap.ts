@@ -60,6 +60,12 @@ export const BOARD_KEYMAP: readonly BoardKeymapEntry[] = [
     owner: 'surface',
   },
   {
+    id: 'fixed-board-agent-extend',
+    keys: { key: '← ↑ ↓ →', modifiers: ['shift'] },
+    label: 'Fleet: add Agents to the selection',
+    owner: 'surface',
+  },
+  {
     id: 'fixed-board-pan',
     keys: { key: 'W A S D' },
     label: 'Fleet: pan board',

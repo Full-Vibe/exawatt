@@ -128,6 +128,14 @@ const isBoardCanvas = file =>
 
 export const SURFACE_GATES = [
   {
+    gate: 'eval:electron:fleet-direct',
+    why: 'a Fleet ghost slot must open the one composer in its own Project through the workspace pending slot',
+    match: file =>
+      (file.startsWith('src/components/fleet/spatial/ghost-slots/') &&
+        !/\.test\.tsx?$/.test(file)) ||
+      file === 'scripts/electron-fleet-direct-eval.mjs',
+  },
+  {
     gate: 'eval:settings:navigation',
     why: 'Settings remains searchable, deep-linkable and responsive as Fleet preferences grow',
     match: file =>
@@ -1689,6 +1697,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:source-compatibility': GATE,
   'eval:electron:chrome': GATE,
   'eval:electron:session-parity': GATE,
+  'eval:electron:fleet-direct': GATE,
 
   // (c) CI.
   'test:ci': CI,

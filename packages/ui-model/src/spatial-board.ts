@@ -2012,6 +2012,72 @@ export function selectSpatialBandSelection(
   return { agentIds: [...captured], childUnitIds: [...capturedChildren] };
 }
 
+/**
+ * A ghost slot (ENG-004 V4.2): the address the next Agent started in a Project
+ * will take, offered on the board as the place to start one.
+ *
+ * It is not a unit. It never enters band selection, the arrow walk, the
+ * census or any count, and it reserves nothing: when the Agent arrives, the
+ * layout's own `stableSlots` gives it this same lowest free index, which is
+ * why the ghost can promise "it lands here" without a second allocation
+ * policy.
+ */
+export interface SpatialBoardGhostSlot {
+  /** `ghost:<zoneId>:<slotIndex>`, stable while the slot stays free. */
+  id: string;
+  zoneId: string;
+  slotIndex: number;
+  x: number;
+  y: number;
+  size: number;
+  /** A launch asked for from this zone has not arrived yet: this is the slot
+   *  it will take, and the next free one is offered beside it. */
+  pending: boolean;
+}
+
+/**
+ * One ghost per Project at its next free slot; two while a launch from that
+ * Project is in flight (the reserved slot and the next one), never more.
+ *
+ * Only zones that draw their Agents as individual pieces get one. A zone drawn
+ * as a population field has no slot grammar on screen to extend, and the
+ * aggregate "+N more Projects" zone is not a Project.
+ */
+export function selectSpatialGhostSlots(
+  layout: SpatialBoardLayout,
+  options: { pendingZoneIds?: ReadonlySet<string> } = {}
+): SpatialBoardGhostSlot[] {
+  const usedByZone = new Map<string, Set<number>>();
+  for (const piece of layout.pieces) {
+    if (piece.kind !== 'agent') continue;
+    const used = usedByZone.get(piece.projectId) ?? new Set<number>();
+    used.add(piece.slotIndex);
+    usedByZone.set(piece.projectId, used);
+  }
+  const ghosts: SpatialBoardGhostSlot[] = [];
+  for (const zone of layout.zones) {
+    if (!zone.visible || zone.isAggregate) continue;
+    const used = new Set(usedByZone.get(zone.id));
+    // Agents exist but none is drawn as a piece: the zone is a field.
+    if (zone.agentCount > 0 && used.size === 0) continue;
+    const pending = options.pendingZoneIds?.has(zone.id) ?? false;
+    for (let offered = 0; offered < (pending ? 2 : 1); offered += 1) {
+      const slotIndex = nextFreeSlot(used);
+      const position = slotPosition(zone, slotIndex);
+      ghosts.push({
+        id: `ghost:${zone.id}:${slotIndex}`,
+        zoneId: zone.id,
+        slotIndex,
+        x: position.x,
+        y: position.y,
+        size: zone.unitSize,
+        pending: pending && offered === 0,
+      });
+    }
+  }
+  return ghosts;
+}
+
 export interface SpatialScopeActivity {
   agentCount: number;
   working: number;

@@ -346,7 +346,14 @@ describe('extractLocalWorkspaceProjects', () => {
           },
         ],
       })
-    ).toEqual([{ id: '/code/alpha', label: 'Alpha', color: '#19E6FF' }]);
+    ).toEqual([
+      {
+        id: '/code/alpha',
+        label: 'Alpha',
+        color: '#19E6FF',
+        rootPath: '/code/alpha',
+      },
+    ]);
   });
 
   it('deduplicates malformed layouts and falls back to the directory leaf', () => {
@@ -358,6 +365,20 @@ describe('extractLocalWorkspaceProjects', () => {
           { name: 'Missing path', tabs: [] },
         ],
       })
-    ).toEqual([{ id: '/code/alpha', label: 'alpha' }]);
+    ).toEqual([{ id: '/code/alpha', label: 'alpha', rootPath: '/code/alpha' }]);
+  });
+
+  // A ghost slot asks the workspace to start an Agent in this Project, so the
+  // board has to know whether there is a folder to start it in.
+  it('carries the folder binding, and a folderless Project as null', () => {
+    expect(
+      extractLocalWorkspaceProjects({
+        v: 5,
+        projects: [
+          { dir: 'registry-7', rootPath: null, name: 'Notes', tabs: [] },
+          { dir: '/code/beta', rootPath: '/code/beta', name: 'Beta', tabs: [] },
+        ],
+      }).map(project => project.rootPath)
+    ).toEqual([null, '/code/beta']);
   });
 });

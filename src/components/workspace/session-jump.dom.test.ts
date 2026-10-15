@@ -26,6 +26,7 @@ import {
   consumePendingRemoteAgentOpen,
   consumePendingReopenLastClosed,
   consumePendingSessionJump,
+  pendingAgentComposerProjectDir,
   requestAgentComposer,
   requestLaunch,
   requestOpenProject,
@@ -125,6 +126,22 @@ describe('session-jump launch verbs under tenant scope', () => {
 
     expect(detail).toEqual(request);
     expect(consumePendingAgentComposerRequest()).toEqual(request);
+  });
+
+  // The Fleet board's ghost slot (ENG-004 V4.2): the workspace opens the
+  // draft in that Project on mount, and the composer it hosts still gets the
+  // whole request, so reading the Project must not consume the slot.
+  it('names a bound Project without consuming the composer request', () => {
+    publishActiveTenantKind('personal');
+    const request = { projectDir: '/code/alpha' };
+
+    requestAgentComposer(request);
+
+    expect(pendingAgentComposerProjectDir()).toBe('/code/alpha');
+    expect(consumePendingAgentComposerRequest()).toEqual(request);
+    expect(pendingAgentComposerProjectDir()).toBeNull();
+    requestAgentComposer('claude');
+    expect(pendingAgentComposerProjectDir()).toBeNull();
   });
 
   it('carries Shell as a configuration selection without launching it', () => {

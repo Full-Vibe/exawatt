@@ -18,6 +18,7 @@ import {
   selectSpatialDelegationUnits,
   selectSpatialDirectionalTarget,
   type SpatialBoardDelegationUnit,
+  type SpatialBoardGhostSlot,
   type SpatialBoardTarget,
   type SpatialSelectionDirection,
   type SpatialBoardLayout,
@@ -321,9 +322,12 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   onToggleAgentSelect,
   onToggleZoneSelect,
   onBandSelect,
+  onExtendAgentSelection,
   onSelectDelegationChild,
   selectedChildTarget = null,
   delegationUnits,
+  ghostSlots,
+  onActivateGhost,
   sessionTransitionAgentId = null,
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
@@ -349,6 +353,9 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   onToggleAgentSelect?: (agentId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
   onBandSelect?: (band: SpatialBoardRect) => void;
+  /** Shift+arrows (V3.2's owed keyboard path): the Agents the walk passes
+   *  join the multi-selection, the keyboard twin of shift-clicking each. */
+  onExtendAgentSelection?: (agentIds: readonly string[]) => void;
   /** Which delegated child an activation came through (ENG-023 D3c). */
   onSelectDelegationChild?: (parentAgentId: string, childId: string) => void;
   /** The child arrow navigation currently sits on, if any. */
@@ -356,6 +363,9 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   /** Delegated children the board is drawing, as arrow/band targets. Derived
    *  from the layout when a caller has no reason to compute them. */
   delegationUnits?: readonly SpatialBoardDelegationUnit[];
+  /** Where the next Agent in each Project will stand (ENG-004 V4.2). */
+  ghostSlots?: readonly SpatialBoardGhostSlot[];
+  onActivateGhost?: (ghost: SpatialBoardGhostSlot) => void;
   sessionTransitionAgentId?: string | null;
   viewportStorageKey?: string;
   preserveDrawingBuffer?: boolean;
@@ -662,6 +672,22 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
           selectedTarget,
           direction
         );
+        // Shift extends: where the walk stood and where it lands both join
+        // the working set. A child stands for its parent, the unit Direct
+        // addresses (ENG-023 D2).
+        const reached =
+          target?.kind === 'agent'
+            ? target.agentId
+            : target?.kind === 'child'
+              ? target.parentAgentId
+              : null;
+        if (event.shiftKey && onExtendAgentSelection && reached) {
+          onExtendAgentSelection(
+            layout.selectedAgentId
+              ? [layout.selectedAgentId, reached]
+              : [reached]
+          );
+        }
         if (target?.kind === 'agent') {
           controller.current?.focusAgent(target.agentId);
           onMoveAgentSelection?.(target.agentId);
@@ -681,6 +707,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   }, [
     layout,
     onDrillProject,
+    onExtendAgentSelection,
     onMoveAgentSelection,
     onSelectDelegationChild,
     selectedTarget,
@@ -808,6 +835,8 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
               onManualCameraInput={suspendSelectionFollow}
               onClampEdges={handleClampEdges}
               onSelectDelegationChild={onSelectDelegationChild}
+              ghostSlots={ghostSlots}
+              onActivateGhost={onActivateGhost}
               selectedDelegationUnitId={
                 selectedChildTarget?.kind === 'child'
                   ? selectedChildTarget.unitId

@@ -13,6 +13,7 @@ import {
 import * as THREE from 'three';
 import {
   selectSpatialDelegationUnits,
+  type SpatialBoardGhostSlot,
   type SpatialBoardLayout,
   type SpatialBoardLens,
   type SpatialBoardProjection,
@@ -41,7 +42,11 @@ import {
 } from './operations-board-ambient';
 import { useHostRenderPolicy } from '@/lib/host-power/use-host-render-policy';
 import { BoardCameraRig } from './operations-board-camera-rig';
-import { BoardGrid, ZoneLayer } from './operations-board-zone-layer';
+import {
+  BoardGrid,
+  GhostSlotLayer,
+  ZoneLayer,
+} from './operations-board-zone-layer';
 import {
   AgentPieceLayer,
   MultiSelectionLayer,
@@ -51,6 +56,7 @@ import { createBoardHoverStore } from './operations-board-hover';
 import {
   AgentControls,
   DelegationControls,
+  GhostControls,
   ProjectControls,
 } from './operations-board-controls';
 
@@ -125,6 +131,8 @@ export function OperationsBoardCanvas({
   onClampEdges,
   onSelectDelegationChild,
   selectedDelegationUnitId = null,
+  ghostSlots,
+  onActivateGhost,
   preserveDrawingBuffer = false,
   theme,
 }: {
@@ -153,6 +161,9 @@ export function OperationsBoardCanvas({
   onSelectDelegationChild?: (parentAgentId: string, childId: string) => void;
   /** The delegated child arrow navigation sits on, so it wears the ring. */
   selectedDelegationUnitId?: string | null;
+  /** Where the next Agent in each Project will stand (ENG-004 V4.2). */
+  ghostSlots?: readonly SpatialBoardGhostSlot[];
+  onActivateGhost?: (ghost: SpatialBoardGhostSlot) => void;
   preserveDrawingBuffer?: boolean;
   theme: SpatialThemeSnapshot;
 }) {
@@ -304,6 +315,13 @@ export function OperationsBoardCanvas({
             hover={hover}
             theme={theme}
           />
+          {ghostSlots && onActivateGhost && (
+            <GhostSlotLayer
+              ghosts={ghostSlots}
+              onActivate={onActivateGhost}
+              theme={theme}
+            />
+          )}
           <AgentPieceLayer
             pieces={layout.pieces}
             delegationUnits={delegationUnits}
@@ -356,6 +374,17 @@ export function OperationsBoardCanvas({
             reduced={reduced}
             theme={theme}
           />
+          {ghostSlots && onActivateGhost && (
+            <GhostControls
+              ghosts={ghostSlots}
+              zones={visibleZones}
+              altitude={layout.altitude}
+              focusedProjectId={layout.focusedProjectId}
+              onActivate={onActivateGhost}
+              reduced={reduced}
+              theme={theme}
+            />
+          )}
           <DelegationControls
             units={delegationUnits}
             pieces={layout.pieces}

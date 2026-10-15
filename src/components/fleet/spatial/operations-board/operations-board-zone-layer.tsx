@@ -16,10 +16,12 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ComponentRef,
 } from 'react';
 import * as THREE from 'three';
 import {
+  type SpatialBoardGhostSlot,
   type SpatialBoardLayout,
   type SpatialBoardProjectZone,
   type SpatialBoardRect,
@@ -34,6 +36,7 @@ import {
 } from '../spatial-theme';
 import {
   boardRectCenter as rectCenter,
+  boardWorldPosition,
 } from './operations-board-camera';
 import { mixHexColors } from '@/lib/appearance/color';
 import { FOCUS_RECESSION_MIX } from './operations-board-materials';
@@ -437,6 +440,113 @@ export const ZoneLayer = memo(function ZoneLayer({
             theme={theme}
           />
         ))}
+    </>
+  );
+});
+
+const GHOST_RING_POINTS: Array<[number, number, number]> = Array.from(
+  { length: 49 },
+  (_, index) => {
+    const angle = (index / 48) * Math.PI * 2;
+    return [Math.cos(angle), Math.sin(angle), 0];
+  }
+);
+const GHOST_SOCKET_SCALE = 0.72;
+const GHOST_PLUS_POINTS: Array<[number, number, number]> = [
+  [-0.32, 0, 0],
+  [0.32, 0, 0],
+  [0, -0.32, 0],
+  [0, 0.32, 0],
+];
+const GHOST_HIT_GEOMETRY = new THREE.CircleGeometry(1, 24);
+
+/**
+ * Ghost slots (ENG-004 V4.2): where the next Agent in each Project will
+ * stand, drawn as an empty dashed socket of the same size as an Agent. It is
+ * the quietest mark on the board (calm attention): muted until pointed at,
+ * and the reserved slot of a launch in flight takes the selection role, the
+ * one hue the board already spends on "you asked for this".
+ *
+ * Pointer activation lives here because the ghost exists at every altitude;
+ * its keyboard and accessible twin is `GhostControls`, which follows the
+ * Agent controls' rule of existing below Fleet only.
+ */
+export const GhostSlotLayer = memo(function GhostSlotLayer({
+  ghosts,
+  onActivate,
+  theme,
+}: {
+  ghosts: readonly SpatialBoardGhostSlot[];
+  onActivate: (ghost: SpatialBoardGhostSlot) => void;
+  theme: SpatialThemeSnapshot;
+}) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  useCursor(hoveredId !== null);
+  return (
+    <>
+      {ghosts.map(ghost => {
+        // Smaller than a unit: the lattice is drawn at touching pitch, and an
+        // empty socket the size of an Agent crowded its neighbour.
+        const radius = (ghost.size / 2) * GHOST_SOCKET_SCALE;
+        const hovered = hoveredId === ghost.id;
+        const color = ghost.pending
+          ? theme.selection
+          : hovered
+            ? theme.label
+            : theme.labelMuted;
+        return (
+          <group
+            key={ghost.id}
+            position={boardWorldPosition(ghost, 0.4)}
+            userData={{ boardGhost: ghost.id }}
+          >
+            <Line
+              points={GHOST_RING_POINTS}
+              color={color}
+              lineWidth={hovered || ghost.pending ? 1.6 : 1.1}
+              dashed={!ghost.pending}
+              dashSize={0.12}
+              gapSize={0.1}
+              toneMapped={false}
+              transparent
+              opacity={hovered || ghost.pending ? 0.95 : 0.6}
+              depthWrite={false}
+              raycast={() => null}
+              scale={radius}
+            />
+            <Line
+              points={GHOST_PLUS_POINTS}
+              segments
+              color={color}
+              lineWidth={1.1}
+              toneMapped={false}
+              transparent
+              opacity={hovered ? 0.9 : 0.45}
+              depthWrite={false}
+              raycast={() => null}
+              scale={radius}
+            />
+            <mesh
+              geometry={GHOST_HIT_GEOMETRY}
+              scale={radius}
+              onPointerOver={event => {
+                event.stopPropagation();
+                setHoveredId(ghost.id);
+              }}
+              onPointerOut={() =>
+                setHoveredId(current => (current === ghost.id ? null : current))
+              }
+              onClick={(event: ThreeEvent<MouseEvent>) => {
+                if (event.delta > 5) return;
+                event.stopPropagation();
+                onActivate(ghost);
+              }}
+            >
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+          </group>
+        );
+      })}
     </>
   );
 });

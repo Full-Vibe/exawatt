@@ -44,6 +44,7 @@ import {
 } from '@exawatt/ui-model';
 import { createAgentProjectOwnersSelector } from './agent-project-owners';
 import { useFleetAttention } from './use-fleet-attention';
+import { useGhostSlots } from './ghost-slots/use-ghost-slots';
 import { SpatialSelectionPanel } from './spatial-selection-panel';
 import { useMinuteClock } from './use-minute-clock';
 import {
@@ -291,6 +292,16 @@ export function SpatialFleetClient() {
     return pruned.size === multiSelectedIds.size ? multiSelectedIds : pruned;
   }, [filteredState.agents, multiSelectedIds]);
 
+  // Shift+arrows: the walk's Agents join the working set; never removes.
+  const extendAgentSelection = useCallback((agentIds: readonly string[]) => {
+    setMultiSelectedIds(previous => {
+      if (agentIds.every(id => previous.has(id))) return previous;
+      const next = new Set(previous);
+      for (const id of agentIds) next.add(id);
+      return next;
+    });
+  }, []);
+
   const toggleAgentSelect = useCallback((agentId: string) => {
     setMultiSelectedIds(previous => {
       const next = new Set(previous);
@@ -494,8 +505,16 @@ export function SpatialFleetClient() {
   // Clicking an agent drills to the agent (with its owning Project as the
   // focused context); clicking empty space releases the working set first,
   // then ascends (the RTS deselect-before-zoom-out order).
+  const openWorkspace = useCallback(
+    () => navigateCommandSurface('/workspace'),
+    [navigateCommandSurface]
+  );
+  const { ghostSlots, activateGhost, notice: ghostNotice, clearNotice } =
+    useGhostSlots({ layout: boardLayout, projects, isDemo, openWorkspace });
+
   const handleSelectAgent = useCallback(
     (agentId: string | null) => {
+      clearNotice();
       if (agentId) {
         const owner = agentProjectOwners.get(agentId) ?? null;
         navigate({ altitude: 'agent', project: owner, agent: agentId });
@@ -508,6 +527,7 @@ export function SpatialFleetClient() {
     [
       ascend,
       clearMultiSelect,
+      clearNotice,
       agentProjectOwners,
       multiSelection.size,
       navigate,
@@ -547,13 +567,14 @@ export function SpatialFleetClient() {
         return;
       }
       if (event.key === 'Escape') {
-        if (multiSelection.size > 0) clearMultiSelect();
+        if (ghostNotice) clearNotice();
+        else if (multiSelection.size > 0) clearMultiSelect();
         else ascend();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ascend, clearMultiSelect, multiSelection.size]);
+  }, [ascend, clearMultiSelect, clearNotice, ghostNotice, multiSelection.size]);
 
   const focusedZoneLabel = scene.groups[0]?.label ?? null;
   const inspectedAgent =
@@ -903,14 +924,26 @@ export function SpatialFleetClient() {
               onToggleAgentSelect={toggleAgentSelect}
               onToggleZoneSelect={toggleZoneSelect}
               onBandSelect={bandSelect}
+              onExtendAgentSelection={extendAgentSelection}
               onSelectDelegationChild={selectDelegationChild}
               selectedChildTarget={selectedChildTarget}
               delegationUnits={delegationUnits}
+              ghostSlots={ghostSlots}
+              onActivateGhost={activateGhost}
               sessionTransitionAgentId={sessionHandoffAgentId}
               viewportStorageKey={viewportStorageKey}
             />
           ) : (
             <BoardLoadingGround />
+          )}
+          {ghostNotice && (
+            <p
+              role="status"
+              data-board-ghost-notice
+              className="exa-material-overlay absolute left-1/2 top-3 z-20 max-w-[calc(100%-2rem)] -translate-x-1/2 border border-border px-3 py-2 text-chrome-meta text-foreground"
+            >
+              {ghostNotice}
+            </p>
           )}
         </section>
 

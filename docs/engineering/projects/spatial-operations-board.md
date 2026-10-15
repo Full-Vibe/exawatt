@@ -3559,3 +3559,45 @@ view choice, and a fresh installation writes no implicit preference.
 P5 uses a separate normal landing and queued dogfood update. Installation is
 verified from the worker receipt; the running app is not restarted automatically.
 The next look review is the operator using the actual app, as requested.
+
+### 2026-10-15 — V4.2 L1: ghost slots and the keyboard path
+
+**Ghost slots and Shift+arrows landed; Direct follows as L2.** Each Project
+zone drawn as individual Agents offers one ghost at its next free slot
+(`selectSpatialGhostSlots`, beside the layout's own `stableSlots`, so the
+Agent started from a ghost lands exactly on it; a contract test proves the
+arrival). Two while a launch from that zone is in flight, never more. Fields
+and the aggregate zone get none. On Dots the ghost is a dashed socket at 0.72
+of a unit with a quiet plus, muted until pointed at; the reserved slot takes
+the selection role. At first the socket was a full unit and crowded its
+neighbour at the lattice's touching pitch (screenshot-caught). Tiles keeps its
+decorative sockets for now; the shared-renderer ghost ring is still owed.
+
+Activation is one path: `requestAgentComposer({ projectDir })` through the
+existing pending slot, then the workspace. The workspace opens the same draft
+tab and `AgentLauncher` that ⌘T opens, in the ghost's Project rather than the
+active one (`pendingAgentComposerProjectDir` reads the binding without
+consuming the request the composer still needs). Rendering the composer in
+place on the board was rejected on evidence: Session creation (tab, PTY,
+layout persistence) is owned by the mounted workspace, so an in-place launch
+would be the second launcher BUG-051 warns about. For the same reason Enter
+on a ghost opens the composer too rather than starting an idle Agent: ghost
+then Start is already two keystrokes to an idle Agent, and the board has no
+launch path of its own to skip to. Demo offers the ghost and says "Demo
+cannot start Agents"; a Project with no folder binding says so at the ghost,
+because the composer is folder-keyed and cannot mount without one (the
+catalog now carries `rootPath`, null for folderless). Esc dismisses that
+notice first.
+
+Keyboard: Shift+arrows add the walk's Agents to the working set (owed since
+V3.2), keymap entry `fixed-board-agent-extend`. The ghost's keyboard twin is a
+DOM control below Fleet altitude, like the Agent controls.
+
+Evidence: `eval:spatial` desktop scenario now extends with Shift+arrows,
+releases with Esc before ascending, finds one ghost in the focused Project and
+gets the Demo answer; `eval:electron:fleet-direct` (new) opens two Projects,
+leaves B active, uses A's ghost from the board and finds the composer in A.
+The eval's status-filter check compared byte-identical totals across a live
+Demo that ticks every second (ENG-027 W14) and its "Pause simulation" button
+no longer exists, so it failed every run; it now asserts the premise that
+matters, that filtered-out statuses are still counted.

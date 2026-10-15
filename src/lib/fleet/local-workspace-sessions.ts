@@ -35,6 +35,7 @@ export function extractLocalWorkspaceProjects(
       dir?: unknown;
       name?: unknown;
       color?: unknown;
+      rootPath?: unknown;
     };
     if (
       typeof project.dir !== 'string' ||
@@ -52,6 +53,14 @@ export function extractLocalWorkspaceProjects(
       ...(typeof project.color === 'string' && project.color
         ? { color: project.color }
         : {}),
+      // The workspace's own boundary (`projectRootPath`): an absent binding
+      // is a legacy group whose key is its folder; null is folderless.
+      rootPath:
+        project.rootPath === undefined
+          ? project.dir
+          : typeof project.rootPath === 'string' && project.rootPath
+            ? project.rootPath
+            : null,
     });
   }
   return projects;

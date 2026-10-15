@@ -7,6 +7,7 @@ import {
   selectSpatialBoardLayout,
   selectSpatialDelegationUnits,
   selectSpatialDirectionalTarget,
+  selectSpatialGhostSlots,
   selectSpatialScopeActivity,
   spatialBoardPieceForAgent,
   spatialBoardZoneForAgent,
@@ -1402,5 +1403,75 @@ describe('independent inspection detail', () => {
     );
     expect(after.bounds).toBe(before.bounds);
     expect(after.stats).toBe(before.stats);
+  });
+});
+
+describe('selectSpatialGhostSlots', () => {
+  it('offers one ghost per Project at the slot the next Agent takes', () => {
+    const state = fleet([
+      agent('a1', 'Alpha'),
+      agent('a2', 'Alpha'),
+      agent('b1', 'Beta'),
+    ]);
+    const layout = selectSpatialBoardLayout(state, {
+      projects: [{ id: 'Gamma', label: 'Gamma' }],
+    });
+    const ghosts = selectSpatialGhostSlots(layout);
+    expect(ghosts.map(ghost => ghost.zoneId).sort()).toEqual(
+      layout.zones.map(zone => zone.id).sort()
+    );
+    // The promise the ghost makes: the Agent started here lands exactly on
+    // it, because the layout's own allocation hands out the same slot.
+    for (const ghost of ghosts) {
+      const zone = layout.zones.find(entry => entry.id === ghost.zoneId)!;
+      const label = zone.label;
+      const arrived = selectSpatialBoardLayout(
+        fleet([...Object.values(state.agents), agent('new', label)]),
+        {
+          projects: [{ id: 'Gamma', label: 'Gamma' }],
+          previousLayout: layout,
+        }
+      );
+      const piece = arrived.pieces.find(entry => entry.agentId === 'new')!;
+      expect(piece.slotIndex).toBe(ghost.slotIndex);
+      expect({ x: piece.x, y: piece.y }).toEqual({ x: ghost.x, y: ghost.y });
+    }
+    // A ghost never reads as a unit, pending or not.
+    expect(ghosts.every(ghost => !ghost.pending)).toBe(true);
+  });
+
+  it('offers two while a launch is in flight, never more', () => {
+    const layout = selectSpatialBoardLayout(
+      fleet([agent('a1', 'Alpha'), agent('b1', 'Beta')])
+    );
+    const alpha = layout.zones.find(zone => zone.label === 'Alpha')!;
+    const ghosts = selectSpatialGhostSlots(layout, {
+      pendingZoneIds: new Set([alpha.id]),
+    });
+    const inAlpha = ghosts.filter(ghost => ghost.zoneId === alpha.id);
+    expect(inAlpha).toHaveLength(2);
+    expect(inAlpha.filter(ghost => ghost.pending)).toHaveLength(1);
+    expect(new Set(inAlpha.map(ghost => ghost.slotIndex)).size).toBe(2);
+    expect(ghosts.filter(ghost => ghost.zoneId !== alpha.id)).toHaveLength(1);
+  });
+
+  it('skips Projects drawn as a field and the aggregate zone', () => {
+    const state = projectFleet(3, 20);
+    const layout = selectSpatialBoardLayout(state, {
+      maxFleetPiecesPerZone: 12,
+      maxProjectZones: 1,
+    });
+    expect(layout.zones.some(zone => zone.isAggregate)).toBe(true);
+    expect(selectSpatialGhostSlots(layout)).toEqual([]);
+  });
+
+  it('skips Projects the active filter hides', () => {
+    const state = fleet([agent('a1', 'Alpha'), agent('b1', 'Beta')]);
+    const layout = selectSpatialBoardLayout(state, {
+      visibleAgentIds: new Set(['a1']),
+    });
+    const ghosts = selectSpatialGhostSlots(layout);
+    const visible = layout.zones.filter(zone => zone.visible).map(z => z.id);
+    expect(ghosts.map(ghost => ghost.zoneId)).toEqual(visible);
   });
 });

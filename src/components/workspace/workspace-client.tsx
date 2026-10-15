@@ -115,6 +115,8 @@ import {
   consumePendingProjectPicker,
   FOCUS_AGENT_COMPOSER_EVENT,
   hasPendingAgentComposer,
+  pendingAgentComposerProjectDir,
+  type AgentComposerRequest,
   REOPEN_CLOSED_EVENT,
   REOPEN_LAST_CLOSED_EVENT,
   consumePendingReopenLastClosed,
@@ -664,9 +666,38 @@ export function WorkspaceClient() {
     };
   }, [inElectron, summonProjectOpener]);
 
+  // A composer request bound to a Project (the Fleet board's ghost slot,
+  // ENG-004 V4.2) opens its draft THERE: the same draft tab and composer ⌘T
+  // opens, in the Project the operator pointed at rather than the active one.
+  const openBoundDraft = useCallback(
+    (dir: string) => {
+      const project = projects.find(candidate => candidate.dir === dir);
+      if (!project || projectRootPath(project) === null) {
+        summonProjectOpener();
+        return;
+      }
+      if (!createDraftTab(project.dir)) summonProjectOpener();
+    },
+    [createDraftTab, projects, summonProjectOpener]
+  );
+  // The request usually arrives from another route, before this workspace
+  // has mounted: it waits in the pending slot until the layout is loaded.
+  const boundDraftRequested = useRef(false);
+  useEffect(() => {
+    if (!inElectron || !ready || boundDraftRequested.current) return;
+    boundDraftRequested.current = true;
+    const dir = pendingAgentComposerProjectDir();
+    if (dir) openBoundDraft(dir);
+  }, [inElectron, openBoundDraft, ready]);
+
   useEffect(() => {
     if (!inElectron) return;
     const ensureProject = (event: Event) => {
+      const detail = (event as CustomEvent<AgentComposerRequest>).detail;
+      if (detail && typeof detail === 'object' && detail.projectDir) {
+        openBoundDraft(detail.projectDir);
+        return;
+      }
       if (!activeProject || projectRootPath(activeProject) === null) {
         summonProjectOpener();
         return;
@@ -682,12 +713,22 @@ export function WorkspaceClient() {
       );
     };
     window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
-    if (!activeProject && hasPendingAgentComposer()) {
+    if (
+      !activeProject &&
+      hasPendingAgentComposer() &&
+      pendingAgentComposerProjectDir() === null
+    ) {
       summonProjectOpener();
     }
     return () =>
       window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
-  }, [inElectron, activeProject, createDraftTab, summonProjectOpener]);
+  }, [
+    inElectron,
+    activeProject,
+    createDraftTab,
+    openBoundDraft,
+    summonProjectOpener,
+  ]);
 
   // One derivation for every resume count (BUG-185): the members are the
   // tabs `tabCanResumeAsAgent` admits, which reads the same lifecycle owner

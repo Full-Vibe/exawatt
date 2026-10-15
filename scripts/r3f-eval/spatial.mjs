@@ -386,10 +386,22 @@ async function checkCanonicalStatusFilters(page) {
     await page.getByText(/\d+ shown/).isVisible(),
     'Filtered result count is not visible'
   );
+  // The totals are fleet-wide, so the statuses the filter leaves OUT keep
+  // their counts. Compared as "still counted" rather than "byte-identical":
+  // the Demo fleet is alive (ENG-027 W14) and ticks every second, so the two
+  // readings legitimately differ by whatever changed in between, which made
+  // the old equality fail on every run once the Demo stopped holding still.
+  const excluded = text =>
+    ['Needs you', 'Error', 'Idle'].reduce((sum, label) => {
+      const match = text.match(new RegExp(`${label}\\s*(\\d+)`));
+      return sum + (match ? Number(match[1]) : 0);
+    }, 0);
+  const totalsAfter = await page
+    .locator('[aria-label="Fleet Agent statuses"]')
+    .innerText();
   check(
-    (await page.locator('[aria-label="Fleet Agent statuses"]').innerText()) ===
-      totalsBefore,
-    'Fleet-wide status totals changed with the active filter'
+    excluded(totalsBefore) === 0 || excluded(totalsAfter) > 0,
+    'Fleet-wide status totals followed the active filter'
   );
   await page.getByTitle('Clear search and filters').click();
   await page.waitForFunction(
@@ -810,6 +822,61 @@ async function checkDisplayResolution(browser, lowPower = false) {
   return result;
 }
 
+/**
+ * ENG-004 V4.2 at Project altitude, after `openProject` selected an Agent.
+ * Shift+arrows extend the working set along the arrow walk, Escape releases
+ * it before anything else, and the focused Project offers exactly one ghost
+ * slot whose activation answers honestly (the browser board is Demo, which
+ * cannot start Agents; the composer half is proven in Electron).
+ */
+async function checkExtendAndGhost(page) {
+  // The walk may stand nowhere after the minimap checks: the first press
+  // then reaches one Agent, the second adds where it stood and the next.
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.waitForFunction(() =>
+    new URL(location.href).searchParams.has('agent')
+  );
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.waitForFunction(
+    () =>
+      Number(
+        document
+          .querySelector('[data-spatial-board]')
+          ?.getAttribute('data-board-multi-count') ?? 0
+      ) >= 2,
+    null,
+    { timeout: 10_000 }
+  );
+  await page.locator('[data-spatial-selection-panel="multi"]').waitFor();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-spatial-board]')
+        ?.getAttribute('data-board-multi-count') === '0'
+  );
+  check(
+    new URL(page.url()).searchParams.get('altitude') === 'project',
+    'Escape ascended before releasing the multi-selection'
+  );
+  if (fleetView !== 'v1') return { multi: 2, ghosts: null };
+  const ghosts = page.locator('button[data-board-ghost]');
+  await ghosts.first().waitFor({ state: 'visible' });
+  const ghostCount = await ghosts.count();
+  check(ghostCount === 1, `Focused Project offered ${ghostCount} ghost slots`);
+  await ghosts.first().focus();
+  await page.keyboard.press('Enter');
+  const notice = page.locator('[data-board-ghost-notice]');
+  await notice.waitFor({ state: 'visible' });
+  await page.keyboard.press('Escape');
+  await notice.waitFor({ state: 'hidden' });
+  check(
+    new URL(page.url()).searchParams.get('altitude') === 'project',
+    'Escape ascended before dismissing the ghost notice'
+  );
+  return { multi: 2, ghosts: ghostCount };
+}
+
 async function openAgent(page, units) {
   const unitCount = await units.count();
   check(unitCount > 0, 'Project regime has no accessible Agent units');
@@ -991,6 +1058,7 @@ async function runScenario(browser, scenario) {
         page,
         projectCount
       );
+      result.directAndGhost = await checkExtendAndGhost(page);
     }
     await page.waitForTimeout(1_000);
     if (!scenario.mobile) await page.evaluate(() => window.scrollTo(0, 0));

@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import {
   SESSION_STOPPED_OUTLINE,
   type SpatialBoardDelegationUnit,
+  type SpatialBoardGhostSlot,
   type SpatialBoardLayout,
   type SpatialBoardLens,
   type SpatialBoardPiece,
@@ -607,6 +608,72 @@ export const AgentControls = memo(function AgentControls({
                   {delegationKinds ? ` · ${delegationKinds}` : ''}
                 </span>
               )}
+            </span>
+          </button>
+        </DampedHtmlAnchor>
+      );
+    });
+});
+
+/**
+ * The keyboard and accessible twin of a ghost slot (ENG-004 V4.2). Like the
+ * Agent controls it exists below Fleet only, for the Project in focus: one
+ * Tab stop after that Project's Agents, Enter opens the composer there.
+ */
+export const GhostControls = memo(function GhostControls({
+  ghosts,
+  zones,
+  altitude,
+  focusedProjectId,
+  onActivate,
+  reduced,
+  theme,
+}: {
+  ghosts: readonly SpatialBoardGhostSlot[];
+  zones: readonly SpatialBoardProjectZone[];
+  altitude: SpatialBoardLayout['altitude'];
+  focusedProjectId: string | null;
+  onActivate: (ghost: SpatialBoardGhostSlot) => void;
+  reduced: boolean;
+  theme: SpatialThemeSnapshot;
+}) {
+  if (altitude === 'fleet') return null;
+  return ghosts
+    .filter(ghost => ghost.zoneId === focusedProjectId)
+    .map(ghost => {
+      const project =
+        zones.find(zone => zone.id === ghost.zoneId)?.label ?? 'this Project';
+      return (
+        <DampedHtmlAnchor
+          key={`control:${ghost.id}`}
+          position={boardWorldPosition(ghost, 1.2)}
+          hitSize={ghost.size * 1.35}
+          reduced={reduced}
+          center
+        >
+          <button
+            type="button"
+            style={{
+              width: 'var(--board-hit-size, 44px)',
+              height: 'var(--board-hit-size, 44px)',
+              pointerEvents: 'auto',
+              color: theme.selection,
+            }}
+            data-board-ghost={ghost.zoneId}
+            data-board-ghost-pending={ghost.pending || undefined}
+            aria-label={`Start an Agent in ${project}`}
+            onClick={() => onActivate(ghost)}
+            className="board-control-enter group relative grid h-11 w-11 cursor-pointer place-items-center rounded-full border border-transparent bg-transparent outline-none focus-visible:border-current active:translate-y-px"
+          >
+            <span
+              className="exa-material-overlay pointer-events-none absolute left-1/2 top-[calc(100%+3px)] w-28 -translate-x-1/2 border px-1.5 py-1 text-center text-chrome-micro font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+              style={{
+                borderColor: theme.unitMuted,
+                color: theme.label,
+                boxShadow: `0 8px 22px ${theme.shadow}`,
+              }}
+            >
+              {ghost.pending ? 'Starting here' : 'Start an Agent here'}
             </span>
           </button>
         </DampedHtmlAnchor>

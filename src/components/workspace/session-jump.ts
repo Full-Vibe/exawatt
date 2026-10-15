@@ -33,6 +33,12 @@ export type AgentComposerConfigurationSnapshot =
 export interface AgentComposerConfigurationRequest {
   configurationId?: string;
   configuration?: AgentComposerConfigurationSnapshot;
+  /**
+   * The Project the composer opens in, by its workspace grouping key (the
+   * Fleet board's ghost slot, ENG-004 V4.2). Absent means the active Project,
+   * which is every other caller.
+   */
+  projectDir?: string;
 }
 
 export type AgentComposerRequest =
@@ -295,6 +301,17 @@ export function consumePendingAgentComposer():
     | AgentSourceId
     | null
     | undefined;
+}
+
+/** The Project a pending composer request is bound to, without consuming
+ *  it: the workspace opens the draft there on mount, and the composer that
+ *  draft hosts consumes the request for its source and focus. */
+export function pendingAgentComposerProjectDir(): string | null {
+  if (!hasPendingAgentComposer()) return null;
+  const value = pendingAgentComposer?.value;
+  return value && typeof value === 'object' && value.projectDir
+    ? value.projectDir
+    : null;
 }
 
 export function hasPendingAgentComposer(): boolean {

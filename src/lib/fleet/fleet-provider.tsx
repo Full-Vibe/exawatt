@@ -157,7 +157,8 @@ function sameProjectCatalog(
       (project, index) =>
         project.id === next[index]?.id &&
         project.label === next[index]?.label &&
-        project.color === next[index]?.color
+        project.color === next[index]?.color &&
+        project.rootPath === next[index]?.rootPath
     )
   );
 }
