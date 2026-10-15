@@ -380,6 +380,12 @@ Four Antigravity facts, verified on Antigravity CLI 1.2.17 (2026-10-05):
   but nothing a launch can read says which models accept which, so no effort
   control is offered. `invoke_subagent` fires a start event and no completion
   event, so delegated work is declared unreported rather than shown half-way.
+- **Google's consumer terms do not cover third-party launchers.** Antigravity's
+  FAQ says wrapping `agy` inside third-party applications is not supported on
+  consumer plans and may lead to account suspension. Exawatt starts your own
+  `agy` with your own sign-in in a terminal you watch, injects no credential,
+  and runs no agent turn on your behalf; the source card says so before you
+  launch, and the choice is yours.
 
 Grok-the-model has been launchable through OpenCode since that source landed;
 Grok Build is the native harness — its own TUI, plan mode, subagents, and

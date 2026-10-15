@@ -71,6 +71,14 @@ same Project. A Gateway or Agent Source is never silently promoted into a
 Project, and detaching a source or Agent projection does not delete the
 Project it was mapped to.
 
+A harness's own project store (the directories Claude Code, Codex or
+Antigravity remember) is discovery evidence, read and never written. Exawatt
+may suggest those directories as Projects to open; a suggestion becomes a
+Project only when opened, and the git common directory is the join, so the
+same folder known to several harnesses is one Project and an Agent of any
+harness opened there lands in it. A chat product's Project (claude.ai,
+ChatGPT) that exposes no listing is linked by the user, never discovered.
+
 An explicitly opened zero-Agent Project remains open. Closing its last Agent
 also leaves the Project open: the empty composer is useful Project state, not a
 countdown to deletion. Once that empty Project is inactive for a short tunable
@@ -243,6 +251,7 @@ Examples:
 - intent or proposed action declared
 - status changed
 - message streamed
+- message sent to another Agent over the bus, stamped with its sender
 - tool used
 - file changed
 - blocker raised

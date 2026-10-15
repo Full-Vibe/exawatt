@@ -123,3 +123,136 @@ same day), which matches this default. Unshaped.
 - [The Orchestration of Multi-Agent Systems: Architectures, Protocols, and Enterprise Adoption (arXiv 2601.13671)](https://arxiv.org/html/2601.13671v1)
 - [Sleep-time Compute (arXiv 2504.13171), via Letta/Berkeley coverage](https://www.mindstudio.ai/blog/claude-dreaming-feature-self-improving-agent-memory)
 - [OpenClaw Auto-Dream — periodic consolidation with candidate stores and rollback](https://github.com/LeoYeAI/openclaw-auto-dream)
+
+## 2026-10-14 — Design pass: the bus becomes real, across harnesses (decision `0052`)
+
+<!-- exawatt:public-omit-begin the operator brief is private source material -->
+Source: the 2026-10-14 operator brief (`docs/research/operator-briefs/2026-10-14-gemini-bus-direct-onboarding-analytics-brief.md`) and the research record `docs/research/market/2026-10-14-agent-bus-group-command-and-on-ramp-landscape.md` §1–§4.
+<!-- exawatt:public-omit-end -->
+
+The operator asked for realtime agent-to-agent messaging across Claude Code,
+Codex and Gemini (Antigravity), visible in the product, starting simple. His
+rules, recorded in decision `0052`: deliver immediately, add no approvals of
+Exawatt's own, keep no counter, police nothing, and never productize a debate.
+"It's up to the user how they want their agents to interact or what prompt
+they give them."
+
+### What this amends
+
+- The 2026-08-02 ladder started at assignments and put directed notes later.
+  C4 directed messages is now the first built rung; C2 assignments stay gated
+  on the recorded collision evidence; C5 stays gated.
+- The 2026-09-23 recommendation that a cross-harness message is drafted by the
+  agent and sent by the operator is withdrawn.
+- "The bus already exists" stays true for inbound events. Outbound delivery to
+  another harness is new work on top of it, not a second channel: the same
+  per-Session token and loopback listener carry a `send` request, and
+  delivery adapters hand the message to the receiving harness through its own
+  door.
+
+### Architecture (ten miles)
+
+```text
+sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus (main)
+                                                              │  directory: Session id ⇄ name ⇄ harness ⇄ Project
+                                                              │  envelope: stamped sender, recipient, time, Project
+                                                              │  ledger: machine-local JSONL per Project (size class)
+                                                              ▼
+                                     delivery adapter for the recipient's harness
+   Claude Code ──▶ per-session Unix socket (documented; push between tool calls; the harness's own inbound rule applies)
+   Codex       ──▶ `codex queue --thread <id>` for an interactive tab; app-server `turn/steer` for an Exawatt-owned thread
+   Antigravity ──▶ `--input-format stream-json` for an Exawatt-owned run; bracketed paste into the terminal when idle for an interactive tab (ledger: `delivered: terminal`)
+   others      ──▶ bracketed paste when idle (`terminal`), or `undeliverable` with the reason
+                                                              │
+                                                              ▼
+                                          viewer: Team rail (C1 live), Fleet selection panel (V4.2 Direct)
+```
+
+- **Directory.** The Exawatt Session id is the address. The display name is
+  the Agent's label (the tab title the operator sees); `@name` resolves within
+  the Project first, then the Workspace; an ambiguous name fails at the sender
+  with the candidates listed. The directory is the existing session store plus
+  the connected-source roster; nothing new is persisted for it.
+- **Envelope.** Exawatt stamps `from` (Session id, name, harness, Project),
+  `to`, `at`, `kind` (`agent` or `operator`), and a `reply` hint. The receiving
+  harness sees one text block that opens with the stamp, so the model knows it
+  is reading another Agent, not the user, and knows how to reply. The sending
+  model never writes the stamp.
+- **Outbound tools, two rungs.** Ten feet: a small `exawatt` executable on the
+  launched Session's `PATH` with `exawatt agents` and `exawatt send <to> <text>`
+  (plus `exawatt inbox` for harnesses with no push), reading the channel port,
+  token and Session id from the launch environment the ENG-023 injection
+  already sets. It works in every harness that has a shell tool, today, with no
+  per-harness MCP wiring. Ten miles: an Exawatt MCP server offering the same
+  three tools, injected per launch where the harness accepts a per-launch MCP
+  config (Claude Code `--mcp-config`; Codex `-c mcp_servers.…`), so the tools
+  are discoverable in the model's tool list rather than learned from a prompt.
+  Both rungs call the same `send`.
+- **Inbound rule.** Exawatt delivers unconditionally. A harness's own inbound
+  rule is respected as that harness's dialog (Claude Code's
+  `crossSessionInbound` may hold a message under an Ask-first permission mode
+  and expires it after five minutes; the ledger records `held` then
+  `delivered` or `expired` from the hook that reports it, or `unknown`).
+- **Ledger.** `userData/bus/<projectId>.jsonl`, append-only, one record per
+  message with the envelope, the text, and the delivery result; declares a
+  size class per decision `0039` (bounded by count and bytes, oldest pruned,
+  never silently truncated mid-record). Machine-local; the repo blackboard
+  under `.exawatt/` stays the deliberately curated durable store, and an
+  export of one thread into it is an operator verb, never automatic.
+- **Viewer (C1, live).** A second Team rail beside the roadmap rail, docked
+  at the same breakpoint and a ⌘-drawer below it: a per-Project list of
+  messages newest first (`sender → recipient`, first line, time, delivery
+  glyph), an unread count in the rail tab, and a thread view on click (every
+  message between those two Sessions, full text, with "Send as operator" at
+  the bottom). That is the zoom-out ("chatter is happening") and the zoom-in
+  ("read and mediate") the operator named, in one rail. Fleet's selection
+  panel shows the same unread count on a selected Agent. Nothing summarizes,
+  scores or flags a thread.
+- **The operator is a sender.** V4.2 Direct and the rail's "Send as
+  operator" use the same bus with `kind: operator`, delivered through the
+  harness's user-input door (the terminal for Claude Code, since its TUI
+  queues typed input while busy; `codex queue` for Codex; the terminal for
+  Antigravity), so the message is the user's turn, not a peer's note.
+- **Boundaries that hold.** No message can answer a permission prompt, change
+  a policy, or run anything; it is text. The substrate degrades to nothing:
+  with Exawatt closed, the `exawatt` executable is absent and the Agent
+  behaves as it does today. The bus never writes to a repo. All inter-agent
+  traffic is readable by the operator, every rung.
+
+### Measured transport facts (2026-10-14)
+
+- Claude Code 2.1.300 registers each session under `~/.claude/sessions/`
+  with `messagingSocketPath`; the docs permit a same-user process to post
+  `{"type":"auth","token":…}` then one line of text; `claude agents --json` is
+  the supported read. `SendMessage` reaches only Claude sessions.
+- Codex 0.162.1: `codex queue --thread <uuid|exact name> --message <text>`;
+  the app-server offers `turn/steer`; hooks are stable and on by default;
+  `agent_message_board` is a feature flag under development and off.
+- Antigravity 1.3.5: `--input-format stream-json` in print mode; interactive
+  tabs reachable only through the PTY; subagents may message peers inside one
+  `agy` process, with no outside door.
+- No standard (A2A, ACP, MCP) carries a message between the three today.
+
+### Packets (parallel, one worktree each; estimates are single-agent)
+
+| Packet | Scope | Files owned | Exit | Estimate |
+| --- | --- | --- | --- | --- |
+| B0 Probe | Measure on real installs: a node process posting to a Claude session's socket (with and without the token); `codex queue` against an Exawatt-launched interactive Codex tab using the identity Exawatt already learned; bracketed paste into an idle `agy -i` tab; whether Codex `-c mcp_servers.<name>…` and any Antigravity per-launch MCP path accept an Exawatt server. Record verdicts in this doc. | none (report) | each path marked works / degraded / absent with evidence | 1 h |
+| B1 Bus core | Directory, envelope, ledger with size class, delivery adapters (socket, `codex queue`, idle terminal paste, undeliverable), the per-launch env and the `exawatt` executable on `PATH` through the existing injection seam, IPC `bus:send`, `bus:list`, `bus:thread`, push `bus:message`. Tests on fixtures for every delivery result. | `electron/main/bus/*` (new), `electron/main/pty/session-manager.ts` (env and PATH only), `electron/main/preload.ts`, `packages/core/src/bus/*` (new types) | a message from a Claude tab reaches a Codex tab and back, each in the ledger with its delivery result | 3–4 h |
+| B2 MCP tools | An Exawatt MCP server exposing `list_agents`, `send_message`, `read_inbox`; per-launch injection for Claude Code and Codex; declared absent for others. | `electron/main/bus/mcp-server.ts`, launch descriptors in `harness-registry.ts` | the tools appear in a Claude tab's tool list and work | 2 h |
+| B3 Chatter rail | The Team rail: list, unread count, thread, "Send as operator". Demo source supplies authored chatter so the rail renders in the Demo Workspace. | `src/components/team/chatter-rail/*` (new), `expose-overlay.tsx` (mount only), demo fixtures | a real exchange shows in Team within a second of delivery; Demo shows authored chatter | 3 h |
+| B4 Direct N Agents | ENG-004 V4.2: see the board project doc. Uses `bus:send` with `kind: operator`. | board selection panel, keymap | — | 3 h |
+| B5 Guides | A guide on the two tools and three prompt patterns users have asked for (two reviewers converging, a worker reporting to a lead, a question to a peer), explicitly as examples, not features. | `docs/product/guides/` | — | 1 h |
+
+B0 first, then B1 and B3 in parallel (B3 against fixtures until B1 lands), B2
+and B4 after B1, B5 anytime. Wall clock with four agents: about five hours to
+a demonstrable Claude ⇄ Codex ⇄ Antigravity exchange visible in Team.
+
+### Open questions carried into B0
+
+- Whether a Claude session launched with `--settings` injection also reads
+  `crossSessionInbound` from that file (so YOLO launches accept without a
+  dialog) or only from the user's settings.
+- Whether `codex queue` to a busy thread waits for the turn or interleaves.
+- Whether Antigravity's `.agents/` directory, which already carries the
+  injected hooks, can also carry an MCP declaration per launch.

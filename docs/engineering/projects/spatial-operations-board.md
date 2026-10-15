@@ -3235,3 +3235,62 @@ packet G1a of the Google workshop demo arc.
   the design-system Active rung, and R3F guide rule 12b. Evidence retained
   outside the worktree under the session scratchpad `evidence/` (before and
   after full and crop captures) and `scripts/r3f-eval/spatial-report/`.
+
+### 2026-10-14 — V4.2 Direct N Agents and ghost slots (shaped)
+
+<!-- exawatt:public-omit-begin the operator brief is private source material -->
+Source: the 2026-10-14 operator brief (`docs/research/operator-briefs/2026-10-14-gemini-bus-direct-onboarding-analytics-brief.md`); decision `0052`.
+<!-- exawatt:public-omit-end -->
+
+The operator: "Drag to select, like selecting units on a Starcraft map which
+pops a clear and easy and simple input/output box to talk to all the agents
+under the selection at once." And: "click an empty ghost placeholder agent and
+fill it in ... with two clicks or very few clicks."
+
+What already exists: V3.2's drag-box, Shift-click and Shift+1–9 selection,
+the `multiSelectedIds` working set, the selection panel with counts and
+members, and the inert `Direct N Agents` chip. No shipped competitor has
+drag-box selection of agents; the terminal precedents (iTerm2 Broadcast
+Input, tmux synchronize-panes, Termic's Broadcast) all show recipients
+explicitly and let each answer in its own place.
+
+**Direct.** The chip becomes a composer inside the selection panel: one text
+field, the recipient list with each member's name and harness, Send (⌘↩).
+Sending calls the bus with `kind: operator` once per recipient (decision
+`0052`), and the panel shows each recipient's delivery result as it arrives
+(`delivered`, `queued` for a busy harness that queues input, `terminal` for
+the paste path, `undeliverable` with the reason). Replies arrive where they
+always do: in each Agent's own tab and on its tile's status, and in the Team
+chatter rail's thread. The panel offers no synthesis, comparison, vote, or
+count of exchanges; the user's prompt does what the user wants. Stopped
+Sessions are listed and marked undeliverable rather than silently dropped.
+The keyboard path owed since V3.2 lands with it: Shift+arrows extend the
+selection, ⌘D focuses the composer, Esc clears.
+
+**Ghost slots.** Each Project zone shows one ghost tile at its next free slot
+(`radius`/`slotPitch` already position it). Click or Enter on it opens the
+composer pre-bound to that zone's Project (zone id → folder), with the
+Project's recommended harness and the usual ⌥↑/↓ switch; Start launches
+there and the new Agent takes the slot. On Tiles (V4.1) the ghost is the
+homepage's ghost ring drawn by the shared renderer; on Dots it is a dashed
+outline. Two ghosts in a zone when a launch is in flight, never more. A zone
+with no folder binding offers the ghost but the composer says what is missing
+(folder-dependent actions stay absent, per concepts.md).
+
+**Boundaries.** Direct is the human end of the bus, nothing else: no
+broadcast mode that persists, no hidden recipients, no fan-out the operator
+did not type. Ghost launch reuses `startRoadmapAgent`'s no-UI path and the
+composer; it is not a second launcher (BUG-051's lesson). Fleet's control
+model (decision `0024`) and the one layout hold.
+
+**Acceptance.** Draw a box around two Agents of different harnesses, type one
+line, press ⌘↩: both tabs receive it within a second, the panel shows two
+delivery results, the chatter rail lists two operator messages. Click a
+ghost in a zone, type a task, Start: a new Agent appears in that zone within
+the launch budget and in that Project on Agent and Team. Everything reachable
+without a mouse.
+
+**Files.** `spatial-selection-panel.tsx` (composer and results),
+`operations-board-zone-layer.tsx` and the layout's slot allocation (ghost),
+`spatial-fleet-client.tsx` (launch request through the pending slot the
+workspace already picks up), keymap entries, `eval:spatial` scenario.

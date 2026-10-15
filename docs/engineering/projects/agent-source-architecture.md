@@ -1259,3 +1259,58 @@ Sources, fetched 2026-10-14:
 - Instinct: [Instinct](https://instinct.com) and its
   [terms](https://instinct.com/terms).
 - dots: [Introducing dots](https://openai.com/index/introducing-dots/).
+
+### 2026-10-14 — S5.3.1 The Gemini face, Google's terms, and the chat-style question
+
+<!-- exawatt:public-omit-begin the operator brief is private source material -->
+Source: the 2026-10-14 operator brief (`docs/research/operator-briefs/2026-10-14-gemini-bus-direct-onboarding-analytics-brief.md`); research record §4; decision `0051`.
+<!-- exawatt:public-omit-end -->
+
+The operator asked for "Gemini support ... easy onboarding, connection /
+integration / auth from Gemini" for "somebody who uses both Claude and Gemini
+as their chatbots of choice". Measured: the Google harness is already shipped
+(S5.3); what a new user sees is the word Antigravity, no Google mark, and no
+in-app sign-in. His choice: make it read as Gemini, on the shipped adapter.
+
+**Facts that settle the product question.**
+
+- Gemini CLI is not deprecated as software (0.64.0 shipped 2026-10-13) but
+  Google retired consumer access on 2026-06-18 and positions it for API keys
+  and enterprise licenses. Antigravity CLI is the consumer successor. The
+  S5.2 verdict stands; the trigger is now named: a user with an eligible
+  credential asks.
+- Antigravity 1.3.5 adds `--input-format stream-json` (print mode), its own
+  project concept (`--project`, `--new-project`, files under
+  `~/.gemini/config/projects/`), and `--remote-control`. None changes the
+  interactive adapter.
+- Google's FAQ says third-party wrapping of `agy` is not supported on
+  consumer plans and may cost the user their account. Decision `0051`
+  accepts the risk and requires one disclosure line.
+- Third-party model access (Claude, GPT-OSS) on the operator's plan ends
+  2026-11-02; after that the catalog on a consumer account is Gemini only.
+
+**S5.3.1 scope.**
+
+1. **Label.** The source reads "Gemini" with "Antigravity CLI" as its secondary
+   line wherever sources are named (⌘T, Settings, Team and Fleet source lens,
+   usage card), following the Grok Build precedent where the product name the
+   user knows leads. No artwork: the mark stays `null`; the label is text.
+2. **Guided sign-in.** When `agy` is installed and `agy models` reads unknown,
+   the composer's source detail and Settings show one step: "Sign in to Google
+   in Antigravity", with one button that opens a Shell tab in Exawatt running
+   `agy` (which starts Google's browser sign-in on first run) and a Recheck
+   that re-reads `agy models`. No login subcommand exists; nothing is typed on
+   the user's behalf. The first launch in a folder Antigravity has never seen
+   still asks for trust in the terminal; the step says so.
+3. **Disclosure.** The source card and the public reference carry the one
+   line decision `0051` names.
+4. **Needs-you stays declared absent**, with the existing sentence. A later
+   probe may try Exawatt-owned stream-json runs for a permission signal; that
+   is not this slice.
+
+**Recorded, not shaped: chat-style tabs.** The operator: "I think he sort of
+expects [chat-style Gemini and Claude tabs] too but I think that needs more
+shaping, and may complicate our architecture and may not fit within our
+vision." It stays the deferred "conversation kind". The honest product answer
+today is that a Gemini or Claude Agent in Exawatt is a working agent in a
+folder, and the on-ramp (ENG-046) and the Gemini face make that one click.

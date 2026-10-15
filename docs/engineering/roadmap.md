@@ -23,7 +23,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-016 | Daily-driver adoption                            | active-build | Remove every blocker to Exawatt being the operator's normal daily coding-agent surface.                                                                                                |
 | ENG-017 | Project roadmap lens                             | active-build | Read each repo's own roadmap and show sequence + what every agent is executing.                                                                                                        |
 | ENG-018 | Deterministic session rehydration                | done         | Logical Sessions, exact provider identity, and bounded history survive quit without a daemon.                                                                                          |
-| ENG-004 | Modular UI regimes and Spatial Operations Board  | active-build | R3F tactical board as a sibling regime to the terminal; next: V4.1 Fleet Tiles, the homepage agent tiles as Fleet view v2 behind a Settings choice (decision `0050`).                                                                                      |
+| ENG-004 | Modular UI regimes and Spatial Operations Board  | active-build | R3F tactical board as a sibling regime to the terminal; next: V4.1 Fleet Tiles, the homepage agent tiles as Fleet view v2 behind a Settings choice (decision `0050`). V4.2 Direct N Agents and ghost slots SHAPED 2026-10-14 (decision `0052`). |
 | ENG-021 | Objective engine — context at every granularity  | active-build | Server-owned context labels answering "why does this Session exist?" at every granularity.                                                                                             |
 | ENG-008 | Consumption and controls                         | active-build | Read-only local consumption spine (E0–E3); Policy/Budget enforcement stays planned.                                                                                                    |
 | ENG-025 | Feedback capture and reinflation loop            | active-build | F1/F2 established the loop; F7 delivered authenticated delivery repair and one recoverable workflow (BUG-272); broader intake work remains.                                                               |
@@ -31,9 +31,9 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-026 | Vision-complete information architecture         | active-build | Show the whole intended IA in the real app, with an honest readiness grammar and navigable preview surfaces.                                                                           |
 | ENG-027 | Workspace tenancy and the Demo Workspace         | active-build | Make Workspace a real switchable tenancy scope; Demo is its first non-personal tenant and carries the altitude-scale demo.                                                             |
 | ENG-028 | Agent Types                                      | planned      | A portable Type describes the kind of coworker; the Agent is the individual worker and the harness is the engine.                                                                      |
-| ENG-029 | Project blackboard and agent bus                 | planned      | The repo is the blackboard, ENG-023's event channel is the bus; C1 preview landed, substrate gated.                                                                                    |
+| ENG-029 | Project blackboard and agent bus                 | active-build | The repo is the blackboard, ENG-023's event channel is the bus; RESHAPED 2026-10-14 (decision `0052`): C4 cross-harness messages and the live C1 chatter rail are the first built rungs, realtime and unpoliced; C2 and C5 stay gated. |
 | ENG-019 | Cooperative session crystallization              | planned      | Agents write versioned per-Session handoffs on graceful quit; Exawatt coordinates, never runs git.                                                                                     |
-| ENG-003 | Unified Agent Source architecture                | active-build | Registry foundation, the S2 `opencode` adapter, and the S4 Grok Build adapter landed; S3 provider plurality remains, while remote/fleet work stays planned.                            |
+| ENG-003 | Unified Agent Source architecture                | active-build | Registry foundation, the S2 `opencode` adapter, and the S4 Grok Build adapter landed; S3 provider plurality remains, while remote/fleet work stays planned. S5.3.1 the Gemini face SHAPED 2026-10-14 (decision `0051`). |
 | ENG-023 | Delegation visibility — subagents as fleet truth | active-build | D5.1/D7 and D6 census foundation landed; complete child query/inspection deferred for refinement; D8 launch context and D2 child zoom remain planned.                                                                                                                            |
 | ENG-005 | Initiative primitive                             | planned      | Workspace → Initiative as the durable high-level frame, beyond ENG-002's label slice.                                                                                                  |
 | ENG-006 | Decision model                                   | planned      | Decision as a first-class scoped record with Approval scope and lifetime.                                                                                                              |
@@ -57,9 +57,91 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-043 | Documentation information architecture           | planned      | UNSHAPED pending a design pass — organize documentation by reader need, with Diátaxis as the candidate framework. |
 | ENG-044 | Agent safety and governance controls              | planned      | S1 landed: a Settings ▸ Safety home, one default-off control (block broad process kills). The enterprise governance product is UNSHAPED pending a design pass. |
 | ENG-045 | Permissions and grants                           | planned      | S1 landed: a registry, a first-party primer and Settings ▸ Permissions for notifications. Folder access, Local Network and in-app grants are UNSHAPED pending a design pass. |
+| ENG-046 | First-run on-ramp                                | active-build | SHAPED 2026-10-14: the user's existing Claude Code, Codex and Antigravity projects listed on first run, one click to open, first Agent in two gestures; harness stores read, never imported. |
+| ENG-047 | Activation funnel analytics                      | active-build | SHAPED 2026-10-14 (decision `0053`): visit, download, first launch, first Project, first Agent, day-2 return, and one click-initiated anonymous web-to-app link; no replay, no names or paths. |
 | ENG-014 | Wattage allocation surface                       | planned      | Allocate wattage to goals instead of assigning tasks to agents.                                                                                                                        |
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
+
+## Execution front (2026-10-14): the friend cohort
+
+This week the operator is talking to a cohort of friends and prospects and
+promising features; the asks arrived as one brief on 2026-10-14 and were
+researched and shaped the same night. Decisions `0051` (Google's consumer
+terms, accepted and disclosed), `0052` (Exawatt is the cross-harness message
+bus: realtime, no authority, no policing, fully logged) and `0053` (the
+activation funnel and one anonymous web-to-app link) record the operator's
+answers.
+
+What the research changed before anything was built: Google's harness was
+already shipped (Antigravity CLI, S5.3) and Gemini CLI is a consumer dead end
+since 2026-06-18; drag-box selection already shipped on Fleet (V3.2) with an
+inert Direct chip; no standard carries a message between Claude Code, Codex
+and Antigravity, so Exawatt is the bus, built on the ENG-023 channel; the
+July 2026 OpenAI–Hugging Face incident (1,200 agents improvising a board on a
+package cache) supplies the bus rules; and no public API lists a user's
+claude.ai or ChatGPT Projects, so the on-ramp reads harness stores and the
+folder is the join.
+
+The vision check, recorded so nobody re-litigates it: every ask lands on an
+existing item or extends one, none creates a new surface regime, and the
+operator declined the one thing that would have (a productized debate with a
+round counter). The friend's contract-redline flow is Direct N Agents plus
+the bus plus the user's own prompt, built for the first ICP (Adam) first.
+Chat-style conversation tabs stay the deferred conversation kind, with the
+operator's own concern recorded in ENG-003.
+
+Ordered work (packets for parallel worktree agents; estimates are single
+agent; the full packet tables are in the project docs):
+
+1. **P1 Your projects on first run** (ENG-046 O1 to O3, about 4 h). Harness
+   project suggestions in main, the chooser's "Your projects" section with
+   one-click inert open and "Open all recent", the composer focused on the
+   suggesting harness. Exit: a fresh install with real stores reaches a
+   running Agent in two clicks and a typed task; nothing is written to any
+   store.
+2. **P2 The Gemini face** (ENG-003 S5.3.1, about 2 h). "Gemini" with
+   "Antigravity CLI" beneath it everywhere a source is named, the guided
+   Google sign-in step with Recheck, decision `0051`'s disclosure line in the
+   source card. Exit: ⌘T reads Gemini; a signed-out account gets one step,
+   not a broken row.
+3. **P3 Bus probe, then core** (ENG-029 B0 and B1, about 5 h; the critical
+   path). B0 measures the Claude socket post, `codex queue`, the idle
+   terminal paste into Antigravity and the per-launch MCP doors on real
+   installs and records verdicts; B1 lands the directory, envelope, ledger,
+   delivery adapters, the `exawatt` executable on each Session's PATH, and
+   the IPC. Exit: a Claude tab and a Codex tab exchange messages, each in the
+   ledger with its delivery result.
+4. **P4 Chatter rail** (ENG-029 B3, about 3 h, against Demo fixtures until
+   B1 lands). The second Team rail: list, unread count, thread, "Send as
+   operator". Exit: a real exchange shows in Team within a second; Demo shows
+   authored chatter.
+5. **P5 Direct N Agents and ghost slots** (ENG-004 V4.2, about 3 h, after
+   B1's IPC exists or against a stub). Exit: box-select two Agents of
+   different harnesses, one line, ⌘↩, two delivery results; click a ghost,
+   type, Start, the Agent takes the slot.
+6. **P6 The funnel** (ENG-047 F0 to F3, about 4 h). BUG-171 first, then the
+   events with the manifest and Privacy page in the same landing, the deep
+   link, the dashboard. Exit: the operator's own fresh-install run reads end
+   to end in PostHog.
+7. **P7 MCP tools and guides** (ENG-029 B2 and B5, about 3 h, after B1).
+
+Wall clock with six agents: one afternoon to an MVP of every ask, P3
+deciding. Collision map: P3 owns `electron/main/bus/` and the env lines in
+the session manager; P1 owns `electron/main/projects/` and the chooser; P2
+owns the source registry's presentation files; P4 owns the Team rail; P5 owns
+the board's selection panel and zone layer; P6 owns `src/lib/analytics/`,
+the outbound manifest, the Privacy page and `deep-link.ts`. The preload is
+append-only per packet; roadmap and project docs append through the
+`exawatt-append` driver.
+
+Rules for the front: the daily-driver arc's correctness wins any surface
+conflict (unchanged); visual evidence before landing; the 2026-10-04 polish
+pass continues beside this front and its "newcomer on-ramp is later" line is
+amended by ENG-046; no dogfood freeze is in effect. The cohort story the
+front is judged by: a fresh install shows your projects; one click opens one;
+⌘T starts Gemini; a box around two Agents and one line directs both; Team
+shows them talking; the dashboard shows where each person stopped.
 
 ## Polish execution priority (2026-10-04)
 
@@ -786,6 +868,7 @@ Project doc:
 - V3.9 Playable Fleet directions (DECIDED and LANDED 2026-10-04: close pack plus focus field and the shared Agent hover/press treatment; in review from 2026-08-20, operator-requested study first): the standing real-renderer board bench offers stable lattice, honeycomb close-pack, and focus-field Project treatments plus one shared padded-hex Agent hover/focus/press treatment. Selection never moves a Project or changes altitude. Production retains V3.8 defaults until the operator explicitly chooses; acceptance promotes that shared policy and retires only the proposal choices. Full rationale and review contract: project doc §V3.9.
 - V4.0 Fleet excellence pass (LANDED 2026-09-28, built 2026-09-14 and stranded on its branch until rescued; shaped 2026-09-13; full record in project doc §V4.0. Landed: structural sharing in the layout selector, the canvas split into nine modules by pure motion, hover as a store with memo boundaries on every layer, the single layout→world seam, ease-out flights with the emergence turnaround fix, the keymap-derived help modal, hotkey digits on Project chips, minimap click-to-jump, the nano label tier at phone width, and the empty-fleet and loading fixes. Two baseline defects found and closed: the 1k-fixture hotkey first motion at 79 to 137ms was the semantic zoom clamp making the keydown kick and the route commit resolve to different poses so the commit restarted the flight (clamp deleted; a semantic move lands on its subject's fit; the 1k fixture still fails its 60ms gate on the dev-mode commit cost (82 to 139ms here) and the gate keeps failing on purpose until the Agent controls become one DOM layer), and the 10k fixed-angle "blank canvas" was the scale eval sampling nine gutter points on a full frame (gate now renders and reads in one task on a 9x9 grid). Voltaic hotkey first motion measured 6 to 19ms. Recorded, not done: the three-way address resolver and legacy ownership lookup in the client, the rig's verb extraction, screen-space chip declutter. Shaped 2026-09-13 from operator drive: the Fleet view should feel slick, robust, and performant, and the code should be modular, well-architected, and futureproof for a future globe/parallax/view-lens direction; two adversarial reviews at master `23a6b2f8` are the evidence base). Four workstreams, every behavioral gate the existing eval suite. **W1 perf and robustness:** structural sharing in `selectSpatialBoardLayout` so a live tick that changes nothing hands every layer the previous zone/piece objects (the V3.7-recorded next perf pass), memo boundaries on every canvas layer, hover/press state out of the canvas root into an external store (the root-state class of defect V3.7 evicted, one level down), and the baseline motion-eval failure on the 1k fixture (`0` Project→Fleet first motion 83ms vs the 60ms gate) diagnosed and closed. **W2 architecture:** split the 4,187-line canvas file into layer/rig/material modules by pure motion; split the 873-line camera rig into pointer/handoff/controller hooks that speak verbs on the pure camera module instead of mutating target fields; create the single layout→world mapping seam (`boardWorldPoint`/rect) that today is ~25 inline `-y`-flip call sites — after which a globe or parallax lens is a bounded module implementing an existing interface; collapse the three independent "which Project is focused" resolvers to one and delete the legacy `fieldZones` membership source. **W3 keyboard and polish:** one board-keymap module feeds the three window listeners AND the help modal (which today misdocuments arrows as pan and omits WASD/Q/E/Shift+digits); hotkey ordinals become visible on Project chips (the operator's "not discoverable" complaint, SC2 control-group convention); the hotkey guard learns `<select>`; minimap gains click-to-jump; hotkey flights move to ease-out from rest (the V3.7-recorded question, resolved in favor of game-camera convention); empty-fleet copy stops assuming filters caused emptiness; the loading state stops being bare text. **W4 operator decisions surfaced, not made:** the V3.9 packing/emphasis choice (pending since 2026-08-20) ships back to the operator as a screenshot comparison — it gates deleting the candidate branches and enabling the production Agent hover treatment. Deliberately not in scope: building any lens/globe (the seam only), mobile chip declutter beyond a bounded overlap fix (open design question stands), van Wijk coupled flight path (recorded upgrade for long hops).
 - V4.1 Fleet Tiles: Fleet view v2 (SHAPED 2026-10-14; decision `0050`; full record in project doc §V4.1). Operator brief: "I want a less spherical version in the product... in a modular, robust, performant, high-quality way... version and flag it, like Fleet View v1 / v2, perhaps with a toggle in settings." Tiles is a second renderer in the board's `OperationsBoardCanvas` slot over the same `SpatialBoardLayout`, handle, keymap, selection and DOM controls; Dots (v1) stays the default. The homepage's tile renderer (shape, Gummy/Acrylic/Anodized materials, marks, working motion, press springs, sound) moves into one module shared by the homepage (sphere ground) and Fleet (plane ground). Flat and isometric on the existing orthographic rig first; curvature is a parameter and a perspective rig a possible later slice. The choice lives in a new top-level `presentation` settings record, never in `appearance` (decision `0026`), with a total parser and only explicit choices stored. Delegated children ring their parent with tethers in a treatment distinct from it (operator will iterate). Slices: P0 canon (LANDED with this record), P1 extract the renderer with the homepage pixel-identical, P2 the preference and Settings row (parallel with P1; Settings is the flag: Tiles is offered only in development builds until P5, Dots the default throughout), P3 greybox and operator look review on the board bench at 10/100/1k in three themes, P4 keyboard, selection, handoff, delegation, power, scale/motion evals and gate registration, P5 opt-in Preview in every build's Settings.
+- V4.2 Direct N Agents and ghost slots (SHAPED 2026-10-14; decision `0052`; full record in project doc §2026-10-14 V4.2). The V3.2 chip becomes a composer in the selection panel: one line, the recipient list with harness, ⌘↩, a delivery result per recipient from the ENG-029 bus with `kind: operator`; replies arrive in each Agent's own tab and in the Team chatter rail; no synthesis, vote or count. Each Project zone shows one ghost tile at its next slot; click or Enter opens the composer pre-bound to that Project and Start takes the slot. The keyboard path owed since V3.2 lands with it. Operator brief: "Drag to select, like selecting units on a Starcraft map which pops a clear and easy and simple input/output box to talk to all the agents under the selection at once."
 - `docs/engineering/projects/spatial-operations-board.md`
 
 ### ENG-021 Objective engine — context at every granularity
@@ -1204,6 +1287,73 @@ Project doc:
 
 - `docs/engineering/projects/workspace-tenancy-and-demo.md`
 
+### ENG-046 First-run on-ramp
+
+Status: active-build — SHAPED 2026-10-14 from the operator brief; pulled ahead of the 2026-10-04 polish pass's "a dedicated newcomer on-ramp is later" because the operator is onboarding a cohort this week.
+
+Direction (operator framing): "one click to pop open an existing project inside Exawatt. Not a ton of copy that you have to read. He has a bunch of different projects already in Claude Code, organized by first-party 'project'. These should map to easily visible and openable (and does Exawatt need to 'import' them or do something, or will it just work out of the box?)." The answer is out of the box: Exawatt reads each harness's own project store and shows it; a Project record exists only once something is opened.
+
+Scope:
+
+- harness project stores as discovery evidence, read and never written: Claude Code's per-directory entries and transcript directories, Codex's project table and session cwds, Antigravity's project files; every reader fails soft with a named diagnostic
+- a strict, explainable filter (exists; not home, Downloads, temp or Library; git root or project marker; not a non-git parent of other rows; activity within 30 days, older behind "Show older"), worktrees folded to their repository, one row per folder with one badge per harness
+- the chooser's first section, "Your projects", with one-click inert open (ENG-016 D14), "Open all recent", and the composer focused on the suggesting harness with that Project's recent conversations one click away (D31)
+- the join key is the git common directory, so an Agent of any harness opened in a known folder lands in the one Project (decision `0037` §3 applied to discovery); a chat product's Project with no listing API is user-linked, never discovered
+- local reads only, disclosed on the download page's machine disclosures; ENG-047's `project_opened` carries a source and a harness hint, never a name or path
+- boundary: not a wizard, not an importer, not a watcher (decision `0013` stands); the account card stays an invitation; with no harness installed the chooser shows setup choices and Try Demo
+
+Exit criteria:
+
+- a fresh install on a machine with real stores lists the user's actual projects, most recent first, with no scratch, temp, home or parent-only rows, within two seconds of opening the chooser
+- an unreadable store yields a diagnostic and no rows from that store while the others list
+- opening a suggestion creates no process and exactly the Project identity Browse would have created; the same folder known to two harnesses is one row
+- nothing is written to any harness store, proven by checksum in the eval
+
+Milestones:
+
+- O1 Harness project suggestions in main (readers, filter, folding, diagnostics, IPC)
+- O2 "Your projects" in the chooser with one-click open and "Open all recent"
+- O3 First-Agent hand-off: composer focused on the suggesting harness, recent conversations visible
+- O4 Bindings beyond the folder (Antigravity project, chat-Project links): unshaped until a user asks
+
+Project doc:
+
+- `docs/engineering/projects/first-run-on-ramp.md`
+
+### ENG-047 Activation funnel analytics
+
+Status: active-build — SHAPED 2026-10-14; decision `0053` amends `0031`'s event set and identity sentence and `0036`'s "no additional telemetry" for one bounded set.
+
+Direction (operator framing): "Usage analytics for people who visit the website and also download and run the mac app. Perhaps on PostHog. I'm having a lot of conversations with a lot of people this week promising some features and I want to see what their behavior is and where they get stuck."
+
+Scope:
+
+- five new allowlisted events with exactly the properties decision `0053` names: `page_viewed` (path, referrer hostname), `download_requested` (server side), `project_opened` (source, harness hint, bound), `agent_launched` (harness, placement, permission mode, first for install), `agent_directed` (counts); day-2 return derived in PostHog
+- one anonymous web-to-app join by the user's own click: "Open Exawatt" after a download carries the web id in an `exawatt://welcome` link and the app records one alias to the installation id; the account identity stays unjoined
+- the allowlist, the redactor, the outbound-data manifest, the Privacy page and their tests change in one landing, by construction of the existing tests
+- a stable installation id first (BUG-171: the opt-out and the id move to the Electron settings store)
+- one funnel insight and one "stuck" insight in PostHog, and a read-back against the update feed's download count after the first day
+- boundary: no session replay, autocapture, heatmaps or flags; no names, paths, task text or non-catalog model strings; community builds send nothing
+
+Exit criteria:
+
+- every new event is in the manifest and the Privacy page with its exact properties, and the manifest test passes
+- a URL with a query string, a UTM or a click id yields the same `page_viewed` with none of it
+- the deep link records one alias per installation and ignores repeats and malformed ids
+- the operator's own fresh-install run reads end to end in the funnel
+
+Milestones:
+
+- F0 Stable installation id (BUG-171)
+- F1 Events, manifest, Privacy page and tests in one landing
+- F2 The web-to-app link
+- F3 Dashboard
+- F4 Read-back against the update feed
+
+Project doc:
+
+- `docs/engineering/projects/activation-funnel.md`
+
 ## Next
 
 ### ENG-019 Cooperative session crystallization
@@ -1290,6 +1440,7 @@ Milestones:
 - S3 Provider and model plurality as observed truth (shaped 2026-08-03, follows S2): a provider is a fact a source reports, not an entity Exawatt connects to; the model axis becomes searchable and provider-grouped for catalogs of hundreds; local inference earns a distinct readout (nothing leaves this machine, no billed dollars, watts as the honest unit) and never a distinct code path. Per the operator the near-term job is the UI that shows the app supports this, under the ENG-026 readiness grammar — running local inference is not itself a near-term requirement
 - S4 The Grok Build adapter (landed 2026-08-13; operator-pulled during the Grok Bot wave): xAI's open-source terminal harness is the fourth launchable source — generated declaration, registry facts, D46/D49 launch path, live `grok models` catalog, Exawatt-allocated `--session-id` identity with exact `--resume`, native recent history from its own `summary.json`, and `updates.jsonl` `turn_completed` usage as the ENG-008 local consumption read. Auth stays source-owned (its own OAuth in `~/.grok/auth.json`, never read by Exawatt); decision `0027` is untouched because this is a native harness, not credential injection. TWO shaped assumptions were corrected against the real install: `signals.json` is live context occupancy, not a billed total, so the ledger reads `updates.jsonl` instead; and the interactive TUI exposes no per-launch hook seam, so delegation is declared unobservable and status rides inference like Codex's rather than the ENG-023 channel. Grok-the-model remains launchable via the S2 `opencode` source. Verified facts, both corrections, and the follow-up seam: project doc §S4
 - S5 Source plugins (active-build; SHAPED 2026-09-23 in an operator design session, resequenced the same night after the S5.2 probe): Exawatt ships every harness itself and makes each one cheaper than the last. S5.1 one declaration per source (LANDED 2026-09-24, `7caf4240`: a source was named in ~38 non-test files; adding Qwen made the compiler name three); S5.2 Qwen Code (LANDED 2026-09-24, same landing: a real terminal plus its own hooks injected per launch through a Qwen-specific normalizer); S5.3 Antigravity CLI (LANDED 2026-10-05, demo arc packet G3): the signed-in 1.2.17 run verified the `--add-dir` hooks seam, and the adapter followed the S5 shape in one landing: a real terminal through `agy -i`, identity learned from the first hook's `conversationId` (no id flag exists), exact resume with `--conversation=<id>`, working and done from `PreInvocation`/`Stop` hooks in a per-launch Exawatt directory, catalog and sign-in from `agy models`, native history from Antigravity's own SQLite index, kill-guard coverage for `agy`; needs-you and delegation are declared unreported because Antigravity has no permission event and no delegation completion event. Adding it exposed one general defect, fixed: the launch command named a source by its harness id, which only held while every binary was named after its id (`agy` is not). No mark ships (Google permits only approved, unaltered artwork). The operator's Gemini weekly quota read 0.1% on 2026-10-05, so the demo launch picks a Claude model; the catalog does not carry quota and the turn's own error reports the wall. Gemini CLI is parked: Google moved consumer accounts to Antigravity CLI, the operator's account is refused, and 0.61 accepts hooks only from a root-owned file. Every OS permission arrives as a guided step when first needed. Trigger-deferred: user-added sources (until a user asks), the conversation kind and Instinct (operator deferral), Hermes and Kilo Code. Exawatt-provided identity for always-on agents is ENG-033 future direction. [Plan and progress](projects/agent-source-architecture.md#2026-09-23--s5-execution-plan-and-progress) · [probe verdict](projects/agent-source-architecture.md#2026-09-23--s52-probe-verdict-gemini-cli-is-amber-qwen-code-looks-closer) · [Instinct verdict](projects/agent-source-architecture.md#2026-09-23--instinct-verdict-reachable-only-as-a-text-thread) · [S5.3 landing](projects/agent-source-architecture.md#2026-10-05--s53-antigravity-cli-landed-hooks-seam-verified-needs-you-declared-absent).
+- S5.3.1 The Gemini face (SHAPED 2026-10-14; decision `0051`): the shipped Google source reads "Gemini" with "Antigravity CLI" beneath it everywhere a source is named; a guided Google sign-in step (open a Shell tab running `agy`, then Recheck `agy models`) replaces an unknown row; the source card and the public reference carry the one-line consumer-terms disclosure. Gemini CLI stays parked with its trigger named: a user with an eligible credential (Google retired consumer access on 2026-06-18; the software itself is current). Chat-style conversation tabs stay the deferred conversation kind, with the operator's own concern recorded: "needs more shaping, and may complicate our architecture and may not fit within our vision." [Record](projects/agent-source-architecture.md#2026-10-14--s531-the-gemini-face-googles-terms-and-the-chat-style-question).
 - Concept harnesses: Grok Bot, Muse Code, Instinct and dots (captured 2026-10-14; deliberately UNSHAPED pending a design pass). The homepage's synthetic fleet already shows their marks as concept (decision `0047`), and the operator intends to add support soon. What each offers today: Meta's Muse Code is the only one with a launchable interface: `muse exec` runs headless, `muse serve` speaks a session protocol, and its SDK is MIT. It is untested with Exawatt. Grok Bot has no CLI or API; Cursor's admin API only configures it. Grok Build (S4) is a different product. Instinct publishes no developer interface and its terms bar automation software, so S5's Instinct verdict and its deferral stand. OpenAI's dots have no outside API that starts or drives one. [Interfaces and sources](projects/agent-source-architecture.md#2026-10-14-four-concept-harnesses-and-what-each-offers-today).
 
 Project doc:
@@ -1416,7 +1567,7 @@ Project doc:
 
 ### ENG-029 Project blackboard and agent bus
 
-Status: planned — created 2026-08-02 from the operator brief and design pass C. C1 (the viewer) landed 2026-08-02 as a preview under ENG-026 N4; the substrate (C2 onward, gated) follows.
+Status: active-build — RESHAPED 2026-10-14 by decision `0052` (operator): the bus becomes real across harnesses. C4 cross-harness messages and the live C1 chatter rail are the first built rungs; delivery is realtime, Exawatt adds no approval, counter or policing, every message is logged and readable. The 2026-09-23 courier recommendation is withdrawn. Created 2026-08-02 from the operator brief and design pass C; C1 landed 2026-08-02 as a preview under ENG-026 N4. [Design pass and packets](projects/agent-coordination-substrate.md#2026-10-14--design-pass-the-bus-becomes-real-across-harnesses-decision-0052).
 
 Direction (operator framing): "There needs to be some inter-agent substrate between the agents — some sort of shared, mutable, discoverable state... like a 'bus' between CPU components... But also state: learnings, activity, decisions, debates, plans, and history, but not too unmanageable and infinite." Researched 2026-08-02: this is the **blackboard architecture**, where agents coordinate indirectly through a shared structured workspace instead of conversing. 2026 orchestration surveys find context INCONSISTENCY, not orchestration pattern, is the leading production failure — so shared single-copy state is the primary mechanism and messaging is secondary. The blackboard shape also structurally prevents the debate/indecision/sycophancy loops the operator named.
 
@@ -1424,7 +1575,7 @@ Scope:
 
 - **the repo is the blackboard, Exawatt is the bus** (operator decision): durable shared state lives in the project repo under the `.exawatt/` path ENG-019 already claims, as plain git-versioned files readable by agents that have never heard of Exawatt. Same posture as ENG-017 and ENG-019 — with this third instance it becomes product philosophy, and a marketing claim: your agents' shared memory is yours, in your repo, offline, no lock-in
 - **no second event channel**: ENG-023 D1's source-agnostic harness event channel (loopback listener, per-Session token, merging injection, bounded payloads, fail-open) is the bus. Coordination is its second consumer
-- coordination climbs the least-chatty ladder on evidence only: **claims** now → directed one-way notes later → a queryable room later and gated
+- coordination climbs the least-chatty ladder on evidence only: **assignments** (gated) → directed one-way notes → a queryable room later and gated. AMENDED 2026-10-14 (decision `0052`): directed messages across harnesses are the first built rung, because no standard carries a message between Claude Code, Codex and Antigravity and the operator wants them to "telepathize in realtime"; how Agents use the bus is the user's prompt, never a product pattern
 - **all inter-agent traffic is auditable by the operator**, at every rung — a coordination layer the human cannot read is what becomes untrustworthy at scale
 - **agency** is a runtime capability, not a kind of agent: an Agent can be started by a trigger — time first (the form OpenClaw solves with cron), then bus events. Triggered launches stay as visible, attributable, killable, and policy-bound as operator launches
 - a findings/learnings board ships LAST and only with an earn-your-place contract plus a consolidation pass, because the operator's skepticism that it "would just grow crufty and bloated" is well-founded; this repo's `incidents/` and `decisions/` directories work precisely because entries must earn their place and `AGENTS.md` makes agents read them
@@ -1434,15 +1585,15 @@ Scope:
 
 Milestones:
 
-- C1 Coordination viewer (landed 2026-08-02 as the `/coordination` preview, executing ENG-026 N4): blackboard/bus/viewer, the ladder with assignments gated, and a handoff-record specimen; the derived board shows what the ENG-017 lens already reads. Speaks **assignment**, never claim, test-enforced. The live viewer over real traffic remains this milestone's remainder and follows the substrate.
+- C1 Coordination viewer (landed 2026-08-02 as the `/coordination` preview, executing ENG-026 N4): blackboard/bus/viewer, the ladder with assignments gated, and a handoff-record specimen; the derived board shows what the ENG-017 lens already reads. Speaks **assignment**, never claim, test-enforced. C1 live (SHAPED 2026-10-14, packet B3): the chatter rail in Team, a per-Project list of messages with sender, recipient, time and delivery result, a thread view, "Send as operator", an unread count; Demo renders authored chatter. Nothing summarizes, scores or flags a thread.
 - C2 Assignments: `.exawatt/` records of which Agent is working which roadmap item, read by other Agents before starting. RESCOPED 2026-08-02 (operator); POSITIVE DEMAND EVIDENCE 2026-08-03 (Ben Kim) now warrants a joint design pass with ENG-017 S15, but does not authorize building the rest of the bus. Vocabulary: **assignment**, never "claim"; `claim` is already the assurance word in this product (source-reported claims, billing claims) and must not be overloaded.
 - C3 Triggers: time-based, then bus events, under the same visibility and launch policy as operator launches.
-- C4 Directed notes: bounded one-way messages, fully auditable.
+- C4 Cross-harness messages (SHAPED 2026-10-14, decision `0052`; packets B0 probe, B1 bus core, B2 MCP tools): a stable address per Session, an Exawatt-stamped envelope, a machine-local ledger with a size class, delivery through each harness's own door (Claude Code's documented per-session socket, `codex queue --thread`, Antigravity's stream-json for owned runs and an idle bracketed paste for interactive tabs, marked `terminal`), an `exawatt` executable on each Session's PATH as the universal outbound, and an MCP server for the harnesses that take a per-launch MCP config. Realtime, no Exawatt approval, no counter; a harness's own inbound rule is that harness's dialog. Degraded paths are named, never hidden.
 - C5 Findings board and consolidation: gated on evidence from C2–C4.
 
 What this does NOT solve (recorded 2026-08-02 after the operator corrected an overreach): assignment records would not have prevented the one real collision this repo has seen. On 2026-08-02 two agents working DIFFERENT items (ENG-026 design, ENG-008 E4 build) both needed "how do we show capability that is not built yet" and independently invented `preview` and `Unbuilt`. That is a shared-VOCABULARY failure, and its fix is ENG-036 owning one answer in one place — not assignment. Meanwhile same-file collisions are already handled by mandatory worktrees, `pnpm agent:land`'s fast-forward guard, and ordinary git conflicts. Collision prevention alone therefore does not justify C2. The 2026-08-03 Ben Kim request supplies a different positive use case: batch dispatch needs durable, inspectable item-to-Agent assignment bookkeeping. Design that narrow path with ENG-017 S15 before building it; a growing directory of per-agent files without the batch workflow would still be a mechanism without a product.
 
-Sequencing: C1 rides the demo arc; C2 onward follows the daily-driver work and is gated on evidence, not assumed. Feeds ENG-013 (a lead agent needs a board to read) and ENG-019 (handoffs are blackboard writes).
+Sequencing: C4 and the live C1 execute now in the 2026-10-14 front (B0 → B1 → B2/B3; ENG-004 V4.2 Direct is the operator end of the same bus); C2 and C5 stay gated on evidence. Feeds ENG-013 (a lead agent reads the same ledger) and ENG-019 (handoffs are blackboard writes).
 
 Project doc:
 
