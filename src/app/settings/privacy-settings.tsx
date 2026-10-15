@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { readAnalyticsOptOut, setAnalyticsOptOut } from '@/lib/analytics';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import {
   HOSTED_FEATURE_IDS,
   OUTBOUND_CONTROLS,
@@ -161,15 +162,17 @@ export function PrivacySettings() {
     OUTBOUND_CONTROLS.productAnalytics.defaultEnabled
   );
 
+  // One channel for the read and the writes: a slow read never overwrites
+  // the switch the operator flipped after it began.
+  const analyticsChoice = useLatestRequest();
+
   useEffect(() => {
-    let current = true;
+    const ticket = analyticsChoice.begin();
     void readAnalyticsOptOut().then(optedOut => {
-      if (current) setAnalyticsEnabled(!optedOut);
+      if (ticket.current) setAnalyticsEnabled(!optedOut);
     });
-    return () => {
-      current = false;
-    };
-  }, []);
+    return () => analyticsChoice.invalidate();
+  }, [analyticsChoice]);
 
   // Absent keys mean default, never off — `isHostedFeatureEnabled` owns that.
   const preferences: HostedFeaturePreferences | null = settings;
@@ -284,9 +287,10 @@ export function PrivacySettings() {
             onChange={next => {
               // Show the choice at once; settle on what was kept.
               setAnalyticsEnabled(next);
-              void setAnalyticsOptOut(!next).then(optedOut =>
-                setAnalyticsEnabled(!optedOut)
-              );
+              const ticket = analyticsChoice.begin();
+              void setAnalyticsOptOut(!next).then(optedOut => {
+                if (ticket.current) setAnalyticsEnabled(!optedOut);
+              });
             }}
           />
         </SettingsGroup>
