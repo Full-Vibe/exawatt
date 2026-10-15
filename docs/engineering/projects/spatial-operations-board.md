@@ -2668,7 +2668,10 @@ reading.
    become child tiles tethered to their parent in a treatment distinct from
    it. It reuses the orthographic rig at its fixed angle, the shared
    transition clock, the ambient cadence, the DOM controls and the
-   `data-board-*` attributes.
+   `data-board-*` attributes. One switch (decision `0050`): the preference
+   is read once and selects a lazily loaded view from a `v1`/`v2` registry
+   for the canvas slot; no module below it reads the preference, and chrome
+   differences come from the view's declared capabilities.
 3. The preference: `ExawattSettings.presentation`, with the five IPC touch
    points, a total parser, a web source under `exawatt.presentation.v1`, and a
    provider and hook beside the Backgrounds preference. The surface receives

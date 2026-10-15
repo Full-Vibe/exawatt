@@ -48,6 +48,14 @@ The investigation found the two boards closer than they look:
    targets, and obey the same control model (decision `0024`). A presentation
    never owns layout, addresses, selection, routing, or status truth. No
    second layout is created; Tiles adapts the existing one.
+   **One switch.** The preference is read in exactly one place, which picks a
+   module from a small registry of views (`v1`, `v2`) and mounts it in that
+   slot. Each view is its own lazily loaded chunk, so a Dots user never
+   downloads Tiles. Nothing below the switch branches on the preference: code
+   the views share (the orthographic rig, the DOM controls) is a shared
+   import, and where chrome must differ (Tiles may have no Top/Angle choice)
+   the view's registry entry declares what it supports and the chrome reads
+   that declaration, never the preference.
 2. **One tile renderer for the homepage and the product.** The tile shape,
    materials, marks, working motion, press springs and sound move out of
    `src/components/site/fleet-story/` into a shared module. The homepage keeps
