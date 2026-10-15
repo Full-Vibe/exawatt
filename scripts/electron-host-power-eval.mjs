@@ -99,6 +99,8 @@ async function liveDemoPower(app, page) {
   await page.waitForFunction(
     () => window.__EVAL_GL__ && document.querySelector('canvas')?.width > 0
   );
+  await page.locator('button[aria-label^="Open Project "]').first().click();
+  await page.waitForURL(/altitude=project/);
   await event(app, 'on-ac');
   await renderPasses(page, 180);
   const ac = await ambientSample(page, 60);
@@ -117,6 +119,30 @@ async function liveDemoPower(app, page) {
     );
   }
   assert.equal(battery.dpr, ac.dpr, 'live Demo battery changed resolution');
+  const transmission = await page.evaluate(() => {
+    const materials = new Set();
+    window.__EVAL_SCENE__.traverse(node => {
+      for (const material of [node.material].flat()) {
+        if (material?.isMeshPhysicalMaterial) materials.add(material);
+      }
+    });
+    return {
+      physicalMaterials: materials.size,
+      transmitting: [...materials].filter(material => material.transmission > 0)
+        .length,
+    };
+  });
+  if (fleetView === 'v2') {
+    assert(
+      transmission.physicalMaterials > 0,
+      'Project fixture has no physical tile materials'
+    );
+    assert.equal(
+      transmission.transmitting,
+      0,
+      'battery retained an expensive tile transmission pass'
+    );
+  }
   await event(app, 'lock-screen');
   const lockedStart = await renderPasses(page, 90);
   // Several actual source ticks cross this window. They may reconcile state,
@@ -147,6 +173,7 @@ async function liveDemoPower(app, page) {
   return {
     ac,
     battery,
+    transmission,
     lockedRenderPasses: lockedEnd - lockedStart,
     suspendedRenderPasses: suspendedEnd - suspendedStart,
   };
