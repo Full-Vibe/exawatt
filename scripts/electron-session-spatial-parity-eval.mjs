@@ -87,9 +87,9 @@ try {
       await waitForWorkspaceReady(page);
       // Use the packaged main/preload persistence boundary, not browser storage.
       await page.evaluate(async view => {
-        const saved = await window.electron.settings.setPresentation({
-          schemaVersion: 1,
-          fleetView: view,
+        const saved = await window.electron.settings.updatePresentation({
+          field: 'fleetView',
+          value: view,
         });
         if (saved.presentation?.fleetView !== view)
           throw new Error(

@@ -98,9 +98,9 @@ async function liveDemoPower(app, page) {
   await event(app, 'unlock-screen');
   await page.evaluate(async view => {
     localStorage.setItem('exawatt:active-workspace:v1', 'demo');
-    await window.electron.settings.setPresentation({
-      schemaVersion: 1,
-      fleetView: view,
+    await window.electron.settings.updatePresentation({
+      field: 'fleetView',
+      value: view,
     });
   }, fleetView);
   await page.goto(fleetViewUrl(`${base}/fleet/spatial`), { waitUntil: 'load' });

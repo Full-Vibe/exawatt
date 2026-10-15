@@ -129,7 +129,7 @@ import type {
   AnalyticsIdentityRead,
   AnalyticsIdentityRequest,
   AppearancePreferencesV1,
-  PresentationPreferencesV1,
+  PresentationUpdate,
   ExawattSettings,
   OperatorProfileStateUpdate,
 } from './settings';
@@ -437,8 +437,8 @@ interface RequestTable {
 
   'settings:get': Call<[], ExawattSettings>;
   'settings:get-safety-controls': Call<[], SafetyControlsRead>;
-  'settings:set-presentation': Call<
-    [presentation: PresentationPreferencesV1 | null],
+  'settings:update-presentation': Call<
+    [update: PresentationUpdate],
     ExawattSettings
   >;
   'settings:set-appearance': Call<

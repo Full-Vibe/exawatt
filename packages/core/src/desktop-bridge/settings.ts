@@ -281,3 +281,32 @@ export function parsePresentationPreferences(
     ...(material ? { fleetMaterial: material.id } : {}),
   };
 }
+
+/** One explicit field choice; null removes only that field's override. */
+export type PresentationUpdate =
+  | { field: 'fleetView'; value: FleetView | null }
+  | { field: 'fleetMaterial'; value: FleetMaterial | null };
+
+/** Merge at the persistence owner, never against a renderer's stale snapshot. */
+export function applyPresentationUpdate(
+  current: PresentationPreferencesV1 | undefined,
+  raw: unknown
+): PresentationPreferencesV1 | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    throw new Error('Invalid presentation update');
+  const update = raw as Record<string, unknown>;
+  const { field, value } = update;
+  if (
+    Object.keys(update).some(key => key !== 'field' && key !== 'value') ||
+    (field !== 'fleetView' && field !== 'fleetMaterial') ||
+    (value !== null &&
+      (field === 'fleetView'
+        ? value !== 'v1' && value !== 'v2'
+        : !FLEET_MATERIALS.some(material => material.id === value)))
+  )
+    throw new Error('Invalid presentation update');
+  const next = { ...current, schemaVersion: 1 as const };
+  if (value === null) delete next[field];
+  else Object.assign(next, { [field]: value });
+  return next.fleetView || next.fleetMaterial ? next : undefined;
+}

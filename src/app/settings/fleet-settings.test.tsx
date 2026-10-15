@@ -10,7 +10,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FLEET_MATERIALS } from '@exawatt/core/desktop-bridge';
 import { FleetSettings } from './fleet-settings';
 import { PresentationProvider } from '@/components/presentation/presentation-provider';
-import { PRESENTATION_STORAGE_KEY } from '@/lib/presentation/preference-source';
+import {
+  PRESENTATION_STORAGE_KEY,
+  createPresentationPreferenceSource,
+} from '@/lib/presentation/preference-source';
 
 afterEach(() => {
   cleanup();
@@ -41,9 +44,10 @@ describe('Fleet presentation choices', () => {
       await waitFor(() =>
         expect(preview).toHaveAttribute('aria-pressed', 'true')
       );
-      expect(
-        JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!)
-      ).toEqual({ schemaVersion: 1, fleetView: 'v2' });
+      expect(await createPresentationPreferenceSource().load()).toEqual({
+        schemaVersion: 1,
+        fleetView: 'v2',
+      });
     }
   );
   it('offers every catalog material without changing the selected view', async () => {
@@ -57,9 +61,10 @@ describe('Fleet presentation choices', () => {
       await waitFor(() =>
         expect(button).toHaveAttribute('aria-pressed', 'true')
       );
-      expect(
-        JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!)
-      ).toEqual({ schemaVersion: 1, fleetMaterial: material.id });
+      expect(await createPresentationPreferenceSource().load()).toEqual({
+        schemaVersion: 1,
+        fleetMaterial: material.id,
+      });
     }
   });
   it('restores a saved choice in production without rewriting it', async () => {

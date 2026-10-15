@@ -20,7 +20,10 @@ const { FLEET_MATERIALS } = createRequire(import.meta.url)(
 const base = process.env.EXA_BASE || 'http://localhost:7134';
 const output =
   process.env.SETTINGS_REPORT_DIR || '/tmp/exawatt-fleet-v2-settings';
-const storageKey = 'exawatt.presentation.v1';
+const storageKeys = {
+  fleetView: 'exawatt.presentation.fleetView.v1',
+  fleetMaterial: 'exawatt.presentation.fleetMaterial.v1',
+};
 mkdirSync(output, { recursive: true });
 const identity = await fetch(`${base}/api/dev-identity`).then(response =>
   response.json()
@@ -83,8 +86,12 @@ try {
       themeId
     );
     assert.equal(
-      await page.evaluate(key => localStorage.getItem(key), storageKey),
-      null,
+      await page.evaluate(
+        keys =>
+          Object.values(keys).some(key => localStorage.getItem(key) !== null),
+        storageKeys
+      ),
+      false,
       'reading Settings must not persist defaults'
     );
     const view = page.getByRole('group', { name: 'Fleet view', exact: true });
@@ -96,19 +103,19 @@ try {
     );
     await view.getByRole('button', { name: /v2/ }).click();
     await page.waitForFunction(
-      key => JSON.parse(localStorage.getItem(key) || '{}').fleetView === 'v2',
-      storageKey
+      key => JSON.parse(localStorage.getItem(key) || 'null') === 'v2',
+      storageKeys.fleetView
     );
     for (const material of FLEET_MATERIALS) {
       await page
         .getByRole('button', { name: material.name, exact: true })
         .click();
       await page.waitForFunction(
-        ({ key, material }) => {
-          const value = JSON.parse(localStorage.getItem(key) || '{}');
-          return value.fleetMaterial === material && value.fleetView === 'v2';
-        },
-        { key: storageKey, material: material.id }
+        ({ keys, material }) =>
+          JSON.parse(localStorage.getItem(keys.fleetMaterial) || 'null') ===
+            material &&
+          JSON.parse(localStorage.getItem(keys.fleetView) || 'null') === 'v2',
+        { keys: storageKeys, material: material.id }
       );
     }
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -123,10 +130,12 @@ try {
     await page
       .getByRole('button', { name: 'Reset material', exact: true })
       .click();
-    await page.waitForFunction(key => {
-      const value = JSON.parse(localStorage.getItem(key) || '{}');
-      return value.fleetView === 'v2' && value.fleetMaterial === undefined;
-    }, storageKey);
+    await page.waitForFunction(
+      keys =>
+        JSON.parse(localStorage.getItem(keys.fleetView) || 'null') === 'v2' &&
+        localStorage.getItem(keys.fleetMaterial) === 'null',
+      storageKeys
+    );
     assert.equal(
       await page
         .getByRole('button', { name: 'Gummy', exact: true })

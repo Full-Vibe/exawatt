@@ -35,7 +35,7 @@ import {
   setKeyboardShortcutOverrides,
   setKeepAwakePolicy,
   setReentryRecapEnabled,
-  setPresentationPreferences,
+  updatePresentationPreferences,
   writeSettings,
   type StoredSettings,
 } from './settings-store';
@@ -224,7 +224,7 @@ describe('device-local power preference', () => {
 
 describe('presentation choices', () => {
   it('keeps an explicit material without requiring a view choice', () => {
-    setPresentationPreferences({ schemaVersion: 1, fleetMaterial: 'acrylic' });
+    updatePresentationPreferences({ field: 'fleetMaterial', value: 'acrylic' });
     expect(loadSettings().presentation).toEqual({
       schemaVersion: 1,
       fleetMaterial: 'acrylic',
@@ -233,10 +233,10 @@ describe('presentation choices', () => {
 
   it('does not persist a default, preserves an explicit v1, and can clear a choice', () => {
     expect(loadSettings().presentation).toBeUndefined();
-    setPresentationPreferences({ schemaVersion: 1, fleetView: 'v1' });
+    updatePresentationPreferences({ field: 'fleetView', value: 'v1' });
     setReentryRecapEnabled(false);
     expect(loadSettings().presentation?.fleetView).toBe('v1');
-    setPresentationPreferences(null);
+    updatePresentationPreferences({ field: 'fleetView', value: null });
     expect(loadSettings().presentation).toBeUndefined();
     expect(loadSettings().reentryRecap).toEqual({ enabled: false });
   });
@@ -257,9 +257,44 @@ describe('presentation choices', () => {
       expect(loadSettings().terminal?.fontSize).toBe(15);
     }
   );
+  it('applies independent renderer intents to persisted truth, including resets', () => {
+    fs.writeFileSync(settingsFile(), JSON.stringify(FIXTURES));
+    updatePresentationPreferences({ field: 'fleetView', value: 'v2' });
+    updatePresentationPreferences({
+      field: 'fleetMaterial',
+      value: 'anodized',
+    });
+    expect(loadSettings().presentation).toEqual({
+      schemaVersion: 1,
+      fleetView: 'v2',
+      fleetMaterial: 'anodized',
+    });
+    updatePresentationPreferences({ field: 'fleetView', value: null });
+    expect(loadSettings().presentation).toEqual({
+      schemaVersion: 1,
+      fleetMaterial: 'anodized',
+    });
+    updatePresentationPreferences({ field: 'fleetMaterial', value: null });
+    expect(loadSettings().presentation).toBeUndefined();
+    expect(loadSettings().terminal).toEqual(FIXTURES.terminal);
+  });
+  it.each([
+    null,
+    [],
+    {},
+    { field: 'theme', value: 'v2' },
+    { field: 'fleetView' },
+    { field: 'fleetView', value: 'v3' },
+    { field: 'fleetMaterial', value: 'unknown' },
+    { field: 'fleetView', value: 'v2', fleetMaterial: 'matte' },
+  ])('rejects malformed intents without changing settings: %j', update => {
+    const before = loadSettings();
+    expect(() => updatePresentationPreferences(update)).toThrow();
+    expect(loadSettings()).toEqual(before);
+  });
   it('rejects invalid writes without deleting the saved choice', () => {
-    setPresentationPreferences({ schemaVersion: 1, fleetView: 'v2' });
-    expect(() => setPresentationPreferences({ schemaVersion: 2 })).toThrow();
+    updatePresentationPreferences({ field: 'fleetView', value: 'v2' });
+    expect(() => updatePresentationPreferences({ schemaVersion: 2 })).toThrow();
     expect(loadSettings().presentation?.fleetView).toBe('v2');
   });
 });

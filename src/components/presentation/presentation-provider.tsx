@@ -7,13 +7,13 @@ import {
   useEffect,
   useMemo,
   useState,
-  useRef,
   type ReactNode,
 } from 'react';
 import type {
   FleetView,
   FleetMaterial,
   PresentationPreferencesV1,
+  PresentationUpdate,
 } from '@exawatt/core/desktop-bridge';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import { createPresentationPreferenceSource } from '@/lib/presentation/preference-source';
@@ -42,7 +42,6 @@ export function usePresentation(): PresentationContextValue {
 export function PresentationProvider({ children }: { children: ReactNode }) {
   const source = useMemo(() => createPresentationPreferenceSource(), []);
   const [preference, setPreference] = useState<PresentationPreferencesV1>();
-  const latest = useRef<PresentationPreferencesV1 | undefined>(undefined);
   const [ready, setReady] = useState(false);
   const lifetime = useLatestRequest();
   const updates = useLatestRequest();
@@ -51,7 +50,6 @@ export function PresentationProvider({ children }: { children: ReactNode }) {
     const mounted = lifetime.begin();
     const accept = (next: PresentationPreferencesV1 | undefined) => {
       if (!mounted.current) return;
-      latest.current = next;
       setPreference(next);
       setReady(true);
     };
@@ -75,48 +73,30 @@ export function PresentationProvider({ children }: { children: ReactNode }) {
     };
   }, [source, lifetime, updates]);
 
-  const commit = useCallback(
-    async (next: PresentationPreferencesV1 | undefined) => {
+  const update = useCallback(
+    async (intent: PresentationUpdate) => {
       const ticket = updates.begin();
-      const previous = latest.current;
-      latest.current = next;
-      let saved: PresentationPreferencesV1 | undefined;
-      try {
-        saved = await source.save(next);
-      } catch (error) {
-        if (ticket.current) latest.current = previous;
-        throw error;
-      }
-      // A settings broadcast may precede its response. Both carry the saved
-      // snapshot; a later external choice must not be replaced by this response.
-      if (ticket.current) {
-        latest.current = saved;
-        setPreference(saved);
-      }
+      const saved = await source.update(intent);
+      // Broadcasts are authoritative, including one that arrives before this
+      // response. Never let a delayed response undo a later persisted choice.
+      if (ticket.current) setPreference(saved);
     },
     [source, updates]
   );
-  const update = useCallback(
-    (patch: Partial<Omit<PresentationPreferencesV1, 'schemaVersion'>>) => {
-      const next = { ...latest.current, schemaVersion: 1 as const, ...patch };
-      return commit(next.fleetView || next.fleetMaterial ? next : undefined);
-    },
-    [commit]
-  );
   const setFleetView = useCallback(
-    (fleetView: FleetView) => update({ fleetView }),
+    (value: FleetView) => update({ field: 'fleetView', value }),
     [update]
   );
   const resetFleetView = useCallback(
-    () => update({ fleetView: undefined }),
+    () => update({ field: 'fleetView', value: null }),
     [update]
   );
   const setFleetMaterial = useCallback(
-    (fleetMaterial: FleetMaterial) => update({ fleetMaterial }),
+    (value: FleetMaterial) => update({ field: 'fleetMaterial', value }),
     [update]
   );
   const resetFleetMaterial = useCallback(
-    () => update({ fleetMaterial: undefined }),
+    () => update({ field: 'fleetMaterial', value: null }),
     [update]
   );
   const value = useMemo(

@@ -36,11 +36,8 @@ export function fleetViewUrl(value) {
 export async function prepareFleetViewPage(page) {
   await page.addInitScript(view => {
     localStorage.setItem(
-      'exawatt.presentation.v1',
-      JSON.stringify({
-        schemaVersion: 1,
-        fleetView: view,
-      })
+      'exawatt.presentation.fleetView.v1',
+      JSON.stringify(view)
     );
   }, fleetView);
 }

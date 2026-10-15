@@ -196,7 +196,7 @@ async function preparePage(page, { restore = false } = {}) {
     async ({ view, restore }) => {
       const settings = window.electron.settings;
       if (!restore)
-        await settings.setPresentation({ schemaVersion: 1, fleetView: view });
+        await settings.updatePresentation({ field: 'fleetView', value: view });
       if ((await settings.get()).presentation?.fleetView !== view)
         throw new Error(
           'Packaged Fleet presentation did not persist across launch'

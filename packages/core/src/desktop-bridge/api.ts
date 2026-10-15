@@ -267,7 +267,7 @@ export interface DesktopSettingsApi {
   get: BridgeInvoke<'settings:get'>;
   getSafetyControls: BridgeInvoke<'settings:get-safety-controls'>;
   setAppearance: BridgeInvoke<'settings:set-appearance'>;
-  setPresentation: BridgeInvoke<'settings:set-presentation'>;
+  updatePresentation: BridgeInvoke<'settings:update-presentation'>;
   setAttentionNotifications: BridgeInvoke<'settings:set-attention-notifications'>;
   setDockBadge: BridgeInvoke<'settings:set-dock-badge'>;
   setUsageAlerts: BridgeInvoke<'settings:set-usage-alerts'>;

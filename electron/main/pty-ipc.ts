@@ -66,7 +66,7 @@ import {
   setAttentionNotifications,
   setDockBadge,
   setGoalVisualsEnabled,
-  setPresentationPreferences,
+  updatePresentationPreferences,
   setKeyboardShortcutOverrides,
   setHostedContextLabels,
   setHostedConversationSummaries,
@@ -931,14 +931,11 @@ export function registerPtyIPC(
   // user settings (S3): userData/settings.json — e.g. the terminal font
   handleTrusted('settings:get', () => loadSettings());
   handleTrusted('settings:get-safety-controls', () => readSafetyControls());
-  handleTrusted(
-    'settings:set-presentation',
-    (_event, presentation: unknown) => {
-      const settings = setPresentationPreferences(presentation);
-      broadcast('settings:changed', settings);
-      return settings;
-    }
-  );
+  handleTrusted('settings:update-presentation', (_event, update: unknown) => {
+    const settings = updatePresentationPreferences(update);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
   handleTrusted('settings:set-appearance', (_event, appearance: unknown) => {
     const settings = setAppearancePreferences(appearance);
     const resolved = applyNativeAppearancePreference(

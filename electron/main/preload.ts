@@ -277,8 +277,8 @@ const bridge = {
     get: () => invoke('settings:get'),
     getSafetyControls: () => invoke('settings:get-safety-controls'),
     setAppearance: appearance => invoke('settings:set-appearance', appearance),
-    setPresentation: presentation =>
-      invoke('settings:set-presentation', presentation),
+    updatePresentation: update =>
+      invoke('settings:update-presentation', update),
     setAttentionNotifications: enabled =>
       invoke('settings:set-attention-notifications', enabled),
     setDockBadge: enabled => invoke('settings:set-dock-badge', enabled),

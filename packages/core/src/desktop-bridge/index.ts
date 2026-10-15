@@ -29,4 +29,5 @@ export {
   isAnalyticsId,
   parseAnalyticsDeviceRecord,
   parsePresentationPreferences,
+  applyPresentationUpdate,
 } from './settings';

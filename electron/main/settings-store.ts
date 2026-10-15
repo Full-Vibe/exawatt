@@ -2,6 +2,7 @@ import { app } from 'electron';
 import {
   parseAnalyticsDeviceRecord,
   parsePresentationPreferences,
+  applyPresentationUpdate,
 } from '@exawatt/core/desktop-bridge';
 import {
   readJsonFile,
@@ -1205,14 +1206,11 @@ export function setKeepAwakePolicy(
   return settings;
 }
 
-/** Only explicit choices are written. Null removes the override. */
-export function setPresentationPreferences(raw: unknown): StoredSettings {
-  const presentation = parsePresentationPreferences(raw);
-  if (raw !== null && !presentation)
-    throw new Error('Invalid presentation preference');
+/** Apply one explicit choice to current persisted truth; unrelated choices survive. */
+export function updatePresentationPreferences(update: unknown): StoredSettings {
   const settings = loadSettings();
-  if (presentation?.fleetView || presentation?.fleetMaterial)
-    settings.presentation = presentation;
+  const presentation = applyPresentationUpdate(settings.presentation, update);
+  if (presentation) settings.presentation = presentation;
   else delete settings.presentation;
   writeSettings(settings);
   return settings;
