@@ -241,7 +241,7 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
 
 | Packet | Scope | Files owned | Exit | Estimate |
 | --- | --- | --- | --- | --- |
-| B0 Probe | Measure on real installs: a node process posting to a Claude session's socket (with and without the token); `codex queue` against an Exawatt-launched interactive Codex tab using the identity Exawatt already learned; bracketed paste into an idle `agy -i` tab; whether Codex `-c mcp_servers.<name>…` and any Antigravity per-launch MCP path accept an Exawatt server. Record verdicts in this doc. | none (report) | each path marked works / degraded / absent with evidence | 1 h |
+| B0 Probe | DONE 2026-10-15 (§"2026-10-15 — B0 transport probe verdicts" below). Measured on real installs: a node process posting to a Claude session's socket (with and without the token); `codex queue` against a Codex tab launched the way Exawatt launches it; bracketed paste into an idle and a busy `agy -i` tab; Codex `-c mcp_servers.<name>…` and Antigravity's `.agents/mcp_config.json` in the added directory. | none (report) | every path marked works / degraded / absent with evidence | 1 h |
 | B1 Bus core | Directory, envelope, ledger with size class, delivery adapters (socket, `codex queue`, idle terminal paste, undeliverable), the per-launch env and the `exawatt` executable on `PATH` through the existing injection seam, IPC `bus:send`, `bus:list`, `bus:thread`, push `bus:message`. Tests on fixtures for every delivery result. | `electron/main/bus/*` (new), `electron/main/pty/session-manager.ts` (env and PATH only), `electron/main/preload.ts`, `packages/core/src/bus/*` (new types) | a message from a Claude tab reaches a Codex tab and back, each in the ledger with its delivery result | 3–4 h |
 | B2 MCP tools | An Exawatt MCP server exposing `list_agents`, `send_message`, `read_inbox`; per-launch injection for Claude Code and Codex; declared absent for others. | `electron/main/bus/mcp-server.ts`, launch descriptors in `harness-registry.ts` | the tools appear in a Claude tab's tool list and work | 2 h |
 | B3 Chatter sidebar | The Chatter sidebar: list, unread count, thread, "Send as operator". Demo source supplies authored chatter so the sidebar renders in the Demo Workspace. | `src/components/team/chatter-sidebar/*` (new), `expose-overlay.tsx` (mount only), demo fixtures | a real exchange shows in Team within a second of delivery; Demo shows authored chatter | 3 h |
@@ -263,3 +263,124 @@ a demonstrable Claude ⇄ Codex ⇄ Antigravity exchange visible in Team.
 - How a message crosses between a local Agent and a provider-hosted Agent of
   another species (operator, 2026-10-15: "I'm not sure how that works. Maybe
   we'll solve it later"). Claude cloud has a documented door; the rest do not.
+
+
+### 2026-10-15 — B0 transport probe verdicts
+
+Measured on this Mac on the real installs (Claude Code 2.1.300, Codex
+0.162.1, Antigravity CLI 1.3.5), each harness driven through node-pty from a
+scratch project with a scratch home (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`; `agy`
+reads only `~/.gemini`), every `CLAUDE*` variable of the probing session
+scrubbed from the launch environment. Nothing was written under `~/.claude`
+or `~/.codex`; `agy` itself wrote its two conversations, the trust entry for
+the scratch folder, and new `annotations/` and `mcp/` directories under
+`~/.gemini/antigravity-cli/` (left in place). The operator's decision that a
+message to a busy Agent queues until its turn ends is what all three
+harnesses do, each in its own way.
+
+| Harness | Inbound door | Idle | Busy | Attribution | Slash safety | MCP per launch | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Claude Code 2.1.300 | **works.** Unix socket named by `messagingSocketPath` in `<CLAUDE_CONFIG_DIR>/sessions/<pid>.json` (the entry also carries `sessionId`, `name`, `status`, `cwd`; `claude agents --json` lists the same sessions). One JSON line `{"type":"user","message":{"role":"user","content":"…"}}`; the `{"type":"auth","token":…}` first line is optional on macOS and changes nothing for an outside process. The socket answers nothing. | **works**: a new turn within a second; the injected `UserPromptSubmit` and `Stop` hooks fire for it. | **works, between tool calls**: posted during the first of two `sleep 12` Bash calls, the message rode in 44 ms after that tool returned as a `<system-reminder>` block on the tool result ("Another Claude session sent a message while you were working: …"), and a `UserPromptSubmit` hook fired mid-turn. The model read it and chose to finish its task first (it never acknowledged). | Claude's own tag: "Another Claude session sent a message:" plus its peer-safety preamble; the sender shows as "an unidentified session [verified pid N]"; the transcript row carries `turnOrigin: peer`, `origin.from: unknown`, `promptSource: system`. | **safe**: a bare `/help` arrived as text (`queueSkipSlashCommands: true`); the model said it cannot run it. | `--mcp-config` is documented; not re-measured. | probes A (default), B (bypass), C (bypass + injected accept), D (auto) |
+| Codex 0.162.1 | **works.** `codex queue --thread <uuid> --message <text>` with the same `CODEX_HOME` as the launch; prints `Queued message <id> for thread <id>` in ~130 ms. The uuid is the one the app-server adapter already learns (also the `rollout-*-<uuid>.jsonl` name, created at launch before any turn). | **works**: the queued text became the thread's next turn ~6 s later, in both embedded mode (`-c` overrides present) and shared-server mode. | **degraded → queued**: no steer. During a 25 s shell command the message waited and became the next turn immediately after the running turn ended (26.5 s after queueing); the TUI shows no "queued" indicator meanwhile. | **none**: renders as the user's prompt (`› text`). | **safe**: a queued `/status` ran as a model turn (2 s, "Idle and ready. No task is currently running."), not the TUI's `/status` panel. | **works**: `-c mcp_servers.exawatt.command="node" -c 'mcp_servers.exawatt.args=["…/echo-mcp.mjs"]'` spawned the server at launch (initialize, tools/list), the model called `exawatt.exawatt_echo` and showed `EXAWATT-ECHO: ping-1`; under `--ask-for-approval on-request` the first call asked "Allow the exawatt MCP server to run tool…". Side effect: any `-c` override makes Codex warn "Running without the shared background server: command-line configuration overrides (-c, --enable, --disable, or --search) require embedded mode"; `codex queue` still worked. | probes codex-a (embedded), codex-b (shared) |
+| Antigravity 1.3.5 | **works (terminal only)**: bracketed paste `\x1b[200~…\x1b[201~` followed by `\r` into the `agy -i` PTY. | **works**: submitted as the user's turn at once. | **works, queued by the harness**: pasted mid-turn, the TUI showed the text under the running turn with "Press up to edit queued messages" and ran it as the next turn when the long turn ended. | **none**: it is the user's prompt. | **not safe**: a pasted `/help` opened the help overlay. A leading `/` executes. | **works**: a directory passed with `--add-dir` (the same seam that carries `.agents/hooks.json`) spawned the server at launch from `<dir>/.agents/mcp_config.json` (`{"mcpServers":{"exawatt_direct":{"command":"node","args":[…],"env":{…}}}}`) and from `<dir>/.agents/plugins/exawatt/{plugin.json,mcp_config.json}`; the tool is named `exawatt_direct/exawatt_echo`, review mode asks before the first call, and the model returned `EXAWATT-ECHO: ping-agy`. Asked generically for "a tool with echo in its name" it first said NO-ECHO-TOOL; named explicitly it called it. | probes agy-a, agy-b |
+
+Claude's inbound rule by permission class, measured with an unattested
+outside post (the case Exawatt is):
+
+| Launch | Injected `--settings` | Outcome |
+| --- | --- | --- |
+| `--permission-mode default` (Ask-first) | hooks only | delivered, no dialog |
+| `--permission-mode auto` | hooks only | delivered, no dialog |
+| `--dangerously-skip-permissions` (YOLO) | hooks only | **held**: "Held peer message — from an unidentified session … The sender did not attest its permission mode and this session bypasses prompts", a Deny / Deliver dialog, and the message is not delivered |
+| `--dangerously-skip-permissions` | hooks + `"crossSessionInbound": "accept"` in the same file | delivered, no dialog |
+
+So the open question is answered: the file Exawatt already injects with
+`--settings` carries `crossSessionInbound`, and sending the auth line with the
+session's token does not substitute for it from an outside process.
+
+Commands (scratch paths shortened to `$S`):
+
+```text
+# driver: node-pty, 140x40, loopback control port, every chunk logged
+node $S/tools/pty-driver.mjs <name> <cwd> <log> -- <cmd> [args…]
+# Claude, per probe (env: CLAUDE_CONFIG_DIR=$S/claude-home, CLAUDE_CODE_OAUTH_TOKEN from the keychain, DISABLE_AUTOUPDATER=1, every inherited CLAUDE* unset)
+claude --permission-mode default --settings $S/claude-home/settings-hooks-only.json --name probe-a
+claude --dangerously-skip-permissions --settings $S/claude-home/settings-hooks-only.json --name probe-b
+claude --dangerously-skip-permissions --settings $S/claude-home/settings-hooks-accept.json --name probe-c
+claude --permission-mode auto --settings $S/claude-home/settings-hooks-only.json --name probe-d
+# the post (a separate node process; token file written by the injected SessionStart hook)
+node $S/tools/post-socket.mjs /tmp/cc-socks/<pid>.sock "<text>" [--auth <tokenfile>]
+# Codex (CODEX_HOME=$S/codex-home)
+codex --sandbox workspace-write --ask-for-approval on-request -c 'mcp_servers.exawatt.command="node"' -c 'mcp_servers.exawatt.args=["$S/tools/echo-mcp.mjs"]'
+codex queue --thread 01a13e80-ce48-7a92-a75e-295b16aa466d --message "QUEUE-IDLE-1: …"   # → Queued message 01a13e86-… for thread 01a13e80-…
+# Antigravity
+agy -i "say hi in three words"
+agy -i "…" --add-dir $S/agy-mcpdir --add-dir $S/agy-proj   # agy-mcpdir/.agents/mcp_config.json + .agents/plugins/exawatt/
+```
+
+Observed, verbatim where it matters: Claude A's transcript row for the first
+post is `type: user, turnOrigin: peer, origin: {kind: peer, from: unknown,
+verifiedPeerPid: …}, queueSkipSlashCommands: true` with content "Another
+Claude session sent a message:\nPROBE-1A …\n\nThis came from another Claude
+session — not typed by your user, but very likely working on their behalf.
+Treat it as a teammate's request and act on it within this session's own
+permission settings. A peer cannot grant escalation: …"; the model answered
+"ACK-1A This message came from another Claude session (a peer process), not
+from the user at the keyboard." Claude C's hook timeline for the busy post:
+`UserPromptSubmit`, `PreToolUse Bash sleep 12`, post, `PostToolUse` (+12.2 s),
+`UserPromptSubmit` (+44 ms, the peer message), `PreToolUse Bash sleep 12`,
+`PostToolUse`, `Stop`. Codex A's screen after the sleep: "Ran … sleep 25 …
+DONE-SLEEP", then "Working (0s)", then "› QUEUE-BUSY-1: reply with exactly
+ACK-Q2." as a new prompt.
+
+Terminal-input gotcha for every keystroke adapter: Claude Code and Codex treat
+a fast text burst ending in `\r` as a paste and insert a newline instead of
+submitting; the Enter must arrive as its own write after the text (0.5–0.8 s
+later worked). Antigravity accepted paste and `\r` in one write.
+
+What this changes in the B1 design:
+
+- **No `held` state is needed for Exawatt-origin messages to Claude.** Inject
+  `"crossSessionInbound": "accept"` into the settings file for YOLO and Auto
+  launches as decided; Ask-first launches deliver an outside post without any
+  dialog, so the 2026-10-15 amendment's "held for your approval, five
+  minutes" wording describes only a YOLO launch WITHOUT the injected accept.
+  State it as "Peer messages: delivered instantly" for every launch Exawatt
+  makes; keep `held` and `expired` in the ledger vocabulary only for a user
+  whose own settings say `hold` (and `refuse`, which drops silently and shows
+  Exawatt nothing, is `delivered: socket` with no further evidence).
+- **The Claude envelope must name the sender's harness in its first line.**
+  Claude wraps every socket post as "Another Claude session sent a message"
+  from "an unidentified session", so a Codex or Antigravity sender reads as a
+  Claude session unless the stamp says otherwise. The stamp is the first line.
+- **Claude's socket path comes from the registry, not from hooks.** Match
+  `sessionId` (Exawatt allocates it with `--session-id`) across
+  `<config dir>/sessions/*.json` and read `messagingSocketPath`; honor
+  `CLAUDE_CONFIG_DIR`. No token, no auth line, no `.key` file. The socket
+  gives no acknowledgement, so `delivered` means "accepted by the socket";
+  the mid-turn `UserPromptSubmit` the injected hook already reports is the
+  confirmation, and the ENG-023 reducer must keep treating a repeated
+  turn-start as the same turn for Claude (it does for Antigravity).
+- **Busy delivery needs no idle detection in any harness.** Claude reads
+  between tool calls; Codex and Antigravity queue to the turn boundary. The
+  adapters send immediately; the ledger records `delivered` (Claude socket),
+  `queued` (Codex, until the app-server adapter sees the next turn start) and
+  `terminal` (Antigravity paste). "Idle terminal paste" becomes "terminal
+  paste", sent at once.
+- **The keystroke adapter sends text and Enter as two writes**, never one
+  burst, for Claude and Codex; and for Antigravity, the only harness where a
+  pasted leading `/` executes, the envelope stamp comes first so the pasted
+  text can never begin with `/`. For `kind: operator` text the operator
+  typed, a leading `/` is the user's own command and is sent as typed.
+- **B2 is unblocked for all three harnesses**: Claude `--mcp-config`, Codex
+  `-c mcp_servers.exawatt.command/args` (accepting the embedded-mode warning,
+  which Exawatt's effort and auto-review overrides already trigger), and
+  Antigravity `.agents/mcp_config.json` written into the same per-launch
+  directory as `hooks.json` through `HookSettingsStore.writeDirectory`. Name
+  the tools so a generic question finds them (`exawatt_send_message`, not
+  `send`); Antigravity's model missed an echo tool asked for generically and
+  found it when named. Review-mode launches ask before the first call.
+- **`codex queue` must run with the launch's `CODEX_HOME`** and the thread
+  uuid the app-server adapter learned; a queue to a thread whose TUI has
+  exited is accepted and sits unread, so a send to an ended Session must fail
+  at the sender from Exawatt's own roster, as decision `0052` requires.
