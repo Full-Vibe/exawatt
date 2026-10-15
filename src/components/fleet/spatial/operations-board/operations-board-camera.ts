@@ -9,6 +9,8 @@ export interface BoardCameraTarget {
 }
 
 export interface OperationsBoardViewport {
+  /** Logical camera zoom, when authored by the rig; old stored viewports omit it. */
+  zoom?: number;
   centerX: number;
   centerY: number;
   width: number;

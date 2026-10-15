@@ -99,6 +99,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
   projection,
   reduced,
   controllerRef,
+  onControllerReady,
   onViewportChange,
   onZoomChange,
   onBandSelect,
@@ -116,6 +117,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
   allowAngledEntry?: boolean;
   reduced: boolean;
   controllerRef: { current: OperationsBoardHandle | null };
+  onControllerReady?: (controller: OperationsBoardHandle) => void;
   onViewportChange?: (viewport: OperationsBoardViewport) => void;
   onZoomChange?: (zoom: number) => void;
   /** Band select (V3.2): rect arrives in LAYOUT space (y-down). */
@@ -230,6 +232,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
     ortho.updateMatrixWorld(true);
     const viewport = boardViewportFromCamera(ortho, projectionScratch);
     if (!viewport) return;
+    viewport.zoom = current.current.zoom;
     if (process.env.NODE_ENV !== 'production') {
       (
         window as typeof window & {
@@ -768,10 +771,18 @@ export const BoardCameraRig = memo(function BoardCameraRig({
       restoreViewport(viewport) {
         target.current.x = viewport.centerX;
         target.current.y = boardWorldY(viewport.centerY);
-        target.current.zoom = Math.max(
-          0.001,
-          Math.min(size.width / viewport.width, size.height / viewport.height)
-        );
+        target.current.zoom =
+          viewport.zoom !== undefined &&
+          Number.isFinite(viewport.zoom) &&
+          viewport.zoom > 0
+            ? viewport.zoom
+            : Math.max(
+                0.001,
+                Math.min(
+                  size.width / viewport.width,
+                  size.height / viewport.height
+                )
+              );
         // A viewport remembered against a different fleet shape can sit far
         // outside today's board; restoring it must land inside the limits
         // rather than resuming the session lost in empty space.
@@ -876,6 +887,8 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         cameraChanged();
       },
     };
+    onControllerReady?.(controllerRef.current);
+    announceTargetViewport();
     return () => {
       controllerRef.current = null;
     };
@@ -883,6 +896,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
     announceTargetViewport,
     constrainTarget,
     controllerRef,
+    onControllerReady,
     invalidate,
     layout.bounds,
     layout.bounds.height,

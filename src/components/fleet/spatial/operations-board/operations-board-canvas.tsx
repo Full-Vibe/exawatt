@@ -109,6 +109,7 @@ export function OperationsBoardCanvas({
   projection,
   lens = 'status',
   controllerRef,
+  onControllerReady,
   onViewportChange,
   onDrillProject,
   onSelectAgent,
@@ -131,6 +132,7 @@ export function OperationsBoardCanvas({
   projection: SpatialBoardProjection;
   lens?: SpatialBoardLens;
   controllerRef: { current: OperationsBoardHandle | null };
+  onControllerReady?: (controller: OperationsBoardHandle) => void;
   onViewportChange?: (viewport: OperationsBoardViewport) => void;
   onDrillProject: (projectId: string) => void;
   onSelectAgent: (agentId: string) => void;
@@ -232,7 +234,7 @@ export function OperationsBoardCanvas({
   return (
     <Canvas
       orthographic
-      frameloop="demand"
+      frameloop={pageVisible ? 'demand' : 'never'}
       dpr={lowPower ? [1, 1.25] : [1, 2]}
       camera={{ position: [0, 0, 100], zoom: 1, near: 0.1, far: 200 }}
       gl={{ antialias: true, preserveDrawingBuffer }}
@@ -274,6 +276,7 @@ export function OperationsBoardCanvas({
           projection={projection}
           reduced={reduced}
           controllerRef={controllerRef}
+          onControllerReady={onControllerReady}
           onViewportChange={onViewportChange}
           onZoomChange={handleZoomChange}
           onBandSelect={onBandSelect}

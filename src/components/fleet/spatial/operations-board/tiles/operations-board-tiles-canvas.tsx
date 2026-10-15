@@ -61,6 +61,7 @@ export function OperationsBoardTilesCanvas({
   onSelectDelegationChild,
   selectedDelegationUnitId = null,
   controllerRef,
+  onControllerReady,
   onViewportChange,
   onDrillProject,
   onSelectAgent,
@@ -133,7 +134,7 @@ export function OperationsBoardTilesCanvas({
   return (
     <Canvas
       orthographic
-      frameloop="demand"
+      frameloop={visible ? 'demand' : 'never'}
       dpr={lowPower ? [1, 1.25] : [1, 2]}
       camera={{ position: [0, 0, 100], zoom: 1, near: 0.1, far: 200 }}
       gl={{ antialias: true, preserveDrawingBuffer }}
@@ -183,6 +184,7 @@ export function OperationsBoardTilesCanvas({
           allowAngledEntry
           reduced={reduced}
           controllerRef={controllerRef}
+          onControllerReady={onControllerReady}
           onViewportChange={onViewportChange}
           onZoomChange={onZoomChange}
           onBandSelect={onBandSelect}
@@ -217,6 +219,7 @@ export function OperationsBoardTilesCanvas({
             ambient={ambient}
             reduced={reduced}
             lowPower={lowPower}
+            onBattery={onBattery}
             material={material}
             greybox={greybox}
             sourceMarks={sourceMarks}

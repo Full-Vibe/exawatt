@@ -73,6 +73,19 @@ describe('spatial navigation state', () => {
     ).toBe('exawatt:spatial-viewport:v2:agent:project%3Aa:agent%3Ab:top-down');
   });
 
+  it('preserves optional camera zoom and rejects invalid zoom without dropping old viewports', () => {
+    const viewport = { centerX: 1, centerY: 2, width: 30, height: 20 };
+    expect(parseStoredViewport(JSON.stringify(viewport))).toEqual(viewport);
+    expect(
+      parseStoredViewport(JSON.stringify({ ...viewport, zoom: 2.5 }))
+    ).toEqual({ ...viewport, zoom: 2.5 });
+    for (const zoom of [null, '2', 0, -1, 1_000_001]) {
+      expect(
+        parseStoredViewport(JSON.stringify({ ...viewport, zoom }))
+      ).toBeNull();
+    }
+  });
+
   it('accepts only finite, positive stored viewports', () => {
     expect(
       parseStoredViewport(

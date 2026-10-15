@@ -129,6 +129,14 @@ export function parseStoredViewport(
     }
     const maxMagnitude = 1_000_000;
     if (
+      candidate.zoom !== undefined &&
+      (typeof candidate.zoom !== 'number' ||
+        !Number.isFinite(candidate.zoom) ||
+        candidate.zoom <= 0 ||
+        candidate.zoom > maxMagnitude)
+    )
+      return null;
+    if (
       Math.abs(candidate.centerX!) > maxMagnitude ||
       Math.abs(candidate.centerY!) > maxMagnitude ||
       candidate.width! < 0.01 ||

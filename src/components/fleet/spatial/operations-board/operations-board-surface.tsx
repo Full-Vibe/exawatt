@@ -13,6 +13,7 @@ import {
   memo,
 } from 'react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import {
   selectSpatialDelegationUnits,
   selectSpatialDirectionalTarget,
@@ -74,7 +75,7 @@ function spatialMaterialFrame(theme: SpatialThemeSnapshot): CSSProperties {
 }
 
 class BoardErrorBoundary extends Component<
-  { children: ReactNode; theme: SpatialThemeSnapshot },
+  { children: ReactNode; theme: SpatialThemeSnapshot; onRetry: () => void },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -102,19 +103,14 @@ class BoardErrorBoundary extends Component<
               className="mt-2 text-xs leading-5"
               style={{ color: theme.labelMuted }}
             >
-              Your fleet is still available in the text operations view.
+              Retry the renderer, or choose another Fleet view in Settings.
             </p>
-            <Link
-              href="/fleet"
-              className="mt-4 inline-flex min-h-11 items-center border px-3 text-xs font-semibold outline-none hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
-              style={{
-                borderColor: theme.selection,
-                background: theme.selection,
-                color: theme.material.raised.fallback,
-              }}
-            >
-              Open Fleet view
-            </Link>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={this.props.onRetry}>Retry renderer</Button>
+              <Button variant="outline" asChild>
+                <Link href="/settings?section=fleet">Fleet settings</Link>
+              </Button>
+            </div>
           </div>
         </div>
       );
@@ -417,7 +413,13 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     []
   );
   const pendingViewport = useRef<OperationsBoardViewport | null>(null);
-  const didRestoreViewport = useRef(false);
+  const [rendererAttempt, setRendererAttempt] = useState(0);
+  const rendererKey = `${fleetView}:${rendererAttempt}`;
+  const restoredRenderer = useRef<string | null>(null);
+  const retryRenderer = useCallback(
+    () => setRendererAttempt(value => value + 1),
+    []
+  );
   const viewportSaveTimer = useRef<number | null>(null);
   const visibleZones = useMemo(
     () => layout.zones.filter(zone => zone.visible),
@@ -502,26 +504,31 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     return () => window.removeEventListener(RECENTER_SPATIAL_EVENT, recenter);
   }, []);
 
-  useEffect(() => {
-    if (didRestoreViewport.current) return;
-    didRestoreViewport.current = true;
-    // A Team→Fleet handoff owns the arrival camera (ENG-004 V3.0): the
-    // stored viewport must not yank the entry pose. Skipping the restore on
-    // a handoff that later falls back costs one remembered viewport — the
-    // fit pose is the correct fallback frame anyway.
-    if (altitudeHandoffActive()) return;
-    const viewport = parseStoredViewport(
-      window.sessionStorage.getItem(viewportStorageKey)
-    );
-    if (!viewport) return;
-    const frame = window.requestAnimationFrame(() => {
-      controller.current?.restoreViewport(viewport);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [viewportStorageKey]);
+  const restoreWhenReady = useCallback(
+    (handle: OperationsBoardHandle) => {
+      if (restoredRenderer.current === rendererKey) return;
+      const initial = restoredRenderer.current === null;
+      restoredRenderer.current = rendererKey;
+      // A handoff owns the first arrival. Renderer changes keep the last
+      // operator viewport; startup reads storage only after the lazy rig exists.
+      if (initial && altitudeHandoffActive()) return;
+      const viewport =
+        pendingViewport.current ??
+        (initial
+          ? parseStoredViewport(
+              window.sessionStorage.getItem(viewportStorageKey)
+            )
+          : null);
+      if (viewport) handle.restoreViewport(viewport);
+    },
+    [rendererKey, viewportStorageKey]
+  );
 
   const updateViewport = useCallback(
     (viewport: OperationsBoardViewport) => {
+      // Initial fit reports precede controller registration. They must not
+      // overwrite the prior view's pose while a replacement renderer mounts.
+      if (restoredRenderer.current !== rendererKey) return;
       const rect = viewportRect.current;
       if (rect) {
         rect.setAttribute('x', String(viewport.centerX - viewport.width / 2));
@@ -529,7 +536,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
         rect.setAttribute('width', String(viewport.width));
         rect.setAttribute('height', String(viewport.height));
       }
-      pendingViewport.current = viewport;
+      pendingViewport.current = { ...viewport };
       if (viewportSaveTimer.current !== null) return;
       viewportSaveTimer.current = window.setTimeout(() => {
         viewportSaveTimer.current = null;
@@ -541,7 +548,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
         }
       }, 200);
     },
-    [viewportStorageKey]
+    [rendererKey, viewportStorageKey]
   );
 
   useEffect(
@@ -766,7 +773,11 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
       )}
       {/* World labels own depth within the scene, never above sibling chrome. */}
       <div className="absolute inset-0 isolate">
-        <BoardErrorBoundary theme={theme}>
+        <BoardErrorBoundary
+          key={rendererKey}
+          theme={theme}
+          onRetry={retryRenderer}
+        >
           <Suspense
             fallback={
               <div
@@ -782,6 +793,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
               projection={projection}
               lens={lens}
               controllerRef={controller}
+              onControllerReady={restoreWhenReady}
               onViewportChange={updateViewport}
               onDrillProject={onDrillProject}
               onSelectAgent={onSelectAgent}
