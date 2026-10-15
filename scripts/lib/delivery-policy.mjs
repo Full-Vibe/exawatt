@@ -116,6 +116,15 @@ const isBoardCanvas = file =>
 
 export const SURFACE_GATES = [
   {
+    gate: 'eval:spatial:tiles-bench',
+    why: 'the v2 review bench must paint every material at 10, 100 and 1k Agents in all themes',
+    match: file => file === 'src/app/hud-gallery/board-study/page.tsx' ||
+      file === 'src/components/hud/board-study-fixtures.ts' ||
+      (file.startsWith('src/components/fleet/spatial/operations-board/tiles/') && !/\.test\.tsx?$/.test(file)) ||
+      (file.startsWith('src/components/tiles/') && !/\.test\.tsx?$/.test(file)) ||
+      file === 'scripts/board-tiles-bench-eval.mjs',
+  },
+  {
     gate: 'eval:terrain-story',
     why: 'native wheel and touch must scroll over the 3D world and its agent targets',
     match: file => (file.startsWith('src/app/hud-gallery/terrain-story/') && !/\.test\.tsx?$/.test(file)) || file === 'scripts/terrain-story-eval.mjs',
@@ -1454,6 +1463,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:workspace:team': GATE,
   'eval:navigation:spine': GATE,
   'eval:electron:packaged': GATE,
+  'eval:spatial:tiles-bench': GATE,
   'eval:spatial:viewport': GATE,
   'eval:spatial:attention': GATE,
   'eval:electron:connected-fleet': GATE,

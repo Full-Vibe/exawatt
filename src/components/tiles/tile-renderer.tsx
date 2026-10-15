@@ -475,8 +475,11 @@ export function TileRenderer({
   const surface = useMemo(() => makeSurfaceLightUniforms(), []);
   const spec = useMemo(() => {
     const made = makeCrustMaterial(material);
-    if (!transmission && made.agent instanceof THREE.MeshPhysicalMaterial)
-      made.agent.transmission = 0;
+    if (!transmission) {
+      for (const part of [made.agent, made.ground]) {
+        if (part instanceof THREE.MeshPhysicalMaterial) part.transmission = 0;
+      }
+    }
     // the body takes on the ground's finish as its agent leaves
     withSurfaceLight(made.agent, surface, 1, made.ground);
     return made;

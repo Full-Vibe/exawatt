@@ -1,4 +1,10 @@
-import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
+import {
+  demoFleetAgents,
+  demoWorkspaceAgent,
+  type ExawattAgent,
+  type FleetMetrics,
+  type FleetState,
+} from '@exawatt/core';
 
 /**
  * Deterministic fleets for the Fleet board study (ENG-004).
@@ -9,6 +15,10 @@ import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
  * of "the crowded case" is a URL rather than a setup ritual.
  */
 export type BoardStudyFixtureId =
+  | 'demo'
+  | 'scale-10'
+  | 'scale-100'
+  | 'scale-1000'
   | 'voltaic'
   | 'fanout'
   | 'crowded'
@@ -23,6 +33,26 @@ export interface BoardStudyFixture {
 }
 
 export const BOARD_STUDY_FIXTURES: BoardStudyFixture[] = [
+  {
+    id: 'demo',
+    title: 'Demo Workspace',
+    note: 'Voltaic Grid Systems, from the shared Demo Workspace source.',
+  },
+  {
+    id: 'scale-10',
+    title: '10 Agents',
+    note: '10 Agents across two Projects.',
+  },
+  {
+    id: 'scale-100',
+    title: '100 Agents',
+    note: '100 Agents across ten Projects.',
+  },
+  {
+    id: 'scale-1000',
+    title: '1k Agents',
+    note: '1,000 Agents across 26 Projects.',
+  },
   {
     id: 'voltaic',
     title: 'Mixed fleet',
@@ -122,6 +152,24 @@ function fleet(agents: ExawattAgent[]): FleetState {
 
 export function boardStudyFleet(id: BoardStudyFixtureId): FleetState {
   switch (id) {
+    case 'demo':
+      return fleet(demoFleetAgents('scale').map(demoWorkspaceAgent));
+    case 'scale-10':
+    case 'scale-100':
+    case 'scale-1000': {
+      const count = Number(id.slice('scale-'.length));
+      const projectCount = count === 10 ? 2 : count === 100 ? 10 : 26;
+      return fleet(
+        Array.from({ length: count }, (_, index) =>
+          agent(
+            `bench-${index}`,
+            `Project ${String((index % projectCount) + 1).padStart(2, '0')}`,
+            index % 23 === 0 ? null : STATUSES[index % STATUSES.length]!,
+            { goal: `Assignment ${index + 1}` }
+          )
+        )
+      );
+    }
     case 'fanout':
       return fleet([
         agent('none', 'Fanout', 'working'),
@@ -133,9 +181,14 @@ export function boardStudyFleet(id: BoardStudyFixtureId): FleetState {
     case 'crowded':
       return fleet(
         Array.from({ length: 18 }, (_, index) =>
-          agent(`crowd-${index}`, 'Crowded', STATUSES[index % STATUSES.length]!, {
-            children: 3 + (index % 3),
-          })
+          agent(
+            `crowd-${index}`,
+            'Crowded',
+            STATUSES[index % STATUSES.length]!,
+            {
+              children: 3 + (index % 3),
+            }
+          )
         )
       );
     case 'sparse':
@@ -147,7 +200,9 @@ export function boardStudyFleet(id: BoardStudyFixtureId): FleetState {
     case 'stopped':
       return fleet([
         ...Array.from({ length: 6 }, (_, index) =>
-          agent(`done-${index}`, 'Settled', 'complete', { stopped: index % 2 === 0 })
+          agent(`done-${index}`, 'Settled', 'complete', {
+            stopped: index % 2 === 0,
+          })
         ),
         agent('idle-one', 'Settled', 'idle', { stopped: true }),
         agent('parent', 'Settled', 'complete', { children: 3, stopped: true }),
@@ -187,4 +242,21 @@ export function boardStudyFleet(id: BoardStudyFixtureId): FleetState {
       return fleet(agents);
     }
   }
+}
+
+/** Source identity remains fixture data; the renderer never guesses a brand. */
+export function boardStudySourceMarks(
+  id: BoardStudyFixtureId
+): Readonly<Record<string, string>> {
+  if (id === 'demo')
+    return Object.fromEntries(
+      demoFleetAgents('scale').map(agent => [agent.id, agent.harness])
+    );
+  const sources = ['claude', 'codex', 'openclaw', 'opencode', 'grok'];
+  return Object.fromEntries(
+    Object.keys(boardStudyFleet(id).agents).map((agentId, index) => [
+      agentId,
+      sources[index % sources.length]!,
+    ])
+  );
 }

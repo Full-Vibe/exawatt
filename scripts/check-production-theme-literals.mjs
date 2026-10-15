@@ -67,8 +67,12 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     reason: "the agent card's glass over the story's fixed night ground",
   },
   'src/components/site/fleet-story/mark-tones.ts': {
-    max: 6,
-    reason: 'third-party harness brand artwork',
+    max: 1,
+    reason: 'site-only concept brand artwork; product vendor tones moved to the shared owner',
+  },
+  'src/components/workspace/harness-mark-tones.ts': {
+    max: 5,
+    reason: 'third-party harness brand artwork shared by the homepage and Fleet, moved from the site allowance',
   },
   'src/components/tiles/crust-marks.ts': {
     max: 1,

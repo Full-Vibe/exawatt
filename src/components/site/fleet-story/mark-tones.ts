@@ -16,17 +16,11 @@
  */
 
 import type { StoryMarkId } from './concept-marks';
+import { harnessMarkTone } from '@/components/workspace/harness-mark-tones';
 
 /** Story paint for the tones a registry names, per mark. A tone a mark does
  *  not list is `ink`. */
 const TONES: Partial<Record<StoryMarkId, Record<string, string>>> = {
-  claude: { brand: '#D97757' },
-  openclaw: {
-    brand: '#ff4d4d',
-    claws: '#f0453e',
-    eye: '#050810',
-    glint: '#00e5cc',
-  },
   // the middle stop of Meta's gradient
   muse: { brand: '#0064E0' },
 };
@@ -52,5 +46,5 @@ export function markIdFor(adapterId: string): StoryMarkId | null {
 
 /** The colour a tone takes, or null where it takes the surrounding ink. */
 export function markToneHex(mark: StoryMarkId, tone: string): string | null {
-  return TONES[mark]?.[tone] ?? null;
+  return TONES[mark]?.[tone] ?? harnessMarkTone(mark, tone);
 }

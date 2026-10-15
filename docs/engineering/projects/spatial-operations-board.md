@@ -3348,3 +3348,53 @@ preview offer gating, and the existing Appearance/Settings suites. Signed-browse
 and Night (`/tmp/exawatt-fleet-tiles-p2/settings-{classic,air,night}.png`).
 The normal landing floor verifies the bridge and Electron compile; dogfood is requested by
 the slice's landing.
+
+### 2026-10-14 — V4.1 P3: v2 reaches look review on the board bench
+
+**The three materials are reviewable over one shared board layout; P4 has not started.**
+Execution: `agent/fleet-tiles-p3`, following P1 and P2's parallel worktrees.
+
+- `/hud-gallery/board-study?view=v2&fixture=scale-10&material=compare`
+  places Gummy, Acrylic and Anodized side by side. View, theme, fixture,
+  material, greybox and altitude are URL state. The existing v1 bench stays
+  available. The product Fleet route still mounts v1; Settings persistence is
+  implemented by P2 and the single production renderer switch belongs to P4.
+- The bench uses the real Demo Workspace projection (`demoWorkspaceAgent`),
+  plus exact 10/100/1,000-Agent fixtures. `boardTileModel` adapts existing
+  piece positions and the existing aggregate population field through
+  `boardWorldPoint`. It creates no alternate Agent layout. Decorative ghost
+  sockets carry no census or command identity. Project footprints, camera,
+  transition clock and DOM controls are shared imports.
+- One shared `TileRenderer` per specimen owns geometry, material, lighting,
+  brand marks and springs. Multiple cohorts initially doubled the light rig;
+  combining them removed the washed-out result. Material transmission is off
+  at Fleet altitude and on weak hardware, including Acrylic's ground material.
+  Project detail enables it when allowed. Fully aggregated fields use the
+  shared hex geometry; projected-size LOD and product scale budgets remain P4.
+- UI adheres to the design-system type/spacing/chrome rungs. The status-body
+  exception is explicitly bench-only. Calm attention and the ambient scheduler
+  keep the production motion boundary; full power/motion parity is not claimed.
+  Product vendor tones now have one data owner shared with the homepage;
+  concept mark data remains site-only.
+- Verification: type-check, targeted adapter/mark/slot/surface tests, export
+  consumers, lint and delivery-policy tests passed. The new declared
+  `eval:spatial:tiles-bench` gate captures 16 comparisons at 1920px / DPR 2:
+  nine scale/theme combinations, three Demo Workspace captures, three Project
+  details, and a solid-material 1k greybox. All 48 canvases painted with no
+  browser/WebGL errors. At 1k the Gummy/Acrylic/Anodized overview takes 8/8/7
+  draw calls and about 224k/128k/84k triangles respectively. These are render
+  figures, not a P4 frame-time or 10k certification.
+- Visual QA: no blank/clipped world, shader errors, depth flicker or bloom
+  blowout in the captured matrix. Small overview tiles intentionally collapse
+  material detail; Project captures expose it. The unchanged Project controls
+  omit names at dense label tiers. An independent P1-owner integration review
+  found no P3 blocker.
+- Evidence: `/tmp/exawatt-fleet-v2-review/` contains the full-resolution PNGs,
+  `report.json`, and an HTML capture selector. The landing reruns the matrix on
+  the exact integrated candidate. No P4 work is authorized by this evidence.
+
+**Review boundary.** The operator decides the material/look and whether Material
+becomes a Settings row at launch. D40 glyph/unread/Not-reported and lifecycle
+parity, delegation children, complete keyboard/multi-select/entry/session paths,
+the production registry/preference read, and 150/1k/10k motion/host-power gates
+remain P4. This study has not been accepted as the shipped Fleet presentation.

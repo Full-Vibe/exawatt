@@ -353,6 +353,14 @@ host-power limits. Gallery scene labels use DOM projection under unchanged CSP,
 with pointer pass-through and the same parent geometry/motion; they no longer
 start Troika blob workers for text.
 
+ENG-004 V4.1 P3 mounts the shared tile renderer in the standing board bench.
+`tiles/board-tiles-model.ts` adapts the existing layout and aggregate population
+field; it does not allocate a second Agent layout. The v2 review canvas reuses
+the board camera handle, transition clock and DOM Project/Agent controls, with
+flat tile placement and the existing power cadence. The homepage and bench
+share the material/geometry owner. Production still mounts v1; the lazy view
+registry, sole preference read and full parity belong to P4 after look review.
+
 Performance work starts from an operator-visible gesture and an attributed
 trace, changes the narrowest proven owner, and reruns the same behavior and
 timing evidence on the exact tree. The cross-surface Electron evaluator planned

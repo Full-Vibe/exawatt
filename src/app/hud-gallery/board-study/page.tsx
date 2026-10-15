@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -17,6 +17,14 @@ import {
 } from '@/components/hud/board-study-fixtures';
 import { THEME_REGISTRY } from '@/generated/theme-registry';
 import { resolveAppearance } from '@/lib/appearance/resolve-appearance';
+import { spatialThemeFromResolvedAppearance } from '@/components/fleet/spatial/spatial-theme';
+import type { OperationsBoardHandle } from '@/components/fleet/spatial/operations-board/operations-board-camera-rig';
+import type {
+  OperationsBoardTilesProps,
+  BoardTileMaterial,
+} from '@/components/fleet/spatial/operations-board/tiles/operations-board-tiles-canvas';
+import { boardStudySourceMarks } from '@/components/hud/board-study-fixtures';
+import { resolvedAppearanceCssVariables } from '@/lib/appearance/dom-adapter';
 import type { BuiltInThemeId } from '@/lib/appearance/types';
 
 /**
@@ -34,6 +42,13 @@ import type { BuiltInThemeId } from '@/lib/appearance/types';
  * proposed design.
  */
 
+const TilesCanvas = lazy(() =>
+  import('@/components/fleet/spatial/operations-board/tiles/operations-board-tiles-canvas').then(
+    module => ({ default: module.OperationsBoardTilesCanvas })
+  )
+);
+const MATERIALS = ['gummy', 'acrylic', 'anodized'] as const;
+
 const THEMES = {
   classic: 'exawatt-classic-dark',
   air: 'exawatt-air-light',
@@ -43,6 +58,9 @@ const THEMES = {
 type ThemeKey = keyof typeof THEMES;
 interface StudyState {
   fixture: BoardStudyFixtureId;
+  view: 'v1' | 'v2';
+  material: BoardTileMaterial | 'compare';
+  greybox: boolean;
   altitude: 'fleet' | 'project';
   theme: ThemeKey;
   projection: 'top-down' | 'fixed-angle';
@@ -51,6 +69,9 @@ interface StudyState {
 
 const DEFAULTS: StudyState = {
   fixture: 'voltaic',
+  view: 'v1',
+  material: 'compare',
+  greybox: false,
   altitude: 'fleet',
   theme: 'classic',
   projection: 'top-down',
@@ -63,7 +84,13 @@ function readState(search: string): StudyState {
   const altitude = params.get('altitude');
   const theme = params.get('theme');
   const projection = params.get('projection');
+  const material = params.get('material');
   return {
+    view: params.get('view') === 'v2' ? 'v2' : 'v1',
+    material: MATERIALS.includes(material as BoardTileMaterial)
+      ? (material as BoardTileMaterial)
+      : 'compare',
+    greybox: params.get('greybox') === 'true',
     fixture: BOARD_STUDY_FIXTURES.some(entry => entry.id === fixture)
       ? (fixture as BoardStudyFixtureId)
       : DEFAULTS.fixture,
@@ -78,6 +105,9 @@ function href(state: StudyState, patch: Partial<StudyState>): string {
   const next = { ...state, ...patch };
   const params = new URLSearchParams({
     fixture: next.fixture,
+    view: next.view,
+    material: next.material,
+    greybox: String(next.greybox),
     altitude: next.altitude,
     theme: next.theme,
     projection: next.projection,
@@ -171,6 +201,14 @@ function BoardStudyBench() {
     });
   }, []);
 
+  const sourceMarks = useMemo(
+    () => boardStudySourceMarks(state.fixture),
+    [state.fixture]
+  );
+  const theme = useMemo(
+    () => spatialThemeFromResolvedAppearance(resolvedAppearance),
+    [resolvedAppearance]
+  );
   const active = BOARD_STUDY_FIXTURES.find(
     entry => entry.id === state.fixture
   )!;
@@ -178,10 +216,16 @@ function BoardStudyBench() {
   return (
     <main
       className="min-h-screen bg-background px-4 py-6 font-ui text-foreground sm:px-6"
+      style={resolvedAppearanceCssVariables(resolvedAppearance)}
+      data-exa-theme={resolvedAppearance.themeId}
+      data-exa-appearance={resolvedAppearance.appearance}
+      data-exa-font={resolvedAppearance.interfaceFont}
+      data-exa-typography={resolvedAppearance.theme.typography.profile}
       data-board-study={state.fixture}
+      data-board-study-view={state.view}
       data-board-study-altitude={state.altitude}
     >
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
+      <div className="mx-auto flex max-w-[1920px] flex-col gap-4">
         <header className="flex flex-col gap-2">
           <p className="font-mono text-chrome-micro text-muted-foreground">
             <Link href="/hud-gallery" className="hover:text-foreground">
@@ -190,13 +234,22 @@ function BoardStudyBench() {
             / Fleet board
           </p>
           <h1 className="text-surface-title font-semibold">Fleet board</h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Real board, deterministic fleets. Click a Project to move the
-            selection; switch to Project altitude to test Agent hover and press.
+          <p className="text-chrome-meta text-muted-foreground">
+            {state.view === 'v2' ? 'v2 · Look review' : 'v1'} · Representative
+            data
           </p>
         </header>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-border p-3">
+          <Control
+            label="View"
+            options={(['v1', 'v2'] as const).map(value => ({
+              value,
+              label: value,
+              href: href(state, { view: value }),
+            }))}
+            current={state.view}
+          />
           <Control
             label="Fixture"
             options={BOARD_STUDY_FIXTURES.map(entry => ({
@@ -224,38 +277,147 @@ function BoardStudyBench() {
             }))}
             current={state.theme}
           />
-          <Control
-            label="Projection"
-            options={(['top-down', 'fixed-angle'] as const).map(value => ({
-              value,
-              label: value === 'top-down' ? 'Top' : 'Angle',
-              href: href(state, { projection: value }),
-            }))}
-            current={state.projection}
-          />
+          {state.view === 'v1' && (
+            <Control
+              label="Projection"
+              options={(['top-down', 'fixed-angle'] as const).map(value => ({
+                value,
+                label: value === 'top-down' ? 'Top' : 'Angle',
+                href: href(state, { projection: value }),
+              }))}
+              current={state.projection}
+            />
+          )}
+          {state.view === 'v2' && (
+            <>
+              <Control
+                label="Material"
+                options={(['compare', ...MATERIALS] as const).map(value => ({
+                  value,
+                  label:
+                    value === 'compare'
+                      ? 'Side by side'
+                      : value[0].toUpperCase() + value.slice(1),
+                  href: href(state, { material: value }),
+                }))}
+                current={state.material}
+              />
+              <Control
+                label="Render"
+                options={[
+                  {
+                    value: 'look',
+                    label: 'Materials',
+                    href: href(state, { greybox: false }),
+                  },
+                  {
+                    value: 'greybox',
+                    label: 'Greybox',
+                    href: href(state, { greybox: true }),
+                  },
+                ]}
+                current={state.greybox ? 'greybox' : 'look'}
+              />
+            </>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-chrome-meta text-muted-foreground">
           <span>{active.note}</span>
         </div>
 
-        <div className="h-[76svh] min-h-[520px] overflow-hidden rounded-lg border border-border">
-          <OperationsBoardSurface
-            layout={layout}
-            projection={state.projection}
-            onDrillProject={selectProject}
-            onSelectAgent={() => undefined}
-            onOverview={() => undefined}
-            onProjectionChange={() => undefined}
-            multiSelection={selected}
-            onToggleAgentSelect={toggleAgent}
-            onBandSelect={bandSelect}
-            preserveDrawingBuffer
-            resolvedAppearance={resolvedAppearance}
-          />
-        </div>
+        {state.view === 'v2' ? (
+          <div
+            className={
+              state.material === 'compare'
+                ? 'grid gap-4 lg:grid-cols-3'
+                : 'grid gap-4'
+            }
+          >
+            {(state.material === 'compare' ? MATERIALS : [state.material]).map(
+              material => (
+                <section
+                  key={material}
+                  className="min-w-0"
+                  data-tile-specimen={material}
+                >
+                  <h2 className="mb-2 text-chrome-title font-semibold">
+                    {material[0].toUpperCase() + material.slice(1)}
+                  </h2>
+                  <div className="relative isolate h-[68svh] min-h-[480px] overflow-hidden rounded-lg border border-border">
+                    <BoardTileSpecimen
+                      layout={layout}
+                      projection="fixed-angle"
+                      theme={theme}
+                      material={material}
+                      greybox={state.greybox}
+                      sourceMarks={sourceMarks}
+                      onDrillProject={selectProject}
+                      onSelectAgent={toggleAgent}
+                      onBackground={() => setSelected(new Set())}
+                      multiSelection={selected}
+                      onToggleAgentSelect={toggleAgent}
+                      onBandSelect={bandSelect}
+                      preserveDrawingBuffer
+                    />
+                  </div>
+                </section>
+              )
+            )}
+          </div>
+        ) : (
+          <div className="h-[76svh] min-h-[520px] overflow-hidden rounded-lg border border-border">
+            <OperationsBoardSurface
+              layout={layout}
+              projection={state.projection}
+              onDrillProject={selectProject}
+              onSelectAgent={() => undefined}
+              onOverview={() => undefined}
+              onProjectionChange={() => undefined}
+              multiSelection={selected}
+              onToggleAgentSelect={toggleAgent}
+              onBandSelect={bandSelect}
+              preserveDrawingBuffer
+              resolvedAppearance={resolvedAppearance}
+            />
+          </div>
+        )}
       </div>
     </main>
+  );
+}
+
+function BoardTileSpecimen(
+  props: Omit<OperationsBoardTilesProps, 'controllerRef'>
+) {
+  const controller = useRef<OperationsBoardHandle | null>(null);
+  const band = useRef<HTMLDivElement | null>(null);
+  return (
+    <>
+      <Suspense
+        fallback={
+          <div className="grid h-full place-items-center text-chrome-meta text-muted-foreground">
+            Loading v2…
+          </div>
+        }
+      >
+        <TilesCanvas
+          {...props}
+          controllerRef={controller}
+          bandOverlayRef={band}
+        />
+      </Suspense>
+      <div
+        ref={band}
+        aria-hidden="true"
+        className="pointer-events-none absolute z-10 border border-dashed"
+        style={{
+          display: 'none',
+          borderColor: props.theme.selection,
+          background: props.theme.selectionWash,
+        }}
+      />
+    </>
   );
 }
 

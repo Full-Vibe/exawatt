@@ -585,6 +585,23 @@ only the six Three.js directions. The pinned scene fits its scroll viewport.
 W20's renderer/material controls and vgpu dependency remain exclusively in the
 separate local study; they are absent from the delivered application.
 
+### Fleet v2 look review (ENG-004 V4.1 P3)
+
+The standing `/hud-gallery/board-study` bench compares v1 with v2 over the
+same `SpatialBoardLayout`. The v2 review uses the homepage's shared Rounded
+tiles in Gummy, Acrylic and Anodized, on a flat fixed-angle plane. Its
+status-tinted bodies are a **bench-only exception pending operator review**;
+production's status-light rule remains unchanged until P4/P5. The bench
+includes solid-material greybox, Demo Workspace, and 10/100/1k fixtures in
+Classic, Air and Night. Spare sockets are decorative and never population.
+
+The existing surface-title, chrome-title, chrome-meta and chrome-micro type
+rungs, 4px spacing grid, semantic chrome roles, and concrete spatial snapshot
+own the controls and grounds. Needs-you and faults stay still; Working uses
+the shared ambient cadence. The bench exposes material choices for review,
+not new persisted preferences. D40/unread/lifecycle and delegation parity,
+product routing and full navigation gates are P4 work after acceptance.
+
 ### Appearance snapshot consistency
 
 An application surface consumes one resolved appearance snapshot at a time.
