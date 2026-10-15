@@ -364,6 +364,8 @@ const OUTBOUND_CALL_SITES: Record<string, string | readonly string[] | null> = {
     '## 5. Supabase',
   ],
   'src/lib/desktop-release/desktop-build.ts': '## 6. App updates',
+  // The website server's anonymous read of the published homepage copy.
+  'src/lib/homepage-copy/published.ts': '## 5. Supabase',
   'src/lib/operator-stats/public.ts': '## 5. Supabase',
   'src/lib/server/authenticated-supabase.ts': '## 5. Supabase',
   'src/proxy.ts': '## 5. Supabase',
