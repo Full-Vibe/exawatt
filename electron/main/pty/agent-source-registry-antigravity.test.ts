@@ -73,6 +73,7 @@ describe('Antigravity CLI in the source registry', () => {
     expect(source.summary).toContain('does not yet tell Exawatt when it needs you');
     expect(agentSourceObservationComplete(source)).toBe(true);
     expect(agentSourceLaunchVerdict(source)).toEqual({ kind: 'clear' });
+    expect(source.actions.authenticate).toBe(false);
   });
 
   it('reads a failed listing as unknown, not as signed out, and never blocks the launch', async () => {
@@ -86,7 +87,9 @@ describe('Antigravity CLI in the source registry', () => {
     expect(source.facts.modelDiscovery.state).toBe('unknown');
     // The probe answered, so coverage is complete; the state is what is unknown.
     expect(source.unobservedProbes).toEqual([]);
-    expect(source.actions.authenticate).toBe(false);
+    // Unknown is not signed out, but the one step that repairs a missing
+    // sign-in is offered: Antigravity signs in on its own first run (S5.3.1).
+    expect(source.actions.authenticate).toBe(true);
     expect(agentSourceLaunchVerdict(source).kind).toBe('unproven');
   });
 
@@ -103,5 +106,6 @@ describe('Antigravity CLI in the source registry', () => {
     const source = await antigravitySnapshot();
     expect(source.state).toBe('incompatible');
     expect(source.launchable).toBe(false);
+    expect(source.actions.authenticate).toBe(false);
   });
 });

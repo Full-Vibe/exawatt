@@ -75,6 +75,9 @@ export interface LaunchOptions {
   /** launch INTO an existing draft tab (D24 new-tab page), keeping its
    *  strip position and id */
   reuseTabId?: string;
+  /** Shell only: the first line the new Shell runs, as if typed there. A
+   *  source's guided sign-in (ENG-003 S5.3.1); the operator finishes it. */
+  shellCommand?: string;
 }
 
 /** The draft a launch lands in is still in the strip. */
@@ -211,6 +214,11 @@ export function useSessionLaunch({
         if (!res.ok) {
           setError(res.error);
           return false;
+        }
+        if (opts.harness === 'shell' && opts.shellCommand?.trim()) {
+          // The login shell reads this once its prompt is up, exactly as a
+          // line typed ahead in any terminal.
+          void api.write(res.session.id, `${opts.shellCommand.trim()}\r`);
         }
         // ⌘W on a starting tab cancels the start. The operator closed the
         // one place the Agent could appear, and the provider may already be
@@ -481,7 +489,7 @@ export function useSessionLaunch({
   /** launch in the active project's directory (fallback: last used) —
    *  the one dir-resolution path for ⌘T, palette commands, and buttons */
   const launchHere = useCallback(
-    (harness: PtyHarness): boolean => {
+    (harness: PtyHarness, options: { shellCommand?: string } = {}): boolean => {
       const { projects: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
       const activeProject = gs.find(group => group.dir === ad);
       const dir = activeProject ? projectRootPath(activeProject) : lu || null;
@@ -489,7 +497,13 @@ export function useSessionLaunch({
         setError('Choose a Project directory for this session.');
         return false;
       }
-      void launch({ harness, dir });
+      void launch({
+        harness,
+        dir,
+        ...(harness === 'shell' && options.shellCommand
+          ? { shellCommand: options.shellCommand }
+          : {}),
+      });
       return true;
     },
     [launch, setError, stateRef]

@@ -13,6 +13,11 @@ import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import type { ConnectedSourceView } from '@exawatt/core';
 import { fallbackAgentSourceRegistry } from '@/components/workspace/agent-sources';
+import {
+  LAUNCH_EVENT,
+  consumePendingLaunch,
+} from '@/components/workspace/session-jump';
+import { AGENT_SOURCE_DECLARATIONS } from '@/generated/agent-source-declarations';
 import { AgentSourcesSettings } from './agent-sources-settings';
 import {
   useConnectedSources,
@@ -27,6 +32,9 @@ import {
   installBridgeDouble,
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
+
+const routerPush = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: routerPush }) }));
 
 describe('Agent Source Settings', () => {
   it('replaces declared delegation with observed coverage and clears it on source exit', async () => {
@@ -260,6 +268,61 @@ describe('Agent Source Settings', () => {
     expect(
       screen.getByText('Claude Code installation guide opened.')
     ).toBeInTheDocument();
+  });
+
+  it('opens a declared shell sign-in in a workspace Shell, never in Terminal', async () => {
+    const base = fallbackAgentSourceRegistry('all');
+    const declaration = AGENT_SOURCE_DECLARATIONS.find(
+      candidate => 'signIn' in candidate
+    );
+    if (!declaration || !('signIn' in declaration)) {
+      throw new Error('no source declares a shell sign-in');
+    }
+    const registry = {
+      ...base,
+      sources: base.sources.map(source =>
+        source.adapterId === declaration.adapterId
+          ? {
+              ...source,
+              state: 'unknown' as const,
+              observation: { origin: 'live' as const },
+              unobservedProbes: [],
+              actions: { ...source.actions, recheck: true, authenticate: true },
+            }
+          : source
+      ),
+    };
+    const act = vi.fn();
+    installBridgeDouble({
+      platform: 'darwin',
+      agentSources: { list: vi.fn(async () => registry), act },
+    });
+    const launches: unknown[] = [];
+    const onLaunch = (event: Event) =>
+      launches.push((event as CustomEvent).detail);
+    window.addEventListener(LAUNCH_EVENT, onLaunch);
+    render(<AgentSourcesSettings />);
+    const source = registry.sources.find(
+      candidate => candidate.adapterId === declaration.adapterId
+    )!;
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: `${source.label}, ${source.connectionName}, ${source.stateLabel}`,
+      })
+    );
+    const steps = document.querySelectorAll('[data-source-step]');
+    expect(steps).toHaveLength(1);
+    fireEvent.click(steps[0]);
+    window.removeEventListener(LAUNCH_EVENT, onLaunch);
+    consumePendingLaunch();
+    expect(launches).toEqual([
+      { harness: 'shell', shellCommand: declaration.signIn.command },
+    ]);
+    expect(routerPush).toHaveBeenCalledWith('/workspace');
+    expect(act).not.toHaveBeenCalled();
+    expect(
+      document.querySelector('[data-source-disclosure] a')?.getAttribute('href')
+    ).toBe(declaration.disclosure?.href);
   });
 
   it.each(['authenticate', 'install-guide'] as const)(

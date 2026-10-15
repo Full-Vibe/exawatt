@@ -52,6 +52,9 @@ export interface SetupDetailFieldsProps {
   footnote?: string;
   /** Compact secondary action beside the footnote, in normal Tab order. */
   action?: React.ReactNode;
+  /** The selected source's own lines under the axes (a step's note, its
+   *  disclosure), in the footnote's register. */
+  source?: React.ReactNode;
   /** Rendered opposite the footnote, where there was already empty space. */
   onDone?: () => void;
 }
@@ -60,6 +63,7 @@ export function SetupDetailFields({
   axes,
   footnote,
   action,
+  source,
   onDone,
 }: SetupDetailFieldsProps) {
   return (
@@ -91,6 +95,14 @@ export function SetupDetailFields({
           </label>
         ))}
       </div>
+      {source ? (
+        <div
+          data-setup-detail-source
+          className="flex min-w-0 flex-col gap-1 font-mono text-chrome-micro leading-4 text-hud-text-dim"
+        >
+          {source}
+        </div>
+      ) : null}
       {footnote || action || onDone ? (
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">

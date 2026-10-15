@@ -19,6 +19,7 @@ import {
   consumePendingTabSelect,
   consumePendingLaunch,
   consumePendingOpenProject,
+  type LaunchRequest,
 } from '../session-jump';
 import type { Latest } from './workspace-model';
 
@@ -35,7 +36,10 @@ export function useWorkspaceRequests({
   readyRef: Latest<boolean>;
   activateSession: (sessionRef: string) => boolean;
   selectExistingTab: (dir: string, tabId: string) => void;
-  launchHere: (harness: PtyHarness) => boolean;
+  launchHere: (
+    harness: PtyHarness,
+    options?: { shellCommand?: string }
+  ) => boolean;
   openProject: (dir: string) => Promise<boolean>;
   togglePin: () => boolean;
 }): void {
@@ -62,7 +66,8 @@ export function useWorkspaceRequests({
     const onLaunch = (e: Event) => {
       if (!readyRef.current) return;
       consumePendingLaunch();
-      launchHere((e as CustomEvent<PtyHarness>).detail);
+      const request = (e as CustomEvent<LaunchRequest>).detail;
+      launchHere(request.harness, request);
     };
     const onToggleSplit = () => {
       if (readyRef.current) togglePin();
@@ -103,8 +108,8 @@ export function useWorkspaceRequests({
     // before this workspace mounted — apply it against the loaded layout
     const tabSel = consumePendingTabSelect();
     if (tabSel) selectExistingTab(tabSel.dir, tabSel.tabId);
-    const harness = consumePendingLaunch();
-    if (harness) launchHere(harness);
+    const launchRequest = consumePendingLaunch();
+    if (launchRequest) launchHere(launchRequest.harness, launchRequest);
     const proj = consumePendingOpenProject();
     if (proj) void openProject(proj);
   }, [ready, activateSession, selectExistingTab, launchHere, openProject]);

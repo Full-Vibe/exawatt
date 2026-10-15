@@ -1895,6 +1895,8 @@ async function inspectAntigravity(shell: string): Promise<AgentSourceSnapshot> {
     return unobservedSourceSnapshot({
       adapterId: 'antigravity',
       id: 'antigravity-local',
+      // These helpers name the CLI as "<label> CLI", and "Gemini CLI" is
+      // another Google product: the product that runs here is named.
       label: 'Antigravity',
       observedAt,
     });
@@ -1941,6 +1943,12 @@ async function inspectAntigravity(shell: string): Promise<AgentSourceSnapshot> {
           : listed
             ? 'ready'
             : 'unknown';
+  // Installed and answering, with no catalog: the sign-in may be missing,
+  // and Antigravity's own first interactive run is how it signs in (no login
+  // subcommand exists), so the step is offered. It is never claimed as
+  // signed out: a lost network reads the same.
+  const signInOffered =
+    state === 'unknown' && versionProbe === 'responded' && !listed;
   const unobservedProbes: AgentSourceProbeName[] = [];
   if (versionProbe === 'unanswered') unobservedProbes.push('version');
   if (!modelsResult.answered) {
@@ -1955,12 +1963,14 @@ async function inspectAntigravity(shell: string): Promise<AgentSourceSnapshot> {
     stateLabel: stateLabel(state),
     summary:
       state === 'ready'
-        ? 'Exawatt starts and resumes local Antigravity Agents and sees when they work and finish. Antigravity does not yet tell Exawatt when it needs you.'
+        ? 'Exawatt starts and resumes local Gemini Agents through Antigravity CLI and sees when they work and finish. Antigravity does not yet tell Exawatt when it needs you.'
         : state === 'incompatible'
           ? 'This Antigravity CLI version predates the adapter contract verified by Exawatt.'
-          : state === 'unknown'
-            ? 'Antigravity status is not known yet.'
-            : 'Antigravity CLI is installed, but its checks did not pass.',
+          : signInOffered
+            ? 'Antigravity CLI is installed.'
+            : state === 'unknown'
+              ? 'Antigravity status is not known yet.'
+              : 'Antigravity CLI is installed, but its checks did not pass.',
     observedAt,
     unobservedProbes,
     observation: LIVE_OBSERVATION,
@@ -1991,11 +2001,13 @@ async function inspectAntigravity(shell: string): Promise<AgentSourceSnapshot> {
       ),
       authentication: fact(
         listed ? 'ready' : 'unknown',
-        listed ? `Managed by ${source.authOwner}` : 'Not verified',
+        listed
+          ? `Managed by ${source.authOwner}`
+          : 'Google sign-in not confirmed',
         listed
           ? 'agy models listed the account’s models, which needs a working Google sign-in. Exawatt does not receive or store the credential.'
           : modelsResult.answered
-            ? `agy models listed no models (${modelsNote}). A lost network looks the same as a missing sign-in, so neither is claimed; starting an Agent is the better check.`
+            ? `agy models listed no models (${modelsNote}). Antigravity may need a Google sign-in, or the network may be unreachable.`
             : 'agy models did not return before its deadline.',
         commandEvidence
       ),
@@ -2028,7 +2040,7 @@ async function inspectAntigravity(shell: string): Promise<AgentSourceSnapshot> {
     },
     actions: {
       recheck: true,
-      authenticate: false,
+      authenticate: signInOffered,
       chooseModel: false,
       installGuide: true,
     },
@@ -2499,6 +2511,14 @@ export async function launchSourceOwnedAction(
 ): Promise<AgentSourceActionResult> {
   const descriptor = harnessDescriptor(harness).source;
   const command = sourceOwnedActionCommand(harness, action);
+  // A source that signs in on its own first run signs in inside Exawatt's
+  // Shell, which the renderer opens; it is never sent to Terminal.
+  if (action === 'authenticate' && descriptor.signIn) {
+    return {
+      ok: false,
+      message: `Open a Shell in Exawatt and run ${descriptor.signIn.command}.`,
+    };
+  }
   if (process.platform !== 'darwin') {
     return {
       ok: false,

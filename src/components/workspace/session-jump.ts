@@ -116,7 +116,7 @@ interface Pending<T> {
 
 let pendingSession: Pending<string> | null = null;
 let pendingRemoteAgent: Pending<string> | null = null;
-let pendingLaunch: Pending<PtyHarness> | null = null;
+let pendingLaunch: Pending<LaunchRequest> | null = null;
 let pendingOpenProject: Pending<string> | null = null;
 let pendingProjectPicker: Pending<true> | null = null;
 let pendingConnectSource: Pending<true> | null = null;
@@ -190,10 +190,26 @@ export function consumePendingRemoteAgentOpen(): string | null {
   return pending;
 }
 
-export function requestLaunch(harness: PtyHarness): void {
+/**
+ * A launch asked for from outside the workspace. `shellCommand` is the first
+ * line a new Shell runs: a source's guided sign-in (ENG-003 S5.3.1), which
+ * the operator then finishes in that Shell.
+ */
+export interface LaunchRequest {
+  harness: PtyHarness;
+  shellCommand?: string;
+}
+
+export function requestLaunch(
+  harness: PtyHarness,
+  options: { shellCommand?: string } = {}
+): void {
   if (!launchVerbsAvailable()) return;
-  pendingLaunch = { value: harness, at: Date.now() };
-  window.dispatchEvent(new CustomEvent(LAUNCH_EVENT, { detail: harness }));
+  const request: LaunchRequest = options.shellCommand
+    ? { harness, shellCommand: options.shellCommand }
+    : { harness };
+  pendingLaunch = { value: request, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(LAUNCH_EVENT, { detail: request }));
 }
 
 export function consumePendingSessionJump(): string | null {
@@ -202,7 +218,7 @@ export function consumePendingSessionJump(): string | null {
   return p;
 }
 
-export function consumePendingLaunch(): PtyHarness | null {
+export function consumePendingLaunch(): LaunchRequest | null {
   const p = take(pendingLaunch);
   pendingLaunch = null;
   return p;

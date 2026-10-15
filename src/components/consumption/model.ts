@@ -66,8 +66,9 @@ export const HARNESS_LABEL = Object.fromEntries(
 /**
  * The app an account is read THROUGH, for the sentence that names what failed
  * ("Antigravity isn't installed on this machine."). Ledgered sources use their
- * Agent Source's declared label; Antigravity's declaration belongs to ENG-003
- * S5.3, so until it lands the name is stated here.
+ * Agent Source's declared label. Google's source is labelled Gemini (ENG-003
+ * S5.3.1), but the account is read through the Antigravity CLI, so the
+ * failure names the product that failed.
  */
 export const ACCOUNT_APP: Record<AccountSource, string> = {
   ...HARNESS_LABEL,

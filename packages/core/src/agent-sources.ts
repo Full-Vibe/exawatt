@@ -152,6 +152,29 @@ export interface AgentSourceDeclaration {
   installationGuideUrl: string | null;
   description: string;
   capabilities: AgentSourceCapabilities;
+  /**
+   * A source whose sign-in is its own first interactive run, with no login
+   * subcommand (Antigravity CLI): the step opens a Shell tab in Exawatt
+   * running `command`, and the source signs in there. Absent: the source's
+   * own login command opens in Terminal (`authenticate`).
+   */
+  signIn?: AgentSourceShellSignIn;
+  /** One line the source card owes its reader, with its source (decision
+   *  `0051`). */
+  disclosure?: AgentSourceDisclosure;
+}
+
+export interface AgentSourceShellSignIn {
+  label: string;
+  command: string;
+  /** What the operator meets in the Shell, in one line. */
+  note: string;
+}
+
+export interface AgentSourceDisclosure {
+  text: string;
+  linkLabel: string;
+  href: string;
 }
 
 /**

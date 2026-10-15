@@ -63,6 +63,15 @@ export interface AgentLauncherProps {
    * wins when both are present.
    */
   notice?: { kind: 'notice' | 'checking'; text: string } | null;
+  /**
+   * The step that repairs the notice's fact, beside it on the same reserved
+   * line: a source's guided sign-in and its Recheck (ENG-003 S5.3.1). Never
+   * shown while Start is blocked, whose reason owns the line.
+   */
+  noticeActions?: readonly { id: string; label: string; onClick: () => void }[];
+  /** Source facts the drawer carries under the axes: a step's note and the
+   *  source's disclosure line. */
+  detailSource?: React.ReactNode;
   placeholderCount?: number;
   /** Bench escape hatch: open the detail panel for a screenshot. */
   defaultDetailOpen?: boolean;
@@ -84,6 +93,8 @@ export function AgentLauncher({
   launching = false,
   blockedReason,
   notice = null,
+  noticeActions = [],
+  detailSource,
   placeholderCount,
   defaultDetailOpen = false,
   className,
@@ -223,6 +234,7 @@ export function AgentLauncher({
           axes={axes}
           footnote={detailFootnote}
           action={detailAction}
+          source={detailSource}
           onDone={toggleDetail}
         />
       </div>
@@ -233,23 +245,38 @@ export function AgentLauncher({
           one box with three registers: a blocking fact in the attention
           tone, a non-blocking fact dimmer, and the quiet checking affordance
           while the row is painted from memory (BUG-062 / BUG-082). */}
-      <p
-        role="status"
-        data-launcher-status
-        data-launcher-status-kind={
-          blockedReason ? 'blocked' : (notice?.kind ?? 'none')
-        }
-        className={cn(
-          'min-h-4 truncate font-mono text-chrome-micro leading-4',
-          blockedReason
-            ? 'text-hud-amber/85'
-            : notice?.kind === 'notice'
-              ? 'text-hud-amber/60'
-              : 'text-hud-text-dim/70'
-        )}
-      >
-        {blockedReason ?? notice?.text ?? ''}
-      </p>
+      <div className="flex min-h-4 min-w-0 items-center gap-3">
+        <p
+          role="status"
+          data-launcher-status
+          data-launcher-status-kind={
+            blockedReason ? 'blocked' : (notice?.kind ?? 'none')
+          }
+          className={cn(
+            'min-h-4 min-w-0 truncate font-mono text-chrome-micro leading-4',
+            blockedReason
+              ? 'text-hud-amber/85'
+              : notice?.kind === 'notice'
+                ? 'text-hud-amber/60'
+                : 'text-hud-text-dim/70'
+          )}
+        >
+          {blockedReason ?? notice?.text ?? ''}
+        </p>
+        {!blockedReason
+          ? noticeActions.map(action => (
+              <button
+                key={action.id}
+                type="button"
+                data-launcher-notice-action={action.id}
+                onClick={action.onClick}
+                className="shrink-0 rounded-sm font-mono text-chrome-micro leading-4 text-hud-text underline decoration-hud-text-dim/60 underline-offset-2 outline-none transition-colors hover:text-hud-cyan focus-visible:ring-2 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+              >
+                {action.label}
+              </button>
+            ))
+          : null}
+      </div>
 
       {/* The composer's ONE keyboard hint (BUG-017). The surrounding
           `launch-controls.tsx` printed a second copy of the same chords under

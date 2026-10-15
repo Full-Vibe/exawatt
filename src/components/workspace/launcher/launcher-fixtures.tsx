@@ -89,6 +89,13 @@ const ENGINE_MODELS: Record<string, EngineModel> = {
     vendor: { label: 'OpenRouter', kind: 'hosted' },
     effort: null,
   },
+  gemini: {
+    harness: 'antigravity',
+    sourceId: 'antigravity',
+    modelId: 'gemini-3-pro',
+    modelLabel: 'Gemini 3 Pro',
+    effort: null,
+  },
   qwen: {
     harness: 'opencode',
     sourceId: 'opencode',
@@ -166,6 +173,10 @@ export interface BenchScenario {
   blockedReason?: string;
   /** A non-blocking fact on the reserved status line (readiness fact model). */
   notice?: { kind: 'notice' | 'checking'; text: string };
+  /** Labels of the steps beside the notice (ENG-003 S5.3.1). */
+  noticeActions?: readonly string[];
+  /** The engine whose drawer lines the scenario shows. */
+  sourceLines?: AgentSourceId;
   launching?: boolean;
   width: number;
 }
@@ -346,6 +357,27 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
       kind: 'notice',
       text: 'Claude Code: not signed in · checked 2h ago',
     },
+    width: 768,
+  },
+  {
+    id: 'gemini-sign-in',
+    title: 'Gemini, sign-in not confirmed',
+    note: 'Antigravity is installed and its model list came back empty. One step opens a Shell running agy, Recheck sits beside it, and the drawer carries the Shell note and the terms line (decision 0051).',
+    state: 'ready',
+    setups: buildSetups([
+      ...TRAINED_HISTORY,
+      launch('gemini', BENCH_NOW - 60 * 60 * 1000),
+      launch('gemini', BENCH_NOW - 2 * 60 * 60 * 1000),
+      launch('gemini', BENCH_NOW - 30 * 60 * 1000),
+      launch('gemini', BENCH_NOW - 20 * 60 * 1000),
+      launch('gemini', BENCH_NOW - 10 * 60 * 1000),
+    ]),
+    selectedIndex: 0,
+    detailOpen: true,
+    task: '',
+    notice: { kind: 'notice', text: 'Gemini: Google sign-in not confirmed' },
+    noticeActions: ['Sign in to Google in Antigravity', 'Recheck'],
+    sourceLines: 'antigravity',
     width: 768,
   },
   {

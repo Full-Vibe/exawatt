@@ -617,6 +617,29 @@ try {
           antigravity?.capabilities.effortSelection === 'source-owned',
         JSON.stringify(antigravity?.capabilities)
       );
+      // ENG-003 S5.3.1: the card reads by its declaration, and a signed-in
+      // account is offered no step, only the terms line it owes.
+      const gemini = contract.sources.find(
+        source => source.adapterId === 'antigravity'
+      );
+      await page
+        .getByRole('button', {
+          name: `${gemini.label}, ${gemini.connectionName}, ${antigravity?.stateLabel}`,
+        })
+        .click();
+      await page.getByRole('heading', { name: gemini.label }).waitFor();
+      check(
+        'the Gemini card links the terms its declaration owes and offers a signed-in account no step',
+        (await page
+          .locator('[data-source-disclosure] a')
+          .getAttribute('href')) === gemini.disclosure.href &&
+          (await page.locator('[data-source-step]').count()) === 0
+      );
+      await page
+        .getByRole('button', {
+          name: new RegExp(`^${contract.sources[0].label}, `),
+        })
+        .click();
       check(
         'configured unreachable OpenClaw is degraded, not disconnected/absent',
         openclaw?.state === 'degraded'
@@ -1194,7 +1217,11 @@ try {
           'launch-antigravity'
         );
       });
-      await waitForSelectedEngine(page, 'Antigravity');
+      await waitForSelectedEngine(
+        page,
+        contract.sources.find(source => source.adapterId === 'antigravity')
+          .label
+      );
       await openSetupDrawer(page);
       check(
         'the model Antigravity’s own picker chose is pinned by its label, and no effort control is offered',

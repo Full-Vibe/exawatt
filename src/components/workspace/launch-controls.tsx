@@ -82,6 +82,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { AgentLauncher } from './launcher/agent-launcher';
+import { sourceCardStep } from '@/components/agent-sources/source-card';
+import { launcherSourceLines } from './launcher/source-lines';
 import { useComposerClipboard } from './launcher/use-composer-clipboard';
 import { EngineGlyph } from './launcher/setup-chip';
 import {
@@ -868,7 +870,10 @@ export function AgentComposer({
     }
     const prime = catalogPrimes.current();
     for (const sourceId of availableSourceKey.split('\n')) {
-      if (!isAgentSourceId(sourceId) || primedSourcesRef.current.has(sourceId)) {
+      if (
+        !isAgentSourceId(sourceId) ||
+        primedSourcesRef.current.has(sourceId)
+      ) {
         continue;
       }
       primedSourcesRef.current.add(sourceId);
@@ -1104,6 +1109,25 @@ export function AgentComposer({
   };
   openShellRef.current = () => void openShell();
 
+  /** A source's guided sign-in: a Shell in this Project running its command,
+   *  where the source signs in on its own (ENG-003 S5.3.1). Not a launch
+   *  configuration, so nothing is ranked. */
+  const openSignInShell = async (command: string) => {
+    if (controlsDisabled || clipboard.pending) return;
+    setLaunching('shell');
+    try {
+      await onLaunch({
+        harness: 'shell',
+        dir: projectDir,
+        shellCommand: command,
+      });
+    } catch {
+      // The workspace-level launch owner surfaces the actionable error.
+    } finally {
+      setLaunching(null);
+    }
+  };
+
   const openRecentConversation = async (
     conversation: RecentConversation,
     mode: ConversationOpenMode
@@ -1251,7 +1275,9 @@ export function AgentComposer({
   for (const fact of registryPainted ? readiness.facts : []) {
     if (!fact.available || representedEngines.has(fact.harness)) continue;
     const adjusting =
-      selectedTargetKind === 'agent' && fact.harness === effectiveSource && model
+      selectedTargetKind === 'agent' &&
+      fact.harness === effectiveSource &&
+      model
         ? { model, modelLabel, effort, effortLabel }
         : null;
     launcherSetups.push(
@@ -1362,8 +1388,7 @@ export function AgentComposer({
               ? 'Checking'
               : snapshot.stateLabel,
       disabled: !fact.available,
-      disabledReason:
-        verdict.kind === 'blocked' ? verdict.reason : undefined,
+      disabledReason: verdict.kind === 'blocked' ? verdict.reason : undefined,
       mark: (
         <EngineGlyph
           engine={{
@@ -1607,10 +1632,40 @@ export function AgentComposer({
               : sourceStatus;
   const launcherBlockedReason =
     launcherStatus.kind === 'blocked' ? launcherStatus.text : null;
-  const launcherNotice =
-    launcherStatus.kind === 'notice' || launcherStatus.kind === 'checking'
+  // A source that signs in on its own first run (Antigravity CLI) offers
+  // that ONE step on the status line, with Recheck beside it, and its Shell
+  // opens here in Exawatt (ENG-003 S5.3.1).
+  const sourceStep = sourceCardStep(sourceMeta);
+  const shellSignIn =
+    sourceStep?.kind === 'shell-sign-in' && launcherStatus.kind !== 'blocked'
+      ? sourceStep
+      : null;
+  const launcherNotice = shellSignIn
+    ? {
+        kind: 'notice' as const,
+        text: `${sourceMeta.label}: ${sourceMeta.facts.authentication.value}`,
+      }
+    : launcherStatus.kind === 'notice' || launcherStatus.kind === 'checking'
       ? launcherStatus
       : null;
+  const launcherNoticeActions = shellSignIn
+    ? [
+        {
+          id: 'sign-in',
+          label: shellSignIn.label,
+          onClick: () => void openSignInShell(shellSignIn.command),
+        },
+        {
+          id: 'recheck',
+          label: 'Recheck',
+          onClick: () => void recheckSources(),
+        },
+      ]
+    : [];
+  const launcherDetailSource = launcherSourceLines(
+    effectiveSource,
+    shellSignIn
+  );
 
   const controls = (
     <div
@@ -1690,6 +1745,8 @@ export function AgentComposer({
           launching={launching === 'agent'}
           blockedReason={launcherBlockedReason}
           notice={launcherNotice}
+          noticeActions={launcherNoticeActions}
+          detailSource={launcherDetailSource}
           placeholderCount={Math.max(2, capacity)}
         />
       </div>

@@ -12,7 +12,7 @@ Examples:
 - OpenCode
 - Grok Build
 - Qwen Code
-- Antigravity
+- Gemini, through Antigravity CLI
 - custom harnesses
 - Demo Scenario Source
 
@@ -314,7 +314,7 @@ than optimistically enabled.
 | OpenCode    | live, per Project          | live, exact per-model variants | not through its PTY          | no local record      |
 | Grok Build  | live (`grok models`)       | source-owned — see below       | not through its PTY          | no local record      |
 | Qwen Code   | configured in its settings | source-owned (no effort flag)  | yes, through lifecycle hooks | no local record      |
-| Antigravity | live (`agy models`)        | source-owned — see below       | no (start event only)        | no local record      |
+| Gemini      | live (`agy models`)        | source-owned — see below       | no (start event only)        | no local record      |
 
 Two Grok Build facts are worth stating plainly because both are absences with
 reasons, not gaps waiting to be filled:
@@ -351,7 +351,10 @@ Three Qwen Code facts, for the same reason:
   in the launch environment, so a `qwen` the Agent runs inside its own shell
   would inherit it; only posts naming the Session's own id are read.
 
-Four Antigravity facts, verified on Antigravity CLI 1.2.17 (2026-10-05):
+Google's source is named **Gemini**, with **Antigravity CLI** as its second
+line: Gemini is the name a user knows, and Antigravity CLI (`agy`) is the
+harness that runs it. The facts below name the harness. Verified on
+Antigravity CLI 1.2.17 (2026-10-05):
 
 - **Working and finished are reported; needs you is not.** Antigravity runs
   the hooks in `.agents/hooks.json` of any workspace directory, including one
@@ -371,7 +374,12 @@ Four Antigravity facts, verified on Antigravity CLI 1.2.17 (2026-10-05):
 - **Sign-in and the catalog are one read.** `agy models` lists the account's
   models and needs a working Google sign-in to do it, so a listed catalog is
   the sign-in evidence. A failed or empty listing is reported as unknown,
-  never as signed out: a lost network looks the same. Antigravity's own picker
+  never as signed out: a lost network looks the same. What an unknown
+  sign-in offers is one step, **Sign in to Google in Antigravity**: it opens
+  a Shell tab in Exawatt running `agy`, whose first interactive run starts
+  Google's browser sign-in (there is no login command), and Recheck reads
+  `agy models` again. The first run in a folder Antigravity has never seen
+  asks you to trust it in that Shell. Antigravity's own picker
   stores its choice as a label, and Exawatt pins the matching id; an unmatched
   label pins nothing and the account decides. Quota is not part of the
   catalog: a model whose weekly quota is spent still lists, and the turn's own
@@ -384,8 +392,9 @@ Four Antigravity facts, verified on Antigravity CLI 1.2.17 (2026-10-05):
   FAQ says wrapping `agy` inside third-party applications is not supported on
   consumer plans and may lead to account suspension. Exawatt starts your own
   `agy` with your own sign-in in a terminal you watch, injects no credential,
-  and runs no agent turn on your behalf; the source card says so before you
-  launch, and the choice is yours.
+  and runs no agent turn on your behalf. The source card in Settings and the
+  composer's setup drawer say so in one line, linking Google's FAQ
+  (https://antigravity.google/docs/faq/), and the choice is yours.
 
 Grok-the-model has been launchable through OpenCode since that source landed;
 Grok Build is the native harness — its own TUI, plan mode, subagents, and

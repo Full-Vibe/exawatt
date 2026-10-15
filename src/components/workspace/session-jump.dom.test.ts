@@ -94,7 +94,7 @@ describe('session-jump launch verbs under tenant scope', () => {
     invokeLaunchFamily();
 
     expect(seen).toEqual(LAUNCH_EVENTS);
-    expect(consumePendingLaunch()).toBe('shell');
+    expect(consumePendingLaunch()).toEqual({ harness: 'shell' });
     expect(consumePendingAgentComposer()).toBe('claude');
     expect(consumePendingOpenProject()).toBe('/tmp/project');
     expect(consumePendingProjectPicker()).toBe(true);

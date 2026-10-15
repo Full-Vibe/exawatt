@@ -478,7 +478,7 @@ Examples:
 - OpenCode
 - Grok Build
 - Qwen Code
-- Antigravity
+- Gemini, through Antigravity CLI
 - custom harness
 - Demo Scenario Source
 

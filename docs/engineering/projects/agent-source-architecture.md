@@ -1345,3 +1345,60 @@ screen (ENG-046 O2) now imports it instead.
   (Antigravity signed in, unknown and not installed, light and dark, 1400×900)
   differ by zero pixels on the Settings surface. A contract test renders every
   source state in both layouts and finds at most one step and one Recheck.
+
+### 2026-10-15 — S5.3.1 landed: the Gemini face
+
+**Google's source reads "Gemini" with "Antigravity CLI" beneath it, an unknown
+sign-in gets one step that opens a Shell in Exawatt, and the card carries
+decision `0051`'s line.** Shipped on the S5.3 adapter; launch, hooks, identity,
+catalog and needs-you are unchanged.
+
+- **Label from the declaration.** `contracts/agent-sources.json` names the
+  source `Gemini` with `connectionName` `Antigravity CLI`, so Settings, ⌘T's
+  chips and Engine axis, Team and Fleet's source lens, the usage card and
+  notifications all follow from one edit. Kept where the product is meant:
+  the sign-in step, the disclosure, the summaries and facts that name the CLI
+  (the registry's shared "<label> CLI" helpers are passed "Antigravity",
+  because "Gemini CLI" is a different Google product), the usage failure
+  sentence ("Antigravity isn't installed"), the hosted-features copy, and
+  Recently closed's "Antigravity conversation" fallback.
+- **Guided sign-in.** Two new optional declaration fields:
+  `signIn {label, command, note}` and `disclosure {text, linkLabel, href}`.
+  `inspectAntigravity` offers `actions.authenticate` when `agy` is installed,
+  answers its version, and `agy models` lists nothing; the state stays
+  `unknown` (never signed out) and the authentication fact reads "Google
+  sign-in not confirmed". `sourceCardStep` turns a declared `signIn` into the
+  card's one step, `shell-sign-in`. Settings sends it to the workspace
+  (`requestLaunch('shell', { shellCommand })`, then `/workspace`); the
+  composer opens it directly through `onLaunch`. Either way
+  `LaunchOptions.shellCommand` types the command into the new Shell once it
+  exists, so the in-app Shell path is the only path; `launchSourceOwnedAction`
+  refuses to send a declared shell sign-in to Terminal. The composer's status
+  line reads "Gemini: Google sign-in not confirmed" with the step and Recheck
+  beside it; the setup drawer carries the step's note (the first run in a new
+  folder asks for trust in that Shell) and the disclosure.
+- **Disclosure.** One line on the Settings card and in the composer's setup
+  drawer, linking `https://antigravity.google/docs/faq/`. No gate, no consent.
+- **Mark: stays null.** Google requires a request and approval before a
+  product icon, the Gemini spark included, appears in third-party work
+  ("To use a Google product icon in your work, create a Partner Marketing Hub
+  account to find assets and request permission through our approval form");
+  only plain text is "Go for it", and no public Gemini icon asset exists.
+  Provenance and the remedy (request approval) are in
+  `LICENSES/brand/harness-marks.md`. The launcher chips now draw the neutral
+  sparkle Settings already shows for a markless source (Gemini, Qwen Code)
+  instead of an empty box.
+- **Verification.** Settings captured signed in, unknown and not installed,
+  light and dark, on a fake desktop bridge; the launcher bench gained a
+  "Gemini, sign-in not confirmed" case. Tests assert the contract: every
+  declared shell sign-in becomes the card's one step with the declared
+  command, Settings dispatches exactly that launch and never the Terminal
+  action, the registry offers the step only for an installed, answering,
+  unlisted `agy`, and the Electron agent-sources eval reads the Gemini card
+  by its declaration and finds the declared FAQ link and no step on a
+  signed-in account.
+- **Left open.** A shell sign-in from Settings with no Project open lands on
+  the workspace's "Choose a Project directory" error; the Start screen
+  (ENG-046 O2) owns the project-less case. The launcher's light-theme engine
+  glyph paints the brand colour on the ground (Codex's near-white reads
+  faint), a pre-existing departure from the Agent Source identity rung.

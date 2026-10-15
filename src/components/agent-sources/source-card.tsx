@@ -30,6 +30,7 @@ import {
   LoaderCircle,
   RefreshCw,
   Sparkles,
+  SquareTerminal,
   WifiOff,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -41,8 +42,12 @@ import {
 import { SourceGlyph } from '@/components/workspace/harness-icons';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import { cn } from '@/lib/utils';
+import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import type {
+  AgentSourceAdapterId,
   AgentSourceCatalogId,
+  AgentSourceDisclosure,
+  AgentSourceShellSignIn,
   AgentSourceSnapshot,
   AgentSourceState,
 } from '@exawatt/core';
@@ -236,21 +241,24 @@ export function SourceObservationTime({
 /* The one next step                                                   */
 /* ------------------------------------------------------------------ */
 
-type SourceCardStepKind = 'install-guide' | 'sign-in';
-
-interface SourceCardStep {
-  kind: SourceCardStepKind;
-  label: string;
-}
+export type SourceCardStep =
+  | { kind: 'install-guide'; label: string }
+  | { kind: 'sign-in'; label: string }
+  /** The source signs in on its own first interactive run (Antigravity
+   *  CLI): the step opens a Shell tab in Exawatt running `command`. */
+  | ({ kind: 'shell-sign-in' } & AgentSourceShellSignIn);
 
 /**
  * The ONE step that moves a source toward ready, or null when nothing but a
  * Recheck applies. A missing CLI gets its installation guide; a source that
- * reports no sign-in gets its own sign-in. Never both: a source that is not
- * installed has nobody to sign in to.
+ * offers a sign-in gets the one its declaration names. Never both: a source
+ * that is not installed has nobody to sign in to.
  */
 export function sourceCardStep(
-  source: Pick<AgentSourceSnapshot, 'state' | 'label' | 'harness' | 'actions'>
+  source: Pick<
+    AgentSourceSnapshot,
+    'adapterId' | 'state' | 'label' | 'harness' | 'actions'
+  >
 ): SourceCardStep | null {
   if (source.state === 'not-installed') {
     return source.actions.installGuide
@@ -258,16 +266,31 @@ export function sourceCardStep(
       : null;
   }
   if (source.actions.authenticate && source.harness) {
-    return { kind: 'sign-in', label: `Sign in with ${source.label}` };
+    const shell = agentSourceDeclaration(source.adapterId).signIn;
+    return shell
+      ? { kind: 'shell-sign-in', ...shell }
+      : { kind: 'sign-in', label: `Sign in with ${source.label}` };
   }
   return null;
 }
 
 /** What the attention notice explains: the fact behind the state. */
 export function sourceAttention(
-  source: Pick<AgentSourceSnapshot, 'state' | 'stateLabel' | 'facts'>
+  source: Pick<
+    AgentSourceSnapshot,
+    'state' | 'stateLabel' | 'facts' | 'actions'
+  >
 ): SourceCardAttention | null {
   if (source.state === 'ready') return null;
+  // An unknown sign-in the source offers to repair: the fact is the
+  // sign-in's, named by its own value, never a reachability line.
+  if (source.state === 'unknown' && source.actions.authenticate) {
+    return {
+      title: source.facts.authentication.value,
+      detail: source.facts.authentication.detail,
+      kind: 'sign-in',
+    };
+  }
   const fact =
     source.state === 'not-installed'
       ? source.facts.installation
@@ -279,6 +302,31 @@ export function sourceAttention(
     detail: fact.detail,
     kind: source.state === 'action-required' ? 'sign-in' : 'problem',
   };
+}
+
+/** The declared disclosure as inline text with its link, in the ink of
+ *  whatever line holds it (decision `0051`). Null for a source without one. */
+export function SourceDisclosureText({
+  adapterId,
+}: {
+  adapterId: AgentSourceAdapterId;
+}) {
+  const disclosure: AgentSourceDisclosure | undefined =
+    agentSourceDeclaration(adapterId).disclosure;
+  if (!disclosure) return null;
+  return (
+    <>
+      {disclosure.text}{' '}
+      <a
+        href={disclosure.href}
+        target="_blank"
+        rel="noreferrer"
+        className="underline underline-offset-2"
+      >
+        {disclosure.linkLabel}
+      </a>
+    </>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -355,7 +403,11 @@ function Actions({
           onClick={onStep}
           className={STEP_BUTTON}
         >
-          <ExternalLink aria-hidden size={15} />
+          {step.kind === 'shell-sign-in' ? (
+            <SquareTerminal aria-hidden size={15} />
+          ) : (
+            <ExternalLink aria-hidden size={15} />
+          )}
           {step.label}
         </button>
       )}
@@ -471,6 +523,14 @@ export function SourceCard({
             ) : null
           }
         />
+        {step?.kind === 'shell-sign-in' ? (
+          <p
+            data-source-step-note
+            className="font-ui text-chrome-meta leading-4 text-[var(--settings-dim)]"
+          >
+            {step.note}
+          </p>
+        ) : null}
         {message ? <Message message={message} /> : null}
       </article>
     );
@@ -528,15 +588,6 @@ export function SourceCard({
         </div>
       )}
 
-      {disclosure ? (
-        <div
-          data-source-disclosure
-          className="mt-5 max-w-[68ch] font-ui text-chrome-label leading-5 text-[var(--settings-dim)]"
-        >
-          {disclosure}
-        </div>
-      ) : null}
-
       <Actions
         step={step}
         onStep={onStep}
@@ -545,6 +596,24 @@ export function SourceCard({
         busyLabel={busyLabel}
         className="mt-6"
       />
+
+      {step?.kind === 'shell-sign-in' ? (
+        <p
+          data-source-step-note
+          className="mt-3 max-w-xl font-ui text-chrome-label leading-5 text-[var(--settings-dim)]"
+        >
+          {step.note}
+        </p>
+      ) : null}
+
+      {disclosure ? (
+        <div
+          data-source-disclosure
+          className="mt-4 max-w-[68ch] font-ui text-chrome-label leading-5 text-[var(--settings-dim)]"
+        >
+          {disclosure}
+        </div>
+      ) : null}
 
       {message ? <Message message={message} /> : null}
 

@@ -31,7 +31,7 @@ import {
   TerminalSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { HarnessGlyph } from '../harness-icons';
+import { SourceMark } from '@/components/agent-sources/source-card';
 import {
   LAUNCHER_ROLE_LABEL,
   setupAccessibleLabel,
@@ -56,7 +56,9 @@ export function EngineGlyph({
       {engine.harness === 'shell' ? (
         <TerminalSquare size={size} strokeWidth={1.8} />
       ) : (
-        <HarnessGlyph harness={engine.harness} size={size} />
+        // A source with no vendor mark wears the neutral sparkle Settings
+        // shows, never an empty box beside its name.
+        <SourceMark id={engine.harness} size={size} />
       )}
     </span>
   );

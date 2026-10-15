@@ -229,10 +229,11 @@ Every URL below was fetched on **2026-08-18**.
 
 ---
 
-## Antigravity, no mark shipped
+## Gemini (Antigravity CLI), no mark shipped
 
 - **Vendor / product:** Google LLC. Antigravity, and the Antigravity CLI
-  (`agy`) harness.
+  (`agy`) harness, labelled "Gemini" with "Antigravity CLI" beneath it in
+  the product since 2026-10-15 (ENG-003 S5.3.1).
 - **Why no mark:** Google's trademark guidelines for proper usage
   (`https://partnermarketinghub.withgoogle.com/brands/google/trademarks-and-terms/trademark-guidelines-for-proper-usage/`,
   the page `https://about.google/brand-resource-center/rules/` redirects to,
@@ -247,11 +248,34 @@ Every URL below was fetched on **2026-08-18**.
   product icons, or imagery associated with Google)". Every mark in this
   registry is recoloured to the surrounding ink, which is an alteration, and
   no Google-approved artwork was obtained.
-- **What ships instead:** `SOURCE_MARKS.antigravity` is `null`, so every
-  surface draws its own fallback beside the plain-text product name, which
-  the guidelines permit, and the source's identity colour does the rest.
-- **Remedy:** obtain Google-approved artwork and permission through the Brand
-  Resource Center, then add the mark with its provenance here.
+- **The Gemini icon, evaluated 2026-10-15 (S5.3.1).** The question was
+  whether an unaltered official Gemini icon may appear in a third-party list
+  of integrations as an explicit exception to the recolour rule. It may not
+  without approval. Google's "How to show Google's brand", Product icons
+  section (`https://about.google/brand-resource-center/brand-elements/`,
+  which redirects to
+  `https://partnermarketinghub.withgoogle.com/brands/google/branding-guidelines/how-to-show-googles-brand/`):
+  "To use a Google product icon in your work, create a Partner Marketing Hub
+  account to find assets and request permission through our approval form."
+  The permissions guidance puts product icons under "Ask first. You may be
+  able to use our brand elements for the following uses, but you'll need to
+  submit a request first", and only plain text under "Go for it". The
+  product co-branding page does foresee "a grid of products that are
+  compatible with your services", but sends product icons back to the same
+  approval rule, and its default is plain text ("works with", "integrates
+  with"). The Google APIs Terms §6 (`https://developers.google.com/terms`)
+  grant no Brand Features right, so an API key changes nothing. No public
+  download of the Gemini icon exists: the Gemini brand section of the Partner
+  Marketing Hub sits behind a sign-in, and the Gemini CLI brand kit
+  (`https://geminicli.com/brand-kit/`) is a different product's mark with no
+  third-party licence. Antigravity's FAQ says nothing on brand use.
+- **What ships instead:** `SOURCE_MARKS.antigravity` stays `null`; the
+  source reads "Gemini" in plain text, the use the guidance permits, beside
+  the neutral fallback glyph.
+- **Remedy:** request approval for the Gemini icon in this integrations list
+  through the Partner Marketing Hub form, then add the unaltered artwork as
+  an explicit exception to the recolour rule, under whatever size, colour and
+  clear-space terms the approval carries, with its provenance here.
 
 ---
 

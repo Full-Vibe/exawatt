@@ -1473,6 +1473,6 @@ function buildSources(
     // Google (ENG-038 slice 4): an account with no local ledger. Its windows
     // arrive only through the Antigravity account read, so with no read
     // configured the view is empty and earns no card; it is never a zero.
-    build('antigravity', 'Antigravity', [], inputs.burnRates),
+    build('antigravity', 'Gemini', [], inputs.burnRates),
   ];
 }

@@ -1019,7 +1019,7 @@ Provider/runtime boundaries:
 - Agent Source / Harness adapters
 - local OpenClaw gateway
 - customer-hosted and Exawatt-hosted OpenClaw gateways
-- Codex / Claude Code / OpenCode / Grok Build / Qwen Code / Antigravity adapters
+- Codex / Claude Code / OpenCode / Grok Build / Qwen Code / Gemini (Antigravity CLI) adapters
 - Demo Harness / Demo Scenario Source
 - custom harnesses
 - local machine

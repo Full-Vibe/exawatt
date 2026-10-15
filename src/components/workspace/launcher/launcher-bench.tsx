@@ -15,8 +15,15 @@
  */
 
 import { useState } from 'react';
+import { sourceCardStep } from '@/components/agent-sources/source-card';
+import { HARNESS_META } from '../harnesses';
 import { AgentLauncher } from './agent-launcher';
-import { BENCH_SCENARIOS, benchAxes, type BenchScenario } from './launcher-fixtures';
+import { launcherSourceLines } from './source-lines';
+import {
+  BENCH_SCENARIOS,
+  benchAxes,
+  type BenchScenario,
+} from './launcher-fixtures';
 import type { LauncherSetup } from './launcher-model';
 
 /** Applying an axis change to a setup, the way the composer's adapter will. */
@@ -89,6 +96,30 @@ function ScenarioCase({ scenario }: { scenario: BenchScenario }) {
           launching={scenario.launching}
           blockedReason={scenario.blockedReason ?? null}
           notice={scenario.notice ?? null}
+          noticeActions={(scenario.noticeActions ?? []).map(label => ({
+            id: label,
+            label,
+            onClick: () => {},
+          }))}
+          detailSource={
+            scenario.sourceLines
+              ? launcherSourceLines(
+                  scenario.sourceLines,
+                  sourceCardStep({
+                    adapterId: scenario.sourceLines,
+                    harness: scenario.sourceLines,
+                    label: HARNESS_META[scenario.sourceLines].label,
+                    state: 'unknown',
+                    actions: {
+                      recheck: true,
+                      authenticate: true,
+                      chooseModel: false,
+                      installGuide: true,
+                    },
+                  })
+                )
+              : undefined
+          }
           defaultDetailOpen={scenario.detailOpen}
           placeholderCount={3}
         />

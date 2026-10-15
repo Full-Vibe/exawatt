@@ -19,9 +19,13 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
+import { useRouter } from 'next/navigation';
 import { runAgentSourceAction } from '@/components/workspace/agent-sources';
+import { requestLaunch } from '@/components/workspace/session-jump';
+import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
   SourceCard,
+  SourceDisclosureText,
   SourceMark,
   SourceObservationTime,
   SourceStateGlyph,
@@ -236,6 +240,7 @@ function SourceDetail({
   onRecheck,
   onAuthenticate,
   onInstall,
+  onShellSignIn,
 }: {
   source: AgentSourceSnapshot;
   busy: boolean;
@@ -245,6 +250,7 @@ function SourceDetail({
   onRecheck: () => void;
   onAuthenticate: () => void;
   onInstall: () => void;
+  onShellSignIn: (command: string) => void;
 }) {
   const step = sourceCardStep(source);
   const modelSelection =
@@ -279,7 +285,18 @@ function SourceDetail({
       summary={source.summary}
       attention={sourceAttention(source)}
       step={step}
-      onStep={step?.kind === 'install-guide' ? onInstall : onAuthenticate}
+      onStep={
+        step?.kind === 'install-guide'
+          ? onInstall
+          : step?.kind === 'shell-sign-in'
+            ? () => onShellSignIn(step.command)
+            : onAuthenticate
+      }
+      disclosure={
+        agentSourceDeclaration(source.adapterId).disclosure ? (
+          <SourceDisclosureText adapterId={source.adapterId} />
+        ) : null
+      }
       onRecheck={source.actions.recheck ? onRecheck : null}
       busy={busy}
       busyLabel={checkingLabel}
@@ -508,6 +525,7 @@ export function AgentSourcesSettings({
    */
   openConnection?: { id: string } | null;
 } = {}) {
+  const router = useRouter();
   const connected = useConnectedSources();
   const [selectedConnectionId, setSelectedConnectionId] = useState<
     string | null
@@ -850,6 +868,13 @@ export function AgentSourcesSettings({
               }}
               onAuthenticate={() => void authenticate()}
               onInstall={() => void openInstallGuide()}
+              onShellSignIn={command => {
+                // The source signs in on its own first run, in a Shell tab
+                // the workspace opens; Recheck here once it has.
+                cancelReconciliation();
+                requestLaunch('shell', { shellCommand: command });
+                router.push('/workspace');
+              }}
             />
           ) : null}
         </div>

@@ -109,8 +109,8 @@ export const AGENT_SOURCE_DECLARATIONS = [
   {
     adapterId: 'antigravity',
     harness: 'antigravity',
-    label: 'Antigravity',
-    connectionName: 'Local CLI',
+    label: 'Gemini',
+    connectionName: 'Antigravity CLI',
     color: '#7FB7FF',
     installationGuideUrl: 'https://antigravity.google/docs/cli',
     description:
@@ -125,6 +125,16 @@ export const AGENT_SOURCE_DECLARATIONS = [
       delegationObservation:
         'Antigravity reports a delegation start and no completion, so delegated work is not shown',
       enforcementOwner: 'Antigravity',
+    },
+    signIn: {
+      label: 'Sign in to Google in Antigravity',
+      command: 'agy',
+      note: 'Runs agy in a Shell tab. The first run in a new folder asks you to trust it there.',
+    },
+    disclosure: {
+      text: "Google's terms don't cover third-party launchers on consumer plans. Exawatt runs your own agy with your own Google sign-in.",
+      linkLabel: "Google's FAQ",
+      href: 'https://antigravity.google/docs/faq/',
     },
   },
   {
