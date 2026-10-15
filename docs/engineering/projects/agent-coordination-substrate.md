@@ -469,6 +469,48 @@ interface BusClient {
   selector Fleet's selection panel imports. The pure `agentUnreadCount` serves
   a surface that already holds the Project's messages.
 
+### 2026-10-15 — Agent names (packet P8)
+
+Landed in two slices: the core, main's store and the bridge (`c2d227bd`),
+then every surface and the one rename. What shipped, for the bus to build on:
+
+- **Allocation.** `<harness short>-<n>` at the first launch, the lowest free
+  ordinal per Project per harness (`claude`, `codex`, `gemini` for
+  Antigravity, `opencode`, `grok`, `qwen`; an unknown harness uses its own id
+  folded to a slug). Keyed by the durable Session, so relaunch, resume, a
+  model change and an app restart keep it. Shells and drafts get none. A name
+  is freed only when its Session is deleted for good (discard, the closed
+  ledger's reap); a soft close keeps it, so a reopened tab is still `codex-2`.
+- **Rename.** One verb: the tab's existing rename (double-click, ⌘E, the tab
+  menu, ⌘K) edits the name through main. Names are letters, digits, `-` and
+  `_`, start and end alphanumeric, at most 32 characters; whitespace becomes
+  `-` and a leading `@` is dropped. `operator`, `all`, `everyone` and
+  `exawatt` are reserved. Uniqueness is per Project and case-insensitive; a
+  taken name is refused with the reason while typing and on commit, never
+  suffixed. A shell tab keeps its title rename.
+- **Addressing.** `resolveAgentAddress(directory, projectKey, address)`
+  accepts `@name`, `name`, or a Session id; an exact name wins; a harness's
+  short name (`@codex`) reaches the only Agent of that harness in the
+  Project and lists the candidates when there are several; a name that lives
+  only in another Project fails with that reason and the matches. Names are
+  already valid `busHandle` output up to case, and the resolver ignores
+  case, so the B1 handle and the name agree.
+- **One truth.** `agent-names.json` beside `session-identities.json`; main
+  serves `ptySessions.agentDirectory()` and stamps `agentName` on every PTY
+  row; the renderer mirrors the same records (`useAgentNames`). The Project
+  key is the workspace group key (`projectDir` for every local Project), sent
+  by the renderer at launch and resume.
+- **Migration.** A layout saved before names existed is named on its first
+  read in strip order (Project order, then tab order); a title the operator
+  had given a tab becomes its name when it is a valid, free name.
+- **Surfaces.** Tab: name, then the context label beside it in the dim tone;
+  the context truncates first. Team tile: name as the title, context beneath.
+  Fleet: the hover card leads with the name and puts the goal beneath; the
+  local Agent's `name` is its Agent name. ⌘K: rows lead with the name and
+  match `@name`.
+- **Not done.** Demo Mode keeps its authored Agent titles (they read as
+  operator-given names); connected coworkers keep their source's names.
+
 ### 2026-10-15 — B1 contract
 
 Published before the bus core lands so the Chatter tab (P4) and Direct (P5)

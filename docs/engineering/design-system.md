@@ -634,6 +634,15 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-10-15 — ENG-029 C4 Agent names: an Agent's tab chip prints its name
+  (`text-chrome-title`, medium, full text colour) and then its context label
+  in the dim tone at normal weight, one line; the context label truncates and
+  leaves before the name does. The Team tile's title line is the name with
+  the context beneath it; the Fleet hover card leads with the name and puts
+  the goal beneath. A rename the name rules refuse keeps its editor open and
+  shows the reason under the field (`text-chrome-meta`, red keyline), never
+  over the strip. One owner: `sessionDisplayCopy` (`primaryKind: 'name'`).
+
 - 2026-10-15 — ENG-003 S5.3.1: the Settings source card (identity, state
   pill, one next step, Recheck, disclosure, freshness) is one controlled
   component, `SourceCard`, and rung 3's operational neutrals scope onto its
