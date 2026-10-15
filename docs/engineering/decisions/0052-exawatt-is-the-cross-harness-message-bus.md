@@ -113,3 +113,7 @@ they give them ... we'll likely just be wrong most of the time."
   crosses between a local Agent and a cloud Agent of another species is an
   open question the operator named and deferred; the bus's store and
   transport seam exists so that answer can be plugged in.
+- **Scope is the Project.** An Agent addresses Agents in its own Project;
+  the Chatter sidebar is per Project; a cross-Project send fails at the
+  sender with a clear reason (operator, 2026-10-15: "Within a project only,
+  for now"). Workspace-wide addressing is a later decision, not a default.

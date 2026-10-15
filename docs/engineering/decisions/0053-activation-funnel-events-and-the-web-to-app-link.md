@@ -74,8 +74,9 @@ The operator, on per-person visibility: aggregate only for anonymous
 installs, "and yes for authed users, I want to see their activity stream."
 For an account that signs in, the activation events and Session-level
 activity (opened, launched, directed, finished; never prompt or output text,
-never a path) are written to that account in Supabase and are readable by
-the operator. Sign-in stays an invitation, never a gate (ENG-030 OS0), and
+never a path) are captured to PostHog under a second distinct id, the account
+id, with no identify or alias to the installation id (operator, later the
+same day: "PH for both"), and are readable by the operator beside the funnel. Sign-in stays an invitation, never a gate (ENG-030 OS0), and
 the stream is disclosed at the moment of sign-in and on the Privacy page, so
 a person who signs in has read that their activity is recorded to their
 account. Anonymous installations stay anonymous, and `0031`'s separation of

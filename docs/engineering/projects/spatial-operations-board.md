@@ -3284,7 +3284,19 @@ want them to be identical in code or at least share design components",
 leaning to popping the existing composer open. So: one composer, one code
 path; whether it renders in place on the board or in the workspace is the
 packet's call on evidence (the launcher is already a controlled visual shell
-with no IPC of its own, so in-place is possible without a second launcher). On Tiles (V4.1) the ghost is the
+with no IPC of its own, so in-place is possible without a second launcher).
+
+**Start idle, then command** (operator, 2026-10-15, asked whether the
+composer should launch one task on several harnesses at once): "Hmm I think
+we're jamming too much into the composer window. Maybe he has to start the
+agents in an idle state (or any state) first, either on the fleet board or
+otherwise. Then once the agents are started, he can select them and issue
+commands to them." So the composer gains nothing. The flow for two Agents on
+one task is: ghost, Start (task optional, so an idle Agent is one click past
+the ghost); ghost, Start; box-select both; Direct. An idle Agent is a normal
+D40 state, not a special kind. Whether Enter or a double-click on a ghost
+skips the composer and starts the Project's recommended harness idle is the
+packet's call on evidence; a single click always opens the one composer. On Tiles (V4.1) the ghost is the
 homepage's ghost ring drawn by the shared renderer; on Dots it is a dashed
 outline. Two ghosts in a zone when a launch is in flight, never more. A zone
 with no folder binding offers the ghost but the composer says what is missing

@@ -173,8 +173,9 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
   name is the Agent's short stable name (harness plus ordinal at launch,
   `claude-1`, `codex-2`, renameable anywhere; operator decision 2026-10-15),
   never the changing context label; `@name` resolves within the Project
-  first, then the Workspace; an ambiguous name fails at the sender with the
-  candidates listed. The directory is the existing session store plus
+  only (operator, 2026-10-15: "Within a project only, for now"); a send
+  across Projects fails at the sender with a clear reason, and an ambiguous
+  name fails with the candidates listed. The directory is the existing session store plus
   the connected-source roster; nothing new is persisted for it.
 - **Envelope.** Exawatt stamps `from` (Session id, name, harness, Project),
   `to`, `at`, `kind` (`agent` or `operator`), and a `reply` hint. The receiving
