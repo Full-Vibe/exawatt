@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -14,6 +13,7 @@ import type {
   FleetView,
   PresentationPreferencesV1,
 } from '@exawatt/core/desktop-bridge';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import { createPresentationPreferenceSource } from '@/lib/presentation/preference-source';
 
 interface PresentationContextValue {
@@ -38,43 +38,45 @@ export function PresentationProvider({ children }: { children: ReactNode }) {
   const source = useMemo(() => createPresentationPreferenceSource(), []);
   const [preference, setPreference] = useState<PresentationPreferencesV1>();
   const [ready, setReady] = useState(false);
-  const revision = useRef(0);
+  const lifetime = useLatestRequest();
+  const updates = useLatestRequest();
 
   useEffect(() => {
-    let active = true;
+    const mounted = lifetime.begin();
     const accept = (next: PresentationPreferencesV1 | undefined) => {
-      if (!active) return;
+      if (!mounted.current) return;
       setPreference(next);
       setReady(true);
     };
-    const loadRevision = revision.current;
+    const loadTicket = updates.begin();
     const unsubscribe = source.subscribe(next => {
-      revision.current++;
+      updates.invalidate();
       accept(next);
     });
     void source.load().then(
       next => {
-        if (revision.current === loadRevision) accept(next);
+        if (loadTicket.current) accept(next);
       },
       () => {
-        if (active) setReady(true);
+        if (mounted.current) setReady(true);
       }
     );
     return () => {
-      active = false;
+      lifetime.invalidate();
+      updates.invalidate();
       unsubscribe();
     };
-  }, [source]);
+  }, [source, lifetime, updates]);
 
   const commit = useCallback(
     async (next: PresentationPreferencesV1 | undefined) => {
-      const saveRevision = ++revision.current;
+      const ticket = updates.begin();
       const saved = await source.save(next);
       // A settings broadcast may precede its response. Both carry the saved
       // snapshot; a later external choice must not be replaced by this response.
-      if (revision.current === saveRevision) setPreference(saved);
+      if (ticket.current) setPreference(saved);
     },
-    [source]
+    [source, updates]
   );
   const setFleetView = useCallback(
     (fleetView: FleetView) => commit({ schemaVersion: 1, fleetView }),
