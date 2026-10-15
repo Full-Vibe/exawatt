@@ -58,7 +58,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-044 | Agent safety and governance controls              | planned      | S1 landed: a Settings ▸ Safety home, one default-off control (block broad process kills). The enterprise governance product is UNSHAPED pending a design pass. |
 | ENG-045 | Permissions and grants                           | planned      | S1 landed: a registry, a first-party primer and Settings ▸ Permissions for notifications. Folder access, Local Network and in-app grants are UNSHAPED pending a design pass. |
 | ENG-046 | First-run on-ramp                                | active-build | SHAPED 2026-10-14: the user's existing Claude Code, Codex and Antigravity projects listed on first run, one click to open, first Agent in two gestures; harness stores read, never imported. |
-| ENG-047 | Activation funnel analytics                      | active-build | SHAPED 2026-10-14 (decision `0053`): visit, download, first launch, first Project, first Agent, day-2 return, and one click-initiated anonymous web-to-app link; no replay, no names or paths. |
+| ENG-047 | Activation funnel analytics                      | active-build | SHAPED 2026-10-14 (decision `0053`): visit, download, first launch, first Project, first Agent, day-2 return, and one click-initiated anonymous web-to-app link; no replay, no names or paths. F0, F1, F2 and F5 LANDED 2026-10-15; F3 dashboard and F4 read-back next. |
 | ENG-014 | Wattage allocation surface                       | planned      | Allocate wattage to goals instead of assigning tasks to agents.                                                                                                                        |
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
@@ -1369,11 +1369,11 @@ Exit criteria:
 Milestones:
 
 - F0 Stable installation id (BUG-171) — landed 2026-10-15
-- F1 Events, manifest, Privacy page and tests in one landing
-- F2 The web-to-app link
+- F1 Events, manifest, Privacy page and tests in one landing — landed 2026-10-15
+- F2 The web-to-app link — landed 2026-10-15
 - F3 Dashboard
 - F4 Read-back against the update feed
-- F5 Signed-in activity stream (operator, 2026-10-15: "yes for authed users, I want to see their activity stream"): for accounts that sign in, the activation events plus Session-level activity (opened, launched, directed, finished; never prompt or output text) are sent to PostHog under a second distinct id, the account id, with no identify or alias between it and the installation id (so `0031`'s separation holds and the funnel's anonymous person stays anonymous), disclosed at sign-in and on the Privacy page, and read by the operator in PostHog beside the funnel (operator, 2026-10-15: "PH for both"). No new Supabase table; the dormant task-shaped `activity_events` stays dormant. Decision `0053` amended.
+- F5 Signed-in activity stream — landed 2026-10-15 (account-keyed direct send from the desktop renderer; [log](projects/activation-funnel.md#2026-10-15--f1-f2-and-f5-the-events-the-web-to-app-link-the-signed-in-stream)) (operator, 2026-10-15: "yes for authed users, I want to see their activity stream"): for accounts that sign in, the activation events plus Session-level activity (opened, launched, directed, finished; never prompt or output text) are sent to PostHog under a second distinct id, the account id, with no identify or alias between it and the installation id (so `0031`'s separation holds and the funnel's anonymous person stays anonymous), disclosed at sign-in and on the Privacy page, and read by the operator in PostHog beside the funnel (operator, 2026-10-15: "PH for both"). No new Supabase table; the dormant task-shaped `activity_events` stays dormant. Decision `0053` amended.
 
 Project doc:
 

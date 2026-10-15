@@ -9,6 +9,8 @@ import {
   readAnalyticsIdentity,
   setAnalyticsOptOut,
 } from './analytics-identity';
+import { recordAgentFinished } from './analytics-activity';
+import { ptySessions } from './pty/session-manager';
 
 /**
  * ENG-030 OS1.5b — the IPC half of the main→renderer analytics bridge.
@@ -39,6 +41,8 @@ export function registerAnalyticsIPC(): void {
   handleTrusted('analytics:drain-main-events', () =>
     drainMainAnalyticsEvents()
   );
+  // ENG-047 F5: an Agent's process ending is Session-level activity.
+  ptySessions.on('exit', (id: string) => recordAgentFinished(id));
   handleTrusted('analytics:identity', (_event, request) =>
     readAnalyticsIdentity(request)
   );

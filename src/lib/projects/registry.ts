@@ -9,7 +9,13 @@
  * v1 only writes `kind: 'repository'` (a Project resolved from a git repo/dir);
  * the `kind` column leaves room for future inferred/semantic/manual Projects.
  */
+import type { AgentHarness } from '@exawatt/core';
 import { resolveDistributionIdentity } from '@exawatt/core/distribution';
+import {
+  analyticsSurface,
+  captureAnalyticsEvent,
+  type ProjectOpenSource,
+} from '@/lib/analytics';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createOptionalClient } from '@/lib/supabase/client';
 import {
@@ -21,6 +27,34 @@ import {
 } from './contract';
 
 export type { Project };
+
+/**
+ * Why an open verb ran, when an operator gesture ran it (ENG-047). Passing
+ * one records `project_opened` once the Project is open; a verb run for
+ * bookkeeping (registering the folder an Agent launched in, a rename's
+ * reconcile) passes none and records nothing.
+ */
+export interface ProjectOpenedContext {
+  source: ProjectOpenSource;
+  /** The harness whose own store suggested the folder (ENG-046), if any. */
+  harnessHint?: AgentHarness | null;
+}
+
+function recordOpened(
+  project: Project,
+  opened: ProjectOpenedContext | undefined
+): Project {
+  if (opened) {
+    captureAnalyticsEvent({
+      name: 'project_opened',
+      surface: analyticsSurface(),
+      source: opened.source,
+      harnessHint: opened.harnessHint ?? null,
+      bound: project.root_path === null ? 'folderless' : 'folder',
+    });
+  }
+  return project;
+}
 
 export const LOCAL_PROJECTS_STORAGE_VERSION = 1 as const;
 
@@ -319,8 +353,13 @@ export async function listProjects(): Promise<Project[]> {
  *  Idempotent via the (user_id, root_path) unique index — launching in a known
  *  directory reuses its Project instead of creating a duplicate. */
 export async function openRepositoryProject(
-  ref: RepositoryProjectRef
+  ref: RepositoryProjectRef,
+  opened?: ProjectOpenedContext
 ): Promise<Project> {
+  return recordOpened(await openRepositoryRow(ref), opened);
+}
+
+async function openRepositoryRow(ref: RepositoryProjectRef): Promise<Project> {
   const store = await projectStore();
   if (store.kind === 'local') {
     const projects = readLocalProjects();
@@ -389,9 +428,10 @@ export async function openRepositoryProject(
  * launch, Finder, and worktree verbs must gate on `root_path`.
  */
 export async function openManualProject(
-  ref: ManualProjectRef
+  ref: ManualProjectRef,
+  opened?: ProjectOpenedContext
 ): Promise<Project> {
-  return await openFolderlessProject(ref, 'manual');
+  return recordOpened(await openFolderlessProject(ref, 'manual'), opened);
 }
 
 /** Create or idempotently reopen a folderless Project of one kind, by id. */
@@ -489,11 +529,14 @@ async function openFolderlessProject(
  * whether the operator is signed in refuses here, as every read does.
  */
 export async function openRemoteHomeProject(
-  ref: ManualProjectRef
+  ref: ManualProjectRef,
+  opened?: ProjectOpenedContext
 ): Promise<Project> {
   const home = (await listProjects()).find(isRemoteHome);
-  if (home) return home;
-  return await openFolderlessProject(ref, REMOTE_HOME_KIND);
+  return recordOpened(
+    home ?? (await openFolderlessProject(ref, REMOTE_HOME_KIND)),
+    opened
+  );
 }
 
 export async function renameProject(id: string, name: string): Promise<void> {

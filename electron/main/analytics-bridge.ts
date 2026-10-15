@@ -1,5 +1,7 @@
 /**
- * ENG-030 OS1.5b — the main→renderer analytics bridge.
+ * ENG-030 OS1.5b — the main→renderer analytics bridge. ENG-047 adds the
+ * Agent activity main alone observes (launched, finished) and the one
+ * web-to-app alias a deep link asks for.
  *
  * Electron main cannot emit a product analytics event itself: `posthog-js`
  * lives in the renderer, and decision `0034` means main has NO analytics
@@ -27,6 +29,14 @@
  * and drops anything it does not recognize — drift here can narrow what is
  * counted, never widen what leaves the machine.
  */
+
+import {
+  isAgentHarness,
+  isAgentPermissionMode,
+  type AgentHarness,
+  type AgentPermissionMode,
+} from '@exawatt/core';
+import { isAnalyticsId } from '@exawatt/core/desktop-bridge';
 
 export const MAIN_ANALYTICS_QUEUE_CAP = 16;
 
@@ -78,7 +88,18 @@ export type MainProcessAnalyticsEvent =
       /** Set only when there was no HTTP status to classify. */
       failure: MainTransportFailure | null;
       statusCode: number | null;
-    };
+    }
+  /** ENG-047: an Agent process main started. Main's processes are local. */
+  | {
+      name: 'agent_launched';
+      harness: AgentHarness;
+      permissionMode: AgentPermissionMode | null;
+      firstForInstall: boolean;
+    }
+  /** ENG-047 F5: that process ended (the signed-in stream only). */
+  | { name: 'agent_finished'; harness: AgentHarness }
+  /** ENG-047 F2: the visitor's web id, for the one alias. */
+  | { name: 'web_alias'; webId: string };
 
 function member<T extends string>(
   allowed: readonly T[],
@@ -97,7 +118,8 @@ export function isMainProcessAnalyticsEvent(
     return (
       member(MAIN_CRASH_SCOPES, candidate.scope) &&
       member(MAIN_CRASH_REASONS, candidate.reason) &&
-      (candidate.appVersion === null || typeof candidate.appVersion === 'string')
+      (candidate.appVersion === null ||
+        typeof candidate.appVersion === 'string')
     );
   }
   if (candidate.name === 'hosted_call_failed') {
@@ -110,7 +132,52 @@ export function isMainProcessAnalyticsEvent(
           Number.isInteger(candidate.statusCode)))
     );
   }
+  if (candidate.name === 'agent_launched') {
+    return (
+      isAgentHarness(candidate.harness) &&
+      (candidate.permissionMode === null ||
+        isAgentPermissionMode(candidate.permissionMode)) &&
+      typeof candidate.firstForInstall === 'boolean'
+    );
+  }
+  if (candidate.name === 'agent_finished') {
+    return isAgentHarness(candidate.harness);
+  }
+  if (candidate.name === 'web_alias') return isAnalyticsId(candidate.webId);
   return false;
+}
+
+/** The exact declared shape, so nothing extra rides along across IPC. */
+function cleanEvent(
+  event: MainProcessAnalyticsEvent
+): MainProcessAnalyticsEvent {
+  switch (event.name) {
+    case 'app_crashed':
+      return {
+        name: 'app_crashed',
+        scope: event.scope,
+        reason: event.reason,
+        appVersion: event.appVersion,
+      };
+    case 'hosted_call_failed':
+      return {
+        name: 'hosted_call_failed',
+        service: event.service,
+        failure: event.failure,
+        statusCode: event.statusCode,
+      };
+    case 'agent_launched':
+      return {
+        name: 'agent_launched',
+        harness: event.harness,
+        permissionMode: event.permissionMode,
+        firstForInstall: event.firstForInstall,
+      };
+    case 'agent_finished':
+      return { name: 'agent_finished', harness: event.harness };
+    case 'web_alias':
+      return { name: 'web_alias', webId: event.webId };
+  }
 }
 
 let queue: MainProcessAnalyticsEvent[] = [];
@@ -121,25 +188,13 @@ let notify: (() => void) | null = null;
  * outage must never turn this into an unbounded buffer, and the newest events
  * are the ones a returning renderer can still act on. Never throws.
  */
-export function queueMainAnalyticsEvent(event: MainProcessAnalyticsEvent): void {
+export function queueMainAnalyticsEvent(
+  event: MainProcessAnalyticsEvent
+): void {
   if (!isMainProcessAnalyticsEvent(event)) return;
   // Rebuild the exact declared shape so a caller cannot smuggle extra fields
   // across the IPC boundary alongside a valid event.
-  const clean: MainProcessAnalyticsEvent =
-    event.name === 'app_crashed'
-      ? {
-          name: 'app_crashed',
-          scope: event.scope,
-          reason: event.reason,
-          appVersion: event.appVersion,
-        }
-      : {
-          name: 'hosted_call_failed',
-          service: event.service,
-          failure: event.failure,
-          statusCode: event.statusCode,
-        };
-  queue.push(clean);
+  queue.push(cleanEvent(event));
   if (queue.length > MAIN_ANALYTICS_QUEUE_CAP) {
     queue.splice(0, queue.length - MAIN_ANALYTICS_QUEUE_CAP);
   }

@@ -140,7 +140,11 @@ describe('Project opener', () => {
     });
 
     fireEvent.click(await screen.findByRole('button', { name: /Project/ }));
-    await waitFor(() => expect(onOpenProject).toHaveBeenCalledWith('/project'));
+    await waitFor(() =>
+      expect(onOpenProject).toHaveBeenCalledWith('/project', {
+        source: 'recent',
+      })
+    );
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(window.electron?.pty).toBeUndefined();
   });
@@ -294,7 +298,9 @@ describe('Project opener', () => {
         '/new/project-root'
       )
     );
-    expect(onOpenProject).toHaveBeenCalledWith('/new/project-root');
+    expect(onOpenProject).toHaveBeenCalledWith('/new/project-root', {
+      source: 'recent',
+    });
   });
   it('offers connecting an existing Agent beside the Project routes', async () => {
     const onOpenChange = vi.fn();

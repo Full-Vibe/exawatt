@@ -5,6 +5,7 @@ import {
   ANALYTICS_PROPERTY_DENYLIST,
   redactFrameLocation,
   scrubAnalyticsCapture,
+  scrubEventProperties,
 } from './redact';
 
 function capture(
@@ -266,3 +267,51 @@ describe('capture scrubbing', () => {
     );
   });
 });
+
+describe('page_viewed at the transport', () => {
+  it('reduces a forged path and referrer again, whatever reached the SDK', () => {
+    const result = scrubAnalyticsCapture(
+      capture('page_viewed', {
+        allowlist_version: 1,
+        surface: 'web',
+        path: 'https://www.example.test/download?utm_source=hn&gclid=abc#x',
+        referrer_host: 'https://news.example.test/item?id=1',
+        utm_source: 'hn',
+        gclid: 'abc',
+        msclkid: 'def',
+        $current_url: 'https://www.example.test/download?utm_source=hn',
+      })
+    );
+    expect(result?.properties).toEqual({
+      allowlist_version: 1,
+      surface: 'web',
+      path: '/download',
+      referrer_host: 'news.example.test',
+    });
+  });
+
+  it('denylists every click id it claims to strip', () => {
+    for (const id of ['gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid']) {
+      expect(ANALYTICS_PROPERTY_DENYLIST).toContain(id);
+    }
+  });
+
+  it('is the same allowlist the direct senders use', () => {
+    expect(scrubEventProperties('$create_alias', { alias: 'x' })).toBeNull();
+    expect(
+      scrubEventProperties('agent_finished', {
+        allowlist_version: 1,
+        surface: 'desktop',
+        harness: 'codex',
+        placement: 'local',
+        cwd: '/Users/example/Code/secret',
+      })
+    ).toEqual({
+      allowlist_version: 1,
+      surface: 'desktop',
+      harness: 'codex',
+      placement: 'local',
+    });
+  });
+});
+

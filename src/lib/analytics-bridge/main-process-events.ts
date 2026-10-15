@@ -19,11 +19,13 @@
  * canonical `hostedFailureForStatus` mapping so main never re-implements it.
  */
 
+import { isAgentHarness, isAgentPermissionMode } from '@exawatt/core';
 import {
   analyticsSurface,
   captureAnalyticsEvent,
   hostedFailureForStatus,
   initAnalytics,
+  recordWebAlias,
   type AnalyticsEvent,
 } from '@/lib/analytics';
 import {
@@ -88,7 +90,40 @@ export function normalizeMainProcessAnalyticsEvent(
     };
   }
 
+  // ENG-047: processes main started are local Agents.
+  if (candidate.name === 'agent_launched') {
+    if (!isAgentHarness(candidate.harness)) return null;
+    return {
+      name: 'agent_launched',
+      surface: analyticsSurface(),
+      harness: candidate.harness,
+      placement: 'local',
+      permissionMode: isAgentPermissionMode(candidate.permissionMode)
+        ? candidate.permissionMode
+        : null,
+      firstForInstall: candidate.firstForInstall === true,
+    };
+  }
+
+  if (candidate.name === 'agent_finished') {
+    if (!isAgentHarness(candidate.harness)) return null;
+    return {
+      name: 'agent_finished',
+      surface: analyticsSurface(),
+      harness: candidate.harness,
+      placement: 'local',
+    };
+  }
+
   return null;
+}
+
+function isWebAliasRequest(raw: unknown): raw is { webId: unknown } {
+  return (
+    !!raw &&
+    typeof raw === 'object' &&
+    (raw as Record<string, unknown>).name === 'web_alias'
+  );
 }
 
 interface MainAnalyticsBridge {
@@ -103,12 +138,19 @@ interface MainAnalyticsBridge {
  */
 export async function drainMainProcessAnalyticsEvents(
   bridge: MainAnalyticsBridge,
-  capture: (event: AnalyticsEvent) => void = captureAnalyticsEvent
+  capture: (event: AnalyticsEvent) => void = captureAnalyticsEvent,
+  alias: (webId: unknown) => void = recordWebAlias
 ): Promise<void> {
   try {
     const events = await bridge.drainMainProcessEvents();
     if (!Array.isArray(events)) return;
     for (const raw of events) {
+      // ENG-047 F2: not an event but the one alias; validated where it is
+      // sent, and dropped there when analytics are off.
+      if (isWebAliasRequest(raw)) {
+        alias(raw.webId);
+        continue;
+      }
       const event = normalizeMainProcessAnalyticsEvent(raw);
       if (event) capture(event);
     }

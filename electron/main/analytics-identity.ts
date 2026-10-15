@@ -72,8 +72,24 @@ function adopt(
       ? { optedOut: false, installationId: legacy.installationId }
       : { optedOut: false };
   }
-  if (legacy?.optedOut && !current.optedOut) return { optedOut: true };
+  if (legacy?.optedOut && !current.optedOut) return withOptOut(current, true);
+  if (!current.optedOut && !current.installationId && legacy?.installationId) {
+    return { ...current, installationId: legacy.installationId };
+  }
   return current;
+}
+
+/** The record with the opt-out set; opting out forgets the id, and only the
+ *  id: what this device has done (an Agent launched, a link followed) is a
+ *  local fact, not identity. */
+function withOptOut(
+  current: AnalyticsDeviceRecord | undefined,
+  optedOut: boolean
+): AnalyticsDeviceRecord {
+  const { installationId, ...facts } = current ?? { optedOut };
+  return optedOut || !installationId
+    ? { ...facts, optedOut }
+    : { ...facts, optedOut, installationId };
 }
 
 function answer(
@@ -118,7 +134,7 @@ export function readAnalyticsIdentity(
   const current = read.settings.analytics;
   let next = adopt(current, legacyOf(candidate.legacy));
   if (candidate.ensureId === true && !next?.optedOut && !next?.installationId) {
-    next = { optedOut: false, installationId: store.mint() };
+    next = { ...next, optedOut: false, installationId: store.mint() };
   }
   if (next && next !== current) {
     if (!persist(store, read.settings, next)) return UNAVAILABLE;
@@ -140,12 +156,45 @@ export function setAnalyticsOptOut(
   }
   const read = store.read();
   if (read.status !== 'ready') return UNAVAILABLE;
-  const current = read.settings.analytics;
-  const next: AnalyticsDeviceRecord = optedOut
-    ? { optedOut: true }
-    : current?.installationId
-      ? { optedOut: false, installationId: current.installationId }
-      : { optedOut: false };
+  const next = withOptOut(read.settings.analytics, optedOut);
   if (!persist(store, read.settings, next)) return UNAVAILABLE;
   return answer(next);
+}
+
+/**
+ * Record one fact about this device once. Answers true exactly the first
+ * time, and false on every later call, on an unreadable file, or when the
+ * fact could not be written (so it is never claimed twice).
+ */
+function claimOnce(
+  fact: 'agentLaunched' | 'webLinked',
+  store: AnalyticsSettingsStore,
+  options: { unlessOptedOut: boolean }
+): boolean {
+  const read = store.read();
+  if (read.status !== 'ready') return false;
+  const current = read.settings.analytics;
+  if (current?.[fact]) return false;
+  if (options.unlessOptedOut && current?.optedOut) return false;
+  const next: AnalyticsDeviceRecord = {
+    ...(current ?? { optedOut: false }),
+    [fact]: true,
+  };
+  return persist(store, read.settings, next);
+}
+
+/** ENG-047 `first_for_install`: true for this installation's first Agent.
+ *  Kept even while opted out, so opting in later does not claim a first. */
+export function takeFirstAgentLaunch(
+  store: AnalyticsSettingsStore = SETTINGS_STORE
+): boolean {
+  return claimOnce('agentLaunched', store, { unlessOptedOut: false });
+}
+
+/** ENG-047 F2: true the one time this installation may record the
+ *  web-to-app alias; never while opted out, never twice. */
+export function claimWebLink(
+  store: AnalyticsSettingsStore = SETTINGS_STORE
+): boolean {
+  return claimOnce('webLinked', store, { unlessOptedOut: true });
 }

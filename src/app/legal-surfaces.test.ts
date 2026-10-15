@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 import { ANALYTICS_PROPERTY_DENYLIST } from '@/lib/analytics/redact';
+import { ANALYTICS_EVENT_DISCLOSURES } from '@/lib/analytics/disclosure';
 
 /**
  * `/privacy` and `/terms` are factual claims about shipped behavior, and until
@@ -137,8 +138,16 @@ describe.skipIf(!HAS_LEGAL_SURFACES)('privacy page: what is collected', () => {
     expect(PRIVACY).toContain('What we never store');
   });
 
-  it('does not claim page-level or dwell tracking that the denylist forbids', () => {
-    for (const property of ['$current_url', '$pathname', '$referrer', '$title']) {
+  it('does not claim dwell tracking, or URL capture the denylist forbids', () => {
+    // A page's path is the declared `page_viewed` property (ENG-047), which
+    // the page discloses from the allowlist below; the SDK's own URL, title
+    // and referrer properties stay denylisted.
+    for (const property of [
+      '$current_url',
+      '$pathname',
+      '$referrer',
+      '$title',
+    ]) {
       expect(ANALYTICS_PROPERTY_DENYLIST).toContain(property);
     }
     for (const claim of ['pages visited', 'time spent']) {
@@ -168,6 +177,33 @@ describe.skipIf(!HAS_LEGAL_SURFACES)('privacy page: what is collected', () => {
     );
   });
 
+  it('lists the analytics events from the allowlist itself', () => {
+    // `disclosure.ts` is typed over every allowlisted event, and the page
+    // renders it, so an event cannot reach the wire without reaching here.
+    expect(PRIVACY).toContain('analyticsDisclosuresFor(where)');
+    const places = new Set(
+      Object.values(ANALYTICS_EVENT_DISCLOSURES).map(item => item.where)
+    );
+    for (const where of places) {
+      if (where === 'account') continue; // inside the signed-in list
+      expect(PRIVACY).toContain(`<DisclosureList where="${where}" />`);
+    }
+    // The signed-in list is the account stream's own event list.
+    expect(PRIVACY).toContain('<DisclosureList where="signed-in" />');
+  });
+
+  it('discloses the signed-in stream where people sign in, and here', () => {
+    // Decision 0053, amended 2026-10-15: disclosed at the moment of sign-in.
+    for (const page of [
+      'src/app/sign-in/page.tsx',
+      'src/app/sign-up/page.tsx',
+    ]) {
+      expect(read(page)).toContain('<AccountActivityNotice />');
+    }
+    expect(PRIVACY).toContain('not joined to the anonymous identifier');
+    expect(PRIVACY).toContain('your account is never part of it');
+  });
+
   it('supports its claim that context-label excerpts are secret-redacted', () => {
     const summarizer = read('electron/main/pty/context-summarizer.ts');
     // Both entry points: the launch task and each submitted instruction.
@@ -178,58 +214,64 @@ describe.skipIf(!HAS_LEGAL_SURFACES)('privacy page: what is collected', () => {
   });
 });
 
-describe.skipIf(!HAS_LEGAL_SURFACES)('legal surfaces: no phantom billing', () => {
-  it('has no billing implementation to describe', () => {
-    expect(existsSync('src/app/pricing')).toBe(false);
-    expect(read('package.json')).not.toContain('stripe');
-  });
+describe.skipIf(!HAS_LEGAL_SURFACES)(
+  'legal surfaces: no phantom billing',
+  () => {
+    it('has no billing implementation to describe', () => {
+      expect(existsSync('src/app/pricing')).toBe(false);
+      expect(read('package.json')).not.toContain('stripe');
+    });
 
-  it('does not describe payments neither page can take', () => {
-    for (const claim of [
-      'payment processor',
-      'pricing page',
-      'refund policy',
-      'paid subscription',
-      'billed in advance',
-    ]) {
-      expect(PRIVACY.toLowerCase()).not.toContain(claim);
-      expect(TERMS.toLowerCase()).not.toContain(claim);
-    }
-    expect(TERMS).toContain('Exawatt is free today');
-    expect(TERMS).toContain('we collect no payment details');
-  });
-});
+    it('does not describe payments neither page can take', () => {
+      for (const claim of [
+        'payment processor',
+        'pricing page',
+        'refund policy',
+        'paid subscription',
+        'billed in advance',
+      ]) {
+        expect(PRIVACY.toLowerCase()).not.toContain(claim);
+        expect(TERMS.toLowerCase()).not.toContain(claim);
+      }
+      expect(TERMS).toContain('Exawatt is free today');
+      expect(TERMS).toContain('we collect no payment details');
+    });
+  }
+);
 
-describe.skipIf(!HAS_LEGAL_SURFACES)('terms page: describes the product that ships', () => {
-  it('describes a macOS desktop app, not a cloud platform', () => {
-    for (const claim of [
-      'cloud-based platform',
-      'web-based dashboard',
-      'API access',
-      'task scheduling',
-      'log aggregation',
-    ]) {
-      expect(TERMS).not.toContain(claim);
-    }
-    expect(TERMS).toContain('desktop application for macOS on Apple silicon');
-    expect(TERMS).toContain('run as local processes on your machine');
-  });
+describe.skipIf(!HAS_LEGAL_SURFACES)(
+  'terms page: describes the product that ships',
+  () => {
+    it('describes a macOS desktop app, not a cloud platform', () => {
+      for (const claim of [
+        'cloud-based platform',
+        'web-based dashboard',
+        'API access',
+        'task scheduling',
+        'log aggregation',
+      ]) {
+        expect(TERMS).not.toContain(claim);
+      }
+      expect(TERMS).toContain('desktop application for macOS on Apple silicon');
+      expect(TERMS).toContain('run as local processes on your machine');
+    });
 
-  it('does not require an account the product does not require', () => {
-    // `/download` is deliberately account-free (decision `0021`, 2026-08-14
-    // amendment) and first run has no account wall.
-    expect(TERMS).not.toContain('you must create an account');
-    expect(TERMS).toContain('An account is optional');
-  });
+    it('does not require an account the product does not require', () => {
+      // `/download` is deliberately account-free (decision `0021`, 2026-08-14
+      // amendment) and first run has no account wall.
+      expect(TERMS).not.toContain('you must create an account');
+      expect(TERMS).toContain('An account is optional');
+    });
 
-  it('keeps the YOLO-default safety signal the marketing floor requires', () => {
-    // `docs/product/marketing.md`, "The de-apologising rule has a hard floor":
-    // never trade a true safety signal for a warmer sentence.
-    expect(TERMS).toContain(
-      'starts agents with the harness approval prompts and sandboxing turned off'
-    );
-  });
-});
+    it('keeps the YOLO-default safety signal the marketing floor requires', () => {
+      // `docs/product/marketing.md`, "The de-apologising rule has a hard floor":
+      // never trade a true safety signal for a warmer sentence.
+      expect(TERMS).toContain(
+        'starts agents with the harness approval prompts and sandboxing turned off'
+      );
+    });
+  }
+);
 
 describe('indexability of app surfaces', () => {
   const NOINDEX_SOURCES = [

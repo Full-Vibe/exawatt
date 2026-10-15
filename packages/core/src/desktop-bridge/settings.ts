@@ -164,6 +164,10 @@ export interface AnalyticsDeviceRecord {
   optedOut: boolean;
   /** Anonymous, generated on this device, held only while opted in. */
   installationId?: string;
+  /** ENG-047: this installation has launched an Agent (`first_for_install`). */
+  agentLaunched?: true;
+  /** ENG-047 F2: the one web-to-app alias has been asked for. */
+  webLinked?: true;
 }
 
 /**
@@ -211,6 +215,8 @@ export function parseAnalyticsDeviceRecord(
   if (!candidate.optedOut && isAnalyticsId(candidate.installationId)) {
     record.installationId = candidate.installationId;
   }
+  if (candidate.agentLaunched === true) record.agentLaunched = true;
+  if (candidate.webLinked === true) record.webLinked = true;
   return record;
 }
 

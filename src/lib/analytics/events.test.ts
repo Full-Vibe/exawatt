@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACCOUNT_ONLY_EVENTS,
+  ACCOUNT_STREAM_EVENTS,
   ANALYTICS_ALLOWLIST_VERSION,
   ANALYTICS_EVENT_NAMES,
   ANALYTICS_EVENT_PROPERTIES,
@@ -7,18 +9,38 @@ import {
   HOSTED_FAILURES,
   hostedFailureForStatus,
   isAnalyticsEventName,
+  sanitizeAnalyticsPath,
+  sanitizeReferrerHost,
   toAnalyticsPayload,
   type AnalyticsEvent,
 } from './events';
+import { EVERY_ANALYTICS_EVENT } from './examples.test-support';
 
 describe('analytics event allowlist', () => {
-  it('authorizes exactly the four events decisions 0031/0034 name', () => {
+  it('authorizes exactly the events decisions 0031 and 0053 name', () => {
     expect([...ANALYTICS_EVENT_NAMES]).toEqual([
       'app_launched',
       'sign_in_attempted',
       'hosted_call_failed',
       'app_crashed',
+      'page_viewed',
+      'download_requested',
+      'project_opened',
+      'agent_launched',
+      'agent_directed',
+      'agent_finished',
     ]);
+  });
+
+  it('keeps the account stream to activity, and website events off it', () => {
+    for (const name of ACCOUNT_STREAM_EVENTS) {
+      expect(isAnalyticsEventName(name)).toBe(true);
+    }
+    for (const name of ACCOUNT_ONLY_EVENTS) {
+      expect(ACCOUNT_STREAM_EVENTS).toContain(name);
+    }
+    expect(ACCOUNT_STREAM_EVENTS).not.toContain('page_viewed');
+    expect(ACCOUNT_STREAM_EVENTS).not.toContain('download_requested');
   });
 
   it('declares a property set for every event and no others', () => {
@@ -35,41 +57,9 @@ describe('analytics event allowlist', () => {
   });
 
   it('emits only declared properties', () => {
-    const events: AnalyticsEvent[] = [
-      {
-        name: 'app_launched',
-        surface: 'desktop',
-        platform: 'darwin',
-        delivery: 'signed',
-        appVersion: '0.1.8',
-        signedIn: true,
-      },
-      {
-        name: 'sign_in_attempted',
-        surface: 'desktop',
-        method: 'google',
-        outcome: 'failed',
-        failure: 'cancelled',
-      },
-      {
-        name: 'hosted_call_failed',
-        surface: 'web',
-        service: 'goal_visuals',
-        failure: 'rate_limited',
-        statusCode: 429,
-      },
-      {
-        name: 'app_crashed',
-        surface: 'desktop',
-        scope: 'renderer',
-        reason: 'out_of_memory',
-        appVersion: '0.1.8',
-      },
-    ];
-
-    for (const event of events) {
+    for (const event of EVERY_ANALYTICS_EVENT) {
       const payload = toAnalyticsPayload(event);
-      expect(payload).not.toBeNull();
+      expect(payload, event.name).not.toBeNull();
       expect(Object.keys(payload!.properties).sort()).toEqual(
         [...ANALYTICS_EVENT_PROPERTIES[event.name]].sort()
       );
@@ -222,5 +212,108 @@ describe('analytics event allowlist', () => {
     expect(
       toAnalyticsPayload({ name: 'session_transcript' } as unknown as AnalyticsEvent)
     ).toBeNull();
+  });
+});
+
+describe('page_viewed carries a path and a hostname, nothing else', () => {
+  const view = (url: string, referrer: string | null = null) =>
+    toAnalyticsPayload({ name: 'page_viewed', surface: 'web', url, referrer })
+      ?.properties;
+
+  it('yields the same event with or without a query, UTM, click id or fragment', () => {
+    const plain = view('https://www.exawatt.ai/download');
+    for (const url of [
+      'https://www.exawatt.ai/download?c=FRIEND-CODE',
+      'https://www.exawatt.ai/download?utm_source=hn&utm_medium=social&utm_campaign=launch',
+      'https://www.exawatt.ai/download?gclid=abc&fbclid=def&msclkid=ghi',
+      'https://www.exawatt.ai/download/#fragment',
+      '/download?ttclid=1',
+    ]) {
+      expect(view(url)).toEqual(plain);
+    }
+    expect(plain).toEqual({
+      allowlist_version: ANALYTICS_ALLOWLIST_VERSION,
+      surface: 'web',
+      path: '/download',
+      referrer_host: null,
+    });
+  });
+
+  it('keeps only the referring hostname', () => {
+    expect(
+      view(
+        'https://www.exawatt.ai/',
+        'https://news.ycombinator.com/item?id=4242&utm_source=x'
+      )?.referrer_host
+    ).toBe('news.ycombinator.com');
+    expect(sanitizeReferrerHost('android-app://com.slack/')).toBeNull();
+    expect(sanitizeReferrerHost('not a url at all')).toBeNull();
+  });
+
+  it('masks identifier segments so a page is a page, not a record', () => {
+    expect(
+      sanitizeAnalyticsPath(
+        '/workspace/session/0b8e4f5e-3c1d-4a2b-9f6e-7d8c9b0a1e2f'
+      )
+    ).toBe('/workspace/session/:id');
+    expect(sanitizeAnalyticsPath('/run/123456')).toBe('/run/:id');
+    expect(sanitizeAnalyticsPath('/u/jake')).toBe('/u/jake');
+    expect(sanitizeAnalyticsPath('')).toBeNull();
+    expect(
+      toAnalyticsPayload({ name: 'page_viewed', surface: 'web', url: '' })
+    ).toBeNull();
+  });
+});
+
+describe('the activation events', () => {
+  it('refuses a Project opened from a source decision 0053 does not name', () => {
+    expect(
+      toAnalyticsPayload({
+        name: 'project_opened',
+        surface: 'desktop',
+        source: '/Users/example/Code/secret' as never,
+        bound: 'folder',
+      })
+    ).toBeNull();
+  });
+
+  it('keeps harness hints and harnesses to catalog ids', () => {
+    expect(
+      toAnalyticsPayload({
+        name: 'project_opened',
+        surface: 'desktop',
+        source: 'browse',
+        harnessHint: 'claude-opus-5-secret-model' as never,
+        bound: 'folderless',
+      })?.properties.harness_hint
+    ).toBeNull();
+    expect(
+      toAnalyticsPayload({
+        name: 'agent_launched',
+        surface: 'desktop',
+        harness: 'my-private-harness' as never,
+        placement: 'local',
+        firstForInstall: false,
+      })?.properties
+    ).toMatchObject({ harness: 'unknown', permission_mode: null });
+  });
+
+  it('bounds Direct counts, and never reports more delivered than sent', () => {
+    expect(
+      toAnalyticsPayload({
+        name: 'agent_directed',
+        surface: 'desktop',
+        recipients: 2,
+        delivered: 5,
+      })?.properties
+    ).toMatchObject({ recipients: 2, delivered: 2 });
+    expect(
+      toAnalyticsPayload({
+        name: 'agent_directed',
+        surface: 'desktop',
+        recipients: -1,
+        delivered: 1.5,
+      })?.properties
+    ).toMatchObject({ recipients: 0, delivered: 0 });
   });
 });

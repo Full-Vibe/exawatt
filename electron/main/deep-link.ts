@@ -35,6 +35,9 @@ export interface DeepLinkDependencies {
   isLinkOutcome: () => ((value: unknown) => boolean) | null;
   safeAuthError: (error: unknown) => ElectronAuthError;
   isWorkspaceTarget: (url: string) => boolean;
+  /** ENG-047 F2: `exawatt://welcome?w=<web id>`. Records at most one alias
+   *  per installation; validates the id itself. */
+  welcome?: (webId: string | null) => void;
   record: AuthDiagnosticRecorder;
   logError?: (message: string, detail: unknown) => void;
 }
@@ -67,6 +70,19 @@ export function createDeepLinkRouter(
       recordAuthDiagnostic('auth.callback.parse_failure', {
         error: error instanceof Error ? error.message : String(error),
       });
+      return;
+    }
+
+    // exawatt://welcome?w=<web id>: the download page's "Open Exawatt". It
+    // opens the app and, the first time, links the visitor's anonymous web id
+    // to this installation's. Nothing new is shown.
+    if (parsed.hostname === 'welcome') {
+      deps.welcome?.(parsed.searchParams.get('w'));
+      const mainWindow = deps.window();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
       return;
     }
 

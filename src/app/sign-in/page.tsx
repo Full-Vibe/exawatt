@@ -22,6 +22,7 @@ import {
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { useElectronAuth } from '@/hooks/use-electron-auth';
+import { AccountActivityNotice } from '@/components/auth/account-activity-notice';
 import { AccountNotConfiguredCard } from '@/components/auth/account-not-configured-card';
 import { FORGOT_PASSWORD_PATH } from '@/components/auth/hosted-auth';
 import {
@@ -265,6 +266,7 @@ function SignInForm() {
           >
             Google
           </Button>
+          <AccountActivityNotice />
         </CardContent>
         <CardFooter className="flex justify-center">
           <p className="text-sm text-muted-foreground">

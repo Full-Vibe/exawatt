@@ -221,6 +221,33 @@ describe('createDeepLinkRouter', () => {
   });
 });
 
+describe('exawatt://welcome (ENG-047 F2)', () => {
+  it('hands the web id to the alias recorder and brings the app forward, showing nothing new', () => {
+    const welcomed: Array<string | null> = [];
+    const { links, state, names } = router({
+      welcome: webId => void welcomed.push(webId),
+    });
+    const { window, sent, calls } = fakeWindow();
+    window.minimized = true;
+    state.window = window;
+
+    links.handle('exawatt://welcome?w=7c9e6679-7425-40de-944b-e07fc1f90ae7');
+    links.handle('exawatt://welcome');
+
+    expect(welcomed).toEqual(['7c9e6679-7425-40de-944b-e07fc1f90ae7', null]);
+    expect(calls).toEqual(['restore', 'focus', 'focus']);
+    expect(sent).toEqual([]);
+    expect(names()).toEqual([]);
+  });
+
+  it('needs no window: a link that launches the app still records', () => {
+    const welcomed: Array<string | null> = [];
+    const { links } = router({ welcome: webId => void welcomed.push(webId) });
+    links.handle('exawatt://welcome?w=7c9e6679-7425-40de-944b-e07fc1f90ae7');
+    expect(welcomed).toHaveLength(1);
+  });
+});
+
 describe('registerDeepLinkProtocol', () => {
   function fakeApp() {
     const registered: unknown[][] = [];

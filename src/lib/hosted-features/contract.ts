@@ -223,8 +223,7 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
       'Shows your Google weekly limits for Gemini and for Claude and GPT models in the Usage meter and page.',
     sends:
       'Nothing from Exawatt. Your own Antigravity app asks your Google account for its usage, under the sign-in Antigravity already keeps. Exawatt never reads that sign-in or your Antigravity conversations.',
-    destination:
-      'Google, through your own Antigravity sign-in, never Exawatt',
+    destination: 'Google, through your own Antigravity sign-in, never Exawatt',
     cost: 'Google shows no plan limits here.',
     defaultEnabled: true,
     // Genuinely null, like the Claude and Codex reads: the request is made
@@ -248,9 +247,10 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
   productAnalytics: {
     id: 'productAnalytics',
     label: 'Product analytics',
-    purpose: 'Tells us the app launched, and when something failed.',
+    purpose:
+      'Tells us how people get started, where they get stuck, and when something failed.',
     sends:
-      'Four fixed events (launch, sign-in outcome, hosted-call failure, crash) against an anonymous installation id. Never content.',
+      'Fixed events (launch, sign-in outcome, hosted-call failure, crash, Project opened, Agent started and directed) against an anonymous installation id; signed in, the same activity under your account. Never content.',
     destination: 'Exawatt, then PostHog',
     cost: 'Failures affecting you become invisible to us until you report them.',
     defaultEnabled: true,

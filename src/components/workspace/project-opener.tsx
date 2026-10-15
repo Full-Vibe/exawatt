@@ -14,6 +14,7 @@ import {
   listProjects,
   projectRegistryScope,
   rebindProjectPath,
+  type ProjectOpenedContext,
 } from '@/lib/projects/registry';
 import { extractRecentProjects } from './switcher-rows';
 import {
@@ -102,7 +103,10 @@ export function ProjectOpener({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceProjects: WorkspaceProjectSummary[];
-  onOpenProject: (dir: string) => Promise<boolean>;
+  onOpenProject: (
+    dir: string,
+    opened?: ProjectOpenedContext
+  ) => Promise<boolean>;
   onImportProjects: (dirs: string[]) => Promise<boolean>;
   /** Open a durable folderless Context Group without resolving a path. */
   onOpenContextProject?: (project: {
@@ -313,7 +317,7 @@ export function ProjectOpener({
         if (project.registryId) {
           await rebindProjectPath(project.registryId, dir).catch(() => {});
         }
-        opened = await onOpenProject(dir);
+        opened = await onOpenProject(dir, { source: 'recent' });
       } catch (cause) {
         setError(
           cause instanceof Error
@@ -326,7 +330,7 @@ export function ProjectOpener({
       return;
     }
     try {
-      if (await onOpenProject(dir)) onOpenChange(false);
+      if (await onOpenProject(dir, { source: 'recent' })) onOpenChange(false);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -345,7 +349,7 @@ export function ProjectOpener({
     }
     let opened = false;
     try {
-      opened = await onOpenProject(pick.path);
+      opened = await onOpenProject(pick.path, { source: 'browse' });
     } catch (cause) {
       setError(
         cause instanceof Error

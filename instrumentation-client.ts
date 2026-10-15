@@ -2,8 +2,10 @@
  * ENG-030 OS1 — the single client entry point for product analytics.
  *
  * Next runs this once per renderer load, before the app hydrates. It does
- * four things and nothing else: ask `initAnalytics()` whether analytics are
- * on for this build, emit `app_launched` if they are, and — in the desktop
+ * five things and nothing else: ask `initAnalytics()` whether analytics are
+ * on for this build, emit `app_launched` if they are, on the website emit
+ * `page_viewed` for the landing page and every route change after it
+ * (ENG-047; never in the desktop renderer), and — in the desktop
  * renderer — start draining the events Electron main queued behind it
  * (OS1.5b: main-process crashes and hosted-call failures, which have no other
  * path to the allowlisted emission pipeline) and start the ENG-035 operator-
@@ -52,6 +54,38 @@ async function reportLaunch(): Promise<void> {
       ),
     })
   );
+  // The landing page view carries where the visitor came from; route
+  // changes after it do not (the referrer is still the landing page's).
+  if (!isElectron) {
+    captureAnalyticsEvent({
+      name: 'page_viewed',
+      surface: 'web',
+      url: window.location.href,
+      referrer: externalReferrer(),
+    });
+  }
+}
+
+/** The referring site, unless it is this one (a reload, an internal link). */
+function externalReferrer(): string | null {
+  try {
+    if (!document.referrer) return null;
+    const host = new URL(document.referrer).hostname;
+    return host === window.location.hostname ? null : document.referrer;
+  } catch {
+    return null;
+  }
+}
+
+/** Next's App Router hook: one `page_viewed` per website route change. */
+export function onRouterTransitionStart(url: string): void {
+  if (detectElectron()) return;
+  captureAnalyticsEvent({
+    name: 'page_viewed',
+    surface: 'web',
+    url,
+    referrer: null,
+  });
 }
 
 void reportLaunch();

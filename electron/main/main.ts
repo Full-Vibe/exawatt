@@ -42,6 +42,7 @@ import {
   reportCommandSurfaceFailure,
 } from './command-surface';
 import { createDeepLinkRouter, registerDeepLinkProtocol } from './deep-link';
+import { recordWebLink } from './analytics-activity';
 import { distributionChildEnvironment } from './distribution';
 import {
   assertTrustedIpcSender,
@@ -236,6 +237,7 @@ const deepLinks = createDeepLinkRouter({
   isLinkOutcome: () => runtime.isLinkOutcome,
   safeAuthError: error => runtime.safeAuthError(error),
   isWorkspaceTarget: target => workspace.isTarget(target),
+  welcome: webId => void recordWebLink(webId),
   record: (event, fields) => runtime.recordAuthDiagnostic(event, fields),
 });
 // Before app.whenReady(), so a link that launches the app is not lost.

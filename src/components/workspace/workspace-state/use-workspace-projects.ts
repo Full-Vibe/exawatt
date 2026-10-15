@@ -17,6 +17,7 @@ import {
 import {
   openRepositoryProject,
   listProjects,
+  type ProjectOpenedContext,
   renameProject as registryRenameProject,
   reorderProjects as registryReorderProjects,
   setProjectColor as registrySetProjectColor,
@@ -73,8 +74,11 @@ export function useWorkspaceProjects({
   const editedDirsRef = useRef<Set<string>>(new Set());
 
   const syncProjectIdentity = useCallback(
-    (ref: { rootPath: string; name: string }) => {
-      void openRepositoryProject(ref)
+    (
+      ref: { rootPath: string; name: string },
+      opened?: ProjectOpenedContext
+    ) => {
+      void openRepositoryProject(ref, opened)
         .then(proj => {
           setProjects(prev => linkRegistryProject(prev, proj));
           if (!proj.color) {
@@ -135,7 +139,7 @@ export function useWorkspaceProjects({
   /** Open a Project independently of Sessions. Main-process resolution keeps
    *  git worktrees grouped under the same durable Project identity. */
   const openProject = useCallback(
-    async (dir: string): Promise<boolean> => {
+    async (dir: string, opened?: ProjectOpenedContext): Promise<boolean> => {
       const claim = operatorPosition.claimHere();
       const result = await window.electron?.projects?.resolve(dir);
       if (!result) return false;
@@ -156,10 +160,10 @@ export function useWorkspaceProjects({
       if (mayMove) moveOperator(canonicalDir, null);
       setLastUsedDir(canonicalDir);
       setError(null);
-      syncProjectIdentity({
-        rootPath: canonicalDir,
-        name: result.projectName,
-      });
+      syncProjectIdentity(
+        { rootPath: canonicalDir, name: result.projectName },
+        opened
+      );
       return true;
     },
     [moveOperator, setError, setLastUsedDir, setProjects, syncProjectIdentity]
@@ -313,10 +317,10 @@ export function useWorkspaceProjects({
       setLastUsedDir(first.projectDir);
       setError(null);
       for (const ref of refs) {
-        syncProjectIdentity({
-          rootPath: ref.projectDir,
-          name: ref.projectName,
-        });
+        syncProjectIdentity(
+          { rootPath: ref.projectDir, name: ref.projectName },
+          { source: 'import' }
+        );
       }
       return true;
     },

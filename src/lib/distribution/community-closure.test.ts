@@ -360,6 +360,35 @@ describe('absence: every declared seam answers under the community contract', ()
     });
   });
 
+  it('analytics seam: no event, alias or server capture reaches the network', async () => {
+    // ENG-047's direct sender (`ingest.ts`) is a `fetch`, not a client
+    // package, so the census above cannot see it; this proves the gate.
+    const fetchSpy = vi.fn(refuse('an analytics request'));
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const analytics = await import('@/lib/analytics/client');
+      const { captureServerEvent } = await import('@/lib/analytics/server');
+      const { EVERY_ANALYTICS_EVENT } =
+        await import('@/lib/analytics/examples.test-support');
+      await analytics.initAnalytics();
+      for (const event of EVERY_ANALYTICS_EVENT) {
+        analytics.captureAnalyticsEvent(event);
+      }
+      analytics.recordWebAlias('7c9e6679-7425-40de-944b-e07fc1f90ae7');
+      expect(analytics.currentWebAnalyticsId()).toBeNull();
+      await expect(
+        captureServerEvent(
+          EVERY_ANALYTICS_EVENT.find(e => e.name === 'download_requested')!,
+          '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+          { distribution: COMMUNITY_DISTRIBUTION, nodeEnv: 'production' }
+        )
+      ).resolves.toBe(false);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('electron main holds no configuration of its own to construct from', () => {
     // `auth-coordinator.ts` is the one Electron main module that can build an
     // account client, and it is handed url/anon-key over IPC rather than

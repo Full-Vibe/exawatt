@@ -20,6 +20,7 @@ import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
 import { isAgentNameRequest } from './pty/agent-name-store';
 import type { AgentNameRecord, AgentNameRequest } from '@exawatt/core';
+import { recordAgentLaunched } from './analytics-activity';
 import { defaultShell } from './pty/session-manager';
 import { listAgentModels, setAgentModelCatalogCache } from './pty/agent-models';
 import { AgentModelCatalogCache } from './pty/agent-model-catalog-cache';
@@ -532,6 +533,7 @@ export function registerPtyIPC(
         options,
         () => ptySessions.create(options)
       );
+      recordAgentLaunched(session, options); // ENG-047 `agent_launched`
       // the composer's task is the goal — show it as the subtitle instantly;
       // a resume re-anchors the goal persisted with the layout (D21)
       // Restore durable truth before considering zero-network launch copy. A

@@ -696,8 +696,8 @@ export function ConnectSourceDialog({
         manualProjectIds.current.set(outcome.sourceId, projectId);
         const ref = { id: projectId, name: target.name.trim() };
         const created = target.remoteHome
-          ? await openRemoteHomeProject(ref)
-          : await openManualProject(ref);
+          ? await openRemoteHomeProject(ref, { source: 'connect' })
+          : await openManualProject(ref, { source: 'connect' });
         // Only a Project this attempt minted is this attempt's to archive. An
         // existing Remote home comes back under its own id and is never
         // cleanup's to remove.

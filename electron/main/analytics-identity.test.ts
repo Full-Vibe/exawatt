@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ app: { getPath: () => '/nonexistent' } }));
 
 import {
+  claimWebLink,
   readAnalyticsIdentity,
   setAnalyticsOptOut,
+  takeFirstAgentLaunch,
   type AnalyticsSettingsStore,
 } from './analytics-identity';
 import type { StoredSettings } from './settings-store';
@@ -178,3 +180,32 @@ describe('the runtime opt-out (decision 0031)', () => {
     });
   });
 });
+
+describe('facts this device records once (ENG-047)', () => {
+  it('claims the first Agent launch once, and keeps it across an opt-out', () => {
+    const { store, disk } = fakeStore({
+      analytics: { optedOut: false, installationId: KEPT },
+    });
+    expect(takeFirstAgentLaunch(store)).toBe(true);
+    expect(takeFirstAgentLaunch(store)).toBe(false);
+    setAnalyticsOptOut(true, store);
+    expect(disk()).toEqual({
+      analytics: { optedOut: true, agentLaunched: true },
+    });
+    setAnalyticsOptOut(false, store);
+    expect(takeFirstAgentLaunch(store)).toBe(false);
+  });
+
+  it('claims the web link once, never while opted out, never on a bad read', () => {
+    const fresh = fakeStore();
+    expect(claimWebLink(fresh.store)).toBe(true);
+    expect(claimWebLink(fresh.store)).toBe(false);
+
+    expect(claimWebLink(fakeStore({ analytics: { optedOut: true } }).store)).toBe(
+      false
+    );
+    expect(claimWebLink(fakeStore('unreadable').store)).toBe(false);
+    expect(claimWebLink(fakeStore({}, { failWrites: true }).store)).toBe(false);
+  });
+});
+

@@ -113,3 +113,81 @@ Choices made:
 - **Only a starting client mints.** The Privacy switch reads without
   `ensureId`, and a community build asks main nothing because the
   distribution decides before identity is read.
+
+### 2026-10-15 — F1, F2 and F5: the events, the web-to-app link, the signed-in stream
+
+**Ten allowlisted events, two streams, one join.** `events.ts` adds
+`page_viewed`, `download_requested`, `project_opened`, `agent_launched`,
+`agent_directed` (decision `0053`'s exact properties) and `agent_finished`
+(the amendment's "finished", account stream only). `outbound-data.md` §1,
+`/privacy` and their tests changed in the same landing; the Privacy page now
+renders its event list from `src/lib/analytics/disclosure.ts`, which is typed
+over the allowlist, so an event cannot reach the wire without reaching the
+page.
+
+| Event | Where it fires | Properties |
+| --- | --- | --- |
+| `page_viewed` | website only: the landing view in `instrumentation-client.ts`, then Next's `onRouterTransitionStart` | `path` (path only, identifier segments masked as `:id`), `referrer_host` (landing view only, external sites only) |
+| `download_requested` | server, `/download/artifact`, in `after()` | `platform`, `arch` (from the artifact file name) |
+| `project_opened` | the registry's open verbs, when the caller passes `{ source, harnessHint? }` | `source`, `harness_hint`, `bound` |
+| `agent_launched` | `pty:create`, after the launch is accepted; never a Shell | `harness`, `placement` (`local` for every process main starts), `permission_mode`, `first_for_install` |
+| `agent_directed` | allowlisted; P5's Direct calls `captureAnalyticsEvent` | `recipients`, `delivered` |
+| `agent_finished` | main's `ptySessions` `exit` for an Agent it saw start | `harness`, `placement` |
+
+Every event also carries `allowlist_version` and `surface`.
+
+Choices made:
+
+- **`placement` is canon's `AgentSourcePlacement`** (`local`,
+  `customer-hosted`, `exawatt-hosted`), so a hosted Agent can report into the
+  same property later; every process `pty:create` starts is `local`.
+- **`project_opened` needs a reason.** The verbs record only when the caller
+  says why (`source`); registering the folder an Agent launched in, or a
+  reconcile, records nothing. Wired today: the chooser's Browse (`browse`)
+  and its Project list (`recent`), curated import (`import`), Connect
+  (`connect`). ENG-046 P1 passes `suggested` with the harness hint. The ⌘K
+  palette's Project rows reach `requestOpenProject(dir)` and pass no source
+  yet.
+- **An unknown `source` drops the event** rather than filing it under a
+  guessed one.
+- **`download_requested` is keyed by the visitor's web id**, which the
+  download page appends (`w`) only while analytics run in that browser; no id,
+  no event, so an opted-out visitor, whose choice lives in their own browser,
+  is never counted server side.
+
+**F2, the link.** After a click on Download, the page offers "Open Exawatt"
+(`exawatt://welcome?w=<web id>`, or no `w` when analytics are off) with its
+disclosure beside the button. `deep-link.ts` routes `welcome` to
+`recordWebLink`, which accepts a lowercase UUID only, claims
+`settings.json` `analytics.webLinked` once (never while opted out, never on
+an unreadable file), and queues `web_alias` on the bridge; the renderer posts
+one `$create_alias` from the installation id to the web id. Repeats and
+malformed ids record nothing, and the app shows nothing new beyond coming
+forward.
+
+**F5, the mechanism.** `posthog-js` keeps one distinct id per instance and
+refuses `alias()` with `person_profiles: 'never'`, so three sends post
+straight to the configured ingest origin (`<ingestOrigin>/batch/`,
+`src/lib/analytics/ingest.ts`) with an explicit `distinct_id`, through the
+same allowlist (`scrubEventProperties`) and only after the same decision: the
+server's `download_requested`, the alias, and the account stream. The account
+stream (`account-stream.ts`) runs in the desktop renderer, reads the signed-in
+account from the account client's own session (`onAuthStateChange`, no
+request), and for `app_launched`, `project_opened`, `agent_launched`,
+`agent_directed` and `agent_finished` posts a record whose `distinct_id` is
+the account UUID and whose properties are the event's declared ones and
+nothing else. No `identify`, no alias, no installation id, no SDK device or
+session id. Events captured before the session answers wait (bounded) and
+are then sent or dropped. Chosen over a main-process sender because the
+renderer already owns the decision, the opt-out and the allowlist, and main
+holds no analytics configuration (`community-closure.test.ts` pins that);
+chosen over a second `posthog-js` instance because a memory-persisted second
+instance would still attach its own device and session ids. Main's part is
+only what it alone observes: Agent processes starting and ending, and the
+link. Disclosed on the sign-in and sign-up pages (`AccountActivityNotice`,
+official builds only) and on `/privacy`.
+
+**F0 follow-up.** The device record also holds `agentLaunched` and
+`webLinked`; opting out forgets the id and keeps those facts, so opting back
+in does not claim a second first launch. A record without an id now adopts a
+legacy origin's id rather than minting one.

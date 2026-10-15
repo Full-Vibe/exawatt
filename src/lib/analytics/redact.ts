@@ -34,6 +34,8 @@ import {
   EXCEPTION_LEVELS,
   isAnalyticsEventName,
   POSTHOG_EXCEPTION_EVENT,
+  sanitizeAnalyticsPath,
+  sanitizeReferrerHost,
   type AnalyticsExceptionProperty,
 } from './events';
 
@@ -71,9 +73,30 @@ export const ANALYTICS_PROPERTY_DENYLIST: readonly string[] = [
   'utm_campaign',
   'utm_content',
   'utm_term',
+  // Click ids: every ad network's per-click identifier that rides a landing
+  // URL. Never an event property; `page_viewed` carries a path, not a query.
   'gclid',
+  'gbraid',
+  'wbraid',
+  'dclid',
   'fbclid',
+  'msclkid',
+  'ttclid',
+  'twclid',
+  'li_fat_id',
+  'igshid',
 ];
+
+/**
+ * Declared properties that carry part of a URL. `events.ts` already reduces
+ * them; the transport reduces them again, so a capture that reached the SDK
+ * any other way still leaves with a bare path and a bare hostname: no query
+ * string, no UTM parameter, no click id.
+ */
+const URL_PROPERTY_SANITIZERS: Record<string, (value: unknown) => unknown> = {
+  path: sanitizeAnalyticsPath,
+  referrer_host: sanitizeReferrerHost,
+};
 
 const DENIED = new Set(ANALYTICS_PROPERTY_DENYLIST);
 
@@ -82,7 +105,12 @@ const DENIED = new Set(ANALYTICS_PROPERTY_DENYLIST);
  * ingestion, and none of them can carry product content: `distinct_id` is the
  * anonymous installation id, `token` is the public project key.
  */
-const SDK_TRANSPORT_KEYS = new Set(['token', 'distinct_id', 'uuid', 'timestamp']);
+const SDK_TRANSPORT_KEYS = new Set([
+  'token',
+  'distinct_id',
+  'uuid',
+  'timestamp',
+]);
 
 type Properties = Record<string, unknown>;
 
@@ -232,19 +260,34 @@ export function scrubAnalyticsCapture(
     };
   }
 
-  if (!isAnalyticsEventName(result.event)) return null;
+  const kept = scrubEventProperties(result.event, properties);
+  if (!kept) return null;
+  return { ...result, properties: kept, $set: undefined, $set_once: undefined };
+}
 
-  const declared = new Set(ANALYTICS_EVENT_PROPERTIES[result.event]);
+/**
+ * The allowlist for one event's properties, shared by PostHog's `before_send`
+ * and by the two senders that bypass the SDK (the signed-in account stream and
+ * the server's `download_requested`). `null`: the event is not allowlisted.
+ */
+export function scrubEventProperties(
+  event: string,
+  properties: Properties
+): Properties | null {
+  if (!isAnalyticsEventName(event)) return null;
+  const declared = new Set(ANALYTICS_EVENT_PROPERTIES[event]);
   const kept: Properties = {};
   for (const [key, value] of Object.entries(properties)) {
     if (DENIED.has(key)) continue;
     // SDK-internal properties are machine metadata the library generates —
     // crash payload keys excluded, because the only event those are allowed on
     // is `$exception`, handled above. Everything else must be declared.
-    if (isSdkMetadataKey(key) || declared.has(key)) {
+    if (declared.has(key)) {
+      const sanitize = URL_PROPERTY_SANITIZERS[key];
+      kept[key] = sanitize ? sanitize(value) : value;
+    } else if (isSdkMetadataKey(key)) {
       kept[key] = value;
     }
   }
-
-  return { ...result, properties: kept, $set: undefined, $set_once: undefined };
+  return kept;
 }

@@ -2,10 +2,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  ACCOUNT_STREAM_EVENTS,
   ANALYTICS_EVENT_NAMES,
   ANALYTICS_EVENT_PROPERTIES,
   ANALYTICS_EXCEPTION_PROPERTIES,
+  DOWNLOAD_ARCHES,
   HOSTED_FAILURES,
+  PROJECT_BINDINGS,
+  PROJECT_OPEN_SOURCES,
 } from './events';
 import { ANALYTICS_PROPERTY_DENYLIST } from './redact';
 
@@ -35,6 +39,28 @@ describe('outbound-data manifest', () => {
     }
     // The manifest must say the crash payload is closed, not merely filtered.
     expect(MANIFEST).toContain('$exception_steps');
+  });
+
+  it('names every value a Project open and a download can carry', () => {
+    for (const value of [
+      ...PROJECT_OPEN_SOURCES,
+      ...PROJECT_BINDINGS,
+      ...DOWNLOAD_ARCHES,
+    ]) {
+      expect(MANIFEST).toContain(`\`${value}\``);
+    }
+  });
+
+  it('names the account stream, its events, and the one alias', () => {
+    const section = MANIFEST.slice(
+      MANIFEST.indexOf('**Two streams, one join')
+    ).replace(/\s+/g, ' ');
+    for (const name of ACCOUNT_STREAM_EVENTS) {
+      expect(section).toContain(`\`${name}\``);
+    }
+    expect(section).toContain('$create_alias');
+    expect(section).toContain('exawatt://welcome?w=<web id>');
+    expect(section).toContain('no `identify` and no alias between the two ids');
   });
 
   it('names every failure bucket a hosted call can be counted in', () => {

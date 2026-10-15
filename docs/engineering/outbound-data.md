@@ -71,17 +71,25 @@ the user's machine (ENG-016 D17, incident `0002`), not deniability.
 | Official web and desktop      | `https://www.exawatt.ai/ingest` | One stable outbound identity; absolute also works from packaged Electron's loopback renderer |
 | Downstream/self-hosted        | exact `analytics.ingestOrigin`  | Distributor-controlled redirect or self-host without patching product code                   |
 
-**What is sent.** Four events and nothing else. The complete property set:
+**What is sent.** Ten events and nothing else: four for product health
+(decision `0031`), five for the activation funnel and one for a signed-in
+account's activity (decision `0053`, ENG-047). The complete property set:
 
-| Event                | Properties                                                                                                                                                                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `app_launched`       | `allowlist_version`, `surface` (`desktop`\|`web`), `platform` (`darwin`\|`win32`\|`linux`\|`web`\|`unknown`), `delivery` (`signed`\|`dogfood`\|`hosted`\|`unknown`), `app_version` (version-shaped string or null), `signed_in` (boolean)                          |
-| `sign_in_attempted`  | `allowlist_version`, `surface`, `method` (`google`\|`github`\|`password`\|`unknown`), `outcome` (`started`\|`succeeded`\|`failed`\|`unknown`), `failure` (closed enum or null)                                                                                     |
-| `hosted_call_failed` | `allowlist_version`, `surface`, `service` (closed enum of the hosted endpoints above), `failure` (`network`\|`timeout`\|`unauthorized`\|`rate_limited`\|`quota_exhausted`\|`server_error`\|`invalid_response`\|`unknown`), `status_code` (integer 100–599 or null) |
-| `app_crashed`        | `allowlist_version`, `surface`, `scope` (`renderer`\|`main`\|`gpu`\|`utility`\|`agent_harness`), `reason` (`crashed`\|`killed`\|`out_of_memory`\|`launch_failed`\|`unresponsive`\|`unknown`), `app_version`                                                        |
+| Event                | Properties                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app_launched`       | `allowlist_version`, `surface` (`desktop`\|`web`), `platform` (`darwin`\|`win32`\|`linux`\|`web`\|`unknown`), `delivery` (`signed`\|`dogfood`\|`hosted`\|`unknown`), `app_version` (version-shaped string or null), `signed_in` (boolean)                                                                                                                     |
+| `sign_in_attempted`  | `allowlist_version`, `surface`, `method` (`google`\|`github`\|`password`\|`unknown`), `outcome` (`started`\|`succeeded`\|`failed`\|`unknown`), `failure` (closed enum or null)                                                                                                                                                                                |
+| `hosted_call_failed` | `allowlist_version`, `surface`, `service` (closed enum of the hosted endpoints above), `failure` (`network`\|`timeout`\|`unauthorized`\|`rate_limited`\|`quota_exhausted`\|`server_error`\|`invalid_response`\|`unknown`), `status_code` (integer 100–599 or null)                                                                                            |
+| `app_crashed`        | `allowlist_version`, `surface`, `scope` (`renderer`\|`main`\|`gpu`\|`utility`\|`agent_harness`), `reason` (`crashed`\|`killed`\|`out_of_memory`\|`launch_failed`\|`unresponsive`\|`unknown`), `app_version`                                                                                                                                                   |
+| `page_viewed`        | Website only, on the landing page and every route change; never the desktop app. `allowlist_version`, `surface`, `path` (the page's path only: no origin, query string, fragment, UTM parameter or click id, and identifier-shaped segments become `:id`), `referrer_host` (the referring site's hostname on the landing page, else null)                     |
+| `download_requested` | Sent by the website's server when `/download/artifact` hands over a build, under the visitor's web id; no event without one. `allowlist_version`, `surface`, `platform` (as above), `arch` (`arm64`\|`x64`\|`universal`\|`unknown`)                                                                                                                           |
+| `project_opened`     | Desktop, when an operator gesture opens a Project. `allowlist_version`, `surface`, `source` (`suggested`\|`browse`\|`import`\|`recent`\|`connect`), `harness_hint` (the catalog id of the harness whose store suggested the folder, or null), `bound` (`folder`\|`folderless`)                                                                                |
+| `agent_launched`     | Desktop, when Electron main accepts an Agent launch (`pty:create`; a Shell is not counted). `allowlist_version`, `surface`, `harness` (catalog id from `contracts/agent-sources.json`, or `unknown`), `placement` (`local`\|`customer-hosted`\|`exawatt-hosted`), `permission_mode` (`prompt`\|`auto`\|`unrestricted` or null), `first_for_install` (boolean) |
+| `agent_directed`     | Desktop, one Direct to several Agents. `allowlist_version`, `surface`, `recipients` (integer 0–1000), `delivered` (integer, at most `recipients`)                                                                                                                                                                                                             |
+| `agent_finished`     | Desktop, signed-in account stream only, when an Agent's process ends. `allowlist_version`, `surface`, `harness`, `placement`                                                                                                                                                                                                                                  |
 
 Plus PostHog's `$exception` event, which `capture_exceptions` produces for an
-uncaught renderer error. It is allowlisted the same way the four events above
+uncaught renderer error. It is allowlisted the same way the events above
 are: exactly two crash payload properties may leave, and both are rebuilt
 rather than forwarded.
 
@@ -121,8 +129,13 @@ This is enforced structurally, not by convention:
   campaign parameters) are both denylisted in PostHog config and stripped in
   `before_send`. In the desktop app `$current_url` would otherwise carry
   `http://127.0.0.1:<port>/workspace/session/<id>`.
+- `page_viewed` is built by the client from a path and a hostname
+  (`sanitizeAnalyticsPath`, `sanitizeReferrerHost` in `events.ts`) and
+  reduced again in `before_send`, so no query string, UTM parameter or click
+  id (`gclid`, `gbraid`, `wbraid`, `dclid`, `fbclid`, `msclkid`, `ttclid`,
+  `twclid`, `li_fat_id`, `igshid`) can leave on it.
 - Autocapture, session recording, surveys, heatmaps, web experiments, and
-  pageview capture are all off. The SDK loads no remote script
+  the SDK's own pageview capture are all off. The SDK loads no remote script
   (`disable_external_dependency_loading`), which also keeps the desktop app's
   `script-src 'self'` CSP intact.
 
@@ -138,10 +151,39 @@ desktop install that kept the id or the opt-out on its origin before
 2026-10-15 offers both to main once and deletes its copy. Opting out forgets
 the id; opting back in mints a new one at the next launch. An unreadable
 settings file starts no analytics for that launch rather than reading as
-opted in. The client never calls `identify()`, never sets person properties,
-and never sends an Exawatt account id. Installation identity and account
-identity stay separate (decision `0031`); `signed_in` is a boolean, never a
-user.
+opted in. The client never calls `identify()` and never sets person
+properties. `signed_in` is a boolean, never a user.
+
+**Two streams, one join (decision `0053`).** Three sends bypass `posthog-js`,
+because it keeps one distinct id per instance and refuses an alias without
+person profiles. Each posts the same allowlisted payload
+(`scrubEventProperties`) to the same configured ingest endpoint
+(`<ingestOrigin>/batch/`, `src/lib/analytics/ingest.ts`) with an explicit
+`distinct_id`, only after the same decision says analytics are on:
+
+- **`download_requested`** (`src/lib/analytics/server.ts`, called from
+  `/download/artifact` after the response) is keyed by the visitor's web id,
+  which the download page adds to the artifact link (`w`) only while
+  analytics run in that browser. An opted-out visitor is never counted.
+- **The web-to-app alias.** After a download the page offers "Open Exawatt",
+  `exawatt://welcome?w=<web id>`, with its disclosure beside the button. The
+  app's deep-link handler (`electron/main/deep-link.ts`,
+  `analytics-activity.ts`) accepts a UUID-shaped id once per installation
+  (`settings.json` `analytics.webLinked`), ignores repeats, malformed ids and
+  an opted-out device, and the renderer posts one `$create_alias` from the
+  installation id to the web id. Nothing joins without that click, nothing is
+  read from the clipboard, and the account is never part of it.
+- **The signed-in account stream** (`src/lib/analytics/account-stream.ts`,
+  desktop only). For an account signed in to the app, `app_launched`,
+  `project_opened`, `agent_launched`, `agent_directed` and `agent_finished`
+  are also captured with the account id (the Supabase user UUID) as
+  `distinct_id`. That stream carries the event's declared properties and
+  nothing else: no installation id, no SDK device or session id. There is no
+  `identify` and no alias between the two ids, so the installation person
+  and the account person stay two people and the funnel's anonymous install
+  is never joined to a name (decision `0031`'s separation). Signed out, it
+  sends nothing; the runtime opt-out stops it with everything else. It is
+  disclosed on the sign-in and sign-up pages and on `/privacy`.
 
 **Default.** Off in community builds, including production builds from the
 public repository. A distribution that supplies `analytics` enables the exact
@@ -160,11 +202,13 @@ All four suppress **initialization and emission**, not merely ingestion: when
 analytics are off, `posthog-js` is never imported, so there is no queue and
 nothing to flush later.
 
-**Main-process coverage (ENG-030 OS1.5b).** Electron main observes facts worth
-counting — its own hosted-call failures (sections 2–4) and process crashes —
-but has no analytics path of its own: decision `0034` gives the desktop app
+**Main-process coverage (ENG-030 OS1.5b, ENG-047).** Electron main observes
+facts worth counting — its own hosted-call failures (sections 2–4), process
+crashes, Agent processes it started and ended, and the one alias a
+`welcome` link asks for — but has no analytics path of its own: decision `0034` gives the desktop app
 exactly one analytics destination, and it lives in the renderer. Main queues
-typed `hosted_call_failed` / `app_crashed` events in a bounded in-memory
+typed `hosted_call_failed`, `app_crashed`, `agent_launched`,
+`agent_finished` and `web_alias` items in a bounded in-memory
 bridge (`electron/main/analytics-bridge.ts`, 16 events, drop-oldest, no
 persistence), and the renderer drains them through the same allowlisted
 emission path as every other event

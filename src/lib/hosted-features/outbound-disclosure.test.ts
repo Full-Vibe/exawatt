@@ -364,6 +364,9 @@ const OUTBOUND_CALL_SITES: Record<string, string | readonly string[] | null> = {
     '## 5. Supabase',
   ],
   'src/lib/desktop-release/desktop-build.ts': '## 6. App updates',
+  // ENG-047: the account stream, the one alias and the server's download
+  // event post to the configured analytics ingest endpoint directly.
+  'src/lib/analytics/ingest.ts': '## 1. Product analytics',
   // The website server's anonymous read of the published homepage copy.
   'src/lib/homepage-copy/published.ts': '## 5. Supabase',
   'src/lib/operator-stats/public.ts': '## 5. Supabase',

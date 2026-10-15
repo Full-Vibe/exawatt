@@ -159,3 +159,42 @@ describe('main-process analytics bridge (ENG-030 OS1.5b)', () => {
     });
   });
 });
+
+describe('ENG-047 items on the bridge', () => {
+  it('queues Agent activity and the web alias in their declared shape', () => {
+    queueMainAnalyticsEvent({
+      name: 'agent_launched',
+      harness: 'claude',
+      permissionMode: null,
+      firstForInstall: true,
+      cwd: '/Users/example/Code/secret',
+    } as unknown as MainProcessAnalyticsEvent);
+    queueMainAnalyticsEvent({ name: 'agent_finished', harness: 'codex' });
+    queueMainAnalyticsEvent({
+      name: 'web_alias',
+      webId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    });
+    expect(drainMainAnalyticsEvents()).toEqual([
+      {
+        name: 'agent_launched',
+        harness: 'claude',
+        permissionMode: null,
+        firstForInstall: true,
+      },
+      { name: 'agent_finished', harness: 'codex' },
+      { name: 'web_alias', webId: '7c9e6679-7425-40de-944b-e07fc1f90ae7' },
+    ]);
+  });
+
+  it('refuses a Shell, an unknown harness and a malformed web id', () => {
+    for (const event of [
+      { name: 'agent_launched', harness: 'shell', permissionMode: null, firstForInstall: false },
+      { name: 'agent_finished', harness: 'my-private-harness' },
+      { name: 'web_alias', webId: 'https://example.test/?w=1' },
+    ]) {
+      queueMainAnalyticsEvent(event as unknown as MainProcessAnalyticsEvent);
+    }
+    expect(drainMainAnalyticsEvents()).toEqual([]);
+  });
+});
+

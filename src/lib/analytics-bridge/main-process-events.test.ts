@@ -161,3 +161,45 @@ describe('drainMainProcessAnalyticsEvents', () => {
     expect(capture).not.toHaveBeenCalled();
   });
 });
+
+describe('ENG-047 activity from main', () => {
+  it('rebuilds Agent launches and finishes as local Agents', () => {
+    expect(
+      normalizeMainProcessAnalyticsEvent({
+        name: 'agent_launched',
+        harness: 'claude',
+        permissionMode: 'unrestricted',
+        firstForInstall: true,
+      })
+    ).toMatchObject({
+      name: 'agent_launched',
+      harness: 'claude',
+      placement: 'local',
+      permissionMode: 'unrestricted',
+      firstForInstall: true,
+    });
+    expect(
+      normalizeMainProcessAnalyticsEvent({ name: 'agent_finished', harness: 'codex' })
+    ).toMatchObject({ name: 'agent_finished', harness: 'codex', placement: 'local' });
+    expect(
+      normalizeMainProcessAnalyticsEvent({ name: 'agent_launched', harness: 'shell' })
+    ).toBeNull();
+  });
+
+  it('routes the web alias to the alias sender, never to an event', async () => {
+    const capture = vi.fn();
+    const alias = vi.fn();
+    await drainMainProcessAnalyticsEvents(
+      {
+        drainMainProcessEvents: async () => [
+          { name: 'web_alias', webId: '7c9e6679-7425-40de-944b-e07fc1f90ae7' },
+        ],
+      },
+      capture,
+      alias
+    );
+    expect(alias).toHaveBeenCalledWith('7c9e6679-7425-40de-944b-e07fc1f90ae7');
+    expect(capture).not.toHaveBeenCalled();
+  });
+});
+

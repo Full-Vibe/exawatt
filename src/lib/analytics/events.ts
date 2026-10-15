@@ -15,18 +15,64 @@
  * existing event changes so a warehouse reader can tell the versions apart.
  */
 
+import {
+  AGENT_HARNESSES,
+  AGENT_PERMISSION_MODES,
+  AGENT_SOURCE_PLACEMENTS,
+  type AgentHarness,
+  type AgentPermissionMode,
+  type AgentSourcePlacement,
+} from '@exawatt/core';
+
 /** Bumped whenever an event's declared properties change shape. */
 export const ANALYTICS_ALLOWLIST_VERSION = 1;
 
-/** The four events decision `0031` / roadmap OS1.2 authorize. No others. */
+/**
+ * The events decisions `0031` and `0053` authorize, and no others: the four
+ * product-health events, then the activation funnel (ENG-047), then the one
+ * event only a signed-in account's stream carries (`0053`'s 2026-10-15
+ * amendment).
+ */
 export const ANALYTICS_EVENT_NAMES = [
   'app_launched',
   'sign_in_attempted',
   'hosted_call_failed',
   'app_crashed',
+  'page_viewed',
+  'download_requested',
+  'project_opened',
+  'agent_launched',
+  'agent_directed',
+  'agent_finished',
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
+
+/**
+ * The two streams (decision `0053`). The installation stream is keyed by the
+ * anonymous installation id and carries every event except the account-only
+ * ones. The account stream exists only for a signed-in account, is keyed by
+ * that account's id, never carries the installation id, and carries the
+ * activation events plus Session-level activity: opened, launched, directed,
+ * finished.
+ */
+export const ACCOUNT_ONLY_EVENTS = ['agent_finished'] as const;
+
+export const ACCOUNT_STREAM_EVENTS = [
+  'app_launched',
+  'project_opened',
+  'agent_launched',
+  'agent_directed',
+  'agent_finished',
+] as const satisfies readonly AnalyticsEventName[];
+
+export function isInstallationStreamEvent(name: AnalyticsEventName): boolean {
+  return !(ACCOUNT_ONLY_EVENTS as readonly string[]).includes(name);
+}
+
+export function isAccountStreamEvent(name: AnalyticsEventName): boolean {
+  return (ACCOUNT_STREAM_EVENTS as readonly string[]).includes(name);
+}
 
 /**
  * PostHog's own exception event. `capture_exceptions` produces it directly
@@ -209,6 +255,36 @@ export const CRASH_REASONS = [
 ] as const;
 export type CrashReason = (typeof CRASH_REASONS)[number];
 
+/** Where an opened Project came from (ENG-046's chooser and Connect). */
+export const PROJECT_OPEN_SOURCES = [
+  'suggested',
+  'browse',
+  'import',
+  'recent',
+  'connect',
+] as const;
+export type ProjectOpenSource = (typeof PROJECT_OPEN_SOURCES)[number];
+
+/** Whether the Project is bound to a folder. Never which one. */
+export const PROJECT_BINDINGS = ['folder', 'folderless'] as const;
+export type ProjectBinding = (typeof PROJECT_BINDINGS)[number];
+
+/** Catalog ids (`contracts/agent-sources.json`), never a model string. */
+const ANALYTICS_HARNESSES = [...AGENT_HARNESSES, 'unknown'] as const;
+type AnalyticsHarness = AgentHarness | 'unknown';
+
+const ANALYTICS_PLACEMENTS = AGENT_SOURCE_PLACEMENTS;
+const ANALYTICS_PERMISSION_MODES = AGENT_PERMISSION_MODES;
+
+/** The architecture of the build `/download/artifact` handed over. */
+export const DOWNLOAD_ARCHES = [
+  'arm64',
+  'x64',
+  'universal',
+  'unknown',
+] as const;
+export type DownloadArch = (typeof DOWNLOAD_ARCHES)[number];
+
 /* ------------------------------------------------------------------ *
  * The typed event union. Callers construct one of these; there is no
  * escape hatch for arbitrary properties.
@@ -251,11 +327,72 @@ export interface AppCrashedEvent {
   appVersion?: string | null;
 }
 
+/** A website page view, on route change. Never sent by the desktop app. */
+interface PageViewedEvent {
+  name: 'page_viewed';
+  surface: AnalyticsSurface;
+  /** A URL or path; only its path leaves, with identifier segments masked. */
+  url: string;
+  /** `document.referrer`; only its hostname leaves. */
+  referrer?: string | null;
+}
+
+/** Sent by the server when `/download/artifact` hands over a build. */
+interface DownloadRequestedEvent {
+  name: 'download_requested';
+  surface: AnalyticsSurface;
+  platform: AnalyticsPlatform;
+  arch: DownloadArch;
+}
+
+/** A Project opened through one of the registry's open verbs. */
+interface ProjectOpenedEvent {
+  name: 'project_opened';
+  surface: AnalyticsSurface;
+  source: ProjectOpenSource;
+  /** The harness whose own store suggested this folder, if one did. */
+  harnessHint?: AgentHarness | null;
+  bound: ProjectBinding;
+}
+
+/** An Agent process started (`pty:create` accepted the launch). */
+interface AgentLaunchedEvent {
+  name: 'agent_launched';
+  surface: AnalyticsSurface;
+  harness: AnalyticsHarness;
+  placement: AgentSourcePlacement;
+  permissionMode?: AgentPermissionMode | null;
+  /** The first Agent this installation ever launched. */
+  firstForInstall: boolean;
+}
+
+/** One Direct sent to several Agents (ENG-004 V4.2). Counts only. */
+interface AgentDirectedEvent {
+  name: 'agent_directed';
+  surface: AnalyticsSurface;
+  recipients: number;
+  delivered: number;
+}
+
+/** An Agent process ended. Account stream only. */
+interface AgentFinishedEvent {
+  name: 'agent_finished';
+  surface: AnalyticsSurface;
+  harness: AnalyticsHarness;
+  placement: AgentSourcePlacement;
+}
+
 export type AnalyticsEvent =
   | AppLaunchedEvent
   | SignInAttemptedEvent
   | HostedCallFailedEvent
-  | AppCrashedEvent;
+  | AppCrashedEvent
+  | PageViewedEvent
+  | DownloadRequestedEvent
+  | ProjectOpenedEvent
+  | AgentLaunchedEvent
+  | AgentDirectedEvent
+  | AgentFinishedEvent;
 
 /** Property values that may leave the machine: no strings beyond enums. */
 export type AnalyticsPropertyValue = string | number | boolean | null;
@@ -303,6 +440,25 @@ export const ANALYTICS_EVENT_PROPERTIES: Record<
     'reason',
     'app_version',
   ],
+  page_viewed: ['allowlist_version', 'surface', 'path', 'referrer_host'],
+  download_requested: ['allowlist_version', 'surface', 'platform', 'arch'],
+  project_opened: [
+    'allowlist_version',
+    'surface',
+    'source',
+    'harness_hint',
+    'bound',
+  ],
+  agent_launched: [
+    'allowlist_version',
+    'surface',
+    'harness',
+    'placement',
+    'permission_mode',
+    'first_for_install',
+  ],
+  agent_directed: ['allowlist_version', 'surface', 'recipients', 'delivered'],
+  agent_finished: ['allowlist_version', 'surface', 'harness', 'placement'],
 };
 
 export function isAnalyticsEventName(
@@ -335,6 +491,59 @@ export function sanitizeAppVersion(value: unknown): string | null {
   return typeof value === 'string' && VERSION_PATTERN.test(value.trim())
     ? value.trim()
     : null;
+}
+
+/** A count a caller supplies: a non-negative integer, capped. */
+function sanitizeCount(value: unknown, max: number): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? Math.min(value, max)
+    : 0;
+}
+
+const MAX_DIRECT_RECIPIENTS = 1000;
+const MAX_PATH_LENGTH = 200;
+
+/**
+ * A path segment that names one record rather than a page: a UUID, a long
+ * hex or numeric id, or an opaque token. Masked so `/run/<id>` and
+ * `/workspace/session/<id>` count as one page each and carry no identifier.
+ */
+const IDENTIFIER_SEGMENT =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|\d{4,}|[A-Za-z0-9_-]{24,})$/i;
+
+/**
+ * The path of a page and nothing else: no origin, no query string (so no
+ * UTM parameter or click id), no fragment, and identifier segments masked.
+ * Anything that is not a URL or path leaves as nothing.
+ */
+export function sanitizeAnalyticsPath(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  let pathname: string;
+  try {
+    pathname = new URL(value, 'https://path.invalid').pathname;
+  } catch {
+    return null;
+  }
+  const masked = pathname
+    .split('/')
+    .map(segment => (IDENTIFIER_SEGMENT.test(segment) ? ':id' : segment))
+    .join('/');
+  const trimmed =
+    masked.length > 1 && masked.endsWith('/') ? masked.slice(0, -1) : masked;
+  return trimmed.slice(0, MAX_PATH_LENGTH);
+}
+
+/** A referrer reduced to its hostname; nothing from its path or query. */
+export function sanitizeReferrerHost(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.hostname.toLowerCase().slice(0, 253) || null;
+  } catch {
+    // Already a bare hostname (the transport re-check), or not a URL at all.
+    return /^[a-z0-9.-]{1,253}$/i.test(value) ? value.toLowerCase() : null;
+  }
 }
 
 function sanitizeStatusCode(value: unknown): number | null {
@@ -401,6 +610,80 @@ export function toAnalyticsPayload(
           scope: member(CRASH_SCOPES, event.scope, 'renderer'),
           reason: member(CRASH_REASONS, event.reason, 'unknown'),
           app_version: sanitizeAppVersion(event.appVersion),
+        },
+      };
+    case 'page_viewed': {
+      const path = sanitizeAnalyticsPath(event.url);
+      if (!path) return null;
+      return {
+        name: 'page_viewed',
+        properties: {
+          ...base,
+          path,
+          referrer_host: sanitizeReferrerHost(event.referrer),
+        },
+      };
+    }
+    case 'download_requested':
+      return {
+        name: 'download_requested',
+        properties: {
+          ...base,
+          platform: member(PLATFORMS, event.platform, 'unknown'),
+          arch: member(DOWNLOAD_ARCHES, event.arch, 'unknown'),
+        },
+      };
+    case 'project_opened': {
+      // Decision `0053` names the sources; a value outside them is a caller
+      // bug, and an event filed under a guessed source would mislead.
+      const source = optionalMember(PROJECT_OPEN_SOURCES, event.source);
+      const bound = optionalMember(PROJECT_BINDINGS, event.bound);
+      if (!source || !bound) return null;
+      return {
+        name: 'project_opened',
+        properties: {
+          ...base,
+          source,
+          harness_hint: optionalMember(AGENT_HARNESSES, event.harnessHint),
+          bound,
+        },
+      };
+    }
+    case 'agent_launched':
+      return {
+        name: 'agent_launched',
+        properties: {
+          ...base,
+          harness: member(ANALYTICS_HARNESSES, event.harness, 'unknown'),
+          placement: member(ANALYTICS_PLACEMENTS, event.placement, 'local'),
+          permission_mode: optionalMember(
+            ANALYTICS_PERMISSION_MODES,
+            event.permissionMode
+          ),
+          first_for_install: event.firstForInstall === true,
+        },
+      };
+    case 'agent_directed': {
+      const recipients = sanitizeCount(event.recipients, MAX_DIRECT_RECIPIENTS);
+      return {
+        name: 'agent_directed',
+        properties: {
+          ...base,
+          recipients,
+          delivered: Math.min(
+            sanitizeCount(event.delivered, MAX_DIRECT_RECIPIENTS),
+            recipients
+          ),
+        },
+      };
+    }
+    case 'agent_finished':
+      return {
+        name: 'agent_finished',
+        properties: {
+          ...base,
+          harness: member(ANALYTICS_HARNESSES, event.harness, 'unknown'),
+          placement: member(ANALYTICS_PLACEMENTS, event.placement, 'local'),
         },
       };
   }

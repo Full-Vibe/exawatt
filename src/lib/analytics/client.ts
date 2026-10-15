@@ -24,8 +24,15 @@ import {
   type AnalyticsDecision,
 } from './config';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
-import { toAnalyticsPayload, type AnalyticsEvent } from './events';
+import { isAnalyticsId } from '@exawatt/core/desktop-bridge';
+import { startAccountStream, type AccountStream } from './account-stream';
+import {
+  isInstallationStreamEvent,
+  toAnalyticsPayload,
+  type AnalyticsEvent,
+} from './events';
 import { loadAnalyticsIdentity, persistAnalyticsOptOut } from './identity';
+import { INGEST_LIBS, sendToIngest, type IngestTarget } from './ingest';
 import { ANALYTICS_PROPERTY_DENYLIST, scrubAnalyticsCapture } from './redact';
 
 /** The slice of `posthog-js` this module uses. */
@@ -36,6 +43,11 @@ interface AnalyticsSink {
 }
 
 let sink: AnalyticsSink | null = null;
+/** Where the direct sends go (`ingest.ts`), and as whom. Set while emitting. */
+let target: IngestTarget | null = null;
+let installationId: string | null = null;
+/** ENG-047 F5: the signed-in account's stream, desktop only. */
+let accountStream: AccountStream | null = null;
 let emitting = false;
 /** Between a configured build's start and the device's identity answering. */
 let deciding = false;
@@ -48,7 +60,10 @@ function send(event: AnalyticsEvent): void {
   const payload = toAnalyticsPayload(event);
   if (!payload || !sink) return;
   try {
-    sink.capture(payload.name, payload.properties);
+    if (isInstallationStreamEvent(payload.name)) {
+      sink.capture(payload.name, payload.properties);
+    }
+    accountStream?.capture(event);
   } catch {
     // Analytics never propagate a failure into product behavior.
   }
@@ -94,6 +109,10 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
     }
     deciding = false;
     emitting = true;
+    target = { apiHost: configured.apiHost, key: configured.key };
+    installationId = identity.installationId;
+    // The account stream is the desktop app's: Sessions live there.
+    if (detectElectron()) accountStream = startAccountStream(target);
     // ─────────────────────────────────────────────────────────────────────
     // READ THIS BEFORE DEBUGGING "analytics are not arriving" (2026-08-06).
     //
@@ -153,9 +172,7 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
     flushPending();
     return configured;
   })().catch(() => {
-    deciding = false;
-    emitting = false;
-    pending.length = 0;
+    stopEmission();
     return { enabled: false, reason: 'load_failed' } as AnalyticsDecision;
   });
 
@@ -195,16 +212,13 @@ export async function readAnalyticsOptOut(): Promise<boolean> {
  */
 export async function setAnalyticsOptOut(optedOut: boolean): Promise<boolean> {
   if (optedOut) {
-    emitting = false;
-    deciding = false;
-    pending.length = 0;
     try {
       sink?.opt_out_capturing?.();
       sink?.reset?.(true);
     } catch {
       // Nothing to recover: emission is already off.
     }
-    sink = null;
+    stopEmission();
   }
   // An unpersisted opt-out still holds for this session (emission stopped
   // above); an unpersisted opt-in changes nothing until it can be kept.
@@ -212,11 +226,52 @@ export async function setAnalyticsOptOut(optedOut: boolean): Promise<boolean> {
   return persisted?.optedOut ?? true;
 }
 
-/** Test seam: forget initialization so a suite can exercise a fresh launch. */
-export function __resetAnalyticsForTests(): void {
-  sink = null;
+function stopEmission(): void {
   emitting = false;
   deciding = false;
-  started = null;
   pending.length = 0;
+  sink = null;
+  target = null;
+  installationId = null;
+  accountStream?.stop();
+  accountStream = null;
+}
+
+/**
+ * The website visitor's anonymous id, while analytics are on in this
+ * browser; otherwise null. The download page hands it to the artifact route
+ * (so the server's `download_requested` is the same visitor's) and to
+ * `exawatt://welcome` (so the app can record the one alias, ENG-047 F2).
+ */
+export function currentWebAnalyticsId(): string | null {
+  return emitting && !detectElectron() ? installationId : null;
+}
+
+/**
+ * ENG-047 F2: alias the visitor's web id to this installation, once (main
+ * decides "once"). The only join between two anonymous ids, made by the
+ * user's own click on "Open Exawatt"; the account identity is never part of
+ * it. `posthog-js` refuses an alias without person profiles, so this posts
+ * `$create_alias` directly to the same ingest endpoint.
+ */
+export function recordWebAlias(webId: unknown): void {
+  if (!emitting || !target || !installationId) return;
+  if (!isAnalyticsId(webId) || webId === installationId) return;
+  void sendToIngest(target, [
+    {
+      event: '$create_alias',
+      distinctId: installationId,
+      properties: {
+        distinct_id: installationId,
+        alias: webId,
+        $lib: INGEST_LIBS.webLink,
+      },
+    },
+  ]);
+}
+
+/** Test seam: forget initialization so a suite can exercise a fresh launch. */
+export function __resetAnalyticsForTests(): void {
+  stopEmission();
+  started = null;
 }
