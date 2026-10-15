@@ -2729,6 +2729,56 @@ reading.
   The default stays v1 until the
   operator calls it.
 
+**Review repair architecture (operator-authorized, 2026-10-15; planned before implementation).**
+
+The post-install review found five gaps: v2 Fleet Shift-click reaches the
+Project instead of the individual Agent; raised materials occlude D40 shapes;
+retry reuses a rejected lazy import; concurrent presentation writes replace
+independent choices; and v2 caps label sizing at the empty-state fallback.
+Repair the ownership boundaries rather than add renderer-specific exceptions:
+
+- **Board interaction and labels:** one bounded board-owned Fleet Agent hit
+  layer serves both canvases. It owns modifier selection and drag suppression;
+  ordinary clicks retain Project drilling and below-Fleet DOM controls remain
+  authoritative. Decorative tile meshes stay non-interactive. One shared label
+  hook owns the store, zoom callback and minimum visible Project width; the
+  fallback applies only to an empty set. No new per-frame React state.
+- **Status annotations:** D40 is semantic annotation over decorative materials.
+  One explicit depth policy serves individual, delegated and aggregate marks;
+  v1 retains world depth, v2 uses a late ordered overlay in the same instanced
+  scene. Backing, glyph and unread ordering stays explicit. No second canvas,
+  render loop, per-Agent DOM overlay, or duplicated tile-height animation math.
+- **Renderer lifecycle:** the registry owns capabilities and loaders; a mounted
+  surface owns its lazy load attempt. Explicit retry creates a new lazy identity;
+  normal data/material changes do not. Camera, selection and preference survive
+  the attempt boundary. A real rejected-then-successful lazy load is the test.
+- **Preference authority:** preserve the V1 snapshot/read contract but mutate
+  through validated field intents (set or reset). Electron main merges into its
+  current settings synchronously. Web storage commits independent field keys,
+  with read-only legacy snapshot fallback and reset tombstones; no stale combined
+  snapshot writes, dual writers, generic form engine or global settings rewrite.
+  Notifications read authoritative current state. Distinct-field writes commute;
+  same-field last committed write wins. Existing old browser tabs require reload
+  to join the new storage contract.
+
+Implementation runs in four isolated `agent/*` worktrees with exclusive file
+ownership: interaction/labels owns both canvases and hit/label modules; status
+owns status layers and tile-layer wiring; preferences owns its core/IPC/source/
+provider boundary; coordinator owns registry/surface lifecycle and canon. The
+coordinator combines committed slices and lands through `pnpm agent:land`, with
+all applicable gates and `--dogfood`. Concurrent Direct Agents work is preserved
+at integration; its ghost-slot feature is not part of this repair.
+
+Acceptance: exact selected IDs for Shift-click in both views plus plain click
+and drag behavior; real projected-width label transitions; visible D40 glyphs
+through all five materials and three themes; successful retry after import
+failure without state loss; overlapping field writes/resets in desktop and web
+with delayed broadcasts/loads. Preserve demand rendering, power cadence, bounded
+geometry, homepage appearance, source neutrality and the v1 default. Verify the
+combined tree with the existing pointer, motion, scale, theme, power and Settings
+gates plus focused regressions; no timing-budget relaxation. Final evidence and
+installation state belong in the dated milestone log below.
+
 **Naming amendment (operator, 2026-10-14):** “Let's call it v1 and v2.”
 The Settings choices are v1 and v2 (Preview), superseding Dots/Tiles.
 

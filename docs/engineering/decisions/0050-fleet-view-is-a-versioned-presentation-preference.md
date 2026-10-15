@@ -133,3 +133,16 @@ as future projects add preferences.
   time").
 - Additional motion, camera or sound preferences beyond the accepted material
   choice; none are implied by the Settings organization work.
+
+## Review repair amendment (2026-10-15)
+
+The operator requires architectural repairs for the five post-install findings.
+Board interaction and label sizing are shared owners, separate from decorative
+renderers. D40 is a semantic annotation: v2 draws it with an explicit overlay
+depth policy in the existing scene; v1 retains its world policy. This avoids
+exporting and duplicating animated tile pose solely to keep status readable.
+Renderer load attempts belong to the mounted surface, so retry renews both lazy
+identity and the boundary. Presentation mutations are field intents applied at
+the persistence owner, while subscribers retain the versioned snapshot contract.
+The execution boundaries and acceptance live in ENG-004 V4.1's review repair
+architecture; this amendment does not expand the material or feature scope.
