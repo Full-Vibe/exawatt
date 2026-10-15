@@ -9,6 +9,7 @@ import {
   DEMO_BASE_AGENTS,
   DEMO_CHATTER,
   DEMO_PROJECTS_BY_KEY,
+  isAgentHarness,
 } from '@exawatt/core';
 import { refusedSend, type BusClient } from './client';
 import type { BusEndpoint, BusMessage } from './types';
@@ -17,6 +18,10 @@ import { BUS_OPERATOR } from './operator';
 function endpointFor(agentId: string): BusEndpoint {
   const agent = DEMO_BASE_AGENTS.find(candidate => candidate.id === agentId);
   if (!agent) throw new Error(`Unknown demo chatter Agent ${agentId}`);
+  // the bus addresses launched Sessions; a gateway coworker is not one
+  if (!isAgentHarness(agent.harness)) {
+    throw new Error(`Demo chatter Agent ${agentId} is not a launched Session`);
+  }
   return {
     sessionId: agent.id,
     name: agent.name,

@@ -94,6 +94,7 @@ import {
 import { ChatterView } from '@/components/team/chatter/chatter-view';
 import type { ChatterParticipant } from '@/components/team/chatter/chatter-endpoint';
 import { useBusMessages, useProjectUnread } from '@/lib/bus/use-bus';
+import { agentNameOf, useAgentNames } from '@/lib/agent-names/agent-name-store';
 import {
   useProjectRoadmap,
   type RoadmapLandingsSource,
@@ -586,26 +587,31 @@ export function ExposeOverlay({
   const chatterProjectId = dockVisible ? selectedDir : null;
   const chatter = useBusMessages(chatterProjectId);
   const chatterUnread = useProjectUnread(chatterProjectId, chatter.state);
-  // Chatter names a Session the way its tile does, and opens its tab
+  // Chatter names a Session by its Agent name (claude-1, codex-2; ENG-029
+  // C4), falling back to the tile's label while main has not named it, and
+  // opens its tab
+  const agentNames = useAgentNames();
   const chatterParticipants = useMemo(() => {
     const map = new Map<string, ChatterParticipant>();
     for (const tile of tiles) {
       if (tile.dir !== selectedDir) continue;
       const participant = {
-        label: sessionDisplayCopy({
-          harness: tile.harness,
-          title: tile.title,
-          titleKind: tile.titleKind,
-          lifecycle: tile.lifecycle,
-          summary: summaries[tile.durableSessionId],
-        }).primary,
+        label:
+          agentNameOf(agentNames, tile.durableSessionId) ??
+          sessionDisplayCopy({
+            harness: tile.harness,
+            title: tile.title,
+            titleKind: tile.titleKind,
+            lifecycle: tile.lifecycle,
+            summary: summaries[tile.durableSessionId],
+          }).primary,
         tabId: tile.tabId,
       };
       map.set(tile.durableSessionId, participant);
       if (tile.sessionId) map.set(tile.sessionId, participant);
     }
     return map;
-  }, [selectedDir, summaries, tiles]);
+  }, [agentNames, selectedDir, summaries, tiles]);
 
   // tiles can shrink while open (a session exits) — selection stays in range.
   // Refocus only when the clamp actually MOVES the selection: this effect

@@ -5,20 +5,11 @@
  * `unavailable`, never an empty list.
  */
 import { refusedSend, type BusClient, type BusReadResult } from './client';
-import type {
-  BusLedgerRead,
-  BusMessage,
-  BusSendRequest,
-  BusSendResult,
-} from './types';
+import type { DesktopBridge } from '@exawatt/core/desktop-bridge';
+import type { BusLedgerRead } from './types';
 
-/** The preload's `bus` namespace (`DesktopBusApi` in the B1 contract). */
-export interface BusBridge {
-  send(request: BusSendRequest): Promise<BusSendResult>;
-  list(projectId: string): Promise<BusLedgerRead>;
-  thread(projectId: string, a: string, b: string): Promise<BusLedgerRead>;
-  onMessage(handler: (message: BusMessage) => void): () => void;
-}
+/** The preload's `bus` namespace (`DesktopBusApi`). */
+export type BusBridge = NonNullable<DesktopBridge['bus']>;
 
 /** Why there is no bus here, in one line the operator can act on. */
 function unavailableReason(): string {
@@ -29,8 +20,7 @@ function unavailableReason(): string {
 
 function bridgeOf(): BusBridge | null {
   if (typeof window === 'undefined') return null;
-  const electron = window.electron as { bus?: BusBridge } | undefined;
-  return electron?.bus ?? null;
+  return window.electron?.bus ?? null;
 }
 
 function failureMessage(reason: unknown, fallback: string): string {

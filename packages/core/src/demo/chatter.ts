@@ -11,7 +11,7 @@
  * outcome: Codex queues to the turn boundary, OpenCode has no message door so
  * a message is typed into its terminal, an ended Session is undeliverable, a
  * Claude Code tab whose own settings ask first holds a peer message and lets
- * it lapse, and an OpenClaw gateway accepts without saying more.
+ * it lapse, and a hand-over with no turn reported since is unknown.
  *
  * Nothing here is a debate, a round or a verdict: two Agents ask and answer
  * about the work in front of them, and the operator says one thing to one
@@ -135,13 +135,13 @@ export const DEMO_CHATTER: readonly DemoChatterEntry[] = Object.freeze([
   {
     id: 'chat-api-4',
     projectKey: 'grid-api',
-    from: 'vg-api-verifylib',
-    to: 'vg-api-sandbox',
+    from: 'vg-api-signing',
+    to: 'vg-api-verifylib',
     minutesAgo: 20,
-    text: 'Does the sandbox reset rotate the test signing keys too? The docs promise they survive a reset.',
+    text: 'The sandbox reset will rotate the test signing keys too, and the docs promise they survive a reset.',
     delivery: {
       state: 'unknown',
-      reason: 'The gateway accepted it and reported nothing back.',
+      reason: 'Handed to the tab; it has not reported a turn since.',
     },
   },
   {
