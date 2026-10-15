@@ -231,6 +231,21 @@ try {
                   worldMissing = 0;
                 for (let pixel = 0; pixel < reference.length; pixel += 4) {
                   if (!ink(reference, pixel)) continue;
+                  // Compare solid interior, not one-pixel antialias fringes:
+                  // translucent edge samples legitimately composite differently
+                  // over a body. Every interior pixel must survive unchanged.
+                  const x = (pixel / 4) % 192;
+                  const y = Math.floor(pixel / 4 / 192);
+                  if (
+                    x === 0 ||
+                    x === 191 ||
+                    y === 0 ||
+                    y === 191 ||
+                    [-772, -768, -764, -4, 4, 764, 768, 772].some(
+                      offset => !ink(reference, pixel + offset)
+                    )
+                  )
+                    continue;
                   referencePixels++;
                   if (!ink(actual, pixel)) missing++;
                   if (!ink(occluded, pixel)) worldMissing++;
@@ -239,7 +254,7 @@ try {
                   throw new Error(
                     `No readable glyph interior: ${target.geometry.type} (${referencePixels})`
                   );
-                if (missing > Math.max(2, referencePixels * 0.01))
+                if (missing > 0)
                   throw new Error(
                     `Status geometry occluded: ${target.geometry.type} lost ${missing}/${referencePixels} interior pixels`
                   );
