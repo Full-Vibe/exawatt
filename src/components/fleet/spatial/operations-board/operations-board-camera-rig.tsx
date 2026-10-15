@@ -335,12 +335,16 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         Math.max(0.01, hold.pose.zoom * 0.02);
     // "Only then does the camera pull back" — but an operator who already
     // moved the camera mid-crossfade is obeyed, never yanked to the fit.
+    target.current.tilt = projection === 'fixed-angle' ? 1 : 0;
     if (untouched) {
-      target.current.tilt = projection === 'fixed-angle' ? 1 : 0;
       targetForRect(hold.fitRect);
+    } else {
+      // Manual pan/zoom wins, but the selected view still owns its angle.
+      beginFlightRef.current();
     }
+    if (reduced) snapToTargetRef.current();
     invalidate();
-  }, [invalidate, projection, targetForRect]);
+  }, [invalidate, projection, reduced, targetForRect]);
 
   /** Claims a pending Team→Fleet snapshot and applies the entry pose. Every
    *  decline dispatches the fallback event so the transition owner cuts —
@@ -517,6 +521,8 @@ export const BoardCameraRig = memo(function BoardCameraRig({
 
   const previousProjection = useRef(projection);
   useEffect(() => {
+    // The Team card pose stays flat until its crossfade releases the hold.
+    if (entryHold.current) return;
     target.current.tilt = projection === 'fixed-angle' ? 1 : 0;
     // A flight belongs to a projection CHANGE. This effect also re-runs when
     // its callbacks are rebuilt by a layout change, and starting a flight then
