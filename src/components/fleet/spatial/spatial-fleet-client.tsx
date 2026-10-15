@@ -131,6 +131,17 @@ export function SpatialFleetClient() {
   const selectedAgentId = route.agentId;
   const projection: SpatialBoardProjection = route.projection;
   const { fleetState, projects } = useFleet();
+  // Source identity is authored by each transport over the same Demo/Live
+  // contract. Unknown sources remain unbranded; the renderer never guesses.
+  const sourceMarks = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.values(fleetState.agents)
+          .filter(agent => agent.sourceAdapterId)
+          .map(agent => [agent.id, agent.sourceAdapterId!])
+      ),
+    [fleetState.agents]
+  );
   const { isDemo } = useFleetConnection();
   const { jobs } = useCron();
   const { openHelpModal } = useShortcuts();
@@ -868,6 +879,7 @@ export function SpatialFleetClient() {
           <OperationsBoardSurface
             fleetView={fleetView}
             material={fleetMaterial}
+            sourceMarks={sourceMarks}
             layout={boardLayout}
             projection={projection}
             onDrillProject={drillToProject}
