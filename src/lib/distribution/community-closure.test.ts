@@ -91,6 +91,10 @@ const DECLARED_CONSTRUCTOR_SITES: Record<string, string> = {
   'src/lib/server/authenticated-supabase.ts': 'authenticatedSupabase(token)',
   // The public arena's anonymous reads (incident `0017`).
   'src/lib/operator-stats/public.ts': 'publicClient() via the read helpers',
+  // Homepage copy reads a public singleton only with a configured account;
+  // Community keeps the checked-in document and constructs no client.
+  'src/lib/homepage-copy/published.ts':
+    'readPublishedHomepageCopy() via resolvedDistribution().account',
   // Cookie-refresh middleware. A stale cookie from a previous official install
   // is not authority to rebuild transport.
   'src/proxy.ts': 'resolvedDistribution().account before createServerClient',
@@ -323,6 +327,17 @@ describe('absence: every declared seam answers under the community contract', ()
     );
     await expect(arena.readOperatorProfile('jake')).resolves.toBeNull();
     await expect(arena.readRunReceipt('run-1')).resolves.toBeNull();
+  });
+
+  it('homepage copy seam: checked-in copy without account transport', async () => {
+    const { readPublishedHomepageCopy } =
+      await import('@/lib/homepage-copy/published');
+    const { HOMEPAGE_COPY_BASELINE } =
+      await import('@/lib/homepage-copy/contract');
+    await expect(readPublishedHomepageCopy()).resolves.toEqual({
+      document: HOMEPAGE_COPY_BASELINE,
+      publicationId: null,
+    });
   });
 
   it('middleware seam: a stale session cookie rebuilds no transport', async () => {
