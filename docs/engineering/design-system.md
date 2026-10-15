@@ -250,7 +250,7 @@ Standing rules, all operator-reviewed:
 - **Redundant channels (D30, per Carbon)**: every state carries at least three of shape / icon / color / text — hue never carries the signal alone.
 - **Constant footprint**: glyphs render in a fixed box so state changes never nudge a row.
 - Delegated-child dots breathe at 2600ms, staggered, capped at `DELEGATION_DOT_CAP` — context for the light, never a competing signal (ENG-023).
-- On the Fleet board, protocol color lives **only** in each Agent's light; Project identity stays on zone edges (decision `0007` restraint).
+- On the Fleet board, protocol color lives **only** in each Agent's light; Project identity stays on zone edges (decision `0007` restraint). Fleet Tiles (Fleet view v2, decision `0050`) will tint the agent body with its status, as the homepage does; that exception is amended here, with screenshot evidence, when ENG-004 V4.1 ships.
 
 Motion beyond status (pointer for G2): the house easing is `cubic-bezier(0.22, 1, 0.36, 1)`, interaction transitions 160–260ms, and **every** animation has a `prefers-reduced-motion` gate — no exceptions exist today; do not create the first.
 

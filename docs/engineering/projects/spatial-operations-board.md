@@ -2690,9 +2690,9 @@ reading.
 - P0 canon: this section, the roadmap milestone and decision `0050`. LANDED
   with this record.
 - P1 extract the shared tile renderer, homepage pixel-identical (before and
-  after captures at five scenes and 390px). It edits the files the in-flight
-  `agent/homepage-w15p` branch edits, so it starts after that branch lands.
-  About a day.
+  after captures at five scenes and 390px). The homepage W15p pass that
+  edited the same files landed the same day, so nothing blocks it. About a
+  day.
 - P2 the preference and its Settings row, in parallel with P1. About half a
   day.
 - P3 the Tiles greybox, then the look on the board bench
