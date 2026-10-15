@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
   type ComponentRef,
+  type RefObject,
 } from 'react';
 import * as THREE from 'three';
 import {
@@ -55,6 +56,7 @@ import {
   type BoardHoverStore,
 } from './operations-board-hover';
 import { statusMarkSubjects } from './status-mark-subjects';
+import { sameAgentBodyPaint } from './agent-body-subjects';
 import { StatusMarkLayer } from './operations-board-status-marks';
 
 /**
@@ -315,6 +317,13 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   const [hoveredMeshId, setHoveredMeshId] = useState<string | null>(null);
   const bodyMat = useRef<THREE.MeshLambertMaterial>(null);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
+  const collectBody = useCallback(
+    (id: string) => (instance: THREE.Object3D | null) => {
+      if (instance) bodyRefs.current.set(id, instance);
+      else bodyRefs.current.delete(id);
+    },
+    []
+  );
   // Focus recession (V3.7): a neighbour's bodies mix toward the board on the
   // shared clock. One sampler per zone, one write per body per frame only
   // while the value is actually moving.
@@ -334,7 +343,6 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   );
   const lastBodyRecession = useRef(new Map<string, number>());
   const entranceClock = useRef<number | null>(reduced ? null : 0);
-  const pieceGeometry = AGENT_HEX_GEOMETRY;
   // The cursor follows the mesh this layer hit. Candidate state (hover and
   // press) goes to the hover store instead, so the WebGL and DOM hit paths
   // converge on one candidate and only its subscribers rerender.
@@ -450,62 +458,18 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
     : undefined;
   return (
     <group>
-      <Instances geometry={pieceGeometry} limit={256} range={rendered.length}>
-        <meshLambertMaterial
-          ref={bodyMat}
-          transparent
-          opacity={reduced ? 1 : 0}
-        />
-        {rendered.map(piece => {
-          const interactive = piece.kind === 'agent' && altitude !== 'fleet';
-          return (
-            <Instance
-              key={piece.id}
-              name={`body:${piece.id}`}
-              ref={(instance: THREE.Object3D | null) => {
-                if (instance) bodyRefs.current.set(piece.id, instance);
-                else bodyRefs.current.delete(piece.id);
-              }}
-              position={boardWorldPosition(piece, 0.65)}
-              scale={[piece.size, piece.size, 1]}
-              color={theme.unit}
-              onPointerOver={event => {
-                if (!interactive) return;
-                event.stopPropagation();
-                setHoveredMeshId(piece.id);
-                hover.setAgent(piece.agentId);
-              }}
-              onPointerOut={() => {
-                setHoveredMeshId(null);
-                hover.setAgent(null);
-              }}
-              onPointerDown={event => {
-                if (!interactive || !piece.agentId || event.button !== 0)
-                  return;
-                event.stopPropagation();
-                hover.setPressed(piece.agentId);
-              }}
-              onPointerUp={() => {
-                hover.setPressed(null);
-              }}
-              onClick={(event: ThreeEvent<MouseEvent>) => {
-                if (!piece.agentId || event.delta > 5) return;
-                // Shift-click toggles multi-selection at EVERY altitude
-                // (V3.2) — fleet pieces stay non-interactive for plain
-                // clicks, where zones own the drill verb.
-                if (event.shiftKey && onToggleAgentSelect) {
-                  event.stopPropagation();
-                  onToggleAgentSelect(piece.agentId);
-                  return;
-                }
-                if (!interactive) return;
-                event.stopPropagation();
-                onSelectAgent(piece.agentId);
-              }}
-            />
-          );
-        })}
-      </Instances>
+      <AgentBodyInstances
+        pieces={rendered}
+        color={theme.unit}
+        reduced={reduced}
+        interactive={altitude !== 'fleet'}
+        bodyMat={bodyMat}
+        collectBody={collectBody}
+        setHoveredMeshId={setHoveredMeshId}
+        hover={hover}
+        onSelectAgent={onSelectAgent}
+        onToggleAgentSelect={onToggleAgentSelect}
+      />
       <StatusMarkLayer
         pieces={statusSubjects}
         ambient={ambient}
@@ -541,6 +505,122 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
     </group>
   );
 });
+
+type AgentBodyProps = {
+  pieces: SpatialBoardPiece[];
+  color: string;
+  reduced: boolean;
+  interactive: boolean;
+  bodyMat: RefObject<THREE.MeshLambertMaterial | null>;
+  collectBody: (id: string) => (instance: THREE.Object3D | null) => void;
+  setHoveredMeshId: (id: string | null) => void;
+  hover: BoardHoverStore;
+  onSelectAgent: (id: string) => void;
+  onToggleAgentSelect?: (id: string) => void;
+};
+/** The neutral instance scene does not change on a source clock/status tick.
+ * Emergence, recession, hover and selection continue outside this boundary. */
+const AgentBodyInstances = memo(
+  function AgentBodyInstances({
+    pieces,
+    color,
+    reduced,
+    interactive,
+    bodyMat,
+    ...handlers
+  }: AgentBodyProps) {
+    return (
+      <Instances
+        geometry={AGENT_HEX_GEOMETRY}
+        limit={256}
+        range={pieces.length}
+      >
+        <meshLambertMaterial
+          ref={bodyMat}
+          transparent
+          opacity={reduced ? 1 : 0}
+        />
+        {pieces.map(piece => (
+          <AgentBodyInstance
+            key={piece.id}
+            piece={piece}
+            color={color}
+            interactive={interactive && piece.kind === 'agent'}
+            {...handlers}
+          />
+        ))}
+      </Instances>
+    );
+  },
+  (a, b) =>
+    a.color === b.color &&
+    a.reduced === b.reduced &&
+    a.interactive === b.interactive &&
+    a.bodyMat === b.bodyMat &&
+    a.collectBody === b.collectBody &&
+    a.setHoveredMeshId === b.setHoveredMeshId &&
+    a.hover === b.hover &&
+    a.onSelectAgent === b.onSelectAgent &&
+    a.onToggleAgentSelect === b.onToggleAgentSelect &&
+    sameAgentBodyPaint(a.pieces, b.pieces)
+);
+
+function AgentBodyInstance({
+  piece,
+  color,
+  interactive,
+  collectBody,
+  setHoveredMeshId,
+  hover,
+  onSelectAgent,
+  onToggleAgentSelect,
+}: Omit<AgentBodyProps, 'pieces' | 'reduced' | 'bodyMat'> & {
+  piece: SpatialBoardPiece;
+}) {
+  const bodyRef = useMemo(() => collectBody(piece.id), [collectBody, piece.id]);
+  return (
+    <Instance
+      key={piece.id}
+      name={`body:${piece.id}`}
+      ref={bodyRef}
+      position={boardWorldPosition(piece, 0.65)}
+      scale={[piece.size, piece.size, 1]}
+      color={color}
+      onPointerOver={event => {
+        if (!interactive) return;
+        event.stopPropagation();
+        setHoveredMeshId(piece.id);
+        hover.setAgent(piece.agentId);
+      }}
+      onPointerOut={() => {
+        setHoveredMeshId(null);
+        hover.setAgent(null);
+      }}
+      onPointerDown={event => {
+        if (!interactive || !piece.agentId || event.button !== 0) return;
+        event.stopPropagation();
+        hover.setPressed(piece.agentId);
+      }}
+      onPointerUp={() => {
+        hover.setPressed(null);
+      }}
+      onClick={(event: ThreeEvent<MouseEvent>) => {
+        if (!piece.agentId || event.delta > 5) return;
+        // Shift-click toggles multi-selection at EVERY altitude
+        // (V3.2) — fleet pieces stay non-interactive for plain
+        // clicks, where zones own the drill verb.
+        if (event.shiftKey && onToggleAgentSelect) {
+          event.stopPropagation();
+          onToggleAgentSelect(piece.agentId);
+          return;
+        }
+        if (!interactive) return;
+        event.stopPropagation();
+        onSelectAgent(piece.agentId);
+      }}
+    />
+  );
+}
 
 /** One dashed Line2 draw for every stopped Session-backed Agent. The DOM
  * controls remain the interaction/a11y owner; this layer is visual state. */

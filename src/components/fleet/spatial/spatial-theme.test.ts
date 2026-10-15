@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as appearanceColor from '@/lib/appearance/color';
 import { THEME_REGISTRY } from '@/generated/theme-registry';
 import { contrastRatio } from '@/lib/appearance/color';
 import { resolveAppearance } from '@/lib/appearance/resolve-appearance';
@@ -186,4 +187,27 @@ describe('spatial theme adapter', () => {
       contrastRatio(overlaid.unit, overlaid.canvas)
     ).toBeGreaterThanOrEqual(4.5);
   });
+});
+
+it('reuses project contrast work only within the same immutable snapshot', () => {
+  const theme = spatialThemeFromResolvedAppearance(
+    resolved('exawatt-classic-dark')
+  );
+  const correction = vi.spyOn(appearanceColor, 'correctAccentContrast');
+  try {
+    const first = spatialProjectIdentityColor(theme, 'cache-contract');
+    const computations = correction.mock.calls.length;
+    expect(computations).toBeGreaterThan(0);
+    expect(spatialProjectIdentityColor(theme, 'cache-contract')).toBe(first);
+    expect(correction).toHaveBeenCalledTimes(computations);
+    spatialProjectIdentityColor(theme, 'different-project');
+    expect(correction.mock.calls.length).toBeGreaterThan(computations);
+    const afterProject = correction.mock.calls.length;
+    expect(spatialProjectIdentityColor({ ...theme }, 'cache-contract')).toBe(
+      first
+    );
+    expect(correction.mock.calls.length).toBeGreaterThan(afterProject);
+  } finally {
+    correction.mockRestore();
+  }
 });

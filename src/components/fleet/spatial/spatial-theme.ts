@@ -246,10 +246,24 @@ function hashId(id: string): number {
   return hash;
 }
 
+// Resolved snapshots are immutable. Repeated units/project chrome share the
+// exact corrected identity paint without rerunning contrast searches per tick.
+const projectIdentityPaint = new WeakMap<
+  SpatialThemeSnapshot,
+  Map<string, string>
+>();
+
 export function spatialProjectIdentityColor(
   theme: SpatialThemeSnapshot,
   projectId: string
 ): string {
+  let paints = projectIdentityPaint.get(theme);
+  if (!paints) {
+    paints = new Map();
+    projectIdentityPaint.set(theme, paints);
+  }
+  const cached = paints.get(projectId);
+  if (cached !== undefined) return cached;
   const assigned =
     SPATIAL_PROJECT_IDENTITY_PALETTE[
       hashId(projectId) % SPATIAL_PROJECT_IDENTITY_PALETTE.length
@@ -268,7 +282,14 @@ export function spatialProjectIdentityColor(
     corrected,
     theme.appearance === 'light' ? 0.08 : 0.12
   );
-  return correctAccentContrast(corrected, tintedGround, theme.selection, 3.3);
+  const paint = correctAccentContrast(
+    corrected,
+    tintedGround,
+    theme.selection,
+    3.3
+  );
+  paints.set(projectId, paint);
+  return paint;
 }
 
 export function spatialProjectZoneFill(
