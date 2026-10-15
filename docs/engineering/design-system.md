@@ -590,7 +590,7 @@ separate local study; they are absent from the delivered application.
 The standing `/hud-gallery/board-study` bench compares v1 with v2 over the
 same `SpatialBoardLayout`. The v2 review uses the homepage's shared Rounded
 tiles in Gummy, Acrylic and Anodized, on a flat fixed-angle plane. Its
-status-tinted bodies are a **bench-only exception pending operator review**;
+status-tinted bodies were **accepted for v2 in the 2026-10-15 look review**;
 production's status-light rule remains unchanged until P4/P5. The bench
 includes solid-material greybox, Demo Workspace, and 10/100/1k fixtures in
 Classic, Air and Night. Spare sockets are decorative and never population.
@@ -599,8 +599,22 @@ The existing surface-title, chrome-title, chrome-meta and chrome-micro type
 rungs, 4px spacing grid, semantic chrome roles, and concrete spatial snapshot
 own the controls and grounds. Needs-you and faults stay still; Working uses
 the shared ambient cadence. The bench exposes material choices for review,
-not new persisted preferences. D40/unread/lifecycle and delegation parity,
-product routing and full navigation gates are P4 work after acceptance.
+with all five catalog materials (Matte, Glazed, Gummy, Acrylic, Anodized)
+becoming persisted choices in P4, Gummy by default. D40/unread/lifecycle and
+delegation parity, product routing and full navigation gates remain required.
+
+### Settings information architecture (2026-10-15)
+
+Settings is a set of navigable destinations, not one accumulating Preferences
+page. Group related destinations by operator task; each has a stable id and
+direct link, a clear label and description, and search terms in one small
+registry. Search leads to the actual control location and preserves context.
+Feature modules own their controls and persistence; the registry does not
+become a generic form engine. Preserve old deep links through aliases. Fleet
+view and material belong together, while interface appearance, keyboard,
+notifications, power and trust settings remain distinct destinations.
+Future projects must select or deliberately add a coherent destination.
+Use the existing Settings operational neutrals, type rungs and spacing grid.
 
 ### Appearance snapshot consistency
 

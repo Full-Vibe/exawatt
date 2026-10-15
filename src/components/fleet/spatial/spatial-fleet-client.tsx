@@ -61,6 +61,7 @@ import {
   writeSpatialFilters,
 } from './spatial-navigation-state';
 import { useAppearance } from '@/components/appearance/appearance-provider';
+import { usePresentation } from '@/components/presentation/presentation-provider';
 import {
   spatialFaultCallout,
   spatialNeedsOperatorCallout,
@@ -96,6 +97,7 @@ const OperationsBoardSurface = dynamic(
 );
 
 export function SpatialFleetClient() {
+  const { fleetView, fleetMaterial } = usePresentation();
   const { resolved: resolvedAppearance } = useAppearance();
   const now = useMinuteClock();
   const spatialTheme = useMemo(
@@ -864,6 +866,8 @@ export function SpatialFleetClient() {
           aria-label="Fleet surface"
         >
           <OperationsBoardSurface
+            fleetView={fleetView}
+            material={fleetMaterial}
             layout={boardLayout}
             projection={projection}
             onDrillProject={drillToProject}

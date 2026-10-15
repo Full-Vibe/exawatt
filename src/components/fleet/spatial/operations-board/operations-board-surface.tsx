@@ -2,6 +2,7 @@
 
 import {
   Component,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -24,10 +25,9 @@ import {
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
 import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide';
-import {
-  OperationsBoardCanvas,
-  type OperationsBoardHandle,
-} from './operations-board-canvas';
+import type { OperationsBoardHandle } from './operations-board-canvas';
+import type { FleetView, FleetMaterial } from '@exawatt/core/desktop-bridge';
+import { boardViewFor } from './operations-board-views';
 import type {
   BoardClampEdges,
   OperationsBoardViewport,
@@ -311,7 +311,10 @@ function BoardMiniMap({
  */
 export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   layout,
-  projection,
+  projection: requestedProjection,
+  fleetView = 'v1',
+  material = 'gummy',
+  sourceMarks,
   lens = 'status',
   onDrillProject,
   onSelectAgent,
@@ -332,6 +335,9 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
+  fleetView?: FleetView;
+  material?: FleetMaterial;
+  sourceMarks?: Readonly<Record<string, string>>;
   /** Board color lens (ENG-008): status protocol by default; `burn` recolors
    *  the population field by normalized token share. Presentation-only —
    *  attention triage below never reads it. */
@@ -361,6 +367,11 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
    * the app-global AppearanceProvider snapshot. */
   resolvedAppearance?: ResolvedAppearance;
 }) {
+  const view = boardViewFor(fleetView);
+  const ViewCanvas = view.Canvas;
+  const projection = view.projections.includes(requestedProjection)
+    ? requestedProjection
+    : view.projections[0]!;
   const appearance = useAppearance();
   const resolved = resolvedAppearance ?? appearance.resolved;
   const theme = useMemo(
@@ -626,7 +637,10 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
       } else if (event.key.toLowerCase() === 'p') {
         triage(-1);
         event.preventDefault();
-      } else if (event.key.toLowerCase() === 'v') {
+      } else if (
+        event.key.toLowerCase() === 'v' &&
+        view.projections.length > 1
+      ) {
         onProjectionChange(
           projection === 'top-down' ? 'fixed-angle' : 'top-down'
         );
@@ -670,11 +684,13 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     projection,
     triage,
     visibleZones,
+    view,
   ]);
 
   return (
     <div
       data-spatial-board
+      data-board-view={view.id}
       data-board-projection={projection}
       data-board-lens={lens}
       data-board-projects={visibleZones.length}
@@ -751,33 +767,44 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
       {/* World labels own depth within the scene, never above sibling chrome. */}
       <div className="absolute inset-0 isolate">
         <BoardErrorBoundary theme={theme}>
-          <OperationsBoardCanvas
-            layout={layout}
-            projection={projection}
-            lens={lens}
-            controllerRef={controller}
-            onViewportChange={updateViewport}
-            onDrillProject={onDrillProject}
-            onSelectAgent={onSelectAgent}
-            onBackground={clearAgentSelection}
-            multiSelection={multiSelection}
-            onToggleAgentSelect={onToggleAgentSelect}
-            onToggleZoneSelect={onToggleZoneSelect}
-            onBandSelect={onBandSelect}
-            bandOverlayRef={bandOverlay}
-            followSelection={followSelection}
-            touchSelectionMode={touchSelectionMode}
-            onManualCameraInput={suspendSelectionFollow}
-            onClampEdges={handleClampEdges}
-            onSelectDelegationChild={onSelectDelegationChild}
-            selectedDelegationUnitId={
-              selectedChildTarget?.kind === 'child'
-                ? selectedChildTarget.unitId
-                : null
+          <Suspense
+            fallback={
+              <div
+                className="h-full w-full"
+                style={{ background: theme.canvas }}
+              />
             }
-            preserveDrawingBuffer={preserveDrawingBuffer}
-            theme={theme}
-          />
+          >
+            <ViewCanvas
+              material={material}
+              sourceMarks={sourceMarks}
+              layout={layout}
+              projection={projection}
+              lens={lens}
+              controllerRef={controller}
+              onViewportChange={updateViewport}
+              onDrillProject={onDrillProject}
+              onSelectAgent={onSelectAgent}
+              onBackground={clearAgentSelection}
+              multiSelection={multiSelection}
+              onToggleAgentSelect={onToggleAgentSelect}
+              onToggleZoneSelect={onToggleZoneSelect}
+              onBandSelect={onBandSelect}
+              bandOverlayRef={bandOverlay}
+              followSelection={followSelection}
+              touchSelectionMode={touchSelectionMode}
+              onManualCameraInput={suspendSelectionFollow}
+              onClampEdges={handleClampEdges}
+              onSelectDelegationChild={onSelectDelegationChild}
+              selectedDelegationUnitId={
+                selectedChildTarget?.kind === 'child'
+                  ? selectedChildTarget.unitId
+                  : null
+              }
+              preserveDrawingBuffer={preserveDrawingBuffer}
+              theme={theme}
+            />
+          </Suspense>
         </BoardErrorBoundary>
       </div>
 
@@ -878,31 +905,33 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
               Select units
             </button>
           )}
-          <div
-            className="exa-material-chrome flex border p-1"
-            aria-label="Board projection"
-            style={spatialMaterialFrame(theme)}
-          >
-            {(['top-down', 'fixed-angle'] as const).map(option => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={projection === option}
-                onClick={() => onProjectionChange(option)}
-                className="min-h-11 px-3 text-chrome-label font-medium outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
-                style={
-                  projection === option
-                    ? {
-                        background: theme.selection,
-                        color: theme.material.chrome.fallback,
-                      }
-                    : { color: theme.labelMuted }
-                }
-              >
-                {option === 'top-down' ? 'Top' : 'Angle'}
-              </button>
-            ))}
-          </div>
+          {view.projections.length > 1 && (
+            <div
+              className="exa-material-chrome flex border p-1"
+              aria-label="Board projection"
+              style={spatialMaterialFrame(theme)}
+            >
+              {view.projections.map(option => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={projection === option}
+                  onClick={() => onProjectionChange(option)}
+                  className="min-h-11 px-3 text-chrome-label font-medium outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
+                  style={
+                    projection === option
+                      ? {
+                          background: theme.selection,
+                          color: theme.material.chrome.fallback,
+                        }
+                      : { color: theme.labelMuted }
+                  }
+                >
+                  {option === 'top-down' ? 'Top' : 'Angle'}
+                </button>
+              ))}
+            </div>
+          )}
 
           <BoardMiniMap
             layout={layout}

@@ -2704,14 +2704,20 @@ reading.
 - P3 the Tiles greybox, then the look on the board bench
   (`/hud-gallery/board-study`, a view knob) with the Demo Workspace and 10,
   100 and 1k fixtures in Classic, Air and Night, Gummy, Acrylic and Anodized
-  side by side. Operator review; it also decides whether Material is a
-  Settings row at launch. One to two days.
+  side by side. IMPLEMENTED and look accepted 2026-10-15. Gummy leads;
+  Material is selectable in Settings, including Matte and Glazed from the
+  full bench catalog. The next review is hands-on in the actual app.
 - P4 parity and gates: the full `BOARD_KEYMAP`, band and multi-select, the
   Team to Fleet entry pose, session entry, delegation children, reduced
   motion, low power, three themes, the scale, motion and host-power evals,
   Tiles' modules in `BOARD_CANVAS_MODULES`, and the design-system amendment.
-  The `agent/delegation-build` branch ("pending Fleet review") lands or is
-  rebased first. One to two days.
+  P4 also delivers all five materials and navigable Settings (named sections,
+  search, stable links, modular ownership); material defaults to Gummy while
+  view defaults to v1. Reuse the integrated delegation census foundation
+  (`68f16bd4`, integrated via `2b1bccdbe9f6`). The old
+  `agent/delegation-build` prerequisite is stale: its remaining D6 ancestry/
+  coverage, D8 launch context and deferred gallery work are separate scope;
+  do not wholesale cherry-pick it (see delegation-visibility.md D6 receipt).
 - P5 Tiles ships as an opt-in Preview: every build's Settings offers it.
   The default stays v1 until the
   operator calls it.
@@ -3430,3 +3436,26 @@ becomes a Settings row at launch. D40 glyph/unread/Not-reported and lifecycle
 parity, delegation children, complete keyboard/multi-select/entry/session paths,
 the production registry/preference read, and 150/1k/10k motion/host-power gates
 remain P4. This study has not been accepted as the shipped Fleet presentation.
+
+
+### 2026-10-15 — V4.1 P3 accepted; P4 moves into the app
+
+**Gummy leads, all five materials are selectable, and the next review is in the app.**
+The operator accepted the screenshots and asked for P4 to run in parallel.
+Matte, Glazed, Gummy, Acrylic and Anodized come from one shared catalog.
+Material remains independent of theme and Fleet view, with explicit-only
+persistence and independent reset; v1 remains the default view.
+
+Settings must scale through clear grouped destinations, search and stable
+direct links, not an ever-growing Preferences list. A small registry owns
+section identity, grouping, description, keywords and availability; each
+feature module owns its controls and persistence. Existing links remain
+compatible. The design-system type, spacing and Settings palette still apply.
+
+P4 owns actual Fleet routing, interaction/status/delegation parity and
+performance/power evidence. P5 remains the small availability change after
+parity: expose v2 (Preview) in normal builds for hands-on dogfood. This review
+accepts the look, not a claim that P4 or installation has already passed.
+
+Dependency audit: the delegation census rescue is already on master. The
+old branch is not a prerequisite to revive; its deferred work stays deferred.

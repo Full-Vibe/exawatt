@@ -1,7 +1,7 @@
 # 0050 Fleet view is a versioned presentation preference over one shared tile renderer
 
 Date: 2026-10-14
-Status: accepted; ENG-004 V4.1 P2 implemented, renderer integration pending
+Status: accepted; P3 look accepted 2026-10-15, P4 implementation active
 
 **The Fleet board gains a second presentation, Fleet view v2: the
 homepage's agent tiles drawn flat over the board's existing layout, chosen
@@ -45,6 +45,13 @@ Operator naming amendment, 2026-10-14: “Let's call it v1 and v2.”
 Visible choices are **v1** and **v2 (Preview)**; these supersede the
 planning names Dots/Tiles. The default remains v1.
 
+Operator look review, 2026-10-15: the P3 screenshots are accepted; the next
+review is hands-on in the actual app. Gummy leads, and Material is selectable
+in Settings. Support the entire existing bench catalog: Matte, Glazed,
+Gummy, Acrylic and Anodized. This supersedes the three-material launch scope
+and the unresolved Material-row question. Settings must remain easy to navigate
+as future projects add preferences.
+
 1. **Two presentations, one board.** `v1` (today's board) and `v2`
    (tiles) are interchangeable renderers in the `OperationsBoardCanvas` slot.
    Both implement the same props and `OperationsBoardHandle`, read the same
@@ -74,18 +81,24 @@ planning names Dots/Tiles. The default remains v1.
 4. **A presentation preference, not a theme.** Decision `0026` forbids a theme
    from owning motion, layout, density, geometry or camera, so Fleet view lives
    in its own top-level settings record, `presentation: { schemaVersion: 1,
-   fleetView?: 'v1' | 'v2' }`, never inside `appearance`. Its parser is total:
+   fleetView?: 'v1' | 'v2', fleetMaterial?: FleetMaterial }`, never inside `appearance`. Its parser is total:
    an unknown version reads as absent, so an older build never quarantines the
    settings file. Only an explicit choice is stored; absent resolves to the
    runtime default, `v1`, so a later default change moves everyone who
-   never chose.
+   never chose. Material follows the same explicit-only rule, defaults to
+   Gummy, and resets independently of the view. A pure shared catalog owns
+   material ids and labels; Settings does not import Three.js.
 6. **Settings is the flag, and it only offers what works.** No separate
    feature-flag system is built. Until v2 reaches parity (V4.1 P5), the
    v2 option appears only in development builds and on the board bench;
    no released build can select it. At P5 every build offers it, labelled
    Preview, and a stored `v2` from a development build stays honoured.
-   Future material, motion, camera or sound choices are added to this record
-   when users ask for them, not before.
+   Material is now requested and included in P4. Future motion, camera or
+   sound choices enter this record only when requested. Settings uses named
+   destinations, grouped navigation, search and stable direct links. A small
+   section registry owns discoverability metadata and feature modules own
+   their controls; new projects must choose a coherent home rather than append
+   another card to an unbounded Preferences page.
 5. **The product's rules bind v2.** The demand frameloop, the ambient power
    cadence, one motion owner, reduced motion, the layout budgets and instance
    ceilings, the D40 status glyph with its unread corner and the Not-reported
@@ -114,5 +127,5 @@ planning names Dots/Tiles. The default remains v1.
 - How delegated children look on v2 beyond "distinct from their parent,
   connected to it" (operator, 2026-10-14: "I'll probably iterate on that over
   time").
-- Whether Material becomes a Settings row at launch; the board bench review
-  decides.
+- Additional motion, camera or sound preferences beyond the accepted material
+  choice; none are implied by the Settings organization work.
