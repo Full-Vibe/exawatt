@@ -427,3 +427,25 @@ fixture, the hand-off, the Demo switch, no em dash); lint, type-check,
 `theme:check`, `copy:check`, `eval:gallery:labels` against the worktree's
 dev server; 54 screenshots (5 states × 3 themes × 2 widths, plus older,
 opened, card-on and reduced-motion variants) reviewed by eye.
+
+
+### 2026-10-15 — O0 study reviewed; three answers and one folder per Project
+
+The study at `/hud-gallery/start-screen` (`50c9544c`) went to the operator
+with its three questions. His answers, verbatim in the brief:
+
+- **Engine cards**: show installed engines; with none installed, one "Add an
+  engine" card opens the roster. "I don't want to force (or imply / guide)
+  users to install all three things if that's not their cup of tea." A row of
+  install guides is out.
+- **Account invitation**: a fourth row under Try the Demo, for now ("I'd need
+  to see it to give feedback. let's go with 1 for now").
+- **After a one-click open**: the composer above the Project's recent
+  conversations with Continue on each (O3), from the first open.
+- **Several folders per Project**: one folder per Project for now ("I'm
+  leaning toward 2"; he wants to see how other apps do it). Comparators from
+  the 2026-10-14 record: the Codex desktop app ("Add folder", one primary),
+  Zed and multi-root VS Code and Cursor allow several; Claude Desktop and
+  Conductor bind one. `bindings[]` keeps the door open without building it.
+
+The study is revised to these answers before O2/O5 copy anything from it.

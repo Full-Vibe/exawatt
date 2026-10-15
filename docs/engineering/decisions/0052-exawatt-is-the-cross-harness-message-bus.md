@@ -99,13 +99,17 @@ they give them ... we'll likely just be wrong most of the time."
 - **Harness-side holds mirror the launch policy, transparently.** For Claude
   Code, which decides itself whether a peer message is delivered or held
   (`crossSessionInbound`), Exawatt sets the per-launch value from the
-  Project's launch policy: YOLO and Auto-review launches accept, Ask-first
-  launches keep Claude's own hold dialog. The operator: "1 but make it
-  transparent and clear." So the composer's source detail and the Session
-  header state what that launch does with peer messages ("Peer messages:
-  delivered instantly" or "held for your approval, five minutes"), and the
-  Chatter sidebar shows `held` and `expired` as delivery states. This is
-  the user's own policy applied to one more input, not an Exawatt rule.
+  Project's launch policy. The operator: "1 but make it transparent and
+  clear." Corrected by the B0 probe the same day (Claude Code 2.1.300): an
+  outside post is delivered with no dialog in the default and Auto-review
+  permission modes and is HELD only in a YOLO launch, and the `--settings`
+  file Exawatt already injects per launch carries `crossSessionInbound:
+  accept`, which delivers there too. So every Exawatt launch delivers peer
+  messages instantly, the composer's source detail and the Session header
+  say exactly that ("Peer messages: delivered instantly"), and no `held`
+  path exists for Exawatt-origin messages; `held` and `expired` stay in the
+  ledger vocabulary for a harness that reports them. This is the user's own
+  policy applied to one more input, not an Exawatt rule.
 - **Provider-hosted Agents are reachable through their provider's door.**
   A Claude Code cloud session takes a follow-up through
   `claude -p "<text>" --cloud <session-id>`; that is the delivery adapter
