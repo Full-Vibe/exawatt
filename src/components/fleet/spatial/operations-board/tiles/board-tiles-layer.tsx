@@ -166,8 +166,10 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
   const onMotionFrame = useCallback(
     (settling: boolean, working: boolean) => {
       if (ambient.cadence === 'parked') return;
-      if (settling) invalidate();
-      else if (working) ambient.requestFrame(invalidate);
+      // Status churn is ambient too: a stream of state/color handovers must
+      // not bypass the host economy cadence forever. Input wakes immediately;
+      // camera and emergence transitions retain their own refresh-rate clock.
+      if (settling || working) ambient.requestFrame(invalidate);
     },
     [ambient, invalidate]
   );
