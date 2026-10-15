@@ -49,6 +49,7 @@ import { StoryCanvas } from './canvas-boundary';
 import { fleetModel, STATUS_LABEL, type FleetAgent } from './fleet-model';
 import { facingFade, nameShown, nameStyleOf, type NamesId } from './names';
 import { isNarrow, isShort } from './narrow';
+import { columnFollow, followColumn } from './page-curve';
 import { PinnedAgentPanel } from './pinned-agent-panel';
 import { MATERIAL_SOUND } from './press-sounds';
 import {
@@ -119,6 +120,24 @@ const REVEAL_SPAN = 0.45;
 /** The scene steps run across the top of a portrait stage; an open sheet
  *  starts below them. */
 const STEPS_CLEAR = 32;
+
+/** Where the story is, read off the layout: the stage's pinned travel, and
+ *  the progress along it. Progress is pinned travel: zero the moment the
+ *  stage pins under the header, one the moment it unpins, mapped from the
+ *  end of the landing dwell to the start of the last dwell so every pixel
+ *  of scroll moves the scene (operator 2026-10-09: "it absorbs some of the
+ *  scroll before it starts updating the scene"). */
+function storyAt(section: HTMLElement, stage: HTMLElement | null) {
+  const rect = section.getBoundingClientRect();
+  const travel = storyTravel(
+    rect.height,
+    stage?.offsetHeight ?? window.innerHeight
+  );
+  return {
+    travel,
+    progress: progressAt(pinnedAt(rect.top, travel), travel, STAGES.length - 1),
+  };
+}
 
 export function ScrollExperience({
   Visual,
@@ -233,19 +252,7 @@ export function ScrollExperience({
   const sync = useCallback(() => {
     const section = sectionRef.current;
     if (!section) return;
-    const rect = section.getBoundingClientRect();
-    // Progress is pinned travel: zero the moment the stage pins under the
-    // header, one the moment it unpins, mapped from the end of the landing
-    // dwell to the start of the last dwell so every pixel of scroll moves
-    // the scene (operator 2026-10-09: "it absorbs some of the scroll before
-    // it starts updating the scene").
-    const stageHeight = stageRef.current?.offsetHeight ?? window.innerHeight;
-    const travel = storyTravel(rect.height, stageHeight);
-    const progress = progressAt(
-      pinnedAt(rect.top, travel),
-      travel,
-      STAGES.length - 1
-    );
+    const { travel, progress } = storyAt(section, stageRef.current);
     const d = drive.current;
     d.progress = progress;
     d.highlights = highlights;
@@ -316,6 +323,9 @@ export function ScrollExperience({
   }, [insetTop]);
   useEffect(() => {
     let frame = 0;
+    /** Where the reading column shows the story: the scroll, or a paged
+     *  move's own ease (W15p). */
+    const column = columnFollow();
     let push = 0;
     let shownPush = Number.NaN;
     /** The wheel's push as the scene steps show it, and where they show the
@@ -326,7 +336,7 @@ export function ScrollExperience({
      *  held through the move the push asks for. */
     let stepBase = 0;
     let then = performance.now();
-    const tick = () => {
+    const tick = (frameTime: number) => {
       frame = requestAnimationFrame(tick);
       const a = anchor.current;
       const stageEl = stageRef.current;
@@ -335,18 +345,36 @@ export function ScrollExperience({
       // the camera, written to the stage for the reading column and the
       // landing's cue, and into the scene steps, where the next step starts
       // to fill.
-      const now = performance.now();
-      const dt = Math.min(0.05, (now - then) / 1000);
+      // the frame's own time, as the pager's moves are timed, so what moves
+      // with a move steps evenly however late in the frame this runs
+      const now = frameTime;
+      const dt = Math.max(0, Math.min(0.05, (now - then) / 1000));
       then = now;
-      // the wheel's push before the page moves, and the scroll's way into
-      // the hold around a frame (a finger on glass), as the camera reads them
       const d = drive.current;
       const last = STAGES.length - 1;
-      const progress = d.progress;
+      // The type follows the scroll where the page is this instant (a move's
+      // last step may have moved it since the scroll event said), except
+      // through a paged move: the scroll crosses the hold at either end of
+      // one in a blink, and the column glides the whole way on one ease
+      // instead (W15p).
+      const section = sectionRef.current;
+      const columnAt = followColumn(
+        column,
+        section ? storyAt(section, stageEl).progress : d.progress,
+        d.paged?.(now),
+        dt
+      );
+      // the stage's size, read with the scroll before anything is written
+      // this frame, so reading it costs no layout of its own
+      const width = stageEl.clientWidth;
+      const height = stageEl.clientHeight;
+      const stageWidth = Math.max(1, width);
+      // the wheel's push before the page moves, and the scroll's way into
+      // the hold around a frame (a finger on glass), as the type shows them
       const pending = d.intent?.(now) ?? 0;
       const intent = Math.max(
         -1,
-        Math.min(1, pending + scrollIntent(progress, last))
+        Math.min(1, pending + scrollIntent(columnAt, last))
       );
       const pushTarget = Math.sign(intent) * leanCurve(intent);
       // every scene's column follows the scroll and fades as it leaves its
@@ -355,7 +383,7 @@ export function ScrollExperience({
       for (let i = 0; i < panelRefs.current.length; i += 1) {
         const panel = panelRefs.current[i];
         if (!panel) continue;
-        const away = progress - frameProgress(i, last);
+        const away = columnAt - frameProgress(i, last);
         const r = Math.max(0, 1 - Math.abs(away) / REVEAL_SPAN);
         const reveal = (r * r * (3 - 2 * r)).toFixed(3);
         const follow = reducedMotionRef.current
@@ -366,7 +394,17 @@ export function ScrollExperience({
         if (panel.style.getPropertyValue('--follow') !== follow)
           panel.style.setProperty('--follow', follow);
       }
-      push += (pushTarget - push) * (1 - Math.exp(-PUSH_RATE * dt));
+      // a wheel's push holds through the move it asked for until the move's
+      // own way into the next scene passes it, so the type never sinks back
+      // before it goes
+      const moving = d.moving;
+      const pushHeld =
+        moving !== 0 &&
+        Math.sign(push) === moving &&
+        pushTarget * moving >= 0 &&
+        pushTarget * moving < push * moving;
+      if (!pushHeld)
+        push += (pushTarget - push) * (1 - Math.exp(-PUSH_RATE * dt));
       if (Math.abs(push) < 0.002) push = 0;
       if (push !== shownPush) {
         shownPush = push;
@@ -375,27 +413,28 @@ export function ScrollExperience({
       }
       // one measure of narrow for the steps, the card in the column and the
       // sheet, and one of short, where the column's card steps aside too
-      const narrow = isNarrow(stageEl.clientWidth, stageEl.clientHeight);
-      const short = isShort(stageEl.clientHeight);
+      const narrow = isNarrow(width, height);
+      const short = isShort(height);
       // a phone and a short stage keep the Project names to the scenes
       // inside one Project, where they have room
       const cramped = narrow || short;
       // The scene steps show the scroll itself (W15o, operator 2026-10-14:
       // "It doesn't just go one direction, expanding or contracting. It
       // actually kind of glitches and moves up and down"): where the page is
-      // between two scenes, so a one-way scroll fills them one way. Before
-      // a wheel pages, its push starts to fill the next step, held through
-      // the move it asks for until the move has filled past it.
-      const moving = d.moving;
+      // between two scenes, so a one-way scroll fills them one way, and
+      // through a paged move the move's own ease, as the column shows it, so
+      // they fill in one sweep (W15p). Before a wheel pages, its push starts
+      // to fill the next step, held through the move it asks for until the
+      // move has filled past it.
       const holding = moving !== 0 && Math.sign(stepPush) === moving;
       if (!holding) {
         stepPush +=
           (Math.sign(pending) * leanCurve(pending) - stepPush) *
           (1 - Math.exp(-PUSH_RATE * dt));
-        stepBase = nearestFrame(progress, last);
+        stepBase = nearestFrame(columnAt, last);
       }
       if (Math.abs(stepPush) < 0.002) stepPush = 0;
-      const coord = frameCoord(progress, last);
+      const coord = frameCoord(columnAt, last);
       const lean = stepPush * STEP_PUSH;
       const leanTo = Math.max(0, Math.min(last, stepBase + lean));
       const stepTarget =
@@ -423,7 +462,6 @@ export function ScrollExperience({
         if (fill.style.transform !== scale) fill.style.transform = scale;
       }
       const labelTop = labelTopRef.current;
-      const stageWidth = Math.max(1, stageEl.clientWidth);
       const lb = stageBlend(drive.current.rail, undefined, labelBlend);
       const narrowFlag = narrow ? 'true' : 'false';
       if (stageEl.dataset.narrow !== narrowFlag)

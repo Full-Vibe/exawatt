@@ -56,6 +56,11 @@ export interface StoryDrive {
   intent?: (now: number) => number;
   /** The direction of the paged move under way, or 0. */
   moving: -1 | 0 | 1;
+  /** Where the paged move under way has the story for the type that
+   *  follows the scroll, at a time in milliseconds: one ease from the
+   *  move's start to its end (`shownProgress`, W15p). Absent outside a
+   *  paged move. */
+  paged?: (now: number) => number;
 }
 
 /** Say how a gesture is going (W15i). Module functions, so a hook writes
@@ -69,6 +74,13 @@ export function setIntent(
 
 export function setMoving(drive: StoryDrive, moving: -1 | 0 | 1): void {
   drive.moving = moving;
+}
+
+export function setPaged(
+  drive: StoryDrive,
+  paged: ((now: number) => number) | undefined
+): void {
+  drive.paged = paged;
 }
 
 /**

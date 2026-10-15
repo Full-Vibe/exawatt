@@ -28,7 +28,13 @@
  */
 
 import { useEffect, useRef, type RefObject } from 'react';
-import { easeInOutCubic, MOVE_MS, pagedProgress, railMove } from './page-curve';
+import {
+  easeInOutCubic,
+  MOVE_MS,
+  pagedProgress,
+  railMove,
+  shownProgress,
+} from './page-curve';
 import { WheelPager } from './page-gesture';
 import {
   frameProgress,
@@ -49,7 +55,12 @@ import {
   releaseGlide,
   releaseStop,
 } from './touch-pager';
-import { setIntent, setMoving, type StoryDrive } from './visual-contract';
+import {
+  setIntent,
+  setMoving,
+  setPaged,
+  type StoryDrive,
+} from './visual-contract';
 
 export type SnapMode = 'off' | 'soft' | 'page';
 
@@ -202,6 +213,7 @@ export function useSceneScroll({
     /** Stop a move where it is, as a finger catching it does. */
     const cancelRun = () => {
       cancelAnimationFrame(frame);
+      setPaged(story, undefined);
       if (!animating) return;
       animating = false;
       const cancelled = onCancel;
@@ -211,13 +223,16 @@ export function useSceneScroll({
 
     /** Run a move along the scroll, shaped by `shape` (tau to a fraction of
      *  the distance) over `duration`, and say when it lands; `cancelled` is
-     *  what a move stopped short of landing still owes. */
+     *  what a move stopped short of landing still owes. `shown` is where the
+     *  type that follows the scroll shows the move instead, if not the
+     *  scroll itself (tau to story progress). */
     const run = (
       to: number,
       shape: (tau: number) => number,
       landed?: () => void,
       duration = MOVE_MS,
-      cancelled?: () => void
+      cancelled?: () => void,
+      shown?: (tau: number) => number
     ) => {
       cancelRun();
       const from = window.scrollY;
@@ -231,6 +246,10 @@ export function useSceneScroll({
       runTo = to;
       onCancel = cancelled;
       const start = performance.now();
+      if (shown)
+        setPaged(story, now =>
+          shown(Math.max(0, Math.min(1, (now - start) / duration)))
+        );
       const step = (now: number) => {
         const tau = Math.min(1, (now - start) / duration);
         scrollTop(from + (to - from) * shape(tau));
@@ -238,6 +257,7 @@ export function useSceneScroll({
         else {
           animating = false;
           onCancel = undefined;
+          setPaged(story, undefined);
           landed?.();
         }
       };
@@ -258,12 +278,14 @@ export function useSceneScroll({
       if (onFrame && Math.abs(index - current) === 1) {
         const move = railMove(current, index, last);
         const span = move.to - move.from;
+        // the camera on its own curve, the type on one ease (W15p)
         run(
           to,
           tau => (pagedProgress(tau, move) - move.from) / span,
           landed,
           MOVE_MS,
-          cancelled
+          cancelled,
+          tau => shownProgress(tau, move)
         );
       } else run(to, easeInOutCubic, landed, MOVE_MS, cancelled);
     };
@@ -276,6 +298,7 @@ export function useSceneScroll({
       return () => {
         cancelAnimationFrame(frame);
         goToRef.current = () => undefined;
+        setPaged(story, undefined);
       };
     }
 
@@ -594,6 +617,7 @@ export function useSceneScroll({
       goToRef.current = () => undefined;
       setIntent(story, undefined);
       setMoving(story, 0);
+      setPaged(story, undefined);
       window.clearTimeout(settleTimer);
       window.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKey);
