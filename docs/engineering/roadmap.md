@@ -127,7 +127,9 @@ agent; the full packet tables are in the project docs):
 7. **P7 MCP tools and guides** (ENG-029 B2 and B5, about 3 h, after B1).
 
 Wall clock with six agents: one afternoon to an MVP of every ask, P3
-deciding. Collision map: P3 owns `electron/main/bus/` and the env lines in
+deciding. Agent-ready briefs for every packet, verbatim, are in
+`projects/friend-cohort-execution.md`; six bootstrapped worktrees were left
+clean for them on 2026-10-14. Collision map: P3 owns `electron/main/bus/` and the env lines in
 the session manager; P1 owns `electron/main/projects/` and the chooser; P2
 owns the source registry's presentation files; P4 owns the Team rail; P5 owns
 the board's selection panel and zone layer; P6 owns `src/lib/analytics/`,
