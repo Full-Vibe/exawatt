@@ -3262,19 +3262,29 @@ field, the recipient list with each member's name and harness, Send (⌘↩).
 Sending calls the bus with `kind: operator` once per recipient (decision
 `0052`), and the panel shows each recipient's delivery result as it arrives
 (`delivered`, `queued` for a busy harness that queues input, `terminal` for
-the paste path, `undeliverable` with the reason). Replies arrive where they
-always do: in each Agent's own tab and on its tile's status, and in the Team
-chatter rail's thread. The panel offers no synthesis, comparison, vote, or
-count of exchanges; the user's prompt does what the user wants. Stopped
+the paste path, `undeliverable` with the reason). **Input only** (operator,
+2026-10-15): "just think about it as in Starcraft: you just click to select a
+bunch of people and type a quick command to them." Replies show where they
+already show, in each Agent's own tab, on its tile's status, in Team, and in
+the Chatter sidebar; the panel renders no reply, no thread, no synthesis,
+comparison, vote or count. A second copy of the agent-communication view here
+would "duplicate and diverge", and that is the one thing V4.2 must not do. Stopped
 Sessions are listed and marked undeliverable rather than silently dropped.
 The keyboard path owed since V3.2 lands with it: Shift+arrows extend the
 selection, ⌘D focuses the composer, Esc clears.
 
 **Ghost slots.** Each Project zone shows one ghost tile at its next free slot
-(`radius`/`slotPitch` already position it). Click or Enter on it opens the
-composer pre-bound to that zone's Project (zone id → folder), with the
-Project's recommended harness and the usual ⌥↑/↓ switch; Start launches
-there and the new Agent takes the slot. On Tiles (V4.1) the ghost is the
+(`radius`/`slotPitch` already position it). Click or Enter on it opens
+**the** composer, the existing `AgentLauncher`/`AgentComposer` pair,
+pre-bound to that zone's Project (zone id → folder) with the Project's
+recommended harness and the usual ⌥↑/↓ switch; Start launches there and the
+new Agent takes the slot. Operator, 2026-10-15: "I definitely don't want it to
+be divergent from the existing one that we have, the main one. I basically
+want them to be identical in code or at least share design components",
+leaning to popping the existing composer open. So: one composer, one code
+path; whether it renders in place on the board or in the workspace is the
+packet's call on evidence (the launcher is already a controlled visual shell
+with no IPC of its own, so in-place is possible without a second launcher). On Tiles (V4.1) the ghost is the
 homepage's ghost ring drawn by the shared renderer; on Dots it is a dashed
 outline. Two ghosts in a zone when a launch is in flight, never more. A zone
 with no folder binding offers the ghost but the composer says what is missing
@@ -3288,7 +3298,7 @@ model (decision `0024`) and the one layout hold.
 
 **Acceptance.** Draw a box around two Agents of different harnesses, type one
 line, press ⌘↩: both tabs receive it within a second, the panel shows two
-delivery results, the chatter rail lists two operator messages. Click a
+delivery results, the Chatter sidebar lists two operator messages. Click a
 ghost in a zone, type a task, Start: a new Agent appears in that zone within
 the launch budget and in that Project on Agent and Team. Everything reachable
 without a mouse.

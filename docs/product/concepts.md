@@ -111,6 +111,12 @@ Attention never unfolds or reorders a Project.
 
 ## Agent
 
+An Agent has a short, stable, renameable name, assigned at launch as its
+harness and an ordinal (`claude-1`, `codex-2`, `gemini-1`) and shown on its
+tab and tile; that name is its address for the operator and for other Agents
+(`send this to @codex-2`). The descriptive context label beneath it may change
+as the work changes; the name does not, unless the operator renames it.
+
 A durable, addressable worker projected as a coworker from any compatible
 source. An Agent may be backed by OpenClaw, Codex, Claude Code, a custom
 harness, or Demo Mode. The Agent is the thing the operator names, opens,

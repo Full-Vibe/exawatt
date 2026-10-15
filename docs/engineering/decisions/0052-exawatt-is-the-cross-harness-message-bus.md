@@ -56,11 +56,17 @@ they give them ... we'll likely just be wrong most of the time."
    envelope the receiver sees names the sender Session, its harness and the
    Project, stamped by Exawatt, never by the sending model.
 5. **Every message is logged and visible to the operator**, per Project, in
-   the product (the live C1 viewer: a Team rail first), with the full text,
+   the product (the live C1 viewer: a Chatter sidebar first), with the full text,
    both endpoints, the time and the delivery result. The ledger is
    machine-local Exawatt state, not a repo file; ENG-029's repo blackboard
    remains the durable, deliberately curated store (handoffs, decisions), and
    a later export of a thread into `.exawatt/` is allowed, never automatic.
+   Amended 2026-10-15 (operator): chatter is ephemeral by default and the
+   store and transport sit behind one seam, because "we may in fact just plug
+   in some other information architecture system, or communication, or agent
+   hierarchy system, for which Exawatt remains the user interface." The
+   machine-local ledger is the first implementation, not the design; a
+   "save this thread to the project" operator verb is a possible later mile.
 6. **How Agents use the bus is the user's prompt.** Exawatt documents the
    tools it offers (list the Agents it can reach, send a message, say when it
    is blocked) and shows examples in guides. "You two argue and come back when

@@ -165,13 +165,15 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
    others      ──▶ bracketed paste when idle (`terminal`), or `undeliverable` with the reason
                                                               │
                                                               ▼
-                                          viewer: Team rail (C1 live), Fleet selection panel (V4.2 Direct)
+                                          viewer: Chatter sidebar (C1 live), Fleet selection panel (V4.2 Direct)
 ```
 
-- **Directory.** The Exawatt Session id is the address. The display name is
-  the Agent's label (the tab title the operator sees); `@name` resolves within
-  the Project first, then the Workspace; an ambiguous name fails at the sender
-  with the candidates listed. The directory is the existing session store plus
+- **Directory.** The Exawatt Session id is the address; the operator-facing
+  name is the Agent's short stable name (harness plus ordinal at launch,
+  `claude-1`, `codex-2`, renameable anywhere; operator decision 2026-10-15),
+  never the changing context label; `@name` resolves within the Project
+  first, then the Workspace; an ambiguous name fails at the sender with the
+  candidates listed. The directory is the existing session store plus
   the connected-source roster; nothing new is persisted for it.
 - **Envelope.** Exawatt stamps `from` (Session id, name, harness, Project),
   `to`, `at`, `kind` (`agent` or `operator`), and a `reply` hint. The receiving
@@ -199,16 +201,16 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
   never silently truncated mid-record). Machine-local; the repo blackboard
   under `.exawatt/` stays the deliberately curated durable store, and an
   export of one thread into it is an operator verb, never automatic.
-- **Viewer (C1, live).** A second Team rail beside the roadmap rail, docked
+- **Viewer (C1, live).** A second sidebar in Team beside the roadmap panel, docked
   at the same breakpoint and a ⌘-drawer below it: a per-Project list of
   messages newest first (`sender → recipient`, first line, time, delivery
-  glyph), an unread count in the rail tab, and a thread view on click (every
+  glyph), an unread count in the sidebar's tab, and a thread view on click (every
   message between those two Sessions, full text, with "Send as operator" at
   the bottom). That is the zoom-out ("chatter is happening") and the zoom-in
-  ("read and mediate") the operator named, in one rail. Fleet's selection
+  ("read and mediate") the operator named, in one sidebar. Fleet's selection
   panel shows the same unread count on a selected Agent. Nothing summarizes,
   scores or flags a thread.
-- **The operator is a sender.** V4.2 Direct and the rail's "Send as
+- **The operator is a sender.** V4.2 Direct and the sidebar's "Send as
   operator" use the same bus with `kind: operator`, delivered through the
   harness's user-input door (the terminal for Claude Code, since its TUI
   queues typed input while busy; `codex queue` for Codex; the terminal for
@@ -240,7 +242,7 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
 | B0 Probe | Measure on real installs: a node process posting to a Claude session's socket (with and without the token); `codex queue` against an Exawatt-launched interactive Codex tab using the identity Exawatt already learned; bracketed paste into an idle `agy -i` tab; whether Codex `-c mcp_servers.<name>…` and any Antigravity per-launch MCP path accept an Exawatt server. Record verdicts in this doc. | none (report) | each path marked works / degraded / absent with evidence | 1 h |
 | B1 Bus core | Directory, envelope, ledger with size class, delivery adapters (socket, `codex queue`, idle terminal paste, undeliverable), the per-launch env and the `exawatt` executable on `PATH` through the existing injection seam, IPC `bus:send`, `bus:list`, `bus:thread`, push `bus:message`. Tests on fixtures for every delivery result. | `electron/main/bus/*` (new), `electron/main/pty/session-manager.ts` (env and PATH only), `electron/main/preload.ts`, `packages/core/src/bus/*` (new types) | a message from a Claude tab reaches a Codex tab and back, each in the ledger with its delivery result | 3–4 h |
 | B2 MCP tools | An Exawatt MCP server exposing `list_agents`, `send_message`, `read_inbox`; per-launch injection for Claude Code and Codex; declared absent for others. | `electron/main/bus/mcp-server.ts`, launch descriptors in `harness-registry.ts` | the tools appear in a Claude tab's tool list and work | 2 h |
-| B3 Chatter rail | The Team rail: list, unread count, thread, "Send as operator". Demo source supplies authored chatter so the rail renders in the Demo Workspace. | `src/components/team/chatter-rail/*` (new), `expose-overlay.tsx` (mount only), demo fixtures | a real exchange shows in Team within a second of delivery; Demo shows authored chatter | 3 h |
+| B3 Chatter sidebar | The Chatter sidebar: list, unread count, thread, "Send as operator". Demo source supplies authored chatter so the sidebar renders in the Demo Workspace. | `src/components/team/chatter-sidebar/*` (new), `expose-overlay.tsx` (mount only), demo fixtures | a real exchange shows in Team within a second of delivery; Demo shows authored chatter | 3 h |
 | B4 Direct N Agents | ENG-004 V4.2: see the board project doc. Uses `bus:send` with `kind: operator`. | board selection panel, keymap | — | 3 h |
 | B5 Guides | A guide on the two tools and three prompt patterns users have asked for (two reviewers converging, a worker reporting to a lead, a question to a peer), explicitly as examples, not features. | `docs/product/guides/` | — | 1 h |
 
