@@ -340,7 +340,12 @@ async function checkPersistentProjectWorld(page, projectCount) {
       'v2 exposes an unsupported projection toggle'
     );
   }
-  await page.getByRole('button', { name: 'Top' }).click();
+  if (fleetView === 'v1') {
+    await page.getByRole('button', { name: 'Top' }).click();
+  } else {
+    await pauseFollow.click();
+    await resumeFollow.click();
+  }
   await page.waitForTimeout(700);
   const afterRerender = await readViewport();
   check(
@@ -523,10 +528,12 @@ async function checkBoardTools(page) {
       Math.abs(minimapViewport.height - projectedViewport.height) < 0.05,
     'Minimap viewport does not match the fixed-angle board-plane footprint'
   );
-  check(
-    new URL(page.url()).searchParams.get('projection') === 'fixed-angle',
-    'Projection preference was not reflected in the URL'
-  );
+  if (fleetView === 'v1') {
+    check(
+      new URL(page.url()).searchParams.get('projection') === 'fixed-angle',
+      'Projection preference was not reflected in the URL'
+    );
+  }
   await page
     .locator('button[aria-label^="Open Project "]')
     .first()
@@ -542,13 +549,15 @@ async function checkBoardTools(page) {
     path: join(REPORT_DIR, 'desktop-fleet-fixed-angle.png'),
   });
 
-  await page.getByRole('button', { name: 'Top' }).click();
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector('[data-spatial-board]')
-        ?.getAttribute('data-board-projection') === 'top-down'
-  );
+  if (fleetView === 'v1') {
+    await page.getByRole('button', { name: 'Top' }).click();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-spatial-board]')
+          ?.getAttribute('data-board-projection') === 'top-down'
+    );
+  }
   await page
     .getByRole('button', { name: 'Fit Fleet overview', exact: true })
     .click();
@@ -586,13 +595,15 @@ async function checkAgentProjectionPersistence(page) {
     await page.locator('[data-spatial-selection-panel="agent"]').isVisible(),
     'Projection hid the Agent selection panel'
   );
-  await page.getByRole('button', { name: 'Top' }).click();
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector('[data-spatial-board]')
-        ?.getAttribute('data-board-projection') === 'top-down'
-  );
+  if (fleetView === 'v1') {
+    await page.getByRole('button', { name: 'Top' }).click();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-spatial-board]')
+          ?.getAttribute('data-board-projection') === 'top-down'
+    );
+  }
 }
 
 /**
@@ -901,7 +912,10 @@ async function runScenario(browser, scenario) {
         pieces: Number(surface?.getAttribute('data-board-pieces') || 0),
       };
     });
-    check(board.projection === 'top-down', 'Top-down board projection missing');
+    check(
+      board.projection === (fleetView === 'v2' ? 'fixed-angle' : 'top-down'),
+      'Board projection disagrees with its view capabilities'
+    );
     check(board.projects > 0, 'Operations Board rendered no visible Projects');
     check(board.pieces > 0, 'Operations Board rendered no visible pieces');
     result.board = board;
