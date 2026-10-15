@@ -1,9 +1,9 @@
 # 0050 Fleet view is a versioned presentation preference over one shared tile renderer
 
 Date: 2026-10-14
-Status: accepted for planning; implementation pending ENG-004 V4.1
+Status: accepted; ENG-004 V4.1 P2 implemented, renderer integration pending
 
-**The Fleet board gains a second presentation, Tiles (Fleet view v2): the
+**The Fleet board gains a second presentation, Fleet view v2: the
 homepage's agent tiles drawn flat over the board's existing layout, chosen
 in Settings and stored as a versioned presentation preference that is not a
 theme.** The homepage and the product draw tiles with one shared renderer.
@@ -41,19 +41,23 @@ The investigation found the two boards closer than they look:
 
 ## Decision
 
-1. **Two presentations, one board.** `v1` (Dots, today's board) and `v2`
-   (Tiles) are interchangeable renderers in the `OperationsBoardCanvas` slot.
+Operator naming amendment, 2026-10-14: “Let's call it v1 and v2.”
+Visible choices are **v1** and **v2 (Preview)**; these supersede the
+planning names Dots/Tiles. The default remains v1.
+
+1. **Two presentations, one board.** `v1` (today's board) and `v2`
+   (tiles) are interchangeable renderers in the `OperationsBoardCanvas` slot.
    Both implement the same props and `OperationsBoardHandle`, read the same
    `SpatialBoardLayout`, keep the same `data-board-*` attributes and DOM hit
    targets, and obey the same control model (decision `0024`). A presentation
    never owns layout, addresses, selection, routing, or status truth. No
-   second layout is created; Tiles adapts the existing one.
+   second layout is created; v2 adapts the existing one.
    **One switch.** The preference is read in exactly one place, which picks a
    module from a small registry of views (`v1`, `v2`) and mounts it in that
-   slot. Each view is its own lazily loaded chunk, so a Dots user never
-   downloads Tiles. Nothing below the switch branches on the preference: code
+   slot. Each view is its own lazily loaded chunk, so a v1 user never
+   downloads v2. Nothing below the switch branches on the preference: code
    the views share (the orthographic rig, the DOM controls) is a shared
-   import, and where chrome must differ (Tiles may have no Top/Angle choice)
+   import, and where chrome must differ (v2 may have no Top/Angle choice)
    the view's registry entry declares what it supports and the chrome reads
    that declaration, never the preference.
 2. **One tile renderer for the homepage and the product.** The tile shape,
@@ -62,7 +66,7 @@ The investigation found the two boards closer than they look:
    its scroll story, camera rails and concept marks on top. The ground is a
    parameter (`sphere` for the homepage, `plane` for Fleet), so the two cannot
    drift and the homepage stays a picture of the product.
-3. **Flat and isometric first.** Tiles uses the board's existing orthographic
+3. **Flat and isometric first.** v2 uses the board's existing orthographic
    rig at its fixed angle. Ground curvature stays a renderer parameter and
    the camera stays behind the existing handle, so a gentle curve or a
    perspective camera can arrive later as its own slice. Neither is built
@@ -73,30 +77,30 @@ The investigation found the two boards closer than they look:
    fleetView?: 'v1' | 'v2' }`, never inside `appearance`. Its parser is total:
    an unknown version reads as absent, so an older build never quarantines the
    settings file. Only an explicit choice is stored; absent resolves to the
-   runtime default, `v1` (Dots), so a later default change moves everyone who
+   runtime default, `v1`, so a later default change moves everyone who
    never chose.
 6. **Settings is the flag, and it only offers what works.** No separate
-   feature-flag system is built. Until Tiles reaches parity (V4.1 P5), the
-   Tiles option appears only in development builds and on the board bench;
+   feature-flag system is built. Until v2 reaches parity (V4.1 P5), the
+   v2 option appears only in development builds and on the board bench;
    no released build can select it. At P5 every build offers it, labelled
    Preview, and a stored `v2` from a development build stays honoured.
    Future material, motion, camera or sound choices are added to this record
    when users ask for them, not before.
-5. **The product's rules bind Tiles.** The demand frameloop, the ambient power
+5. **The product's rules bind v2.** The demand frameloop, the ambient power
    cadence, one motion owner, reduced motion, the layout budgets and instance
    ceilings, the D40 status glyph with its unread corner and the Not-reported
    reading, and calm attention (needs-you and fault never pulse) all hold.
-   Tiles may tint the agent body with its status, as the homepage does; that
+   v2 may tint the agent body with its status, as the homepage does; that
    amends the design-system rule that status colour lives only in each
-   Agent's light, for Tiles only, when V4.1 ships.
+   Agent's light, for v2 only, when V4.1 ships.
 
 ## Consequences
 
 - The V2.0 restraint against "material spectacle" in the project doc governs
-  Dots. Tiles brings the homepage's material language deliberately and opt-in;
+  v1. v2 brings the homepage's material language deliberately and opt-in;
   every other V2.0 prohibition (orbit controls, planet-like marks, floating
   islands) still holds.
-- Tiles' modules join the board's landing gates (`BOARD_CANVAS_MODULES`), and
+- v2's modules join the board's landing gates (`BOARD_CANVAS_MODULES`), and
   the scale, motion and host-power evals learn to read it.
 - Extracting the renderer must leave the homepage pixel-identical; before and
   after captures at every scene and at phone width are the evidence.
@@ -105,9 +109,9 @@ The investigation found the two boards closer than they look:
 
 ## Not decided here
 
-- Whether Tiles becomes the default. That is the operator's call after living
+- Whether v2 becomes the default. That is the operator's call after living
   with it.
-- How delegated children look on Tiles beyond "distinct from their parent,
+- How delegated children look on v2 beyond "distinct from their parent,
   connected to it" (operator, 2026-10-14: "I'll probably iterate on that over
   time").
 - Whether Material becomes a Settings row at launch; the board bench review

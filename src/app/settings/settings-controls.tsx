@@ -113,3 +113,47 @@ export function SettingSwitch({
     </button>
   );
 }
+
+/** Shared theme/presentation choice: existing Settings chrome-label control. */
+export function SettingsSegmentedControl<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: ReactNode }[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      className="flex shrink-0 self-start rounded-md border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] p-0.5"
+      role="group"
+      aria-label={label}
+    >
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          disabled={disabled}
+          onClick={() => onChange(option.value)}
+          className="h-8 rounded px-3 font-ui text-chrome-label font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] disabled:cursor-not-allowed disabled:opacity-50"
+          style={{
+            color:
+              value === option.value
+                ? 'var(--settings-text)'
+                : 'var(--settings-dim)',
+            background:
+              value === option.value ? 'var(--settings-panel)' : 'transparent',
+          }}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}

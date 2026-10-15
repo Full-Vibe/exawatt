@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import { parsePresentationPreferences } from '@exawatt/core/desktop-bridge';
 import {
   readJsonFile,
   writeJsonFileAtomic,
@@ -331,7 +332,9 @@ const SETTINGS_SCHEMA: {
     const leadIsChoice =
       lead === null ||
       (typeof lead === 'number' &&
-        (USAGE_ALERT_POLICY.leadMinuteChoices as readonly (number | null)[]).includes(lead));
+        (
+          USAGE_ALERT_POLICY.leadMinuteChoices as readonly (number | null)[]
+        ).includes(lead));
     if (
       typeof candidate.attention !== 'boolean' &&
       typeof candidate.dockBadge !== 'boolean' &&
@@ -513,6 +516,7 @@ const SETTINGS_SCHEMA: {
   launchConfigurations: raw =>
     raw === undefined ? undefined : parseLaunchConfigurationPool(raw),
   appearance: raw => parseAppearancePreferences(raw) ?? undefined,
+  presentation: parsePresentationPreferences,
   // Absent means "this device has never stored a choice", which is what lets
   // a signed-in operator adopt an account copy exactly once; a present key,
   // however malformed, is a choice, parsed by the same total parser the
@@ -575,7 +579,12 @@ function validStoredSettings(value: unknown): boolean {
       'letterSpacing',
       'fontStrokeWidth',
     ],
-    notifications: ['attention', 'dockBadge', 'usageAlerts', 'usageAlertLeadMinutes'],
+    notifications: [
+      'attention',
+      'dockBadge',
+      'usageAlerts',
+      'usageAlertLeadMinutes',
+    ],
     power: ['keepAwake'],
     contextLabels: ['hosted'],
     conversationSummaries: ['hosted'],
@@ -598,6 +607,9 @@ function validStoredSettings(value: unknown): boolean {
   for (const key of SETTINGS_KEYS) {
     if (!(key in raw)) continue;
     const parsed = SETTINGS_SCHEMA[key](raw[key]);
+    // Presentation is a forward-compatible optional record (decision 0050).
+    // An older build must not quarantine unrelated settings for a newer view.
+    if (key === 'presentation') continue;
     if (parsed === undefined) return false;
     const fields = knownProperties[key];
     if (!fields) continue;
@@ -862,7 +874,9 @@ export function setUsageAlerts(enabled: boolean): StoredSettings {
   return settings;
 }
 
-export function setUsageAlertLeadMinutes(minutes: number | null): StoredSettings {
+export function setUsageAlertLeadMinutes(
+  minutes: number | null
+): StoredSettings {
   const settings = loadSettings();
   settings.notifications = {
     ...settings.notifications,
@@ -1169,6 +1183,18 @@ export function setKeepAwakePolicy(
   }
   const settings = loadSettings();
   settings.power = { keepAwake: policy };
+  writeSettings(settings);
+  return settings;
+}
+
+/** Only explicit choices are written. Null removes the override. */
+export function setPresentationPreferences(raw: unknown): StoredSettings {
+  const presentation = parsePresentationPreferences(raw);
+  if (raw !== null && !presentation)
+    throw new Error('Invalid presentation preference');
+  const settings = loadSettings();
+  if (presentation?.fleetView) settings.presentation = presentation;
+  else delete settings.presentation;
   writeSettings(settings);
   return settings;
 }

@@ -9,6 +9,7 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
+import { PresentationProvider } from '@/components/presentation/presentation-provider';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { PERMISSIONS } from '@exawatt/core';
 import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
@@ -33,9 +34,11 @@ vi.mock('@/lib/goal-visuals/preference-source', () => ({
 // layout.tsx — the test harness mirrors that mounting context.
 async function renderSettings() {
   const view = render(
-    <GoalVisualPreferenceProvider>
-      <SettingsClient />
-    </GoalVisualPreferenceProvider>
+    <PresentationProvider>
+      <GoalVisualPreferenceProvider>
+        <SettingsClient />
+      </GoalVisualPreferenceProvider>
+    </PresentationProvider>
   );
   await act(async () => undefined);
   return view;
@@ -317,9 +320,7 @@ describe('Settings: the Connect route', () => {
     await renderSettings();
     expect(document.querySelector('[data-no-connect-route]')).toBeNull();
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Connect a server' })
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Connect a server' }));
     await act(async () => undefined);
 
     const dialog = document.querySelector('[data-connect-source]');

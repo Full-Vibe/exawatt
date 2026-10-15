@@ -143,6 +143,7 @@ export interface ExawattSettings<ThemeId extends string = string> {
   };
   launchConfigurations?: LaunchConfigurationPoolV1;
   appearance?: AppearancePreferencesV1<ThemeId>;
+  presentation?: PresentationPreferencesV1;
   /**
    * Per-device keyboard overrides (BUG-044). Absent means this device has
    * never stored a choice, which is not the same as storing none.
@@ -155,4 +156,24 @@ export interface OperatorProfileStateUpdate {
   startedAt?: string;
   lastSyncedAt?: string;
   profileEnabled?: boolean;
+}
+
+/** Device-local presentation choices are independent of theme and data source. */
+export type FleetView = 'v1' | 'v2';
+export interface PresentationPreferencesV1 {
+  schemaVersion: 1;
+  fleetView?: FleetView;
+}
+
+/** Unknown versions and malformed records are absent, never a store failure. */
+export function parsePresentationPreferences(
+  raw: unknown
+): PresentationPreferencesV1 | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const candidate = raw as Record<string, unknown>;
+  if (candidate.schemaVersion !== 1) return undefined;
+  if (candidate.fleetView === undefined) return { schemaVersion: 1 };
+  if (candidate.fleetView !== 'v1' && candidate.fleetView !== 'v2')
+    return undefined;
+  return { schemaVersion: 1, fleetView: candidate.fleetView };
 }

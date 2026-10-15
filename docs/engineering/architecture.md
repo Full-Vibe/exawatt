@@ -254,6 +254,17 @@ PTY/data state, or resetting camera, filters, and selection. Material filters
 and authored opaque fallbacks swap through generated roles; renderer capability
 never changes theme truth.
 
+Fleet presentation is a separate device-local record, never a theme:
+`ExawattSettings.presentation = { schemaVersion: 1, fleetView?: 'v1' | 'v2' }`
+(decision `0050`, ENG-004 V4.1 P2). A total core parser reads unsupported
+versions as absent without quarantining unrelated settings. Only explicit
+choices persist; absent resolves to v1 at runtime. `PresentationProvider`
+uses main-process settings and broadcasts on desktop, and
+`exawatt.presentation.v1` plus storage events on the web, independent of
+Demo/Live. Settings offers v1 and development-only v2 (Preview) until P5;
+a stored development v2 remains valid in every build. P2 installs the
+preference boundary only; P3 previews the renderer on the board bench.
+
 Electron settings are authoritative on desktop; a validated local mirror exists
 only to select generated CSS before hydration, then reconciles immediately.
 BrowserWindow, the CSP launch document, native theme source, and the hydrated

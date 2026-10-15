@@ -110,6 +110,7 @@ import type {
 } from './roadmap';
 import type {
   AppearancePreferencesV1,
+  PresentationPreferencesV1,
   ExawattSettings,
   OperatorProfileStateUpdate,
 } from './settings';
@@ -380,6 +381,10 @@ interface RequestTable {
 
   'settings:get': Call<[], ExawattSettings>;
   'settings:get-safety-controls': Call<[], SafetyControlsRead>;
+  'settings:set-presentation': Call<
+    [presentation: PresentationPreferencesV1 | null],
+    ExawattSettings
+  >;
   'settings:set-appearance': Call<
     [appearance: AppearancePreferencesV1],
     ExawattSettings
@@ -390,7 +395,10 @@ interface RequestTable {
   >;
   'settings:set-dock-badge': Call<[enabled: boolean], ExawattSettings>;
   'settings:set-usage-alerts': Call<[enabled: boolean], ExawattSettings>;
-  'consumption:use-reset': Call<[source: PlanAccountSourceId], PlanResetOutcome>;
+  'consumption:use-reset': Call<
+    [source: PlanAccountSourceId],
+    PlanResetOutcome
+  >;
   'settings:set-usage-alert-lead': Call<
     [minutes: number | null],
     ExawattSettings

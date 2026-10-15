@@ -35,6 +35,7 @@ import {
   setKeyboardShortcutOverrides,
   setKeepAwakePolicy,
   setReentryRecapEnabled,
+  setPresentationPreferences,
   writeSettings,
   type StoredSettings,
 } from './settings-store';
@@ -101,6 +102,7 @@ const FIXTURES: {
     10
   ),
   appearance: DEFAULT_ELECTRON_APPEARANCE_PREFERENCES,
+  presentation: { schemaVersion: 1, fleetView: 'v2' },
   keyboardShortcuts: REBIND,
 };
 
@@ -213,5 +215,39 @@ describe('device-local power preference', () => {
     setKeepAwakePolicy('never');
     expect(() => setKeepAwakePolicy('always' as 'never')).toThrow();
     expect(loadSettings().power).toEqual({ keepAwake: 'never' });
+  });
+});
+
+describe('presentation choices', () => {
+  it('does not persist a default, preserves an explicit v1, and can clear a choice', () => {
+    expect(loadSettings().presentation).toBeUndefined();
+    setPresentationPreferences({ schemaVersion: 1, fleetView: 'v1' });
+    setReentryRecapEnabled(false);
+    expect(loadSettings().presentation?.fleetView).toBe('v1');
+    setPresentationPreferences(null);
+    expect(loadSettings().presentation).toBeUndefined();
+    expect(loadSettings().reentryRecap).toEqual({ enabled: false });
+  });
+  it.each([
+    { schemaVersion: 2, fleetView: 'v3' },
+    { schemaVersion: 1, fleetView: 4 },
+    null,
+  ])(
+    'reads unsupported presentation as absent without quarantining other settings: %j',
+    presentation => {
+      fs.writeFileSync(
+        settingsFile(),
+        JSON.stringify({ terminal: { fontSize: 15 }, presentation })
+      );
+      expect(loadSettings()).toEqual({ terminal: { fontSize: 15 } });
+      expect(fs.existsSync(settingsFile())).toBe(true);
+      setReentryRecapEnabled(false);
+      expect(loadSettings().terminal?.fontSize).toBe(15);
+    }
+  );
+  it('rejects invalid writes without deleting the saved choice', () => {
+    setPresentationPreferences({ schemaVersion: 1, fleetView: 'v2' });
+    expect(() => setPresentationPreferences({ schemaVersion: 2 })).toThrow();
+    expect(loadSettings().presentation?.fleetView).toBe('v2');
   });
 });

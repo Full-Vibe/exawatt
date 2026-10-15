@@ -23,3 +23,5 @@ export {
   safeSourceExtensions,
   isCanonicalSessionRecordField,
 } from '../session-record-extensions';
+
+export { parsePresentationPreferences } from './settings';

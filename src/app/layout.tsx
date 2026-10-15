@@ -15,6 +15,7 @@ import { CommandNavigationProvider } from '@/components/nav/command-navigation-p
 import { ProductFeedbackProvider } from '@/components/feedback/product-feedback-provider';
 import { WorkspaceTenancyProvider } from '@/lib/tenancy/tenancy-provider';
 import { AppearanceProvider } from '@/components/appearance/appearance-provider';
+import { PresentationProvider } from '@/components/presentation/presentation-provider';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { APPEARANCE_BOOTSTRAP_SCRIPT } from '@/lib/appearance/bootstrap-script';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
@@ -102,37 +103,39 @@ export default function RootLayout({
         {/* Outside every provider, so a provider that throws is still heard. */}
         <RendererErrorReporter />
         <AppearanceProvider>
-          <GoalVisualPreferenceProvider>
-            <TooltipProvider>
-              <CommandNavigationProvider>
-                {/* Workspace tenancy (ENG-027 W1) scopes everything below it —
+          <PresentationProvider>
+            <GoalVisualPreferenceProvider>
+              <TooltipProvider>
+                <CommandNavigationProvider>
+                  {/* Workspace tenancy (ENG-027 W1) scopes everything below it —
                   the header switcher and every surface read the active tenant */}
-                <WorkspaceTenancyProvider>
-                  <NoticeLaneProvider>
-                    {/* Feedback sits above ShortcutProvider so the ⌘K palette can
+                  <WorkspaceTenancyProvider>
+                    <NoticeLaneProvider>
+                      {/* Feedback sits above ShortcutProvider so the ⌘K palette can
                   read auth state for its quick-feedback verbs (ENG-025 F1) */}
-                    <ProductFeedbackProvider>
-                      <ShortcutProvider>
-                        {/* Permissions (ENG-045): the first-party primer
+                      <ProductFeedbackProvider>
+                        <ShortcutProvider>
+                          {/* Permissions (ENG-045): the first-party primer
                           before any system prompt, and the registry's status */}
-                        <PermissionsProvider>
-                          <FleetProvider>
-                            <SiteHeader />
-                            <UpdateReadyNotice />
-                            {/* one-time, dismissible, never a gate (ENG-030
+                          <PermissionsProvider>
+                            <FleetProvider>
+                              <SiteHeader />
+                              <UpdateReadyNotice />
+                              {/* one-time, dismissible, never a gate (ENG-030
                           OS0.1); it gates itself on signed-out app surfaces */}
-                            <AccountFirstRunCard />
-                            {children}
-                          </FleetProvider>
-                        </PermissionsProvider>
-                      </ShortcutProvider>
-                    </ProductFeedbackProvider>
-                  </NoticeLaneProvider>
-                </WorkspaceTenancyProvider>
-              </CommandNavigationProvider>
-            </TooltipProvider>
-            <SiteFooter />
-          </GoalVisualPreferenceProvider>
+                              <AccountFirstRunCard />
+                              {children}
+                            </FleetProvider>
+                          </PermissionsProvider>
+                        </ShortcutProvider>
+                      </ProductFeedbackProvider>
+                    </NoticeLaneProvider>
+                  </WorkspaceTenancyProvider>
+                </CommandNavigationProvider>
+              </TooltipProvider>
+              <SiteFooter />
+            </GoalVisualPreferenceProvider>
+          </PresentationProvider>
         </AppearanceProvider>
       </body>
     </html>

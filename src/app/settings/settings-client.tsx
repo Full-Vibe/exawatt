@@ -68,6 +68,7 @@ import {
 } from 'lucide-react';
 import { ConnectSourceDialog } from '@/components/workspace/connect-source-dialog';
 import { AgentSourcesSettings } from './agent-sources-settings';
+import { FleetSettings } from './fleet-settings';
 import { AppearanceSettings } from './appearance-settings';
 import { PrivacySettings } from './privacy-settings';
 import { PermissionsSettings } from './permissions-settings';
@@ -493,6 +494,7 @@ export function SettingsClient() {
               </div>
 
               <AppearanceSettings />
+              <FleetSettings />
               <NotificationsSettings />
               <PowerSettings />
               <PermissionsExplainer />

@@ -21,7 +21,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
+import {
+  SettingsGroup,
+  SettingRow,
+  SettingSwitch,
+  SettingsSegmentedControl,
+} from './settings-controls';
 
 const AIR_THEME_ID = 'exawatt-air-light';
 const CLASSIC_THEME_ID = 'exawatt-classic-dark';
@@ -197,46 +202,27 @@ export function AppearanceSettings() {
         title="Theme mode"
         description="Follow the system appearance or keep one theme selected."
       >
-        <div
-          className="flex shrink-0 self-start rounded-md border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] p-0.5"
-          role="group"
-          aria-label="Theme mode"
-        >
-          {(['auto', 'manual'] as const).map(mode => {
-            const selected = preferences.selection.mode === mode;
-            return (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={selected}
-                disabled={disabled}
-                onClick={() =>
-                  commit(current =>
-                    mode === 'auto'
-                      ? selectAutoThemes(current)
-                      : selectManualTheme(
-                          current,
-                          current.selection.mode === 'manual'
-                            ? current.selection.themeId
-                            : resolved.themeId
-                        )
+        <SettingsSegmentedControl
+          label="Theme mode"
+          value={preferences.selection.mode}
+          options={[
+            { value: 'auto', label: 'Auto' },
+            { value: 'manual', label: 'Manual' },
+          ]}
+          disabled={disabled}
+          onChange={mode =>
+            commit(current =>
+              mode === 'auto'
+                ? selectAutoThemes(current)
+                : selectManualTheme(
+                    current,
+                    current.selection.mode === 'manual'
+                      ? current.selection.themeId
+                      : resolved.themeId
                   )
-                }
-                className="h-8 rounded px-3 font-ui text-chrome-label font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] disabled:cursor-not-allowed disabled:opacity-50"
-                style={{
-                  color: selected
-                    ? 'var(--settings-text)'
-                    : 'var(--settings-dim)',
-                  background: selected
-                    ? 'var(--settings-panel)'
-                    : 'transparent',
-                }}
-              >
-                {mode === 'auto' ? 'Auto' : 'Manual'}
-              </button>
-            );
-          })}
-        </div>
+            )
+          }
+        />
       </SettingRow>
 
       {preferences.selection.mode === 'manual' ? (

@@ -26,6 +26,7 @@ import {
   OUTBOUND_CONTROLS,
   type OutboundControlId,
 } from '@/lib/hosted-features/contract';
+import { PresentationProvider } from '@/components/presentation/presentation-provider';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { PrivacySettings } from './privacy-settings';
 import type {
@@ -154,9 +155,11 @@ function installSettingsBridge(
 
 async function renderPrivacy() {
   const view = render(
-    <GoalVisualPreferenceProvider>
-      <PrivacySettings />
-    </GoalVisualPreferenceProvider>
+    <PresentationProvider>
+      <GoalVisualPreferenceProvider>
+        <PrivacySettings />
+      </GoalVisualPreferenceProvider>
+    </PresentationProvider>
   );
   await act(async () => undefined);
   return view;
@@ -551,9 +554,7 @@ describe('Settings → Privacy', () => {
     installSettingsBridge();
     await renderPrivacy();
 
-    expect(
-      screen.queryByRole('link', { name: 'Privacy policy' })
-    ).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Privacy policy' })).toBeNull();
   });
 
   it('still renders the browser-reachable controls without a desktop bridge', async () => {
