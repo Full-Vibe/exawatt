@@ -9,9 +9,21 @@ work; no paid-cloud implementation is active.
 
 ## Projects and Agents
 
-Use **Open Project** to select a known Project, browse to one folder, or review
-folders from an optional parent-directory import. Opening a Project only changes
-the working context; it does not start a shell or Agent.
+With no Project open, Exawatt shows its Start screen: the agent engines
+installed on this Mac (and **Add an engine** for the rest), **Your projects**,
+**Try the Demo**, and, in builds with accounts, the sign-in invitation.
+**Your projects** lists the folders Claude Code, Codex and Antigravity already
+work in, read from their own records on this Mac, most recent first, with a
+badge for each app that knows the folder. Opening one creates a Project in
+Exawatt and changes nothing in those apps; **Open all recent** opens every
+recent row at once. The new-Agent composer then recommends the engine that
+last worked there, above that folder's recent conversations, each with
+**Continue**.
+
+Use **Open Project** (⌘N) to select a known Project, pick from the same **Your
+projects** list, browse to one folder, or review folders from an optional
+parent-directory import. Opening a Project only changes the working context; it
+does not start a shell or Agent.
 
 Inside a Project, the new-Agent page stays deliberately small: an optional first
 task, two-to-four whole Agent setup cards, **More**, and **Start**. Each card is

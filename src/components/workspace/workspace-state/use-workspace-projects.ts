@@ -137,15 +137,19 @@ export function useWorkspaceProjects({
   );
 
   /** Open a Project independently of Sessions. Main-process resolution keeps
-   *  git worktrees grouped under the same durable Project identity. */
-  const openProject = useCallback(
-    async (dir: string, opened?: ProjectOpenedContext): Promise<boolean> => {
+   *  git worktrees grouped under the same durable Project identity. Answers
+   *  the Project's canonical folder, or null when nothing opened. */
+  const openProjectAt = useCallback(
+    async (
+      dir: string,
+      opened?: ProjectOpenedContext
+    ): Promise<string | null> => {
       const claim = operatorPosition.claimHere();
       const result = await window.electron?.projects?.resolve(dir);
-      if (!result) return false;
+      if (!result) return null;
       if (!result.ok) {
         setError(result.error);
-        return false;
+        return null;
       }
       const canonicalDir = result.projectDir;
       const mayMove = claim.stillCurrent();
@@ -164,9 +168,15 @@ export function useWorkspaceProjects({
         { rootPath: canonicalDir, name: result.projectName },
         opened
       );
-      return true;
+      return canonicalDir;
     },
     [moveOperator, setError, setLastUsedDir, setProjects, syncProjectIdentity]
+  );
+
+  const openProject = useCallback(
+    async (dir: string, opened?: ProjectOpenedContext): Promise<boolean> =>
+      (await openProjectAt(dir, opened)) !== null,
+    [openProjectAt]
   );
 
   /**
@@ -281,11 +291,13 @@ export function useWorkspaceProjects({
   );
 
   /** Curated import adds inert Projects in one state transition. Every path is
-   *  resolved again at the trust boundary even when it came from our scanner. */
-  const importProjects = useCallback(
-    async (directories: string[]): Promise<boolean> => {
+   *  resolved again at the trust boundary even when it came from our scanner.
+   *  Answers each requested folder's canonical Project folder, in order, or
+   *  null when nothing opened. */
+  const importProjectsAt = useCallback(
+    async (directories: string[]): Promise<Map<string, string> | null> => {
       const unique = [...new Set(directories)];
-      if (unique.length === 0) return false;
+      if (unique.length === 0) return null;
       const claim = operatorPosition.claimHere();
       const resolved = await Promise.all(
         unique.map(directory => window.electron?.projects?.resolve(directory))
@@ -298,13 +310,13 @@ export function useWorkspaceProjects({
             ? failed.error
             : 'Project discovery is unavailable in this app build.'
         );
-        return false;
+        return null;
       }
       const refs = resolved.filter(
         (result): result is Extract<NonNullable<typeof result>, { ok: true }> =>
           !!result && result.ok
       );
-      if (refs.length === 0) return false;
+      if (refs.length === 0) return null;
       const mayMove = claim.stillCurrent();
       setProjects(prev =>
         openProjectGroups(
@@ -322,9 +334,15 @@ export function useWorkspaceProjects({
           { source: 'import' }
         );
       }
-      return true;
+      return new Map(unique.map((dir, index) => [dir, refs[index].projectDir]));
     },
     [moveOperator, setError, setLastUsedDir, setProjects, syncProjectIdentity]
+  );
+
+  const importProjects = useCallback(
+    async (directories: string[]): Promise<boolean> =>
+      (await importProjectsAt(directories)) !== null,
+    [importProjectsAt]
   );
 
   /**
@@ -398,9 +416,11 @@ export function useWorkspaceProjects({
     reconcileWithRegistry,
     syncProjectOrder,
     openProject,
+    openProjectAt,
     openRemoteAgent,
     openContextProject,
     importProjects,
+    importProjectsAt,
     closeProject,
     renameProject,
     setProjectColor,

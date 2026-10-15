@@ -1170,7 +1170,9 @@ Built:
   reads `unknown`. The registry declares and explains and enforces nothing;
   macOS enforces the grant
 - inert persisted Projects independent of Session tabs; a curated Project
-  chooser with reviewed parent-folder import; and a lightweight task + Launch
+  chooser with reviewed parent-folder import; the Start screen (ENG-046) as
+  the empty-Project state, whose "Your projects" (shared with the chooser)
+  opens harness-store suggestions through the same verb Browse uses; and a lightweight task + Launch
   Configuration ribbon + Start composer. Its selected configuration carries an
   exact configured source/model/effort identity; Customize carries
   source-agnostic launch-permission, worktree/branch, roadmap, and naming

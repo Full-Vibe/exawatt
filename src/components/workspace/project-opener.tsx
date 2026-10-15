@@ -22,21 +22,19 @@ import {
   type ProjectLibraryEntry,
   type WorkspaceProjectSummary,
 } from './project-library';
-import {
-  ArrowLeft,
-  Cable,
-  Check,
-  FolderInput,
-  FolderOpen,
-  Search,
-} from 'lucide-react';
+import { ArrowLeft, Check, Search } from 'lucide-react';
 import {
   ConnectSourceDialog,
   type ConnectSourceResult,
 } from './connect-source-dialog';
 import type { ProjectImportCandidate } from '@exawatt/core/desktop-bridge';
+import { ProjectCard, ProjectRoutes } from './project-routes';
+import {
+  YourProjects,
+  type SuggestionOpen,
+} from './start-screen/your-projects';
 
-type ProjectOpenerRoute = 'projects' | 'connect';
+type ProjectOpenerRoute = 'projects' | 'connect' | 'import';
 
 /** Where the listed Projects came from, as the registry answered. */
 type RegistryPosition =
@@ -67,24 +65,35 @@ const REGISTRY_LABEL: Record<RegistryPosition, string | null> = {
 export function useProjectOpenerState(): {
   open: boolean;
   initialRoute: ProjectOpenerRoute;
+  /** The folder an `import` summons reviews, already picked by the caller. */
+  importDirectory: string | null;
   onOpenChange: (open: boolean) => void;
-  /** Open the chooser on a route. The default is the Project routes. */
-  summon: (route?: ProjectOpenerRoute) => void;
+  /** Open the chooser on a route. The default is the Project routes. An
+   *  `import` summons carries the folder its caller already picked (the
+   *  Start screen picks first, so no dialog flashes before the OS picker). */
+  summon: (route?: ProjectOpenerRoute, importDirectory?: string) => void;
 } {
-  const [position, setPosition] = useState<'closed' | ProjectOpenerRoute>(
-    'closed'
-  );
+  const [position, setPosition] = useState<
+    | { route: 'closed' }
+    | { route: ProjectOpenerRoute; importDirectory: string | null }
+  >({ route: 'closed' });
   const summon = useCallback(
-    (route: ProjectOpenerRoute = 'projects') => setPosition(route),
+    (route: ProjectOpenerRoute = 'projects', importDirectory?: string) =>
+      setPosition({ route, importDirectory: importDirectory ?? null }),
     []
   );
   const onOpenChange = useCallback(
-    (next: boolean) => setPosition(next ? 'projects' : 'closed'),
+    (next: boolean) =>
+      setPosition(
+        next ? { route: 'projects', importDirectory: null } : { route: 'closed' }
+      ),
     []
   );
   return {
-    open: position !== 'closed',
-    initialRoute: position === 'closed' ? 'projects' : position,
+    open: position.route !== 'closed',
+    initialRoute: position.route === 'closed' ? 'projects' : position.route,
+    importDirectory:
+      position.route === 'closed' ? null : position.importDirectory,
     onOpenChange,
     summon,
   };
@@ -98,7 +107,10 @@ export function ProjectOpener({
   onImportProjects,
   onOpenContextProject,
   onAgentSourceConnected,
+  onOpenSuggestion,
+  onOpenAllSuggestions,
   initialRoute = 'projects',
+  importDirectory = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -116,12 +128,18 @@ export function ProjectOpener({
   }) => void;
   /** ENG-010 C2: a saved source hands back its mapping and the Agent to open. */
   onAgentSourceConnected?: (result: ConnectSourceResult) => void;
+  /** ENG-046: open a harness-store suggestion, exactly as Browse would. */
+  onOpenSuggestion?: (open: SuggestionOpen) => Promise<boolean>;
+  /** ENG-046: "Open all recent". */
+  onOpenAllSuggestions?: (opens: SuggestionOpen[]) => Promise<boolean>;
   /**
    * Which route the chooser lands on. The File menu's Connect command enters
    * here rather than opening a second door to the same place, so cancelling
    * still returns to the chooser the route belongs to.
    */
   initialRoute?: ProjectOpenerRoute;
+  /** The folder an `import` route reviews, picked before the chooser opened. */
+  importDirectory?: string | null;
 }) {
   const [synced, setSynced] = useState<
     Awaited<ReturnType<typeof listProjects>>
@@ -141,6 +159,7 @@ export function ProjectOpener({
     'browse' | 'import' | 'locate' | null
   >(null);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [suggestionsListed, setSuggestionsListed] = useState(0);
   // Connecting runs a tunnel and a Gateway handshake from the main process,
   // so outside the desktop app the route says so instead of failing later.
   const [connectSupported, setConnectSupported] = useState(true);
@@ -190,6 +209,18 @@ export function ProjectOpener({
   const library = useMemo(
     () => mergeProjectLibrary(synced, workspaceProjects, recents),
     [synced, workspaceProjects, recents]
+  );
+
+  // A suggestion for a folder the library already lists would be the same
+  // Project twice; the library row is the one that carries its identity.
+  const libraryPaths = useMemo(
+    () =>
+      new Set(
+        library
+          .map(project => project.rootPath)
+          .filter((path): path is string => path !== null)
+      ),
+    [library]
   );
 
   const projects = useMemo(() => {
@@ -371,10 +402,16 @@ export function ProjectOpener({
       finishDirectoryPick(true);
       return;
     }
+    await reviewImport(pick.path);
+    finishDirectoryPick(true);
+  };
+
+  /** Scan a picked folder and put its Projects up for review. */
+  const reviewImport = async (directory: string) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await window.electron?.projects?.scanDirectory(pick.path);
+      const result = await window.electron?.projects?.scanDirectory(directory);
       if (!result) return;
       if (!result.ok) {
         setError(result.error);
@@ -397,9 +434,16 @@ export function ProjectOpener({
       );
     } finally {
       setLoading(false);
-      finishDirectoryPick(true);
     }
   };
+
+  // An import summoned with its folder already picked goes straight to the
+  // review, the way a Browse-then-Import inside the chooser arrives there.
+  useEffect(() => {
+    if (!open || initialRoute !== 'import' || !importDirectory) return;
+    // Only on the transition into an open chooser with a folder to review.
+    void reviewImport(importDirectory);
+  }, [open, initialRoute, importDirectory]);
 
   const finishImport = async () => {
     if (selected.size === 0) return;
@@ -432,7 +476,7 @@ export function ProjectOpener({
             releaseNativePicker.current = null;
             release?.();
           }}
-          className="max-h-[min(760px,calc(100vh-3rem))] w-[min(820px,calc(100vw-2rem))] max-w-none overflow-hidden rounded-md border p-0"
+          className="flex max-h-[min(760px,calc(100vh-3rem))] w-[min(820px,calc(100vw-2rem))] max-w-none flex-col overflow-hidden rounded-md border p-0 sm:max-w-none"
           style={{
             background: HUD.bg.deep,
             borderColor: HUD.strokeSoft,
@@ -574,6 +618,25 @@ export function ProjectOpener({
                 </label>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {onOpenSuggestion && onOpenAllSuggestions && (
+                  <YourProjects
+                    headingLevel="h3"
+                    hiddenPaths={libraryPaths}
+                    query={query}
+                    divided={loading || projects.length > 0}
+                    onListedChange={setSuggestionsListed}
+                    onOpen={async open => {
+                      const opened = await onOpenSuggestion(open);
+                      if (opened) onOpenChange(false);
+                      return opened;
+                    }}
+                    onOpenAll={async opens => {
+                      const opened = await onOpenAllSuggestions(opens);
+                      if (opened) onOpenChange(false);
+                      return opened;
+                    }}
+                  />
+                )}
                 {loading ? (
                   <p
                     className="py-12 text-center font-mono text-sm"
@@ -582,50 +645,37 @@ export function ProjectOpener({
                     Loading Projects...
                   </p>
                 ) : projects.length === 0 ? (
-                  <p
-                    className="py-12 text-center font-mono text-sm"
-                    style={{ color: HUD.textDim }}
-                  >
-                    {query ? 'No matching Projects.' : 'No Projects yet.'}
-                  </p>
+                  // Suggestions above are the Projects there are to open;
+                  // "No Projects yet" under them would contradict the rows.
+                  suggestionsListed > 0 ? null : (
+                    <p
+                      className="py-12 text-center font-mono text-sm"
+                      style={{ color: HUD.textDim }}
+                    >
+                      {query ? 'No matching Projects.' : 'No Projects yet.'}
+                    </p>
+                  )
                 ) : (
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {projects.map(project => (
-                      <button
+                      <ProjectCard
                         key={project.dir}
-                        type="button"
-                        onClick={() => void choose(project)}
-                        className="group min-w-0 rounded-md border p-3 text-left outline-none transition-colors hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                        style={{
-                          borderColor: HUD.strokeFaint,
-                          background: HUD.surfaceInputSoft,
-                        }}
-                      >
-                        <span
-                          className="mb-5 block h-5 w-[3px] rounded-full"
-                          style={{
-                            background: project.color ?? HUD.textDim,
-                            boxShadow: `0 0 8px ${withThemeAlpha(project.color ?? HUD.textDim, 0.4)}`,
-                          }}
-                        />
-                        <span
-                          className="block truncate text-sm font-medium"
-                          style={{ color: HUD.text }}
-                        >
-                          {project.name}
-                        </span>
-                        <span
-                          className="mt-1 block truncate font-mono text-chrome-micro"
-                          style={{ color: HUD.textDim }}
-                        >
-                          {project.remoteHome
-                            ? 'Connected servers'
-                            : (project.rootPath ?? 'No folder')}
-                          {/* Beside an account's Projects, one kept on this
-                            machine says so: it does not sync (BUG-191). */}
-                          {registry === 'hosted' && project.local && ' · Local'}
-                        </span>
-                      </button>
+                        name={project.name}
+                        color={project.color}
+                        onOpen={() => void choose(project)}
+                        detail={
+                          <>
+                            {project.remoteHome
+                              ? 'Connected servers'
+                              : (project.rootPath ?? 'No folder')}
+                            {/* Beside an account's Projects, one kept on this
+                              machine says so: it does not sync (BUG-191). */}
+                            {registry === 'hosted' &&
+                              project.local &&
+                              ' · Local'}
+                          </>
+                        }
+                      />
                     ))}
                   </div>
                 )}
@@ -640,67 +690,26 @@ export function ProjectOpener({
                 )}
               </div>
               <div
-                className="flex items-center gap-2 border-t px-4 py-3"
+                className="border-t px-4 py-3"
                 style={{ borderColor: HUD.strokeFaint }}
               >
-                <button
-                  type="button"
+                <ProjectRoutes
                   disabled={nativePicker !== null}
-                  onClick={() => void browse()}
-                  className="inline-flex h-8 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-hud-fill disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                  style={{
-                    color: HUD.text,
-                    borderColor: HUD.strokeSoft,
-                  }}
-                >
-                  <FolderOpen className="h-3.5 w-3.5" /> Browse Folder
-                </button>
-                <button
-                  type="button"
-                  disabled={nativePicker !== null}
-                  onClick={() => void beginImport()}
-                  className="inline-flex h-8 items-center gap-2 rounded px-3 font-mono text-xs outline-none hover:bg-hud-fill disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                  style={{ color: HUD.textDim }}
-                >
-                  <FolderInput className="h-3.5 w-3.5" /> Import Folder
-                </button>
-                {/* The third route this chooser offers (ENG-010 C2): a Project
-                  comes from disk, an Agent can come from a server the operator
-                  already runs. It carries Browse Folder's weight because it is
-                  a peer way in, not a footnote under the Project routes. */}
-                <span
-                  aria-hidden
-                  className="mx-1 h-5 w-px"
-                  style={{ background: HUD.strokeFaint }}
+                  connectSupported={connectSupported}
+                  onBrowse={() => void browse()}
+                  onImport={() => void beginImport()}
+                  onConnect={beginConnect}
+                  trailing={
+                    REGISTRY_LABEL[registry] && (
+                      <span
+                        className="ml-auto font-mono text-chrome-micro"
+                        style={{ color: HUD.textDim }}
+                      >
+                        {REGISTRY_LABEL[registry]}
+                      </span>
+                    )
+                  }
                 />
-                <button
-                  type="button"
-                  disabled={nativePicker !== null || !connectSupported}
-                  onClick={beginConnect}
-                  className="inline-flex h-8 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-hud-fill disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                  style={{
-                    color: HUD.text,
-                    borderColor: HUD.strokeSoft,
-                  }}
-                >
-                  <Cable className="h-3.5 w-3.5" /> Connect a server…
-                </button>
-                {!connectSupported && (
-                  <span
-                    className="font-mono text-chrome-micro"
-                    style={{ color: HUD.textDim }}
-                  >
-                    Desktop app only
-                  </span>
-                )}
-                {REGISTRY_LABEL[registry] && (
-                  <span
-                    className="ml-auto font-mono text-chrome-micro"
-                    style={{ color: HUD.textDim }}
-                  >
-                    {REGISTRY_LABEL[registry]}
-                  </span>
-                )}
               </div>
             </>
           )}

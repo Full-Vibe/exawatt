@@ -77,6 +77,26 @@ describe('the transcript directories are the ones actually read', () => {
   });
 });
 
+describe('the project suggestions disclose every store they read', () => {
+  it('names each harness store the Start screen reads (ENG-046)', () => {
+    // `electron/main/projects/harness-project-suggestions.ts` reads these
+    // beside the transcript roots above; a store added there is added here.
+    render(<MachineDisclosures distribution={COMMUNITY_DISTRIBUTION} />);
+    for (const store of [
+      '~/.claude.json',
+      '~/.codex/config.toml',
+      '~/.gemini/config/projects',
+      '~/.gemini/antigravity-cli',
+    ]) {
+      expect(screen.getByText(store)).toBeVisible();
+    }
+    expect(
+      screen.getByText('It lists the folders your agents already know')
+        .nextElementSibling?.textContent
+    ).toContain('never writes to them');
+  });
+});
+
 describe('a distribution with hosted capabilities discloses them', () => {
   it('describes the excerpts, the project sync, and the switches', () => {
     render(<MachineDisclosures distribution={HOSTED} version="1.2.3" />);

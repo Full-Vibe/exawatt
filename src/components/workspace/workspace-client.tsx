@@ -57,6 +57,8 @@ import {
 import { navHistory, type NavLocation } from '@/components/nav/nav-history';
 import { operatorPosition } from '@/components/nav/operator-position';
 import { ProjectOpener, useProjectOpenerState } from './project-opener';
+import { StartScreen } from './start-screen/start-screen';
+import type { SuggestionOpen } from './start-screen/your-projects';
 import { ExposeOverlay, type TeamSelection } from './expose-overlay';
 import { teamViewProjects } from './team-order';
 import { useTeamOrderPreference } from './team-order-preference';
@@ -161,6 +163,7 @@ import {
   loadAgentModelCatalog,
   permissionModeFor,
   recommendLaunchableAgentSource,
+  type AgentSourceId,
 } from './agent-sources';
 import {
   availableSessionCloneTargets,
@@ -404,9 +407,11 @@ export function WorkspaceClient() {
     cloneSession,
     launchHere,
     openProject,
+    openProjectAt,
     openContextProject,
     openRemoteAgent,
     importProjects,
+    importProjectsAt,
     closeProject,
     closeTab,
     createDraftTab,
@@ -434,6 +439,75 @@ export function WorkspaceClient() {
     renameProject,
     setProjectColor,
   } = useWorkspaceState({ getInitialSize, sessionVisible: !overviewOpen });
+
+  /**
+   * ENG-046: the engine each Project opened from a harness suggestion
+   * recommends, keyed by its canonical folder. Session-only by design: it
+   * seeds the empty Project's composer (O3), and once the operator starts or
+   * picks an engine the composer's own memory takes over.
+   */
+  const [suggestedSources, setSuggestedSources] = useState<
+    Record<string, AgentSourceId>
+  >({});
+  const rememberSuggestedSources = useCallback(
+    (entries: Array<[dir: string, source: AgentSourceId | undefined]>) => {
+      const known = entries.filter(
+        (entry): entry is [string, AgentSourceId] => entry[1] !== undefined
+      );
+      if (known.length === 0) return;
+      setSuggestedSources(current => ({
+        ...current,
+        ...Object.fromEntries(known),
+      }));
+    },
+    []
+  );
+  // Opening a suggestion is Browse with the folder already chosen: the same
+  // verb, so it makes exactly the Project Browse would have (inert, D14).
+  // TODO(ENG-047 F1): emit `project_opened` with {source: 'suggested'} once
+  // the funnel's allowlisted event and the registry verbs' `source` land.
+  const openSuggestion = useCallback(
+    async ({ suggestion, source }: SuggestionOpen): Promise<boolean> => {
+      const dir = await openProjectAt(suggestion.path);
+      if (dir === null) return false;
+      rememberSuggestedSources([[dir, source]]);
+      return true;
+    },
+    [openProjectAt, rememberSuggestedSources]
+  );
+  // "Open all recent": one explicit gesture over the listed rows, through
+  // the same verb Import's review finishes with.
+  const openAllSuggestions = useCallback(
+    async (opens: SuggestionOpen[]): Promise<boolean> => {
+      const dirs = await importProjectsAt(
+        opens.map(({ suggestion }) => suggestion.path)
+      );
+      if (dirs === null) return false;
+      rememberSuggestedSources(
+        opens.map(({ suggestion, source }) => [
+          dirs.get(suggestion.path) ?? suggestion.path,
+          source,
+        ])
+      );
+      return true;
+    },
+    [importProjectsAt, rememberSuggestedSources]
+  );
+  // The Start screen's Pick a folder routes. No modal is open there, so the
+  // native picker opens directly; Import hands its picked folder to the
+  // chooser's review, and Connect is the chooser's own route.
+  const browseFromStart = useCallback(async () => {
+    const dir = await window.electron?.dialog
+      ?.openDirectory('Open Project')
+      .catch(() => null);
+    if (dir) await openProject(dir);
+  }, [openProject]);
+  const importFromStart = useCallback(async () => {
+    const dir = await window.electron?.dialog
+      ?.openDirectory('Choose a folder containing Projects')
+      .catch(() => null);
+    if (dir) summonProjectOpener('import', dir);
+  }, [summonProjectOpener]);
   /**
    * The active tab, told apart by kind.
    *
@@ -2282,25 +2356,16 @@ export function WorkspaceClient() {
               }`}
             >
               {!activeProject ? (
-                <div className="flex h-full flex-col items-center justify-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => summonProjectOpener()}
-                    className="inline-flex h-10 items-center gap-2 rounded border px-4 font-mono text-sm outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                    style={{
-                      color: HUD.text,
-                      borderColor: HUD.strokeSoft,
-                    }}
-                  >
-                    <FolderOpen className="h-4 w-4" /> Open Project
-                  </button>
-                  <p
-                    className="max-w-sm text-center font-mono text-chrome-label"
-                    style={{ color: HUD.textDim }}
-                  >
-                    Choose the Project where you want to start or resume work.
-                  </p>
-                </div>
+                <StartScreen
+                  connectSupported={
+                    inElectron && !!window.electron?.connectedSources
+                  }
+                  onOpenSuggestion={openSuggestion}
+                  onOpenAllSuggestions={openAllSuggestions}
+                  onBrowse={() => void browseFromStart()}
+                  onImport={() => void importFromStart()}
+                  onConnect={() => summonProjectOpener('connect')}
+                />
               ) : (
                 <>
                   {/* every tab renders through ONE per-state pane path
@@ -2468,7 +2533,12 @@ export function WorkspaceClient() {
                             composerTab?.draftSource &&
                             isAgentSourceId(composerTab.draftSource)
                               ? composerTab.draftSource
-                              : undefined
+                              : // ENG-046 O3: an empty Project opened from a
+                                // suggestion recommends the harness that
+                                // knows its folder.
+                                !composerTab
+                                ? suggestedSources[composerProject.dir]
+                                : undefined
                           }
                           initialTask={composerTab?.draftTask ?? undefined}
                           initialModel={composerTab?.draftModel ?? undefined}
@@ -2575,6 +2645,9 @@ export function WorkspaceClient() {
       <ProjectOpener
         open={projectOpener.open}
         initialRoute={projectOpener.initialRoute}
+        importDirectory={projectOpener.importDirectory}
+        onOpenSuggestion={openSuggestion}
+        onOpenAllSuggestions={openAllSuggestions}
         onOpenChange={projectOpener.onOpenChange}
         workspaceProjects={projects}
         onOpenProject={openProject}

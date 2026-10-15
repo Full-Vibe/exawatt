@@ -438,6 +438,18 @@ export const RecentConversations = forwardRef<
                       : `in ${meta.label}`}
                   </span>
                 </span>
+                {/* The row's verb, visible (ENG-046 O3: "Continue on each").
+                  The accessible name already leads with the action. */}
+                <span
+                  aria-hidden="true"
+                  data-conversation-continue
+                  className="mt-1 inline-flex shrink-0 items-center rounded border px-2 py-0.5 font-mono text-chrome-micro transition-colors group-hover:border-hud-cyan/30 group-hover:text-hud-text motion-reduce:transition-none @max-[560px]:hidden"
+                  style={{ borderColor: HUD.strokeFaint, color: HUD.textDim }}
+                >
+                  {reopensExawatt && !conversation.providerSessionId
+                    ? 'Reopen'
+                    : 'Continue'}
+                </span>
               </button>
               <button
                 type="button"

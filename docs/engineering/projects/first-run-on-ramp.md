@@ -509,3 +509,63 @@ in-place open makes it fail.
 
 Boy Scout: the catalog's Codex roots now honor `CODEX_HOME` through the
 same `codexHome()` the suggestions use.
+
+### 2026-10-15 — O2, O3, O5 landed: the Start screen
+
+**The empty-Project state is the Start screen** (`<sha pending>`), replacing
+the lone Open Project button. It is the study as the operator's review amended it, built
+from production parts and arranged once
+(`src/components/workspace/start-screen/`):
+
+1. **Agents you can run**: installed engines only, each rendered by P2's
+   shared `SourceCard` (`src/components/agent-sources/source-card.tsx`,
+   consumed, not copied) with its one next step and Recheck when it is not
+   ready; one **Add an engine** card opens the roster in Settings. With
+   nothing installed that card takes the row and names every engine: it is
+   the O5 remediation. Nothing installs on the user's behalf.
+2. **Your projects**: the O1 suggestions with a badge per harness, relative
+   last activity, Show older, Open all recent and a refresh; one line under
+   the title, derived from the rows, says which apps the rows came from and
+   that opening one changes nothing in them. An unreadable store is its own
+   line beside the rows the other stores still give. With no rows the
+   section is **Pick a folder** with Browse, Import and Connect.
+3. **Try the Demo**: the tenancy switch the account menu uses.
+4. **The account invitation** as a row (`AccountInvitationRow`). While the
+   row is mounted the floating card steps aside, and one dismissal retires
+   both (the dismissal is now one shared store).
+
+**One component, two surfaces.** `YourProjects` renders on the Start screen
+and as the ⌘N chooser's first section (suggestions the library already
+lists are hidden, and "No Projects yet" is not printed under rows). The
+chooser's Project card and its Browse / Import / Connect footer are now
+controllable components (`project-routes.tsx`) that both surfaces render.
+Opening a row calls `openProjectAt`, the verb Browse calls, so it creates
+exactly Browse's Project; Open all recent calls `importProjectsAt`, the verb
+Import's review finishes with. Import from the Start screen picks the folder
+first and hands it to the chooser's review (a new `import` route), so no
+dialog flashes before the OS picker.
+
+**O3.** The opened Project's composer is focused with the most recent
+harness that knows the folder and is installed here (never a harness that
+is not), held for the session only; the D31 recent conversations sit under
+it and each now shows **Continue** beside Start fresh.
+
+**Boy Scout.** The chooser rendered at the shared dialog's 512px cap rather
+than its authored 820px (`sm:max-w-lg` survived the `max-w-none` override),
+and its grid layout let a long list clip the footer; it now lays out as a
+column at its authored width.
+
+**Not done.** `project_opened` with `source: 'suggested'` waits on ENG-047
+F1 (a TODO names it at the call site). The getting-started guide, the
+architecture doc and the download page's machine disclosures (every store
+the suggestions read) are updated; the `/hud-gallery/start-screen` study is
+retired with its index entry.
+
+Verified: contract tests for the Start screen, the shared section, the pure
+derivations, the invitation hand-off and the disclosure; screenshots of
+every state (no harness, signed out, ready with projects, ready with none,
+an unreadable store, the chooser, the hand-off, the Demo switch) in light
+and dark at desktop and 560px; and the real Electron app on a fresh
+userData against the operator's real stores (fixture CLIs on PATH): 9
+recent rows and 23 in all, the first painted 0.24 s after the Start screen,
+no diagnostic.

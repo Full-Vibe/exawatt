@@ -613,13 +613,6 @@ export default function HudGallery() {
                   Open the one-step Connect study →
                 </a>{' '}
                 <a
-                  href="/hud-gallery/start-screen"
-                  className="underline underline-offset-2"
-                  style={{ color: HUD.cyan }}
-                >
-                  Open the first-run Start screen study →
-                </a>{' '}
-                <a
                   href="/hud-gallery/direct-agents"
                   className="underline underline-offset-2"
                   style={{ color: HUD.cyan }}

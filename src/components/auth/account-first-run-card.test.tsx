@@ -9,7 +9,9 @@ import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AccountFirstRunCard,
+  AccountInvitationRow,
   ACCOUNT_FIRST_RUN_STORAGE_KEY,
+  resetAccountInvitationForTests,
 } from './account-first-run-card';
 import {
   installBridgeDouble,
@@ -25,6 +27,9 @@ const { pathname, session, accountAvailable, authObserver } = vi.hoisted(
       listener: null as
         | null
         | ((event: string, session: { user: { id: string } } | null) => void),
+      listeners: new Set<
+        (event: string, session: { user: { id: string } } | null) => void
+      >(),
       read: null as null | Promise<{
         data: { session: { user: { id: string } } | null };
       }>,
@@ -48,15 +53,18 @@ vi.mock('@/lib/supabase/client', () => ({
               listener: NonNullable<typeof authObserver.listener>
             ) => {
               authObserver.listener = listener;
+              authObserver.listeners.add(listener);
               queueMicrotask(() => {
-                if (authObserver.listener === listener)
+                if (authObserver.listeners.has(listener))
                   listener('INITIAL_SESSION', session.current);
               });
               return {
                 data: {
                   subscription: {
                     unsubscribe: () => {
-                      authObserver.listener = null;
+                      authObserver.listeners.delete(listener);
+                      if (authObserver.listener === listener)
+                        authObserver.listener = null;
                     },
                   },
                 },
@@ -82,8 +90,10 @@ beforeEach(() => {
   session.current = null;
   accountAvailable.current = true;
   authObserver.listener = null;
+  authObserver.listeners.clear();
   authObserver.read = null;
   window.localStorage.clear();
+  resetAccountInvitationForTests();
 });
 
 afterEach(() => {
@@ -223,5 +233,34 @@ describe('AccountFirstRunCard', () => {
     await mount();
 
     expect(card()).toBeNull();
+  });
+
+  it('steps aside for a surface that carries the invitation as a row, and one dismissal retires both', async () => {
+    const view = render(<AccountFirstRunCard />);
+    await act(async () => {});
+    expect(card()).not.toBeNull();
+
+    view.rerender(
+      <>
+        <AccountFirstRunCard />
+        <AccountInvitationRow />
+      </>
+    );
+    await act(async () => {});
+    // the row is the invitation; nothing floats over the surface it sits in
+    expect(card()).toBeNull();
+    const row = () => document.querySelector('[data-account-invitation="row"]');
+    expect(row()).not.toBeNull();
+
+    fireEvent.click(row()!.querySelector('[data-account-first-run-dismiss]')!);
+    expect(row()).toBeNull();
+
+    // leaving the surface does not bring the floating card back
+    view.rerender(<AccountFirstRunCard />);
+    await act(async () => {});
+    expect(card()).toBeNull();
+    expect(
+      window.localStorage.getItem(ACCOUNT_FIRST_RUN_STORAGE_KEY)
+    ).not.toBeNull();
   });
 });

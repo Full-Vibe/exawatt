@@ -81,6 +81,17 @@ export function MachineDisclosures({
           outside Exawatt. OpenCode is listed by asking its own command instead
           of reading a directory. The transcripts stay on your machine.
         </Disclosure>
+        <Disclosure term="It lists the folders your agents already know">
+          To suggest your projects, Exawatt reads where Claude Code, Codex and
+          Antigravity record the folders they have worked in: the project list
+          in <Path>~/.claude.json</Path>, the trusted projects in{' '}
+          <Path>~/.codex/config.toml</Path>, Antigravity&rsquo;s{' '}
+          <Path>~/.gemini/config/projects</Path> and its conversation index in{' '}
+          <Path>~/.gemini/antigravity-cli</Path>, and the same Claude Code and
+          Codex histories as above. It reads them when you open the Start
+          screen or the project chooser, never writes to them, and creates a
+          Project only when you open one. The list stays on your machine.
+        </Disclosure>
         <Disclosure term="macOS asks before Exawatt touches a folder">
           Agents reach your projects through Exawatt, so macOS attributes the
           prompts for Documents, Desktop, Downloads, and external volumes to it.
