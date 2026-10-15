@@ -1125,12 +1125,14 @@ export function TileRenderer({
               ARRIVE_RATE,
               delta
             );
-        anim.agentness[i] = THREE.MathUtils.damp(
-          anim.agentness[i],
-          agentTarget,
-          AGENT_RATE,
-          delta
-        );
+        anim.agentness[i] = input.tileScale
+          ? agentTarget
+          : THREE.MathUtils.damp(
+              anim.agentness[i],
+              agentTarget,
+              AGENT_RATE,
+              delta
+            );
         anim.weight[i] = THREE.MathUtils.damp(
           anim.weight[i],
           weightTarget,
