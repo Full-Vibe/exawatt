@@ -321,7 +321,7 @@ const MarkCohort = memo(
         {/* Bodies and marks share the transparent pass; layer order keeps the
        contrast plate and glyph above translucent bodies (BUG-250). */}
         <meshBasicMaterial
-          color={color}
+          color={z === 0.97 ? color : undefined}
           toneMapped={false}
           transparent
           opacity={opacity}
