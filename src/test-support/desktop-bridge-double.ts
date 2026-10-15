@@ -20,7 +20,7 @@ import type {
  */
 
 type Namespace = {
-  [K in keyof DesktopBridge]: NonNullable<DesktopBridge[K]> extends object
+  [K in keyof DesktopBridge]-?: NonNullable<DesktopBridge[K]> extends object
     ? K
     : never;
 }[keyof DesktopBridge];
@@ -36,6 +36,7 @@ const NAMESPACES = [
   'permissions',
   'workspace',
   'roadmap',
+  'bus',
   'settings',
   'app',
   'auth',
@@ -54,14 +55,14 @@ void everyNamespaceListed;
 
 /** What a test states: any subset of any namespace, and the platform. */
 type BridgeDoubleSpec = {
-  [K in Namespace]?: Partial<DesktopBridge[K]>;
+  [K in Namespace]?: Partial<NonNullable<DesktopBridge[K]>>;
 } & { platform?: string };
 
 /** Refuses, member by member, anything the contract does not declare. */
 type OnlyContractMembers<Spec> = {
   [K in keyof Spec]: K extends Namespace
     ? {
-        [M in keyof Spec[K]]: M extends keyof DesktopBridge[K]
+        [M in keyof Spec[K]]: M extends keyof NonNullable<DesktopBridge[K]>
           ? Spec[K][M]
           : never;
       }
