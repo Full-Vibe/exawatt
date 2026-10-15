@@ -125,14 +125,14 @@ renders its event list from `src/lib/analytics/disclosure.ts`, which is typed
 over the allowlist, so an event cannot reach the wire without reaching the
 page.
 
-| Event | Where it fires | Properties |
-| --- | --- | --- |
-| `page_viewed` | website only: the landing view in `instrumentation-client.ts`, then Next's `onRouterTransitionStart` | `path` (path only, identifier segments masked as `:id`), `referrer_host` (landing view only, external sites only) |
-| `download_requested` | server, `/download/artifact`, in `after()` | `platform`, `arch` (from the artifact file name) |
-| `project_opened` | the registry's open verbs, when the caller passes `{ source, harnessHint? }` | `source`, `harness_hint`, `bound` |
-| `agent_launched` | `pty:create`, after the launch is accepted; never a Shell | `harness`, `placement` (`local` for every process main starts), `permission_mode`, `first_for_install` |
-| `agent_directed` | allowlisted; P5's Direct calls `captureAnalyticsEvent` | `recipients`, `delivered` |
-| `agent_finished` | main's `ptySessions` `exit` for an Agent it saw start | `harness`, `placement` |
+| Event                | Where it fires                                                                                       | Properties                                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `page_viewed`        | website only: the landing view in `instrumentation-client.ts`, then Next's `onRouterTransitionStart` | `path` (path only, identifier segments masked as `:id`), `referrer_host` (landing view only, external sites only) |
+| `download_requested` | server, `/download/artifact`, in `after()`                                                           | `platform`, `arch` (from the artifact file name)                                                                  |
+| `project_opened`     | the registry's open verbs, when the caller passes `{ source, harnessHint? }`                         | `source`, `harness_hint`, `bound`                                                                                 |
+| `agent_launched`     | `pty:create`, after the launch is accepted; never a Shell                                            | `harness`, `placement` (`local` for every process main starts), `permission_mode`, `first_for_install`            |
+| `agent_directed`     | allowlisted; P5's Direct calls `captureAnalyticsEvent`                                               | `recipients`, `delivered`                                                                                         |
+| `agent_finished`     | main's `ptySessions` `exit` for an Agent it saw start                                                | `harness`, `placement`                                                                                            |
 
 Every event also carries `allowlist_version` and `surface`.
 
@@ -191,3 +191,73 @@ official builds only) and on `/privacy`.
 `webLinked`; opting out forgets the id and keeps those facts, so opting back
 in does not claim a second first launch. A record without an id now adopts a
 legacy origin's id rather than minting one.
+
+### 2026-10-15 — F3: the dashboard, as definitions
+
+No PostHog personal API key is in this worktree's environment (only the
+public project key, `NEXT_PUBLIC_POSTHOG_KEY`), so the insights were not
+created through the API. These are the exact definitions; create them in the
+Exawatt PostHog project (SQL insight, paste the `query` object, or New
+insight → SQL and paste the `query.query` text), put them on one dashboard
+named "Activation funnel", and link it from the private operator notes. They
+have not been run against live data yet; the first fresh-install run is the
+check (exit criterion).
+
+Shared rules, both insights:
+
+- A person is an installation (or a browser), merged with its web id when
+  the "Open Exawatt" alias exists. The signed-in account stream is excluded
+  (`$lib = 'exawatt-account-stream'`), so an account never counts twice.
+- `{filters}` binds the insight's date range: set it to the week of the
+  cohort being read. The funnel's steps must happen in order inside that
+  range.
+- Day-2 return is a desktop launch on a later calendar day than the first
+  one, derived here from `app_launched` (decision `0053`: never sent).
+
+**Insight 1, "Activation funnel"** (visit → download → first launch → first
+Project → first Agent → day-2 return):
+
+```json
+{
+  "kind": "DataVisualizationNode",
+  "source": {
+    "kind": "HogQLQuery",
+    "filters": { "dateRange": { "date_from": "-7d" } },
+    "query": "WITH people AS (SELECT person_id, minIf(toUnixTimestamp(timestamp), event = 'page_viewed') AS visit, minIf(toUnixTimestamp(timestamp), event = 'download_requested') AS download, minIf(toUnixTimestamp(timestamp), event = 'app_launched' AND properties.surface = 'desktop') AS launch, minIf(toUnixTimestamp(timestamp), event = 'project_opened') AS project, minIf(toUnixTimestamp(timestamp), event = 'agent_launched') AS agent, minIf(toDate(timestamp), event = 'app_launched' AND properties.surface = 'desktop') AS first_day, maxIf(toDate(timestamp), event = 'app_launched' AND properties.surface = 'desktop') AS last_day FROM events WHERE {filters} AND event IN ('page_viewed', 'download_requested', 'app_launched', 'project_opened', 'agent_launched') AND coalesce(properties.$lib, '') != 'exawatt-account-stream' GROUP BY person_id), reached AS (SELECT visit > 0 AS s1, s1 AND download >= visit AS s2, s2 AND launch >= download AS s3, s3 AND project >= launch AS s4, s4 AND agent >= project AS s5, s5 AND last_day > first_day AS s6 FROM people) SELECT step, people FROM (SELECT 1 AS n, 'Visited the site' AS step, countIf(s1) AS people FROM reached UNION ALL SELECT 2, 'Downloaded', countIf(s2) FROM reached UNION ALL SELECT 3, 'Launched the app', countIf(s3) FROM reached UNION ALL SELECT 4, 'Opened a Project', countIf(s4) FROM reached UNION ALL SELECT 5, 'Started an Agent', countIf(s5) FROM reached UNION ALL SELECT 6, 'Came back on a later day', countIf(s6) FROM reached) ORDER BY n"
+  },
+  "display": "ActionsBar"
+}
+```
+
+The `minIf(...) > 0` tests rely on ClickHouse returning 0 for a `minIf` with
+no matching row; a step a person never reached is 0 and fails every later
+comparison.
+
+**Insight 2, "Where installs stop"** (installs with a launch and no Project;
+a Project and no Agent; an Agent and no second launch), with up to ten
+example person ids per stage so the operator can open one in PostHog:
+
+```json
+{
+  "kind": "DataTableNode",
+  "source": {
+    "kind": "HogQLQuery",
+    "filters": { "dateRange": { "date_from": "-7d" } },
+    "query": "SELECT multiIf(projects = 0, '1. Launched, no Project', agents = 0, '2. Project, no Agent', launches < 2, '3. Agent, no second launch', '4. Came back') AS stopped_at, count() AS installs, groupArray(10)(toString(person_id)) AS examples FROM (SELECT person_id, countIf(event = 'project_opened') AS projects, countIf(event = 'agent_launched') AS agents, countIf(event = 'app_launched') AS launches FROM events WHERE {filters} AND event IN ('app_launched', 'project_opened', 'agent_launched') AND properties.surface = 'desktop' AND coalesce(properties.$lib, '') != 'exawatt-account-stream' GROUP BY person_id HAVING launches > 0) GROUP BY stopped_at ORDER BY stopped_at"
+  }
+}
+```
+
+**Beside them, the signed-in activity stream** (F5), one row per event, the
+account UUID as the person; join it to a name in Supabase, never in PostHog:
+
+```json
+{
+  "kind": "DataTableNode",
+  "source": {
+    "kind": "HogQLQuery",
+    "filters": { "dateRange": { "date_from": "-7d" } },
+    "query": "SELECT timestamp, distinct_id AS account, event, properties.harness AS harness, properties.placement AS placement, properties.source AS opened_from, properties.recipients AS recipients, properties.delivered AS delivered FROM events WHERE {filters} AND properties.$lib = 'exawatt-account-stream' ORDER BY timestamp DESC LIMIT 500"
+  }
+}
+```
