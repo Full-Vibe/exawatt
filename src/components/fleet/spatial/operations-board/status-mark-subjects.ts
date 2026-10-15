@@ -1,4 +1,4 @@
-import type { SpatialBoardPiece } from '@exawatt/ui-model';
+import type { SpatialBoardLens, SpatialBoardPiece } from '@exawatt/ui-model';
 
 /**
  * The Agent pieces that wear a status mark: every visible Agent, stopped
@@ -22,8 +22,37 @@ export function statusMarkSubjects(
   const stopped = visible.filter(piece => piece.sessionState === 'stopped');
   if (stopped.length === 0) return [...rendered];
   const stoppedIds = new Set(stopped.map(piece => piece.id));
-  return [
-    ...rendered.filter(piece => !stoppedIds.has(piece.id)),
-    ...stopped,
-  ];
+  return [...rendered.filter(piece => !stoppedIds.has(piece.id)), ...stopped];
+}
+
+export function sameStatusMarkPiecePaint(
+  piece: SpatialBoardPiece,
+  other: SpatialBoardPiece,
+  lens: SpatialBoardLens
+): boolean {
+  return (
+    piece === other ||
+    (piece.id === other.id &&
+      piece.kind === other.kind &&
+      piece.x === other.x &&
+      piece.y === other.y &&
+      piece.size === other.size &&
+      piece.status === other.status &&
+      piece.unread === other.unread &&
+      (lens !== 'burn' || piece.burnIntensity === other.burnIntensity))
+  );
+}
+/** Compare the complete mark paint input; source clocks and selection are not
+ * mark paint. Burn affects paint only while its lens is selected. */
+export function sameStatusMarkPaint(
+  previous: readonly SpatialBoardPiece[],
+  next: readonly SpatialBoardPiece[],
+  lens: SpatialBoardLens
+): boolean {
+  return (
+    previous.length === next.length &&
+    previous.every((piece, index) =>
+      sameStatusMarkPiecePaint(piece, next[index]!, lens)
+    )
+  );
 }

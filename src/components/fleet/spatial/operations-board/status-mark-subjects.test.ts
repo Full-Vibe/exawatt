@@ -11,7 +11,10 @@ import {
 } from '@/components/status-light';
 import { fleetStatusCounts } from '../../fleet-status-counts';
 import { delegationStatusPieces } from './delegation-roster';
-import { statusMarkSubjects } from './status-mark-subjects';
+import {
+  sameStatusMarkPaint,
+  statusMarkSubjects,
+} from './status-mark-subjects';
 
 /**
  * BUG-225: the counts bar and the board are two readouts of one fleet. For
@@ -133,7 +136,9 @@ describe('the counts bar and the board', () => {
     // three top-level Agents are working or reviewing, plus one exited mid-turn
     expect(counts.readings.active).toBe(4 + 12);
     expect(
-      selectSpatialDelegationUnits(layout).some(unit => unit.kind === 'overflow')
+      selectSpatialDelegationUnits(layout).some(
+        unit => unit.kind === 'overflow'
+      )
     ).toBe(true);
   });
 
@@ -166,5 +171,42 @@ describe('statusMarkSubjects', () => {
     };
     const subjects = statusMarkSubjects([departing], [piece!]);
     expect(subjects).toEqual([piece]);
+  });
+});
+
+describe('status mark reconciliation', () => {
+  const [piece] = selectSpatialBoardLayout({
+    agents: { a: agent('a', 'working') },
+    metrics,
+    lastUpdated: 1,
+  }).pieces.filter(item => item.kind === 'agent');
+  it('retains a mark through unrelated source metadata and inactive lens changes', () => {
+    const next = {
+      ...piece!,
+      label: 'new name',
+      summary: 'new task',
+      activity: 'new activity',
+      selected: true,
+      burnIntensity: 0.9,
+    };
+    expect(sameStatusMarkPaint([piece!], [next], 'status')).toBe(true);
+    expect(sameStatusMarkPaint([piece!], [next], 'burn')).toBe(false);
+  });
+  it('reconciles every mark paint or membership change', () => {
+    const changes = [
+      { id: 'new' },
+      { kind: 'aggregate' as const },
+      { x: piece!.x + 1 },
+      { y: piece!.y + 1 },
+      { size: piece!.size + 1 },
+      { status: 'idle' as const },
+      { status: null },
+      { unread: true },
+    ];
+    for (const change of changes)
+      expect(
+        sameStatusMarkPaint([piece!], [{ ...piece!, ...change }], 'status')
+      ).toBe(false);
+    expect(sameStatusMarkPaint([piece!], [], 'status')).toBe(false);
   });
 });

@@ -2,7 +2,7 @@
 
 import { Instances, Instance } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { useMemo, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { SpatialBoardLens, SpatialBoardPiece } from '@exawatt/ui-model';
 import {
@@ -10,6 +10,10 @@ import {
   workStateReading,
   type StatusLightReading,
 } from '@/components/status-light/protocol';
+import {
+  sameStatusMarkPaint,
+  sameStatusMarkPiecePaint,
+} from './status-mark-subjects';
 import type { SpatialThemeSnapshot } from '../spatial-theme';
 import { boardWorldPosition } from './operations-board-camera';
 import {
@@ -41,7 +45,7 @@ export function StatusMarkLayer({
   const rotorRefs = useRef(new Map<string, THREE.Object3D>());
   // Every mark instance a piece owns, so its light scales with its body.
   const markRefs = useRef(new Map<string, Set<THREE.Object3D>>());
-  const collectMark = (pieceId: string, rotor = false) => {
+  const collectMark = useCallback((pieceId: string, rotor = false) => {
     let attached: THREE.Object3D | null = null;
     return (instance: THREE.Object3D | null) => {
       if (attached) {
@@ -62,24 +66,11 @@ export function StatusMarkLayer({
       set.add(instance);
       if (rotor) rotorRefs.current.set(pieceId, instance);
     };
-  };
+  }, []);
   const sizeById = useMemo(
     () => new Map(pieces.map(piece => [piece.id, piece.size])),
     [pieces]
   );
-  const agentPieces = pieces.filter(piece => piece.kind === 'agent');
-  const byState = (state: StatusLightReading) =>
-    agentPieces.filter(piece => workStateReading(piece.status) === state);
-  const off = byState('off');
-  const unreported = byState('unreported');
-  const rotating = byState('active');
-  const result = byState('result');
-  const needsYou = byState('needs-you');
-  const fault = byState('fault');
-  const signalDisks = [...result, ...needsYou, ...fault];
-  const unread = agentPieces.filter(piece => piece.unread);
-  const geometries = STATUS_MARK_GEOMETRY;
-
   useFrame((state, delta) => {
     if (emergenceScale) {
       const now = performance.now();
@@ -109,284 +100,271 @@ export function StatusMarkLayer({
     ambient.requestFrame(state.invalidate);
   });
 
-  const instance = (piece: SpatialBoardPiece) => ({
-    name: `mark:${piece.id}`,
-    ref: collectMark(piece.id),
-    position: boardWorldPosition(piece, 0.94),
-    scale: [piece.size, piece.size, 1] as [number, number, number],
-    color: pieceLensColor(piece, lens, theme),
-  });
-
   return (
-    <>
-      {unread.length > 0 && (
-        <Instances
-          geometry={STATUS_MARK_GEOMETRY.unread}
-          limit={1024}
-          range={unread.length}
-          renderOrder={3}
-        >
-          <meshBasicMaterial
-            toneMapped={false}
-            transparent
-            opacity={1}
-            depthWrite={false}
-          />
-          {unread.map(piece => (
-            <Instance
-              {...instance(piece)}
-              key={`unread:${piece.id}`}
-              color={theme.labelMuted}
-              position={boardWorldPosition(piece, 1.01)}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {agentPieces.length > 0 && (
-        <Instances
-          geometry={geometries.backing}
-          limit={1024}
-          range={agentPieces.length}
-          renderOrder={1}
-        >
-          {/* The whole mark stack -- this plate and every mark above it --
-              draws in the transparent pass (BUG-250). The hex bodies are
-              transparent (they fade in) and three.js draws every opaque object
-              first, so an opaque plate or mark that writes no depth was painted
-              over by the body beneath it: Idle's arcs and the no-reading bar
-              vanished into their hex, and the plate that carries each mark's
-              contrast (design system: every mark sits on a canvas-colored
-              plate) never showed. Inside the transparent pass, render order
-              sequences body (0), plate (1), mark (2). */}
-          <meshBasicMaterial
-            toneMapped={false}
-            transparent
-            opacity={1}
-            depthWrite={false}
-          />
-          {agentPieces.map(piece => (
-            <Instance
-              {...instance(piece)}
-              color={theme.markBacking}
-              key={`status-backing:${piece.id}`}
-              position={boardWorldPosition(piece, 0.91)}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {rotating.length > 0 && (
-        <Instances
-          geometry={geometries.ring}
-          limit={256}
-          range={rotating.length}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            toneMapped={false}
-            transparent
-            opacity={0.98}
-            depthWrite={false}
-          />
-          {rotating.map(piece => (
-            <Instance
-              {...instance(piece)}
-              key={`status-ring:${piece.id}`}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {signalDisks.length > 0 && (
-        <Instances
-          geometry={geometries.signal}
-          limit={256}
-          range={signalDisks.length}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            toneMapped={false}
-            transparent
-            opacity={0.98}
-            depthWrite={false}
-          />
-          {signalDisks.map(piece => (
-            <Instance
-              {...instance(piece)}
-              key={`status-signal:${piece.id}`}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {off.length > 0 && (
-        <Instances
-          geometry={geometries.offSegment}
-          limit={1024}
-          range={off.length * 4}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            toneMapped={false}
-            transparent
-            opacity={1}
-            depthWrite={false}
-          />
-          {off.flatMap(piece =>
-            [0, 1, 2, 3].map(segment => (
-              <Instance
-                {...instance(piece)}
-                key={`status-off-${segment}:${piece.id}`}
-                rotation={[0, 0, segment * (Math.PI / 2)]}
-                raycast={() => null}
-              />
-            ))
-          )}
-        </Instances>
-      )}
-      {unreported.length > 0 && (
-        <Instances
-          geometry={geometries.socketRing}
-          limit={1024}
-          range={unreported.length}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            toneMapped={false}
-            transparent
-            opacity={0.35}
-            depthWrite={false}
-          />
-          {unreported.map(piece => (
-            <Instance
-              {...instance(piece)}
-              key={`status-unreported-ring:${piece.id}`}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {unreported.length > 0 && (
-        <Instances
-          geometry={geometries.noReadingBar}
-          limit={1024}
-          range={unreported.length}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            toneMapped={false}
-            transparent
-            opacity={1}
-            depthWrite={false}
-          />
-          {unreported.map(piece => (
-            <Instance
-              {...instance(piece)}
-              key={`status-unreported-bar:${piece.id}`}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {rotating.length > 0 && (
-        <Instances
-          geometry={geometries.rotor}
-          limit={256}
-          range={rotating.length}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            toneMapped={false}
-            transparent
-            opacity={0.84}
-            depthWrite={false}
-          />
-          {rotating.map(piece => (
-            <Instance
-              {...instance(piece)}
-              key={`status-rotor:${piece.id}`}
-              ref={collectMark(piece.id, true)}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {result.length > 0 && (
-        <Instances
-          geometry={geometries.check}
-          limit={256}
-          range={result.length}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            color={theme.canvas}
-            toneMapped={false}
-            transparent
-            opacity={0.98}
-            depthWrite={false}
-          />
-          {result.map(piece => (
-            <Instance
-              {...instance(piece)}
-              color={theme.canvas}
-              key={`status-check:${piece.id}`}
-              position={boardWorldPosition(piece, 0.97)}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {needsYou.length > 0 && (
-        <Instances
-          geometry={geometries.dot}
-          limit={256}
-          range={needsYou.length}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            color={theme.canvas}
-            toneMapped={false}
-            transparent
-            opacity={0.98}
-            depthWrite={false}
-          />
-          {needsYou.map(piece => (
-            <Instance
-              {...instance(piece)}
-              color={theme.canvas}
-              key={`status-dot:${piece.id}`}
-              position={boardWorldPosition(piece, 0.97)}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-      {fault.length > 0 && (
-        <Instances
-          geometry={geometries.cross}
-          limit={256}
-          range={fault.length}
-          renderOrder={2}
-        >
-          <meshBasicMaterial
-            color={theme.canvas}
-            toneMapped={false}
-            transparent
-            opacity={0.98}
-            depthWrite={false}
-          />
-          {fault.map(piece => (
-            <Instance
-              {...instance(piece)}
-              color={theme.canvas}
-              key={`status-cross:${piece.id}`}
-              position={boardWorldPosition(piece, 0.97)}
-              raycast={() => null}
-            />
-          ))}
-        </Instances>
-      )}
-    </>
+    <StatusMarkInstances
+      pieces={pieces}
+      lens={lens}
+      theme={theme}
+      collectMark={collectMark}
+    />
   );
 }
+type MarkInstancesProps = {
+  pieces: SpatialBoardPiece[];
+  lens: SpatialBoardLens;
+  theme: SpatialThemeSnapshot;
+  collectMark: (
+    pieceId: string,
+    rotor?: boolean
+  ) => (instance: THREE.Object3D | null) => void;
+};
+
+/** Animation stays live outside this static scene boundary. Unrelated source
+ * metadata must not reconcile hundreds of Drei instances every clock tick. */
+const StatusMarkInstances = memo(
+  function StatusMarkInstances({
+    pieces,
+    lens,
+    theme,
+    collectMark,
+  }: MarkInstancesProps) {
+    const agentPieces = pieces.filter(piece => piece.kind === 'agent');
+    const byState = (state: StatusLightReading) =>
+      agentPieces.filter(piece => workStateReading(piece.status) === state);
+    const off = byState('off');
+    const unreported = byState('unreported');
+    const rotating = byState('active');
+    const result = byState('result');
+    const needsYou = byState('needs-you');
+    const fault = byState('fault');
+    const signalDisks = [...result, ...needsYou, ...fault];
+    const unread = agentPieces.filter(piece => piece.unread);
+    const geometries = STATUS_MARK_GEOMETRY;
+
+    const shared = { lens, theme, collectMark };
+    return (
+      <>
+        <MarkCohort
+          {...shared}
+          pieces={unread}
+          geometry={geometries.unread}
+          limit={1024}
+          order={3}
+          color={theme.labelMuted}
+          z={1.01}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={agentPieces}
+          geometry={geometries.backing}
+          limit={1024}
+          order={1}
+          color={theme.markBacking}
+          z={0.91}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={rotating}
+          geometry={geometries.ring}
+          opacity={0.98}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={signalDisks}
+          geometry={geometries.signal}
+          opacity={0.98}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={off}
+          geometry={geometries.offSegment}
+          limit={1024}
+          segments={4}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={unreported}
+          geometry={geometries.socketRing}
+          limit={1024}
+          opacity={0.35}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={unreported}
+          geometry={geometries.noReadingBar}
+          limit={1024}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={rotating}
+          geometry={geometries.rotor}
+          opacity={0.84}
+          rotor
+        />
+        <MarkCohort
+          {...shared}
+          pieces={result}
+          geometry={geometries.check}
+          color={theme.canvas}
+          z={0.97}
+          opacity={0.98}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={needsYou}
+          geometry={geometries.dot}
+          color={theme.canvas}
+          z={0.97}
+          opacity={0.98}
+        />
+        <MarkCohort
+          {...shared}
+          pieces={fault}
+          geometry={geometries.cross}
+          color={theme.canvas}
+          z={0.97}
+          opacity={0.98}
+        />
+      </>
+    );
+  },
+  (previous, next) =>
+    previous.collectMark === next.collectMark &&
+    previous.theme === next.theme &&
+    previous.lens === next.lens &&
+    sameStatusMarkPaint(previous.pieces, next.pieces, next.lens)
+);
+
+type MarkInstanceProps = Omit<MarkInstancesProps, 'pieces'> & {
+  piece: SpatialBoardPiece;
+  color?: string;
+  z?: number;
+  angle?: number;
+  rotor?: boolean;
+};
+const noRaycast = () => null;
+/** A changed reading updates its own marks without reattaching every other
+ * instance ref in the draw cohort. */
+const MarkInstance = memo(
+  function MarkInstance({
+    piece,
+    lens,
+    theme,
+    collectMark,
+    color,
+    z = 0.94,
+    angle = 0,
+    rotor = false,
+  }: MarkInstanceProps) {
+    const ref = useMemo(
+      () => collectMark(piece.id, rotor),
+      [collectMark, piece.id, rotor]
+    );
+    return (
+      <Instance
+        name={`mark:${piece.id}`}
+        ref={ref}
+        position={boardWorldPosition(piece, z)}
+        scale={[piece.size, piece.size, 1]}
+        color={color ?? pieceLensColor(piece, lens, theme)}
+        rotation={[0, 0, angle]}
+        raycast={noRaycast}
+      />
+    );
+  },
+  (previous, next) =>
+    previous.collectMark === next.collectMark &&
+    previous.theme === next.theme &&
+    previous.lens === next.lens &&
+    previous.color === next.color &&
+    previous.z === next.z &&
+    previous.angle === next.angle &&
+    previous.rotor === next.rotor &&
+    sameStatusMarkPiecePaint(previous.piece, next.piece, next.lens)
+);
+
+type MarkCohortProps = MarkInstancesProps & {
+  geometry: THREE.BufferGeometry;
+  color?: string;
+  z?: number;
+  rotor?: boolean;
+  opacity?: number;
+  limit?: number;
+  order?: number;
+  segments?: number;
+};
+/** A draw cohort retains its React instance tree when another reading changes.
+ * The backing and cutout cohorts consume only position, size and fixed paint. */
+const MarkCohort = memo(
+  function MarkCohort({
+    pieces,
+    lens,
+    theme,
+    collectMark,
+    geometry,
+    color,
+    z,
+    rotor,
+    opacity = 1,
+    limit = 256,
+    order = 2,
+    segments = 1,
+  }: MarkCohortProps) {
+    if (!pieces.length) return null;
+    return (
+      <Instances
+        geometry={geometry}
+        limit={limit}
+        range={pieces.length * segments}
+        renderOrder={order}
+      >
+        {/* Bodies and marks share the transparent pass; layer order keeps the
+       contrast plate and glyph above translucent bodies (BUG-250). */}
+        <meshBasicMaterial
+          color={color}
+          toneMapped={false}
+          transparent
+          opacity={opacity}
+          depthWrite={false}
+        />
+        {pieces.flatMap(piece =>
+          Array.from({ length: segments }, (_, segment) => (
+            <MarkInstance
+              key={`${piece.id}:${segment}`}
+              piece={piece}
+              lens={lens}
+              theme={theme}
+              collectMark={collectMark}
+              color={color}
+              z={z}
+              rotor={rotor}
+              angle={(segment * Math.PI) / 2}
+            />
+          ))
+        )}
+      </Instances>
+    );
+  },
+  (previous, next) =>
+    previous.collectMark === next.collectMark &&
+    previous.theme === next.theme &&
+    previous.lens === next.lens &&
+    previous.geometry === next.geometry &&
+    previous.color === next.color &&
+    previous.z === next.z &&
+    previous.rotor === next.rotor &&
+    previous.opacity === next.opacity &&
+    previous.limit === next.limit &&
+    previous.order === next.order &&
+    previous.segments === next.segments &&
+    previous.pieces.length === next.pieces.length &&
+    previous.pieces.every((piece, index) => {
+      const other = next.pieces[index]!;
+      return next.color !== undefined
+        ? piece.id === other.id &&
+            piece.x === other.x &&
+            piece.y === other.y &&
+            piece.size === other.size
+        : sameStatusMarkPiecePaint(piece, other, next.lens);
+    })
+);
