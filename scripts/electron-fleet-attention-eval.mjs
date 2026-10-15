@@ -10,6 +10,13 @@ import {
   waitForPageCondition,
   withElectronApp,
 } from './lib/electron-eval.mjs';
+import {
+  runFleetViewMatrix,
+  assertFleetView,
+  fleetView,
+} from './lib/fleet-view-eval.mjs';
+
+await runFleetViewMatrix(import.meta.url);
 const base = process.env.EXA_BASE ?? 'http://localhost:7183';
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-fleet-attention-'));
 try {
@@ -28,6 +35,16 @@ try {
     },
     async (app, page) => {
       await waitForWorkspaceReady(page);
+      await page.evaluate(async view => {
+        const saved = await window.electron.settings.setPresentation({
+          schemaVersion: 1,
+          fleetView: view,
+        });
+        if (saved.presentation?.fleetView !== view)
+          throw new Error(
+            'Fleet view did not persist through the desktop bridge'
+          );
+      }, fleetView);
       await page.evaluate(() =>
         window.dispatchEvent(
           new CustomEvent('exawatt:open-project', { detail: '/tmp' })
@@ -47,6 +64,7 @@ try {
       assert.equal(ids.length, 2);
       await page.locator('[data-command-altitude-level="spatial"]').click();
       await page.locator('[data-spatial-board]').waitFor();
+      await assertFleetView(page);
       // Produce actual BELs through the shell's PTY while no Session is focused.
       for (const id of ids) {
         await page.evaluate(
@@ -138,7 +156,7 @@ try {
       );
       assert.ok(attention, 'reading must not resolve a request');
       console.log(
-        'PASS Live Fleet menu + CmdJ share queue, selection does not read, Enter acknowledges exact Session without resolving'
+        `PASS Live Fleet ${fleetView}: menu + CmdJ share queue, selection does not read, Enter acknowledges exact Session without resolving`
       );
     },
     { maxMs: 150_000 }

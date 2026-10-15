@@ -141,10 +141,11 @@ async function checkViewport(label) {
   }
   // Short windows may intentionally scroll the route itself to preserve usable
   // controls. Check reachability through that owner rather than assuming every
-  // control can fit simultaneously into a physically smaller viewport.
+  // control can fit simultaneously into a physically smaller viewport. Inspect
+  // the controls this view advertises: v2 has no alternate projection button.
   for (const control of [
     page.locator('[data-spatial-command] > header button').first(),
-    page.getByRole('button', { name: 'Top', exact: true }),
+    ...(await page.locator('[data-board-tool-cluster] button').all()),
   ]) {
     await control.scrollIntoViewIfNeeded();
     assert.ok(
