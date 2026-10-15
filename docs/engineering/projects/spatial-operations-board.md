@@ -3519,7 +3519,9 @@ not universal upper bounds or a claim about battery-life duration.
 Live-update profiling also found a shared 1Hz pause: routine Demo metadata
 reconciled hundreds of unchanged Drei status instances. The status draw groups
 and individual instances now memoize the exact paint inputs, with animation
-and emergence sampling outside that boundary. Real status, unread, theme and
+and emergence sampling outside that boundary. v1 neutral bodies use the same
+separation; immutable theme snapshots cache the exact contrast-corrected
+Project color rather than repeat that search for every unit and source tick. Real status, unread, theme and
 burn-lens changes still update. v2 passed every live Voltaic and 1k motion
 flight at the existing 50ms hitch threshold. A warmed 3-second live-Demo v2
 sample measured 15.5% of one core on AC and 10.9% in economy, with 178 versus
