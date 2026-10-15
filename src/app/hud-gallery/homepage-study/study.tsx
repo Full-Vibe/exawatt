@@ -124,7 +124,7 @@ const HEADLINE_FONTS = [
     id: 'hanken',
     name: 'Hanken',
     note: 'A confident grotesk with a more human rhythm.',
-    family: 'var(--study-hanken)',
+    family: 'var(--font-hanken)',
   },
 ] as const;
 const INTERFACE_FONTS = [
@@ -144,7 +144,7 @@ const INTERFACE_FONTS = [
     id: 'hanken',
     name: 'Hanken',
     note: 'A warmer reading face for product copy and controls.',
-    family: 'var(--study-hanken)',
+    family: 'var(--font-hanken)',
   },
 ] as const;
 type HeadlineFontId = (typeof HEADLINE_FONTS)[number]['id'];
@@ -178,10 +178,10 @@ function readState(params: URLSearchParams): StudyState {
   return {
     headlineFont: HEADLINE_FONTS.some(font => font.id === headlineFont)
       ? (headlineFont as HeadlineFontId)
-      : 'geist',
+      : 'hanken',
     interfaceFont: INTERFACE_FONTS.some(font => font.id === interfaceFont)
       ? (interfaceFont as InterfaceFontId)
-      : 'geist',
+      : 'hanken',
     signal: CRUST_SIGNALS.some(x => x.id === signal)
       ? (signal as CrustSignalId)
       : HOMEPAGE_STORY.signal,

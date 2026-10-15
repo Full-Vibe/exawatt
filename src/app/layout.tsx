@@ -47,6 +47,14 @@ const geistSans = localFont({
   display: 'swap',
 });
 
+const hanken = localFont({
+  src: './fonts/HankenGrotesk-Variable-Latin.woff2',
+  variable: '--font-hanken',
+  weight: '100 900',
+  style: 'normal',
+  display: 'swap',
+});
+
 const distribution = resolvedDistribution();
 const distributionIdentity = resolveDistributionIdentity(distribution);
 
@@ -72,7 +80,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${exo2.variable} ${geistMono.variable} ${geistSans.variable}`}
+      className={`${exo2.variable} ${geistMono.variable} ${geistSans.variable} ${hanken.variable}`}
       data-exa-theme="exawatt-classic-dark"
       data-exa-appearance="dark"
       data-exa-contrast="standard"

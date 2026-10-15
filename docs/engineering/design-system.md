@@ -18,9 +18,9 @@ ENG-032 T2 adds a resolved `data-exa-typography` profile under the global
 
 | Utility / profile     | Face                                | Where it is used                                         |
 | --------------------- | ----------------------------------- | -------------------------------------------------------- |
-| Classic theme default | Exo 2 shell/body + Geist UI/display | compatibility rendering of the shipped product           |
-| Air theme default     | system shell/UI + Geist display     | lighter native-feeling application chrome                |
-| Night theme default   | Geist shell/UI/display              | calm dark application chrome                             |
+| Classic theme default | Exo 2 shell/body + Hanken UI/display | compatibility shell with the selected proportional face |
+| Air theme default     | system shell + Hanken UI/display     | lighter native-feeling application chrome                |
+| Night theme default   | Geist shell + Hanken UI/display      | calm dark application chrome                             |
 | System override       | system shell/UI/display             | app-global interface-family override                     |
 | Geist override        | Geist shell/UI/display              | deterministic bundled interface-family override          |
 | `font-mono`           | Geist Mono                          | metrics, ordinals, tracked micro-labels, code (302 uses) |
@@ -30,13 +30,18 @@ App surfaces set `font-ui` on their root; numbers and micro-labels go
 the interface profile. No preset adds a font binary, local-font permission, or
 runtime network fetch.
 
-The homepage typography comparison at `/hud-gallery/homepage-study` is a
-study-only exception, not a fourth app profile. It keeps the existing named
-marketing size rungs while comparing Geist with Manrope and Hanken Grotesk on
-the story's h1/h2, and compares Geist, Hanken, and the existing Geist Mono tab
-face on short product labels. Modal sentences stay in a proportional face;
-selection does not change `/` or application typography. Both additional
-faces are self-hosted and loaded only by the study route.
+Decision `0049` selects Hanken Grotesk for the homepage story's headlines and
+body and for the app's `font-ui` and `font-display` roles across the three
+theme profiles. Shared form labels and dialog content take `font-ui`; tab
+labels, shortcut hints, metrics and explicit mono controls keep Geist Mono.
+The `/hud-gallery/homepage-study` comparison keeps Geist and Manrope as
+alternatives and opens on the selected Hanken setting. Hanken is bundled at
+the root; Manrope remains study-only. `/architecture` and other public
+exhibition surfaces retain their fixed Geist boundary, while `/` declares a
+fixed Hanken boundary, both independent of app appearance preferences.
+`font-ui` and `font-display` are declared in Tailwind's runtime `@theme` block:
+putting them in `@theme inline` bakes Geist into the utilities and makes a
+profile's computed variable look correct while rendered text ignores it.
 
 ### The named scale
 

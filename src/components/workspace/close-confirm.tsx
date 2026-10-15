@@ -82,19 +82,19 @@ export function CloseConfirm({
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="font-mono text-sm" style={{ color: HUD.text }}>
+        <div className="font-ui text-sm font-semibold" style={{ color: HUD.text }}>
           Close <span style={{ color }}>{title}</span>?
         </div>
         {goal && (
           <div
-            className="font-sans text-xs leading-4"
+            className="font-ui text-xs leading-4"
             style={{ color: withThemeAlpha(color, 0.69) }}
           >
             {goal}
           </div>
         )}
         <div
-          className="font-sans text-xs leading-5"
+          className="font-ui text-xs leading-5"
           style={{ color: HUD.textDim }}
         >
           {turn === 'working' && (
@@ -200,11 +200,11 @@ export function CloseProjectConfirm({
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="font-mono text-sm" style={{ color: HUD.text }}>
+        <div className="font-ui text-sm font-semibold" style={{ color: HUD.text }}>
           Close Project <span style={{ color }}>{title}</span>?
         </div>
         <div
-          className="font-sans text-xs leading-5"
+          className="font-ui text-xs leading-5"
           style={{ color: HUD.textDim }}
         >
           {tabCount} open {tabCount === 1 ? 'tab' : 'tabs'} will close.
@@ -319,11 +319,11 @@ export function PauseProjectConfirm({
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="font-mono text-sm" style={{ color: HUD.text }}>
+        <div className="font-ui text-sm font-semibold" style={{ color: HUD.text }}>
           Pause Project <span style={{ color }}>{title}</span>?
         </div>
         <div
-          className="font-sans text-xs leading-5"
+          className="font-ui text-xs leading-5"
           style={{ color: HUD.textDim }}
         >
           {activeCount} {activeCount === 1 ? 'Agent has' : 'Agents have'} active

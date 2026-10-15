@@ -23,8 +23,6 @@
   --color-ring: var(--ring);
   --font-sans: var(--exa-interface-font, var(--font-exo2));
   --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-geist-sans);
-  --font-ui: var(--font-geist-sans);
   /* Application chrome type roles (ENG-016 D39). Keep operational copy on a
      compact but readable scale; the micro role is only for nonessential
      shortcut ordinals and symbolic marks, never the primary reading path. */
@@ -101,6 +99,14 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* These two families change with the appearance profile. Keep their Tailwind
+   utilities as variable references: @theme inline would bake Geist into
+   .font-ui/.font-display and silently ignore every profile override. */
+@theme {
+  --font-display: var(--font-geist-sans);
+  --font-ui: var(--font-geist-sans);
 }
 
 :root {
@@ -210,22 +216,21 @@
 
 [data-exa-typography='classic'] {
   --exa-theme-interface-font: var(--font-exo2);
-  --exa-theme-ui-font: var(--font-geist-sans);
-  --exa-theme-display-font: var(--font-geist-sans);
+  --exa-theme-ui-font: var(--font-hanken);
+  --exa-theme-display-font: var(--font-hanken);
 }
 
 [data-exa-typography='air'] {
   --exa-theme-interface-font:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --exa-theme-ui-font:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --exa-theme-display-font: var(--font-geist-sans);
+  --exa-theme-ui-font: var(--font-hanken);
+  --exa-theme-display-font: var(--font-hanken);
 }
 
 [data-exa-typography='night'] {
   --exa-theme-interface-font: var(--font-geist-sans);
-  --exa-theme-ui-font: var(--font-geist-sans);
-  --exa-theme-display-font: var(--font-geist-sans);
+  --exa-theme-ui-font: var(--font-hanken);
+  --exa-theme-display-font: var(--font-hanken);
 }
 
 [data-exa-font='theme'] {
@@ -252,12 +257,10 @@ body {
   color: var(--foreground);
 }
 
-/* Home and the public Architecture map are fixed exhibition surfaces, not app
-   appearance canvases. Their complete typographic presentation is therefore
-   insulated from app-theme previews, Auto changes, and saved interface scale.
-   Keep this boundary semantic and route-stable; a page-local <style> owner can
-   disappear during App Router handoff and recreate the exact split ownership
-   this selector prevents. */
+/* Public exhibition surfaces are fixed outside the app appearance canvas.
+   The homepage takes its selected Hanken face below; Architecture keeps Geist.
+   Keep the boundary semantic and route-stable: a page-local <style> owner can
+   disappear during App Router handoff and recreate split ownership. */
 [data-public-exhibition-surface='true'],
 [data-public-dark-chrome='true'] {
   --exa-interface-scale: 1;
@@ -267,18 +270,22 @@ body {
   font-family: var(--font-geist-sans);
 }
 
-/* THE PUBLIC SURFACE RESOLVES A REAL FACE, and the T5.3 boundary is intact
-   (ENG-031 W6b). Incident `0004` was never about webfonts: it was about a
-   fixed public surface inheriting a MUTABLE app preference, so Air, Classic
-   and Night each reflowed the same heading. `--font-geist-sans` is a fixed
-   family declared once in the root layout, exactly like the mono control that
-   stayed stable through the whole incident, and it is written here as a
-   literal rather than through `--exa-theme-*`, so theme churn cannot reach it.
-   The face is self-hosted, subset to Latin, and preloaded by `next/font/local`
-   from the same origin, which is the same delivery the mono control already
-   proves on this surface. The page was downloading three variable webfonts and
-   displaying none of them; this spends nothing new and stops throwing the
-   bytes away. `eval:typography-stability` remains the gate. */
+/* The selected homepage face is fixed to the page, independent of the
+   operator's app typography preference and the shared dark-chrome shell. */
+main[data-fleet-story] {
+  --exa-interface-font: var(--font-hanken);
+  --font-ui: var(--font-hanken);
+  --font-display: var(--font-hanken);
+  font-family: var(--font-hanken);
+}
+
+/* PUBLIC SURFACES RESOLVE FIXED FACES, preserving the T5.3 stability boundary
+   (ENG-031 W6b, amended by decision 0049). Incident `0004` came from a
+   public page inheriting a mutable app preference: theme churn reflowed its
+   heading. Both fixed families come from root local fonts, independent of
+   `--exa-theme-*`, so app appearance changes cannot reach either page.
+   Both faces are self-hosted Latin subsets loaded by `next/font/local` from
+   the same origin. `eval:typography-stability` remains the gate. */
 
 /* THE PROPOSED HOMEPAGE'S GROUND REACHES THE DOCUMENT (ENG-031 W6b).
    The board's ground stops at `main`, so macOS rubber-band overscroll pulled

@@ -27,7 +27,7 @@ const FONT_ASSETS = [
     magic: 'wOF2',
   },
   {
-    path: 'src/app/hud-gallery/homepage-study/fonts/HankenGrotesk-Variable-Latin.woff2',
+    path: 'src/app/fonts/HankenGrotesk-Variable-Latin.woff2',
     sha256: '1f21c6eaa0000f3329cfcfac966b43d5bebf5aa610303e33294ac31bc6f4bb59',
     magic: 'wOF2',
   },
@@ -79,7 +79,7 @@ test('the exact licensed font binaries are committed', () => {
   );
 });
 
-test('the layout preserves the three typography variables and variable weights', () => {
+test('the layout bundles each selected application typography variable', () => {
   const layout = readFileSync('src/app/layout.tsx', 'utf8');
 
   assert.match(layout, /import localFont from 'next\/font\/local'/);
@@ -89,14 +89,15 @@ test('the layout preserves the three typography variables and variable weights',
     ['Exo2-Variable-Latin.woff2', '--font-exo2'],
     ['Geist-Variable-Latin.woff2', '--font-geist-sans'],
     ['GeistMono-Variable-Latin.woff2', '--font-geist-mono'],
+    ['HankenGrotesk-Variable-Latin.woff2', '--font-hanken'],
   ]) {
     assert.match(layout, new RegExp(file.replace('.', '\\.')));
     assert.match(layout, new RegExp(`variable: '${variable}'`));
   }
 
-  assert.equal(layout.match(/weight: '100 900'/g)?.length, 3);
-  assert.equal(layout.match(/style: 'normal'/g)?.length, 3);
-  assert.equal(layout.match(/display: 'swap'/g)?.length, 3);
+  assert.equal(layout.match(/weight: '100 900'/g)?.length, 4);
+  assert.equal(layout.match(/style: 'normal'/g)?.length, 4);
+  assert.equal(layout.match(/display: 'swap'/g)?.length, 4);
 
   // Gallery annotations now inherit these local DOM faces. The no-remote-font
   // contract below covers them without pinning a retired WebGL implementation.

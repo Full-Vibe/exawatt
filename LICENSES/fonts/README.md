@@ -13,11 +13,11 @@ font service.
 | `src/app/fonts/Geist-Variable-Latin.woff2`     | Geist Sans, normal, variable weight 100–900, Latin subset | [Google Fonts Geist v5](https://fonts.gstatic.com/s/geist/v5/gyByhwUxId8gMEwcGFU.woff2)                 | `19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1` |
 | `src/app/fonts/GeistMono-Variable-Latin.woff2` | Geist Mono, normal, variable weight 100–900, Latin subset | [Google Fonts Geist Mono v6](https://fonts.gstatic.com/s/geistmono/v6/or3nQ6H-1_WfwkMZI_qYFrcdmg.woff2) | `684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc` |
 | `src/app/hud-gallery/homepage-study/fonts/Manrope-Variable-Latin.woff2` | Manrope, normal, variable weight 200–800, Latin subset; study only | [Google Fonts Manrope v20](https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSvfedN4.woff2) | `e310b55a7fd9677f5e3555e6c6c4d064fa1f1d24393f0ddbe217cea12a8c432f` |
-| `src/app/hud-gallery/homepage-study/fonts/HankenGrotesk-Variable-Latin.woff2` | Hanken Grotesk, normal, variable weight 100–900, Latin subset; study only | [Google Fonts Hanken Grotesk v12](https://fonts.gstatic.com/s/hankengrotesk/v12/ieVn2YZDLWuGJpnzaiwFXS9tYtpd59CxCis4.woff2) | `1f21c6eaa0000f3329cfcfac966b43d5bebf5aa610303e33294ac31bc6f4bb59` |
+| `src/app/fonts/HankenGrotesk-Variable-Latin.woff2` | Hanken Grotesk, normal, variable weight 100–900, Latin subset; homepage and application UI | [Google Fonts Hanken Grotesk v12](https://fonts.gstatic.com/s/hankengrotesk/v12/ieVn2YZDLWuGJpnzaiwFXS9tYtpd59CxCis4.woff2) | `1f21c6eaa0000f3329cfcfac966b43d5bebf5aa610303e33294ac31bc6f4bb59` |
 
-The three application webfonts are the same Google Fonts family revisions and
-Latin subset selected by the former `next/font/google` declarations. The
-Google Fonts CSS declarations used to resolve the versioned files were:
+Exo 2, Geist Sans, and Geist Mono are the same Google Fonts family revisions
+and Latin subsets selected by the former `next/font/google` declarations. The
+Google Fonts CSS declarations used to resolve those versioned files were:
 
 - `https://fonts.googleapis.com/css2?family=Exo+2:wght@100..900&display=swap`
 - `https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap`
@@ -49,5 +49,6 @@ Copyright 2021 The Hanken Grotesk Project Authors. Their license texts are
 [`HankenGrotesk-OFL-1.1.txt`](./HankenGrotesk-OFL-1.1.txt), from the
 [Google Fonts Manrope](https://github.com/google/fonts/tree/main/ofl/manrope)
 and [Hanken Grotesk](https://github.com/google/fonts/tree/main/ofl/hankengrotesk)
-catalog entries. Both are SIL OFL 1.1. The two new faces load only on the
-gallery's homepage study, with no font-service request at build or runtime.
+catalog entries. Both are SIL OFL 1.1. Hanken is loaded by the root layout;
+Manrope remains study-only. Neither requires a font-service request at build
+or runtime.
