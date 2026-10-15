@@ -61,7 +61,7 @@ withheld promotion. Each is named under "What this reverses".
    - The three middle scenes keep the study's canon copy.
    - Amended on his later rounds the same day (W15o, W15p): the landing title
      is "Scale your agent fleet." over "Exawatt is the command surface for
-     your agent fleet."; the close is "Fleet command for thousands of
+     every agent you run."; the close is "Fleet command for thousands of
      agents." over the reassurance line; the buttons are Download for Mac and
      View on GitHub side by side, with no requirement line and no Add your
      harness. Project doc `website-overhaul.md` → "W15o", "W15p".

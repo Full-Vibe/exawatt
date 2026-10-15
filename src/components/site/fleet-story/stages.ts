@@ -83,7 +83,8 @@ export const STAGES: Stage[] = [
     // angle for the homepage: "Make the scene 1 H1 'Scale your agent
     // fleet'"; and on the line under it, which read as a list: "Maybe in
     // scene 1 it should be: Exawatt is the command surface for your agent
-    // fleet"). The deck keeps the line it had, to compare.
+    // fleet", then, so it does not repeat the title, "for every agent you
+    // run": "yes I like that"). The deck keeps the line it had, to compare.
     copy: {
       deck: {
         headline: ['The command interface for your agent fleet.'],
@@ -91,7 +92,7 @@ export const STAGES: Stage[] = [
       },
       canon: {
         headline: ['Scale your agent fleet.'],
-        body: ['Exawatt is the command surface for your agent fleet.'],
+        body: ['Exawatt is the command surface for every agent you run.'],
       },
     },
   },
