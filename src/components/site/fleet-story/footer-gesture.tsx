@@ -20,8 +20,13 @@ const VIGNETTE =
  * a whole new site"). The picture is the gesture alone, the face between the
  * two lit hands, small enough that the head and both hands stand inside a
  * one-row footer: centred across it, rising from the foot of the page, dimmed,
- * and its edges dissolved so there is no frame to it. The ground it dissolves
- * into is the story's own (the canvas colour of the story's theme,
+ * and its edges dissolved so there is no frame to it. On a phone the columns
+ * stack into a tall footer, and a figure rising from its foot stood under the
+ * last of them alone (operator 2026-10-14: "he's only under the legal section
+ * but he should be higher (still behind-z the footer menu), maybe just
+ * vertically centered or higher up"), so there he stands a little above the
+ * middle of the footer's height, behind its menu. The ground it dissolves into
+ * is the story's own (the canvas colour of the story's theme,
  * `scroll-experience.tsx`), so the last scene runs into the footer with no
  * seam. Lazy: it is the last thing on the page.
  */
@@ -34,10 +39,15 @@ export function FooterGesture() {
       style={{ background: ground }}
       data-footer-gesture
     >
-      {/* the figure rises from the foot of the page: the photograph is cut
-          at the chest, 58% down it, by the footer's bottom edge */}
+      {/* on a phone the vignette's middle, 40% down the photograph, is 45%
+          down the footer: the face a little above the footer's middle, the
+          lit fingertips in the gap above the second column rather than on
+          its words, and the chest gone to the ground before the last column.
+          From two columns up the figure rises from the foot of the page, the
+          photograph cut at the chest, 58% down it, by the footer's bottom
+          edge */}
       <div
-        className="absolute bottom-0 left-1/2 aspect-[3/2] w-[130vw] -translate-x-1/2 translate-y-[42%] sm:w-[80vw] lg:w-[41rem]"
+        className="absolute left-1/2 top-[45%] aspect-[3/2] w-[130vw] -translate-x-1/2 -translate-y-[40%] sm:bottom-0 sm:top-auto sm:w-[80vw] sm:translate-y-[42%] lg:w-[41rem]"
         style={{ maskImage: VIGNETTE, WebkitMaskImage: VIGNETTE }}
       >
         <Image
