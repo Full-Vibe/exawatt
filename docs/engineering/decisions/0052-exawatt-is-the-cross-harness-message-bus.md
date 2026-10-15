@@ -121,3 +121,21 @@ they give them ... we'll likely just be wrong most of the time."
   the Chatter sidebar is per Project; a cross-Project send fails at the
   sender with a clear reason (operator, 2026-10-15: "Within a project only,
   for now"). Workspace-wide addressing is a later decision, not a default.
+
+- **Transport is a plugin of the Agent Source; the core never knows the
+  mechanism.** Operator, 2026-10-15: "It should be built in a modular way,
+  kind of extension- or integration-based, such that any agent harness has
+  its own kind of plugin or wrapper. The Exawatt application, at some
+  architectural layer, shouldn't have to know or care how that transmission
+  mechanism works. It might be over the network, it might be on disk, or it
+  might be using the Codex Q or Claude Socket or whatever you found." So
+  each source plugin declares a `messaging` capability in its launch
+  descriptor, the same S5 shape as `eventChannel`: how the outbound tools
+  reach that harness (an executable on PATH, an MCP declaration, nothing) and
+  one `deliver(envelope)` adapter (a socket, a CLI queue, a terminal paste,
+  a file spool, a network relay, a provider's follow-up queue). The bus core
+  addresses, stamps, logs and calls `deliver`; it never branches on a
+  harness id, and the ledger records only the adapter's declared delivery
+  kind. A harness with no plugin reads `undeliverable` with that reason. A
+  standard (A2A, Claude channels, a hosted relay) arrives as one more
+  adapter, not a rewrite.

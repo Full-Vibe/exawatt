@@ -235,6 +235,14 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
   harness's user-input door (the terminal for Claude Code, since its TUI
   queues typed input while busy; `codex queue` for Codex; the terminal for
   Antigravity), so the message is the user's turn, not a peer's note.
+- **Plugin boundary (operator, 2026-10-15).** The transport is a plugin of
+  the Agent Source: each harness's launch descriptor declares a `messaging`
+  capability (outbound tool reach plus one `deliver(envelope)` adapter) in
+  the same S5 shape as `eventChannel`, and the bus core (address, stamp,
+  ledger, `deliver`) never branches on a harness id. Socket, CLI queue,
+  terminal paste, file spool, network relay and a provider's follow-up queue
+  are all adapters; the core treats them identically and records the
+  adapter's declared kind. Adding a harness or a standard is one adapter.
 - **Boundaries that hold.** No message can answer a permission prompt, change
   a policy, or run anything; it is text. The substrate degrades to nothing:
   with Exawatt closed, the `exawatt` executable is absent and the Agent

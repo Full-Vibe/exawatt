@@ -51,6 +51,15 @@ is the join.
   Until an API exists, a Project may carry a user-pasted link to such a
   Project as a binding (later milestone); Exawatt never claims the two are
   the same thing.
+- **Two-way door, and visibly so.** Operator, 2026-10-15: "we'll tweak this
+  over time so make sure this is a two-way door technical decision here.
+  Make sure it's very clear what's happening to the user so they can
+  understand as they onboard." Bindings are additive and dated, the join
+  rule is one function, worktree folding is a flag, `root_path` leaves only
+  after a reversible backfill, no store is written. On screen: one line
+  under "Your projects" saying where the rows come from and that opening one
+  creates a Project here and changes nothing in Claude Code, Codex or
+  Antigravity; badges name the harnesses that know each folder.
 - **The filter is strict and explainable.** A directory entry is suggested
   when it exists, is not the home directory, `Downloads`, a temporary path or
   anything under `Library`, is a git root or carries a project marker
