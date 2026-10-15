@@ -46,7 +46,7 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-030 | Open-source readiness                            | active-build | Public repo is live; repair projection/history parity, exact-tree CI/security, and public Release provenance before the friend cohort. Contribution intake is trigger-deferred. |
 | ENG-031 | Website — vision communication and guides        | active-build | SHAPED 2026-08-14 — the overhaul IS the ENG-030 launch surface. The W15 fleet story is `/`; W22 plans an authenticated homepage copy editor (decision `0048`). |
 | ENG-032 | Theming and visual identity                      | done         | T0–T5.3 LANDED — three presets share one app-global Manual/Auto contract with browser-paint and public-typography continuity gates.                                                    |
-| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction accepted 2026-09-24, P2 one-screen Connect and P3 one-click send access landed 2026-09-24; managed placement and clone/move remain design work. H3 direction decided 2026-09-28: Exawatt-hosted harness machines, design pass next. |
+| ENG-033 | Hosted Agents                                    | planned      | H0–H2 landed; H2.1–H2.3 shaped for pickup; H2.4 one-step Connect from ⌘T and ⌘N with a Remote home, direction accepted 2026-09-24, P2 one-screen Connect and P3 one-click send access landed 2026-09-24; managed placement and clone/move remain design work. H3 direction decided 2026-09-28: Exawatt-hosted harness machines, design pass next. H5 provider-hosted Agents on the same board ENQUEUED 2026-10-15 (Claude cloud first; design pass after the front). |
 | ENG-034 | Multiplayer and sharing                          | planned      | UNSHAPED pending a design pass — Docs-like permissions and sharing over ENG-027's Workspace scope.                                                                                     |
 | ENG-035 | Leaderboard and shareable stats                  | active-build | Agentmaxxing: opt-in public operator identity, multi-axis global ranks, activity graph, and shareable Runs.                                                                            |
 | ENG-037 | Cross-harness Session transfer                   | planned      | UNSHAPED pending a design pass — freeze a Session mid-work and reinflate it into another harness with one gesture.                                                                     |
@@ -125,6 +125,11 @@ agent; the full packet tables are in the project docs):
    link, the dashboard. Exit: the operator's own fresh-install run reads end
    to end in PostHog.
 7. **P7 MCP tools and guides** (ENG-029 B2 and B5, about 3 h, after B1).
+8. **P8 Cloud Agents on the same board** (ENG-033 H5; a design pass after
+   the MVPs, not this week's build). Claude cloud sessions first, through
+   the interfaces Claude Code now documents; the bus reaches a cloud Claude
+   through its follow-up queue. The cross-cloud bus for other species is an
+   open question the operator named.
 
 Wall clock with six agents: one afternoon to an MVP of every ask, P3
 deciding. Agent-ready briefs for every packet, verbatim, are in
@@ -1324,7 +1329,7 @@ Milestones:
 - O3 First-Agent hand-off: composer focused on the suggesting harness, recent conversations visible
 - O4 Bindings beyond the folder (Antigravity project, chat-Project links): unshaped until a user asks
 - O5 No-harness first run (operator, 2026-10-15): Exawatt detects that no harness is installed or signed in and gives clear remediation and next steps (install guide, sign-in, Recheck, then a folder), through the existing source cards and the ENG-045 guided-step pattern; no installer runs on the user's behalf. Design pass first (O0).
-- O0 Holistic first-run design pass (NEXT, before O2 and O5): one journey across the states no harness / harness not signed in / harness ready with projects / ready with none / Demo, prototyped at `/hud-gallery` per ENG-036 and reviewed by the operator before production wiring
+- O0 Holistic first-run design pass (NEXT, before O2 and O5): one journey across the states no harness / harness not signed in / harness ready with projects / ready with none / Demo, prototyped at `/hud-gallery` per ENG-036 and reviewed by the operator before production wiring. DIRECTION DECIDED 2026-10-15 (operator): one Start screen from existing parts replaces the lone Open Project button: the source cards (ready, sign in, install guide, exactly as Settings shows them), then Your projects (or Pick a folder when none), then Try the Demo; it remains the empty-Project state forever, a home rather than a wizard, and it is what the chooser and the composer already are, arranged once
 
 Project doc:
 
@@ -1359,6 +1364,7 @@ Milestones:
 - F2 The web-to-app link
 - F3 Dashboard
 - F4 Read-back against the update feed
+- F5 Signed-in activity stream (operator, 2026-10-15: "yes for authed users, I want to see their activity stream"): for accounts that sign in, the activation events plus Session-level activity (opened, launched, directed, finished; never prompt or output text) are written to the account in Supabase, disclosed at sign-in and on the Privacy page, and readable by the operator; anonymous installs stay anonymous. The dormant task-shaped `activity_events` table is replaced, not reused. Decision `0053` amended.
 
 Project doc:
 
@@ -2198,6 +2204,8 @@ surface, never a duplicate roster.
 Ownership: ENG-010 owns H1, ENG-011 later proves mixed-source fleet scale,
 ENG-012 owns hosted metadata/governance/billing, and ENG-033 owns the
 user-facing progression. No fourth execution plan.
+
+- H5 Provider-hosted Agents on the same board — ENQUEUED 2026-10-15 (operator: "Yes 100%... I want the user to spin up and monitor and talk to and manipulate their cloud agents just the same as they do local agents. Of course the visual treatment should be different, clear, and subtle but they should live on the same game board in the same project space"). Claude Code first, because its interfaces now exist and are documented: `claude --cloud "<task>"` creates a cloud session (GitHub remote or a bundled local repo), `claude agents --json` lists cloud and Remote Control sessions beside local ones when signed in to claude.ai, `claude -p "<text>" --cloud <session-id>` queues a follow-up, and `--teleport` pulls a session down. Shape: placement `provider-hosted` on the configured source (decision `0037` §3: a fact, never a different Agent noun), the same Agent, Project, Team, Fleet, Chatter and Direct surfaces, a subtle distinct treatment, and the bus delivering to a cloud Claude through the follow-up queue. Codex cloud and the Gemini managed agent follow the same shape on their own evidence. Design pass next, after the 2026-10-14 front's MVPs; recorded caveat, the operator's own: "how does [the bus] work between remote and local or between agents of different species across the cloud barrier? I'm not sure how that works. Maybe we'll solve it later."
 
 Project doc and decision: same as ENG-010 above.
 

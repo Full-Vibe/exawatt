@@ -67,3 +67,17 @@ funnel with a web-to-app link and without session replay.
 - ENG-047 owns execution; ENG-046's on-ramp emits `project_opened` and
   `agent_launched` from its first landing so the funnel reads the cohort the
   operator is talking to this week.
+
+## Amendment, 2026-10-15: a signed-in activity stream
+
+The operator, on per-person visibility: aggregate only for anonymous
+installs, "and yes for authed users, I want to see their activity stream."
+For an account that signs in, the activation events and Session-level
+activity (opened, launched, directed, finished; never prompt or output text,
+never a path) are written to that account in Supabase and are readable by
+the operator. Sign-in stays an invitation, never a gate (ENG-030 OS0), and
+the stream is disclosed at the moment of sign-in and on the Privacy page, so
+a person who signs in has read that their activity is recorded to their
+account. Anonymous installations stay anonymous, and `0031`'s separation of
+installation identity from account identity still holds: the stream is keyed
+by the account, not joined to the installation id. Execution: ENG-047 F5.

@@ -93,3 +93,23 @@ they give them ... we'll likely just be wrong most of the time."
   default-off control.
 - ENG-013's lead agent reads the same ledger it would otherwise have had to
   invent.
+
+## Amendments, 2026-10-15
+
+- **Harness-side holds mirror the launch policy, transparently.** For Claude
+  Code, which decides itself whether a peer message is delivered or held
+  (`crossSessionInbound`), Exawatt sets the per-launch value from the
+  Project's launch policy: YOLO and Auto-review launches accept, Ask-first
+  launches keep Claude's own hold dialog. The operator: "1 but make it
+  transparent and clear." So the composer's source detail and the Session
+  header state what that launch does with peer messages ("Peer messages:
+  delivered instantly" or "held for your approval, five minutes"), and the
+  Chatter sidebar shows `held` and `expired` as delivery states. This is
+  the user's own policy applied to one more input, not an Exawatt rule.
+- **Provider-hosted Agents are reachable through their provider's door.**
+  A Claude Code cloud session takes a follow-up through
+  `claude -p "<text>" --cloud <session-id>`; that is the delivery adapter
+  for a provider-hosted Claude Agent when ENG-033 H5 lands. How a message
+  crosses between a local Agent and a cloud Agent of another species is an
+  open question the operator named and deferred; the bus's store and
+  transport seam exists so that answer can be plugged in.

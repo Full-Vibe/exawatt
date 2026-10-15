@@ -163,6 +163,7 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
    Codex       ──▶ `codex queue --thread <id>` for an interactive tab; app-server `turn/steer` for an Exawatt-owned thread
    Antigravity ──▶ `--input-format stream-json` for an Exawatt-owned run; bracketed paste into the terminal when idle for an interactive tab (ledger: `delivered: terminal`)
    others      ──▶ bracketed paste when idle (`terminal`), or `undeliverable` with the reason
+   cloud Claude ──▶ `claude -p "<text>" --cloud <session-id>` (its follow-up queue; ENG-033 H5, later)
                                                               │
                                                               ▼
                                           viewer: Chatter sidebar (C1 live), Fleet selection panel (V4.2 Direct)
@@ -258,3 +259,6 @@ a demonstrable Claude ⇄ Codex ⇄ Antigravity exchange visible in Team.
 - Whether `codex queue` to a busy thread waits for the turn or interleaves.
 - Whether Antigravity's `.agents/` directory, which already carries the
   injected hooks, can also carry an MCP declaration per launch.
+- How a message crosses between a local Agent and a provider-hosted Agent of
+  another species (operator, 2026-10-15: "I'm not sure how that works. Maybe
+  we'll solve it later"). Claude cloud has a documented door; the rest do not.

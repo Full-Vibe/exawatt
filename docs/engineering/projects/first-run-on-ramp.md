@@ -130,6 +130,32 @@ itself, a backups volume and five temporary eval directories.
 
 ### 2026-10-14 — created from the operator brief
 
+### 2026-10-15 — the cohort is both kinds of person, and the first run is one Start screen
+
+Round 1: "Both, about evenly." Round 2, on a machine with no harness: "It
+should be smart and detect that and give clear remediation and next steps
+for the user. It should be clear, holistic, clean, and obvious inside our
+application not just like a feature-jammed single-use UI." Round 3, offered
+three shapes, the operator chose one Start screen from existing parts.
+
+**O0 shape, decided.** The empty-Project state (today one centered Open
+Project button and the account card) becomes a Start screen assembled from
+pieces that already exist and already carry their own truth:
+
+1. **Agents you can run**: the Settings source cards, in the composer's
+   order, each with its one next step (Sign in, Install guide, Recheck) and
+   decision `0051`'s line on the Gemini card. Nothing installs on the user's
+   behalf.
+2. **Your projects**: ENG-046's suggestions with harness badges and one-click
+   open; "Pick a folder" when there are none.
+3. **Try the Demo**: the existing Workspace switch.
+
+It stays the empty-Project state forever (a home, never a once-only wizard),
+so the ⌘N chooser, the composer and this screen are the same components
+arranged once. O0 prototypes it at `/hud-gallery` across the five states
+(no harness; installed, signed out; ready with projects; ready with none;
+Demo) for operator review before O2 and O5 wire it into production.
+
 Shaped in one pass with the research record. The operator's decisions are in
 the brief; the agent's standing decisions (join key, suggestions over import,
 user-linked chat Projects) are recorded there so they can be reversed.

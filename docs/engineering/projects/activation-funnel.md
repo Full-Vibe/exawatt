@@ -50,6 +50,15 @@ analytics (decision `0036`).
   with the Supabase update-feed downloads and record the ratio, so decision
   `0034`'s warning (first-party ingest "will look higher") is calibrated
   rather than guessed.
+- **F5 Signed-in activity stream** (decision `0053`, amended 2026-10-15). A
+  new account-keyed Supabase table (the dormant `activity_events` is
+  task-shaped and is replaced) receives, for signed-in accounts only, the
+  activation events plus Session-level activity: opened, launched, directed,
+  finished, with harness and placement, never prompt or output text and
+  never a path. Written from the main process through the existing
+  authenticated client; disclosed at sign-in and on the Privacy page; read by
+  the operator in Supabase (an in-app admin view is a later question).
+  Migrations are validated in PGlite before `supabase db push`.
 
 ## Ownership boundaries
 
