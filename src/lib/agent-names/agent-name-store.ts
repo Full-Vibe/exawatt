@@ -18,7 +18,7 @@ import type {
  * door.
  */
 
-export type AgentNames = ReadonlyMap<string, AgentNameRecord>;
+type AgentNames = ReadonlyMap<string, AgentNameRecord>;
 
 const EMPTY: AgentNames = new Map();
 

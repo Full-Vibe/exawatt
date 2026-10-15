@@ -19,7 +19,7 @@
 export const AGENT_NAME_MAX_LENGTH = 32;
 
 /** Who chose the name: allocation at launch, or the operator. */
-export type AgentNameOrigin = 'assigned' | 'operator';
+type AgentNameOrigin = 'assigned' | 'operator';
 
 export interface AgentNameRecord {
   /** The Exawatt Session id: the address beneath the name. */
@@ -45,9 +45,9 @@ export interface AgentNameRequest {
   preferredName?: string | null;
 }
 
-export type AgentNameRefusal = 'empty' | 'length' | 'characters' | 'reserved';
+type AgentNameRefusal = 'empty' | 'length' | 'characters' | 'reserved';
 
-export type AgentNameValidation =
+type AgentNameValidation =
   | { ok: true; name: string }
   | { ok: false; code: AgentNameRefusal; reason: string };
 
@@ -95,7 +95,7 @@ export function agentNamePrefix(harness: string): string {
 }
 
 /** The comparison key: names are unique and addressed without case. */
-export function agentNameKey(name: string): string {
+function agentNameKey(name: string): string {
   return name.normalize('NFC').toLowerCase();
 }
 
@@ -269,7 +269,7 @@ export interface AgentDirectoryEntry {
   name: string;
 }
 
-export type AgentAddressResolution<T extends AgentDirectoryEntry> =
+type AgentAddressResolution<T extends AgentDirectoryEntry> =
   | { kind: 'agent'; agent: T }
   | { kind: 'ambiguous'; reason: string; candidates: T[] }
   | { kind: 'none'; reason: string; elsewhere: T[] };

@@ -13,12 +13,12 @@ import {
 } from '../persisted-state-file';
 
 /** A record main keeps per durable Session. */
-export interface SessionKeyedRecord {
+interface SessionKeyedRecord {
   durableSessionId: string;
   updatedAt: number;
 }
 
-export interface SessionRecordStoreOptions<R> {
+interface SessionRecordStoreOptions<R> {
   /** What the operator knows this state as, for the unreadable notice. */
   label: string;
   /** The array's key in `{ v: 1, [collection]: R[] }`. */
