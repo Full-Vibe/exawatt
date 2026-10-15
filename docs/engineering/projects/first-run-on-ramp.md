@@ -357,3 +357,73 @@ known to more than one harness, and most Claude Code entries pointing at
 directories that no longer exist, which is what made "a binding is dated
 evidence" an invariant rather than a nicety. O4's build stays unshaped until
 a user asks for the chat-Project link.
+
+### 2026-10-15 — O0 study landed, awaiting operator review
+
+Route: `/hud-gallery/start-screen` (`src/app/hud-gallery/start-screen/`),
+linked from the gallery index under Review workbenches. Landed as `50c9544c`.
+Every control is in the URL: `?state=&theme=&width=&card=`.
+
+**The five states**, one composition each (Agents you can run, then Your
+projects or Pick a folder, then Try the Demo; no steps, no progress, no
+dismiss):
+
+1. `no-harness`: six cards, each Not installed with Install guide and
+   Recheck; Pick a folder with Browse, Import and Connect a server; the Demo
+   row.
+2. `signed-out`: Antigravity installed, Google not signed in. The Gemini
+   card (ENG-003 S5.3.1 face: "Gemini" over "Antigravity CLI") reads Action
+   required with the one next step "Sign in to Google in Antigravity",
+   Recheck beside it, and decision `0051`'s one line with the FAQ link.
+3. `ready-projects`: Claude Code, Codex and Gemini ready; eight authored
+   suggestions ranked by last activity, harness badges per row, relative
+   time, six inside the 30-day window and two behind "Show older (2)", "Open
+   all recent". Clicking a row shows the hand-off: the real `AgentLauncher`
+   with the suggesting engine selected and the not-installed engine dimmed
+   with its reason (O3's moment, shown once).
+4. `ready-empty`: the same cards, Pick a folder, the Demo row.
+5. `demo`: the Try the Demo row switched: Demo named with its tagline, the
+   ribbon of ten Voltaic Projects with Agent counts, the active Project's
+   Agents under real `StatusLight`s, and Personal as the way back.
+
+Themes Classic, Air and Night; desktop and a 520px frame; reduced motion
+checked (the study carries no motion). Keyboard reachable: every row and
+step is a button.
+
+**Reused as is:** `Button`, `SourceIdentityMark`, `SettingsSourceMark`,
+`StatusLight`, `AgentLauncher` with the launcher bench's cold setups and
+`benchAxes`, `DEMO_WORKSPACE` and `PERSONAL_WORKSPACE`, `OUTBOUND_CONTROLS`,
+the Voltaic fixture (`DEMO_PROJECTS`, `DEMO_BASE_AGENTS`), the composer's
+engine order and source declarations, the workspace HUD roles and the theme
+registry.
+
+**Copied, so the production packet knows what to make controllable:** the
+Settings source card (rail row, state pill and the repair actions are
+private to `AgentSourcesSettings`, bound to the registry IPC); the chooser's
+Project row and its Browse / Import / Connect footer (inline in
+`ProjectOpener`, bound to the registry and the native picker); the account
+menu's Workspace row (inside the dropdown); the Demo ribbon's Project chip
+(`TabStrip` over live state); `AccountFirstRunCard` (reads Supabase, the
+pathname and storage). Two study decisions to confirm: the cards paint from
+the shared HUD and action roles rather than the Settings-scoped neutrals,
+because the Start screen lives on the workspace stage; next steps use the
+one button recipe (`outline`, Recheck `ghost`) rather than Settings' amber
+repair button, because six accent buttons on a home screen would break the
+one-primary-action rule.
+
+**Questions for the operator:**
+
+1. Six cards or only the installed ones? The composer's order shows every
+   engine, so the no-harness state is six install guides.
+2. Does the account invitation keep floating over the Start screen (it
+   covers the top-right cards, including Gemini's state), or become a fourth
+   row under Try the Demo?
+3. After a one-click open, is the composer alone enough, or should the
+   Project's recent conversations sit beside it from the first open (O3)?
+
+Verification: `page.test.tsx` pins the contract only (five distinct states,
+one next step per card, section order, the 30-day split derived from the
+fixture, the hand-off, the Demo switch, no em dash); lint, type-check,
+`theme:check`, `copy:check`, `eval:gallery:labels` against the worktree's
+dev server; 54 screenshots (5 states × 3 themes × 2 widths, plus older,
+opened, card-on and reduced-motion variants) reviewed by eye.
