@@ -83,6 +83,75 @@ async function event(app, name) {
   );
 }
 
+/** The fixed fixture isolates policy. This second pass keeps real Demo ticks live. */
+async function liveDemoPower(app, page) {
+  await event(app, 'resume');
+  await event(app, 'unlock-screen');
+  await page.evaluate(async view => {
+    localStorage.setItem('exawatt:active-workspace:v1', 'demo');
+    await window.electron.settings.setPresentation({
+      schemaVersion: 1,
+      fleetView: view,
+    });
+  }, fleetView);
+  await page.goto(fleetViewUrl(`${base}/fleet/spatial`), { waitUntil: 'load' });
+  await assertFleetView(page);
+  await page.waitForFunction(
+    () => window.__EVAL_GL__ && document.querySelector('canvas')?.width > 0
+  );
+  await event(app, 'on-ac');
+  await renderPasses(page, 180);
+  const ac = await ambientSample(page, 60);
+  assert(
+    ac.rotors > 0 && ac.painted > 0,
+    'live Demo must render working Agents'
+  );
+  await event(app, 'on-battery');
+  await renderPasses(page, 90);
+  const battery = await ambientSample(page, 60);
+  assert(battery.painted > 0, 'live Demo battery policy froze working Agents');
+  if (battery.tickMs !== null && battery.tickMs < HEALTHY_TICK_MS) {
+    assert(
+      battery.painted < battery.ticks,
+      'live Demo updates bypassed economy cadence'
+    );
+  }
+  assert.equal(battery.dpr, ac.dpr, 'live Demo battery changed resolution');
+  await event(app, 'lock-screen');
+  const lockedStart = await renderPasses(page, 90);
+  // Several actual source ticks cross this window. They may reconcile state,
+  // but an unseen canvas must not render them or request ambient frames.
+  const lockedEnd = await renderPasses(page, 360);
+  assert.equal(
+    lockedEnd,
+    lockedStart,
+    'live Demo updates painted a locked canvas'
+  );
+  await event(app, 'unlock-screen');
+  const unlockedStart = await renderPasses(page, 10);
+  assert(
+    (await renderPasses(page, 60)) > unlockedStart,
+    'live Demo did not wake on unlock'
+  );
+  await page.screenshot({ path: join(artifacts, 'live-demo-battery.png') });
+  await event(app, 'suspend');
+  const suspendedStart = await renderPasses(page, 90);
+  const suspendedEnd = await renderPasses(page, 360);
+  assert.equal(
+    suspendedEnd,
+    suspendedStart,
+    'live Demo updates painted a suspended canvas'
+  );
+  await event(app, 'resume');
+  await event(app, 'unlock-screen');
+  return {
+    ac,
+    battery,
+    lockedRenderPasses: lockedEnd - lockedStart,
+    suspendedRenderPasses: suspendedEnd - suspendedStart,
+  };
+}
+
 try {
   await withElectronApp(
     {
@@ -206,11 +275,13 @@ try {
         resumedPower,
         'resume refreshes real power source'
       );
+      const liveDemo = await liveDemoPower(app, page);
       assert.deepEqual(errors, []);
       console.log(
         JSON.stringify({
           result: 'pass',
           initial,
+          liveDemo,
           ac,
           lockedRenderPasses: lockedEnd - lockedStart,
           battery,
