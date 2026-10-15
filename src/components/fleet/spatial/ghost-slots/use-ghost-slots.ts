@@ -15,7 +15,7 @@ import { rememberSpatialReturn } from '@/components/nav/spatial-return';
  * (ENG-004 V4.2). Exactly one answer per ghost, so the notice a ghost raises
  * and the composer it opens can never disagree.
  */
-export type GhostActivation =
+type GhostActivation =
   | { kind: 'compose'; projectDir: string }
   | { kind: 'unavailable'; reason: string };
 
