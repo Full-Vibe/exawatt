@@ -70,6 +70,29 @@ describe('public homepage copy read', () => {
     expect(eq).toHaveBeenCalledWith('singleton', true);
   });
 
+  it('serves the checked-in document, without an error, before the first publish', async () => {
+    // the singleton row exists from the migration on, empty until a publish
+    distribution.account = {
+      supabaseUrl: 'https://account.example.test',
+      supabaseAnonKey: 'public-key',
+    };
+    maybeSingle.mockResolvedValue({
+      data: { publication_id: null, document: null },
+      error: null,
+    });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      expect(await readPublishedHomepageCopy()).toEqual({
+        document: HOMEPAGE_COPY_BASELINE,
+        publicationId: null,
+      });
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('never renders an invalid hosted snapshot', async () => {
     distribution.account = {
       supabaseUrl: 'https://account.example.test',

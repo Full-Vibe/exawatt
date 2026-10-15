@@ -35,9 +35,9 @@ export const readPublishedHomepageCopy = cache(
               fetch(input, {
                 ...init,
                 cache: 'no-store',
-              signal: init?.signal
-                ? AbortSignal.any([init.signal, AbortSignal.timeout(5_000)])
-                : AbortSignal.timeout(5_000),
+                signal: init?.signal
+                  ? AbortSignal.any([init.signal, AbortSignal.timeout(5_000)])
+                  : AbortSignal.timeout(5_000),
               }),
           },
         }
@@ -48,7 +48,10 @@ export const readPublishedHomepageCopy = cache(
         .eq('singleton', true)
         .maybeSingle();
       if (error) throw error;
-      if (!data) return baseline;
+      // the singleton row always exists; until a first publish it holds no
+      // document, which is the baseline, not a broken snapshot
+      if (!data || (data.publication_id === null && data.document === null))
+        return baseline;
       return {
         publicationId: data.publication_id,
         document: parseHomepageCopyDocument(data.document),
