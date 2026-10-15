@@ -8,16 +8,22 @@ describe('Agent command Project ownership', () => {
       { clusterId: 'project-a', agentIds: ['a', 'b'] },
       { clusterId: 'project-b', agentIds: ['c'] },
     ]);
-    expect(select([
-      { clusterId: 'project-b', agentIds: ['c'] },
-      { clusterId: 'project-a', agentIds: ['b', 'a'] },
-    ])).toBe(first);
+    expect(
+      select([
+        { clusterId: 'project-b', agentIds: ['c'] },
+        { clusterId: 'project-a', agentIds: ['b', 'a'] },
+      ])
+    ).toBe(first);
   });
 
   it('immediately routes moves, additions and removals using current membership', () => {
     const select = createAgentProjectOwnersSelector();
-    const before = select([{ clusterId: 'old-project', agentIds: ['a', 'removed'] }]);
-    const after = select([{ clusterId: 'new-project', agentIds: ['a', 'added'] }]);
+    const before = select([
+      { clusterId: 'old-project', agentIds: ['a', 'removed'] },
+    ]);
+    const after = select([
+      { clusterId: 'new-project', agentIds: ['a', 'added'] },
+    ]);
     expect(after).not.toBe(before);
     expect(after.get('a')).toBe('new-project');
     expect(after.get('added')).toBe('new-project');

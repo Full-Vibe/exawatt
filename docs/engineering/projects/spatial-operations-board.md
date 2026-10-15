@@ -3532,4 +3532,12 @@ captures (five scenes at desktop and mobile widths).
 The delivery floor runs each declared gate on its exact committed candidate.
 Browser and Electron Session/source journeys now select and assert both actual
 renderers, rather than allowing a v2 preference write to masquerade as coverage.
+The combined candidate passed the application suite, all material/theme/scale
+comparisons, packaged connected-Agent and Session journeys, and live host-power
+checks. Its v1 motion run exposed a remaining callback dependency: every Demo
+metadata tick rebuilt Agent ownership zones and therefore the selection handler,
+invalidating the neutral-body memo despite unchanged geometry. A browser trace
+confirmed two such updates with all 164 body inputs otherwise unchanged. The
+selection dependency now uses semantic Agent-to-Project ownership;
+the existing 50ms motion budget remains unchanged for final delivery.
 P5 remains a separate small availability slice after P4 integrates.

@@ -17,8 +17,11 @@ export function createAgentProjectOwnersSelector() {
     }
     if (
       previous.size === next.size &&
-      [...next].every(([agentId, projectId]) => previous.get(agentId) === projectId)
-    ) return previous;
+      [...next].every(
+        ([agentId, projectId]) => previous.get(agentId) === projectId
+      )
+    )
+      return previous;
     previous = next;
     return next;
   };

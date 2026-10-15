@@ -379,7 +379,10 @@ export function SpatialFleetClient() {
     [fleetState, projects]
   );
 
-  const selectAgentProjectOwners = useMemo(() => createAgentProjectOwnersSelector(), []);
+  const selectAgentProjectOwners = useMemo(
+    () => createAgentProjectOwnersSelector(),
+    []
+  );
   const agentProjectOwners = selectAgentProjectOwners(fieldZones);
 
   const updateFilters = useCallback(
@@ -494,8 +497,7 @@ export function SpatialFleetClient() {
   const handleSelectAgent = useCallback(
     (agentId: string | null) => {
       if (agentId) {
-        const owner =
-          agentProjectOwners.get(agentId) ?? null;
+        const owner = agentProjectOwners.get(agentId) ?? null;
         navigate({ altitude: 'agent', project: owner, agent: agentId });
       } else if (multiSelection.size > 0) {
         clearMultiSelect();
@@ -503,7 +505,13 @@ export function SpatialFleetClient() {
         ascend();
       }
     },
-    [ascend, clearMultiSelect, agentProjectOwners, multiSelection.size, navigate]
+    [
+      ascend,
+      clearMultiSelect,
+      agentProjectOwners,
+      multiSelection.size,
+      navigate,
+    ]
   );
 
   useFleetAttention({
@@ -514,8 +522,7 @@ export function SpatialFleetClient() {
 
   const moveAgentSelection = useCallback(
     (agentId: string) => {
-      const owner =
-        agentProjectOwners.get(agentId) ?? null;
+      const owner = agentProjectOwners.get(agentId) ?? null;
       navigate({
         altitude: scene.altitude,
         project: scene.altitude === 'fleet' ? null : owner,
