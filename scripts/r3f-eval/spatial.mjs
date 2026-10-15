@@ -861,6 +861,47 @@ async function measureIdleFrames(page) {
   );
 }
 
+/** Reduced motion parks ambient work, but never prevents real data from painting. */
+async function checkReducedMotionPark(browser) {
+  const page = await browser.newPage({
+    viewport: { width: 1280, height: 800 },
+    reducedMotion: 'reduce',
+  });
+  const result = {
+    name: 'reduced-motion-fixed-inputs',
+    passed: false,
+    errors: [],
+  };
+  page.on('pageerror', error => result.errors.push(error.message));
+  page.on('console', message => {
+    if (message.type() === 'error')
+      result.errors.push(consoleErrorText(message));
+  });
+  try {
+    await primeEvalBrowserPage(page);
+    await prepareFleetViewPage(page);
+    await page.goto(
+      fleetViewUrl(`${EXA_BASE}/eval/t10-board-scale?agents=30&projects=5`),
+      { waitUntil: 'load' }
+    );
+    await waitForSpatialCanvas(page);
+    result.detail = await measureIdleFrames(page);
+    check(result.detail.rotors > 0, 'Fixed-input fixture has no working marks');
+    check(
+      result.detail.renders === 0,
+      `Reduced-motion fixed-input scene must park; drew ${result.detail.renders} idle frames`
+    );
+    await checkWorkingMotion(page, { expectMotion: false });
+    await page.screenshot({ path: join(REPORT_DIR, `${result.name}.png`) });
+    result.passed = result.errors.length === 0;
+  } catch (error) {
+    result.errors.push(String(error.message || error));
+  } finally {
+    await page.close();
+  }
+  return result;
+}
+
 async function runScenario(browser, scenario) {
   const page = await browser.newPage({
     viewport: scenario.viewport,
@@ -985,20 +1026,14 @@ async function runScenario(browser, scenario) {
         'Mobile Agent inspector is not visible'
       );
     }
-    if (scenario.reduced) {
-      // V2.4 gate amendment: ambient status motion (breathing halos,
-      // selection rotation) deliberately keeps the VISIBLE scene alive, so
-      // the park-at-rest assertion belongs to the context that must park:
-      // reduced motion (hidden tabs park too, untestable here).
-      check(
-        idle.renders === 0,
-        `Reduced-motion scene must park; drew ${idle.renders} idle frames`
-      );
-    } else if (scenario.lowPower) {
+    // Reduced motion must still paint changed records. Live Demo ticks every
+    // second, so its frame count is diagnostic; the fixed-input park gate below
+    // isolates the ambient scheduler without suppressing production updates.
+    if (scenario.lowPower) {
       // BUG-263: power is a cadence, not a freeze. Weak hardware keeps the
       // working rotors turning on the bounded economy timer.
       checkEconomyCadence(idle, 'Low power');
-    } else if (idle.rotors > 0) {
+    } else if (!scenario.reduced && idle.rotors > 0) {
       check(idle.painted > 0, 'Working rotors stopped requesting frames');
     }
 
@@ -1292,6 +1327,7 @@ const browser = await chromium.launch({
 });
 const results = [];
 try {
+  results.push(await checkReducedMotionPark(browser));
   results.push(await checkDisplayResolution(browser));
   results.push(await checkDisplayResolution(browser, true));
   for (const scenario of scenarios) {

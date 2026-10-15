@@ -344,7 +344,12 @@ const rmPage = await browser.newPage({
 const rmErrors = [];
 rmPage.on('pageerror', e => rmErrors.push(String(e.message || e)));
 await prepareFleetViewPage(rmPage);
-await rmPage.goto(fleetViewUrl(`${BASE}/fleet/spatial`), { waitUntil: 'load' });
+// Live Demo records legitimately update every second, even with reduced motion.
+// Pixel stability is an ambient-rendering contract only while inputs stay fixed.
+await rmPage.goto(
+  fleetViewUrl(`${BASE}/eval/t10-board-scale?agents=30&projects=5`),
+  { waitUntil: 'load' }
+);
 await rmPage.waitForFunction(() => {
   const c = document.querySelector('canvas');
   return c && c.width > 0 && c.height > 0;
