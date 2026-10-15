@@ -3471,3 +3471,46 @@ not only deterministic fixtures. Evidence must distinguish CPU submission
 from GPU load and verify foreground battery cadence plus hidden/locked/
 suspended rendering. No claim of universal zero CPU usage or battery drain
 is made from development-host measurements.
+
+### 2026-10-15 — V4.1 P4 app parity and power controls
+
+**Fleet v2 now implements the real board contract; final delivery remains gated on performance evidence.**
+One lazy view registry selects the canvas. Both presentations share layout,
+source-owned status and harness identity, selection, child delegation,
+keyboard/pointer controls and Session addresses. Five materials come from the
+bench catalog; Gummy is the material default and v1 remains the view default.
+Settings has grouped destinations, searchable topic metadata and stable links.
+
+Camera registration restores the latest viewport only when the lazy renderer
+is ready, preserving logical zoom across v1/v2 changes. A failed renderer can
+retry or reach Fleet Settings. Team card entry remains flat during the carry
+and completes the fixed angle even if the operator pans during entry. Dense
+parent/child DOM targets use projected extents so adjacent children cannot
+intercept their parent's click. BUG-282's retired-route fallbacks now keep an
+unavailable Session on its board with an explanation, or open Fleet Settings.
+
+Measured performance repairs include bounded coarse aggregate geometry, one
+lighting/environment owner, disposal of temporary reflection resources, no
+transmission pass on battery, and no redundant window input listeners for
+DOM-owned tiles. Canvases stop their frameloop while hidden, locked or suspended.
+The Demo frame context is now a stable subscribable store; unrelated source
+ticks no longer cross R3F's context bridge and repaint stationary canvases.
+See [incident 0037](../incidents/0037-demo-context-repaints-unrelated-canvases.md)
+for the diagnosis, rejected hypotheses and regression controls.
+
+Independent verification before delivery: five Settings gates, all five
+materials across 80 bench canvases, v2 spatial/pointer contracts, camera
+switch/entry journeys and both-view emergence passed. Both views also passed
+the real Electron live-Demo host-power check: DPR stayed 2, working marks
+continued on battery, and lock and suspend each drew zero frames across 360
+refreshes while source updates continued. The 10k Project probe reduced
+geometry from 31.13M to 1.085M triangles per frame and median painted intervals
+from 32.3ms to 16.6ms (17.4ms p95). CPU submission alone was insufficient: a
+whole-main-thread probe found avoidable aggregate transforms during continuous
+camera input, so final acceptance also measures that workload. These are
+development-host measurements, not a claim about battery-life duration.
+
+The delivery floor runs each declared gate on its exact committed candidate.
+Browser and Electron Session/source journeys now select and assert both actual
+renderers, rather than allowing a v2 preference write to masquerade as coverage.
+P5 remains a separate small availability slice after P4 integrates.
