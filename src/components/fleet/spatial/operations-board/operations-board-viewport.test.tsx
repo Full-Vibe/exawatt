@@ -3,7 +3,7 @@ import { useEffect, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAgent } from '@exawatt/core';
 import { selectSpatialBoardLayout } from '@exawatt/ui-model';
-import type { FleetView } from '@exawatt/core/desktop-bridge';
+import type { FleetView, FleetMaterial } from '@exawatt/core/desktop-bridge';
 import type { OperationsBoardCanvas } from './operations-board-canvas';
 import type { OperationsBoardHandle } from './operations-board-camera-rig';
 import { THEME_REGISTRY } from '@/generated/theme-registry';
@@ -224,9 +224,10 @@ describe('board renderer readiness', () => {
   it('retries a rejected import with a fresh attempt while retaining viewport and selection', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const selectedLayout = { ...layout, selectedAgentId: agent.id };
-    const renderSelected = () => (
+    const renderSelected = (material: FleetMaterial = 'gummy') => (
       <OperationsBoardSurface
         layout={selectedLayout}
+        material={material}
         fleetView="v2"
         projection="fixed-angle"
         viewportStorageKey={storageKey}
@@ -243,6 +244,7 @@ describe('board renderer readiness', () => {
       await Promise.resolve();
     });
     expect(rig.loads.get('v2')).toBe(1);
+    expect(rig.loads.has('v1')).toBe(false);
     rig.rejectLoad = null;
     await act(async () => view.rerender(renderSelected()));
     expect(rig.loads.get('v2')).toBe(1);
@@ -259,7 +261,8 @@ describe('board renderer readiness', () => {
     expect(controller.restoreViewport).toHaveBeenCalledExactlyOnceWith(
       remembered
     );
-    await act(async () => view.rerender(renderSelected()));
+    await act(async () => view.rerender(renderSelected('matte')));
+    expect(rig.props.get('v2')!.layout.selectedAgentId).toBe(agent.id);
     expect(rig.loads.get('v2')).toBe(2);
   });
 });

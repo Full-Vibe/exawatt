@@ -298,15 +298,6 @@ function BoardMiniMap({
   );
 }
 
-/**
- * The board is a memo boundary (V3.7). Nothing above it is compiled by the
- * React Compiler, so without this every render of the fleet client -- the
- * URL catching up with a move already made, a minute-clock tick, a fleet
- * tick that changed nothing the board reads -- re-rendered the surface, the
- * canvas, and every layer under it: measured 56ms, landing mid-flight as a
- * frame hitch. Every prop it takes is stable across those renders, so the
- * boundary is what makes that fact count.
- */
 /** Attempt identities are created at mount/retry, never during scene updates. */
 function createRendererAttempt(view: FleetView, revision = 0) {
   return { Canvas: lazy(boardViewFor(view).load), revision };
@@ -318,6 +309,15 @@ function initialRendererAttempts() {
   };
 }
 
+/**
+ * The board is a memo boundary (V3.7). Nothing above it is compiled by the
+ * React Compiler, so without this every render of the fleet client -- the
+ * URL catching up with a move already made, a minute-clock tick, a fleet
+ * tick that changed nothing the board reads -- re-rendered the surface, the
+ * canvas, and every layer under it: measured 56ms, landing mid-flight as a
+ * frame hitch. Every prop it takes is stable across those renders, so the
+ * boundary is what makes that fact count.
+ */
 export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   layout,
   projection: requestedProjection,
