@@ -752,6 +752,7 @@ export function TileRenderer({
   // when the browser takes the gesture (a scroll on glass) or the window
   // loses focus.
   useEffect(() => {
+    if (!interactive) return;
     const up = () => {
       letGo(anim, play);
       requestFrame?.();
@@ -769,7 +770,7 @@ export function TileRenderer({
       window.removeEventListener('pointercancel', drop);
       window.removeEventListener('blur', drop);
     };
-  }, [anim, play, requestFrame]);
+  }, [anim, play, requestFrame, interactive]);
 
   const setCursor = (pointing: boolean) => {
     gl.domElement.style.setProperty('cursor', pointing ? 'pointer' : '');
