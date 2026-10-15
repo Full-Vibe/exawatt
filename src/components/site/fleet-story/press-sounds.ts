@@ -3,7 +3,8 @@
  * 2026-10-14: "add some sound effect options... other cool sound effects to
  * use for the different materials"). A press plays on the way down and a
  * quieter release on the way up, as the keyswitch study's Frosted thock does
- * (W15i), which stays the homepage's sound and Matte's.
+ * (W15i), which stays Matte's. The homepage plays its material's own: Gummy's
+ * droplet (operator 2026-10-14: "Use the Droplet sound for Gummy").
  *
  * Every sound is synthesized on the spot from a few voices: a tone (an
  * oscillator, with a pitch glide or a wobble), filtered noise (the contact),
@@ -30,21 +31,20 @@ export type PressSoundId =
   | 'bubble'
   | 'droplet';
 
-/** What a visual is told to play: a sound by name, `true` for the
- *  homepage's own (the Frosted thock), or `false` for none. */
-export type PressSoundSetting = boolean | PressSoundId;
+/** What a visual is told to play: a sound by name, or `false` for none. */
+export type PressSoundSetting = PressSoundId | false;
 
 export const PRESS_SOUNDS: { id: PressSoundId; name: string; note: string }[] =
   [
     {
       id: 'thock',
       name: 'Thock',
-      note: "The keyswitch study's Frosted thock: a soft polymer key. Matte's, and the homepage's.",
+      note: "The keyswitch study's Frosted thock: a soft polymer key. Matte's.",
     },
     {
       id: 'blop',
       name: 'Blop',
-      note: "Gummy's: a soft wet squish going down, a wobbly spring back up.",
+      note: 'A soft wet squish going down, a wobbly spring back up.',
     },
     {
       id: 'tick',
@@ -69,7 +69,7 @@ export const PRESS_SOUNDS: { id: PressSoundId; name: string; note: string }[] =
     {
       id: 'droplet',
       name: 'Droplet',
-      note: 'A drop falling into still water, and a tiny one after.',
+      note: "Gummy's: a drop falling into still water, and a tiny one after.",
     },
   ];
 
@@ -77,19 +77,10 @@ export const PRESS_SOUNDS: { id: PressSoundId; name: string; note: string }[] =
 export const MATERIAL_SOUND: Record<CrustMaterialId, PressSoundId> = {
   matte: 'thock',
   glazed: 'tink',
-  gummy: 'blop',
+  gummy: 'droplet',
   acrylic: 'tick',
   anodized: 'clink',
 };
-
-/** The sound a setting plays, or none. */
-export function resolvePressSound(
-  setting: PressSoundSetting
-): PressSoundId | null {
-  if (setting === true) return 'thock';
-  if (setting === false) return null;
-  return setting;
-}
 
 interface Envelope {
   /** Seconds after the strike the voice starts. */

@@ -5,7 +5,6 @@ import {
   PRESS_SOUND_DESIGNS,
   PRESS_SOUNDS,
   playPressSound,
-  resolvePressSound,
   voiceLength,
 } from './press-sounds';
 import { CRUST_MATERIALS } from './visuals/crust-materials';
@@ -93,10 +92,12 @@ describe('press sounds (ENG-031)', () => {
         expect(PRESS_SOUND_DESIGNS[sound.id]).toBeDefined();
   });
 
-  it('keeps the homepage on the Frosted thock', () => {
-    expect(resolvePressSound(true)).toBe('thock');
-    expect(resolvePressSound(false)).toBeNull();
-    expect(resolvePressSound('tink')).toBe('tink');
+  it('gives every material a sound of its own', () => {
+    const sounds = CRUST_MATERIALS.map(material => MATERIAL_SOUND[material.id]);
+    expect(new Set(sounds).size).toBe(sounds.length);
+  });
+
+  it('plays the thock exactly as the keyswitch study does', () => {
     for (const phase of ['press', 'release'] as const) {
       const ours = recorder();
       const keyswitch = recorder();

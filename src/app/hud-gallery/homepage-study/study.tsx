@@ -493,7 +493,7 @@ export function HomepageStudy({ fontVariables }: { fontVariables: string }) {
             <Option
               active={state.sound}
               href={href({ ...state, sound: true })}
-              title="Pressing an agent clicks like the keyswitch study's Frosted thock."
+              title="Pressing an agent makes its material's sound."
             >
               On
             </Option>

@@ -3,10 +3,10 @@
 /**
  * The sound of pressing an agent (ENG-031 W15i, operator 2026-10-13: "add
  * the keyswitch sound effect for clicking-to-select a given agent (from the
- * Keyswitch material studies)"). The homepage plays the keyswitch study's
- * Frosted thock, the profile the shipped Agent Start key plays; the material
- * study can pick any of the sounds in `press-sounds.ts`, each synthesized on
- * the spot: a press on the way down, a quieter release on the way up.
+ * Keyswitch material studies)"). The homepage plays its material's own sound
+ * (`MATERIAL_SOUND`: Gummy's droplet); the material study can pick any of the
+ * sounds in `press-sounds.ts`, each synthesized on the spot: a press on the
+ * way down, a quieter release on the way up.
  *
  * Only ever from a pointer gesture. The audio context is made on the first
  * one, which is what lets a browser start it, and closed with the page.
@@ -16,7 +16,6 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { KeySwitchSoundPhase } from '@/components/hud/webgl/keyswitch-audio';
 import {
   playPressSound,
-  resolvePressSound,
   type PressSoundId,
   type PressSoundSetting,
 } from './press-sounds';
@@ -66,11 +65,10 @@ export function usePressSound(
   const audio = useAudio();
   return useCallback(
     (phase: KeySwitchSoundPhase) => {
-      const id = resolvePressSound(sound);
-      if (!id) return;
+      if (!sound) return;
       try {
         const active = audio();
-        if (active) playPressSound(active, id, phase);
+        if (active) playPressSound(active, sound, phase);
       } catch {
         // no sound is never an error
       }

@@ -49,6 +49,7 @@ import { fleetModel, STATUS_LABEL, type FleetAgent } from './fleet-model';
 import { facingFade, nameShown, nameStyleOf, type NamesId } from './names';
 import { isNarrow, isShort } from './narrow';
 import { PinnedAgentPanel } from './pinned-agent-panel';
+import { MATERIAL_SOUND } from './press-sounds';
 import {
   exemplarFor,
   leanCurve,
@@ -144,7 +145,7 @@ export function ScrollExperience({
   /** Off: the browser scrolls. Soft: a glide to the nearest frame when the
    *  scroll stops. Page: one scene per gesture. */
   snap: SnapMode;
-  /** Pressing an agent clicks like a key. */
+  /** Pressing an agent makes its material's sound (`MATERIAL_SOUND`). */
   sound: boolean;
   /** How the Project names are drawn. */
   names: NamesId;
@@ -529,7 +530,7 @@ export function ScrollExperience({
             motion={motion}
             signal={signal}
             light={light}
-            sound={sound}
+            sound={sound ? MATERIAL_SOUND[material] : false}
             names={names}
             onHoverChange={onHoverChange}
             onSelect={onSelect}
