@@ -1023,9 +1023,11 @@ function PanelBody({
         // two do not fit across, the source goes under the download
         <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-3 pt-1">
           <DownloadCta align="center" requirement={false} />
+          {/* a keyboard's focus rings it in white, clear of the border, as it
+              does the download */}
           <Button
             asChild
-            className="h-11 gap-2.5 rounded-md border border-white/25 bg-white/[0.06] px-6 text-base font-semibold text-white shadow-none hover:bg-white/[0.12] [&_svg]:size-5"
+            className="h-11 gap-2.5 rounded-md border border-white/25 bg-white/[0.06] px-6 text-base font-semibold text-white shadow-none hover:bg-white/[0.12] focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black [&_svg]:size-5"
           >
             <a
               href={GITHUB_URL}

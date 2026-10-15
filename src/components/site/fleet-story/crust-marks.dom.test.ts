@@ -116,6 +116,17 @@ describe('the marks as geometry', () => {
     expect(shapes[0].holes).toHaveLength(2);
   });
 
+  it("stands Grok Bot's face in the middle of its tile", () => {
+    // the page draws the face in a box moved by 15 (`translate`); without the
+    // move the face would sit off to one side and still fit the box
+    const index = markIndexFor('grok-bot');
+    const head = parts.find(part => part.mark === index);
+    if (!head) throw new Error('no Grok Bot mark');
+    const b = box(head.geometry);
+    expect((b.min.x + b.max.x) / 2).toBeCloseTo(0, 2);
+    expect((b.min.z + b.max.z) / 2).toBeCloseTo(0, 2);
+  });
+
   it('gives a stroked antenna a real width, not a hairline', () => {
     const index = markIndexFor('openclaw');
     const mine = parts.filter(part => part.mark === index);

@@ -155,8 +155,9 @@ export interface VisualProps {
   /** Whether a ghost answers the pointer now (a lone agent's slots do; a
    *  full cluster's do not). Read only when `onExpand` is given. */
   expandable?: boolean;
-  /** Pressing an agent or a slot clicks like a key (W15i): `true` is the
-   *  homepage's Frosted thock, or a sound from `press-sounds.ts` by name. */
+  /** Pressing an agent or a slot clicks like a key (W15i): a sound from
+   *  `press-sounds.ts` by name, or `false` for none. The story passes its
+   *  material's own (`MATERIAL_SOUND`, W15p). */
   sound?: PressSoundSetting;
   /** How the Project names are drawn (W15i); Border also outlines each
    *  Project's land. Crust only draws the outline. */

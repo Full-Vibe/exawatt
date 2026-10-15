@@ -621,7 +621,7 @@ export function playPressSound(
   phase: KeySwitchSoundPhase
 ): void {
   if (id === 'thock') {
-    // exactly the keyswitch study's Frosted thock, as the homepage plays it
+    // exactly the keyswitch study's Frosted thock, Matte's
     playKeySwitchSound(
       context as AudioContext,
       KEYSWITCH_VARIANT_SOUND_PROFILES['reference-frost'],

@@ -41,8 +41,9 @@ export function FooterGesture() {
     >
       {/* on a phone the vignette's middle, 40% down the photograph, is 45%
           down the footer: the face a little above the footer's middle, the
-          lit fingertips in the gap above the second column rather than on
-          its words, and the chest gone to the ground before the last column.
+          lit fingertips about the gap above the second column (on the
+          narrowest phones a thumb's glow reaches the edge of its first
+          link), and the chest gone to the ground before the last column.
           From two columns up the figure rises from the foot of the page, the
           photograph cut at the chest, 58% down it, by the footer's bottom
           edge */}

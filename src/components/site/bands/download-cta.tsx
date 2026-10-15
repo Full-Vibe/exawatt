@@ -74,7 +74,9 @@ export function DownloadCta({
         <Button
           asChild
           className={cn(
-            'h-11 rounded-md bg-white px-7 text-base font-semibold text-black shadow-lg hover:bg-white/90',
+            // a keyboard's focus rings it in white, clear of the button: the
+            // shared ring is one pixel of the app's theme colour
+            'h-11 rounded-md bg-white px-7 text-base font-semibold text-black shadow-lg hover:bg-white/90 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black',
             size === 'close' && 'h-12 px-8 text-lg'
           )}
           data-band-download
