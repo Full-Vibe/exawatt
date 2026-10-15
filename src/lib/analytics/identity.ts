@@ -20,7 +20,7 @@ export const ANALYTICS_OPT_OUT_STORAGE_KEY = 'exawatt.analytics.opt-out.v1';
 export const ANALYTICS_INSTALLATION_ID_STORAGE_KEY =
   'exawatt.analytics.installation-id.v1';
 
-export interface AnalyticsIdentity {
+interface AnalyticsIdentity {
   optedOut: boolean;
   /** Null while opted out, or before anything asked for one. */
   installationId: string | null;
