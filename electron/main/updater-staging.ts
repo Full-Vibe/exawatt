@@ -24,7 +24,7 @@ export interface NativeUpdater {
   removeListener(event: 'error', listener: (error: Error) => void): unknown;
 }
 
-export type NativeUpdaterOutcome =
+type NativeUpdaterOutcome =
   | { ok: true }
   | { ok: false; reason: string; timedOut: boolean };
 
@@ -42,9 +42,9 @@ const realTimers: Timers = {
  * Squirrel downloads the zip from localhost, unzips it and verifies the
  * bundle. A 150 MB update takes seconds; three minutes is a hung helper.
  */
-export const STAGE_DEADLINE_MS = 180_000;
+const STAGE_DEADLINE_MS = 180_000;
 /** After a staged install starts, the app should be gone within seconds. */
-export const INSTALL_DEADLINE_MS = 30_000;
+const INSTALL_DEADLINE_MS = 30_000;
 
 /**
  * Waits for the native updater's `error` or the deadline, and, when
