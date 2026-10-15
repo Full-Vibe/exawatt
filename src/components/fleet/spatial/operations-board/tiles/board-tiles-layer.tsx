@@ -60,6 +60,7 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
   ambient,
   reduced,
   lowPower,
+  onBattery = false,
   material,
   greybox,
   sourceMarks,
@@ -74,6 +75,7 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
   ambient: AmbientMotion;
   reduced: boolean;
   lowPower: boolean;
+  onBattery?: boolean;
   material: CrustMaterialId;
   greybox: boolean;
   sourceMarks?: Readonly<Record<string, string>>;
@@ -241,6 +243,7 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
           transmission={
             layout.altitude !== 'fleet' &&
             !lowPower &&
+            !onBattery &&
             !theme.reducedTransparency
           }
         />
