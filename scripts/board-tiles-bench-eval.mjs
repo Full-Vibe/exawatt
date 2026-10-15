@@ -120,6 +120,89 @@ try {
     );
     await page.close();
   }
+  // Dense fanout must remain independently clickable; oversized DOM wrappers
+  // previously captured neighboring parent/child centers despite correct pixels.
+  const fanout = await context.newPage();
+  await fanout.setViewportSize({ width: 1440, height: 1000 });
+  await primeEvalBrowserPage(fanout);
+  const fanoutErrors = [];
+  fanout.on('pageerror', error => fanoutErrors.push(error.message));
+  fanout.on('console', message => {
+    if (message.type() === 'error') fanoutErrors.push(message.text());
+  });
+  const fanoutUrl = `${base}/hud-gallery/board-study?view=v2&material=gummy&theme=air&fixture=fanout&altitude=project`;
+  await fanout.goto(fanoutUrl, { waitUntil: 'load' });
+  await fanout.waitForFunction(() => {
+    const targets = [
+      ...document.querySelectorAll(
+        '[data-board-agent], [data-board-delegation-unit]'
+      ),
+    ];
+    return (
+      targets.length > 0 &&
+      targets.every(
+        node =>
+          parseFloat(
+            getComputedStyle(node).getPropertyValue('--board-hit-size')
+          ) > 0
+      )
+    );
+  });
+  const hits = await fanout.evaluate(() =>
+    [
+      ...document.querySelectorAll(
+        '[data-board-agent], [data-board-delegation-unit]'
+      ),
+    ].map(node => {
+      const box = node.getBoundingClientRect();
+      return {
+        id:
+          node.getAttribute('data-board-agent') ??
+          node.getAttribute('data-board-delegation-unit'),
+        hit:
+          document
+            .elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+            ?.closest('button') === node,
+      };
+    })
+  );
+  if (hits.some(hit => !hit.hit))
+    throw new Error(
+      `Fanout targets occluded: ${JSON.stringify(hits.filter(hit => !hit.hit))}`
+    );
+  const child = fanout.locator('[data-board-delegation-unit]').first();
+  const parentId = await child.getAttribute('data-board-delegation-parent');
+  const parent = fanout.locator(`[data-board-agent="${parentId}"]`);
+  await parent.click();
+  await fanout.waitForFunction(
+    id =>
+      document
+        .querySelector(`[data-board-agent="${id}"]`)
+        ?.getAttribute('aria-pressed') === 'true',
+    parentId
+  );
+  await child.click();
+  await fanout.waitForFunction(
+    id =>
+      document
+        .querySelector(`[data-board-agent="${id}"]`)
+        ?.getAttribute('aria-pressed') === 'false',
+    parentId
+  );
+  if (fanoutErrors.length)
+    throw new Error(`Fanout errors: ${fanoutErrors.join('; ')}`);
+  const fanoutScreenshot = join(reportDir, 'air-fanout-project.png');
+  await fanout.screenshot({ path: fanoutScreenshot, fullPage: true });
+  report.push({
+    id: 'air-fanout-project',
+    url: fanoutUrl,
+    screenshot: fanoutScreenshot,
+    hits,
+  });
+  console.log(
+    `PASS fanout: ${hits.length} independent parent/child targets; real clicks preserve parent selection`
+  );
+  await fanout.close();
   writeFileSync(
     join(reportDir, 'report.json'),
     JSON.stringify(report, null, 2)
@@ -136,11 +219,11 @@ try {
     join(reportDir, 'index.html'),
     `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fleet v2 · P3 look review</title>
+<title>Fleet v2 · material and interaction review</title>
 <style>body{margin:24px;background:#101418;color:#e2e9ed;font:16px system-ui}h1{font-size:22px;margin:0 0 8px}p{color:#adb8c0}select{font:inherit;padding:8px;margin-bottom:16px;max-width:100%}img{display:block;width:100%;height:auto}a{color:#91d3d0}</style>
-<h1>Fleet v2 · P3 look review</h1><p>Left to right: Gummy, Matte, Glazed, Acrylic, Anodized. Product parity is verified separately.</p>
+<h1>Fleet v2 · material and interaction review</h1><p>Left to right: Gummy, Matte, Glazed, Acrylic, Anodized. Product parity is verified separately.</p>
 <label for="capture">Capture </label><select id="capture">${choices}</select>
-<a id="full" href="${initial.screenshot.split('/').at(-1)}"><img id="image" alt="Three materials compared on the same Fleet layout" src="${initial.screenshot.split('/').at(-1)}"></a>
+<a id="full" href="${initial.screenshot.split('/').at(-1)}"><img id="image" alt="Fleet material comparison or delegation interaction fixture" src="${initial.screenshot.split('/').at(-1)}"></a>
 <p><a href="report.json">Render measurements</a> · Click the image for the full-resolution screenshot.</p>
 <script>const s=document.getElementById('capture');s.value=${JSON.stringify(initial.screenshot.split('/').at(-1))};s.onchange=()=>{document.getElementById('image').src=s.value;document.getElementById('full').href=s.value};</script></html>`
   );
