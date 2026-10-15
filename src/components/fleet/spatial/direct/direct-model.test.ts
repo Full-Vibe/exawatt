@@ -84,7 +84,23 @@ describe('recipientNote', () => {
 describe('directResultOf', () => {
   it('reads a refusal as undeliverable with its reason', () => {
     expect(
-      directResultOf({ status: 'refused', reason: 'Demo cannot send' })
+      directResultOf({
+        delivery: {
+          state: 'undeliverable',
+          reason: 'Demo cannot send',
+          adapter: 'demo',
+        },
+        record: null,
+      })
     ).toEqual({ state: 'undeliverable', reason: 'Demo cannot send' });
+  });
+
+  it('reads a logged delivery as its state', () => {
+    expect(
+      directResultOf({
+        delivery: { state: 'queued', adapter: 'codex-queue' },
+        record: null,
+      })
+    ).toEqual({ state: 'queued' });
   });
 });

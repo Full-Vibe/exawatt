@@ -3617,9 +3617,11 @@ reason). One bus send per reachable recipient with `kind: operator`; nothing
 interrupts a running turn; no reply, thread, comparison or count renders here.
 
 The seam is P4's `BusClient` (`src/lib/bus/`), read through the client, never
-`window.electron.bus`. Its answer is reduced to a row in exactly one function,
-`directResultOf`, so P3's published `{delivery, record}` send result is one
-edit there when P4's contract fix reaches master. Whether this build can send
+`window.electron.bus`, and typed against the core contract
+(`@exawatt/core` bus types). A send's answer is reduced to a row in exactly
+one function, `directResultOf`, which reads the published `{delivery,
+record}` result and, until P4's retype of the client lands, the client's
+pre-contract answer; delete that branch then. Whether this build can send
 is the client's own answer: the Demo board provides the Demo client ("Demo
 cannot send" on every row, Send disabled), and a desktop build without the
 bus reports the live client's unavailable reason. The bus address is the

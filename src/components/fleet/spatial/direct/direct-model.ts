@@ -6,10 +6,12 @@
  * a count of answers (decision `0052`; operator 2026-10-15: a second
  * agent-communication view would "duplicate and diverge").
  */
-import type { ExawattAgent } from '@exawatt/core';
+import type {
+  BusDeliveryState,
+  BusSendResult,
+  ExawattAgent,
+} from '@exawatt/core';
 import { workStateReading } from '@/components/status-light/protocol';
-import type { BusSendResult } from '@/lib/bus/client';
-import type { BusDeliveryState } from '@/lib/bus/types';
 
 /** What the board knows about a recipient before anything is sent. */
 type RecipientReadiness =
@@ -60,19 +62,35 @@ export type DirectResult =
   | { state: BusDeliveryState; reason?: string };
 
 /**
- * The bus's answer to one send, reduced to the recipient's row. This is the
- * one place that reads the client's result shape, so a change to it is one
- * edit here (P3's published contract answers `{delivery, record}`).
+ * The renderer client's answer from before it was typed against the core
+ * contract (P4 is retyping it). Declared here, structurally, so Direct reads
+ * either answer without depending on the renderer's own message types.
  */
-export function directResultOf(result: BusSendResult): DirectResult {
-  return result.status === 'sent'
-    ? {
-        state: result.message.delivery.state,
-        ...(result.message.delivery.reason
-          ? { reason: result.message.delivery.reason }
-          : {}),
-      }
-    : { state: 'undeliverable', reason: result.reason };
+type PreContractSendAnswer =
+  | {
+      status: 'sent';
+      message: { delivery: { state: BusDeliveryState; reason?: string } };
+    }
+  | { status: 'refused'; reason: string };
+
+/**
+ * The bus's answer to one send, reduced to the recipient's row. This is the
+ * one place that reads a send result. A `null` record is a refusal before
+ * anything was logged; its `delivery` says why.
+ */
+export function directResultOf(
+  result: BusSendResult | PreContractSendAnswer
+): DirectResult {
+  const delivery =
+    'delivery' in result
+      ? result.delivery
+      : result.status === 'sent'
+        ? result.message.delivery
+        : { state: 'undeliverable' as const, reason: result.reason };
+  return {
+    state: delivery.state,
+    ...(delivery.reason ? { reason: delivery.reason } : {}),
+  };
 }
 
 export const SESSION_STOPPED_REASON = 'Session stopped';

@@ -10,7 +10,7 @@ import type { FleetAgentView } from '@exawatt/ui-model';
 import { createLiveBusClient, type BusBridge } from '@/lib/bus/live-client';
 import { createDemoBusClient } from '@/lib/bus/demo-client';
 import type { BusClient } from '@/lib/bus/client';
-import type { BusDeliveryState, BusSendRequest } from '@/lib/bus/types';
+import type { BusDeliveryState } from '@exawatt/core';
 import { BusClientProvider } from '@/lib/bus/use-bus';
 import { SpatialSelectionPanel } from '../spatial-selection-panel';
 import type { DirectRecipient } from './direct-model';
@@ -70,7 +70,7 @@ const RECIPIENTS: DirectRecipient[] = [
 /** This machine's bus at its real boundary: the live client over a bridge
  *  double shaped like the preload namespace, answering per recipient. */
 function bridge(states: Record<string, BusDeliveryState>) {
-  const sent: BusSendRequest[] = [];
+  const sent: Parameters<BusBridge['send']>[0][] = [];
   const double: BusBridge = {
     list: async () => [],
     thread: async () => [],
