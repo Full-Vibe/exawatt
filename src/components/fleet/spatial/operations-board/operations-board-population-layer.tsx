@@ -27,6 +27,10 @@ import {
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
 import { BURN_RAMP_STEPS, noopRaycast } from './operations-board-materials';
+import {
+  statusMarkRendering,
+  type StatusMarkDepthPolicy,
+} from './status-mark-rendering';
 import { boardWorldY } from './operations-board-camera';
 
 /**
@@ -48,14 +52,17 @@ export function PopulationStatusMarks({
   ambient,
   theme,
   backing = false,
+  depthPolicy = 'scene',
 }: {
   field: ReturnType<typeof computePopulationDotField>;
   lens: SpatialBoardLens;
   ambient: boolean;
   /** Product tiles need the same contrast plate as individual D40 marks. */
   backing?: boolean;
+  depthPolicy?: StatusMarkDepthPolicy;
   theme: SpatialThemeSnapshot;
 }) {
+  const rendering = statusMarkRendering(depthPolicy);
   const invalidate = useThree(state => state.invalidate);
   const capacity = useMemo(() => {
     let size = 64;
@@ -228,13 +235,14 @@ export function PopulationStatusMarks({
       args={[geometry, undefined, capacity]}
       frustumCulled={false}
       raycast={noopRaycast}
-      renderOrder={2}
+      renderOrder={rendering.glyph}
     >
       <shaderMaterial
         ref={material}
         args={[shader]}
         transparent
-        depthWrite={false}
+        depthTest={rendering.depthTest}
+        depthWrite={rendering.depthWrite}
       />
     </instancedMesh>
   );

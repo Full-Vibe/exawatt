@@ -277,6 +277,7 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
       </group>
       {!greybox && (
         <StatusMarkLayer
+          depthPolicy="overlay"
           pieces={statusSubjects}
           ambient={ambient}
           lens={lens}
@@ -286,6 +287,7 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
       )}
       {!greybox && (
         <PopulationStatusMarks
+          depthPolicy="overlay"
           field={populationField}
           lens={lens}
           ambient={false}

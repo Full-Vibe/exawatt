@@ -14,6 +14,10 @@ import {
   sameStatusMarkPaint,
   sameStatusMarkPiecePaint,
 } from './status-mark-subjects';
+import {
+  statusMarkRendering,
+  type StatusMarkDepthPolicy,
+} from './status-mark-rendering';
 import type { SpatialThemeSnapshot } from '../spatial-theme';
 import { boardWorldPosition } from './operations-board-camera';
 import {
@@ -33,8 +37,10 @@ export function StatusMarkLayer({
   lens,
   theme,
   emergenceScale,
+  depthPolicy = 'scene',
 }: {
   pieces: SpatialBoardPiece[];
+  depthPolicy?: StatusMarkDepthPolicy;
   /** How often the Active rotors may paint; `parked` rests them at zero. */
   ambient: AmbientMotion;
   lens: SpatialBoardLens;
@@ -106,10 +112,12 @@ export function StatusMarkLayer({
       lens={lens}
       theme={theme}
       collectMark={collectMark}
+      depthPolicy={depthPolicy}
     />
   );
 }
 type MarkInstancesProps = {
+  depthPolicy: StatusMarkDepthPolicy;
   pieces: SpatialBoardPiece[];
   lens: SpatialBoardLens;
   theme: SpatialThemeSnapshot;
@@ -127,6 +135,7 @@ const StatusMarkInstances = memo(
     lens,
     theme,
     collectMark,
+    depthPolicy,
   }: MarkInstancesProps) {
     const agentPieces = pieces.filter(piece => piece.kind === 'agent');
     const byState = (state: StatusLightReading) =>
@@ -141,7 +150,8 @@ const StatusMarkInstances = memo(
     const unread = agentPieces.filter(piece => piece.unread);
     const geometries = STATUS_MARK_GEOMETRY;
 
-    const shared = { lens, theme, collectMark };
+    const shared = { lens, theme, collectMark, depthPolicy };
+    const rendering = statusMarkRendering(depthPolicy);
     return (
       <>
         <MarkCohort
@@ -149,7 +159,7 @@ const StatusMarkInstances = memo(
           pieces={unread}
           geometry={geometries.unread}
           limit={1024}
-          order={3}
+          order={rendering.unread}
           color={theme.labelMuted}
           z={1.01}
         />
@@ -158,7 +168,7 @@ const StatusMarkInstances = memo(
           pieces={agentPieces}
           geometry={geometries.backing}
           limit={1024}
-          order={1}
+          order={rendering.backing}
           color={theme.markBacking}
           z={0.91}
         />
@@ -207,6 +217,7 @@ const StatusMarkInstances = memo(
           geometry={geometries.check}
           color={theme.canvas}
           materialColor={theme.canvas}
+          order={rendering.cutout}
           z={0.97}
           opacity={0.98}
         />
@@ -216,6 +227,7 @@ const StatusMarkInstances = memo(
           geometry={geometries.dot}
           color={theme.canvas}
           materialColor={theme.canvas}
+          order={rendering.cutout}
           z={0.97}
           opacity={0.98}
         />
@@ -225,6 +237,7 @@ const StatusMarkInstances = memo(
           geometry={geometries.cross}
           color={theme.canvas}
           materialColor={theme.canvas}
+          order={rendering.cutout}
           z={0.97}
           opacity={0.98}
         />
@@ -233,12 +246,13 @@ const StatusMarkInstances = memo(
   },
   (previous, next) =>
     previous.collectMark === next.collectMark &&
+    previous.depthPolicy === next.depthPolicy &&
     previous.theme === next.theme &&
     previous.lens === next.lens &&
     sameStatusMarkPaint(previous.pieces, next.pieces, next.lens)
 );
 
-type MarkInstanceProps = Omit<MarkInstancesProps, 'pieces'> & {
+type MarkInstanceProps = Omit<MarkInstancesProps, 'pieces' | 'depthPolicy'> & {
   piece: SpatialBoardPiece;
   color?: string;
   z?: number;
@@ -312,25 +326,27 @@ const MarkCohort = memo(
     rotor,
     opacity = 1,
     limit = 256,
-    order = 2,
+    order,
+    depthPolicy,
     segments = 1,
   }: MarkCohortProps) {
     if (!pieces.length) return null;
+    const rendering = statusMarkRendering(depthPolicy);
     return (
       <Instances
         geometry={geometry}
         limit={limit}
         range={pieces.length * segments}
-        renderOrder={order}
+        renderOrder={order ?? rendering.glyph}
       >
-        {/* Bodies and marks share the transparent pass; layer order keeps the
-       contrast plate and glyph above translucent bodies (BUG-250). */}
+        {/* v2 annotations ignore decorative tile depth; v1 keeps scene depth. */}
         <meshBasicMaterial
           color={materialColor}
           toneMapped={false}
           transparent
           opacity={opacity}
-          depthWrite={false}
+          depthTest={rendering.depthTest}
+          depthWrite={rendering.depthWrite}
         />
         {pieces.flatMap(piece =>
           Array.from({ length: segments }, (_, segment) => (
@@ -354,6 +370,7 @@ const MarkCohort = memo(
     previous.collectMark === next.collectMark &&
     previous.theme === next.theme &&
     previous.lens === next.lens &&
+    previous.depthPolicy === next.depthPolicy &&
     previous.geometry === next.geometry &&
     previous.color === next.color &&
     previous.materialColor === next.materialColor &&
