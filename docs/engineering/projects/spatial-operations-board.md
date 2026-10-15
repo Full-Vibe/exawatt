@@ -3242,7 +3242,7 @@ packet G1a of the Google workshop demo arc.
 ### 2026-10-14 — V4.2 Direct N Agents and ghost slots (shaped)
 
 <!-- exawatt:public-omit-begin the operator brief is private source material -->
-Source: the 2026-10-14 operator brief (`docs/research/operator-briefs/2026-10-14-gemini-bus-direct-onboarding-analytics-brief.md`); decision `0052`.
+Source: the 2026-10-14 operator brief (`docs/research/operator-briefs/2026-10-14-gemini-bus-direct-onboarding-analytics-brief.md`); decision `0052`. Visual references for Direct (Termic Broadcast and Races, iTerm2 Broadcast Input, Superset's fleet loop, mcp_agent_mail's overseer compose and confirm): `docs/research/ui-references/2026-10-15-agent-chatter-and-group-command/README.md` (2026-10-15).
 <!-- exawatt:public-omit-end -->
 
 The operator: "Drag to select, like selecting units on a Starcraft map which

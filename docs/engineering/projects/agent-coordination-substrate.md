@@ -127,7 +127,7 @@ same day), which matches this default. Unshaped.
 ## 2026-10-14 — Design pass: the bus becomes real, across harnesses (decision `0052`)
 
 <!-- exawatt:public-omit-begin the operator brief is private source material -->
-Source: the 2026-10-14 operator brief (`docs/research/operator-briefs/2026-10-14-gemini-bus-direct-onboarding-analytics-brief.md`) and the research record `docs/research/market/2026-10-14-agent-bus-group-command-and-on-ramp-landscape.md` §1–§4.
+Source: the 2026-10-14 operator brief (`docs/research/operator-briefs/2026-10-14-gemini-bus-direct-onboarding-analytics-brief.md`) and the research record `docs/research/market/2026-10-14-agent-bus-group-command-and-on-ramp-landscape.md` §1–§4. Visual references for the Chatter sidebar (screenshots, notes, and text snapshots of a Claude Code tab receiving an outside post): `docs/research/ui-references/2026-10-15-agent-chatter-and-group-command/README.md` (2026-10-15).
 <!-- exawatt:public-omit-end -->
 
 The operator asked for realtime agent-to-agent messaging across Claude Code,
