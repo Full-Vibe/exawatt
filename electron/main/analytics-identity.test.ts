@@ -120,7 +120,7 @@ describe('the analytics identity main holds (BUG-171)', () => {
     expect(
       readAnalyticsIdentity(
         {
-          legacy: { optedOut: false, installationId: '/Users/me/secret' },
+          legacy: { optedOut: false, installationId: 'not-an-analytics-id' },
           ensureId: true,
         },
         store
