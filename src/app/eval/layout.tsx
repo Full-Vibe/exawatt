@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { FixtureSourceBoundary } from './fixture-source-boundary';
 
 /**
  * `/eval` is the render-performance harness set: eleven R3F and DOM tasks that
@@ -16,5 +17,5 @@ export const metadata: Metadata = {
 };
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <FixtureSourceBoundary>{children}</FixtureSourceBoundary>;
 }

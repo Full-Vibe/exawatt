@@ -98,6 +98,9 @@ const workspaceStateModule = (file, ...modules) =>
  * emergence and status marks, the camera rig the pointer and wheel, the
  * controls the in-world DOM that sits over the canvas.
  */
+const isBoardFixtureBoundary = file =>
+  file === 'src/app/eval/layout.tsx' ||
+  file === 'src/app/eval/fixture-source-boundary.tsx';
 const BOARD_CANVAS_DIR = 'src/components/fleet/spatial/operations-board/';
 const BOARD_CANVAS_MODULES = [
   'operations-board-canvas.tsx',
@@ -737,7 +740,8 @@ export const SURFACE_GATES = [
       isBoardCanvas(file) ||
       file.startsWith('src/app/eval/t11-altitude-handoff/') ||
       file === 'scripts/r3f-eval/spatial.mjs' ||
-      file === 'scripts/lib/fleet-view-eval.mjs',
+      file === 'scripts/lib/fleet-view-eval.mjs' ||
+      isBoardFixtureBoundary(file),
   },
   {
     gate: 'eval:electron:host-power',
@@ -746,6 +750,7 @@ export const SURFACE_GATES = [
       file === 'electron/main/host-power.ts' ||
       file === 'src/lib/host-power/use-host-render-policy.ts' ||
       file === 'scripts/electron-host-power-eval.mjs' ||
+      isBoardFixtureBoundary(file) ||
       isBoardCanvas(file),
   },
   {
@@ -756,7 +761,8 @@ export const SURFACE_GATES = [
       file ===
         'src/components/fleet/spatial/operations-board/operations-board-emergence.ts' ||
       file === 'src/app/eval/t5-operations-board/page.tsx' ||
-      file === 'scripts/spatial-emergence-eval.mjs',
+      file === 'scripts/spatial-emergence-eval.mjs' ||
+      isBoardFixtureBoundary(file),
   },
   {
     gate: 'eval:spatial:pointer',
