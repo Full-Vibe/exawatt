@@ -84,7 +84,7 @@ async function shot(page, file) {
 async function openSection(page, name, ready) {
   await until(async () => {
     if ((await ready.count()) > 0) return true;
-    await page.getByRole('button', { name, exact: true }).click();
+    await page.getByRole('link', { name, exact: true }).click();
     return (await ready.count()) > 0;
   }, `the ${name} section`);
 }
@@ -95,7 +95,7 @@ const openPermissions = page =>
     page.locator('[data-permission="notifications"]')
   );
 const openPreferences = page =>
-  openSection(page, 'Preferences', nativeSwitch(page));
+  openSection(page, 'Notifications', nativeSwitch(page));
 /** By attribute, not by role: while a dialog is open the page behind it is
  *  hidden from the accessibility tree, and the switch is still on screen. */
 const nativeSwitch = page =>

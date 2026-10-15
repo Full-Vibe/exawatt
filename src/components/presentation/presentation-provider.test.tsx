@@ -96,6 +96,34 @@ describe('presentation persistence', () => {
     expect(two.result.current.fleetView).toBe('v1');
     expect(write).not.toHaveBeenCalled();
   });
+  it('does not retry a failed material change when the view changes later', async () => {
+    const save = vi
+      .fn<DesktopSettingsApi['setPresentation']>()
+      .mockRejectedValueOnce(new Error('Store unavailable'))
+      .mockImplementation(async presentation => ({
+        presentation: presentation ?? undefined,
+      }));
+    installBridgeDouble({
+      settings: {
+        get: vi.fn(async () => ({})),
+        setPresentation: save,
+        onChanged: vi.fn(() => () => undefined),
+      },
+    });
+    const view = mount();
+    await waitFor(() => expect(view.result.current.ready).toBe(true));
+    await act(async () => {
+      await expect(
+        view.result.current.setFleetMaterial('acrylic')
+      ).rejects.toThrow('Store unavailable');
+    });
+    expect(view.result.current.fleetMaterial).toBe('gummy');
+    await act(() => view.result.current.setFleetView('v2'));
+    expect(save).toHaveBeenLastCalledWith({
+      schemaVersion: 1,
+      fleetView: 'v2',
+    });
+  });
   it('uses desktop settings and does not let a slow initial read undo a newer broadcast', async () => {
     let resolveLoad!: (settings: ExawattSettings) => void;
     let changed!: (settings: ExawattSettings) => void;

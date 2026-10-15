@@ -88,7 +88,7 @@ vi.mock('./agent-sources-settings', () => ({
 
 function editShortcut(label: string): HTMLElement {
   if (!screen.queryByText(label)) {
-    fireEvent.click(screen.getByRole('button', { name: 'Preferences' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Keyboard shortcuts' }));
   }
   const row = screen.getByText(label).closest('.group');
   if (!(row instanceof HTMLElement)) throw new Error(`No row for ${label}`);
@@ -102,6 +102,7 @@ function editShortcut(label: string): HTMLElement {
 
 describe('shortcut settings policy', () => {
   beforeEach(() => {
+    window.history.replaceState(null, '', '/settings?section=keyboard');
     installBridgeDouble({ platform: 'darwin' });
     for (const definition of defaultShortcuts) {
       shortcutRegistry.register({ ...definition, action: vi.fn() });
@@ -249,7 +250,7 @@ describe('shortcut settings policy', () => {
     });
     await renderSettings();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preferences' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Notifications' }));
     expect(
       screen.getByRole('switch', { name: 'Native macOS notifications' })
     ).toBeVisible();
@@ -257,7 +258,7 @@ describe('shortcut settings policy', () => {
       expect(outboundRow(control.id)).toBeNull();
     }
 
-    fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Privacy' }));
     await act(async () => undefined);
     expect(screen.getByRole('heading', { name: 'Privacy' })).toBeVisible();
     // Every control gets its row and its disclosure here. WHETHER a row also
@@ -273,7 +274,7 @@ describe('shortcut settings policy', () => {
   it('gives permissions their own section in the Settings navigation', async () => {
     await renderSettings();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Permissions' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Permissions' }));
     await act(async () => undefined);
     expect(screen.getByRole('heading', { name: 'Permissions' })).toBeVisible();
     for (const permission of PERMISSIONS) {
@@ -303,6 +304,7 @@ describe('shortcut settings policy', () => {
 
 describe('Settings: the Connect route', () => {
   beforeEach(() => {
+    window.history.replaceState(null, '', '/settings');
     installBridgeDouble({ platform: 'darwin' });
   });
 
@@ -328,5 +330,41 @@ describe('Settings: the Connect route', () => {
     expect(
       screen.getByRole('heading', { name: 'Connect a server' })
     ).toBeVisible();
+  });
+});
+
+describe('Settings navigation contract', () => {
+  afterEach(() => {
+    cleanup();
+    window.history.replaceState(null, '', '/settings');
+  });
+  it('restores deep links, finds a material by search vocabulary, and keeps browser history usable', async () => {
+    window.history.replaceState(null, '', '/settings?section=appearance');
+    await renderSettings();
+    expect(screen.getByRole('link', { name: 'Appearance' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    fireEvent.change(
+      screen.getByRole('searchbox', { name: 'Search Settings' }),
+      { target: { value: 'anodized' } }
+    );
+    const results = screen.getByRole('region', {
+      name: 'Settings search results',
+    });
+    fireEvent.click(
+      within(results).getByRole('link', { name: 'Tile material' })
+    );
+    expect(window.location.search).toBe('?section=fleet');
+    expect(window.location.hash).toBe('#fleet-material');
+    expect(screen.getByRole('group', { name: 'Tile material' })).toBeVisible();
+    act(() => {
+      window.history.replaceState(null, '', '/settings?section=appearance');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(screen.getByRole('link', { name: 'Appearance' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
   });
 });

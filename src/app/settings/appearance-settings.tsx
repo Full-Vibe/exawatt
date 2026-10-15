@@ -199,6 +199,7 @@ export function AppearanceSettings() {
       dataAttribute="data-appearance-settings"
     >
       <SettingRow
+        id="theme-mode"
         title="Theme mode"
         description="Follow the system appearance or keep one theme selected."
       >
@@ -282,6 +283,7 @@ export function AppearanceSettings() {
       )}
 
       <SettingRow
+        id="system-accent"
         title="System accent"
         description="Use the operating system accent for primary actions."
       >
@@ -299,6 +301,7 @@ export function AppearanceSettings() {
       </SettingRow>
 
       <SettingRow
+        id="interface-font"
         title="Interface font"
         description="Use the theme default, the system UI font, or bundled Geist."
       >
@@ -328,6 +331,7 @@ export function AppearanceSettings() {
       </SettingRow>
 
       <SettingRow
+        id="interface-text-size"
         title="Interface text size"
         description="Scale app labels and reading text without changing layout density or Terminal text."
       >

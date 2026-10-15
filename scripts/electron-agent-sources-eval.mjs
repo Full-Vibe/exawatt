@@ -734,10 +734,13 @@ try {
         JSON.stringify(overflow)
       );
 
-      await page.getByRole('button', { name: 'Preferences' }).click();
-      await page.getByRole('heading', { name: 'Preferences' }).waitFor();
+      await page.getByRole('link', { name: 'Keyboard shortcuts' }).click();
+      await page
+        .getByRole('heading', { name: 'Keyboard shortcuts', exact: true })
+        .first()
+        .waitFor();
       await page.screenshot({
-        path: join(output, 'settings-preferences-760x900.png'),
+        path: join(output, 'settings-keyboard-760x900.png'),
         fullPage: true,
       });
       check(

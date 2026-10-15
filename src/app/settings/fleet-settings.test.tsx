@@ -7,6 +7,7 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FLEET_MATERIALS } from '@exawatt/core/desktop-bridge';
 import { FleetSettings } from './fleet-settings';
 import { PresentationProvider } from '@/components/presentation/presentation-provider';
 import { PRESENTATION_STORAGE_KEY } from '@/lib/presentation/preference-source';
@@ -36,6 +37,22 @@ describe('Fleet view offer gate', () => {
     expect(JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!)).toEqual(
       { schemaVersion: 1, fleetView: 'v2' }
     );
+  });
+  it('offers every catalog material without changing the selected view', async () => {
+    renderSettings();
+    for (const material of FLEET_MATERIALS) {
+      const button = screen.getByRole('button', {
+        name: material.name,
+      });
+      await waitFor(() => expect(button).not.toBeDisabled());
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(button).toHaveAttribute('aria-pressed', 'true')
+      );
+      expect(
+        JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!)
+      ).toEqual({ schemaVersion: 1, fleetMaterial: material.id });
+    }
   });
   it('does not offer unfinished v2 in production or overwrite a saved development choice', async () => {
     vi.stubEnv('NODE_ENV', 'production');

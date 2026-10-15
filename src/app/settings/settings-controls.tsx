@@ -34,6 +34,7 @@ export function SettingsGroup({
 }
 
 export function SettingRow({
+  id,
   title,
   description,
   children,
@@ -41,9 +42,14 @@ export function SettingRow({
   title: string;
   description: string;
   children?: ReactNode;
+  id?: string;
 }) {
   return (
-    <div className="flex min-h-[76px] items-center justify-between gap-5 py-3 max-[520px]:flex-col max-[520px]:items-stretch">
+    <div
+      id={id}
+      tabIndex={id ? -1 : undefined}
+      className="scroll-mt-6 focus:outline-none flex min-h-[76px] items-center justify-between gap-5 py-3 max-[520px]:flex-col max-[520px]:items-stretch"
+    >
       <div>
         <p className="font-ui text-chrome-title font-medium text-[var(--settings-soft)]">
           {title}

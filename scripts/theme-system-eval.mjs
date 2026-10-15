@@ -309,8 +309,8 @@ async function openAppearanceSettings() {
     timeout: 30_000,
   });
   await page.locator('[data-settings-shell]').waitFor();
-  const preferences = page.getByRole('button', {
-    name: 'Preferences',
+  const preferences = page.getByRole('link', {
+    name: 'Appearance',
     exact: true,
   });
   // The Settings shell is server-rendered. Prove the client handler has
@@ -326,7 +326,7 @@ async function openAppearanceSettings() {
   }
   assert(
     (await preferences.getAttribute('aria-current')) === 'page',
-    'Preferences navigation never became interactive'
+    'Appearance navigation never became interactive'
   );
   const appearance = page.locator('[data-appearance-settings]');
   await appearance.waitFor();
@@ -430,8 +430,8 @@ async function assertCommandPickerContract(appearance) {
   await commitPreset(appearance, classic);
   await assertRootAppearance(classic);
 
-  const focusTarget = page.getByRole('button', {
-    name: 'Preferences',
+  const focusTarget = page.getByRole('link', {
+    name: 'Appearance',
     exact: true,
   });
   await focusTarget.focus();

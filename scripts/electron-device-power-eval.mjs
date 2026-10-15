@@ -318,11 +318,9 @@ try {
     );
     // A cold route can paint its server-rendered navigation before React has
     // attached handlers. The live registry is existing, observable hydration
-    // evidence; clicking merely visible HTML can lose the Preferences action.
+    // evidence; clicking merely visible HTML can lose the Power action.
     await page.locator('[data-agent-source-registry-status="live"]').waitFor();
-    await page
-      .getByRole('button', { name: 'Preferences', exact: true })
-      .click();
+    await page.getByRole('link', { name: 'Power', exact: true }).click();
     const group = page.locator('[data-power-settings]');
     await group.waitFor();
     const control = group.getByRole('combobox');
@@ -339,7 +337,7 @@ try {
       'never'
     );
     console.log(
-      'PASS device power: Preferences control writes the persisted policy through the real bridge'
+      'PASS device power: Power control writes the persisted policy through the real bridge'
     );
     console.log(
       'PASS device power: setting persists on disk, renderer reload, and a fresh Electron process; no idle assertion'

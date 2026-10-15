@@ -78,8 +78,15 @@ export function PresentationProvider({ children }: { children: ReactNode }) {
   const commit = useCallback(
     async (next: PresentationPreferencesV1 | undefined) => {
       const ticket = updates.begin();
+      const previous = latest.current;
       latest.current = next;
-      const saved = await source.save(next);
+      let saved: PresentationPreferencesV1 | undefined;
+      try {
+        saved = await source.save(next);
+      } catch (error) {
+        if (ticket.current) latest.current = previous;
+        throw error;
+      }
       // A settings broadcast may precede its response. Both carry the saved
       // snapshot; a later external choice must not be replaced by this response.
       if (ticket.current) {
