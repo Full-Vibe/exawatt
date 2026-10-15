@@ -97,12 +97,7 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
     [layout, sourceMarks, rendered]
   );
   const tiles = useMemo(
-    () => [
-      ...model.ground,
-      ...model.ghosts,
-      ...model.agents,
-      ...model.population,
-    ],
+    () => [...model.ground, ...model.ghosts, ...model.agents],
     [model]
   );
   const populationField = useMemo(
@@ -247,6 +242,31 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
             !theme.reducedTransparency
           }
         />
+        {/* Aggregates remain coarse even when a nearby Project is magnified.
+            One material batch, no extra light/environment/transmission pass. */}
+        {model.population.length > 0 && (
+          <TileRenderer
+            tiles={model.population}
+            surface="plane"
+            theme={theme}
+            material={greybox ? 'matte' : material}
+            shape="hex"
+            detail="coarse"
+            lighting={false}
+            mark="off"
+            motion={NO_MOTION}
+            signal="paint"
+            readFrame={readFrame}
+            readClock={readAmbientClock}
+            marks={PRODUCT_MARKS}
+            reducedMotion={reduced || ambient.cadence === 'parked'}
+            calmAttention
+            interactive={false}
+            requestFrame={invalidate}
+            onMotionFrame={onMotionFrame}
+            transmission={false}
+          />
+        )}
       </group>
       {!greybox && (
         <StatusMarkLayer
