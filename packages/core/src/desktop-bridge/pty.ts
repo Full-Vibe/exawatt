@@ -19,6 +19,9 @@ export interface PtyCreateOptions {
   rows?: number;
   /** Display title; defaults to the harness name. */
   title?: string;
+  /** The workspace Project the Agent's name is unique within (ENG-029 C4);
+   *  defaults to the git common directory of `cwd`. */
+  projectKey?: string;
   /** Explicit operator roadmap assignment; restored with the durable Session. */
   roadmapItemId?: string | null;
   /** Exact provider conversation id. Presence means resume that id. */
@@ -70,6 +73,9 @@ export interface PtySessionRecord {
   durableSessionId: string;
   harness: PtyHarness;
   title: string;
+  /** The Agent's short, stable name (`claude-1`), its address on the bus;
+   *  null for a shell. Absent on records from before names existed. */
+  agentName?: string | null;
   cwd: string;
   /** Directory-keyed Project grouping (worktree-aware git root). */
   projectDir: string;

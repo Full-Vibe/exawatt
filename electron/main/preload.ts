@@ -182,6 +182,11 @@ const bridge = {
     reopenSession: durableSessionId =>
       invoke('pty:reopen-session', durableSessionId),
     rename: (id, title) => invoke('pty:rename', id, title),
+    agentNames: () => invoke('pty:agent-names'),
+    ensureAgentNames: requests => invoke('pty:ensure-agent-names', requests),
+    renameAgent: (durableSessionId, name) =>
+      invoke('pty:rename-agent', durableSessionId, name),
+    onAgentNamesChanged: subscribe('pty:agent-names-changed'),
     focus: id => invoke('pty:focus', id),
     markUnread: id => invoke('pty:mark-unread', id),
     setContextAuth: accessToken => invoke('pty:set-context-auth', accessToken),

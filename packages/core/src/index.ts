@@ -91,6 +91,7 @@ export * from './shortcuts/accelerator';
 export * from './shortcuts/keyboard-overrides';
 export * from './distribution/index';
 export * from './service-protocol';
+export * from './agents/agent-name';
 // D71: pure reading projection only; adapters retain IO and execution ownership.
 export {
   normalizeCodexRetainedHistory,

@@ -153,6 +153,13 @@ interface DesktopPtyApi {
   /** Removes and returns a ledger entry so the tab can resurrect whole. */
   reopenSession: BridgeInvoke<'pty:reopen-session'>;
   rename: BridgeInvoke<'pty:rename'>;
+  /** Every Agent's name (ENG-029 C4); main is the one truth. */
+  agentNames: BridgeInvoke<'pty:agent-names'>;
+  /** Names Sessions that have none, in request order, and answers theirs. */
+  ensureAgentNames: BridgeInvoke<'pty:ensure-agent-names'>;
+  /** The operator's rename; refused with a reason, never suffixed. */
+  renameAgent: BridgeInvoke<'pty:rename-agent'>;
+  onAgentNamesChanged: BridgeSubscribe<'pty:agent-names-changed'>;
   /** The operator is looking at this Session (null: none focused). */
   focus: BridgeInvoke<'pty:focus'>;
   /** Restore operator unread intent without repeating a source notification. */

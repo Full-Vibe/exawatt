@@ -18,6 +18,8 @@ import { handleTrusted } from './ipc-security';
 import { createSessionModelChanger } from './pty/session-model-change';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
+import { isAgentNameRequest } from './pty/agent-name-store';
+import type { AgentNameRecord, AgentNameRequest } from '@exawatt/core';
 import { defaultShell } from './pty/session-manager';
 import { listAgentModels, setAgentModelCatalogCache } from './pty/agent-models';
 import { AgentModelCatalogCache } from './pty/agent-model-catalog-cache';
@@ -262,6 +264,9 @@ export function registerPtyIPC(
       broadcast('pty:exit', { id, durableSessionId, exitCode, exitSignal });
     }
   );
+  ptySessions.on('agent-names', (records: AgentNameRecord[]) => {
+    broadcast('pty:agent-names-changed', records);
+  });
   ptySessions.on(
     'identity',
     (id: string, durableSessionId: string, harnessSessionId: string) => {
@@ -742,6 +747,19 @@ export function registerPtyIPC(
   handleTrusted('pty:rename', (_event, id: string, title: string) => {
     ptySessions.rename(id, title);
   });
+  handleTrusted('pty:agent-names', () => ptySessions.agentNameRecords());
+  handleTrusted(
+    'pty:ensure-agent-names',
+    (_event, requests: AgentNameRequest[]) =>
+      ptySessions.ensureAgentNames(
+        Array.isArray(requests) ? requests.filter(isAgentNameRequest) : []
+      )
+  );
+  handleTrusted(
+    'pty:rename-agent',
+    (_event, durableSessionId: string, name: string) =>
+      ptySessions.renameAgent(String(durableSessionId), String(name))
+  );
   /** One `pty:list` row: what the PTY owner knows, plus main's live
    *  observations of the Session, so a reload or a late attach sees them at
    *  once instead of waiting for the next push. */

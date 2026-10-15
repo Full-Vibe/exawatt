@@ -1,4 +1,9 @@
 import type {
+  AgentNameRecord,
+  AgentNameRequest,
+  AgentRenameResult,
+} from '../agents/agent-name';
+import type {
   AgentHarness,
   AgentPermissionMode,
   AgentSourceAction,
@@ -300,6 +305,15 @@ interface RequestTable {
     ClosedSessionEntry | null
   >;
   'pty:rename': Call<[id: string, title: string], void>;
+  'pty:agent-names': Call<[], AgentNameRecord[]>;
+  'pty:ensure-agent-names': Call<
+    [requests: AgentNameRequest[]],
+    AgentNameRecord[]
+  >;
+  'pty:rename-agent': Call<
+    [durableSessionId: string, name: string],
+    AgentRenameResult
+  >;
   'pty:focus': Call<[id: string | null], void>;
   'pty:mark-unread': Call<[id: string], void>;
   'pty:set-context-auth': Call<[accessToken: string | null], void>;
@@ -534,6 +548,8 @@ interface PushTable {
   };
   /** Main-owned ledger cardinality after archive, reopen, or reap. */
   'pty:closed-sessions-changed': number;
+  /** Every Agent name after a launch deals one or the operator renames. */
+  'pty:agent-names-changed': AgentNameRecord[];
   'pty:context': { durableSessionId: string; summary: string };
   'pty:data': PtyDataEvent;
   /** Null means the Session has nothing live to report. */

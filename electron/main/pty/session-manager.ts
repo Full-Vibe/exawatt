@@ -13,7 +13,15 @@ import { buildHarnessCommand } from './harness-command';
 import type { HarnessLaunchWiring } from './harness-command';
 import { harnessEventChannel } from '../harness-events/channel';
 import { HookSettingsStore } from '../harness-events/hook-settings-store';
-import type { SafetyControlSettings } from '@exawatt/core';
+import {
+  harnessCarriesAgentName,
+  type AgentDirectoryEntry,
+  type AgentNameRecord,
+  type AgentNameRequest,
+  type AgentRenameResult,
+  type SafetyControlSettings,
+} from '@exawatt/core';
+import { AgentNameStore } from './agent-name-store';
 import {
   SessionHistoryStore,
   type SessionHistorySnapshot,
@@ -165,6 +173,7 @@ export class PtySessionManager extends EventEmitter {
   private scrollback = new ScrollbackStore();
   private history: SessionHistoryStore | null = null;
   private identities: SessionIdentityStore | null = null;
+  private agentNames: AgentNameStore | null = null;
   private hookSettings: HookSettingsStore | null = null;
   private nextId = 1;
   private acceptingCreates = true;
@@ -205,12 +214,16 @@ export class PtySessionManager extends EventEmitter {
     this.identities = new SessionIdentityStore(
       path.join(path.dirname(root), 'session-identities.json')
     );
+    this.agentNames = new AgentNameStore(
+      path.join(path.dirname(root), 'agent-names.json')
+    );
     this.hookSettings = new HookSettingsStore(
       path.join(path.dirname(root), 'harness-events')
     );
     await Promise.all([
       this.history.initialize(),
       this.identities.initialize(),
+      this.agentNames.initialize(),
       this.hookSettings.initialize(),
     ]);
   }
@@ -436,6 +449,14 @@ export class PtySessionManager extends EventEmitter {
       harnessDescriptor(options.harness).allocatesFreshSessionId
         ? (options.resumeSessionId ?? randomUUID())
         : (options.resumeSessionId ?? null);
+    // The Agent's name (ENG-029 C4): dealt at its first launch and the same
+    // on every relaunch and resume, because it is keyed by the durable
+    // Session. Known before spawn, so the launch can carry it.
+    const agentName = await this.nameAgent(
+      { durableSessionId, harness: options.harness },
+      options.projectKey?.trim() || null,
+      project.projectDir
+    );
     const testHarnessExecutable =
       process.env.EXAWATT_TEST === '1' &&
       process.env.EXAWATT_TEST_HARNESS_BIN &&
@@ -554,6 +575,7 @@ export class PtySessionManager extends EventEmitter {
       durableSessionId,
       harness: options.harness,
       title: options.title || options.harness,
+      agentName,
       roadmapItemId: options.roadmapItemId ?? null,
       projectDir: project.projectDir,
       projectName: project.projectName,
@@ -1074,6 +1096,101 @@ export class PtySessionManager extends EventEmitter {
     if (s && next) s.info.title = next;
   }
 
+  /**
+   * Deal names to Sessions that have none (a first read of an existing
+   * layout, ENG-029 C4) and answer the requested Sessions' names. Never
+   * fails a caller over persistence: a dealt name stays in memory and is
+   * written by the shutdown checkpoint.
+   */
+  async ensureAgentNames(
+    requests: readonly AgentNameRequest[]
+  ): Promise<AgentNameRecord[]> {
+    if (!this.agentNames) return [];
+    const before = this.agentNames.list().length;
+    const records = await this.agentNames.ensure(requests);
+    if (this.agentNames.list().length !== before) this.publishAgentNames();
+    return records;
+  }
+
+  agentNameRecords(): AgentNameRecord[] {
+    return this.agentNames?.list() ?? [];
+  }
+
+  /**
+   * The bus directory (ENG-029 C4, decision 0052): every named Agent with
+   * its Project, and its live PTY id when one is running. Resolve an
+   * address against it with `resolveAgentAddress` from `@exawatt/core`.
+   */
+  agentDirectory(): (AgentDirectoryEntry & { ptyId: string | null })[] {
+    const live = new Map<string, string>();
+    for (const [id, session] of this.sessions) {
+      if (!session.info.exited) live.set(session.info.durableSessionId, id);
+    }
+    return this.agentNameRecords().map(record => ({
+      durableSessionId: record.durableSessionId,
+      projectKey: record.projectKey,
+      harness: record.harness,
+      name: record.name,
+      ptyId: live.get(record.durableSessionId) ?? null,
+    }));
+  }
+
+  /** The operator's rename: the name every surface and the bus read. */
+  async renameAgent(
+    durableSessionId: string,
+    name: string
+  ): Promise<AgentRenameResult> {
+    if (!this.agentNames) {
+      return {
+        ok: false,
+        code: 'unknown',
+        reason: 'This Agent has no name yet',
+      };
+    }
+    const result = await this.agentNames.rename(durableSessionId, name);
+    if (!result.ok) return result;
+    // Not a `session` event: that one means a process changed, and its
+    // observers (attention, the Codex app-server) would re-attach.
+    for (const session of this.sessions.values()) {
+      if (session.info.durableSessionId === durableSessionId)
+        session.info.agentName = result.record.name;
+    }
+    this.publishAgentNames();
+    return result;
+  }
+
+  /**
+   * A Session already named keeps its name unless the launch names a
+   * different Project for it; an unnamed one is dealt a name in the Project
+   * the launch names, or in its git Project when it names none.
+   */
+  private async nameAgent(
+    session: { durableSessionId: string; harness: string },
+    projectKey: string | null,
+    fallbackProjectKey: string
+  ): Promise<string | null> {
+    if (!this.agentNames || !harnessCarriesAgentName(session.harness))
+      return null;
+    const known = this.agentNames.get(session.durableSessionId);
+    if (known && (!projectKey || known.projectKey === projectKey))
+      return known.name;
+    try {
+      const [record] = await this.agentNames.ensure([
+        { ...session, projectKey: projectKey ?? fallbackProjectKey },
+      ]);
+      this.publishAgentNames();
+      return record?.name ?? null;
+    } catch (error) {
+      // A Session must never fail to start because it could not be named.
+      console.warn('[session-manager] Agent launches unnamed:', error);
+      return null;
+    }
+  }
+
+  private publishAgentNames(): void {
+    this.emit('agent-names', this.agentNameRecords());
+  }
+
   assignRoadmapItem(
     id: string,
     durableSessionId: string,
@@ -1302,6 +1419,7 @@ export class PtySessionManager extends EventEmitter {
     await Promise.all([
       this.history?.delete(durableSessionId),
       this.identities?.delete(durableSessionId),
+      this.agentNames?.delete(durableSessionId),
     ]);
   }
 
@@ -1321,6 +1439,7 @@ export class PtySessionManager extends EventEmitter {
     await Promise.all([
       this.history?.delete(s.info.durableSessionId),
       this.identities?.delete(s.info.durableSessionId),
+      this.agentNames?.delete(s.info.durableSessionId),
     ]);
   }
 
@@ -1337,6 +1456,7 @@ export class PtySessionManager extends EventEmitter {
     await Promise.all([
       this.history?.delete(durableSessionId),
       this.identities?.delete(durableSessionId),
+      this.agentNames?.delete(durableSessionId),
     ]);
   }
 
@@ -1467,7 +1587,11 @@ export class PtySessionManager extends EventEmitter {
   }
 
   async flushHistory(): Promise<void> {
-    await Promise.all([this.history?.flush(), this.identities?.flush()]);
+    await Promise.all([
+      this.history?.flush(),
+      this.identities?.flush(),
+      this.agentNames?.flush(),
+    ]);
   }
 
   async reconcileResumeIdentities(

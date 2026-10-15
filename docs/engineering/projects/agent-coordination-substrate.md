@@ -176,7 +176,17 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
   only (operator, 2026-10-15: "Within a project only, for now"); a send
   across Projects fails at the sender with a clear reason, and an ambiguous
   name fails with the candidates listed. The directory is the existing session store plus
-  the connected-source roster; nothing new is persisted for it.
+  the connected-source roster. Names (P8, 2026-10-15) are the one new
+  persisted fact: allocation, rename uniqueness and the resolver are pure in
+  `packages/core/src/agents/agent-name.ts` (`assignAgentNames`,
+  `renameAgentName`, `resolveAgentAddress`); main persists them beside the
+  Session identities in `agent-names.json`
+  (`electron/main/pty/agent-name-store.ts`) and serves the directory as
+  `ptySessions.agentDirectory()` (name, harness, Project key, live PTY id);
+  every PTY row carries `agentName`; the renderer reads the same records
+  through `src/lib/agent-names/agent-name-store.ts` (`useAgentNames`). The
+  Project key is the workspace's Project group key, so the bus and the strip
+  agree on which Project a name lives in.
 - **Envelope.** Exawatt stamps `from` (Session id, name, harness, Project),
   `to`, `at`, `kind` (`agent` or `operator`), and a `reply` hint. The receiving
   harness sees one text block that opens with the stamp, so the model knows it
