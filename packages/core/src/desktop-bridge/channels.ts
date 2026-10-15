@@ -100,6 +100,12 @@ import type {
   WorktreeResult,
 } from './pty';
 import type {
+  BusLedgerRead,
+  BusSendRequest,
+  BusSendResult,
+  MessageRecord,
+} from '../bus/types';
+import type {
   RoadmapProjectActivity,
   RoadmapReadResult,
   RoadmapAttentionObservation,
@@ -360,6 +366,12 @@ interface RequestTable {
   /** Opens the grant's own System Settings pane, or System Settings. */
   'permissions:open-settings': Call<[id: PermissionId], void>;
 
+  /** ENG-029 C4: the operator's send, one Project's ledger, and the thread
+   *  between two addresses (a Session id or `operator`). */
+  'bus:send': Call<[request: BusSendRequest], BusSendResult>;
+  'bus:list': Call<[projectId: string], BusLedgerRead>;
+  'bus:thread': Call<[projectId: string, a: string, b: string], BusLedgerRead>;
+
   'roadmap:publish-attention': Call<
     [observation: RoadmapAttentionObservation],
     boolean
@@ -532,6 +544,8 @@ interface PushTable {
   'pty:identity': PtyIdentityEvent;
   'pty:notification-click': { id: string };
   'pty:recap': PtyReentryRecap;
+  /** A message was logged or its delivery moved; upsert by `id`. */
+  'bus:message': MessageRecord;
   'roadmap:session-assigned': PtySessionRecord;
   'roadmap:file-changed': { projectDir: string };
   'settings:changed': ExawattSettings;

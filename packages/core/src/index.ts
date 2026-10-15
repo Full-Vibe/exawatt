@@ -104,3 +104,5 @@ export type {
   RetainedHistoryOptions,
   RetainedHistoryPage,
 } from './conversation/retained-history';
+// ENG-029 C4: the agent-to-agent bus contract (decision 0052).
+export * from './bus/index';

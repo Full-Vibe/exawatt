@@ -227,6 +227,16 @@ interface DesktopWorkspaceApi {
   onChanged: BridgeSubscribe<'workspace:changed'>;
 }
 
+/** The agent-to-agent bus (ENG-029 C4, decision 0052): the operator sends,
+ *  reads one Project's ledger or one thread, and hears every new message or
+ *  delivery change. */
+interface DesktopBusApi {
+  send: BridgeInvoke<'bus:send'>;
+  list: BridgeInvoke<'bus:list'>;
+  thread: BridgeInvoke<'bus:thread'>;
+  onMessage: BridgeSubscribe<'bus:message'>;
+}
+
 /** The roadmap lens (ENG-017): raw reads, one narrow write boundary. */
 interface DesktopRoadmapApi {
   read: BridgeInvoke<'roadmap:read'>;
@@ -381,6 +391,9 @@ interface DesktopBridgeShape {
   permissions: DesktopPermissionsApi;
   workspace: DesktopWorkspaceApi;
   roadmap: DesktopRoadmapApi;
+  /** Absent until the bus core is registered (ENG-029 B1 lands in slices);
+   *  a client reads absence as unavailable, never as an empty ledger. */
+  bus?: DesktopBusApi;
   settings: DesktopSettingsApi;
   app: DesktopAppApi;
   auth: DesktopAuthApi;

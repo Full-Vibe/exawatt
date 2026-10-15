@@ -458,3 +458,54 @@ interface BusClient {
   `useProjectUnread`, and `useAgentUnread(projectId, sessionId)`, the per-Agent
   selector Fleet's selection panel imports. The pure `agentUnreadCount` serves
   a surface that already holds the Project's messages.
+
+### 2026-10-15 — B1 contract
+
+Published before the bus core lands so the Chatter tab (P4) and Direct (P5)
+build against the real names. Types live in `packages/core/src/bus/`
+(exported from `@exawatt/core`); the IPC is in the desktop bridge's channel
+table; main's bus core and its transports follow in later B1 slices.
+
+- **Address.** The Exawatt durable Session id (`session-<uuid>`) is the
+  address; the operator's address is `operator` (`BUS_OPERATOR_ID`). An Agent
+  may also be named by `@handle`: its display name, lowercased, every run of
+  anything but letters and digits folded to `-` (`busHandle`). Display names
+  come from the agent-names packet when it lands and from the tab label until
+  then. `projectId` is the Project's directory (`projectDir`), the key the
+  renderer already groups Agents by. Shell tabs are not addressable.
+- **`MessageEnvelope`** `{id, projectId, from: {sessionId, name, harness,
+  kind: 'agent' | 'operator'}, to: {sessionId, name, harness}, at, text}`.
+  Exawatt stamps `from`; the sending model never does.
+- **`DeliveryResult`** `{state, reason?, adapter}` with `state` one of
+  `delivered | queued | held | terminal | undeliverable | expired | unknown`
+  (`BUS_DELIVERY_STATES`). `adapter` is the transport's declared kind
+  (`claude-socket`, `codex-queue`, `terminal-input`, …), `bus` when the bus
+  refused before any transport ran, `demo` in the Demo Workspace.
+- **`MessageRecord`** = envelope + `delivery` (the newest `DeliveryEvent`,
+  which adds `at`) + `history` (every event, oldest first). An operator
+  message to a busy Agent reads `queued` and then `delivered`; a Codex peer
+  message reads `queued` until its turn starts.
+- **`MessagingTransport`** `{kind, deliver(envelope, target, context):
+  Promise<DeliveryResult>}`: the plugin interface a harness's launch
+  descriptor declares under `messaging`. The core never branches on a
+  harness id.
+- **IPC** (renderer is always the operator):
+  `bus:send({projectId, to, text, kind: 'operator'}) → BusSendResult
+  {delivery, record | null, candidates?}` (`record` null means refused before
+  logging: unknown, ended, ambiguous or cross-Project recipient, bad text,
+  Demo; `candidates` lists the Sessions an ambiguous name could mean);
+  `bus:list(projectId) → BusLedgerRead`; `bus:thread(projectId, a, b) →
+  BusLedgerRead` (both directions, oldest first; `a`/`b` are Session ids or
+  `operator`); push `bus:message: MessageRecord`, sent for every new message
+  and every delivery change, upserted by `id`. `BusLedgerRead` is
+  `{ok: true, records} | {ok: false, reason}`: a damaged ledger is never an
+  empty list.
+- **Preload** `window.electron.bus` `{send, list, thread, onMessage}`
+  (`DesktopBusApi`). Optional in the bridge type until the core registers
+  its handlers; a client reads its absence as unavailable.
+- **Demo** answers every send with `demoBusSendResult()`: `undeliverable`,
+  "Demo cannot send", adapter `demo`, no record.
+- **Rendering** helpers both ends share: `busStampLine` and
+  `busDeliveredText` (the exact text a recipient Agent receives: the stamp
+  line naming sender, harness, Project and the reply command, a blank line,
+  then the text; an operator message is the text alone) and `busThread`.

@@ -22,6 +22,8 @@ Order: P3's B1 (B0 is done); P1, P2, P6 any time; P4 and P5 may start against th
 
 ## The bus contract packets build against (until P3 publishes the real one)
 
+Superseded 2026-10-15 by the published contract: `agent-coordination-substrate.md` §"2026-10-15 — B1 contract" (types in `packages/core/src/bus/`). The draft below is kept for the record; where they differ, the published contract wins (`bus:send` answers `{delivery, record, candidates?}`; a ledger read is `{ok, records} | {ok: false, reason}`).
+
 Message record: `{id, projectId, from: {sessionId, name, harness}, to: {sessionId, name, harness}, kind: 'agent' | 'operator', at, text, delivery: {state: 'delivered' | 'queued' | 'held' | 'terminal' | 'undeliverable' | 'expired' | 'unknown', reason?}}`. IPC: `bus:list(projectId)`, `bus:thread(projectId, aSessionId, bSessionId)`, `bus:send({projectId, to, text, kind})` returning the delivery result, push `bus:message`. P3 owns `packages/core/src/bus/` and the preload namespace; P4 and P5 consume it through a renderer-side `BusClient` seam with a Demo implementation and a Live implementation that reports `unavailable` (never an empty list) when the namespace is absent.
 
 ## P3 — Bus probe, then core (ENG-029 B0, B1; about 5 h; the critical path)
