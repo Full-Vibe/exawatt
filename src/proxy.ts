@@ -100,6 +100,14 @@ function hasAuthCookie(request: NextRequest): boolean {
     .some(cookie => cookie.name.startsWith('sb-') && cookie.value !== '');
 }
 
+function signInRedirect(request: NextRequest) {
+  const url = request.nextUrl.clone();
+  url.pathname = '/sign-in';
+  if (request.nextUrl.pathname.startsWith('/admin'))
+    url.searchParams.set('next', '/admin');
+  return NextResponse.redirect(url);
+}
+
 export async function proxy(request: NextRequest) {
   if (isPublicPath(request.nextUrl.pathname)) {
     return NextResponse.next({ request });
@@ -107,9 +115,7 @@ export async function proxy(request: NextRequest) {
 
   // Signed out is decidable from cookies alone — no network.
   if (!hasAuthCookie(request)) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/sign-in';
-    return NextResponse.redirect(url);
+    return signInRedirect(request);
   }
 
   // A stale cookie can survive a switch from the official distribution to a
@@ -117,9 +123,7 @@ export async function proxy(request: NextRequest) {
   // from ambient env: the resolved contract is the only capability switch.
   const account = resolvedDistribution().account;
   if (!account) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/sign-in';
-    return NextResponse.redirect(url);
+    return signInRedirect(request);
   }
 
   let supabaseResponse = NextResponse.next({
@@ -165,9 +169,7 @@ export async function proxy(request: NextRequest) {
     // would strand a signed-in user who is merely offline. (supabase-js
     // reports network failures as a retryable error, it does not throw.)
     if (!user && !isAuthRetryableFetchError(error)) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/sign-in';
-      return NextResponse.redirect(url);
+      return signInRedirect(request);
     }
   } catch {
     // Unexpected throw (e.g. abort surfacing directly): same fail-open rule.

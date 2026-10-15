@@ -159,6 +159,9 @@ describe('proxy offline authority', () => {
     expect(response.status).toBeGreaterThanOrEqual(300);
     expect(response.status).toBeLessThan(400);
     expect(response.headers.get('location')).toContain('/sign-in');
+    expect(
+      new URL(response.headers.get('location')!).searchParams.get('next')
+    ).toBe('/admin');
   });
 
   it('ignores a stale account cookie when the distribution has no account transport', async () => {
