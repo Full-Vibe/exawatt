@@ -955,7 +955,8 @@ const SOURCES: { id: string; label: string }[] = [
  * hundred, and Muse and Grok Bot answer for Support, the large Project the
  * close faces, so the scene with the download shows all four (W15m: in
  * Marketing they sat behind the globe there). The first Project, which the
- * landing and the close-ups show, runs the product's own five.
+ * landing and the close-ups show, runs the product's own five, and from the
+ * hundred-agent scene on two Grok Bots work among them (`PROJECT_GUESTS`).
  */
 const CONCEPT_SOURCES: { id: string; label: string }[] = [
   { id: 'grok-bot', label: 'Grok Bot' },
@@ -973,11 +974,31 @@ const CONCEPT_PROJECTS: Partial<Record<number, readonly [string, string]>> = {
 /** The share of a concept Project its first harness takes. */
 const CONCEPT_CORE = 0.6;
 
+/**
+ * Concept agents at work in a Project of the product's harnesses, by
+ * Project and the agent's place in it. Two Grok Bots work in the first
+ * Project (operator 2026-10-14, on the scene that puts every species of
+ * agent side by side: "add in a couple of Grok Bot agents"), so the close-up
+ * that says so shows them among the product's five. Both are past the first
+ * ten, which the landing and the close-ups were tuned on, so they arrive with
+ * the hundred; both are at work, so the scene that lifts the agents at work
+ * lifts them; and they stand one to a side of the Project's near edge, clear
+ * of the Codex agent the scene's card points at and of the reading column.
+ */
+const PROJECT_GUESTS: Partial<
+  Record<number, Readonly<Record<number, string>>>
+> = {
+  0: { 22: 'Grok Bot', 26: 'Grok Bot' },
+};
+
 function sourceFor(project: FleetProject, local: number, index: number) {
   const pair = CONCEPT_PROJECTS[project.id];
   if (pair)
     return pair[local < Math.round(project.count * CONCEPT_CORE) ? 0 : 1];
-  return SOURCES[(index * 7 + project.id) % SOURCES.length].label;
+  return (
+    PROJECT_GUESTS[project.id]?.[local] ??
+    SOURCES[(index * 7 + project.id) % SOURCES.length].label
+  );
 }
 
 const ALL_SOURCES = [...SOURCES, ...CONCEPT_SOURCES];

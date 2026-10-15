@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import * as THREE from 'three';
+import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
 import { describe, expect, it } from 'vitest';
 import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
 import { STORY_MARK_PATHS } from './concept-marks';
@@ -100,6 +101,19 @@ describe('the marks as geometry', () => {
     expect(layer('glint')).toBeGreaterThan(layer('eye'));
     // the antennae are the vendor's strokes, extruded as outlines with width
     expect(lobster.some(part => part.stroke === 3)).toBe(true);
+  });
+
+  it("cuts Grok Bot's eyes out of its head, where its page paints them in the ground", () => {
+    // xAI's own mark (W15p): the page fills the head with its ink and the
+    // eyes with its ground; drawn in one ink here, the eyes are holes
+    const mark = STORY_MARK_PATHS['grok-bot'];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${mark.viewBox} ${mark.viewBox}"><path d="${mark.parts[0].d}" fill-rule="${mark.fillRule}"/></svg>`;
+    const shapes = new SVGLoader()
+      .parse(svg)
+      .paths.flatMap(path => SVGLoader.createShapes(path));
+    expect(mark.parts).toHaveLength(1);
+    expect(shapes).toHaveLength(1);
+    expect(shapes[0].holes).toHaveLength(2);
   });
 
   it('gives a stroked antenna a real width, not a hairline', () => {

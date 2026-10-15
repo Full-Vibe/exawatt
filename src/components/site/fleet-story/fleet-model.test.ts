@@ -76,19 +76,32 @@ describe('study fleet model', () => {
   const isConcept = (agent: FleetAgent) =>
     !(sourceAdapterId(agent.source) in HARNESS_MARK_PATHS);
 
-  it('runs only the product harnesses in the first Project', () => {
+  // Two Grok Bots work among the product's five in the first Project (W15p,
+  // operator 2026-10-14: "add in a couple of Grok Bot agents"), arriving
+  // with the hundred and at work, so the scene that lifts work lifts them.
+  it('runs the product harnesses in the first Project, with two Grok Bots at work past its first ten', () => {
     const first = model.projects[0];
     const agents = model.agents.slice(first.first, first.first + first.count);
-    expect(agents.some(isConcept)).toBe(false);
+    const guests = agents.filter(isConcept);
+    expect(guests.map(agent => agent.source)).toEqual(['Grok Bot', 'Grok Bot']);
+    for (const guest of guests) {
+      expect(guest.id - first.first).toBeGreaterThanOrEqual(10);
+      expect(guest.status).toBe('active');
+    }
+    const product = agents.filter(agent => !isConcept(agent));
+    expect(new Set(product.map(agent => agent.source)).size).toBe(5);
   });
 
   it('brings concept harnesses in by the hundred and all four by the whole fleet, a minority in Projects of their own', () => {
+    // the first Project's two Grok Bots, and Sales's two harnesses
     const hundred = model.agents.slice(0, 100).filter(isConcept);
-    expect(new Set(hundred.map(agent => agent.source)).size).toBe(2);
+    expect(new Set(hundred.map(agent => agent.source)).size).toBe(3);
     const fleet = model.agents.filter(isConcept);
     expect(new Set(fleet.map(agent => agent.source)).size).toBe(4);
     expect(fleet.length).toBeLessThan(FLEET_MAX / 2);
     for (const project of model.projects) {
+      // the first Project's guests are pinned above
+      if (project.id === model.projects[0].id) continue;
       const agents = model.agents.filter(agent => agent.project === project.id);
       if (!agents.some(isConcept)) continue;
       // a Project settles on one or two harnesses, not confetti

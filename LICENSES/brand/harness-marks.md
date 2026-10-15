@@ -283,17 +283,27 @@ Every source below was retrieved on **2026-10-14**.
 
 - **Vendor / product:** xAI (SpaceXAI). Grok Bot, always-on agents with their own cloud computers,
   in beta since 2026-08-11 (`https://x.ai/news/introducing-grok-bot`).
-- **Origin:** the app's 1024 px App Store icon, found through Apple's lookup API
-  (`https://itunes.apple.com/lookup?id=6794501026`). No vector mark was found: `https://x.ai/bot`
-  refuses automated fetches.
-- **What was drawn:** a trace, not the vendor's bytes. The face is a circle: fitted to the icon's
-  visible edge, it holds to a quarter of a pixel at 1024. The two eyes are capsules fitted to their
-  cut-outs. The icon crops the face with its tile, so the circle is drawn whole and the eyes keep
-  their place on it, in a 100 box, eyes cut out (`fillRule: evenodd`). The icon's grey face and
-  bevel are flattened to the surrounding ink.
+- **Origin URL:** `https://x.ai/bot`, the inline SVG the page draws its own mark with
+  (`<svg class="grok-bot-mark grok-bot-mark--fill" viewBox="-15 -15 259 259">`: one
+  `grok-bot-mark__head` path and two `grok-bot-mark__eye` paths), and the page's stylesheet for its
+  paint (`.grok-bot-mark__head{fill:var(--fg)}`, `.grok-bot-mark__eye{fill:var(--bg)}`). The page
+  refuses direct automated fetches (HTTP 403); its HTML was read through the `r.jina.ai` proxy of
+  the same URL, and the stylesheet was fetched from the page's own `/_next/static` chunk.
+- **What was drawn:** the three paths, byte for byte, in the page's own box: `viewBox` 259 moved by
+  15 (`translate: [15, 15]`), which is the page's `-15 -15 259 259`. The page paints the head in its
+  ink and the eyes in its ground; here the three paths are joined into one, filled `evenodd`, so the
+  eyes are cut out of the head and read the same on any ground, and the head takes the surrounding
+  ink. The page's wrapper also scales the face by 1.0405 about its centre, which the registry has no
+  field for, so the face stands about 4% smaller in its box than the page draws it.
+- **Replaces (ENG-031 W15p, 2026-10-14):** the story first drew a trace of the app's 1024 px App
+  Store icon (`https://itunes.apple.com/lookup?id=6794501026`), because no vector mark had been
+  found. Asked to "get the logo", the search was repeated and found the page's own mark above. The
+  icon is a close crop of a rendered face; the mark itself sets smaller eyes higher on the face.
 - **Trademark terms:** the xAI Brand Guidelines quoted under Grok Build apply: marks "only to
   accurately refer to us or our services", logos "exactly as provided... without any alteration or
-  adjustment". Tracing and recolouring are alterations, covered by the decision above.
+  adjustment". Drawing the head in the surrounding ink is how the page draws it on its own dark
+  ground; joining the paths and extruding the mark on a tile are alterations, covered by the
+  decision above.
 
 ### Muse
 
