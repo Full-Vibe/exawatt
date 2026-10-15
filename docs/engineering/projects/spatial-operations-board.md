@@ -2601,6 +2601,123 @@ including the label-tier contract at desktop and phone width), the pointer
 eval, the scale eval (9/9), and the motion eval's Voltaic cases; the 1k timing
 gate fails as recorded above.
 
+### V4.1 Fleet Tiles: Fleet view v2 (shaped 2026-10-14)
+
+Decision `0050`. The operator's brief, 2026-10-14: "Do you see the recent
+homepage upgrades and various material / studies that went into refining the
+agent board experience? I want a less spherical version in the product.
+Investigate what it would take to adopt this UI in Fleet view, in a modular,
+robust, performant, high-quality way... We should version and flag it, like
+Fleet View v1 / v2, perhaps with a toggle in settings. Then over time we may
+have more UI prefs in there (e.g., material, behavior, camera, etc.) if users
+demand such. Just planning right now."
+
+His answers the same day:
+
+- **Ground and camera:** flat and isometric. "I'm not sure. Would it be
+  code-risky to build toggle-ability? Start with 1 for now." Answer given:
+  curvature is a renderer parameter from the first slice at no extra cost; a
+  perspective camera is the expensive part (zoom-to-Project, band select,
+  label tiers, minimap, the Team to Fleet entry pose all assume the
+  orthographic rig), so the camera stays behind `OperationsBoardHandle` and a
+  perspective rig, if wanted, is its own later slice.
+- **Agent look:** "I want the gummy or acrylic or anodyzed agent UI from the
+  homepage into Fleet." The homepage's tile, material and status treatment
+  come over unchanged, including status tinting the body (its Paint signal).
+- **Subagents:** "Something like 3 [children ring the parent with connecting
+  lines, as Fleet does now]. I want it to look very robust and slick. But yeah
+  some distinct visual treatment for children vs. parent. I'll probably
+  iterate on that over time."
+
+**Findings.** Both layouts are already flat hex. The homepage packs Projects
+on a plane (`fleet-model.ts`) and enters the sphere only in `placeTiles`
+(`visuals/shared.ts`); about seven files then read `SPHERE_CENTER` or
+`SPHERE_RADIUS` directly (tile up vectors, borders, label anchors, pick
+bounds, camera target, globe body, fog). The product's `SpatialBoardLayout`
+is projection-independent and reaches the world through the V4.0 seam
+(`boardWorldY/Point/Position`). The board surface's renderer slot is
+`OperationsBoardCanvas`; the surface DOM tests mock exactly that module, so
+they hold for a second renderer with the same props. Shared unchanged: the
+ui-model layout and census, the client, route, navigation state, selection
+panel, theme snapshot, keymap, hover store, label tier, transition clock,
+emergence, ambient cadence, gestures, input, env and delegation roster.
+Replaced per renderer: canvas, field, zone, agent, population, status-mark,
+delegation and effects layers, and materials; the camera rig and the DOM
+controls are kept. What the homepage renderer lacks for the product: stable
+string-id instance slots (it indexes a synthetic fleet capped at 300 and
+rebuilds every `InstancedMesh` on a count change), a demand loop (it paints
+every frame), level of detail (a Gummy tile is about 2,180 triangles, plus
+the transmission pass), keyboard and multi-select, and the Not-reported
+reading.
+
+**Architecture.**
+
+1. Shared tile renderer, extracted from `src/components/site/fleet-story/`
+   (`crust-shape`, `crust-materials`, `crust-signal`, `crust-motion`,
+   `crust-surface-light`, `crust-marks`, `environment`, `hex`, `territory`,
+   `press-sounds`, `use-press-sound`, `pick-bounds`, `canvas-boundary`, and
+   the tile core of `crust-visual.tsx`). A `surface` parameter (`sphere` |
+   `plane`) replaces the module constants; the mark registry is injected so
+   the concept marks stay site-only; instances are keyed by stable string ids
+   with spare capacity; a neutral input contract (highlights, focus, selection
+   set, label mode) replaces `StoryDrive` in the core, and the homepage maps
+   its story onto it.
+2. `v2` canvas in the board's slot, over the same layout and world seam.
+   Agent pieces become tiles; each zone becomes a territory with ghost slots;
+   aggregate pieces and population become low-detail tiles; delegation units
+   become child tiles tethered to their parent in a treatment distinct from
+   it. It reuses the orthographic rig at its fixed angle, the shared
+   transition clock, the ambient cadence, the DOM controls and the
+   `data-board-*` attributes.
+3. The preference: `ExawattSettings.presentation`, with the five IPC touch
+   points, a total parser, a web source under `exawatt.presentation.v1`, and a
+   provider and hook beside the Backgrounds preference. The surface receives
+   `fleetView` as a stable prop; the bench and evals pass it explicitly.
+   Settings ▸ Preferences gains a Fleet group with a "Fleet view" segmented
+   control: Dots, Tiles (Preview). The inline segmented control in
+   `appearance-settings.tsx` moves into `settings-controls.tsx` for it.
+4. Budgets: the layout's piece budgets and instance ceilings, one draw call
+   per instanced part regardless of count, transmission only at Project and
+   Agent zoom and never on low power, low-detail geometry below a projected
+   size, working motion on the ambient cadence, and `eval:spatial:scale` at
+   150, 1k and 10k.
+5. Status: the D40 glyph, unread corner and Not-reported reading on every
+   tile; needs-you and fault never pulse; only Active moves. The design-system
+   amendment (status may tint a Tiles body) lands with V4.1.
+
+**Slices.**
+
+- P0 canon: this section, the roadmap milestone and decision `0050`. LANDED
+  with this record.
+- P1 extract the shared tile renderer, homepage pixel-identical (before and
+  after captures at five scenes and 390px). It edits the files the in-flight
+  `agent/homepage-w15p` branch edits, so it starts after that branch lands.
+  About a day.
+- P2 the preference and its Settings row, in parallel with P1. About half a
+  day.
+- P3 the Tiles greybox, then the look on the board bench
+  (`/hud-gallery/board-study`, a view knob) with the Demo Workspace and 10,
+  100 and 1k fixtures in Classic, Air and Night, Gummy, Acrylic and Anodized
+  side by side. Operator review; it also decides whether Material is a
+  Settings row at launch. One to two days.
+- P4 parity and gates: the full `BOARD_KEYMAP`, band and multi-select, the
+  Team to Fleet entry pose, session entry, delegation children, reduced
+  motion, low power, three themes, the scale, motion and host-power evals,
+  Tiles' modules in `BOARD_CANVAS_MODULES`, and the design-system amendment.
+  The `agent/delegation-build` branch ("pending Fleet review") lands or is
+  rebased first. One to two days.
+- P5 Tiles ships as an opt-in Preview. The default stays Dots until the
+  operator calls it.
+
+**Calls made, the operator's to overturn:** the names Dots and Tiles
+("Classic" is a theme); Fleet's control model stays (drag selects, wheel pans,
+no globe spin); the product's selection panel stays, not the homepage card;
+Tiles starts from the homepage's choices (Gummy, Rounded, Wander and Wave,
+press sound on); no other preferences until asked.
+
+**Side finding:** two board fallbacks still link to the retired `/fleet`
+route (BUG-282).
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0
