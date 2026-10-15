@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import type { BusClient } from '@/lib/bus/client';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import { DEMO_CANNOT_SEND } from '@/lib/bus/demo-client';
 import {
   SESSION_STOPPED_REASON,
@@ -55,33 +56,34 @@ export function useDirect({
     recipientsRef.current = recipients;
   }, [recipients]);
 
-  // A new working set starts clean: results belong to the set they went to.
+  // A new working set starts clean: results belong to the set they went to,
+  // so a send still answering for the previous set writes nothing.
+  const addressReads = useLatestRequest();
+  const sends = useLatestRequest();
   useEffect(() => {
+    sends.invalidate();
     setResults(new Map());
-    let current = true;
+    const ticket = addressReads.begin();
     const ids = recipientsRef.current.map(recipient => recipient.agentId);
     void resolveAddresses(ids).then(resolved => {
-      if (current) setAddresses(resolved);
+      if (ticket.current) setAddresses(resolved);
     });
-    return () => {
-      current = false;
-    };
-  }, [key, resolveAddresses]);
+    return () => addressReads.invalidate();
+  }, [addressReads, key, resolveAddresses, sends]);
 
   // Whether a bus exists here is the client's answer, read through the seam:
   // an unavailable read names the reason the rows then show.
   const probeProject = recipients.find(entry => entry.projectId)?.projectId;
+  const probes = useLatestRequest();
   useEffect(() => {
     if (client.kind === 'demo' || !probeProject) return;
-    let current = true;
+    const ticket = probes.begin();
     void client.list(probeProject).then(read => {
-      if (current)
+      if (ticket.current)
         setBusReason(read.status === 'unavailable' ? read.reason : null);
     });
-    return () => {
-      current = false;
-    };
-  }, [client, probeProject]);
+    return () => probes.invalidate();
+  }, [client, probeProject, probes]);
 
   const availability: DirectAvailability = useMemo(
     () =>
@@ -98,11 +100,15 @@ export function useDirect({
       const trimmed = text.trim();
       if (!trimmed || availability.kind !== 'ready') return false;
       const targets = recipientsRef.current;
+      const ticket = sends.begin();
       setSending(true);
       try {
         const resolved = await resolveAddresses(
           targets.map(recipient => recipient.agentId)
         );
+        // The selection changed while addresses resolved: nothing was sent,
+        // and the new set's rows are not this send's to fill.
+        if (!ticket.current) return false;
         setAddresses(resolved);
         setResults(
           new Map(
@@ -114,8 +120,11 @@ export function useDirect({
             ])
           )
         );
-        const settle = (agentId: string, result: DirectResult) =>
-          setResults(previous => new Map(previous).set(agentId, result));
+        const settle = (agentId: string, result: DirectResult) => {
+          if (ticket.current) {
+            setResults(previous => new Map(previous).set(agentId, result));
+          }
+        };
         // Stopped Sessions are listed and answered, never sent: an ended
         // Session has no door, and the row already said so before Send.
         await Promise.all(
@@ -149,7 +158,7 @@ export function useDirect({
         setSending(false);
       }
     },
-    [availability.kind, client, resolveAddresses]
+    [availability.kind, client, resolveAddresses, sends]
   );
 
   return { availability, results, addresses, sending, send };
