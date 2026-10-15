@@ -59,6 +59,12 @@ withheld promotion. Each is named under "What this reverses".
    - Buttons: Download for Mac, with the requirement line under it. Add your
      harness links to CONTRIBUTING's adapter lane.
    - The three middle scenes keep the study's canon copy.
+   - Amended on his later rounds the same day (W15o, W15p): the landing title
+     is "Scale your agent fleet." over "Exawatt is the command surface for
+     your agent fleet."; the close is "Fleet command for thousands of
+     agents." over the reassurance line; the buttons are Download for Mac and
+     View on GitHub side by side, with no requirement line and no Add your
+     harness. Project doc `website-overhaul.md` → "W15o", "W15p".
 5. **Four concept harness marks join the synthetic fleet: Grok Bot, Muse,
    Instinct and dots.** Exawatt cannot run any of them today, and the
    vendors' brand terms do not grant the use. xAI and OpenAI forbid altered
@@ -71,6 +77,10 @@ withheld promotion. Each is named under "What this reverses".
    - Adapter work is captured under ENG-003, unshaped pending a design pass.
    - Each mark's provenance is recorded in `LICENSES/brand/harness-marks.md`
      when the marks land.
+   - Amended the same day: the label went in W15o ("useless, doesn't support
+     any of our goals"), and in W15p two Grok Bots joined the first Project
+     ("add in a couple of Grok Bot agents"), drawn in xAI's own mark from the
+     Grok Bot page.
 
 ## What this reverses
 
