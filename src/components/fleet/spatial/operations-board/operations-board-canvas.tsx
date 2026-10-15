@@ -1,15 +1,7 @@
 'use client';
 
 import { Canvas, useThree } from '@react-three/fiber';
-import {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
   selectSpatialDelegationUnits,
@@ -19,7 +11,8 @@ import {
   type SpatialBoardProjection,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
-import { createZoneLabelTierStore } from './operations-board-label-tier';
+import { useBoardProjectLabels } from './use-board-project-labels';
+import { FleetAgentHitTargets } from './fleet-agent-hit-targets';
 import { BoardField, BoardTransitionProvider } from './operations-board-field';
 import {
   ALTITUDE_HANDOFF_CROSSFADE_MS,
@@ -227,21 +220,8 @@ export function OperationsBoardCanvas({
   // The tier lives in a store the zone controls subscribe to, not in state
   // here: a root-level flip mid-flight re-rendered every layer under the
   // canvas. See `operations-board-label-tier.ts`.
-  const [labelTierStore] = useState(() => createZoneLabelTierStore('full'));
-  const minZoneWidth =
-    visibleZones.length > 0
-      ? visibleZones.reduce(
-          (min, zone) => Math.min(min, zone.rect.width),
-          Number.POSITIVE_INFINITY
-        )
-      : 24;
-  useEffect(() => {
-    labelTierStore.setMinZoneWidth(minZoneWidth);
-  }, [labelTierStore, minZoneWidth]);
-  const handleZoomChange = useCallback(
-    (zoom: number) => labelTierStore.setZoom(zoom),
-    [labelTierStore]
-  );
+  const { store: labelTierStore, onZoomChange: handleZoomChange } =
+    useBoardProjectLabels(visibleZones);
   return (
     <Canvas
       orthographic
@@ -320,6 +300,12 @@ export function OperationsBoardCanvas({
               ghosts={ghostSlots}
               onActivate={onActivateGhost}
               theme={theme}
+            />
+          )}
+          {layout.altitude === 'fleet' && onToggleAgentSelect && (
+            <FleetAgentHitTargets
+              pieces={layout.pieces}
+              onToggleAgentSelect={onToggleAgentSelect}
             />
           )}
           <AgentPieceLayer

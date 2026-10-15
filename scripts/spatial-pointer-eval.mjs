@@ -49,6 +49,91 @@ await page.waitForFunction(() => {
 await assertFleetView(page);
 await page.waitForTimeout(1600);
 
+// Fleet modifier selection must address the clicked Agent, not the Project
+// behind it. Read the shared picking slots, project a real body center, and
+// assert the command panel's exact IDs rather than only a positive count.
+const fleetAgentPoint = excluded =>
+  page.evaluate(excluded => {
+    const node = window.__EVAL_SCENE__?.getObjectByName(
+      'fleet-agent-hit-targets'
+    );
+    const camera = window.__EVAL_CAM__;
+    const canvas = document.querySelector('canvas');
+    if (!node || !camera || !canvas) return null;
+    node.updateWorldMatrix(true, false);
+    camera.updateMatrixWorld();
+    const box = canvas.getBoundingClientRect();
+    const matrix = node.matrix.clone();
+    const visibleBody =
+      document
+        .querySelector('[data-spatial-board]')
+        ?.getAttribute('data-board-view') === 'v2'
+        ? window.__EVAL_SCENE__?.getObjectByName('tile-agent-bodies')
+        : null;
+    visibleBody?.updateWorldMatrix(true, false);
+    for (let slot = 0; slot < node.count; slot++) {
+      const id = node.userData.agentIds[slot];
+      if (excluded.includes(id)) continue;
+      // v2 uses the visible body's actual center, not the picking geometry.
+      const bodySlot = visibleBody?.userData.boardTileBodyIds?.indexOf(
+        `agent:${id}`
+      );
+      if (visibleBody && (bodySlot === undefined || bodySlot < 0)) continue;
+      const projectionNode = visibleBody ?? node;
+      projectionNode.getMatrixAt(visibleBody ? bodySlot : slot, matrix);
+      const point = node.position
+        .clone()
+        .set(0, 0, 0)
+        .applyMatrix4(matrix)
+        .applyMatrix4(projectionNode.matrixWorld)
+        .project(camera);
+      const x = box.x + ((point.x + 1) * box.width) / 2;
+      const y = box.y + ((1 - point.y) * box.height) / 2;
+      if (document.elementFromPoint(x, y) === canvas) return { id, x, y };
+    }
+    return null;
+  }, excluded);
+const expectSelectedIds = async ids => {
+  await page.waitForFunction(
+    expected => {
+      const actual = [...document.querySelectorAll('[data-selection-member]')]
+        .map(node => node.getAttribute('data-selection-member'))
+        .sort();
+      return JSON.stringify(actual) === JSON.stringify(expected);
+    },
+    [...ids].sort()
+  );
+};
+const shiftClick = async point => {
+  if (!point) throw new Error('No unobscured Fleet Agent target');
+  await page.keyboard.down('Shift');
+  await page.mouse.click(point.x, point.y);
+  await page.keyboard.up('Shift');
+};
+const firstAgent = await fleetAgentPoint([]);
+await shiftClick(firstAgent);
+await expectSelectedIds([firstAgent.id]);
+check('Fleet Shift-click selects exactly the clicked Agent', true);
+// The selection panel can resize the world; read the next center after it opens.
+const secondAgent = await fleetAgentPoint([firstAgent.id]);
+await shiftClick(secondAgent);
+await expectSelectedIds([firstAgent.id, secondAgent.id]);
+check('Fleet Shift-click adds exactly one Agent', true);
+await page.keyboard.press('Escape');
+await expectSelectedIds([]);
+const plainAgent = await fleetAgentPoint([]);
+await page.mouse.click(plainAgent.x, plainAgent.y);
+await page.waitForURL(/altitude=project/);
+check('ordinary Fleet Agent click still drills its Project', true);
+await page.keyboard.press('0');
+await page.waitForFunction(
+  () =>
+    document
+      .querySelector('[data-spatial-command]')
+      ?.getAttribute('data-spatial-altitude') === 'fleet'
+);
+await page.waitForTimeout(900);
+
 const viewportOf = () => {
   return window.__EVAL_BOARD_VIEWPORT__
     ? { ...window.__EVAL_BOARD_VIEWPORT__ }

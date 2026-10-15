@@ -605,16 +605,14 @@ function AgentBodyInstance({
         hover.setPressed(null);
       }}
       onClick={(event: ThreeEvent<MouseEvent>) => {
-        if (!piece.agentId || event.delta > 5) return;
-        // Shift-click toggles multi-selection at EVERY altitude
-        // (V3.2) — fleet pieces stay non-interactive for plain
-        // clicks, where zones own the drill verb.
+        if (!interactive || !piece.agentId || event.delta > 5) return;
+        // Fleet modifier selection lives in FleetAgentHitTargets; this
+        // visual-body enhancement only mirrors the focused Project controls.
         if (event.shiftKey && onToggleAgentSelect) {
           event.stopPropagation();
           onToggleAgentSelect(piece.agentId);
           return;
         }
-        if (!interactive) return;
         event.stopPropagation();
         onSelectAgent(piece.agentId);
       }}

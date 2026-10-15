@@ -27,7 +27,8 @@ import {
   ProjectControls,
 } from '../operations-board-controls';
 import { createBoardHoverStore } from '../operations-board-hover';
-import { createZoneLabelTierStore } from '../operations-board-label-tier';
+import { useBoardProjectLabels } from '../use-board-project-labels';
+import { FleetAgentHitTargets } from '../fleet-agent-hit-targets';
 import { useLowPowerMode, useReducedMotion } from '../operations-board-env';
 import {
   createAmbientFrameScheduler,
@@ -110,23 +111,12 @@ export function OperationsBoardTilesCanvas({
     },
     [hover, playPress]
   );
-  const [labels] = useState(() => createZoneLabelTierStore('full'));
-  const onZoomChange = useCallback(
-    (zoom: number) => labels.setZoom(zoom),
-    [labels]
-  );
   const suppressMissRef = useRef(0);
   const zones = useMemo(
     () => layout.zones.filter(zone => zone.visible),
     [layout.zones]
   );
-  useEffect(
-    () =>
-      labels.setMinZoneWidth(
-        Math.min(...zones.map(zone => zone.rect.width), 24)
-      ),
-    [labels, zones]
-  );
+  const { store: labels, onZoomChange } = useBoardProjectLabels(zones);
   const delegationUnits = useMemo(
     () => selectSpatialDelegationUnits(layout),
     [layout]
@@ -213,6 +203,12 @@ export function OperationsBoardTilesCanvas({
               theme={theme}
             />
           </group>
+          {layout.altitude === 'fleet' && onToggleAgentSelect && (
+            <FleetAgentHitTargets
+              pieces={layout.pieces}
+              onToggleAgentSelect={onToggleAgentSelect}
+            />
+          )}
           <BoardTilesLayer
             layout={layout}
             theme={theme}
