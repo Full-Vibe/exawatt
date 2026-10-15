@@ -6,17 +6,8 @@
  * from the shared materials module so aggregation never invents a color.
  */
 
-import {
-  useFrame,
-  useThree,
-} from '@react-three/fiber';
-import {
-  memo,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import {
   type SpatialBoardLayout,
@@ -24,9 +15,7 @@ import {
   type SpatialBoardPiece,
   type SpatialBoardProjectZone,
 } from '@exawatt/ui-model';
-import {
-  STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
-} from '@/components/status-light/protocol';
+import { STATUS_LIGHT_ACTIVE_ROTATION_SECONDS } from '@/components/status-light/protocol';
 import {
   computePopulationDotField,
   POPULATION_STATUS_ORDER,
@@ -53,15 +42,18 @@ import { boardWorldY } from './operations-board-camera';
  */
 const POPULATION_MARK_SCALE = 1.2;
 
-function PopulationStatusMarks({
+export function PopulationStatusMarks({
   field,
   lens,
   ambient,
   theme,
+  backing = false,
 }: {
   field: ReturnType<typeof computePopulationDotField>;
   lens: SpatialBoardLens;
   ambient: boolean;
+  /** Product tiles need the same contrast plate as individual D40 marks. */
+  backing?: boolean;
   theme: SpatialThemeSnapshot;
 }) {
   const invalidate = useThree(state => state.invalidate);
@@ -97,7 +89,11 @@ function PopulationStatusMarks({
   }, [capacity]);
   const shader = useMemo(
     () => ({
-      uniforms: { uPhase: { value: 0 } },
+      uniforms: {
+        uPhase: { value: 0 },
+        uBacking: { value: backing ? 1 : 0 },
+        uBackingColor: { value: new THREE.Color(theme.markBacking) },
+      },
       vertexShader: `
         attribute float instanceState;
         attribute vec3 instanceMarkColor;
@@ -113,6 +109,8 @@ function PopulationStatusMarks({
       `,
       fragmentShader: `
         uniform float uPhase;
+        uniform float uBacking;
+        uniform vec3 uBackingColor;
         varying vec2 vMarkUv;
         varying float vMarkState;
         varying vec3 vMarkColor;
@@ -144,21 +142,36 @@ function PopulationStatusMarks({
             ink = check < 0.05 ? 1.0 : 0.0;
           } else if (vMarkState < 3.5) {
             ink = abs(d - 0.27) < 0.055 || d < 0.065 ? 1.0 : 0.0;
-          } else {
+          } else if (vMarkState < 4.5) {
             float cross = min(
               segment(p, vec2(-0.19, -0.19), vec2(0.19, 0.19)),
               segment(p, vec2(-0.19, 0.19), vec2(0.19, -0.19))
             );
             ink = cross < 0.05 ? 1.0 : 0.0;
+          } else {
+            ink = abs(d - 0.27) < 0.035 || (abs(p.x) < 0.25 && abs(p.y) < 0.035) ? 1.0 : 0.0;
           }
-          if (ink < 0.5) discard;
+          if (ink < 0.5) {
+            if (uBacking > 0.5 && d < 0.39) {
+              gl_FragColor = vec4(uBackingColor, 1.0);
+              return;
+            }
+            discard;
+          }
           gl_FragColor = vec4(vMarkColor, alpha);
         }
       `,
     }),
+    // Uniforms update in place below; shader source is presentation-invariant.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
+  useEffect(() => {
+    shader.uniforms.uBacking.value = backing ? 1 : 0;
+    shader.uniforms.uBackingColor.value.set(theme.markBacking);
+    invalidate();
+  }, [backing, theme.markBacking, shader, invalidate]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   useLayoutEffect(() => {
     if (!mesh.current) return;
@@ -168,7 +181,7 @@ function PopulationStatusMarks({
     const colors = geometry.getAttribute(
       'instanceMarkColor'
     ) as THREE.InstancedBufferAttribute;
-    const stateByStatus = [3, 4, 1, 1, 0, 2] as const;
+    const stateByStatus = [3, 4, 1, 1, 0, 2, 5] as const;
     mesh.current.count = field.count;
     for (let index = 0; index < field.count; index += 1) {
       scratch.position.set(field.x[index]!, boardWorldY(field.y[index]!), 0.92);

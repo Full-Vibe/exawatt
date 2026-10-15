@@ -66,7 +66,7 @@ import { StatusMarkLayer } from './operations-board-status-marks';
 /** Animated selection: an accent reticle that eases in on selection and
  *  slowly rotates while ambient motion is welcome. Keyed by the selected
  *  piece so a selection change replays the ease-in. */
-function SelectionRing({
+export function SelectionRing({
   piece,
   ambient,
   reduced,
@@ -131,7 +131,7 @@ function SelectionRing({
  * reticle contracts on press, giving mouse/touch-down visible weight without
  * moving the Agent's stable address.
  */
-function AgentCandidateReticle({
+export function AgentCandidateReticle({
   piece,
   pressed,
   reduced,
@@ -544,7 +544,7 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
 
 /** One dashed Line2 draw for every stopped Session-backed Agent. The DOM
  * controls remain the interaction/a11y owner; this layer is visual state. */
-function StoppedAgentOutlines({
+export function StoppedAgentOutlines({
   pieces,
   lens,
   theme,

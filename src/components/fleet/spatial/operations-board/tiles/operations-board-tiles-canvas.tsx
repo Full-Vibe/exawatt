@@ -1,6 +1,6 @@
 'use client';
 
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import {
   useCallback,
   useEffect,
@@ -10,20 +10,17 @@ import {
   type ComponentProps,
 } from 'react';
 import type * as THREE from 'three';
-import { TileRenderer } from '@/components/tiles/tile-renderer';
-import type {
-  TileFrame,
-  TileRendererProps,
-} from '@/components/tiles/tile-contract';
 import type { CrustMaterialId } from '@/components/tiles/crust-materials';
-import { DEFAULT_MOTION } from '@/components/tiles/crust-motion';
-import { harnessMarkTone } from '@/components/workspace/harness-mark-tones';
-import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
+import { selectSpatialDelegationUnits } from '@exawatt/ui-model';
 import { BoardCameraRig } from '../operations-board-camera-rig';
 import type { OperationsBoardCanvas } from '../operations-board-canvas';
 import { BoardField, BoardTransitionProvider } from '../operations-board-field';
 import { ZoneLayer } from '../operations-board-zone-layer';
-import { AgentControls, ProjectControls } from '../operations-board-controls';
+import {
+  AgentControls,
+  DelegationControls,
+  ProjectControls,
+} from '../operations-board-controls';
 import { createBoardHoverStore } from '../operations-board-hover';
 import { createZoneLabelTierStore } from '../operations-board-label-tier';
 import { useLowPowerMode, useReducedMotion } from '../operations-board-env';
@@ -33,12 +30,9 @@ import {
   type AmbientMotion,
 } from '../operations-board-ambient';
 import { useHostRenderPolicy } from '@/lib/host-power/use-host-render-policy';
-import { boardTileModel } from './board-tiles-model';
+import { BoardTilesLayer } from './board-tiles-layer';
 
-export type BoardTileMaterial = Extract<
-  CrustMaterialId,
-  'gummy' | 'acrylic' | 'anodized'
->;
+export type BoardTileMaterial = CrustMaterialId;
 export type OperationsBoardTilesProps = ComponentProps<
   typeof OperationsBoardCanvas
 > & {
@@ -47,64 +41,20 @@ export type OperationsBoardTilesProps = ComponentProps<
   sourceMarks?: Readonly<Record<string, string>>;
 };
 
-const PRODUCT_MARKS = { paths: HARNESS_MARK_PATHS, tone: harnessMarkTone };
-
-const EMPTY_SELECTION: ReadonlySet<string> = new Set();
-const NO_MOTION = {
-  sheen: false,
-  breathe: false,
-  wander: false,
-  pulse: false,
-  spin: false,
-  lift: 'still',
-} as const;
-
 function RefreshScene({ identity }: { identity: unknown }) {
   const invalidate = useThree(state => state.invalidate);
   useEffect(() => invalidate(), [identity, invalidate]);
   return null;
 }
 
-/** One host cadence for both Working motion and the initial spring settle. */
-function CadencedTiles({
-  ambient,
-  ...props
-}: TileRendererProps & { ambient: AmbientMotion }) {
-  const invalidate = useThree(state => state.invalidate);
-  const settleUntil = useRef(0);
-  const requestFrame = useCallback(() => {
-    settleUntil.current = performance.now() + 1600;
-    invalidate();
-  }, [invalidate]);
-  const moving =
-    !props.reducedMotion && props.tiles.some(tile => tile.status === 'active');
-  useEffect(requestFrame, [
-    requestFrame,
-    props.tiles,
-    props.readFrame,
-    props.material,
-    ambient,
-  ]);
-  useFrame(() => {
-    if (ambient.cadence === 'parked') return;
-    if (performance.now() < settleUntil.current) invalidate();
-    else if (moving) ambient.requestFrame(invalidate);
-  });
-  return (
-    <TileRenderer
-      {...props}
-      reducedMotion={props.reducedMotion || ambient.cadence === 'parked'}
-      requestFrame={requestFrame}
-    />
-  );
-}
-
-/** V4.1 P3 review canvas. Same input/handle contract and camera as v1; it is
- * mounted only by the bench until the operator accepts the look. P4 owns the
- * registry, product preference read, full keyboard/entry/delegation parity. */
+/** Fleet v2 implements the same board contract and camera handle as v1.
+ * Presentation preferences and route/selection commands remain above it. */
 export function OperationsBoardTilesCanvas({
   layout,
   theme,
+  lens = 'status',
+  onSelectDelegationChild,
+  selectedDelegationUnitId = null,
   controllerRef,
   onViewportChange,
   onDrillProject,
@@ -160,38 +110,10 @@ export function OperationsBoardTilesCanvas({
       ),
     [labels, zones]
   );
-  const model = useMemo(
-    () => boardTileModel(layout, sourceMarks),
-    [layout, sourceMarks]
+  const delegationUnits = useMemo(
+    () => selectSpatialDelegationUnits(layout),
+    [layout]
   );
-  const tiles = useMemo(
-    () => [
-      ...model.ground,
-      ...model.ghosts,
-      ...model.agents,
-      ...model.population,
-    ],
-    [model]
-  );
-  const ghostIds = useMemo(
-    () => new Set(model.ghosts.map(tile => tile.id)),
-    [model]
-  );
-  const groundIds = useMemo(
-    () => new Set(model.ground.map(tile => tile.id)),
-    [model]
-  );
-  const frame = useMemo<TileFrame>(
-    () => ({
-      focusId: layout.selectedAgentId,
-      selection: multiSelection ?? EMPTY_SELECTION,
-      tileGhost: id => ghostIds.has(id),
-      tilePresent: id => !ghostIds.has(id),
-      tileAgent: id => !ghostIds.has(id) && !groundIds.has(id),
-    }),
-    [ghostIds, groundIds, layout.selectedAgentId, multiSelection]
-  );
-  const readFrame = useCallback(() => frame, [frame]);
   return (
     <Canvas
       orthographic
@@ -203,6 +125,7 @@ export function OperationsBoardTilesCanvas({
       onPointerMissed={event => {
         if (
           event.type === 'click' &&
+          event.target instanceof HTMLCanvasElement &&
           performance.now() - suppressMissRef.current >= 250
         )
           onBackground();
@@ -217,6 +140,16 @@ export function OperationsBoardTilesCanvas({
           };
         };
         canvas.boardEvidence = { gl, scene, camera };
+        if (process.env.NODE_ENV !== 'production') {
+          const target = window as typeof window & {
+            __EVAL_GL__?: THREE.WebGLRenderer;
+            __EVAL_SCENE__?: THREE.Scene;
+            __EVAL_CAM__?: THREE.Camera;
+          };
+          target.__EVAL_GL__ = gl;
+          target.__EVAL_SCENE__ = scene;
+          target.__EVAL_CAM__ = camera;
+        }
       }}
       aria-hidden="true"
       data-board-canvas-theme={theme.themeId}
@@ -260,35 +193,28 @@ export function OperationsBoardTilesCanvas({
               theme={theme}
             />
           </group>
-          <group rotation={[Math.PI / 2, 0, 0]}>
-            <CadencedTiles
-              ambient={ambient}
-              tiles={tiles}
-              surface="plane"
-              theme={theme}
-              material={greybox ? 'matte' : material}
-              shape={greybox || model.agents.length === 0 ? 'hex' : 'rounded'}
-              mark={greybox ? 'off' : 'relief'}
-              motion={greybox ? NO_MOTION : DEFAULT_MOTION}
-              signal="paint"
-              readFrame={readFrame}
-              marks={PRODUCT_MARKS}
-              reducedMotion={reduced}
-              calmAttention
-              transmission={
-                layout.altitude !== 'fleet' &&
-                !lowPower &&
-                !theme.reducedTransparency
-              }
-            />
-          </group>
+          <BoardTilesLayer
+            layout={layout}
+            theme={theme}
+            ambient={ambient}
+            reduced={reduced}
+            lowPower={lowPower}
+            material={material}
+            greybox={greybox}
+            sourceMarks={sourceMarks}
+            hover={hover}
+            multiSelection={multiSelection}
+            delegationUnits={delegationUnits}
+            selectedDelegationUnitId={selectedDelegationUnitId}
+            lens={lens}
+          />
           <ProjectControls
             zones={zones}
             altitude={layout.altitude}
             focusedProjectId={layout.focusedProjectId}
             labelTierStore={labels}
             reduced={reduced}
-            lens="status"
+            lens={lens}
             onDrillProject={onDrillProject}
             onToggleZoneSelect={onToggleZoneSelect}
             theme={theme}
@@ -302,6 +228,17 @@ export function OperationsBoardTilesCanvas({
             onHoverChange={hover.setAgent}
             onPressedChange={hover.setPressed}
             multiSelection={multiSelection}
+            reduced={reduced}
+            theme={theme}
+          />
+          <DelegationControls
+            units={delegationUnits}
+            pieces={layout.pieces}
+            altitude={layout.altitude}
+            focusedProjectId={layout.focusedProjectId}
+            onSelectAgent={onSelectAgent}
+            onSelectDelegationChild={onSelectDelegationChild}
+            onHoverChange={hover.setDelegation}
             reduced={reduced}
             theme={theme}
           />

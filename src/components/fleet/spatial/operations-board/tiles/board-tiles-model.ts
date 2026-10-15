@@ -1,4 +1,4 @@
-import type { SpatialBoardLayout } from '@exawatt/ui-model';
+import type { SpatialBoardLayout, SpatialBoardPiece } from '@exawatt/ui-model';
 import { workStateReading } from '@/components/status-light/protocol';
 import type { TileInstance } from '@/components/tiles/tile-contract';
 import { boardWorldPoint, boardRectCenter } from '../operations-board-camera';
@@ -25,12 +25,13 @@ function tilePoint(point: { x: number; y: number }) {
 
 export function boardTileModel(
   layout: SpatialBoardLayout,
-  sourceMarks: Readonly<Record<string, string>> = {}
+  sourceMarks: Readonly<Record<string, string>> = {},
+  renderedPieces: readonly SpatialBoardPiece[] = layout.pieces
 ): BoardTileModel {
   const agents: TileInstance[] = [];
   const ground: TileInstance[] = [];
   const ghosts: TileInstance[] = [];
-  for (const piece of layout.pieces) {
+  for (const piece of renderedPieces) {
     if (!piece.visible || piece.kind !== 'agent') continue;
     const reading = workStateReading(piece.status);
     const radius = piece.size / (2 * 0.82);
@@ -76,6 +77,7 @@ export function boardTileModel(
     );
     population.push({
       agentId: `population:${index}`,
+      ambient: false,
       id: `population:${field.zoneIds[field.zone[index]!]!}:${field.status[index]}:${field.ordinal[index]}`,
       ...tilePoint({ x: field.x[index]!, y: field.y[index]! }),
       radius: field.size[index]! / (2 * 0.82),
