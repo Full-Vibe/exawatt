@@ -414,3 +414,47 @@ What this changes in the B1 design:
   uuid the app-server adapter learned; a queue to a thread whose TUI has
   exited is accepted and sits unread, so a send to an ended Session must fail
   at the sender from Exawatt's own roster, as decision `0052` requires.
+
+### 2026-10-15 — B3 renderer bus client (packet P4, first landing)
+
+**The renderer reads and sends through one seam, `src/lib/bus/`.** The
+Chatter tab in Team and the Direct composer on the Fleet board (P5) use a
+`BusClient`, never `window.electron` directly:
+
+```ts
+interface BusClient {
+  readonly kind: 'live' | 'demo';
+  list(projectId: string): Promise<BusReadResult>;      // ok | unavailable | error
+  thread(projectId: string, a: string, b: string): Promise<BusReadResult>;
+  send(request: BusSendRequest): Promise<BusSendResult>; // sent (with delivery) | refused
+  subscribe(listener: (message: BusMessage) => void): () => void;
+}
+```
+
+- `types.ts` carries the packets' agreed message record (`at` is epoch
+  milliseconds; `projectId` is the workspace Project's `dir`, the key Team
+  groups tiles by). When `packages/core/src/bus/` lands, this file becomes a
+  re-export of the core types in one edit.
+- `live-client.ts` expects the preload namespace `window.electron.bus` with
+  `list(projectId) → BusMessage[]`, `thread(projectId, a, b) → BusMessage[]`,
+  `send({projectId, to, text, kind}) → {status: 'sent', message} | {status:
+  'refused', reason}` and `onMessage(handler) → unsubscribe`, where a pushed
+  record whose id was already seen replaces it (a `queued` message becoming
+  `delivered`). With the namespace absent every read is `unavailable` with one
+  line of reason, never an empty list; a throwing read is `error`.
+- `demo-client.ts` stamps Voltaic's authored chatter
+  (`packages/core/src/demo/chatter.ts`, every delivery state represented, on
+  the Demo tabs' own Session ids) on the shell clock; send answers "Demo
+  cannot send".
+- `operator.ts` is the operator as a sender (`sessionId: 'operator'`).
+- `selectors.ts` holds the pure reads: ledger-order upsert, newest first, a
+  pair's thread (what the two said to each other plus the operator's messages
+  to either), first line, and unread. `read-state.ts` is the operator's
+  reading position per Project (the newest stamp seen, forward-only, this
+  window's storage), shared by every unread count so reading in one place
+  clears the other.
+- `use-bus.tsx`: `BusClientProvider` (the Demo Workspace provides the Demo
+  client; the default is the live one), `useBusMessages(projectId)`,
+  `useProjectUnread`, and `useAgentUnread(projectId, sessionId)`, the per-Agent
+  selector Fleet's selection panel imports. The pure `agentUnreadCount` serves
+  a surface that already holds the Project's messages.

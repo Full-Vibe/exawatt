@@ -30,6 +30,11 @@ export {
   type DemoLandedMilestone,
 } from './roadmaps';
 export { DEMO_BASE_AGENTS } from './agents';
+export {
+  DEMO_CHATTER,
+  type DemoChatterEntry,
+  type DemoChatterDeliveryState,
+} from './chatter';
 export { DEMO_TRANSCRIPTS } from './transcripts';
 export { demoWorkLog } from './work-log';
 export {
