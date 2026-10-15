@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { DownloadCta } from '@/components/site/bands/download-cta';
+import { Button } from '@/components/ui/button';
 import { GITHUB_URL } from '@/components/site/site-links';
 import { GitHubMark } from '@/components/site/github-mark';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
@@ -978,27 +979,27 @@ function PanelBody({
         </p>
       ) : null}
       {stage.cta ? (
-        <>
-          <DownloadCta
-            align="center"
-            requirement={false}
-            className="pointer-events-auto pt-1"
-          />
-          {/* the source, under the download rather than beside it: nothing
-              sits beside the button (`download-cta.tsx`) */}
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noreferrer"
-            // a whole fingertip tall, without moving the words off the
-            // column's rhythm
-            className="pointer-events-auto -my-2 inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-[14px] font-medium text-white/70 transition-colors hover:text-white"
-            data-story-github
+        // the download and the source side by side, a primary and its second
+        // (operator 2026-10-14: "Put the two CTA buttons side-by-side (on
+        // desktop at least) because GH one isn't very legible"); where the
+        // two do not fit across, the source goes under the download
+        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-3 pt-1">
+          <DownloadCta align="center" requirement={false} />
+          <Button
+            asChild
+            className="h-11 gap-2.5 rounded-md border border-white/25 bg-white/[0.06] px-6 text-base font-semibold text-white shadow-none hover:bg-white/[0.12] [&_svg]:size-5"
           >
-            <GitHubMark className="h-4 w-4" />
-            View on GitHub
-          </a>
-        </>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              data-story-github
+            >
+              <GitHubMark />
+              View on GitHub
+            </a>
+          </Button>
+        </div>
       ) : null}
       {stage.id === 'third' && copySet === 'deck' ? (
         <p className="text-[12px] text-white/40">

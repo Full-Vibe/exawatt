@@ -26,7 +26,11 @@ import {
  *   chevron square IS on every platform. The slot is deleted rather than left
  *   empty, per burn-bridges: an available slot beside a primary CTA is an
  *   invitation to rebuild the same defect. The way down is a labelled cue at
- *   the bottom of the fold's frame; see `sequence-scroll-cue.tsx`.
+ *   the bottom of the fold's frame; see `sequence-scroll-cue.tsx`. A second
+ *   choice of its own is not that defect: the homepage story's close sets the
+ *   source on GitHub beside this button as a labelled, outlined secondary
+ *   (ENG-031 W15p, operator 2026-10-14: "Put the two CTA buttons
+ *   side-by-side"), from outside this component, which still has no slot.
  * - FLAT DOM. The 3D key switch comes off the site (operator); no premium hero
  *   in the 16-site set makes its primary conversion action a mesh. This is a
  *   real anchor: hit-testable, keyboard-focusable, and legible to a crawler.
