@@ -28,7 +28,7 @@
 import type { StatusLightState } from '@/components/status-light/protocol';
 import type { FleetAgent } from './fleet-model';
 
-type StageId = 'landing' | 'working' | 'needs-you' | 'third' | 'fleet';
+export type StageId = 'landing' | 'working' | 'needs-you' | 'third' | 'fleet';
 
 export type CopySetId = 'deck' | 'canon';
 

@@ -49,6 +49,7 @@ export function DownloadCta({
   size = 'fold',
   align = 'center',
   requirement = true,
+  label = DOWNLOAD_LABEL,
 }: {
   className?: string;
   /** The close repeats the fold's button; only the leading rhythm differs. */
@@ -60,6 +61,8 @@ export function DownloadCta({
    *  later Apple Silicon disclaimer. That can just be on the download
    *  page"). */
   requirement?: boolean;
+  /** The homepage may publish its own action label; other uses keep canon. */
+  label?: string;
 }) {
   return (
     <div
@@ -81,7 +84,7 @@ export function DownloadCta({
           )}
           data-band-download
         >
-          <Link href={DOWNLOAD_HREF}>{DOWNLOAD_LABEL}</Link>
+          <Link href={DOWNLOAD_HREF}>{label}</Link>
         </Button>
       </div>
       {requirement ? (

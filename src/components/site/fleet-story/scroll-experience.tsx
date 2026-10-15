@@ -44,6 +44,7 @@ import { Button } from '@/components/ui/button';
 import { GITHUB_URL } from '@/components/site/site-links';
 import { GitHubMark } from '@/components/site/github-mark';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
+import type { HomepageCopyDocument } from '@/lib/homepage-copy/contract';
 import { AgentCard } from './agent-card';
 import { StoryCanvas } from './canvas-boundary';
 import { fleetModel, STATUS_LABEL, type FleetAgent } from './fleet-model';
@@ -93,6 +94,14 @@ const VisualCanvas = dynamic(
     ssr: false,
   }
 );
+
+function sceneCopy(
+  stage: Stage,
+  copySet: CopySetId,
+  document?: HomepageCopyDocument
+) {
+  return document?.scenes[stage.id] ?? stage.copy[copySet];
+}
 
 const STAGE_SCREENS = 1.0;
 /** How fast the rig follows the scroll, per second. A hand on the wheel
@@ -152,6 +161,7 @@ export function ScrollExperience({
   sound,
   names,
   insetTop = 0,
+  copyDocument,
 }: {
   /** The study's candidate visual; the homepage draws Crust. */
   Visual?: ComponentType<VisualProps>;
@@ -171,6 +181,9 @@ export function ScrollExperience({
   names: NamesId;
   /** Pixels of the stage's top covered by the study's own controls. */
   insetTop?: number;
+  /** Published homepage copy, or a validated private preview. The study
+   *  omits this and keeps its deck/canon comparison. */
+  copyDocument?: HomepageCopyDocument;
 }) {
   const model = useMemo(() => fleetModel(), []);
   const theme = useMemo(() => heroBoardTheme('classic'), []);
@@ -622,6 +635,7 @@ export function ScrollExperience({
         <SceneSteps
           stage={stage}
           copySet={copySet}
+          copyDocument={copyDocument}
           fillRefs={stepRefs}
           onStep={index => goToScene.current(index)}
           reducedMotion={reducedMotion}
@@ -638,6 +652,7 @@ export function ScrollExperience({
               }}
               stage={item}
               copySet={copySet}
+              copyDocument={copyDocument}
               active={index === stage}
               agent={index === stage ? focusedAgent : null}
               accent={theme.selection}
@@ -663,6 +678,7 @@ export function ScrollExperience({
 function SceneSteps({
   stage,
   copySet,
+  copyDocument,
   fillRefs,
   onStep,
   reducedMotion,
@@ -670,6 +686,7 @@ function SceneSteps({
 }: {
   stage: number;
   copySet: CopySetId;
+  copyDocument?: HomepageCopyDocument;
   fillRefs: React.RefObject<(HTMLSpanElement | null)[]>;
   onStep: (index: number) => void;
   reducedMotion: boolean;
@@ -697,14 +714,14 @@ function SceneSteps({
       </span>
       {/* and for a screen reader, each scene as it arrives */}
       <p className="sr-only" aria-live="polite">
-        {`Scene ${stage + 1} of ${STAGES.length}: ${STAGES[stage].copy[copySet].headline.join(' ')}`}
+        {`Scene ${stage + 1} of ${STAGES.length}: ${sceneCopy(STAGES[stage], copySet, copyDocument).headline.join(' ')}`}
       </p>
       {STAGES.map((item, index) => (
         <button
           key={item.id}
           type="button"
           onClick={() => onStep(index)}
-          aria-label={`Scene ${index + 1} of ${STAGES.length}: ${item.copy[copySet].headline.join(' ')}`}
+          aria-label={`Scene ${index + 1} of ${STAGES.length}: ${sceneCopy(item, copySet, copyDocument).headline.join(' ')}`}
           aria-current={index === stage ? 'step' : undefined}
           className="group/step flex items-center landscape:h-7 landscape:w-9 landscape:justify-end portrait:h-7 portrait:flex-1"
         >
@@ -847,6 +864,7 @@ function Panel({
   panelRef,
   stage,
   copySet,
+  copyDocument,
   active,
   agent,
   accent,
@@ -857,6 +875,7 @@ function Panel({
   panelRef: (el: HTMLDivElement | null) => void;
   stage: Stage;
   copySet: CopySetId;
+  copyDocument?: HomepageCopyDocument;
   active: boolean;
   agent: FleetAgent | null;
   /** The product's selection colour: the card is the agent in focus. */
@@ -917,6 +936,7 @@ function Panel({
         <PanelBody
           stage={stage}
           copySet={copySet}
+          copyDocument={copyDocument}
           agent={shown}
           interactive={active}
           accent={accent}
@@ -930,6 +950,7 @@ function Panel({
 function PanelBody({
   stage,
   copySet,
+  copyDocument,
   agent,
   interactive = true,
   accent,
@@ -937,6 +958,7 @@ function PanelBody({
 }: {
   stage: Stage;
   copySet: CopySetId;
+  copyDocument?: HomepageCopyDocument;
   agent: FleetAgent | null;
   /** Only the stage on screen may take the pointer. An invisible panel
    *  from another stage must never swallow a click meant for the world. */
@@ -944,7 +966,7 @@ function PanelBody({
   accent: string;
   reducedMotion: boolean;
 }) {
-  const copy = stage.copy[copySet];
+  const copy = sceneCopy(stage, copySet, copyDocument);
   const isLanding = stage.id === 'landing';
   const last = copy.headline.length - 1;
   // the landing's promise is the page's title
@@ -989,7 +1011,7 @@ function PanelBody({
       >
         {copy.headline.map((line, index) => (
           <span
-            key={line}
+            key={index}
             className={cn(
               'block',
               isLanding && index < last && 'text-white/50'
@@ -999,7 +1021,7 @@ function PanelBody({
           </span>
         ))}
       </Heading>
-      {copy.body ? (
+      {copy.body?.length ? (
         <p
           className={cn(
             'pointer-events-auto max-w-[32rem] text-pretty text-[15px] leading-relaxed text-white/70 md:text-[17px]',
@@ -1009,8 +1031,8 @@ function PanelBody({
               'text-balance text-[17px] text-white/80 md:max-w-[44rem] md:text-[21px]'
           )}
         >
-          {copy.body.map(line => (
-            <span key={line} className="block">
+          {copy.body.map((line, index) => (
+            <span key={index} className="block">
               {line}
             </span>
           ))}
@@ -1022,7 +1044,11 @@ function PanelBody({
         // desktop at least) because GH one isn't very legible"); where the
         // two do not fit across, the source goes under the download
         <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-3 pt-1">
-          <DownloadCta align="center" requirement={false} />
+          <DownloadCta
+            align="center"
+            requirement={false}
+            label={copyDocument?.actions.downloadLabel}
+          />
           {/* a keyboard's focus rings it in white, clear of the border, as it
               does the download */}
           <Button
@@ -1036,7 +1062,7 @@ function PanelBody({
               data-story-github
             >
               <GitHubMark />
-              View on GitHub
+              {copyDocument?.actions.githubLabel ?? 'View on GitHub'}
             </a>
           </Button>
         </div>

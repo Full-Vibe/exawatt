@@ -2,14 +2,12 @@ import type { Metadata } from 'next';
 import { resolveDistributionIdentity } from '@exawatt/core/distribution';
 import { HOMEPAGE_STORY } from '@/components/site/fleet-story/homepage-settings';
 import { ScrollExperience } from '@/components/site/fleet-story/scroll-experience';
-import { STAGES } from '@/components/site/fleet-story/stages';
 import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { readPublishedHomepageCopy } from '@/lib/homepage-copy/published';
 
-const landing = STAGES[0].copy[HOMEPAGE_STORY.copySet];
-const promise = landing.headline.join(' ');
-const description = (landing.body ?? []).join(' ');
-const { productName } = resolveDistributionIdentity(resolvedDistribution());
+/** A publish should appear in the HTML and metadata on the next request. */
+export const dynamic = 'force-dynamic';
 
 /**
  * The homepage is the fleet story (ENG-031 W15m, operator 2026-10-14: "I'm
@@ -23,40 +21,49 @@ const { productName } = resolveDistributionIdentity(resolvedDistribution());
  * story's type, its title and its download are in the HTML a crawler and a
  * slow connection get first.
  */
-export const metadata: Metadata = {
-  metadataBase: new URL(EXAWATT_HOSTED_ORIGIN),
-  // the product first, then its promise, as a homepage title reads
-  title: { absolute: `${productName} · ${promise.replace(/\.$/, '')}` },
-  description,
-  openGraph: {
-    title: promise,
-    description,
-    type: 'website',
-    images: [
-      {
-        url: '/images/og-home.png',
-        width: 1200,
-        height: 630,
-        alt: 'A fleet of agents on a world of hex tiles, each wearing its harness mark.',
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: promise,
-    description,
-    images: ['/images/og-home.png'],
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { document } = await readPublishedHomepageCopy();
+  const landing = document.scenes.landing;
+  const promise = landing.headline.join(' ');
+  const description = landing.body.join(' ') || promise;
+  const { productName } = resolveDistributionIdentity(resolvedDistribution());
 
-export default function Home() {
+  return {
+    metadataBase: new URL(EXAWATT_HOSTED_ORIGIN),
+    // the product first, then its promise, as a homepage title reads
+    title: { absolute: `${productName} · ${promise.replace(/\.$/, '')}` },
+    description,
+    openGraph: {
+      title: promise,
+      description,
+      type: 'website',
+      images: [
+        {
+          url: '/images/og-home.png',
+          width: 1200,
+          height: 630,
+          alt: 'A fleet of agents on a world of hex tiles, each wearing its harness mark.',
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: promise,
+      description,
+      images: ['/images/og-home.png'],
+    },
+  };
+}
+
+export default async function Home() {
+  const { document } = await readPublishedHomepageCopy();
   return (
     <main
       className="min-h-screen bg-[#04060b] font-ui text-white"
       data-fleet-story
       data-public-exhibition-surface="true"
     >
-      <ScrollExperience {...HOMEPAGE_STORY} />
+      <ScrollExperience {...HOMEPAGE_STORY} copyDocument={document} />
     </main>
   );
 }
