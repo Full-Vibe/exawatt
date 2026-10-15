@@ -99,9 +99,9 @@ itself, a backups volume and five temporary eval directories.
   (ENG-016 D31 catalog), so "Continue where Claude Code left off" is one
   click. No new surface.
 - **O4 Bindings beyond the folder (later).** The registry's single
-  `root_path` grows into bindings (`folder`, `antigravity-project`,
-  `claude-project-link`, `chatgpt-project-link`), each an attribute, never
-  a join key. Unshaped until a user asks for the chat-Project link.
+  `root_path` grows into `bindings[]`, each an attribute, never a join key.
+  Spec written 2026-10-15 (the "Bindings spec" section below); the build
+  stays unshaped until a user asks for the chat-Project link.
 
 ## Ownership boundaries
 
@@ -127,6 +127,191 @@ itself, a backups volume and five temporary eval directories.
   Agent of either harness lands in that one Project.
 - Nothing is written to any harness store, proven by a checksum before and
   after the eval.
+
+## Bindings spec (2026-10-15)
+
+What an Exawatt Project is once it can carry more than one folder and the
+evidence of three harness stores and two chat products. This is a contract
+the operator can argue with, not code; O4 builds it when a user asks, and O1
+to O3 are built against it so nothing they store has to be undone.
+
+<!-- exawatt:public-omit-begin the evidence file is private research -->
+Evidence: `docs/research/market/2026-10-15-harness-project-stores-and-exawatt-bindings.md`
+(every store on the operator's Mac read read-only on 2026-10-15; vendor
+documentation of the same day).
+<!-- exawatt:public-omit-end -->
+
+### The record
+
+```text
+Project
+  id              opaque, Exawatt-owned; never derived from anything below
+  name            the operator's label; seeded once at creation, never
+                  overwritten by a store afterwards
+  kind            'repository' | 'manual' | 'remote-home' (unchanged)
+  bindings[]      zero or more; each an attribute, never a join key
+  color, sort_order, last_opened_at, archived_at (unchanged)
+
+Binding
+  kind            'folder' | 'claude-code-directory' | 'codex-directory'
+                  | 'antigravity-project' | 'claude-cloud-project'
+                  | 'chatgpt-project'
+  ref             what the kind names (below)
+  machine_id      present on every path-shaped kind; a path is per machine
+  label           the store's own name, when it has one
+  source          'user' (pasted or picked) | 'discovery' (read from a store)
+  observed_at     when Exawatt last saw this evidence or the user bound it
+```
+
+What each kind names, and what Exawatt may do with it:
+
+| kind | `ref` | Evidence of | Exawatt may |
+| --- | --- | --- | --- |
+| `folder` | an absolute directory on `machine_id`; today's `root_path` | where the Project lives on this machine | open, launch, Finder, worktree verbs |
+| `claude-code-directory` | the exact key of Claude Code's per-directory entry (`~/.claude.json` → `projects`) or the `cwd` its transcripts record | Claude Code has run here; trust accepted or not; last start | show the badge, recommend the harness, rank by last activity, list its conversations |
+| `codex-directory` | the exact key of Codex's `[projects."<path>"]` entry or a thread's `cwd` | Codex has run here; trusted | the same |
+| `antigravity-project` | the `id` of `~/.gemini/config/projects/<id>.json` (its `folderUri`s name the folders) | Antigravity groups conversations here | the same, and pass `--project <id>` at launch when the operator wants Antigravity's own grouping to match |
+| `claude-cloud-project` | a `claude.ai/code/projects/...` URL the user pasted | the user says this cloud Project is about this work | open the link; never list, match or claim equivalence |
+| `chatgpt-project` | a ChatGPT project URL the user pasted | the same | the same |
+
+A store that has a display name (Antigravity, the Codex app, both chat
+products) contributes it as `label`; Claude Code and the Codex CLI have none,
+and the folder's basename stands in. The label never renames the Project.
+
+### The join rule
+
+- An Agent of any harness opening in a directory resolves that directory
+  with `git rev-parse --git-common-dir` (`project-resolve.ts`): a linked
+  worktree and a subdirectory both fold to the repository's working
+  directory; a directory outside git is itself.
+- The Project is the one whose `folder` binding on this machine equals that
+  resolved directory. There is at most one (today the `(user_id, root_path)`
+  unique index; tomorrow a partial unique index on folder bindings per
+  machine).
+- Harness-store bindings are never looked up to find a Project. They are
+  attached to the Project the folder join found, or carried by a suggestion
+  until that suggestion is opened. The same holds for cloud links.
+- No Project has that folder: discovery lists a suggestion; a Project is
+  created only by an explicit open (chooser, suggestion click, Browse,
+  launch). Discovery never creates a row.
+- Worktrees fold for now (operator, 2026-10-15: "Start with 1. We'll shift
+  this around over time."). When that changes, a worktree becomes a second
+  `folder` binding on the same Project, not a second Project, and the join
+  rule above is unchanged.
+
+### Invariants
+
+1. **Identity survives rebind and detach.** Adding, replacing or removing
+   any binding, including the last `folder`, never changes `id`; a Project
+   with zero bindings is valid and openable, and folder-dependent verbs are
+   simply absent (decision `0037` §3).
+2. **Stores are never written.** Every `discovery` binding is the result of
+   a read. Exawatt never writes `~/.claude.json`, `~/.claude/projects/`,
+   `~/.codex/config.toml`, `~/.codex/sessions/`, any Codex SQLite file,
+   `~/.gemini/config/projects/` or Antigravity's SQLite. Passing
+   `--project <id>` to `agy` is the harness writing its own store through
+   its own CLI, and only when the operator asked for it.
+3. **A suggestion becomes a row only on open.** A suggestion carries its
+   folder and its discovery bindings; opening it creates the row and its
+   bindings in one gesture, exactly the row Browse would have created for
+   that folder.
+4. **One row per folder, N badges.** The folder join is unique per machine
+   and user; the same folder known to Claude Code, Codex and Antigravity is
+   one Project with three discovery bindings, and never three rows. A
+   harness arriving later adds a binding, never a row.
+5. **A binding is dated evidence, never truth.** Each carries `observed_at`.
+   A store entry that disappears (a purge, the 30-day transcript sweep, a
+   deleted or moved directory) makes the binding stale, not the Project
+   deleted: Exawatt shows the state (folder missing, harness no longer
+   knows it) and keeps the row. A refresh re-reads the stores; nothing
+   watches the filesystem (decision `0013`).
+
+### Explicit non-bijections
+
+- **Worktrees.** Every store is keyed per working directory; Exawatt folds
+  to the repository, so one Project ↔ many store entries. Claude Code folds
+  only its auto memory and permission approvals across worktrees; the Codex
+  app leaves worktrees made outside it without a project. The fold is the
+  operator's choice and is reversible by the rule above.
+- **Parent and nested directories.** A store remembers the home directory,
+  a parent of several repositories and a package inside one. The filter
+  drops parents that are not git roots; the join folds subdirectories. Some
+  entries therefore map to no Project and some to a Project they did not
+  name.
+- **Deleted, moved and purged directories.** No store records a move; each
+  accumulates a new entry and keeps the old, and on a real machine most
+  Claude Code entries point at directories that no longer exist. Claude
+  Code's purge removes its knowledge of a directory and the retention sweep
+  removes transcripts but not the entry; an Exawatt row keeps its identity
+  through all of it. Rebinding the folder is a user act.
+- **Entry versus transcript.** Claude Code keeps per-directory entries and
+  per-directory transcripts, and each exists without the other. A reader
+  unions them and reads the transcript's own `cwd`, because the transcript
+  directory name is a lossy encoding that cannot be decoded.
+- **Cloud projects with no API.** Claude Code Projects and ChatGPT Projects
+  cannot be listed, matched or opened by Exawatt; a Claude Code Project
+  thread that runs locally through Remote Control is an ordinary local
+  session with a working directory and no project signal; teleport moves a
+  session, not a project; "a local session doesn't have these options".
+  The binding is a link the user pasted and nothing more.
+- **Antigravity's default bucket and multi-folder projects.** Conversations
+  started without `--project` land in `default-cli-project`, which has no
+  folders and maps to no Project; a user project may list several folders,
+  so one Antigravity project may attach to several Exawatt Projects.
+- **The Codex app's own projects.** They have ids and roots in local SQLite,
+  but the app has not assigned them to the CLI's threads, so the directory
+  is the usable evidence and the app's id is a later binding kind at most.
+
+### Migration from `root_path` (shape only; no migration is written here)
+
+Today: `projects.root_path TEXT NULL` with a unique `(user_id, root_path)`
+index; `git_remote TEXT NULL` written at creation and never read; the local
+registry mirrors the same DTO in storage version 1.
+
+Target shape:
+
+```text
+project_bindings
+  id            uuid
+  project_id    → projects.id (cascade)
+  kind          text
+  ref           text
+  machine_id    text NULL          present for folder and *-directory kinds
+  label         text NULL
+  source        text               'user' | 'discovery'
+  observed_at   timestamptz
+  created_at    timestamptz
+  unique (project_id, kind, ref, machine_id)
+  partial unique (user_id, machine_id, ref) where kind = 'folder'
+```
+
+Order of work when O4 is built: (1) add the table and backfill one `folder`
+binding per row from `root_path` with this machine's id; (2) move the folder
+join and `rebindProjectPath` onto folder bindings; (3) delete `root_path`
+and its unique index in the same landing, and bump the local registry's
+storage version with a one-time migration of v1 rows. No shim keeps
+`root_path` alive. `git_remote` stays as a cross-machine rematch hint until a
+sync design needs it; it is not a join.
+
+### Open questions for the operator
+
+1. **Several folders in one Project.** Codex and Antigravity allow a
+   frontend and a backend in one project. Allow N `folder` bindings with
+   different repositories, with the first as primary for launch and Finder?
+   Proposed: allow when asked, primary = first; nothing in the join changes.
+2. **Antigravity's own grouping.** Pass `--project <id>` at launch so
+   Antigravity's store groups conversations the way Exawatt does (Antigravity
+   then writes its own store on the operator's behalf), or leave its default
+   bucket alone? Proposed: leave it alone until the mismatch is felt.
+3. **Cross-machine.** A synced account sees a Project whose folder is on
+   another Mac. Proposed: `machine_id` on every path-shaped binding, one
+   folder binding per machine, `git_remote` as a rematch hint; not a join.
+4. **Stale badges.** When a harness entry is purged or the folder is gone,
+   show the badge as stale, or drop it on the next refresh? Proposed: keep
+   it for one refresh with its date, then drop; the row stays.
+5. **Local threads of a cloud Project.** No documented signal says a local
+   session is a Claude Code Project thread. Proposed: do nothing; the
+   session is an ordinary Agent in the folder's Project.
 
 ## Roadmap milestone log
 
@@ -161,3 +346,14 @@ Demo) for operator review before O2 and O5 wire it into production.
 Shaped in one pass with the research record. The operator's decisions are in
 the brief; the agent's standing decisions (join key, suggestions over import,
 user-linked chat Projects) are recorded there so they can be reversed.
+
+### 2026-10-15 — O4 bindings spec written
+
+The Project record with `bindings[]`, the folder join, five invariants, the
+non-bijections and the migration shape from `root_path` are in the "Bindings
+spec (2026-10-15)" section above. Measured the same day on the operator's
+Mac: 37 distinct projects across the three stores after folding, 19 of them
+known to more than one harness, and most Claude Code entries pointing at
+directories that no longer exist, which is what made "a binding is dated
+evidence" an invariant rather than a nicety. O4's build stays unshaped until
+a user asks for the chat-Project link.

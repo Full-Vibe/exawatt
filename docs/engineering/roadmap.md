@@ -1327,7 +1327,7 @@ Milestones:
 - O1 Harness project suggestions in main (readers, filter, folding, diagnostics, IPC)
 - O2 "Your projects" in the chooser with one-click open and "Open all recent"
 - O3 First-Agent hand-off: composer focused on the suggesting harness, recent conversations visible
-- O4 Bindings beyond the folder (Antigravity project, chat-Project links): unshaped until a user asks
+- O4 Bindings beyond the folder (Antigravity project, chat-Project links): spec written 2026-10-15 (`first-run-on-ramp.md` → "Bindings spec"); build unshaped until a user asks
 - O5 No-harness first run (operator, 2026-10-15): Exawatt detects that no harness is installed or signed in and gives clear remediation and next steps (install guide, sign-in, Recheck, then a folder), through the existing source cards and the ENG-045 guided-step pattern; no installer runs on the user's behalf. Design pass first (O0).
 - O0 Holistic first-run design pass (NEXT, before O2 and O5): one journey across the states no harness / harness not signed in / harness ready with projects / ready with none / Demo, prototyped at `/hud-gallery` per ENG-036 and reviewed by the operator before production wiring. DIRECTION DECIDED 2026-10-15 (operator): one Start screen from existing parts replaces the lone Open Project button: the source cards (ready, sign in, install guide, exactly as Settings shows them), then Your projects (or Pick a folder when none), then Try the Demo; it remains the empty-Project state forever, a home rather than a wizard, and it is what the chooser and the composer already are, arranged once
 
