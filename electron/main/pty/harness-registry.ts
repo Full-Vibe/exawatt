@@ -8,6 +8,7 @@ import type { HarnessEventNormalizer } from '../harness-events/channel';
 import {
   claudeHookEvent,
   claudeHookSettings,
+  type HookSettingsLaunch,
 } from '../harness-events/claude-hooks';
 import {
   qwenHookEvent,
@@ -21,6 +22,10 @@ import {
   antigravityHookSettings,
 } from '../harness-events/antigravity-hooks';
 import { readQwenAdminDefaults } from './qwen-source';
+import type { BusTransport } from '../bus/transports/types';
+import { claudeSocketTransport } from '../bus/transports/claude-socket';
+import { codexQueueTransport } from '../bus/transports/codex-queue';
+import { terminalInputTransport } from '../bus/transports/terminal-input';
 
 /**
  * How a source is wired to Exawatt's harness event channel (ENG-023).
@@ -37,7 +42,8 @@ export interface HarnessEventChannelBinding {
   settings: (
     port: number,
     token: string,
-    safety: SafetyControlSettings
+    safety: SafetyControlSettings,
+    launch: HookSettingsLaunch
   ) => string;
   /** Point the launch at that document. */
   invocation: (invocation: string, settingsPath: string) => string;
@@ -92,6 +98,47 @@ export type DelegationCapability =
   | { observable: true; mechanism: 'settings-hooks' | 'protocol' }
   | { observable: false; reason: string };
 
+/**
+ * How the agent-to-agent bus reaches this source (ENG-029 C4, decision
+ * `0052`'s plugin boundary): the same S5 shape as `eventChannel`, so the bus
+ * core asks the descriptor for a door and never branches on a harness id.
+ *
+ * `agent` is the peer door a message from another Agent takes; `operator`
+ * is the door for the user's own turn (Direct, "Send as operator"). Null is
+ * a real answer: every message to that door reads `undeliverable`.
+ * `outbound` is how an Agent of this source reaches the bus: `path` puts the
+ * `exawatt` executable on the Session's PATH; `mcp` is the per-launch MCP
+ * door B2 adds.
+ */
+interface HarnessMessagingCapability {
+  agent: BusTransport | null;
+  operator: BusTransport | null;
+  outbound: { path: boolean; mcp: null };
+}
+
+/** The user's own turn: typed into the terminal once the recipient's turn
+ *  has ended, as if the operator had typed it. Every terminal harness. */
+const operatorTurnDoor = terminalInputTransport({
+  delivered: 'delivered',
+  holdWhile: ['starting', 'running', 'blocked'],
+});
+
+/** A peer message through a terminal whose harness queues pasted input
+ *  itself (Antigravity, measured): typed at once, never into a dialog. */
+const queuedPeerTerminalDoor = terminalInputTransport({
+  delivered: 'terminal',
+  holdWhile: ['starting', 'blocked'],
+});
+
+/** A peer message through a terminal nobody has measured mid-turn: typed
+ *  when the turn has ended, the documented degraded door. */
+const idlePeerTerminalDoor = terminalInputTransport({
+  delivered: 'terminal',
+  holdWhile: ['starting', 'running', 'blocked'],
+});
+
+const shellOutbound = { path: true, mcp: null } as const;
+
 export interface HarnessLaunchDescriptor {
   id: AgentHarness;
   /** Stable operator-facing source metadata. Renderer code receives this
@@ -113,6 +160,9 @@ export interface HarnessLaunchDescriptor {
    *  sources with no push mechanism, which simply launch unsubscribed. */
   eventChannel?: HarnessEventChannelBinding;
   launchAgent?: HarnessLaunchAgentBinding;
+  /** How the agent-to-agent bus reaches this source and how its Agents
+   *  reach the bus. Required: a source decides, even if the answer is none. */
+  messaging: HarnessMessagingCapability;
   /** Source-owned assertion control, deliberately verified one version at a
    * time. A recognized feature alone does not establish runtime behavior. */
   sleepControl?:
@@ -218,6 +268,12 @@ const descriptors = {
         `${invocation} --settings ${shellQuote(settingsPath)}`,
       normalize: claudeHookEvent,
     },
+    // B0: the per-session socket, read between tool calls when busy.
+    messaging: {
+      agent: claudeSocketTransport(),
+      operator: operatorTurnDoor,
+      outbound: shellOutbound,
+    },
     permissionFlags: mode =>
       mode === 'prompt'
         ? '--permission-mode default'
@@ -257,6 +313,12 @@ const descriptors = {
     // app-server adapter version/shape-probes Codex's owned thread protocol
     // and fails to absent when that protocol cannot be observed.
     delegation: { observable: true, mechanism: 'protocol' },
+    // B0: `codex queue` runs the message as the thread's next turn.
+    messaging: {
+      agent: codexQueueTransport('codex'),
+      operator: operatorTurnDoor,
+      outbound: shellOutbound,
+    },
     permissionFlags: workspaceReviewFlags,
     modelInvocation: (invocation, quotedModel) =>
       `${invocation} --model ${quotedModel}`,
@@ -285,6 +347,11 @@ const descriptors = {
     delegation: {
       observable: false,
       reason: 'OpenCode PTY does not report delegated work',
+    },
+    messaging: {
+      agent: idlePeerTerminalDoor,
+      operator: operatorTurnDoor,
+      outbound: shellOutbound,
     },
     launchAgent: {
       configuration: opencodeLaunchAgentConfiguration,
@@ -337,6 +404,11 @@ const descriptors = {
       reason:
         'Grok Build reports delegated work only to hooks Exawatt cannot inject per launch',
     },
+    messaging: {
+      agent: idlePeerTerminalDoor,
+      operator: operatorTurnDoor,
+      outbound: shellOutbound,
+    },
     permissionFlags: mode =>
       mode === 'prompt'
         ? '--permission-mode default'
@@ -374,6 +446,11 @@ const descriptors = {
     // existing id is refused, so a fresh launch always gets a fresh id.
     allocatesFreshSessionId: true,
     delegation: { observable: true, mechanism: 'settings-hooks' },
+    messaging: {
+      agent: idlePeerTerminalDoor,
+      operator: operatorTurnDoor,
+      outbound: shellOutbound,
+    },
     eventChannel: {
       settings: (port, token) =>
         qwenHookSettings(port, token, readQwenAdminDefaults()),
@@ -428,6 +505,13 @@ const descriptors = {
       observable: false,
       reason:
         'Antigravity reports a delegation start and no completion, so delegated work is not shown',
+    },
+    // B0: an interactive tab is reachable only through its terminal; a paste
+    // mid-turn is queued by Antigravity itself and runs as the next turn.
+    messaging: {
+      agent: queuedPeerTerminalDoor,
+      operator: operatorTurnDoor,
+      outbound: shellOutbound,
     },
     eventChannel: {
       settings: antigravityHookSettings,

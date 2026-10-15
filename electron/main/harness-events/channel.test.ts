@@ -318,4 +318,86 @@ describe('HarnessEventChannel', () => {
     expect(await target.start()).toBe(true);
     expect(target.register('pty-2', claudeHookEvent)!.port).toBe(port);
   });
+
+  describe('the bus paths (ENG-029 C4)', () => {
+    async function busPost(
+      port: number,
+      verb: string,
+      body: string,
+      token?: string
+    ): Promise<{ status: number; text: string }> {
+      const response = await fetch(`http://127.0.0.1:${port}/bus/${verb}`, {
+        method: 'POST',
+        headers: token ? { 'x-exawatt-token': token } : {},
+        body,
+      });
+      return { status: response.status, text: await response.text() };
+    }
+
+    it('hands a bus token’s Session, the verb and the body to the bus, and answers its text', async () => {
+      const target = await started();
+      const calls: [string, string, string][] = [];
+      target.setBusHandler(async (sessionId, verb, body) => {
+        calls.push([sessionId, verb, body]);
+        return { status: 200, text: 'Sent.' };
+      });
+      const bus = target.registerBus('pty-1')!;
+      expect(await busPost(bus.port, 'send', '@x\nhi', bus.token)).toEqual({
+        status: 200,
+        text: 'Sent.\n',
+      });
+      expect(calls).toEqual([['pty-1', 'send', '@x\nhi']]);
+    });
+
+    it('keeps the two token kinds apart: a hook token never speaks on the bus, a bus token never posts an event', async () => {
+      const target = await started();
+      const seen = collect(target);
+      const calls: string[] = [];
+      target.setBusHandler(async sessionId => {
+        calls.push(sessionId);
+        return { status: 200, text: '' };
+      });
+      const hook = target.register('pty-1', claudeHookEvent)!;
+      const bus = target.registerBus('pty-1')!;
+      expect((await busPost(hook.port, 'agents', '', hook.token)).status).toBe(
+        403
+      );
+      expect(
+        await post(
+          bus,
+          { hook_event_name: 'Stop' },
+          { 'x-exawatt-token': bus.token }
+        )
+      ).toBe(404);
+      expect(calls).toEqual([]);
+      expect(seen).toEqual([]);
+    });
+
+    it('refuses a released or unknown bus token, and an oversized body', async () => {
+      const target = await started();
+      target.setBusHandler(async () => ({ status: 200, text: 'ok' }));
+      const bus = target.registerBus('pty-1')!;
+      target.releaseBus('pty-1');
+      expect((await busPost(bus.port, 'agents', '', bus.token)).status).toBe(
+        403
+      );
+      expect((await busPost(bus.port, 'agents', '')).status).toBe(403);
+      const fresh = target.registerBus('pty-2')!;
+      expect(
+        (await busPost(fresh.port, 'send', 'x'.repeat(70 * 1024), fresh.token))
+          .status
+      ).toBe(413);
+    });
+
+    it('answers a failing bus handler without breaking the channel', async () => {
+      const target = await started();
+      target.setBusHandler(async () => {
+        throw new Error('disk full');
+      });
+      const bus = target.registerBus('pty-1')!;
+      const answer = await busPost(bus.port, 'send', '@x\nhi', bus.token);
+      expect(answer.status).toBe(500);
+      expect(answer.text).toContain('disk full');
+    });
+  });
 });

@@ -1,0 +1,252 @@
+import fs from 'fs';
+import net from 'net';
+import os from 'os';
+import path from 'path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { claudeSocketTransport, findClaudeSocket } from './claude-socket';
+import { codexQueueTransport } from './codex-queue';
+import { terminalInputTransport } from './terminal-input';
+import { undeliverableTransport } from './undeliverable';
+import {
+  context,
+  envelope,
+  recordingTerminal,
+  target,
+} from './fixtures.test-support';
+
+/**
+ * Every transport plugin, against its contract: the delivery state each
+ * outcome records, and the exact bytes each door receives.
+ */
+
+const cleanups: (() => void)[] = [];
+afterEach(() => {
+  while (cleanups.length) cleanups.pop()!();
+});
+
+function scratch(): string {
+  // Unix socket paths are short-limited, so the scratch dir stays near /tmp.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bus-'));
+  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+/** A Claude Code session as it registers itself, with a listening socket. */
+async function claudeSession(dir: string, sessionId: string) {
+  const sessions = path.join(dir, 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const socketPath = path.join(dir, 's.sock');
+  const received: string[] = [];
+  let arrived!: () => void;
+  const firstMessage = new Promise<void>(resolve => (arrived = resolve));
+  const server = net.createServer(socket => {
+    let text = '';
+    socket.on('data', chunk => (text += chunk.toString('utf8')));
+    socket.on('end', () => {
+      received.push(text);
+      arrived();
+    });
+  });
+  await new Promise<void>(resolve => server.listen(socketPath, resolve));
+  cleanups.push(() => server.close());
+  fs.writeFileSync(
+    path.join(sessions, `${process.pid}.json`),
+    JSON.stringify({
+      pid: process.pid,
+      sessionId,
+      messagingSocketPath: socketPath,
+      updatedAt: 2,
+    })
+  );
+  return { socketPath, received, server, firstMessage };
+}
+
+describe('claude-socket', () => {
+  const sessionId = target().harnessSessionId!;
+
+  it('posts one JSON user line carrying exactly the stamped text, and reads delivered', async () => {
+    const dir = scratch();
+    const claude = await claudeSession(dir, sessionId);
+    const transport = claudeSocketTransport({ configDir: () => dir });
+    const ctx = context();
+    const result = await transport.deliver(envelope, target(), ctx);
+    expect(result).toEqual({ state: 'delivered', adapter: 'claude-socket' });
+    await claude.firstMessage;
+    expect(claude.received).toHaveLength(1);
+    const lines = claude.received[0].split('\n').filter(Boolean);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toEqual({
+      type: 'user',
+      message: { role: 'user', content: ctx.text },
+    });
+  });
+
+  it('finds the socket by the session id Exawatt allocated, never by recency', async () => {
+    const dir = scratch();
+    await claudeSession(dir, sessionId);
+    fs.writeFileSync(
+      path.join(dir, 'sessions', '1.json'),
+      JSON.stringify({
+        pid: 1,
+        sessionId: 'someone-else',
+        messagingSocketPath: '/nope.sock',
+        updatedAt: 99,
+      })
+    );
+    expect(
+      await findClaudeSocket(path.join(dir, 'sessions'), sessionId, () => true)
+    ).toBe(path.join(dir, 's.sock'));
+  });
+
+  it('reads undeliverable, with the reason, when no live session holds the id', async () => {
+    const dir = scratch();
+    await claudeSession(dir, sessionId);
+    const dead = claudeSocketTransport({
+      configDir: () => dir,
+      alive: () => false,
+    });
+    const result = await dead.deliver(envelope, target(), context());
+    expect(result.state).toBe('undeliverable');
+    expect(result.reason).toMatch(/socket/);
+  });
+
+  it('reads undeliverable before Claude Code has named its conversation', async () => {
+    const result = await claudeSocketTransport({
+      configDir: () => scratch(),
+    }).deliver(envelope, target({ harnessSessionId: null }), context());
+    expect(result.state).toBe('undeliverable');
+  });
+
+  it('reads undeliverable when the socket refuses the connection', async () => {
+    const dir = scratch();
+    const claude = await claudeSession(dir, sessionId);
+    await new Promise<void>(resolve => claude.server.close(() => resolve()));
+    const result = await claudeSocketTransport({
+      configDir: () => dir,
+    }).deliver(envelope, target(), context());
+    expect(result.state).toBe('undeliverable');
+    expect(result.reason).toMatch(/refused/);
+  });
+});
+
+describe('codex-queue', () => {
+  it('queues for the exact thread with the text in the environment, and declares its turn-start settle', async () => {
+    const transport = codexQueueTransport('codex');
+    const ctx = context();
+    const result = await transport.deliver(
+      envelope,
+      target({ harness: 'codex' }),
+      ctx
+    );
+    expect(result.state).toBe('queued');
+    expect(result.adapter).toBe('codex-queue');
+    expect(transport.queuedUntilTurnStart).toBe(true);
+    expect(ctx.commands).toEqual([
+      {
+        executable: 'codex',
+        args: [
+          'queue',
+          '--thread',
+          target().harnessSessionId,
+          '--message',
+          { env: 'EXAWATT_BUS_MESSAGE', value: ctx.text },
+        ],
+      },
+    ]);
+  });
+
+  it('reads undeliverable with the CLI’s own words when the queue refuses', async () => {
+    const result = await codexQueueTransport().deliver(
+      envelope,
+      target({ harness: 'codex' }),
+      context({
+        runSourceCommand: async () => ({
+          exitCode: 1,
+          stdout: '',
+          stderr: 'error: unknown thread\nmore',
+        }),
+      })
+    );
+    expect(result).toEqual({
+      state: 'undeliverable',
+      reason: 'codex queue refused it: error: unknown thread',
+      adapter: 'codex-queue',
+    });
+  });
+
+  it('reads undeliverable before Codex has named its thread, without running anything', async () => {
+    const ctx = context();
+    const result = await codexQueueTransport().deliver(
+      envelope,
+      target({ harness: 'codex', harnessSessionId: null }),
+      ctx
+    );
+    expect(result.state).toBe('undeliverable');
+    expect(ctx.commands).toEqual([]);
+  });
+});
+
+describe('terminal-input', () => {
+  const peer = terminalInputTransport({
+    delivered: 'terminal',
+    holdWhile: ['blocked'],
+  });
+  const operator = terminalInputTransport({
+    delivered: 'delivered',
+    holdWhile: ['running', 'blocked'],
+  });
+
+  it('pastes the text bracketed, then presses Enter as a separate write after the TUI answered', async () => {
+    const terminal = recordingTerminal(true);
+    const ctx = context({
+      terminal: terminal.door,
+      text: 'line one\nline two',
+    });
+    const result = await peer.deliver(envelope, target(), ctx);
+    expect(result).toEqual({ state: 'terminal', adapter: 'terminal-input' });
+    expect(terminal.writes).toEqual([
+      '\x1b[200~line one\nline two\x1b[201~',
+      '\r',
+    ]);
+    expect(terminal.events).toEqual(['write', 'settled', 'submit']);
+  });
+
+  it('keeps a message to one line when the TUI has no bracketed paste', async () => {
+    const terminal = recordingTerminal(false);
+    await peer.deliver(
+      envelope,
+      target(),
+      context({ terminal: terminal.door, text: 'a\n\nb' })
+    );
+    expect(terminal.writes).toEqual(['a b', '\r']);
+  });
+
+  it('records the operator’s own turn as delivered', async () => {
+    const terminal = recordingTerminal(true);
+    const result = await operator.deliver(
+      envelope,
+      target(),
+      context({ terminal: terminal.door, text: '/compact' })
+    );
+    expect(result.state).toBe('delivered');
+    expect(terminal.writes[0]).toBe('\x1b[200~/compact\x1b[201~');
+  });
+
+  it('reads undeliverable for a Session with no terminal', async () => {
+    expect((await peer.deliver(envelope, target(), context())).state).toBe(
+      'undeliverable'
+    );
+  });
+});
+
+describe('undeliverable', () => {
+  it('names its reason and holds nothing', async () => {
+    const transport = undeliverableTransport('No door here');
+    expect(transport.holdWhile).toEqual([]);
+    expect(await transport.deliver(envelope, target(), context())).toEqual({
+      state: 'undeliverable',
+      reason: 'No door here',
+      adapter: 'none',
+    });
+  });
+});

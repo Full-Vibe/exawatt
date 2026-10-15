@@ -478,11 +478,14 @@ table; main's bus core and its transports follow in later B1 slices.
 
 - **Address.** The Exawatt durable Session id (`session-<uuid>`) is the
   address; the operator's address is `operator` (`BUS_OPERATOR_ID`). An Agent
-  may also be named by `@handle`: its display name, lowercased, every run of
-  anything but letters and digits folded to `-` (`busHandle`). Display names
-  come from the agent-names packet when it lands and from the tab label until
-  then. `projectId` is the Project's directory (`projectDir`), the key the
-  renderer already groups Agents by. Shell tabs are not addressable.
+  may also be named by `@name`, its Agent name (`claude-1`, from the
+  agent-names packet; `busHandle` folds anything else), or by its harness's
+  short name when it is the only one (`@codex`); resolution is the core's
+  `resolveAgentAddress`. `projectId` is the workspace Project's key (its
+  `dir`, the key Team groups tiles by and Agent names are unique within); a
+  Session launched without one is in its git Project (`projectDir`). Shell
+  tabs are not addressable. (Amended 2026-10-15 at the B1 core landing: the
+  first publication said `projectDir` and a tab-label fallback.)
 - **`MessageEnvelope`** `{id, projectId, from: {sessionId, name, harness,
   kind: 'agent' | 'operator'}, to: {sessionId, name, harness}, at, text}`.
   Exawatt stamps `from`; the sending model never does.
@@ -511,11 +514,59 @@ table; main's bus core and its transports follow in later B1 slices.
   `{ok: true, records} | {ok: false, reason}`: a damaged ledger is never an
   empty list.
 - **Preload** `window.electron.bus` `{send, list, thread, onMessage}`
-  (`DesktopBusApi`). Optional in the bridge type until the core registers
-  its handlers; a client reads its absence as unavailable.
+  (`DesktopBusApi`), present in every build since the B1 core landing; a
+  client still reads its absence (an older build) as unavailable.
 - **Demo** answers every send with `demoBusSendResult()`: `undeliverable`,
   "Demo cannot send", adapter `demo`, no record.
 - **Rendering** helpers both ends share: `busStampLine` and
   `busDeliveredText` (the exact text a recipient Agent receives: the stamp
   line naming sender, harness, Project and the reply command, a blank line,
   then the text; an operator message is the text alone) and `busThread`.
+
+### 2026-10-15 — B1 bus core landed (packet P3)
+
+**A real Claude Code tab and a real Codex tab exchange messages through
+Exawatt, each logged with its delivery result.** Measured end to end in the
+Electron app on Claude Code 2.1.301 and Codex 0.162.1 in a scratch HOME
+(`pnpm eval:electron:bus-live`, a probe that spends a few model turns, never
+a landing gate): the operator's message reached Claude as his own turn
+(held `queued` "Waiting for @claude-1 to finish starting", then `delivered`
+through `terminal-input`); Claude ran `exawatt send @codex-2 …` and the
+record read `queued` then `delivered` through `codex-queue`; Codex ran
+`exawatt send @claude-1 …` and Claude's transcript shows "Another Claude
+session sent a message: [Exawatt] Message from @codex-2 (Codex) in Project
+…", `delivered` through `claude-socket`; an unknown recipient was refused at
+the sender.
+
+What landed (`electron/main/bus/`): the directory (live roster, Agent names,
+the core's `resolveAgentAddress`), stamping (control characters stripped,
+16,000-character bound), the ledger behind `BusStore` (JSONL per Project,
+2,000 messages and 4 MB, pruned by whole message, damaged logs fail loud and
+are never pruned), dispatch (doors resolved only through each launch
+descriptor's `messaging`; a test fails if a harness id appears in the core),
+recipient state from the existing turn truth plus the terminal, the HTTP
+verbs on the ENG-023 channel (`/bus/agents|send|inbox`, a separate BUS
+token), the `exawatt` script, and the IPC. Transports: `claude-socket`,
+`codex-queue`, `terminal-input`, `undeliverable`. The session manager gained
+one generic launch-environment seam; the Claude settings document carries
+`crossSessionInbound: accept` for YOLO launches only.
+
+Found while building it, and now in the design:
+
+- **A program still starting must not be typed into.** A Claude Code tab
+  given keystrokes in its first instant never drew at all. Recipients have a
+  `starting` state (no bracketed paste switched on yet, bounded at 30 s) that
+  every terminal door and the Claude socket hold through.
+- **A Codex tab has no thread until its first turn** (0.162.1, shared-server
+  mode: no rollout at launch, unlike B0's embedded-mode run), so a peer
+  message to a never-prompted Codex tab reads `undeliverable` with "give it a
+  first task", never a guess at its terminal.
+- **Codex runs a queued message back to back with the running turn**, with
+  no idle gap to call a turn start, so a `queued` Codex message also settles
+  when the recipient has run and then gone idle.
+- **Codex's workspace-write sandbox turns network off by default**, so a
+  Codex Agent in Ask-first or Auto mode is expected to ask to escalate before
+  `exawatt send` reaches the loopback (not yet measured; the live probe runs
+  YOLO). The MCP door (B2) runs outside that sandbox.
+- Codex leaves a managed app-server daemon running from whatever home it ran
+  in; the live probe stops the one it started.

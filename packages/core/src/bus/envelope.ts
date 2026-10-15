@@ -13,12 +13,14 @@
  */
 import type { BusSendResult, MessageEnvelope, MessageRecord } from './types';
 
-/** The `@handle` a sender types for a display name. */
+/** The `@handle` a sender types for a name: an Agent name as it is (names
+ *  are addressed without case), anything else folded to letters, digits,
+ *  `_` and `-`. */
 export function busHandle(name: string): string {
   const handle = name
-    .normalize('NFKD')
+    .normalize('NFC')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{N}_-]+/gu, '-')
     .replace(/^-+|-+$/g, '');
   return handle || 'agent';
 }

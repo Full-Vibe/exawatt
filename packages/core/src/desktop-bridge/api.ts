@@ -401,9 +401,7 @@ interface DesktopBridgeShape {
   permissions: DesktopPermissionsApi;
   workspace: DesktopWorkspaceApi;
   roadmap: DesktopRoadmapApi;
-  /** Absent until the bus core is registered (ENG-029 B1 lands in slices);
-   *  a client reads absence as unavailable, never as an empty ledger. */
-  bus?: DesktopBusApi;
+  bus: DesktopBusApi;
   settings: DesktopSettingsApi;
   app: DesktopAppApi;
   auth: DesktopAuthApi;

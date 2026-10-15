@@ -23,6 +23,7 @@ import type {
 import type { SessionBlockedReason } from '@exawatt/core/desktop-bridge';
 import {
   isSafetyControlEnabled,
+  type AgentPermissionMode,
   type SafetyControlSettings,
 } from '@exawatt/core';
 import { GUARD_PATH } from './channel';
@@ -117,6 +118,11 @@ const SUBSCRIBED_EVENTS: readonly Subscription[] = [
 
 export const CLAUDE_HOOK_HEADER = 'x-exawatt-token';
 
+/** What a launch tells the settings document beyond the channel itself. */
+export interface HookSettingsLaunch {
+  permissionMode?: AgentPermissionMode;
+}
+
 /**
  * The settings document Exawatt injects for one launch.
  *
@@ -132,7 +138,8 @@ export const CLAUDE_HOOK_HEADER = 'x-exawatt-token';
 export function claudeHookSettings(
   port: number,
   token: string,
-  safety: SafetyControlSettings = {}
+  safety: SafetyControlSettings = {},
+  launch: HookSettingsLaunch = {}
 ): string {
   const endpoint = {
     type: 'http' as const,
@@ -158,7 +165,21 @@ export function claudeHookSettings(
       ],
     });
   }
-  return JSON.stringify({ hooks }, null, 2);
+  return JSON.stringify(
+    {
+      hooks,
+      // ENG-029 C4 (decision 0052, B0 2026-10-15): an outside peer post to a
+      // launch that bypasses prompts is HELD for a Deny/Deliver dialog unless
+      // this says accept; Ask-first and Auto launches deliver without it. The
+      // operator's own launch policy decides, so only the YOLO launch carries
+      // it and a user's own `hold` stays in force everywhere else.
+      ...(launch.permissionMode === 'unrestricted'
+        ? { crossSessionInbound: 'accept' }
+        : {}),
+    },
+    null,
+    2
+  );
 }
 
 function readString(

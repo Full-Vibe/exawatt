@@ -52,6 +52,30 @@ export type HarnessGuard = (
 /** The path a safety-control hook posts to; every other path is an event. */
 export const GUARD_PATH = '/guard';
 
+/**
+ * ENG-029 C4: the agent-to-agent bus is this channel's second consumer. An
+ * Agent's `exawatt` command posts to `/bus/<verb>` with its Session's BUS
+ * token — a separate token from the hook token, carried in the launch
+ * environment so every process the Agent starts can speak for it, and never
+ * accepted as an event or a guard post. The handler answers plain text the
+ * calling Agent reads.
+ */
+const BUS_PATH_PREFIX = '/bus/';
+
+/** Bus requests are a recipient and a message, nothing bigger. */
+const MAX_BUS_BODY_BYTES = 64 * 1024;
+
+export interface BusChannelAnswer {
+  status: number;
+  text: string;
+}
+
+type BusChannelHandler = (
+  sessionId: string,
+  verb: string,
+  body: string
+) => Promise<BusChannelAnswer>;
+
 function isLoopback(address: string | undefined): boolean {
   if (!address) return false;
   const host = address.startsWith('::ffff:') ? address.slice(7) : address;
@@ -67,6 +91,10 @@ export class HarnessEventChannel extends EventEmitter {
   private tokens = new Map<string, string>();
   private normalizers = new Map<string, HarnessEventNormalizer>();
   private guard: HarnessGuard | null = null;
+  /** bus token -> Exawatt session id, and back */
+  private busSessions = new Map<string, string>();
+  private busTokens = new Map<string, string>();
+  private busHandler: BusChannelHandler | null = null;
   private starting: Promise<boolean> | null = null;
   private readonly now: () => number;
 
@@ -122,6 +150,8 @@ export class HarnessEventChannel extends EventEmitter {
     this.sessions.clear();
     this.tokens.clear();
     this.normalizers.clear();
+    this.busSessions.clear();
+    this.busTokens.clear();
   }
 
   get listening(): boolean {
@@ -152,6 +182,32 @@ export class HarnessEventChannel extends EventEmitter {
     this.tokens.delete(sessionId);
     this.sessions.delete(token);
     this.normalizers.delete(token);
+  }
+
+  /**
+   * Claim a bus token for one Session launch (ENG-029 C4). Null when the
+   * channel is not listening: the Session then launches without the bus and
+   * its `exawatt` command says Exawatt is unreachable.
+   */
+  registerBus(sessionId: string): ChannelRegistration | null {
+    if (!this.server) return null;
+    this.releaseBus(sessionId);
+    const token = randomBytes(24).toString('base64url');
+    this.busSessions.set(token, sessionId);
+    this.busTokens.set(sessionId, token);
+    return { port: this.port, token };
+  }
+
+  releaseBus(sessionId: string): void {
+    const token = this.busTokens.get(sessionId);
+    if (!token) return;
+    this.busTokens.delete(sessionId);
+    this.busSessions.delete(token);
+  }
+
+  /** Install the one handler bus requests are answered by. */
+  setBusHandler(handler: BusChannelHandler | null): void {
+    this.busHandler = handler;
   }
 
   /** Install the one guard safety-control hooks are answered by. */
@@ -188,6 +244,10 @@ export class HarnessEventChannel extends EventEmitter {
     }
     const header = request.headers['x-exawatt-token'];
     const token = Array.isArray(header) ? header[0] : header;
+    if (request.url?.startsWith(BUS_PATH_PREFIX)) {
+      this.handleBus(request, response, token);
+      return;
+    }
     const sessionId = token ? this.sessions.get(token) : undefined;
     const normalize = token ? this.normalizers.get(token) : undefined;
     if (!sessionId || !normalize) {
@@ -252,6 +312,73 @@ export class HarnessEventChannel extends EventEmitter {
         return;
       }
       if (event) this.emit('event', sessionId, event);
+    });
+  }
+
+  /** One bus request: a known bus token, a bounded text body, one answer. */
+  private handleBus(
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+    token: string | undefined
+  ): void {
+    let answered = false;
+    const answer = ({ status, text }: BusChannelAnswer) => {
+      if (answered || response.writableEnded) return;
+      answered = true;
+      try {
+        response.writeHead(status, {
+          'content-type': 'text/plain; charset=utf-8',
+        });
+        response.end(text.endsWith('\n') ? text : `${text}\n`);
+      } catch {
+        // The caller hung up. The send itself is already logged or refused.
+      }
+    };
+    const sessionId = token ? this.busSessions.get(token) : undefined;
+    const handler = this.busHandler;
+    if (!sessionId || !handler) {
+      request.resume();
+      answer({
+        status: 403,
+        text: 'This Session is not connected to the Exawatt bus. Agents launched from Exawatt can use it.',
+      });
+      return;
+    }
+    const verb = (request.url ?? '')
+      .slice(BUS_PATH_PREFIX.length)
+      .split('?')[0];
+    let size = 0;
+    const chunks: Buffer[] = [];
+    let oversized = false;
+    request.on('data', (chunk: Buffer) => {
+      if (oversized) return;
+      size += chunk.length;
+      if (size > MAX_BUS_BODY_BYTES) {
+        oversized = true;
+        chunks.length = 0;
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('error', () =>
+      answer({ status: 400, text: 'The request was cut off.' })
+    );
+    request.on('end', () => {
+      if (oversized) {
+        answer({
+          status: 413,
+          text: `That message is too long for the bus (over ${MAX_BUS_BODY_BYTES / 1024} KB).`,
+        });
+        return;
+      }
+      handler(sessionId, verb, Buffer.concat(chunks).toString('utf8')).then(
+        answer,
+        error =>
+          answer({
+            status: 500,
+            text: `Exawatt could not handle that: ${error instanceof Error ? error.message : String(error)}`,
+          })
+      );
     });
   }
 }

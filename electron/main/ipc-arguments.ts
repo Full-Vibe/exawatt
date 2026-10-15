@@ -421,6 +421,59 @@ export const ARGUMENT_BOUNDARIES = {
       return [operatorProfileState(state)];
     },
   },
+  // ENG-029 C4: a send types into an Agent's terminal, so its shape is read
+  // here. Length beyond the bus's own bound is the bus's refusal to word.
+  'bus:send': {
+    read([request]) {
+      if (
+        !isRecord(request) ||
+        request.kind !== 'operator' ||
+        typeof request.projectId !== 'string' ||
+        !request.projectId ||
+        request.projectId.length > 4096 ||
+        typeof request.to !== 'string' ||
+        request.to.length > 240 ||
+        typeof request.text !== 'string' ||
+        request.text.length > 64 * 1024
+      ) {
+        throw new Error('Invalid bus message');
+      }
+      return [
+        {
+          projectId: request.projectId,
+          to: request.to,
+          text: request.text,
+          kind: 'operator',
+        },
+      ];
+    },
+  },
+  'bus:list': {
+    read([projectId]) {
+      if (
+        typeof projectId !== 'string' ||
+        !projectId ||
+        projectId.length > 4096
+      )
+        throw new Error('Invalid Project');
+      return [projectId];
+    },
+  },
+  'bus:thread': {
+    read([projectId, a, b]) {
+      if (
+        typeof projectId !== 'string' ||
+        !projectId ||
+        projectId.length > 4096 ||
+        typeof a !== 'string' ||
+        !SESSION_ID.test(a) ||
+        typeof b !== 'string' ||
+        !SESSION_ID.test(b)
+      )
+        throw new Error('Invalid bus thread');
+      return [projectId, a, b];
+    },
+  },
 } satisfies Boundaries;
 
 /** The channels whose arguments are read here. */

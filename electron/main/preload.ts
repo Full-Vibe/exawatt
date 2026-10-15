@@ -266,6 +266,13 @@ const bridge = {
     unwatch: projectDir => invoke('roadmap:unwatch', projectDir),
     onFileChanged: subscribe('roadmap:file-changed'),
   },
+  // ENG-029 C4: the agent-to-agent bus. The renderer is always the operator.
+  bus: {
+    send: request => invoke('bus:send', request),
+    list: projectId => invoke('bus:list', projectId),
+    thread: (projectId, a, b) => invoke('bus:thread', projectId, a, b),
+    onMessage: subscribe('bus:message'),
+  },
   settings: {
     get: () => invoke('settings:get'),
     getSafetyControls: () => invoke('settings:get-safety-controls'),

@@ -1030,6 +1030,29 @@ Provider/runtime boundaries:
 
 The UI should depend on normalized Exawatt concepts, not raw provider-specific payloads.
 
+### Agent-to-agent bus (ENG-029 C4)
+
+Decision `0052`: Exawatt is the bus between Agents of any harness, realtime
+and unpoliced, every message logged. It rides the ENG-023 loopback channel
+(`/bus/<verb>` beside `/hook` and `/guard`, with a per-launch BUS token kept
+apart from the hook token) and has no second channel. The core in
+`electron/main/bus/` addresses (the durable Session id; `@handle` from the
+display name; scope is the Project), stamps (`from` is Exawatt's, never the
+model's), logs through the `BusStore` seam, and delivers through the door the
+recipient harness's launch descriptor declares (`messaging.agent`,
+`messaging.operator`); it never branches on a harness id. Transports live in
+`electron/main/bus/transports/`: Claude Code's per-session socket, `codex
+queue`, the terminal (bracketed paste, Enter as its own write), and
+`undeliverable`. A door declares the recipient states it must not type into
+(`starting`, `running`, `blocked`, read from the existing turn truth and the
+terminal) and the core holds a message there and releases it on the event
+that ends that state. The outbound door is a POSIX `exawatt` script Exawatt
+writes into `userData/bus/bin` and prepends to each launched Session's PATH
+through the session manager's launch-environment seam, with
+`EXAWATT_BUS_PORT`, `EXAWATT_BUS_TOKEN` and `EXAWATT_SESSION_ID`. The
+renderer reaches it as `window.electron.bus` (`bus:send`, `bus:list`,
+`bus:thread`, push `bus:message`); the renderer is always the operator.
+
 ### Persistence size classes
 
 Everything Exawatt writes under Electron `userData` declares a **size class**:
@@ -1044,6 +1067,7 @@ the rule and the three defects that produced it.
 | `consumption-scan/log-v1.jsonl` | append log compacted from live state                            | samples: 14 days behind the newest sample (an anchor no further than a day past wall time), widened to cover an active Operator-profile publication anchor and to the 400-day ceiling while that anchor is still unknown, re-read live at hydrate and after every pass (BUG-141); observations: 14 days; a Codex watermark's `seenSnapshots`: 256 entries | the scanner's sample sink and `parseCodexRollout`, both at the write; `retention-policy.ts` owns the horizon |
 | `agent-model-catalogs.json`     | one row per `(engine, shell, cwd)`                              | 48 rows, 14 days, and a row whose `cwd` no longer exists                                                                                                                                                                                                                                                                                                  | `AgentModelCatalogCache.write`, plus one sweep on load                                                       |
 | `agent-source-observations.json` | one row per Agent Source adapter: the last COMPLETE observation, keyed by adapter id | at most one row per declared adapter, none older than 30 days behind the newest row (an anchor no further than a day past wall time, `retentionAnchorMs`; a row stamped past that is evicted, BUG-182), all read through the same login shell as the newest write; an incomplete or simulated observation is never written | `AgentSourceObservationStore.remember`, plus one sweep on load |
+| `bus/<project key>.jsonl` | the agent-to-agent ledger: one append-only file per Project, a message line plus a line per delivery change | 2,000 messages and 4 MB per Project, pruned to 75% of both by whole message (never mid-record); a damaged log is never pruned or read as empty | `JsonlBusStore`'s write path |
 
 Two rules carry most of the weight. **A large per-Session artifact never rides
 a small-object record**: it goes in a content-addressed side store, written

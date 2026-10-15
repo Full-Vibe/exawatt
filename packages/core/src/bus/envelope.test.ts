@@ -82,6 +82,7 @@ describe('the bus stamp', () => {
   it('folds any display name to a typeable handle', () => {
     expect(busHandle('Fix the Login bug!')).toBe('fix-the-login-bug');
     expect(busHandle('codex-2')).toBe('codex-2');
+    expect(busHandle('Code_Reviewer')).toBe('code_reviewer');
     expect(busHandle('   ')).toBe('agent');
   });
 });

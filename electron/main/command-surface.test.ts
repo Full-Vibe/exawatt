@@ -90,8 +90,7 @@ const {
   bootstrapCommandSurface,
   reloadWindow,
   reportCommandSurfaceFailure,
-} =
-  await import('./command-surface');
+} = await import('./command-surface');
 
 type Dependencies = Parameters<typeof bootstrapCommandSurface>[0];
 
@@ -111,6 +110,7 @@ function fakeModules() {
       registerPtyIPC: (_contract: unknown, interrupted: boolean) =>
         log.push(`ipc:pty(interrupted=${interrupted})`),
     },
+    busIpc: { registerBusIPC: () => log.push('ipc:bus') },
     roadmapIpc: { registerRoadmapIPC: () => log.push('ipc:roadmap') },
     projectIpc: { registerProjectIPC: () => log.push('ipc:projects') },
     roadmapWatcher: { disposeRoadmapWatchers: () => {} },
@@ -243,6 +243,7 @@ describe('bootstrapCommandSurface', () => {
       'ipc:agent-sources',
       'ipc:connected-sources',
       'ipc:pty(interrupted=true)',
+      'ipc:bus',
       'ipc:roadmap',
       'ipc:projects',
       'ipc:main',
@@ -339,7 +340,11 @@ describe('bootstrapCommandSurface', () => {
     ]);
     for (const options of world.planAccountOptions) {
       expect(options.enabled).toBe(true);
-      expect(Object.keys(options).sort()).toEqual(['allowed', 'enabled', 'stateDir']);
+      expect(Object.keys(options).sort()).toEqual([
+        'allowed',
+        'enabled',
+        'stateDir',
+      ]);
     }
   });
 

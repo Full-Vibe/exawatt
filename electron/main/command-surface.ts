@@ -130,6 +130,7 @@ async function loadCommandRuntimeModules() {
     auth,
     authDiagnostics,
     connectedSourcesIpc,
+    busIpc,
   ] = await Promise.all([
     import('./agent-sources-ipc'),
     import('./pty-ipc'),
@@ -143,6 +144,7 @@ async function loadCommandRuntimeModules() {
     import('./auth-coordinator'),
     import('./auth-diagnostics'),
     import('./connected-sources-ipc'),
+    import('./bus/bus-ipc'),
   ]);
   return {
     agentSourcesIpc,
@@ -157,6 +159,7 @@ async function loadCommandRuntimeModules() {
     auth,
     authDiagnostics,
     connectedSourcesIpc,
+    busIpc,
   };
 }
 
@@ -348,6 +351,11 @@ export async function bootstrapCommandSurface(
           deps.mainDiagnostics,
           runtime.hostPower
         ),
+    },
+    // ENG-029 C4: the agent-to-agent bus, after the sessions it addresses.
+    {
+      id: 'bus',
+      register: () => modules.busIpc.registerBusIPC(userDataPath()),
     },
     { id: 'roadmap', register: () => modules.roadmapIpc.registerRoadmapIPC() },
     { id: 'projects', register: () => modules.projectIpc.registerProjectIPC() },
@@ -542,9 +550,9 @@ export function reloadWindow(
     win &&
     !deps.isWorkspaceTarget(win.webContents.getURL())
   ) {
-    void win.loadURL(deps.workspaceUrl()).catch(error =>
-      console.error('[window] workspace did not open', error)
-    );
+    void win
+      .loadURL(deps.workspaceUrl())
+      .catch(error => console.error('[window] workspace did not open', error));
     return;
   }
   deps.reload(focused, options);

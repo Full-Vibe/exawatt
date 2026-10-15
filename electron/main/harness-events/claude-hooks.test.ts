@@ -60,6 +60,19 @@ describe('claudeHookSettings with safety controls (ENG-044)', () => {
 describe('claudeHookSettings', () => {
   const settings = JSON.parse(claudeHookSettings(51234, 'tok-abc'));
 
+  it('accepts peer messages without a dialog only in a launch that bypasses prompts (ENG-029 C4)', () => {
+    const inbound = (permissionMode?: 'prompt' | 'auto' | 'unrestricted') =>
+      JSON.parse(claudeHookSettings(51234, 'tok-abc', {}, { permissionMode }))
+        .crossSessionInbound;
+    // B0: Ask-first and Auto deliver an outside post already; only a YOLO
+    // launch holds it, so only it carries the accept and a user's own hold
+    // stays in force everywhere else.
+    expect(inbound('unrestricted')).toBe('accept');
+    expect(inbound('prompt')).toBeUndefined();
+    expect(inbound('auto')).toBeUndefined();
+    expect(inbound()).toBeUndefined();
+  });
+
   it('subscribes to turn boundaries, child boundaries, and operator gates', () => {
     expect(Object.keys(settings.hooks).sort()).toEqual([
       'ElicitationResult',

@@ -167,6 +167,25 @@ interface Session {
   stopRequested?: boolean;
 }
 
+/**
+ * What a launch adds to its Session's environment beyond Exawatt's own, so a
+ * capability can reach the processes an Agent runs without the session
+ * manager knowing what it is (ENG-029 C4: the bus's port, token, address and
+ * the `exawatt` executable). `release` runs when the Session's process ends.
+ */
+interface LaunchEnvironmentExtension {
+  env: Record<string, string>;
+  /** Directories put in front of the inherited PATH. */
+  pathPrepend: readonly string[];
+  release(): void;
+}
+
+type LaunchEnvironmentProvider = (launch: {
+  id: string;
+  durableSessionId: string;
+  harness: PtyHarness;
+}) => Promise<LaunchEnvironmentExtension | null>;
+
 export class PtySessionManager extends EventEmitter {
   private sessions = new Map<string, Session>();
   /** Bounded 4 MB per session; late panes replay text and S4 reads visit deltas. */
@@ -187,6 +206,37 @@ export class PtySessionManager extends EventEmitter {
   private productName = 'Exawatt Community';
   /** ENG-044: the safety controls a launch carries, read at each launch. */
   private safetyControls: () => SafetyControlSettings = () => ({});
+  private launchEnvironmentProvider: LaunchEnvironmentProvider | null = null;
+  private launchEnvironmentReleases = new Map<string, () => void>();
+
+  /** Install the one provider every later launch's environment consults. */
+  setLaunchEnvironmentProvider(
+    provider: LaunchEnvironmentProvider | null
+  ): void {
+    this.launchEnvironmentProvider = provider;
+  }
+
+  /** A provider that fails launches the Session without its extension: a
+   *  Session must never fail to start because Exawatt wanted to add to it. */
+  private async extendLaunchEnvironment(
+    id: string,
+    durableSessionId: string,
+    harness: PtyHarness
+  ): Promise<LaunchEnvironmentExtension | null> {
+    const provider = this.launchEnvironmentProvider;
+    if (!provider) return null;
+    try {
+      const extension = await provider({ id, durableSessionId, harness });
+      if (extension) this.launchEnvironmentReleases.set(id, extension.release);
+      return extension;
+    } catch (error) {
+      console.warn(
+        `[session-manager] ${harness} launches without its environment extension:`,
+        error instanceof Error ? error.message : error
+      );
+      return null;
+    }
+  }
 
   setProductName(productName: string): void {
     if (!productName.trim()) throw new Error('Product name is required');
@@ -239,7 +289,8 @@ export class PtySessionManager extends EventEmitter {
   private async subscribeToEventChannel(
     id: string,
     harness: PtyHarness,
-    harnessSessionId: string | null
+    harnessSessionId: string | null,
+    permissionMode: AgentPermissionMode
   ): Promise<HarnessLaunchWiring> {
     if (harness === 'shell') return {};
     const descriptor = harnessDescriptor(harness);
@@ -273,7 +324,8 @@ export class PtySessionManager extends EventEmitter {
       document = channel.settings(
         registration.port,
         registration.token,
-        this.safetyControls()
+        this.safetyControls(),
+        { permissionMode }
       );
     } catch (error) {
       console.warn(
@@ -322,6 +374,9 @@ export class PtySessionManager extends EventEmitter {
   private cleanupHarnessWiring(id: string): void {
     harnessEventChannel.release(id);
     void this.hookSettings?.remove(id);
+    const release = this.launchEnvironmentReleases.get(id);
+    this.launchEnvironmentReleases.delete(id);
+    release?.();
   }
 
   pauseCreates(): void {
@@ -471,8 +526,21 @@ export class PtySessionManager extends EventEmitter {
           )
         : undefined;
 
+    const extension = await this.extendLaunchEnvironment(
+      id,
+      durableSessionId,
+      options.harness
+    );
     const launchEnvironment = {
       ...process.env,
+      ...extension?.env,
+      ...(extension?.pathPrepend.length
+        ? {
+            PATH: [...extension.pathPrepend, process.env.PATH ?? '']
+              .filter(Boolean)
+              .join(path.delimiter),
+          }
+        : {}),
       SHELL: shell,
       TERM_PROGRAM: this.productName,
     };
@@ -500,7 +568,9 @@ export class PtySessionManager extends EventEmitter {
       ...(await this.subscribeToEventChannel(
         id,
         options.harness,
-        harnessSessionId
+        harnessSessionId,
+        // The same default the launch command applies.
+        options.permissionMode ?? 'unrestricted'
       )),
       ...(opencodeLaunchAgentName
         ? { launchAgentName: opencodeLaunchAgentName }

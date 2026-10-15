@@ -96,8 +96,7 @@ export interface MessageRecord extends MessageEnvelope {
 export interface BusDirectoryEntry extends BusEndpoint {
   projectId: string;
   projectName: string;
-  /** The `@handle` a sender types: the name, lowercased, runs of anything
-   *  but letters and digits folded to `-`. */
+  /** The `@handle` a sender types: the Agent's name (`busHandle`). */
   handle: string;
   state: 'live' | 'ended';
 }

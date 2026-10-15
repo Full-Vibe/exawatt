@@ -1616,6 +1616,9 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:feedback-live': manual(
     'authorized hosted writes from an explicitly named signed artifact using disposable account and exact cleanup'
   ),
+  'eval:electron:bus-live': manual(
+    'drives real signed-in Claude Code and Codex CLIs through paid provider turns to exchange bus messages'
+  ),
   'eval:electron:real-harness': manual(
     'drives real signed-in Claude Code and Codex CLIs through paid provider turns'
   ),
