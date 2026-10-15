@@ -180,6 +180,7 @@ export function OperationsBoardTilesCanvas({
         <BoardCameraRig
           layout={layout}
           projection="fixed-angle"
+          allowAngledEntry
           reduced={reduced}
           controllerRef={controllerRef}
           onViewportChange={onViewportChange}

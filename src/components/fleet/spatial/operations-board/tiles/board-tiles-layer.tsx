@@ -276,7 +276,7 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
       )}
       {candidate && (
         <AgentCandidateReticle
-          key={candidate.id}
+          key={`candidate:${candidate.id}`}
           piece={candidate}
           pressed={pressedId === candidate.agentId}
           reduced={reduced}

@@ -7,10 +7,7 @@
  * camera only -- world layout is never a function of what the camera does.
  */
 
-import {
-  useFrame,
-  useThree,
-} from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import {
   memo,
   useCallback,
@@ -25,9 +22,7 @@ import {
   type SpatialBoardProjection,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
-import {
-  useBoardTransitionClock,
-} from './operations-board-field';
+import { useBoardTransitionClock } from './operations-board-field';
 import {
   beginBoardTransition,
   boardTransitionEase,
@@ -113,9 +108,12 @@ export const BoardCameraRig = memo(function BoardCameraRig({
   touchSelectionMode,
   onManualCameraInput,
   onClampEdges,
+  allowAngledEntry = false,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
+  /** Match Team cards flat first, then use the existing flight into the fixed angle. */
+  allowAngledEntry?: boolean;
   reduced: boolean;
   controllerRef: { current: OperationsBoardHandle | null };
   onViewportChange?: (viewport: OperationsBoardViewport) => void;
@@ -334,9 +332,12 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         Math.max(0.01, hold.pose.zoom * 0.02);
     // "Only then does the camera pull back" — but an operator who already
     // moved the camera mid-crossfade is obeyed, never yanked to the fit.
-    if (untouched) targetForRect(hold.fitRect);
+    if (untouched) {
+      target.current.tilt = projection === 'fixed-angle' ? 1 : 0;
+      targetForRect(hold.fitRect);
+    }
     invalidate();
-  }, [invalidate, targetForRect]);
+  }, [invalidate, projection, targetForRect]);
 
   /** Claims a pending Team→Fleet snapshot and applies the entry pose. Every
    *  decline dispatches the fallback event so the transition owner cuts —
@@ -346,7 +347,10 @@ export const BoardCameraRig = memo(function BoardCameraRig({
     if (!altitudeHandoffActive()) return false;
     const fallback = () =>
       window.dispatchEvent(new CustomEvent(ALTITUDE_HANDOFF_FALLBACK_EVENT));
-    if (projection !== 'top-down' || activeLayout.altitude !== 'fleet') {
+    if (
+      (!allowAngledEntry && projection !== 'top-down') ||
+      activeLayout.altitude !== 'fleet'
+    ) {
       claimAltitudeHandoff(); // consume — this arrival cannot carry position
       fallback();
       return false;
@@ -409,6 +413,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
     });
     return true;
   }, [
+    allowAngledEntry,
     applyCamera,
     gl,
     notifyViewport,
