@@ -24,20 +24,23 @@ const renderSettings = () =>
     </PresentationProvider>
   );
 
-describe('Fleet view offer gate', () => {
-  it('lets development explicitly choose and persist the preview', async () => {
-    vi.stubEnv('NODE_ENV', 'development');
-    renderSettings();
-    const preview = screen.getByRole('button', { name: /v2/ });
-    await waitFor(() => expect(preview).not.toBeDisabled());
-    fireEvent.click(preview);
-    await waitFor(() =>
-      expect(preview).toHaveAttribute('aria-pressed', 'true')
-    );
-    expect(JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!)).toEqual(
-      { schemaVersion: 1, fleetView: 'v2' }
-    );
-  });
+describe('Fleet presentation choices', () => {
+  it.each(['development', 'production'])(
+    'persists an explicit v2 choice in %s',
+    async environment => {
+      vi.stubEnv('NODE_ENV', environment);
+      renderSettings();
+      const preview = screen.getByRole('button', { name: /v2/ });
+      await waitFor(() => expect(preview).not.toBeDisabled());
+      fireEvent.click(preview);
+      await waitFor(() =>
+        expect(preview).toHaveAttribute('aria-pressed', 'true')
+      );
+      expect(
+        JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!)
+      ).toEqual({ schemaVersion: 1, fleetView: 'v2' });
+    }
+  );
   it('offers every catalog material without changing the selected view', async () => {
     renderSettings();
     for (const material of FLEET_MATERIALS) {
@@ -54,21 +57,22 @@ describe('Fleet view offer gate', () => {
       ).toEqual({ schemaVersion: 1, fleetMaterial: material.id });
     }
   });
-  it('does not offer unfinished v2 in production or overwrite a saved development choice', async () => {
+  it('restores a saved choice in production without rewriting it', async () => {
     vi.stubEnv('NODE_ENV', 'production');
-    localStorage.setItem(
-      PRESENTATION_STORAGE_KEY,
-      JSON.stringify({ schemaVersion: 1, fleetView: 'v2' })
-    );
+    const saved = JSON.stringify({
+      schemaVersion: 1,
+      fleetView: 'v2',
+      fleetMaterial: 'matte',
+    });
+    localStorage.setItem(PRESENTATION_STORAGE_KEY, saved);
     renderSettings();
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'v1' })).not.toBeDisabled()
+      expect(screen.getByRole('button', { name: 'v2' })).not.toBeDisabled()
     );
-    expect(
-      screen.queryByRole('button', { name: /v2/ })
-    ).not.toBeInTheDocument();
-    expect(
-      JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!).fleetView
-    ).toBe('v2');
+    expect(screen.getByRole('button', { name: 'v2' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(localStorage.getItem(PRESENTATION_STORAGE_KEY)).toBe(saved);
   });
 });

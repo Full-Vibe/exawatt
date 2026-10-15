@@ -21,13 +21,10 @@ export function FleetSettings() {
   } = usePresentation();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // P5 removes this offer gate after the v2 parity review. Stored choices
-  // are deliberately parsed independently of the build that reads them.
   const options: { value: FleetView; label: string }[] = [
     { value: 'v1', label: 'v1' },
+    { value: 'v2', label: 'v2' },
   ];
-  if (process.env.NODE_ENV === 'development')
-    options.push({ value: 'v2', label: 'v2 (Preview)' });
   const select = async (save: () => Promise<void>) => {
     setSaving(true);
     setError(null);
