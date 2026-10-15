@@ -353,13 +353,23 @@ host-power limits. Gallery scene labels use DOM projection under unchanged CSP,
 with pointer pass-through and the same parent geometry/motion; they no longer
 start Troika blob workers for text.
 
-ENG-004 V4.1 P3 mounts the shared tile renderer in the standing board bench.
-`tiles/board-tiles-model.ts` adapts the existing layout and aggregate population
-field; it does not allocate a second Agent layout. The v2 review canvas reuses
-the board camera handle, transition clock and DOM Project/Agent controls, with
-flat tile placement and the existing power cadence. The homepage and bench
-share the material/geometry owner. Production still mounts v1; the lazy view
-registry, sole preference read and full parity belong to P4 after look review.
+ENG-004 V4.1 mounts Fleet presentations through one lazy registry in
+`operations-board-views.tsx`. `SpatialFleetClient` reads the presentation
+preference once; `OperationsBoardSurface` selects the registered canvas and
+uses its declared projection capabilities. The renderer owns neither the
+preference nor layout, selection, status truth or routes. The v2 adapter maps
+existing pieces and population into the shared homepage tile core, with the
+board's camera, transition/emergence, DOM controls, status marks and delegation
+owners. `ExawattAgent.sourceAdapterId` preserves source-authored mark identity
+through local, Demo, remote and legacy projections; unknown sources remain
+unbranded. There is no Demo-only UI branch. Gummy is the default material;
+Matte, Glazed, Acrylic and Anodized share one pure catalog with Settings.
+
+Settings discovers feature modules through a small grouped section registry
+and stable links/search metadata. Each module retains its own persistence
+contract; the registry is navigation, not a general-purpose form engine.
+Presentation stores only explicit view/material choices with independent reset
+and total parsing. v1 remains the default view.
 
 Performance work starts from an operator-visible gesture and an attributed
 trace, changes the narrowest proven owner, and reruns the same behavior and
