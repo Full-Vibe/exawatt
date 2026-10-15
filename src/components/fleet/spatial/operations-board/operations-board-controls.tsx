@@ -11,6 +11,7 @@ import { Html } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import {
   memo,
+  useCallback,
   useLayoutEffect,
   useRef,
   type ReactNode,
@@ -96,6 +97,7 @@ function DampedHtmlAnchor({
   reduced,
   center = false,
   interactive = true,
+  hitSize,
   children,
 }: {
   position: [number, number, number];
@@ -104,13 +106,29 @@ function DampedHtmlAnchor({
   /** A read-only label must not take the board's pan and zoom gestures,
    *  which the canvas owns: the anchor's wrapper sits on top of it. */
   interactive?: boolean;
+  /** World-space footprint; transparent input must not cover adjacent units. */
+  hitSize?: number;
   children: ReactNode;
 }) {
   const group = useRef<THREE.Group>(null);
+  const hitBox = useRef<HTMLDivElement>(null);
+  const previousHitPixels = useRef(Number.NaN);
+  const projectedCenter = useRef(new THREE.Vector3());
+  const projectedEdge = useRef(new THREE.Vector3());
   const initial = useRef(position);
   const target = useRef(position);
   target.current = position;
   const invalidate = useThree(state => state.invalidate);
+  const attachHitBox = useCallback(
+    (node: HTMLDivElement | null) => {
+      hitBox.current = node;
+      if (node) {
+        previousHitPixels.current = Number.NaN;
+        invalidate();
+      }
+    },
+    [invalidate]
+  );
   const transitionClock = useBoardTransitionClock();
   useLayoutEffect(() => {
     if (!reduced || !group.current) return;
@@ -119,7 +137,29 @@ function DampedHtmlAnchor({
   }, [invalidate, position, reduced]);
   useFrame((state, delta) => {
     const node = group.current;
-    if (!node || reduced) return;
+    if (!node) return;
+    if (hitSize && hitBox.current) {
+      node.updateWorldMatrix(true, false);
+      node.getWorldPosition(projectedCenter.current);
+      projectedEdge.current.set(hitSize, 0, 0);
+      node.localToWorld(projectedEdge.current);
+      projectedCenter.current.project(state.camera);
+      projectedEdge.current.project(state.camera);
+      const pixels = Math.hypot(
+        ((projectedEdge.current.x - projectedCenter.current.x) *
+          state.size.width) /
+          2,
+        ((projectedEdge.current.y - projectedCenter.current.y) *
+          state.size.height) /
+          2
+      );
+      const diameter = Math.max(12, Math.min(44, pixels));
+      if (diameter !== previousHitPixels.current) {
+        previousHitPixels.current = diameter;
+        hitBox.current.style.setProperty('--board-hit-size', `${diameter}px`);
+      }
+    }
+    if (reduced) return;
     // During a semantic transition the whole field is being carried, so an
     // anchor that also damped its own local position would ease twice and lag
     // behind the piece it labels. It takes the new local spot immediately and
@@ -170,9 +210,15 @@ function DampedHtmlAnchor({
         // anchors belong just above the board's own overlay chrome (z-10/z-20)
         // and below app chrome, so the range is stated rather than defaulted.
         zIndexRange={[BOARD_HTML_Z_MAX, 0]}
-        style={{ pointerEvents: interactive ? 'auto' : 'none' }}
+        style={{ pointerEvents: interactive && !hitSize ? 'auto' : 'none' }}
       >
-        {children}
+        {hitSize ? (
+          <div ref={attachHitBox} style={{ pointerEvents: 'none' }}>
+            {children}
+          </div>
+        ) : (
+          children
+        )}
       </Html>
     </group>
   );
@@ -447,11 +493,17 @@ export const AgentControls = memo(function AgentControls({
         <DampedHtmlAnchor
           key={`control:${piece.id}`}
           position={boardWorldPosition(piece, 1.2)}
+          hitSize={piece.size * 1.35}
           reduced={reduced}
           center
         >
           <button
             type="button"
+            style={{
+              width: 'var(--board-hit-size, 44px)',
+              height: 'var(--board-hit-size, 44px)',
+              pointerEvents: 'auto',
+            }}
             data-board-agent={piece.agentId}
             data-board-session-state={piece.sessionState}
             data-board-status-light={lightState}
@@ -508,7 +560,7 @@ export const AgentControls = memo(function AgentControls({
                 onPressedChange(null);
               }
             }}
-            className="board-control-enter group relative grid h-11 w-11 cursor-pointer place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px"
+            className="board-control-enter group relative grid h-11 w-11 rounded-full cursor-pointer place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px"
           >
             {/* Reveal-only (operator, 2026-08-11): a persistent card per Agent
                 put three lines of prose on a board whose job is a glance, and
@@ -681,11 +733,17 @@ export const DelegationControls = memo(function DelegationControls({
         <DampedHtmlAnchor
           key={`delegation-control:${unit.id}`}
           position={boardWorldPosition(unit, 1.1)}
+          hitSize={unit.size * 1.35}
           reduced={reduced}
           center
         >
           <button
             type="button"
+            style={{
+              width: 'var(--board-hit-size, 44px)',
+              height: 'var(--board-hit-size, 44px)',
+              pointerEvents: 'auto',
+            }}
             data-board-delegation-unit={unit.id}
             data-board-delegation-kind={unit.kind}
             data-board-delegation-parent={unit.parentAgentId}
@@ -701,7 +759,7 @@ export const DelegationControls = memo(function DelegationControls({
             onPointerLeave={() => onHoverChange(null)}
             onFocus={() => onHoverChange(unit.id)}
             onBlur={() => onHoverChange(null)}
-            className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color] duration-150 focus-visible:ring-2 focus-visible:ring-ring"
+            className="board-control-enter group relative grid h-11 w-11 rounded-full place-items-center border border-transparent bg-transparent outline-none transition-[border-color] duration-150 focus-visible:ring-2 focus-visible:ring-ring"
           >
             {unit.kind === 'overflow' && (
               <span

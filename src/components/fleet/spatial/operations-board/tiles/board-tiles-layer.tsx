@@ -39,6 +39,8 @@ import { boardTileModel } from './board-tiles-model';
 import { boardTileStatusSubjects } from './board-tile-status';
 import { useTileEmergence } from './use-tile-emergence';
 
+const readAmbientClock = () => performance.now() / 1000;
+
 const PRODUCT_MARKS = { paths: HARNESS_MARK_PATHS, tone: harnessMarkTone };
 const EMPTY_SELECTION: ReadonlySet<string> = new Set();
 const NO_MOTION = {
@@ -229,6 +231,7 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
           motion={greybox ? NO_MOTION : DEFAULT_MOTION}
           signal="paint"
           readFrame={readFrame}
+          readClock={readAmbientClock}
           marks={PRODUCT_MARKS}
           reducedMotion={reduced || ambient.cadence === 'parked'}
           calmAttention
