@@ -1506,6 +1506,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:project-agent': GATE,
   'eval:roadmap:rail': GATE,
   'eval:electron:recents': GATE,
+  'eval:projects:suggestions': CI,
   'eval:electron:agent-sources': GATE,
   'eval:electron:connect-flow': GATE,
   'eval:electron:lifecycle': GATE,

@@ -1,10 +1,10 @@
-import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { DatabaseSync } from 'node:sqlite';
+import { git } from '../../../scripts/lib/hermetic-git.mjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   RECENT_WINDOW_MS,
@@ -32,18 +32,10 @@ afterEach(() => {
   }
 });
 
-function git(cwd: string, ...args: string[]): void {
-  execFileSync(
-    'git',
-    ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args],
-    { cwd, stdio: 'ignore' }
-  );
-}
-
 function makeRepository(directory: string): void {
   fs.mkdirSync(directory, { recursive: true });
-  git(directory, 'init', '-q');
-  git(directory, 'commit', '-q', '--allow-empty', '-m', 'init');
+  git(directory, ['init', '-q']);
+  git(directory, ['commit', '-q', '--allow-empty', '-m', 'init']);
 }
 
 function write(file: string, text: string): void {
@@ -92,7 +84,7 @@ function buildFixture({
   makeRepository(alpha);
   fs.mkdirSync(path.join(alpha, 'packages', 'web'), { recursive: true });
   const worktree = path.join(code, 'alpha-wt', 'feature');
-  git(alpha, 'worktree', 'add', '-q', worktree, '-b', 'feature');
+  git(alpha, ['worktree', 'add', '-q', worktree, '-b', 'feature']);
   makeRepository(beta);
   write(path.join(scripts, 'package.json'), '{}');
   write(path.join(code, 'package.json'), '{}');
