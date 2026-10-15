@@ -69,6 +69,10 @@ function SignInForm() {
   // parameter is a code, never text — whatever arrives, only copy from
   // CALLBACK_FAILURE_MESSAGES is ever rendered.
   const callbackErrorCode = searchParams.get('error') || null;
+  // Only this exact in-app destination is accepted from the URL. A collaborator
+  // opening /admin can sign in and return to the right tool in one step.
+  const postSignInPath =
+    searchParams.get('next') === '/admin' ? '/admin' : '/workspace';
   const callbackError = callbackErrorCode
     ? isAuthCallbackFailure(callbackErrorCode)
       ? CALLBACK_FAILURE_MESSAGES[callbackErrorCode]
@@ -145,7 +149,7 @@ function SignInForm() {
         outcome: 'succeeded',
         failure: null,
       });
-      router.push('/workspace');
+      router.push(postSignInPath);
       router.refresh();
     }
   };

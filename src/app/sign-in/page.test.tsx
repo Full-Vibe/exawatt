@@ -1,4 +1,11 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SignInPage from './page';
 import {
@@ -7,9 +14,10 @@ import {
   GENERIC_CALLBACK_FAILURE,
 } from '@/components/auth/callback-failures';
 
-const { search, captured, accountClient } = vi.hoisted(() => ({
+const { search, captured, accountClient, navigation } = vi.hoisted(() => ({
   search: { current: '' },
   captured: { events: [] as Array<Record<string, unknown>> },
+  navigation: { push: vi.fn(), refresh: vi.fn() },
   accountClient: {
     current: {
       auth: { signInWithPassword: vi.fn(async () => ({ error: null })) },
@@ -18,7 +26,7 @@ const { search, captured, accountClient } = vi.hoisted(() => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => navigation,
   useSearchParams: () => new URLSearchParams(search.current),
 }));
 
@@ -45,6 +53,8 @@ async function mount() {
 beforeEach(() => {
   search.current = '';
   captured.events = [];
+  navigation.push.mockReset();
+  navigation.refresh.mockReset();
   accountClient.current = {
     auth: { signInWithPassword: vi.fn(async () => ({ error: null })) },
   };
@@ -53,6 +63,28 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('sign-in page callback failures', () => {
+  it('returns to admin only for the exact approved destination', async () => {
+    for (const [next, expected] of [
+      ['/admin', '/admin'],
+      ['//attacker.example', '/workspace'],
+    ]) {
+      cleanup();
+      navigation.push.mockReset();
+      search.current = `next=${encodeURIComponent(next)}`;
+      await mount();
+      fireEvent.change(screen.getByLabelText('Email'), {
+        target: { value: 'editor@example.com' },
+      });
+      fireEvent.change(screen.getByLabelText('Password'), {
+        target: { value: 'example-password' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
+      await waitFor(() =>
+        expect(navigation.push).toHaveBeenCalledWith(expected)
+      );
+    }
+  });
+
   it('shows that a callback failed instead of leaving it invisible', async () => {
     search.current = 'error=exchange_rejected';
 
