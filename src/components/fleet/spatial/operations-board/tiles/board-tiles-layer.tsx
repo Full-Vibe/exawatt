@@ -43,6 +43,13 @@ const readAmbientClock = () => performance.now() / 1000;
 
 const PRODUCT_MARKS = { paths: HARNESS_MARK_PATHS, tone: harnessMarkTone };
 const EMPTY_SELECTION: ReadonlySet<string> = new Set();
+// Aggregate population has no Agent command identity or lifecycle sampling.
+// Camera-only paints therefore reuse its existing GPU instance buffers.
+const POPULATION_FRAME: TileFrame = {
+  focusId: null,
+  selection: EMPTY_SELECTION,
+};
+const readPopulationFrame = () => POPULATION_FRAME;
 const NO_MOTION = {
   sheen: false,
   breathe: false,
@@ -252,14 +259,14 @@ export const BoardTilesLayer = memo(function BoardTilesLayer({
             material={greybox ? 'matte' : material}
             shape="hex"
             detail="coarse"
+            staticInstances
             lighting={false}
             mark="off"
             motion={NO_MOTION}
             signal="paint"
-            readFrame={readFrame}
-            readClock={readAmbientClock}
+            readFrame={readPopulationFrame}
             marks={PRODUCT_MARKS}
-            reducedMotion={reduced || ambient.cadence === 'parked'}
+            reducedMotion
             calmAttention
             interactive={false}
             requestFrame={invalidate}
