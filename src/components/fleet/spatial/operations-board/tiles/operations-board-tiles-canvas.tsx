@@ -13,7 +13,12 @@ import type * as THREE from 'three';
 import type { CrustMaterialId } from '@/components/tiles/crust-materials';
 import { selectSpatialDelegationUnits } from '@exawatt/ui-model';
 import { BoardCameraRig } from '../operations-board-camera-rig';
-import type { OperationsBoardCanvas } from '../operations-board-canvas';
+import {
+  BoardDisplayResolution,
+  type OperationsBoardCanvas,
+} from '../operations-board-canvas';
+import { usePressSound } from '@/components/tiles/use-press-sound';
+import { MATERIAL_SOUND } from '@/components/tiles/press-sounds';
 import { BoardField, BoardTransitionProvider } from '../operations-board-field';
 import { ZoneLayer } from '../operations-board-zone-layer';
 import {
@@ -93,6 +98,17 @@ export function OperationsBoardTilesCanvas({
     [cadence, scheduler]
   );
   const [hover] = useState(createBoardHoverStore);
+  const playPress = usePressSound(greybox ? false : MATERIAL_SOUND[material]);
+  const onPressedChange = useCallback(
+    (id: string | null) => {
+      const previous = hover.get().pressedAgentId;
+      if (previous === id) return;
+      hover.setPressed(id);
+      if (previous) playPress('release');
+      if (id) playPress('press');
+    },
+    [hover, playPress]
+  );
   const [labels] = useState(() => createZoneLabelTierStore('full'));
   const onZoomChange = useCallback(
     (zoom: number) => labels.setZoom(zoom),
@@ -159,6 +175,7 @@ export function OperationsBoardTilesCanvas({
       <color attach="background" args={[theme.canvas]} />
       <RefreshScene identity={theme} />
       <RefreshScene identity={ambient} />
+      <BoardDisplayResolution lowPower={lowPower} />
       <BoardTransitionProvider>
         <BoardCameraRig
           layout={layout}
@@ -226,7 +243,7 @@ export function OperationsBoardTilesCanvas({
             onSelectAgent={onSelectAgent}
             onToggleAgentSelect={onToggleAgentSelect}
             onHoverChange={hover.setAgent}
-            onPressedChange={hover.setPressed}
+            onPressedChange={onPressedChange}
             multiSelection={multiSelection}
             reduced={reduced}
             theme={theme}

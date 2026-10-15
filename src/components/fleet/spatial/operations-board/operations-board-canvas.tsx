@@ -82,7 +82,7 @@ function ResumeAmbientMotion({ ambient }: { ambient: AmbientMotion }) {
 /** Display changes can alter DPR without changing the canvas's CSS size.
  * R3F's resize observer then has nothing to report. Re-resolve its bounded
  * DPR through the store, retaining the camera, scene and demand loop. */
-function BoardDisplayResolution({ lowPower }: { lowPower: boolean }) {
+export function BoardDisplayResolution({ lowPower }: { lowPower: boolean }) {
   const setDpr = useThree(state => state.setDpr);
   useEffect(() => {
     let query: MediaQueryList;
