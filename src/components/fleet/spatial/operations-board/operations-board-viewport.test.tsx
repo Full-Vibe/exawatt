@@ -14,6 +14,8 @@ const rig = vi.hoisted(() => ({
   props: new Map<FleetView, CanvasProps>(),
   fail: null as FleetView | null,
   handoff: false,
+  rejectLoad: null as FleetView | null,
+  loads: new Map<FleetView, number>(),
 }));
 vi.mock('@/components/appearance/appearance-provider', () => ({
   useAppearance: () => ({ resolved: appearance }),
@@ -34,9 +36,17 @@ vi.mock('./operations-board-views', () => {
       return <div data-test-renderer={view} />;
     };
   }
+  function loader(view: FleetView) {
+    const Canvas = canvas(view);
+    return async () => {
+      rig.loads.set(view, (rig.loads.get(view) ?? 0) + 1);
+      if (rig.rejectLoad === view) throw new Error('Fixture chunk unavailable');
+      return { default: Canvas };
+    };
+  }
   const views = {
-    v1: { Canvas: canvas('v1'), projections: ['top-down', 'fixed-angle'] },
-    v2: { Canvas: canvas('v2'), projections: ['fixed-angle'] },
+    v1: { load: loader('v1'), projections: ['top-down', 'fixed-angle'] },
+    v2: { load: loader('v2'), projections: ['fixed-angle'] },
   };
   return { boardViewFor: (view: FleetView) => views[view] };
 });
@@ -113,6 +123,8 @@ function handle(): OperationsBoardHandle {
 }
 beforeEach(() => {
   rig.props.clear();
+  rig.loads.clear();
+  rig.rejectLoad = null;
   rig.fail = null;
   rig.handoff = false;
   window.sessionStorage.clear();
@@ -132,14 +144,12 @@ describe('board renderer readiness', () => {
     });
     expect(first.restoreViewport).not.toHaveBeenCalled();
     act(() => {
-      rig.props
-        .get('v1')!
-        .onViewportChange?.({
-          centerX: 0,
-          centerY: 0,
-          width: 500,
-          height: 500,
-        });
+      rig.props.get('v1')!.onViewportChange?.({
+        centerX: 0,
+        centerY: 0,
+        width: 500,
+        height: 500,
+      });
       rig.props.get('v1')!.onControllerReady?.(first);
     });
     expect(first.restoreViewport).toHaveBeenCalledExactlyOnceWith(remembered);
@@ -147,17 +157,15 @@ describe('board renderer readiness', () => {
     act(() => rig.props.get('v1')!.onViewportChange?.(panned));
     // Real rig snapshots reuse a projection scratch object. Retain the value.
     panned.zoom = 99;
-    view.rerender(surface('v2'));
+    await act(async () => view.rerender(surface('v2')));
     const second = handle();
     act(() => {
-      rig.props
-        .get('v2')!
-        .onViewportChange?.({
-          centerX: 0,
-          centerY: 0,
-          width: 800,
-          height: 600,
-        });
+      rig.props.get('v2')!.onViewportChange?.({
+        centerX: 0,
+        centerY: 0,
+        width: 800,
+        height: 600,
+      });
       rig.props.get('v2')!.onControllerReady?.(second);
       rig.props.get('v2')!.onControllerReady?.(second);
     });
@@ -166,7 +174,7 @@ describe('board renderer readiness', () => {
       centerX: 23,
       zoom: 4,
     });
-    view.rerender(surface('v1'));
+    await act(async () => view.rerender(surface('v1')));
     const third = handle();
     act(() => rig.props.get('v1')!.onControllerReady?.(third));
     expect(third.restoreViewport).toHaveBeenCalledExactlyOnceWith({
@@ -176,34 +184,82 @@ describe('board renderer readiness', () => {
     });
   });
 
-  it('lets the Team handoff own the first camera pose', () => {
+  it('lets the Team handoff own the first camera pose', async () => {
     rig.handoff = true;
     window.sessionStorage.setItem(storageKey, JSON.stringify(remembered));
-    render(surface('v2'));
+    await act(async () => {
+      render(surface('v2'));
+    });
     const controller = handle();
     act(() => rig.props.get('v2')!.onControllerReady?.(controller));
     expect(controller.restoreViewport).not.toHaveBeenCalled();
   });
 
-  it('recovers after a renderer failure by retry or changing view', () => {
+  it('recovers after a renderer failure by retry or changing view', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     rig.fail = 'v2';
     const view = render(surface('v2'));
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(view.getByRole('link', { name: 'Fleet settings' })).toHaveAttribute(
       'href',
       '/settings?section=fleet'
     );
     rig.fail = null;
-    fireEvent.click(view.getByRole('button', { name: 'Retry renderer' }));
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: 'Retry renderer' }));
+    });
     expect(
       view.container.querySelector('[data-test-renderer="v2"]')
     ).not.toBeNull();
-    view.rerender(surface('v1'));
+    await act(async () => view.rerender(surface('v1')));
     rig.fail = 'v2';
-    view.rerender(surface('v2'));
-    view.rerender(surface('v1'));
+    await act(async () => view.rerender(surface('v2')));
+    await act(async () => view.rerender(surface('v1')));
     expect(
       view.container.querySelector('[data-test-renderer="v1"]')
     ).not.toBeNull();
+  });
+  it('retries a rejected import with a fresh attempt while retaining viewport and selection', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const selectedLayout = { ...layout, selectedAgentId: agent.id };
+    const renderSelected = () => (
+      <OperationsBoardSurface
+        layout={selectedLayout}
+        fleetView="v2"
+        projection="fixed-angle"
+        viewportStorageKey={storageKey}
+        onDrillProject={() => undefined}
+        onSelectAgent={() => undefined}
+        onOverview={() => undefined}
+        onProjectionChange={() => undefined}
+      />
+    );
+    window.sessionStorage.setItem(storageKey, JSON.stringify(remembered));
+    rig.rejectLoad = 'v2';
+    const view = render(renderSelected());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(rig.loads.get('v2')).toBe(1);
+    rig.rejectLoad = null;
+    await act(async () => view.rerender(renderSelected()));
+    expect(rig.loads.get('v2')).toBe(1);
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: 'Retry renderer' }));
+    });
+    expect(rig.loads.get('v2')).toBe(2);
+    expect(
+      view.container.querySelector('[data-test-renderer="v2"]')
+    ).not.toBeNull();
+    expect(rig.props.get('v2')!.layout.selectedAgentId).toBe(agent.id);
+    const controller = handle();
+    act(() => rig.props.get('v2')!.onControllerReady?.(controller));
+    expect(controller.restoreViewport).toHaveBeenCalledExactlyOnceWith(
+      remembered
+    );
+    await act(async () => view.rerender(renderSelected()));
+    expect(rig.loads.get('v2')).toBe(2);
   });
 });

@@ -260,7 +260,7 @@ Standing rules, all operator-reviewed:
 - **Redundant channels (D30, per Carbon)**: every state carries at least three of shape / icon / color / text — hue never carries the signal alone.
 - **Constant footprint**: glyphs render in a fixed box so state changes never nudge a row.
 - Delegated-child dots breathe at 2600ms, staggered, capped at `DELEGATION_DOT_CAP` — context for the light, never a competing signal (ENG-023).
-- On the Fleet board, protocol color lives **only** in each Agent's light; Project identity stays on zone edges (decision `0007` restraint). Fleet Tiles (Fleet view v2, decision `0050`) will tint the agent body with its status, as the homepage does; that exception is amended here, with screenshot evidence, when ENG-004 V4.1 ships.
+- On the Fleet board, protocol color lives **only** in each Agent's light; Project identity stays on zone edges (decision `0007` restraint). Fleet Tiles (Fleet view v2, decision `0050`) may also tint the Agent body with its status, as accepted in the V4.1 look review. Its D40 shapes remain semantic annotations above decorative materials: a shared overlay depth policy preserves backing, glyph and unread ordering in the existing scene. Material height or opacity must never erase a status shape; v1 retains its world-depth policy.
 
 Motion beyond status (pointer for G2): the house easing is `cubic-bezier(0.22, 1, 0.36, 1)`, interaction transitions 160–260ms, and **every** animation has a `prefers-reduced-motion` gate — no exceptions exist today; do not create the first.
 
@@ -601,7 +601,7 @@ The standing `/hud-gallery/board-study` bench compares v1 with v2 over the
 same `SpatialBoardLayout`. The v2 review uses the homepage's shared Rounded
 tiles in Gummy, Acrylic and Anodized, on a flat fixed-angle plane. Its
 status-tinted bodies were **accepted for v2 in the 2026-10-15 look review**;
-production's status-light rule remains unchanged until P4/P5. The bench
+P4/P5 adopted that exception for opt-in v2 while preserving v1's status-light rule. The bench
 includes solid-material greybox, Demo Workspace, and 10/100/1k fixtures in
 Classic, Air and Night. Spare sockets are decorative and never population.
 

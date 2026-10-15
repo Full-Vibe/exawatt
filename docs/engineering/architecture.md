@@ -265,6 +265,12 @@ Demo/Live. After P4 parity, P5 offers v1 and v2 (Preview) in every build.
 The shared canvas registry selects the actual renderer. Material resets
 independently and defaults to Gummy; the pure catalog also includes Matte,
 Glazed, Acrylic and Anodized. Stored development choices remain valid.
+Mutations cross this boundary as validated single-field set/reset intents,
+not renderer-merged snapshots. Main applies each intent synchronously to current
+settings. Web storage keeps independent field entries with read-only V1 legacy
+fallback; reset tombstones prevent an old override from returning. Subscribers
+read assembled current snapshots. Different-field updates cannot replace each
+other, and no generic settings transaction framework is required.
 
 Electron settings are authoritative on desktop; a validated local mirror exists
 only to select generated CSS before hydration, then reconciles immediately.
@@ -357,7 +363,10 @@ start Troika blob workers for text.
 ENG-004 V4.1 mounts Fleet presentations through one lazy registry in
 `operations-board-views.tsx`. `SpatialFleetClient` reads the presentation
 preference once; `OperationsBoardSurface` selects the registered canvas and
-uses its declared projection capabilities. The renderer owns neither the
+uses its declared projection capabilities. The registry supplies stable loaders;
+the mounted surface owns each lazy attempt and creates a fresh identity on an
+explicit retry, preserving camera and selection above the failure boundary.
+The renderer owns neither the
 preference nor layout, selection, status truth or routes. The v2 adapter maps
 existing pieces and population into the shared homepage tile core, with the
 board's camera, transition/emergence, DOM controls, status marks and delegation
@@ -365,6 +374,11 @@ owners. `ExawattAgent.sourceAdapterId` preserves source-authored mark identity
 through local, Demo, remote and legacy projections; unknown sources remain
 unbranded. There is no Demo-only UI branch. Gummy is the default material;
 Matte, Glazed, Acrylic and Anodized share one pure catalog with Settings.
+Fleet-level individual hit targets and Project label sizing have shared board
+owners, independent of decorative body meshes. A shared depth policy treats v2
+D40 marks as semantic annotations over materials in the existing instanced
+scene; v1 retains world-depth marks. No extra render loop or tile-pose coupling
+is introduced.
 
 Settings discovers feature modules through a small grouped section registry
 and stable links/search metadata. Each module retains its own persistence

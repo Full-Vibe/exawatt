@@ -3,6 +3,7 @@
 import {
   Component,
   Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -306,6 +307,17 @@ function BoardMiniMap({
  * frame hitch. Every prop it takes is stable across those renders, so the
  * boundary is what makes that fact count.
  */
+/** Attempt identities are created at mount/retry, never during scene updates. */
+function createRendererAttempt(view: FleetView, revision = 0) {
+  return { Canvas: lazy(boardViewFor(view).load), revision };
+}
+function initialRendererAttempts() {
+  return {
+    v1: createRendererAttempt('v1'),
+    v2: createRendererAttempt('v2'),
+  };
+}
+
 export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   layout,
   projection: requestedProjection,
@@ -374,7 +386,6 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   resolvedAppearance?: ResolvedAppearance;
 }) {
   const view = boardViewFor(fleetView);
-  const ViewCanvas = view.Canvas;
   const projection = view.projections.includes(requestedProjection)
     ? requestedProjection
     : view.projections[0]!;
@@ -423,13 +434,24 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     []
   );
   const pendingViewport = useRef<OperationsBoardViewport | null>(null);
-  const [rendererAttempt, setRendererAttempt] = useState(0);
-  const rendererKey = `${fleetView}:${rendererAttempt}`;
-  const restoredRenderer = useRef<string | null>(null);
-  const retryRenderer = useCallback(
-    () => setRendererAttempt(value => value + 1),
-    []
+  const [rendererAttempts, setRendererAttempts] = useState(
+    initialRendererAttempts
   );
+  const attempt = rendererAttempts[fleetView];
+  const rendererKey = `${fleetView}:${attempt.revision}`;
+  const ViewCanvas = attempt.Canvas;
+  const restoredRenderer = useRef<string | null>(null);
+  // React.lazy caches rejection on the type. Replace only the failed attempt;
+  // data/material updates and switching back to a healthy view retain its type.
+  const retryRenderer = useCallback(() => {
+    setRendererAttempts(previous => ({
+      ...previous,
+      [fleetView]: createRendererAttempt(
+        fleetView,
+        previous[fleetView].revision + 1
+      ),
+    }));
+  }, [fleetView]);
   const viewportSaveTimer = useRef<number | null>(null);
   const visibleZones = useMemo(
     () => layout.zones.filter(zone => zone.visible),
