@@ -36,12 +36,23 @@ await primeEvalBrowserPage(page);
 const errors = [];
 page.on('pageerror', error => errors.push(String(error.message || error)));
 
+// Tiles are told apart by the rig's own tab ids, not by the copy they print:
+// the copy is a tile's name, which is the product's to change (ENG-029 C4
+// put the Agent's name where the task used to be).
+const TASK = {
+  'exa-1': 'Ship the launcher redraw',
+  'exa-2': 'Fix Sessions rendering',
+  'exa-4': 'Review keyboard navigation',
+};
 const titles = () =>
-  page.evaluate(() =>
-    Array.from(document.querySelectorAll('[data-expose-tile]')).map(
-      node => node.getAttribute('aria-label')?.split(',')[0] ?? ''
+  page
+    .evaluate(() =>
+      Array.from(
+        document.querySelectorAll('[data-expose-tile-slot]'),
+        node => node.getAttribute('data-expose-tile-slot') ?? ''
+      )
     )
-  );
+    .then(ids => ids.map(id => TASK[id] ?? id));
 
 try {
   await page.goto(`${BASE}/hud-gallery/team-order`, {
