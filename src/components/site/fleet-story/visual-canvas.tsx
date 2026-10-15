@@ -14,15 +14,15 @@ import { useRef, type ComponentType, type RefObject } from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import type { FleetModel } from './fleet-model';
 import type { NamesId } from './names';
-import type { PressSoundSetting } from './press-sounds';
+import type { PressSoundSetting } from '@/components/tiles/press-sounds';
 import type { StoryDrive, VisualAnchor, VisualProps } from './visual-contract';
 import { CameraRig } from './visuals/camera-rig';
 import type { CrustMarkId } from './visuals/crust-marks';
-import type { CrustMaterialId } from './visuals/crust-materials';
-import type { CrustMotion } from './visuals/crust-motion';
-import type { CrustShapeId } from './visuals/crust-shape';
-import type { CrustSignalId } from './visuals/crust-signal';
-import type { EnvironmentKind } from './visuals/environment';
+import type { CrustMaterialId } from '@/components/tiles/crust-materials';
+import type { CrustMotion } from '@/components/tiles/crust-motion';
+import type { CrustShapeId } from '@/components/tiles/crust-shape';
+import type { CrustSignalId } from '@/components/tiles/crust-signal';
+import type { EnvironmentKind } from '@/components/tiles/environment';
 import { CrustVisual } from './visuals/crust-visual';
 
 export function VisualCanvas({

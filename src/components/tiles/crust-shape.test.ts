@@ -6,7 +6,7 @@ import {
   tilePrismGeometry,
   tileRingGeometry,
   tileSlabGeometry,
-} from './crust-shape';
+} from '@/components/tiles/crust-shape';
 
 function bounds(g: THREE.BufferGeometry) {
   g.computeBoundingBox();

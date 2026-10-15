@@ -26,7 +26,7 @@ import {
 import { stageAt } from '@/components/site/fleet-story/stages';
 import type { VisualProps } from '@/components/site/fleet-story/visual-contract';
 import { GlobeBody } from '@/components/site/fleet-story/visuals/globe-body';
-import { keepPickable } from '@/components/site/fleet-story/visuals/pick-bounds';
+import { keepPickable } from '@/components/tiles/pick-bounds';
 import {
   highlightWeight,
   paletteFrom,

@@ -4,7 +4,7 @@ import {
   motionParam,
   parseMotion,
   toggleGlow,
-} from './crust-motion';
+} from '@/components/tiles/crust-motion';
 
 describe('working motion', () => {
   it('reads a missing motion as the default', () => {

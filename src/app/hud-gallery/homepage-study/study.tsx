@@ -40,7 +40,7 @@ import {
 import {
   CRUST_MATERIALS,
   type CrustMaterialId,
-} from '@/components/site/fleet-story/visuals/crust-materials';
+} from '@/components/tiles/crust-materials';
 import {
   CRUST_GLOWS,
   CRUST_LIFTS,
@@ -48,16 +48,16 @@ import {
   parseMotion,
   toggleGlow,
   type CrustMotion,
-} from '@/components/site/fleet-story/visuals/crust-motion';
+} from '@/components/tiles/crust-motion';
 import {
   CRUST_SHAPES,
   type CrustShapeId,
-} from '@/components/site/fleet-story/visuals/crust-shape';
+} from '@/components/tiles/crust-shape';
 import {
   CRUST_SIGNALS,
   type CrustSignalId,
-} from '@/components/site/fleet-story/visuals/crust-signal';
-import type { EnvironmentKind } from '@/components/site/fleet-story/visuals/environment';
+} from '@/components/tiles/crust-signal';
+import type { EnvironmentKind } from '@/components/tiles/environment';
 import { HOMEPAGE_STORY } from '@/components/site/fleet-story/homepage-settings';
 import { DomeVisual } from './visuals/dome-visual';
 import { LidarVisual } from './visuals/lidar-visual';

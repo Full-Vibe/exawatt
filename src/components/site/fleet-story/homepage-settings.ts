@@ -2,11 +2,14 @@ import type { NamesId } from './names';
 import type { CopySetId } from './stages';
 import type { SnapMode } from './use-scene-scroll';
 import type { CrustMarkId } from './visuals/crust-marks';
-import type { CrustMaterialId } from './visuals/crust-materials';
-import { DEFAULT_MOTION, type CrustMotion } from './visuals/crust-motion';
-import type { CrustShapeId } from './visuals/crust-shape';
-import type { CrustSignalId } from './visuals/crust-signal';
-import type { EnvironmentKind } from './visuals/environment';
+import type { CrustMaterialId } from '@/components/tiles/crust-materials';
+import {
+  DEFAULT_MOTION,
+  type CrustMotion,
+} from '@/components/tiles/crust-motion';
+import type { CrustShapeId } from '@/components/tiles/crust-shape';
+import type { CrustSignalId } from '@/components/tiles/crust-signal';
+import type { EnvironmentKind } from '@/components/tiles/environment';
 
 /**
  * What the homepage draws (ENG-031 W15m): the study's choices, fixed. The

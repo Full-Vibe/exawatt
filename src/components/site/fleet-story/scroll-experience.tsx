@@ -46,13 +46,13 @@ import { GitHubMark } from '@/components/site/github-mark';
 import { heroBoardTheme } from '@/components/site/hero-board/hero-board-theme';
 import type { HomepageCopyDocument } from '@/lib/homepage-copy/contract';
 import { AgentCard } from './agent-card';
-import { StoryCanvas } from './canvas-boundary';
+import { StoryCanvas } from '@/components/tiles/canvas-boundary';
 import { fleetModel, STATUS_LABEL, type FleetAgent } from './fleet-model';
 import { facingFade, nameShown, nameStyleOf, type NamesId } from './names';
 import { isNarrow, isShort } from './narrow';
 import { columnFollow, followColumn } from './page-curve';
 import { PinnedAgentPanel } from './pinned-agent-panel';
-import { MATERIAL_SOUND } from './press-sounds';
+import { MATERIAL_SOUND } from '@/components/tiles/press-sounds';
 import {
   exemplarFor,
   leanCurve,
@@ -80,11 +80,11 @@ import {
   type VisualProps,
 } from './visual-contract';
 import type { CrustMarkId } from './visuals/crust-marks';
-import type { CrustMaterialId } from './visuals/crust-materials';
-import type { CrustMotion } from './visuals/crust-motion';
-import type { CrustShapeId } from './visuals/crust-shape';
-import type { CrustSignalId } from './visuals/crust-signal';
-import type { EnvironmentKind } from './visuals/environment';
+import type { CrustMaterialId } from '@/components/tiles/crust-materials';
+import type { CrustMotion } from '@/components/tiles/crust-motion';
+import type { CrustShapeId } from '@/components/tiles/crust-shape';
+import type { CrustSignalId } from '@/components/tiles/crust-signal';
+import type { EnvironmentKind } from '@/components/tiles/environment';
 
 export type { SnapMode } from './use-scene-scroll';
 

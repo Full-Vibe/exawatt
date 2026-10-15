@@ -7,7 +7,7 @@ import {
   sourceAdapterId,
   type FleetAgent,
 } from './fleet-model';
-import { axialKey } from './hex';
+import { axialKey } from '@/components/tiles/hex';
 
 describe('study fleet model', () => {
   const model = fleetModel();

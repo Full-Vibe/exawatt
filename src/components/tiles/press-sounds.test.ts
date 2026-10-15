@@ -6,8 +6,8 @@ import {
   PRESS_SOUNDS,
   playPressSound,
   voiceLength,
-} from './press-sounds';
-import { CRUST_MATERIALS } from './visuals/crust-materials';
+} from '@/components/tiles/press-sounds';
+import { CRUST_MATERIALS } from '@/components/tiles/crust-materials';
 
 /** A recording stand-in for an audio context: every node made, every
  *  automation call on every parameter, every start and stop, in order. */

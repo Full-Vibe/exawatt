@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { hexSpiral } from './hex';
-import { axialToPlane } from './fleet-model';
-import { BORDER_SAMPLES, borderInradius, writeBorder } from './territory';
+import { hexSpiral } from '@/components/tiles/hex';
+import { axialToPlane } from '@/components/site/fleet-story/fleet-model';
+import {
+  BORDER_SAMPLES,
+  borderInradius,
+  writeBorder,
+} from '@/components/tiles/territory';
 
 const points = new Float32Array(BORDER_SAMPLES * 2);
 const normals = new Float32Array(BORDER_SAMPLES * 2);

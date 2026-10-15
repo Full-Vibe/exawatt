@@ -31,6 +31,17 @@ The UI layer supports multiple modular regimes over the same command model:
   one source-agnostic board model
 - future packaged or Electron-hosted UI variants
 
+The ENG-004 V4.1 P1 tile renderer lives in `src/components/tiles/` and has
+no homepage data dependency. Owners supply stable string identities, planar
+positions, status, an injected mark registry, neutral frame state (presence,
+highlights, focus and selection), and the `sphere` or `plane` surface. Instance
+storage grows with spare capacity and preserves surviving identities through
+reordering. The homepage adapter retains scroll staging, globe, camera and
+Project label/border ownership; Fleet v2 will reuse the tile layer over the
+existing board layout. Motion cadence remains owned by the mounting surface;
+transmission can be removed for overview and low-power rendering. This slice
+changes no design-system rung or production Fleet presentation.
+
 The privileged desktop renderer is local application code packaged in the same
 versioned Electron artifact as main/preload (decision `0008`). It must not load
 the hosted Exawatt site as its primary renderer or expose PTY preload methods to

@@ -19,14 +19,22 @@
  */
 
 import * as THREE from 'three';
-import { SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
+import { SPHERE_CENTER, SPHERE_RADIUS } from './surface';
 
 /** The globe's radius and room above it for a lifted agent. */
 const PICK_RADIUS = SPHERE_RADIUS + 6;
 
-export function keepPickable(mesh: THREE.InstancedMesh) {
+export function keepPickable(
+  mesh: THREE.InstancedMesh,
+  radius = PICK_RADIUS,
+  center = SPHERE_CENTER
+) {
   const sphere = mesh.boundingSphere;
-  if (sphere === null || sphere.radius !== PICK_RADIUS) {
-    mesh.boundingSphere = new THREE.Sphere(SPHERE_CENTER.clone(), PICK_RADIUS);
+  if (
+    sphere === null ||
+    sphere.radius !== radius ||
+    !sphere.center.equals(center)
+  ) {
+    mesh.boundingSphere = new THREE.Sphere(center.clone(), radius);
   }
 }

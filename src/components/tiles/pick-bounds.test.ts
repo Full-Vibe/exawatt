@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { SPHERE_CENTER, SPHERE_RADIUS } from '../sphere';
-import { keepPickable } from './pick-bounds';
+import { SPHERE_CENTER, SPHERE_RADIUS } from './surface';
+import { keepPickable } from '@/components/tiles/pick-bounds';
 
 /** A mesh of packed instances like the study's: a few exist, the rest do not. */
 function packedMesh() {

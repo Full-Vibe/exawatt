@@ -9,7 +9,7 @@
  */
 
 import type { StatusLightState } from '@/components/status-light/protocol';
-import { hexSpiral } from '@/components/site/fleet-story/hex';
+import { hexSpiral } from '@/components/tiles/hex';
 import type {
   FleetAgent,
   FleetModel,

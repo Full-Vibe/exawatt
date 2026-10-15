@@ -33,8 +33,8 @@ import {
 } from '@/components/site/fleet-story/sphere';
 import { stageAt } from '@/components/site/fleet-story/stages';
 import type { VisualProps } from '@/components/site/fleet-story/visual-contract';
-import { useRoomEnvironment } from '@/components/site/fleet-story/visuals/environment';
-import { keepPickable } from '@/components/site/fleet-story/visuals/pick-bounds';
+import { useRoomEnvironment } from '@/components/tiles/environment';
+import { keepPickable } from '@/components/tiles/pick-bounds';
 import {
   clearPoolField,
   makePoolField,

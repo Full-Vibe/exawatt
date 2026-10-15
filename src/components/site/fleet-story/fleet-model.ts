@@ -22,7 +22,7 @@
  */
 
 import type { StatusLightState } from '@/components/status-light/protocol';
-import { hexSpiral, type Axial } from './hex';
+import { hexSpiral, type Axial } from '@/components/tiles/hex';
 
 export const FLEET_MAX = 300;
 

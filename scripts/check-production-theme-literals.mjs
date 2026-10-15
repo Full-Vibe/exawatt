@@ -70,11 +70,11 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     max: 6,
     reason: 'third-party harness brand artwork',
   },
-  'src/components/site/fleet-story/visuals/crust-marks.ts': {
+  'src/components/tiles/crust-marks.ts': {
     max: 1,
     reason: "an SVG rasterised as a mark's alpha mask, not rendered colour",
   },
-  'src/components/site/fleet-story/visuals/crust-visual.tsx': {
+  'src/components/tiles/tile-renderer.tsx': {
     max: 3,
     reason: 'alpha stops of a glow sprite drawn to a canvas, not theme paint',
   },

@@ -18,7 +18,7 @@ import {
   playPressSound,
   type PressSoundId,
   type PressSoundSetting,
-} from './press-sounds';
+} from '@/components/tiles/press-sounds';
 
 type AudioWindow = Window &
   typeof globalThis & {

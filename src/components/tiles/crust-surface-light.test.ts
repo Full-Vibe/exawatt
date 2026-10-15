@@ -4,14 +4,14 @@ import {
   CRUST_MATERIALS,
   disposeCrustMaterial,
   makeCrustMaterial,
-} from './crust-materials';
+} from '@/components/tiles/crust-materials';
 import {
   groundFinish,
   handoverAt,
   HANDOVER_TRANSMISSION,
   makeSurfaceLightUniforms,
   withSurfaceLight,
-} from './crust-surface-light';
+} from '@/components/tiles/crust-surface-light';
 
 interface Patched {
   uniforms: Record<string, { value: unknown }>;

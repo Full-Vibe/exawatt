@@ -20,7 +20,7 @@ import {
   playKeySwitchSound,
   type KeySwitchSoundPhase,
 } from '@/components/hud/webgl/keyswitch-audio';
-import type { CrustMaterialId } from './visuals/crust-materials';
+import type { CrustMaterialId } from '@/components/tiles/crust-materials';
 
 export type PressSoundId =
   | 'thock'

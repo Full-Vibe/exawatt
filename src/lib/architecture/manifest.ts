@@ -528,7 +528,7 @@ export const architectureManifest = {
           id: 'spatial-operations-board',
           label: 'Fleet Operations Board',
           summary:
-            'R3F tactical board with stable catalog-backed Project zones, including zero-Agent state, semantic zoom, anchored live and dotted stopped Agents, attention, and exact Session handoff. Source-neutral census precedes capped geometry; parent and child counts stay distinct. Fleet Cmd+J shares the attention queue and follows a target before Enter opens its Session. One route-owned viewport feeds the board and contained, scrollable inspector across direct entry and resize. Lifecycle-owned retirement cleanup releases demand frames; display-resolution observation updates R3F DPR without remounting or bypassing host-power limits. Read-only host facts stop ambient motion on battery, lock, and suspend.',
+            'R3F tactical board with stable catalog-backed Project zones, including zero-Agent state, semantic zoom, anchored live and dotted stopped Agents, attention, and exact Session handoff. Source-neutral census precedes capped geometry; parent and child counts stay distinct. Fleet Cmd+J shares the attention queue and follows a target before Enter opens its Session. One route-owned viewport feeds the board and contained, scrollable inspector across direct entry and resize. Lifecycle-owned retirement cleanup releases demand frames; display-resolution observation updates R3F DPR without remounting or bypassing host-power limits. Read-only host facts stop ambient motion on battery, lock, and suspend. ENG-004 V4.1 P1 extracts the homepage tile layer into a shared renderer with stable string identities, injected harness marks, neutral selection/highlight input, and sphere/plane placement; the homepage retains its story and globe adapter, while Fleet v2 integration remains the next slice.',
           layer: 'ui',
           status: 'implemented',
           x: 455,
@@ -720,7 +720,7 @@ export const architectureManifest = {
           id: 'consumption-spine',
           label: 'Consumption Spine',
           summary:
-            'Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split. Structurally separate plan-account reads share one service (throttle, last-known state, pace history, off switch) with a per-vendor reader through the operator\'s own binary and sign-in: Claude and Google (Antigravity, an account with no local ledger) through their CLIs\' own /usage, Codex through its own app-server; automated test launches keep all three closed.',
+            "Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split. Structurally separate plan-account reads share one service (throttle, last-known state, pace history, off switch) with a per-vendor reader through the operator's own binary and sign-in: Claude and Google (Antigravity, an account with no local ledger) through their CLIs' own /usage, Codex through its own app-server; automated test launches keep all three closed.",
           layer: 'coordination',
           status: 'implemented',
           x: 645,
