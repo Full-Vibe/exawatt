@@ -23,7 +23,7 @@ export function FleetSettings() {
   const [error, setError] = useState<string | null>(null);
   const options: { value: FleetView; label: string }[] = [
     { value: 'v1', label: 'v1' },
-    { value: 'v2', label: 'v2' },
+    { value: 'v2', label: 'v2 (Preview)' },
   ];
   const select = async (save: () => Promise<void>) => {
     setSaving(true);

@@ -32,6 +32,11 @@ describe('Fleet presentation choices', () => {
       renderSettings();
       const preview = screen.getByRole('button', { name: /v2/ });
       await waitFor(() => expect(preview).not.toBeDisabled());
+      expect(screen.getByRole('button', { name: /^v1/ })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+      expect(localStorage.getItem(PRESENTATION_STORAGE_KEY)).toBeNull();
       fireEvent.click(preview);
       await waitFor(() =>
         expect(preview).toHaveAttribute('aria-pressed', 'true')
@@ -67,9 +72,9 @@ describe('Fleet presentation choices', () => {
     localStorage.setItem(PRESENTATION_STORAGE_KEY, saved);
     renderSettings();
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'v2' })).not.toBeDisabled()
+      expect(screen.getByRole('button', { name: /v2/ })).not.toBeDisabled()
     );
-    expect(screen.getByRole('button', { name: 'v2' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /v2/ })).toHaveAttribute(
       'aria-pressed',
       'true'
     );
