@@ -47,7 +47,7 @@ const TilesCanvas = lazy(() =>
     module => ({ default: module.OperationsBoardTilesCanvas })
   )
 );
-const MATERIALS = ['gummy', 'acrylic', 'anodized'] as const;
+const MATERIALS = ['gummy', 'matte', 'glazed', 'acrylic', 'anodized'] as const;
 
 const THEMES = {
   classic: 'exawatt-classic-dark',
@@ -330,7 +330,7 @@ function BoardStudyBench() {
           <div
             className={
               state.material === 'compare'
-                ? 'grid gap-4 lg:grid-cols-3'
+                ? 'grid gap-4 lg:grid-cols-3 2xl:grid-cols-5'
                 : 'grid gap-4'
             }
           >

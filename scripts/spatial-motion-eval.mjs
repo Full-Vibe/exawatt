@@ -22,10 +22,22 @@
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { primeEvalBrowserPage, resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
+import {
+  primeEvalBrowserPage,
+  resolveQaBrowserLaunchOptions,
+} from './lib/qa-browser.mjs';
+
+import {
+  fleetView,
+  fleetViewUrl,
+  assertFleetView,
+  prepareFleetViewPage,
+  runFleetViewMatrix,
+} from './lib/fleet-view-eval.mjs';
+await runFleetViewMatrix(import.meta.url);
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7100';
-const OUT = '/tmp/exa-spatial-motion';
+const OUT = join('/tmp/exa-spatial-motion', fleetView);
 mkdirSync(OUT, { recursive: true });
 
 /** Budgets. Frame-based where the claim is about frames. */
@@ -69,7 +81,9 @@ let starved = false;
 const timing = (name, ok, detail = '') => {
   if (starved) {
     results.push([name, true]);
-    console.log(`SKIP ${name}  (machine starved; timing inconclusive)${detail ? `  ${detail}` : ''}`);
+    console.log(
+      `SKIP ${name}  (machine starved; timing inconclusive)${detail ? `  ${detail}` : ''}`
+    );
     return;
   }
   check(name, ok, detail);
@@ -81,6 +95,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 await primeEvalBrowserPage(page);
+await prepareFleetViewPage(page);
 const errors = [];
 page.on('pageerror', e => errors.push(String(e.message || e)));
 
@@ -109,7 +124,8 @@ const installRecorder = () => {
     ctx.drawImage(src, 0, 0, c.width, c.height);
     const px = ctx.getImageData(0, 0, c.width, c.height).data;
     const lum = new Uint8Array(c.width * c.height);
-    for (let i = 0; i < lum.length; i++) lum[i] = (px[i * 4] * 3 + px[i * 4 + 1] * 6 + px[i * 4 + 2]) / 10;
+    for (let i = 0; i < lum.length; i++)
+      lum[i] = (px[i * 4] * 3 + px[i * 4 + 1] * 6 + px[i * 4 + 2]) / 10;
     latestLum = lum;
   };
   const originalRender = gl.render.bind(gl);
@@ -123,7 +139,15 @@ const installRecorder = () => {
   };
   const tick = () => {
     const t = performance.now();
-    w.__MOTION__.push({ t, dt: t - last, zoom: cam.zoom, cx: cam.position.x, cy: cam.position.y, lum: latestLum, rendered: latestLum !== null });
+    w.__MOTION__.push({
+      t,
+      dt: t - last,
+      zoom: cam.zoom,
+      cx: cam.position.x,
+      cy: cam.position.y,
+      lum: latestLum,
+      rendered: latestLum !== null,
+    });
     latestLum = null;
     last = t;
     if (!w.__MOTION_STOP__) requestAnimationFrame(tick);
@@ -138,11 +162,12 @@ const press = async key => {
   return t0;
 };
 const runScenario = async (scenario, url) => {
-  await page.goto(url, { waitUntil: 'load' });
+  await page.goto(fleetViewUrl(url), { waitUntil: 'load' });
   await page.waitForFunction(() => {
     const c = document.querySelector('canvas');
     return c && c.width > 0 && c.height > 0;
   });
+  await assertFleetView(page);
   await page.waitForTimeout(3000);
   await page.mouse.click(720, 450);
   await page.waitForTimeout(400);
@@ -150,7 +175,10 @@ const runScenario = async (scenario, url) => {
   // Idle cadence: median rAF interval with nothing happening.
   await page.waitForTimeout(600);
   const idle = await page.evaluate(() => {
-    const f = window.__MOTION__.slice(-30).map(x => x.dt).sort((a, b) => a - b);
+    const f = window.__MOTION__
+      .slice(-30)
+      .map(x => x.dt)
+      .sort((a, b) => a - b);
     return f[Math.floor(f.length / 2)] ?? 0;
   });
   // CPU calibration: a fixed amount of work, best of five. Idle cadence only
@@ -168,9 +196,13 @@ const runScenario = async (scenario, url) => {
   });
   if (idle > BUDGET.idleFrameMs || cpu > BUDGET.calibrationMs) {
     starved = true;
-    console.log(`\n${scenario}: idle frame ${idle.toFixed(1)}ms, calibration ${cpu.toFixed(1)}ms -- machine starved, timing gates inconclusive`);
+    console.log(
+      `\n${scenario}: idle frame ${idle.toFixed(1)}ms, calibration ${cpu.toFixed(1)}ms -- machine starved, timing gates inconclusive`
+    );
   } else {
-    console.log(`\n${scenario}: idle frame ${idle.toFixed(1)}ms, calibration ${cpu.toFixed(1)}ms`);
+    console.log(
+      `\n${scenario}: idle frame ${idle.toFixed(1)}ms, calibration ${cpu.toFixed(1)}ms`
+    );
   }
   const marks = [];
   marks.push([`${scenario} 1 (Fleet -> Project)`, await press('1')]);
@@ -181,75 +213,139 @@ const runScenario = async (scenario, url) => {
     window.__MOTION_STOP__ = true;
   });
   const frames = await page.evaluate(() =>
-    window.__MOTION__.map(f => ({ t: f.t, dt: f.dt, zoom: f.zoom, cx: f.cx, cy: f.cy, lum: f.lum ? Array.from(f.lum) : null }))
+    window.__MOTION__.map(f => ({
+      t: f.t,
+      dt: f.dt,
+      zoom: f.zoom,
+      cx: f.cx,
+      cy: f.cy,
+      lum: f.lum ? Array.from(f.lum) : null,
+    }))
   );
   // Carry the last rendered image forward through frames that did not
   // render, so a diff always compares two real images.
-  for (let i = 1; i < frames.length; i++) if (!frames[i].lum) frames[i].lum = frames[i - 1].lum;
+  for (let i = 1; i < frames.length; i++)
+    if (!frames[i].lum) frames[i].lum = frames[i - 1].lum;
   return { marks, frames };
 };
 
 const report = { budget: BUDGET, presses: [] };
 const judge = ({ marks, frames }) => {
-for (const [label, t0] of marks) {
-  const win = [];
-  for (let i = 1; i < frames.length; i++) {
-    const a = frames[i - 1];
-    const b = frames[i];
-    if (b.t < t0 || b.t > t0 + BUDGET.windowMs) continue;
-    if (!a.lum || !b.lum) continue;
-    let sum = 0;
-    for (let k = 0; k < a.lum.length; k++) sum += Math.abs(a.lum[k] - b.lum[k]);
-    const diff = sum / a.lum.length;
-    const zoomRatio = b.zoom / a.zoom;
-    const pan = Math.hypot(b.cx - a.cx, b.cy - a.cy);
-    // At rest the camera pose is bit-identical frame to frame, so ANY change
-    // is the flight. An ease that leaves from rest moves sub-perceptually for
-    // its first frames; the gate credits the frame the camera started on.
-    const stationary = b.zoom === a.zoom && b.cx === a.cx && b.cy === a.cy;
-    win.push({ at: b.t - t0, dt: b.dt, diff, zoomRatio, pan, stationary });
-  }
-  const moving = win.filter(f => !f.stationary);
-  const firstMotion = moving.length ? moving[0].at : null;
-  const medianMovingDiff = moving.length
-    ? [...moving.map(f => f.diff)].sort((a, b) => a - b)[Math.floor(moving.length / 2)]
-    : 0;
-  const cuts = win.filter(
-    f => f.stationary && f.diff > BUDGET.stationaryCutAbs && f.diff > medianMovingDiff * BUDGET.stationaryCutRatio
-  );
-  // The commit that applies the move is the first long frame after the key.
-  // It is reported and gated on its own; the hitch gate covers what follows.
-  const commitFrame = win.find(f => f.at <= BUDGET.commitSearchMs && f.dt > BUDGET.commitDetectMs) ?? null;
-  const commitGap = commitFrame ? commitFrame.dt : 0;
-  const midFlightHitches = win.filter(
-    f => (commitFrame ? f.at > commitFrame.at : true) && f.dt > BUDGET.hitchMs
-  );
-  // Rewind: distance-to-final should be monotone non-increasing (with slack).
-  const last = win[win.length - 1];
-  const finalZoom = frames.filter(f => f.t <= t0 + BUDGET.windowMs).at(-1);
-  let rewinds = 0;
-  if (finalZoom && moving.length > 2) {
-    let prev = Infinity;
+  for (const [label, t0] of marks) {
+    const win = [];
     for (let i = 1; i < frames.length; i++) {
-      const f = frames[i];
-      if (f.t < t0 || f.t > t0 + BUDGET.windowMs) continue;
-      const remaining = Math.abs(Math.log(f.zoom) - Math.log(finalZoom.zoom)) + Math.hypot(f.cx - finalZoom.cx, f.cy - finalZoom.cy) * 0.05;
-      if (remaining > prev + 0.02) rewinds += 1;
-      prev = remaining;
+      const a = frames[i - 1];
+      const b = frames[i];
+      if (b.t < t0 || b.t > t0 + BUDGET.windowMs) continue;
+      if (!a.lum || !b.lum) continue;
+      let sum = 0;
+      for (let k = 0; k < a.lum.length; k++)
+        sum += Math.abs(a.lum[k] - b.lum[k]);
+      const diff = sum / a.lum.length;
+      const zoomRatio = b.zoom / a.zoom;
+      const pan = Math.hypot(b.cx - a.cx, b.cy - a.cy);
+      // At rest the camera pose is bit-identical frame to frame, so ANY change
+      // is the flight. An ease that leaves from rest moves sub-perceptually for
+      // its first frames; the gate credits the frame the camera started on.
+      const stationary = b.zoom === a.zoom && b.cx === a.cx && b.cy === a.cy;
+      win.push({ at: b.t - t0, dt: b.dt, diff, zoomRatio, pan, stationary });
     }
+    const moving = win.filter(f => !f.stationary);
+    const firstMotion = moving.length ? moving[0].at : null;
+    const medianMovingDiff = moving.length
+      ? [...moving.map(f => f.diff)].sort((a, b) => a - b)[
+          Math.floor(moving.length / 2)
+        ]
+      : 0;
+    const cuts = win.filter(
+      f =>
+        f.stationary &&
+        f.diff > BUDGET.stationaryCutAbs &&
+        f.diff > medianMovingDiff * BUDGET.stationaryCutRatio
+    );
+    // The commit that applies the move is the first long frame after the key.
+    // It is reported and gated on its own; the hitch gate covers what follows.
+    const commitFrame =
+      win.find(
+        f => f.at <= BUDGET.commitSearchMs && f.dt > BUDGET.commitDetectMs
+      ) ?? null;
+    const commitGap = commitFrame ? commitFrame.dt : 0;
+    const midFlightHitches = win.filter(
+      f => (commitFrame ? f.at > commitFrame.at : true) && f.dt > BUDGET.hitchMs
+    );
+    // Rewind: distance-to-final should be monotone non-increasing (with slack).
+    const last = win[win.length - 1];
+    const finalZoom = frames.filter(f => f.t <= t0 + BUDGET.windowMs).at(-1);
+    let rewinds = 0;
+    if (finalZoom && moving.length > 2) {
+      let prev = Infinity;
+      for (let i = 1; i < frames.length; i++) {
+        const f = frames[i];
+        if (f.t < t0 || f.t > t0 + BUDGET.windowMs) continue;
+        const remaining =
+          Math.abs(Math.log(f.zoom) - Math.log(finalZoom.zoom)) +
+          Math.hypot(f.cx - finalZoom.cx, f.cy - finalZoom.cy) * 0.05;
+        if (remaining > prev + 0.02) rewinds += 1;
+        prev = remaining;
+      }
+    }
+    const trace = frames
+      .filter(f => f.t >= t0 && f.t <= t0 + BUDGET.windowMs)
+      .map(f => ({
+        at: +(f.t - t0).toFixed(0),
+        zoom: +f.zoom.toFixed(3),
+        cx: +f.cx.toFixed(2),
+        cy: +f.cy.toFixed(2),
+      }));
+    const entry = {
+      label,
+      firstMotion,
+      medianMovingDiff,
+      cuts: cuts.map(c => ({ at: c.at, diff: c.diff })),
+      midFlightHitches: midFlightHitches.map(h => ({ at: h.at, dt: h.dt })),
+      commitGap,
+      rewinds,
+      frames: win.length,
+      trace,
+    };
+    report.presses.push(entry);
+    console.log(
+      `\n${label}: frames=${win.length} first-motion=${firstMotion === null ? 'none' : firstMotion.toFixed(0) + 'ms'} median-moving-diff=${medianMovingDiff.toFixed(2)} commit-gap=${commitGap.toFixed(0)}ms`
+    );
+    timing(
+      `${label}: camera moves within ${BUDGET.firstMotionMs}ms`,
+      firstMotion !== null && firstMotion <= BUDGET.firstMotionMs,
+      firstMotion === null ? '' : `${firstMotion.toFixed(0)}ms`
+    );
+    check(
+      `${label}: no cut before or between camera frames`,
+      cuts.length === 0,
+      cuts.length
+        ? `${cuts.length} stationary frame(s) with diff ${cuts.map(c => c.diff.toFixed(1)).join(',')} vs moving median ${medianMovingDiff.toFixed(1)}`
+        : ''
+    );
+    timing(
+      `${label}: no mid-flight hitch over ${BUDGET.hitchMs}ms`,
+      midFlightHitches.length === 0,
+      midFlightHitches.length
+        ? midFlightHitches
+            .map(h => `+${h.at.toFixed(0)}ms/${h.dt.toFixed(0)}ms`)
+            .join(' ')
+        : ''
+    );
+    timing(
+      `${label}: commit gap under ${BUDGET.commitGapMs}ms`,
+      commitGap <= BUDGET.commitGapMs,
+      `${commitGap.toFixed(0)}ms`
+    );
+    // Frame-derived like the others: on a starved box a frame can land after
+    // the state it claims to show, which reads as a reversal that never was.
+    timing(
+      `${label}: motion never rewinds`,
+      rewinds === 0,
+      rewinds ? `${rewinds} reversal(s)` : ''
+    );
   }
-  const trace = frames.filter(f => f.t >= t0 && f.t <= t0 + BUDGET.windowMs).map(f => ({ at: +(f.t - t0).toFixed(0), zoom: +f.zoom.toFixed(3), cx: +f.cx.toFixed(2), cy: +f.cy.toFixed(2) }));
-  const entry = { label, firstMotion, medianMovingDiff, cuts: cuts.map(c => ({ at: c.at, diff: c.diff })), midFlightHitches: midFlightHitches.map(h => ({ at: h.at, dt: h.dt })), commitGap, rewinds, frames: win.length, trace };
-  report.presses.push(entry);
-  console.log(`\n${label}: frames=${win.length} first-motion=${firstMotion === null ? 'none' : firstMotion.toFixed(0) + 'ms'} median-moving-diff=${medianMovingDiff.toFixed(2)} commit-gap=${commitGap.toFixed(0)}ms`);
-  timing(`${label}: camera moves within ${BUDGET.firstMotionMs}ms`, firstMotion !== null && firstMotion <= BUDGET.firstMotionMs, firstMotion === null ? '' : `${firstMotion.toFixed(0)}ms`);
-  check(`${label}: no cut before or between camera frames`, cuts.length === 0, cuts.length ? `${cuts.length} stationary frame(s) with diff ${cuts.map(c => c.diff.toFixed(1)).join(',')} vs moving median ${medianMovingDiff.toFixed(1)}` : '');
-  timing(`${label}: no mid-flight hitch over ${BUDGET.hitchMs}ms`, midFlightHitches.length === 0, midFlightHitches.length ? midFlightHitches.map(h => `+${h.at.toFixed(0)}ms/${h.dt.toFixed(0)}ms`).join(' ') : '');
-  timing(`${label}: commit gap under ${BUDGET.commitGapMs}ms`, commitGap <= BUDGET.commitGapMs, `${commitGap.toFixed(0)}ms`);
-  // Frame-derived like the others: on a starved box a frame can land after
-  // the state it claims to show, which reads as a reversal that never was.
-  timing(`${label}: motion never rewinds`, rewinds === 0, rewinds ? `${rewinds} reversal(s)` : '');
-}
 };
 
 judge(await runScenario('voltaic', `${BASE}/fleet/spatial?fleet=voltaic`));
@@ -261,5 +357,7 @@ check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 writeFileSync(join(OUT, 'results.json'), JSON.stringify(report, null, 2));
 await browser.close();
 const failed = results.filter(([, ok]) => !ok);
-console.log(`\n${failed.length === 0 ? 'MOTION EVAL PASSED' : `MOTION EVAL FAILED (${failed.length})`}  report: ${join(OUT, 'results.json')}`);
+console.log(
+  `\n${failed.length === 0 ? 'MOTION EVAL PASSED' : `MOTION EVAL FAILED (${failed.length})`}  report: ${join(OUT, 'results.json')}`
+);
 process.exit(failed.length === 0 ? 0 : 1);

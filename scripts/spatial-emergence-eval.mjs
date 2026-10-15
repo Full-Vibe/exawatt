@@ -9,8 +9,21 @@ import {
   resolveQaBrowserLaunchOptions,
 } from './lib/qa-browser.mjs';
 
+import {
+  fleetView,
+  fleetViewUrl,
+  assertFleetView,
+  installBoardBodyProbe,
+  prepareFleetViewPage,
+  runFleetViewMatrix,
+} from './lib/fleet-view-eval.mjs';
+await runFleetViewMatrix(import.meta.url);
+
 const base = process.env.EXA_BASE || 'http://localhost:7000';
-const reportDir = join(import.meta.dirname, 'r3f-eval', 'emergence-report');
+const reportDir = join(
+  join(import.meta.dirname, 'r3f-eval', 'emergence-report'),
+  fleetView
+);
 mkdirSync(reportDir, { recursive: true });
 const browser = await chromium.launch({
   headless: true,
@@ -85,11 +98,10 @@ async function population(page, entries) {
 
 async function objects(page) {
   return page.evaluate(() => {
-    const bodies = [],
+    const bodies = window.__EVAL_AGENT_BODIES__(),
       marks = [];
     window.__EVAL_SCENE__.traverse(node => {
       const reading = { name: node.name, scale: node.scale.x };
-      if (node.name.startsWith('body:')) bodies.push(reading);
       if (node.name.startsWith('mark:')) marks.push(reading);
     });
     return { bodies, marks };
@@ -112,7 +124,13 @@ function checkRestored(arrived, baseline) {
     );
     check(
       marks.length > 0 &&
-        marks.every(mark => Math.abs(mark.scale - body.scale) < 1e-6),
+        marks.every(mark =>
+          baseline.marks.some(
+            original =>
+              original.name === mark.name &&
+              Math.abs(mark.scale - original.scale) < 1e-6
+          )
+        ),
       'Status marks did not settle at body scale'
     );
   }
@@ -138,11 +156,11 @@ async function switchMotionDuringRetirement(page, baseline, idle, result) {
     };
     probe.onRender = () => {
       if (heldAt !== null) return;
-      window.__EVAL_SCENE__.traverse(node => {
+      window.__EVAL_AGENT_BODIES__().forEach(node => {
         const original = bodies.find(body => body.name === node.name);
-        if (original && node.scale.x > 0 && node.scale.x < original.scale) {
+        if (original && node.scale > 0 && node.scale < original.scale) {
           heldAt = nativeNow();
-          probe.partialRetirement = node.scale.x / original.scale;
+          probe.partialRetirement = node.scale / original.scale;
         }
       });
     };
@@ -154,10 +172,9 @@ async function switchMotionDuringRetirement(page, baseline, idle, result) {
     );
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.waitForFunction(() => {
-      let remaining = 0;
+      let remaining = window.__EVAL_AGENT_BODIES__().length;
       window.__EVAL_SCENE__.traverse(node => {
-        if (node.name.startsWith('body:') || node.name.startsWith('mark:'))
-          remaining++;
+        if (node.name.startsWith('mark:')) remaining++;
       });
       return remaining === 0;
     });
@@ -173,9 +190,9 @@ async function switchMotionDuringRetirement(page, baseline, idle, result) {
   await page.evaluate(bodies => {
     const probe = window.__EMERGENCE_PROBE__;
     probe.onRender = () => {
-      window.__EVAL_SCENE__.traverse(node => {
+      window.__EVAL_AGENT_BODIES__().forEach(node => {
         const original = bodies.find(body => body.name === node.name);
-        if (original && node.scale.x > 0 && node.scale.x < original.scale)
+        if (original && node.scale > 0 && node.scale < original.scale)
           probe.ordinaryArrivalObserved = true;
       });
     };
@@ -203,17 +220,23 @@ try {
     page.on('pageerror', error => errors.push(error.message));
     try {
       await primeEvalBrowserPage(page);
+      await prepareFleetViewPage(page);
       await page.addInitScript(() =>
         Object.defineProperty(navigator, 'hardwareConcurrency', {
           get: () => 8,
         })
       );
-      await page.goto(`${base}/eval/t5-operations-board?fixture=emergence`, {
-        waitUntil: 'load',
-      });
+      await page.goto(
+        fleetViewUrl(`${base}/eval/t5-operations-board?fixture=emergence`),
+        {
+          waitUntil: 'load',
+        }
+      );
       await page.waitForFunction(
         () => window.__EVAL_GL__ && window.__EVAL_SET_BOARD_POPULATION__
       );
+      await assertFleetView(page);
+      await installBoardBodyProbe(page);
       await page.evaluate(() => {
         const gl = window.__EVAL_GL__;
         const render = gl.render.bind(gl);

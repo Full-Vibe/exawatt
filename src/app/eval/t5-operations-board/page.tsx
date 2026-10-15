@@ -150,12 +150,14 @@ export default function OperationsBoardEvalPage() {
   // after mount so the server and first client render agree.
   const [focusedProject, setFocusedProject] = useState<string | null>(null);
   const [fanout, setFanout] = useState(false);
+  const [fleetView, setFleetView] = useState<'v1' | 'v2'>('v1');
   const [population, setPopulation] = useState<ExawattAgent[] | null>(null);
   const [themeId, setThemeId] = useState<BuiltInThemeId>(
     'exawatt-classic-dark'
   );
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    setFleetView(params.get('fleetView') === 'v2' ? 'v2' : 'v1');
     const fanoutRequested = params.get('fixture') === 'fanout';
     setFanout(fanoutRequested);
     if (params.get('fixture') === 'emergence') {
@@ -243,6 +245,7 @@ export default function OperationsBoardEvalPage() {
       >
         <OperationsBoardSurface
           layout={layout}
+          fleetView={fleetView}
           projection="top-down"
           onDrillProject={() => undefined}
           onSelectAgent={() => undefined}

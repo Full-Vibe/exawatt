@@ -152,7 +152,8 @@ function buildVoltaicFleet(): FleetState {
     agents[item.id] = {
       id: item.id,
       name: item.name,
-      project: DEMO_PROJECTS_BY_KEY.get(item.projectKey)?.name ?? item.projectKey,
+      project:
+        DEMO_PROJECTS_BY_KEY.get(item.projectKey)?.name ?? item.projectKey,
       status: item.status,
       goal: item.goal,
       sessionKey: item.id,
@@ -203,7 +204,8 @@ function BoardScaleFixture() {
     Number(params.get('projects') ?? PROJECT_NAMES.length) ||
       PROJECT_NAMES.length
   );
-  const urlAltitude = params.get('altitude') === 'project' ? 'project' : 'fleet';
+  const urlAltitude =
+    params.get('altitude') === 'project' ? 'project' : 'fleet';
   const urlFocused =
     urlAltitude === 'project'
       ? (params.get('project') ??
@@ -224,7 +226,8 @@ function BoardScaleFixture() {
     params.get('projection') === 'fixed-angle' ? 'fixed-angle' : 'top-down';
 
   const state = useMemo(
-    () => (voltaic ? buildVoltaicFleet() : buildFleet(agentCount, projectCount)),
+    () =>
+      voltaic ? buildVoltaicFleet() : buildFleet(agentCount, projectCount),
     [agentCount, projectCount, voltaic]
   );
   const { layout, layoutMs } = useMemo(() => {
@@ -249,6 +252,7 @@ function BoardScaleFixture() {
       <div className="h-full overflow-hidden">
         <OperationsBoardSurface
           layout={layout}
+          fleetView={params.get('fleetView') === 'v2' ? 'v2' : 'v1'}
           projection={projection}
           onDrillProject={projectId =>
             startTransition(() =>

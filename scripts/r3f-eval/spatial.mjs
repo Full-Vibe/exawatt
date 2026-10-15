@@ -13,8 +13,17 @@ import {
   resolveQaBrowserLaunchOptions,
 } from '../lib/qa-browser.mjs';
 
+import {
+  fleetView,
+  fleetViewUrl,
+  assertFleetView,
+  prepareFleetViewPage,
+  runFleetViewMatrix,
+} from '../lib/fleet-view-eval.mjs';
+await runFleetViewMatrix(import.meta.url);
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPORT_DIR = join(__dirname, 'spatial-report');
+const REPORT_DIR = join(join(__dirname, 'spatial-report'), fleetView);
 const EXA_BASE = process.env.EXA_BASE || 'http://localhost:7000';
 const HEADED = process.env.SPATIAL_HEADED === '1';
 const HARD_FAIL = [
@@ -193,6 +202,7 @@ async function pauseDemo(page, mobile) {
 }
 
 async function waitForSpatialCanvas(page) {
+  await assertFleetView(page);
   await page.waitForFunction(
     () => {
       const canvas = document.querySelector('canvas');
@@ -320,7 +330,16 @@ async function checkPersistentProjectWorld(page, projectCount) {
   );
   await page.waitForTimeout(700);
   const followed = await readViewport();
-  await page.getByRole('button', { name: 'Angle' }).click();
+  if (fleetView === 'v1') {
+    await page.getByRole('button', { name: 'Angle' }).click();
+  } else {
+    check(
+      (await page
+        .getByRole('button', { name: 'Angle', exact: true })
+        .count()) === 0,
+      'v2 exposes an unsupported projection toggle'
+    );
+  }
   await page.getByRole('button', { name: 'Top' }).click();
   await page.waitForTimeout(700);
   const afterRerender = await readViewport();
@@ -441,7 +460,16 @@ async function checkBoardTools(page) {
   const quaternionBefore = await page.evaluate(() =>
     Array.from(window.__EVAL_CAM__.quaternion)
   );
-  await page.getByRole('button', { name: 'Angle' }).click();
+  if (fleetView === 'v1') {
+    await page.getByRole('button', { name: 'Angle' }).click();
+  } else {
+    check(
+      (await page
+        .getByRole('button', { name: 'Angle', exact: true })
+        .count()) === 0,
+      'v2 exposes an unsupported projection toggle'
+    );
+  }
   await page.waitForFunction(
     () =>
       document
@@ -456,7 +484,11 @@ async function checkBoardTools(page) {
     (sum, value, index) => sum + Math.abs(value - quaternionBefore[index]),
     0
   );
-  check(quaternionDelta > 0.05, 'Fixed-angle camera pose did not change');
+  if (fleetView === 'v1') {
+    check(quaternionDelta > 0.05, 'Fixed-angle camera pose did not change');
+  } else {
+    check(quaternionDelta < 0.001, 'v2 fixed-angle camera changed projection');
+  }
   // Read both projections in one page task. The camera is still damped; four
   // separate attribute awaits can span frames and compare different poses.
   const { projectedViewport, minimapViewport } = await page.evaluate(() => {
@@ -525,7 +557,16 @@ async function checkBoardTools(page) {
 
 async function checkAgentProjectionPersistence(page) {
   const before = new URL(page.url()).searchParams.get('agent');
-  await page.getByRole('button', { name: 'Angle' }).click();
+  if (fleetView === 'v1') {
+    await page.getByRole('button', { name: 'Angle' }).click();
+  } else {
+    check(
+      (await page
+        .getByRole('button', { name: 'Angle', exact: true })
+        .count()) === 0,
+      'v2 exposes an unsupported projection toggle'
+    );
+  }
   await page.waitForFunction(
     () =>
       document
@@ -567,11 +608,13 @@ async function checkMarkStackDrawOrder(page) {
     const layers = { bodies: [], marks: [] };
     window.__EVAL_SCENE__.traverse(node => {
       if (!node.isInstancedMesh || !node.visible) return;
-      const role = node.children.some(child => child.name.startsWith('body:'))
-        ? 'bodies'
-        : node.children.some(child => child.name.startsWith('mark:'))
-          ? 'marks'
-          : null;
+      const role =
+        node.userData.boardTileBodyIds ||
+        node.children.some(child => child.name.startsWith('body:'))
+          ? 'bodies'
+          : node.children.some(child => child.name.startsWith('mark:'))
+            ? 'marks'
+            : null;
       if (!role) return;
       node.geometry.computeBoundingSphere();
       layers[role].push({
@@ -616,6 +659,7 @@ async function checkDisplayResolution(browser, lowPower = false) {
     reducedMotion: 'no-preference',
   });
   await primeEvalBrowserPage(page);
+  await prepareFleetViewPage(page);
   await page.addInitScript(
     cores => {
       Object.defineProperty(navigator, 'hardwareConcurrency', {
@@ -636,9 +680,12 @@ async function checkDisplayResolution(browser, lowPower = false) {
       result.errors.push(consoleErrorText(message));
   });
   try {
-    await page.goto(`${EXA_BASE}/eval/t10-board-scale?agents=30&projects=5`, {
-      waitUntil: 'load',
-    });
+    await page.goto(
+      fleetViewUrl(`${EXA_BASE}/eval/t10-board-scale?agents=30&projects=5`),
+      {
+        waitUntil: 'load',
+      }
+    );
     await waitForSpatialCanvas(page);
     const cdp = await page.context().newCDPSession(page);
     await page.evaluate(() => {
@@ -812,6 +859,7 @@ async function runScenario(browser, scenario) {
     deviceScaleFactor: scenario.lowPower ? 2 : 1,
   });
   await primeEvalBrowserPage(page);
+  await prepareFleetViewPage(page);
   if (scenario.lowPower) {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'hardwareConcurrency', {
@@ -840,7 +888,7 @@ async function runScenario(browser, scenario) {
   };
 
   try {
-    await page.goto(`${EXA_BASE}/fleet/spatial`, {
+    await page.goto(fleetViewUrl(`${EXA_BASE}/fleet/spatial`), {
       waitUntil: 'load',
       timeout: 30_000,
     });
@@ -985,6 +1033,7 @@ async function runHandoffScenario(browser, scenario) {
     reducedMotion: scenario.reduced ? 'reduce' : 'no-preference',
   });
   await primeEvalBrowserPage(page);
+  await prepareFleetViewPage(page);
   if (scenario.lowPower) {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'hardwareConcurrency', {
@@ -1011,7 +1060,9 @@ async function runHandoffScenario(browser, scenario) {
   const result = { name: scenario.name, passed: false, errors: [] };
   try {
     await page.goto(
-      `${EXA_BASE}/eval/t11-altitude-handoff${scenario.query ?? ''}`,
+      fleetViewUrl(
+        `${EXA_BASE}/eval/t11-altitude-handoff${scenario.query ?? ''}`
+      ),
       { waitUntil: 'load', timeout: 30_000 }
     );
     await page.waitForSelector('[data-enter-fleet]', { timeout: 20_000 });

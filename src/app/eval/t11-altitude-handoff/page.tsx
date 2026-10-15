@@ -258,6 +258,7 @@ function HandoffFixture() {
             <div className="h-full overflow-hidden">
               <OperationsBoardSurface
                 layout={layout}
+                fleetView={params.get('fleetView') === 'v2' ? 'v2' : 'v1'}
                 projection="top-down"
                 onDrillProject={projectId => {
                   evalState().drilled = projectId;

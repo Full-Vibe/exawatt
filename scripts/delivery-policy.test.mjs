@@ -548,6 +548,7 @@ test('every module the Fleet board canvas was split into owes what the canvas ow
   );
   assert.ok(canvas.includes('eval:spatial:emergence'));
   for (const part of [
+    'operations-board-views.tsx',
     'operations-board-agent-layer.tsx',
     'operations-board-status-marks.tsx',
     'operations-board-camera-rig.tsx',
@@ -564,6 +565,29 @@ test('every module the Fleet board canvas was split into owes what the canvas ow
       part
     );
   }
+});
+
+test('v2 product and shared tile modules inherit every board gate', () => {
+  const owed = file => missingSurfaceGates([file]).map(entry => entry.gate);
+  const board = owed(
+    'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx'
+  );
+  for (const file of [
+    'src/components/fleet/spatial/operations-board/tiles/operations-board-tiles-canvas.tsx',
+    'src/components/fleet/spatial/operations-board/tiles/board-tiles-model.ts',
+    'src/components/tiles/tile-renderer.tsx',
+  ]) {
+    const gates = owed(file);
+    for (const gate of board)
+      assert.ok(gates.includes(gate), `${file} owes ${gate}`);
+  }
+  assert.ok(board.includes('eval:electron:host-power'));
+  assert.equal(
+    owed(
+      'src/components/fleet/spatial/operations-board/tiles/board-tiles-model.test.ts'
+    ).length,
+    0
+  );
 });
 
 test('the shared menu primitive owes the launcher gate', () => {

@@ -12,8 +12,17 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
 
+import {
+  fleetView,
+  fleetViewUrl,
+  assertFleetView,
+  prepareFleetViewPage,
+  runFleetViewMatrix,
+} from './lib/fleet-view-eval.mjs';
+await runFleetViewMatrix(import.meta.url);
+
 const BASE = process.env.EXA_BASE || 'http://localhost:7100';
-const OUT = '/tmp/exa-spatial-v24-nav';
+const OUT = join('/tmp/exa-spatial-v24-nav', fleetView);
 mkdirSync(OUT, { recursive: true });
 
 const results = [];
@@ -31,11 +40,13 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
 const errors = [];
 page.on('pageerror', e => errors.push(String(e.message || e)));
-await page.goto(`${BASE}/fleet/spatial`, { waitUntil: 'load' });
+await prepareFleetViewPage(page);
+await page.goto(fleetViewUrl(`${BASE}/fleet/spatial`), { waitUntil: 'load' });
 await page.waitForFunction(() => {
   const c = document.querySelector('canvas');
   return c && c.width > 0 && c.height > 0;
 });
+await assertFleetView(page);
 await page.waitForTimeout(1600);
 
 const viewportOf = () => {
@@ -127,7 +138,10 @@ const touchPage = await browser.newPage({
 });
 const touchErrors = [];
 touchPage.on('pageerror', e => touchErrors.push(String(e.message || e)));
-await touchPage.goto(`${BASE}/fleet/spatial`, { waitUntil: 'load' });
+await prepareFleetViewPage(touchPage);
+await touchPage.goto(fleetViewUrl(`${BASE}/fleet/spatial`), {
+  waitUntil: 'load',
+});
 await touchPage.waitForFunction(() => {
   const canvas = document.querySelector('canvas');
   return canvas && canvas.width > 0 && window.__EVAL_BOARD_VIEWPORT__;
@@ -141,12 +155,15 @@ const touchCanvas = await touchPage.locator('canvas').boundingBox();
 // chip and the camera never hears it. Measured: a start 7px above a chip's
 // box produced pointer events on the chip and a pan of exactly 0.
 const TOUCH_ADJUSTMENT_MARGIN = 28;
+await assertFleetView(touchPage);
 const readClearTouchPoints = () =>
   touchPage.evaluate(margin => {
     const canvas = document.querySelector('canvas');
     const rect = canvas.getBoundingClientRect();
     const controls = Array.from(
-      document.querySelectorAll('button, a, [role=button], input, [data-board-zone]')
+      document.querySelectorAll(
+        'button, a, [role=button], input, [data-board-zone]'
+      )
     )
       .map(el => el.getBoundingClientRect())
       .filter(r => r.width > 0 && r.height > 0);
@@ -326,11 +343,13 @@ const rmPage = await browser.newPage({
 });
 const rmErrors = [];
 rmPage.on('pageerror', e => rmErrors.push(String(e.message || e)));
-await rmPage.goto(`${BASE}/fleet/spatial`, { waitUntil: 'load' });
+await prepareFleetViewPage(rmPage);
+await rmPage.goto(fleetViewUrl(`${BASE}/fleet/spatial`), { waitUntil: 'load' });
 await rmPage.waitForFunction(() => {
   const c = document.querySelector('canvas');
   return c && c.width > 0 && c.height > 0;
 });
+await assertFleetView(rmPage);
 await rmPage.waitForTimeout(1500);
 await rmPage.screenshot({ path: join(OUT, 'reduced-motion.png') });
 // two shots apart: reduced motion must be static

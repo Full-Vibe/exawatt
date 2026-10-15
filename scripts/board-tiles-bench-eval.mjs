@@ -57,7 +57,7 @@ try {
           ...document.querySelectorAll('[data-board-view="v2"] canvas'),
         ];
         return (
-          canvases.length === 3 &&
+          canvases.length === 5 &&
           canvases.every(
             canvas =>
               canvas.width > 0 &&
@@ -138,7 +138,7 @@ try {
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fleet v2 · P3 look review</title>
 <style>body{margin:24px;background:#101418;color:#e2e9ed;font:16px system-ui}h1{font-size:22px;margin:0 0 8px}p{color:#adb8c0}select{font:inherit;padding:8px;margin-bottom:16px;max-width:100%}img{display:block;width:100%;height:auto}a{color:#91d3d0}</style>
-<h1>Fleet v2 · P3 look review</h1><p>Left to right: Gummy, Acrylic, Anodized. P4 parity has not started.</p>
+<h1>Fleet v2 · P3 look review</h1><p>Left to right: Gummy, Matte, Glazed, Acrylic, Anodized. Product parity is verified separately.</p>
 <label for="capture">Capture </label><select id="capture">${choices}</select>
 <a id="full" href="${initial.screenshot.split('/').at(-1)}"><img id="image" alt="Three materials compared on the same Fleet layout" src="${initial.screenshot.split('/').at(-1)}"></a>
 <p><a href="report.json">Render measurements</a> · Click the image for the full-resolution screenshot.</p>

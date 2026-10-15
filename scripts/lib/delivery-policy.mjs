@@ -101,6 +101,7 @@ const workspaceStateModule = (file, ...modules) =>
 const BOARD_CANVAS_DIR = 'src/components/fleet/spatial/operations-board/';
 const BOARD_CANVAS_MODULES = [
   'operations-board-canvas.tsx',
+  'operations-board-views.tsx',
   'operations-board-agent-layer.tsx',
   'operations-board-status-marks.tsx',
   'operations-board-camera-rig.tsx',
@@ -112,22 +113,35 @@ const BOARD_CANVAS_MODULES = [
   'operations-board-zone-layer.tsx',
 ];
 const isBoardCanvas = file =>
-  BOARD_CANVAS_MODULES.some(module => file === `${BOARD_CANVAS_DIR}${module}`);
+  BOARD_CANVAS_MODULES.some(
+    module => file === `${BOARD_CANVAS_DIR}${module}`
+  ) ||
+  (file.startsWith(`${BOARD_CANVAS_DIR}tiles/`) &&
+    !/\.test\.tsx?$/.test(file)) ||
+  (file.startsWith('src/components/tiles/') && !/\.test\.tsx?$/.test(file));
 
 export const SURFACE_GATES = [
   {
     gate: 'eval:spatial:tiles-bench',
     why: 'the v2 review bench must paint every material at 10, 100 and 1k Agents in all themes',
-    match: file => file === 'src/app/hud-gallery/board-study/page.tsx' ||
+    match: file =>
+      file === 'src/app/hud-gallery/board-study/page.tsx' ||
       file === 'src/components/hud/board-study-fixtures.ts' ||
-      (file.startsWith('src/components/fleet/spatial/operations-board/tiles/') && !/\.test\.tsx?$/.test(file)) ||
-      (file.startsWith('src/components/tiles/') && !/\.test\.tsx?$/.test(file)) ||
+      (file.startsWith(
+        'src/components/fleet/spatial/operations-board/tiles/'
+      ) &&
+        !/\.test\.tsx?$/.test(file)) ||
+      (file.startsWith('src/components/tiles/') &&
+        !/\.test\.tsx?$/.test(file)) ||
       file === 'scripts/board-tiles-bench-eval.mjs',
   },
   {
     gate: 'eval:terrain-story',
     why: 'native wheel and touch must scroll over the 3D world and its agent targets',
-    match: file => (file.startsWith('src/app/hud-gallery/terrain-story/') && !/\.test\.tsx?$/.test(file)) || file === 'scripts/terrain-story-eval.mjs',
+    match: file =>
+      (file.startsWith('src/app/hud-gallery/terrain-story/') &&
+        !/\.test\.tsx?$/.test(file)) ||
+      file === 'scripts/terrain-story-eval.mjs',
   },
   {
     gate: 'eval:gallery:labels',
@@ -713,7 +727,8 @@ export const SURFACE_GATES = [
         'src/components/fleet/spatial/operations-board/operations-board-surface.tsx' ||
       isBoardCanvas(file) ||
       file.startsWith('src/app/eval/t11-altitude-handoff/') ||
-      file === 'scripts/r3f-eval/spatial.mjs',
+      file === 'scripts/r3f-eval/spatial.mjs' ||
+      file === 'scripts/lib/fleet-view-eval.mjs',
   },
   {
     gate: 'eval:electron:host-power',
@@ -721,7 +736,8 @@ export const SURFACE_GATES = [
     match: file =>
       file === 'electron/main/host-power.ts' ||
       file === 'src/lib/host-power/use-host-render-policy.ts' ||
-      file === 'scripts/electron-host-power-eval.mjs',
+      file === 'scripts/electron-host-power-eval.mjs' ||
+      isBoardCanvas(file),
   },
   {
     gate: 'eval:spatial:emergence',

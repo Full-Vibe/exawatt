@@ -30,8 +30,17 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
 
+import {
+  fleetView,
+  fleetViewUrl,
+  assertFleetView,
+  prepareFleetViewPage,
+  runFleetViewMatrix,
+} from './lib/fleet-view-eval.mjs';
+await runFleetViewMatrix(import.meta.url);
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPORT_DIR = join(__dirname, 'r3f-eval', 'scale-report');
+const REPORT_DIR = join(join(__dirname, 'r3f-eval', 'scale-report'), fleetView);
 const EXA_BASE = process.env.EXA_BASE || 'http://localhost:7090';
 const HEADED = process.env.SCALE_HEADED === '1';
 const WINDOW_POS = process.env.SCALE_WINDOW_POS || null;
@@ -239,6 +248,7 @@ async function run() {
       deviceScaleFactor: 1,
     });
     const page = await context.newPage();
+    await prepareFleetViewPage(page);
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
     page.on('console', message => {
@@ -253,7 +263,10 @@ async function run() {
     const url = `${EXA_BASE}/eval/t10-board-scale?${params.toString()}`;
     const result = { id: scenario.id, url, ok: false };
     try {
-      await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
+      await page.goto(fleetViewUrl(url), {
+        waitUntil: 'load',
+        timeout: 60_000,
+      });
       await page.waitForFunction(
         () => {
           const canvas = document.querySelector('canvas');
@@ -264,6 +277,7 @@ async function run() {
       await page.waitForFunction(() => Boolean(window.__EVAL_GL__), {
         timeout: 15_000,
       });
+      await assertFleetView(page);
       // Let entrance choreography and camera arrival settle fully.
       await page.waitForTimeout(1_800);
       await installRenderProbe(page);
@@ -344,8 +358,7 @@ async function run() {
         const src = gl?.domElement;
         if (!gl || !scene || !camera || !src) return { unreadable: true };
         gl.render(scene, camera);
-        const gl2 =
-          src.getContext('webgl2') || src.getContext('webgl');
+        const gl2 = src.getContext('webgl2') || src.getContext('webgl');
         if (!gl2) return { unreadable: true };
         const { drawingBufferWidth: w, drawingBufferHeight: h } = gl2;
         const px = new Uint8Array(4);

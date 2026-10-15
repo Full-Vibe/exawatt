@@ -8,9 +8,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
 
+import {
+  fleetView,
+  fleetViewUrl,
+  assertFleetView,
+  prepareFleetViewPage,
+  runFleetViewMatrix,
+} from './lib/fleet-view-eval.mjs';
+await runFleetViewMatrix(import.meta.url);
+
 const base = process.env.EXA_BASE || 'http://localhost:7000';
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-electron-host-power-'));
-const artifacts = '/tmp/exawatt-host-power-eval';
+const artifacts = join('/tmp/exawatt-host-power-eval', fleetView);
 mkdirSync(artifacts, { recursive: true });
 
 async function renderPasses(page, count) {
@@ -98,12 +107,14 @@ try {
           errors.push(message.text());
         }
       });
-      await page.goto(`${base}/eval/t5-operations-board`, {
+      await prepareFleetViewPage(page);
+      await page.goto(fleetViewUrl(`${base}/eval/t5-operations-board`), {
         waitUntil: 'load',
       });
       await page.waitForFunction(
         () => window.__EVAL_GL__ && document.querySelector('canvas')?.width > 0
       );
+      await assertFleetView(page);
       const actual = await app.evaluate(({ powerMonitor }) => ({
         powerSource: powerMonitor.isOnBatteryPower() ? 'battery' : 'ac',
         idle: powerMonitor.getSystemIdleState(1),
