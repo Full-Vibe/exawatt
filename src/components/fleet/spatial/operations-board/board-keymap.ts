@@ -74,7 +74,7 @@ export const BOARD_KEYMAP: readonly BoardKeymapEntry[] = [
   {
     id: 'fixed-board-projection',
     keys: { key: 'V' },
-    label: 'Fleet: toggle projection',
+    label: 'Fleet v1: toggle projection',
     owner: 'surface',
   },
   {
