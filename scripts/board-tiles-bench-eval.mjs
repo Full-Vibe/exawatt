@@ -3,6 +3,7 @@
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { verifyStaticTileBuffers } from './lib/tile-static-buffer-eval.mjs';
 import {
   resolveQaBrowserLaunchOptions,
   primeEvalBrowserPage,
@@ -22,6 +23,7 @@ const context = await browser.newContext({
 });
 const report = [];
 try {
+  await verifyStaticTileBuffers(context, base);
   const scenarios = [];
   for (const theme of ['classic', 'air', 'night']) {
     for (const fixture of ['scale-10', 'scale-100', 'scale-1000', 'demo']) {
