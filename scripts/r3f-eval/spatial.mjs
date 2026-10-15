@@ -848,6 +848,32 @@ async function checkExtendAndGhost(page) {
     { timeout: 10_000 }
   );
   await page.locator('[data-spatial-selection-panel="multi"]').waitFor();
+  // Direct: the chord focuses the one field, every recipient answers (the
+  // Demo honestly: it cannot send), and Escape clears the text before it
+  // releases the selection.
+  const multi = Number(
+    await page
+      .locator('[data-spatial-board]')
+      .getAttribute('data-board-multi-count')
+  );
+  await page.keyboard.press('Meta+d');
+  await page.waitForFunction(() =>
+    document.activeElement?.hasAttribute('data-direct-input')
+  );
+  const results = await page.locator('[data-direct-result]').count();
+  check(
+    results === multi,
+    `Direct listed ${results} recipient results for ${multi} selected Agents`
+  );
+  await page.keyboard.type('run the tests');
+  await page.keyboard.press('Escape');
+  check(
+    (await page.locator('[data-direct-input]').inputValue()) === '' &&
+      (await page
+        .locator('[data-spatial-board]')
+        .getAttribute('data-board-multi-count')) === String(multi),
+    'Escape released the selection before clearing the Direct text'
+  );
   await page.keyboard.press('Escape');
   await page.waitForFunction(
     () =>
@@ -859,7 +885,7 @@ async function checkExtendAndGhost(page) {
     new URL(page.url()).searchParams.get('altitude') === 'project',
     'Escape ascended before releasing the multi-selection'
   );
-  if (fleetView !== 'v1') return { multi: 2, ghosts: null };
+  if (fleetView !== 'v1') return { multi, results, ghosts: null };
   const ghosts = page.locator('button[data-board-ghost]');
   await ghosts.first().waitFor({ state: 'visible' });
   const ghostCount = await ghosts.count();
@@ -874,7 +900,7 @@ async function checkExtendAndGhost(page) {
     new URL(page.url()).searchParams.get('altitude') === 'project',
     'Escape ascended before dismissing the ghost notice'
   );
-  return { multi: 2, ghosts: ghostCount };
+  return { multi, results, ghosts: ghostCount };
 }
 
 async function openAgent(page, units) {

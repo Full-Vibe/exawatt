@@ -3601,3 +3601,45 @@ The eval's status-filter check compared byte-identical totals across a live
 Demo that ticks every second (ENG-027 W14) and its "Pause simulation" button
 no longer exists, so it failed every run; it now asserts the premise that
 matters, that filtered-out statuses are still counted.
+
+### 2026-10-15 — V4.2 L2: Direct N Agents
+
+**The inert chip is now Direct: one field, the recipients, ⌘↩.** The
+selection panel's member list became the recipient list (one list, so what is
+selected and what Send addresses cannot differ): status light, harness mark,
+name, goal and Project, P4's per-Agent unread when the bus has any, and one
+note line per recipient. Before Send the note says what will happen ("busy,
+will deliver when its turn ends" for a recipient whose light reads active;
+"undeliverable · Session stopped" for an ended Session, listed and never
+sent); after Send it shows each result as it arrives (`delivered`, `queued,
+delivers when its turn ends`, `typed into terminal`, `undeliverable` with the
+reason). One bus send per reachable recipient with `kind: operator`; nothing
+interrupts a running turn; no reply, thread, comparison or count renders here.
+
+The seam is P4's `BusClient` (`src/lib/bus/`), read through the client, never
+`window.electron.bus`. Its answer is reduced to a row in exactly one function,
+`directResultOf`, so P3's published `{delivery, record}` send result is one
+edit there when P4's contract fix reaches master. Whether this build can send
+is the client's own answer: the Demo board provides the Demo client ("Demo
+cannot send" on every row, Send disabled), and a desktop build without the
+bus reports the live client's unavailable reason. The bus address is the
+durable Session id (B1 contract), resolved from this machine's Sessions at
+the board, since the board's Agent id is a runtime handle; a shell or a
+connected coworker answers why it takes no messages.
+
+Keyboard: ⌘D focuses Direct while a working set exists (`fixed-board-direct`,
+owner `client`). ⌘D is Split on the Agent altitude only (the workspace
+registry binds it in the `workspace` context and the native menu item does
+not register the accelerator), so on the board it was free; D13 keeps
+board keys in the board keymap, and the help modal lists it from there.
+Escape clears the Direct text first, then the selection, then ascends.
+`agent_directed` is a TODO naming ENG-047 F1 until P6's allowlisted event
+lands. Names are the current labels until P8's name module lands.
+
+Specimens: `/hud-gallery/direct-agents` renders the production panel before
+Send, after Send and in Demo, and the ghost at Project altitude over the Demo
+fleet. Evidence: Direct contract tests (`direct-model`, `direct-composer`
+over the live client at a bridge double), the chord test in
+`board-keymap.test.ts`, `eval:spatial` (Shift+arrows, ⌘D, a result row per
+recipient, Escape order) and `eval:electron:fleet-direct` (both Projects'
+Agents selected, ⌘D, a row each on the real bridge).

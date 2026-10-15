@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
 import type {
@@ -10,8 +10,8 @@ import type {
   SpatialBoardDelegationUnit,
   SpatialScopeActivity,
 } from '@exawatt/ui-model';
-import { AnnouncedChip } from '@/components/readiness';
 import { Button } from '@/components/ui/button';
+import { useAgentUnread } from '@/lib/bus/use-bus';
 import {
   STATUS_LIGHT_META,
   StatusLight,
@@ -19,6 +19,31 @@ import {
 } from '@/components/status-light';
 import type { SpatialCalloutTheme } from './spatial-theme';
 import { agentGoalDisplay, delegationElapsedLabel } from './spatial-agent-copy';
+import {
+  recipientNote,
+  type DirectAvailability,
+  type DirectRecipient,
+  type DirectResult,
+} from './direct/direct-model';
+import {
+  DirectComposer,
+  RecipientMark,
+  RecipientNoteLine,
+} from './direct/direct-composer';
+import type { RecipientAddress } from './direct/use-direct';
+
+/** Everything Direct needs from the board: the recipients and their bus
+ *  addresses, whether this build can send, and each result as it arrives. */
+interface SelectionDirect {
+  recipients: readonly DirectRecipient[];
+  addresses: ReadonlyMap<string, RecipientAddress>;
+  availability: DirectAvailability;
+  results: ReadonlyMap<string, DirectResult>;
+  sending: boolean;
+  onSend: (text: string) => Promise<boolean>;
+  inputRef?: Ref<HTMLTextAreaElement>;
+  shortcutLabel?: string | null;
+}
 
 /**
  * One selection command panel (ENG-004 V3.3 S4/F6, decision `0024`).
@@ -102,13 +127,38 @@ function ScopeCount({
   );
 }
 
-/** Multi-selection: the working set, its D40 buckets, and the one announced
- *  command verb. Selection is real; fan-out is not built (V3.2's boundary). */
+/** Unread messages one recipient sent or received, from the same reading
+ *  position as Team's Chatter tab, so the two never disagree. */
+function RecipientUnread({
+  projectId,
+  address,
+}: {
+  projectId: string | null;
+  address: RecipientAddress | undefined;
+}) {
+  const sessionId = address && 'address' in address ? address.address : null;
+  const unread = useAgentUnread(sessionId ? projectId : null, sessionId);
+  if (unread === 0) return null;
+  return (
+    <span
+      data-direct-unread={unread}
+      className="shrink-0 font-mono text-chrome-micro tabular-nums text-foreground"
+      title={`${unread} unread ${unread === 1 ? 'message' : 'messages'}`}
+    >
+      {unread} new
+    </span>
+  );
+}
+
+/** Multi-selection: the working set, its D40 buckets, and Direct. The member
+ *  list is the recipient list: one list, so what is selected and what Send
+ *  addresses can never differ. */
 function MultiSelectionCommand({
   agents,
   workers,
   activity,
   statusColors,
+  direct,
   onClear,
   onInspect,
 }: {
@@ -118,9 +168,13 @@ function MultiSelectionCommand({
   workers: SpatialBoardDelegationUnit[];
   activity: SpatialScopeActivity | null;
   statusColors: { active: string; blocked: string; idle: string };
+  direct: SelectionDirect | null;
   onClear: () => void;
   onInspect: (agentId: string) => void;
 }) {
+  const recipients = new Map(
+    direct?.recipients.map(recipient => [recipient.agentId, recipient])
+  );
   return (
     <>
       <div className="flex items-start justify-between gap-3">
@@ -130,8 +184,8 @@ function MultiSelectionCommand({
             {agents.length} {agents.length === 1 ? 'Agent' : 'Agents'}
           </h2>
           {/* Counted apart, not folded in: a delegated child is a selectable
-              unit but not an Agent, and the Direct verb below is Agent-only
-              until a child has something to direct (ENG-023 D2). */}
+              unit but not an Agent, and Direct is Agent-only until a child
+              has something to direct (ENG-023 D2). */}
           {workers.length > 0 && (
             <p className="mt-0.5 text-chrome-meta text-muted-foreground">
               and {workers.length} delegated{' '}
@@ -173,13 +227,76 @@ function MultiSelectionCommand({
         </div>
       )}
 
+      {direct && agents.length > 0 && (
+        <div className="border-t border-border pt-3">
+          <DirectComposer
+            count={agents.length}
+            availability={direct.availability}
+            sending={direct.sending}
+            onSend={direct.onSend}
+            onEscapeEmpty={onClear}
+            inputRef={direct.inputRef}
+            shortcutLabel={direct.shortcutLabel}
+          />
+        </div>
+      )}
+
       {agents.length > 0 && (
-        <AnnouncedChip
-          coming={`direct all ${agents.length} selected Agents at once`}
-          className="mt-3 self-start"
+        <PanelSection
+          title={direct ? 'Recipients' : 'Selected'}
+          count={agents.length}
         >
-          Direct {agents.length} {agents.length === 1 ? 'Agent' : 'Agents'}
-        </AnnouncedChip>
+          <ul className="space-y-1">
+            {agents.map(agent => {
+              const light = workStateReading(agent.status);
+              const recipient = recipients.get(agent.id);
+              const note =
+                direct && recipient
+                  ? recipientNote(
+                      recipient,
+                      direct.availability,
+                      direct.results.get(agent.id)
+                    )
+                  : null;
+              return (
+                <li key={agent.id}>
+                  <button
+                    type="button"
+                    data-selection-member={agent.id}
+                    onClick={() => onInspect(agent.id)}
+                    className="flex w-full items-start gap-2 rounded px-1.5 py-1 text-left outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="mt-1 shrink-0">
+                      <StatusLight decorative size="compact" state={light} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <RecipientMark harness={recipient?.harness ?? null} />
+                        <span className="min-w-0 flex-1 truncate text-chrome-meta text-foreground">
+                          {agent.name}
+                        </span>
+                        {direct && recipient && (
+                          <RecipientUnread
+                            projectId={recipient.projectId}
+                            address={direct.addresses.get(agent.id)}
+                          />
+                        )}
+                      </span>
+                      <span className="block truncate text-chrome-micro text-muted-foreground">
+                        {agentGoalDisplay(agent.goal).summary}
+                        {' · '}
+                        {agent.project}
+                      </span>
+                      {note && (
+                        <RecipientNoteLine note={note} agentId={agent.id} />
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </PanelSection>
       )}
 
       {workers.length > 0 && (
@@ -199,34 +316,6 @@ function MultiSelectionCommand({
                 </span>
               </li>
             ))}
-          </ul>
-        </PanelSection>
-      )}
-
-      {agents.length > 0 && (
-        <PanelSection title="Selected" count={agents.length}>
-          <ul className="space-y-1">
-            {agents.map(agent => {
-              const light = workStateReading(agent.status);
-              return (
-                <li key={agent.id}>
-                  <button
-                    type="button"
-                    data-selection-member={agent.id}
-                    onClick={() => onInspect(agent.id)}
-                    className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <StatusLight decorative size="compact" state={light} />
-                    <span className="min-w-0 flex-1 truncate text-chrome-meta text-foreground">
-                      {agentGoalDisplay(agent.goal).summary}
-                    </span>
-                    <span className="shrink-0 truncate text-chrome-micro text-muted-foreground">
-                      {agent.project}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
           </ul>
         </PanelSection>
       )}
@@ -252,6 +341,7 @@ export function SpatialSelectionPanel({
   onOpenSession,
   onClearSelection,
   onInspectAgent,
+  direct = null,
 }: {
   /** The single URL-addressed Agent, when one is inspected. */
   agent: FleetAgentView | null;
@@ -280,6 +370,8 @@ export function SpatialSelectionPanel({
   onOpenSession: () => void;
   onClearSelection: () => void;
   onInspectAgent: (agentId: string) => void;
+  /** Direct N Agents; null where the board cannot address a selection. */
+  direct?: SelectionDirect | null;
 }) {
   const workers = selectedChildren ?? [];
   const multi = selectedAgents.length > 0 || workers.length > 0;
@@ -303,6 +395,7 @@ export function SpatialSelectionPanel({
           workers={workers}
           activity={scopeActivity}
           statusColors={statusColors}
+          direct={direct}
           onClear={onClearSelection}
           onInspect={onInspectAgent}
         />

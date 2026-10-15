@@ -241,7 +241,7 @@ describe('SpatialSelectionPanel', () => {
     expect(screen.queryByText('Delegated')).not.toBeInTheDocument();
   });
 
-  it('switches to the multi-selection command with the announced verb', () => {
+  it('switches to the multi-selection command', () => {
     renderPanel({
       selectedAgents: [agentView(), agentView({ id: 'a2', name: 'Second' })],
       scopeActivity: {
@@ -257,7 +257,6 @@ describe('SpatialSelectionPanel', () => {
     expect(panel).toHaveAttribute('data-spatial-selection-panel', 'multi');
     expect(panel).toHaveAttribute('data-selection-count', '2');
     expect(screen.getByText('2 Agents')).toBeInTheDocument();
-    expect(screen.getByText('Direct 2 Agents')).toBeInTheDocument();
     expect(screen.getByText('working')).toBeInTheDocument();
   });
 

@@ -45,6 +45,10 @@ import {
 import { createAgentProjectOwnersSelector } from './agent-project-owners';
 import { useFleetAttention } from './use-fleet-attention';
 import { useGhostSlots } from './ghost-slots/use-ghost-slots';
+import { directRecipients } from './direct/direct-model';
+import { useDirect, type RecipientAddress } from './direct/use-direct';
+import { BusClientProvider, useBusClient } from '@/lib/bus/use-bus';
+import { createDemoBusClient } from '@/lib/bus/demo-client';
 import { SpatialSelectionPanel } from './spatial-selection-panel';
 import { useMinuteClock } from './use-minute-clock';
 import {
@@ -63,6 +67,7 @@ import {
   writeSpatialFilters,
 } from './spatial-navigation-state';
 import { useAppearance } from '@/components/appearance/appearance-provider';
+import { BOARD_KEYMAP } from './operations-board/board-keymap';
 import { usePresentation } from '@/components/presentation/presentation-provider';
 import {
   spatialFaultCallout,
@@ -509,8 +514,12 @@ export function SpatialFleetClient() {
     () => navigateCommandSurface('/workspace'),
     [navigateCommandSurface]
   );
-  const { ghostSlots, activateGhost, notice: ghostNotice, clearNotice } =
-    useGhostSlots({ layout: boardLayout, projects, isDemo, openWorkspace });
+  const {
+    ghostSlots,
+    activateGhost,
+    notice: ghostNotice,
+    clearNotice,
+  } = useGhostSlots({ layout: boardLayout, projects, isDemo, openWorkspace });
 
   const handleSelectAgent = useCallback(
     (agentId: string | null) => {
@@ -575,6 +584,87 @@ export function SpatialFleetClient() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [ascend, clearMultiSelect, clearNotice, ghostNotice, multiSelection.size]);
+
+  // Direct (ENG-004 V4.2): the working set's Agents as bus recipients. The
+  // Demo board reads the Demo bus, which answers honestly that it cannot
+  // send; this machine's bus answers for itself, including its absence.
+  const liveBus = useBusClient();
+  const demoBus = useMemo(
+    () => (isDemo ? createDemoBusClient(Date.now()) : null),
+    [isDemo]
+  );
+  const bus = demoBus ?? liveBus;
+  const recipients = useMemo(
+    () =>
+      directRecipients(
+        [...multiSelection]
+          .map(id => fleetState.agents[id])
+          .filter((agent): agent is NonNullable<typeof agent> => Boolean(agent))
+      ),
+    [fleetState.agents, multiSelection]
+  );
+  const agentsRef = useRef(fleetState.agents);
+  useLayoutEffect(() => {
+    agentsRef.current = fleetState.agents;
+  }, [fleetState.agents]);
+  // The board's Agent id is a runtime handle; the bus address is the durable
+  // Session id (ENG-029 B1 contract), read from this machine's Sessions.
+  const resolveAddresses = useCallback(
+    async (agentIds: readonly string[]) => {
+      const addresses = new Map<string, RecipientAddress>();
+      if (isDemo) {
+        for (const id of agentIds) addresses.set(id, { address: id });
+        return addresses;
+      }
+      const pty = window.electron?.pty;
+      const sessions = pty ? await pty.list().catch(() => null) : null;
+      for (const id of agentIds) {
+        const agent = agentsRef.current[id];
+        const session = sessions?.find(candidate => candidate.id === id);
+        addresses.set(
+          id,
+          agent?.presence
+            ? { refused: 'Connected Agents do not take messages yet' }
+            : !pty
+              ? { refused: 'Open the desktop app to direct Agents' }
+              : !sessions
+                ? { refused: "Could not read this Mac's Sessions" }
+                : !session
+                  ? { refused: 'Session is not running' }
+                  : session.harness === 'shell'
+                    ? { refused: 'A shell does not take messages' }
+                    : { address: session.durableSessionId }
+        );
+      }
+      return addresses;
+    },
+    [isDemo]
+  );
+  const direct = useDirect({ client: bus, recipients, resolveAddresses });
+  const directInput = useRef<HTMLTextAreaElement | null>(null);
+  const directKeys = BOARD_KEYMAP.find(
+    entry => entry.id === 'fixed-board-direct'
+  )?.keys;
+  // ⌘D focuses Direct while a working set exists (`board-keymap.ts`). It is
+  // the board's own binding: Split owns ⌘D only on the Agent altitude.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== 'd' ||
+        !event.metaKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        recipients.length === 0
+      ) {
+        return;
+      }
+      event.preventDefault();
+      directInput.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [recipients.length]);
 
   const focusedZoneLabel = scene.groups[0]?.label ?? null;
   const inspectedAgent =
@@ -948,29 +1038,43 @@ export function SpatialFleetClient() {
         </section>
 
         {showSelectionPanel && (
-          <SpatialSelectionPanel
-            agent={inspectedAgent}
-            selectedAgents={selectedAgents}
-            selectedChildren={selectedChildren}
-            scopeActivity={scopeActivity}
-            activity={inspectedActivity}
-            delegation={inspectedDelegation}
-            highlightChildId={viaChildId}
-            statusColors={{
-              active: spatialTheme.status.active,
-              blocked: spatialTheme.status['needs-you'],
-              idle: spatialTheme.status.off,
-            }}
-            needsOperatorCallout={needsOperatorCallout}
-            faultCallout={faultCallout}
-            isDemo={isDemo}
-            opening={Boolean(sessionHandoffAgentId)}
-            handoffError={sessionHandoffError}
-            now={now}
-            onOpenSession={() => void openInspectedSession()}
-            onClearSelection={clearMultiSelect}
-            onInspectAgent={handleSelectAgent}
-          />
+          <BusClientProvider client={bus}>
+            <SpatialSelectionPanel
+              agent={inspectedAgent}
+              selectedAgents={selectedAgents}
+              selectedChildren={selectedChildren}
+              scopeActivity={scopeActivity}
+              activity={inspectedActivity}
+              delegation={inspectedDelegation}
+              highlightChildId={viaChildId}
+              statusColors={{
+                active: spatialTheme.status.active,
+                blocked: spatialTheme.status['needs-you'],
+                idle: spatialTheme.status.off,
+              }}
+              needsOperatorCallout={needsOperatorCallout}
+              faultCallout={faultCallout}
+              isDemo={isDemo}
+              opening={Boolean(sessionHandoffAgentId)}
+              handoffError={sessionHandoffError}
+              now={now}
+              onOpenSession={() => void openInspectedSession()}
+              onClearSelection={clearMultiSelect}
+              onInspectAgent={handleSelectAgent}
+              direct={{
+                recipients,
+                addresses: direct.addresses,
+                availability: direct.availability,
+                results: direct.results,
+                sending: direct.sending,
+                onSend: direct.send,
+                inputRef: directInput,
+                shortcutLabel: directKeys
+                  ? formatShortcutKeys(directKeys)
+                  : null,
+              }}
+            />
+          </BusClientProvider>
         )}
       </main>
     </div>

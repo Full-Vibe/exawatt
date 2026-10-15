@@ -90,9 +90,15 @@ export const BOARD_KEYMAP: readonly BoardKeymapEntry[] = [
     owner: 'controls',
   },
   {
+    id: 'fixed-board-direct',
+    keys: { key: 'D', modifiers: ['meta'] },
+    label: 'Fleet: direct the selected Agents',
+    owner: 'client',
+  },
+  {
     id: 'fixed-board-escape',
     keys: { key: 'Escape' },
-    label: 'Fleet: clear selection, then zoom out',
+    label: 'Fleet: clear Direct, then the selection, then zoom out',
     owner: 'client',
   },
 ];

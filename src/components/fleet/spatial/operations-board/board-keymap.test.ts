@@ -14,6 +14,11 @@ import { BOARD_KEYMAP } from './board-keymap';
  * that class of drift a test failure instead of a discovery.
  */
 
+const clientSource = readFileSync(
+  fileURLToPath(new URL('../spatial-fleet-client.tsx', import.meta.url)),
+  'utf8'
+);
+
 const surfaceSource = readFileSync(
   fileURLToPath(new URL('./operations-board-surface.tsx', import.meta.url)),
   'utf8'
@@ -129,5 +134,17 @@ describe('board keymap contract', () => {
     expect(BOARD_KEYMAP.some(e => e.id === 'fixed-board-agent-walk')).toBe(
       true
     );
+  });
+
+  // ENG-004 V4.2: ⌘D focuses Direct. The client answers it, so the chord the
+  // help modal documents must be the one the client compares against.
+  it('documents the Direct chord the client answers', () => {
+    const entry = BOARD_KEYMAP.find(e => e.id === 'fixed-board-direct');
+    expect(entry?.owner).toBe('client');
+    expect(entry?.keys.modifiers).toEqual(['meta']);
+    expect(clientSource).toContain(
+      `event.key.toLowerCase() !== '${entry!.keys.key.toLowerCase()}'`
+    );
+    expect(clientSource).toContain('!event.metaKey');
   });
 });

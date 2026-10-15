@@ -347,8 +347,8 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   onMoveAgentSelection?: (agentId: string) => void;
   onOverview: () => void;
   onProjectionChange: (projection: SpatialBoardProjection) => void;
-  /** Multi-selection (V3.2): real, ephemeral, client-owned. Selection is the
-   *  shipped mechanism; the only announced part is the Direct verb. */
+  /** Multi-selection (V3.2): real, ephemeral, client-owned. Direct (V4.2)
+   *  addresses it from the selection panel. */
   multiSelection?: ReadonlySet<string>;
   onToggleAgentSelect?: (agentId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;

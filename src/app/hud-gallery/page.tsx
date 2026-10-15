@@ -618,6 +618,13 @@ export default function HudGallery() {
                   style={{ color: HUD.cyan }}
                 >
                   Open the first-run Start screen study →
+                </a>{' '}
+                <a
+                  href="/hud-gallery/direct-agents"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the Direct and ghost slot specimens →
                 </a>
               </nav>
             </details>

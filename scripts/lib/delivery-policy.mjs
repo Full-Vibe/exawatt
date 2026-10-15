@@ -129,9 +129,10 @@ const isBoardCanvas = file =>
 export const SURFACE_GATES = [
   {
     gate: 'eval:electron:fleet-direct',
-    why: 'a Fleet ghost slot must open the one composer in its own Project through the workspace pending slot',
+    why: 'a Fleet ghost slot must open the one composer in its own Project, and Direct must answer for every recipient on the real bridge',
     match: file =>
-      (file.startsWith('src/components/fleet/spatial/ghost-slots/') &&
+      ((file.startsWith('src/components/fleet/spatial/ghost-slots/') ||
+        file.startsWith('src/components/fleet/spatial/direct/')) &&
         !/\.test\.tsx?$/.test(file)) ||
       file === 'scripts/electron-fleet-direct-eval.mjs',
   },

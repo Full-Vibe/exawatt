@@ -97,6 +97,32 @@ try {
         { label: `the composer in ${leafA}` }
       );
       console.log(`PASS  ghost opens the composer in ${leafA}`);
+
+      // Direct on this machine: both Projects' Agents join the working set
+      // (Shift+1, Shift+2), ⌘D focuses the one field, and every recipient
+      // row answers before anything is sent: a shell takes no messages, and
+      // a build without the bus says so rather than pretending to send.
+      await page.locator('[data-command-altitude-level="spatial"]').click();
+      await page.locator('[data-spatial-board]').waitFor();
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Shift+Digit1');
+      await page.keyboard.press('Shift+Digit2');
+      await page.locator('[data-spatial-selection-panel="multi"]').waitFor();
+      await page.keyboard.press('Meta+d');
+      await page.waitForFunction(() =>
+        document.activeElement?.hasAttribute('data-direct-input')
+      );
+      await waitForPageCondition(
+        page,
+        () => document.querySelectorAll('[data-direct-result]').length === 2,
+        undefined,
+        { label: 'a Direct result row per recipient' }
+      );
+      if (shots) {
+        await page.keyboard.type('Report status');
+        await page.screenshot({ path: join(shots, 'live-direct.png') });
+      }
+      console.log('PASS  Direct lists every recipient with its answer');
     }
   );
 } finally {
