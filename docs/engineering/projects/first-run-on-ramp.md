@@ -37,7 +37,9 @@ is the join.
   row only when opened; "Open all recent" is one explicit gesture that opens
   the listed rows, never the raw store.
 - **The join key is the git common directory.** A worktree folds into its
-  repository (`project-resolve.ts` already does this); the same folder known
+  repository (`project-resolve.ts` already does this; operator, 2026-10-15,
+  asked whether to mirror Claude Code's one-entry-per-worktree instead: "I'm
+  not sure. We'll shift this around over time. Start with 1."); the same folder known
   to Claude Code, Codex and Antigravity is one suggestion with three badges;
   a Codex Agent opened in a folder Claude Code knows lands in the same Exawatt
   Project. A folder without git is its own Project. This is decision `0037`

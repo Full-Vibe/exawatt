@@ -3296,7 +3296,17 @@ one task is: ghost, Start (task optional, so an idle Agent is one click past
 the ghost); ghost, Start; box-select both; Direct. An idle Agent is a normal
 D40 state, not a special kind. Whether Enter or a double-click on a ghost
 skips the composer and starts the Project's recommended harness idle is the
-packet's call on evidence; a single click always opens the one composer. On Tiles (V4.1) the ghost is the
+packet's call on evidence; a single click always opens the one composer.
+
+**A busy recipient queues** (operator, 2026-10-15, asked what happens to a
+recipient that is mid-task): "Not sure yet, let's go with 1. But it should be
+clear to the user when that happens and what the behavior will be, as it's
+potentially theoretically a destructive action." So Direct never interrupts:
+a busy Agent's message waits for its turn to end, the recipient row says so
+before Send ("busy, will deliver when its turn ends") and shows `queued`
+after, and the Chatter sidebar carries the same state. Interrupt-and-steer is
+not offered; if a harness cannot queue, the row says `undeliverable` with
+that reason rather than pasting into a running turn. On Tiles (V4.1) the ghost is the
 homepage's ghost ring drawn by the shared renderer; on Dots it is a dashed
 outline. Two ghosts in a zone when a launch is in flight, never more. A zone
 with no folder binding offers the ghost but the composer says what is missing
