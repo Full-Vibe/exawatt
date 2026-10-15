@@ -1,17 +1,6 @@
 'use client';
 
-import {
-  AlertCircle,
-  Check,
-  ChevronRight,
-  ExternalLink,
-  Info,
-  KeyRound,
-  LoaderCircle,
-  Plus,
-  RefreshCw,
-  WifiOff,
-} from 'lucide-react';
+import { ChevronRight, Info, Plus } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -32,9 +21,17 @@ import {
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import { runAgentSourceAction } from '@/components/workspace/agent-sources';
 import {
+  SourceCard,
+  SourceMark,
+  SourceObservationTime,
+  SourceStateGlyph,
+  sourceAttention,
+  sourceCardStep,
+  sourceStateTone,
+} from '@/components/agent-sources/source-card';
+import {
   ConnectedSourceDetail,
   ConnectedSourcesRail,
-  SettingsSourceMark,
   useConnectedSources,
 } from './connected-sources-section';
 import type {
@@ -42,128 +39,11 @@ import type {
   AgentSourceCatalogEntry,
   AgentSourceFact,
   AgentSourceSnapshot,
-  AgentSourceState,
 } from '@exawatt/core';
 
 export const SOURCE_AUTH_RECHECK_DELAYS_MS = [
   1_200, 2_500, 4_000, 6_000,
 ] as const;
-
-function stateTone(state: AgentSourceState): {
-  color: string;
-  wash: string;
-} {
-  if (state === 'ready') {
-    return { color: 'var(--settings-teal)', wash: 'var(--settings-teal-wash)' };
-  }
-  if (state === 'action-required' || state === 'connecting') {
-    return {
-      color: 'var(--settings-amber)',
-      wash: 'var(--settings-amber-wash)',
-    };
-  }
-  if (
-    state === 'degraded' ||
-    state === 'unavailable' ||
-    state === 'incompatible'
-  ) {
-    return { color: 'var(--settings-red)', wash: 'var(--settings-red-wash)' };
-  }
-  return {
-    color: 'var(--settings-dim)',
-    wash: 'color-mix(in srgb, var(--settings-dim) 8%, transparent)',
-  };
-}
-
-function StateGlyph({ state }: { state: AgentSourceState }) {
-  const tone = stateTone(state);
-  if (state === 'ready') {
-    return (
-      <span
-        className="flex size-5 items-center justify-center rounded-full border"
-        style={{ color: tone.color, borderColor: tone.color }}
-      >
-        <Check aria-hidden size={12} strokeWidth={2.4} />
-      </span>
-    );
-  }
-  if (state === 'connecting' || state === 'checking') {
-    return (
-      <LoaderCircle
-        aria-hidden
-        size={20}
-        className="animate-spin motion-reduce:animate-none"
-        style={{ color: tone.color }}
-      />
-    );
-  }
-  if (state === 'degraded' || state === 'unavailable') {
-    return <WifiOff aria-hidden size={20} style={{ color: tone.color }} />;
-  }
-  return <AlertCircle aria-hidden size={20} style={{ color: tone.color }} />;
-}
-
-function StatePill({ source }: { source: AgentSourceSnapshot }) {
-  const tone = stateTone(source.state);
-  return (
-    <span
-      className="inline-flex min-h-7 items-center gap-2 rounded-full border px-2.5 font-ui text-chrome-label font-medium"
-      style={{
-        color: tone.color,
-        borderColor: `color-mix(in srgb, ${tone.color} 34%, transparent)`,
-        background: tone.wash,
-      }}
-    >
-      <span
-        className="size-1.5 rounded-full"
-        style={{ background: tone.color }}
-      />
-      {source.stateLabel}
-    </span>
-  );
-}
-
-function relativeTime(timestamp: number, now: number): string {
-  if (!timestamp) return 'not observed';
-  const seconds = Math.max(0, Math.round((now - timestamp) / 1_000));
-  if (seconds < 10) return 'now';
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.round(minutes / 60)}h ago`;
-}
-
-function ObservationTime({
-  timestamp,
-  now,
-  prefix = '',
-}: {
-  timestamp: number;
-  now: number;
-  prefix?: string;
-}) {
-  const exact = timestamp
-    ? new Date(timestamp).toLocaleString()
-    : 'No live observation';
-  const iso = timestamp ? new Date(timestamp).toISOString() : undefined;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={`${prefix}${exact}`}
-          className="inline-flex min-h-7 max-w-full items-center gap-1 rounded px-1 font-ui text-chrome-label text-[var(--settings-faint)] outline-none hover:bg-[var(--settings-hover)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
-        >
-          {prefix ? <span>{prefix.trim()}</span> : null}
-          <time dateTime={iso}>{relativeTime(timestamp, now)}</time>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent className="border-[var(--settings-line-strong)] bg-[var(--settings-raised)] font-ui text-chrome-label text-[var(--settings-soft)]">
-        {exact}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
 
 function InfoTip({ label }: { label: string }) {
   return (
@@ -218,7 +98,7 @@ function FactRow({
           {fact.basis === 'observed' && (
             <>
               <span aria-hidden>·</span>
-              <ObservationTime
+              <SourceObservationTime
                 timestamp={fact.provenance.observedAt}
                 now={now}
               />
@@ -312,7 +192,7 @@ function RegistryRail({
                 className="size-9 rounded-lg"
                 color={source.color}
               >
-                <SettingsSourceMark id={source.adapterId} />
+                <SourceMark id={source.adapterId} />
               </SourceIdentityMark>
               <span className="min-w-0 flex-1">
                 <span
@@ -330,12 +210,12 @@ function RegistryRail({
                 </span>
               </span>
               <span className="hidden shrink-0 lg:block">
-                <StateGlyph state={source.state} />
+                <SourceStateGlyph state={source.state} />
               </span>
               <span
                 aria-hidden
                 className="absolute top-2 right-2 size-1.5 rounded-full lg:hidden"
-                style={{ background: stateTone(source.state).color }}
+                style={{ background: sourceStateTone(source.state).color }}
               />
               <span className="sr-only">{source.stateLabel}</span>
             </button>
@@ -366,14 +246,7 @@ function SourceDetail({
   onAuthenticate: () => void;
   onInstall: () => void;
 }) {
-  const needsAttention = source.state !== 'ready';
-  const tone = stateTone(source.state);
-  const attentionFact =
-    source.state === 'not-installed'
-      ? source.facts.installation
-      : source.facts.authentication.state === 'action-required'
-        ? source.facts.authentication
-        : source.facts.reachability;
+  const step = sourceCardStep(source);
   const modelSelection =
     source.capabilities.modelSelection === 'live-catalog'
       ? 'Project-scoped live catalog'
@@ -393,102 +266,25 @@ function SourceDetail({
             ? 'Gateway-advertised'
             : 'Scenario-defined';
   return (
-    <article className="min-w-0 px-5 py-5 sm:px-7 sm:py-7 xl:px-9">
-      <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
-          <SourceIdentityMark
-            className="size-11 rounded-lg"
-            color={source.color}
-          >
-            <SettingsSourceMark id={source.adapterId} size={22} />
-          </SourceIdentityMark>
-          <div className="min-w-0">
-            <p className="truncate font-ui text-chrome-title text-[var(--settings-dim)]">
-              {source.connectionName}
-            </p>
-            <h2 className="truncate font-display text-display font-semibold tracking-[-0.02em] text-[var(--settings-text)]">
-              {source.label}
-            </h2>
-          </div>
-        </div>
-        <StatePill source={source} />
-      </header>
-
-      <p className="mt-5 max-w-[68ch] font-ui text-chrome-title leading-5 text-[var(--settings-dim)]">
-        {source.summary}
-      </p>
-
-      {needsAttention && (
-        <div
-          className="mt-6 flex items-start gap-3 border-y py-4"
-          style={{ color: tone.color, borderColor: tone.color }}
-        >
-          {source.state === 'action-required' ? (
-            <KeyRound aria-hidden className="mt-0.5 shrink-0" size={18} />
-          ) : (
-            <AlertCircle aria-hidden className="mt-0.5 shrink-0" size={18} />
-          )}
-          <div>
-            <p className="font-ui text-sm font-medium">{source.stateLabel}</p>
-            <p className="mt-1 max-w-xl font-ui text-chrome-title leading-5 text-[var(--settings-dim)]">
-              {attentionFact.detail}
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-6 flex flex-wrap gap-2">
-        {source.actions.authenticate && source.harness && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onAuthenticate}
-            className="flex min-h-10 items-center gap-2 rounded-lg bg-[var(--settings-amber)] px-3.5 font-ui text-chrome-title font-medium text-[var(--settings-shell)] outline-none transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-amber)] motion-reduce:transition-none"
-          >
-            <ExternalLink aria-hidden size={15} />
-            Sign in with {source.label}
-          </button>
-        )}
-        {source.actions.installGuide && source.state === 'not-installed' && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onInstall}
-            className="flex min-h-10 items-center gap-2 rounded-lg bg-[var(--settings-amber)] px-3.5 font-ui text-chrome-title font-medium text-[var(--settings-shell)] outline-none transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-amber)] motion-reduce:transition-none"
-          >
-            <ExternalLink aria-hidden size={15} />
-            Open installation guide
-          </button>
-        )}
-        {source.actions.recheck && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onRecheck}
-            className="flex min-h-10 items-center gap-2 rounded-lg border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-3.5 font-ui text-chrome-title font-medium text-[var(--settings-soft)] outline-none transition-[background-color,transform] hover:bg-[var(--settings-hover-strong)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
-          >
-            <RefreshCw
-              aria-hidden
-              size={15}
-              className={busy ? 'animate-spin motion-reduce:animate-none' : ''}
-            />
-            {busy ? checkingLabel : 'Recheck'}
-          </button>
-        )}
-      </div>
-
-      {message && (
-        <p
-          role="status"
-          className="mt-3 max-w-xl font-ui text-chrome-label leading-5"
-          style={{
-            color: message.ok ? 'var(--settings-teal)' : 'var(--settings-red)',
-          }}
-        >
-          {message.text}
-        </p>
-      )}
-
+    <SourceCard
+      layout="detail"
+      identity={{
+        adapterId: source.adapterId,
+        label: source.label,
+        secondary: source.connectionName,
+        color: source.color,
+      }}
+      state={source.state}
+      stateLabel={source.stateLabel}
+      summary={source.summary}
+      attention={sourceAttention(source)}
+      step={step}
+      onStep={step?.kind === 'install-guide' ? onInstall : onAuthenticate}
+      onRecheck={source.actions.recheck ? onRecheck : null}
+      busy={busy}
+      busyLabel={checkingLabel}
+      message={message}
+    >
       <section className="mt-9" aria-labelledby="source-identity-heading">
         <div className="mb-3 flex items-center justify-between gap-4">
           <h3
@@ -497,7 +293,7 @@ function SourceDetail({
           >
             Source identity
           </h3>
-          <ObservationTime
+          <SourceObservationTime
             timestamp={source.observedAt}
             now={now}
             prefix="Checked "
@@ -581,7 +377,7 @@ function SourceDetail({
           value={source.capabilities.enforcementOwner}
         />
       </section>
-    </article>
+    </SourceCard>
   );
 }
 
@@ -631,7 +427,7 @@ function AddSourceView({
               className="flex min-h-[72px] w-full items-center gap-3 px-1 text-left outline-none transition-colors hover:bg-[var(--settings-hover)] focus-visible:bg-[var(--settings-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--settings-teal)]"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--settings-line)] bg-[var(--settings-shell)] text-[var(--settings-soft)]">
-                <SettingsSourceMark id={entry.adapterId} size={20} />
+                <SourceMark id={entry.adapterId} size={20} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-ui text-sm font-medium text-[var(--settings-soft)]">
@@ -675,7 +471,7 @@ function AddSourceView({
               className="flex min-h-[68px] items-center gap-3 px-1 opacity-70"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--settings-line)] bg-[var(--settings-shell)] text-[var(--settings-faint)]">
-                <SettingsSourceMark id={entry.adapterId} size={20} />
+                <SourceMark id={entry.adapterId} size={20} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-ui text-sm font-medium text-[var(--settings-soft)]">

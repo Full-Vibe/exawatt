@@ -25,16 +25,13 @@
  */
 
 import {
-  Check,
   Cloud,
   History,
   KeyRound,
-  LoaderCircle,
   Monitor,
   Pencil,
   RefreshCw,
   Server,
-  Sparkles,
   Unplug,
   WifiOff,
 } from 'lucide-react';
@@ -55,7 +52,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { SourceGlyph } from '@/components/workspace/harness-icons';
+import {
+  SourceMark,
+  SourceReadyGlyph,
+  SourceTonePill,
+  SourceWorkingGlyph,
+} from '@/components/agent-sources/source-card';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
@@ -206,26 +208,8 @@ const CONNECTION_WASH: Readonly<Record<SourceConnectionState, string>> = {
 /** Shape, icon, and text all carry the state; hue is never alone (D30). */
 function ConnectionGlyph({ state }: { state: SourceConnectionState }) {
   const color = CONNECTION_TONE[state];
-  if (state === 'live') {
-    return (
-      <span
-        className="flex size-5 items-center justify-center rounded-full border"
-        style={{ color, borderColor: color }}
-      >
-        <Check aria-hidden size={12} strokeWidth={2.4} />
-      </span>
-    );
-  }
-  if (state === 'reconnecting') {
-    return (
-      <LoaderCircle
-        aria-hidden
-        size={20}
-        className="animate-spin motion-reduce:animate-none"
-        style={{ color }}
-      />
-    );
-  }
+  if (state === 'live') return <SourceReadyGlyph color={color} />;
+  if (state === 'reconnecting') return <SourceWorkingGlyph color={color} />;
   if (state === 'stale') {
     return <History aria-hidden size={20} style={{ color }} />;
   }
@@ -233,38 +217,16 @@ function ConnectionGlyph({ state }: { state: SourceConnectionState }) {
 }
 
 function ConnectionPill({ status }: { status: ConnectionStatus }) {
-  const color = CONNECTION_TONE[status.state];
   return (
-    <span
-      data-connection-pill={status.state}
-      className="inline-flex min-h-7 items-center gap-2 rounded-full border px-2.5 font-ui text-chrome-label font-medium"
-      style={{
-        color,
-        borderColor: `color-mix(in srgb, ${color} 34%, transparent)`,
-        background: CONNECTION_WASH[status.state],
+    <SourceTonePill
+      tone={{
+        color: CONNECTION_TONE[status.state],
+        wash: CONNECTION_WASH[status.state],
       }}
+      data-connection-pill={status.state}
     >
-      <span className="size-1.5 rounded-full" style={{ background: color }} />
       {describeConnectionStatus(status)}
-    </span>
-  );
-}
-
-/** A source's mark in a Settings plate. A source with no vendor mark (Demo
- *  Mode, a coming-soon adapter) shows the neutral sparkle. */
-export function SettingsSourceMark({
-  id,
-  size = 19,
-}: {
-  id: AgentSourceCatalogId;
-  size?: number;
-}) {
-  return (
-    <SourceGlyph
-      source={id}
-      size={size}
-      fallback={<Sparkles aria-hidden size={size} />}
-    />
+    </SourceTonePill>
   );
 }
 
@@ -664,7 +626,7 @@ export function ConnectedSourcesRail({
                   className="size-9 rounded-lg"
                   color={declaration.color}
                 >
-                  <SettingsSourceMark id={source.adapterId} />
+                  <SourceMark id={source.adapterId} />
                 </SourceIdentityMark>
                 <span className="min-w-0 flex-1">
                   <span
@@ -789,7 +751,7 @@ export function ConnectedSourceDetail({
             className="size-11 rounded-lg"
             color={declaration.color}
           >
-            <SettingsSourceMark id={source.adapterId} size={22} />
+            <SourceMark id={source.adapterId} size={22} />
           </SourceIdentityMark>
           <div className="min-w-0">
             <p className="truncate font-ui text-chrome-title text-[var(--settings-dim)]">

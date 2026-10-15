@@ -21,7 +21,7 @@
  * screen are the same components arranged once.
  *
  * REUSED (controlled production components, fed fixture props): `Button`,
- * `SourceIdentityMark`, `SettingsSourceMark`, `StatusLight`,
+ * `SourceIdentityMark`, `SourceMark`, `StatusLight`,
  * `AgentLauncher` (the hand-off after a one-click open), the launcher bench
  * fixtures, `DEMO_WORKSPACE` / `PERSONAL_WORKSPACE`, `OUTBOUND_CONTROLS`, the
  * Voltaic Demo fixture, the workspace HUD roles and the theme registry.
@@ -67,7 +67,7 @@ import {
   withThemeAlpha,
 } from '@/components/workspace/workspace-theme';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
-import { SettingsSourceMark } from '@/app/settings/connected-sources-section';
+import { SourceMark } from '@/components/agent-sources/source-card';
 import { AGENT_SOURCE_META } from '@/components/workspace/agent-sources';
 import {
   StatusLight,
@@ -315,7 +315,7 @@ function SourceCard({ card }: { card: StartSourceCard }) {
     >
       <div className="flex min-w-0 items-center gap-3">
         <SourceIdentityMark className="size-9 rounded-lg" color={card.color}>
-          <SettingsSourceMark id={card.id} />
+          <SourceMark id={card.id} />
         </SourceIdentityMark>
         <span className="min-w-0 flex-1">
           <span
@@ -426,7 +426,7 @@ function HarnessBadges({
               className="size-5 rounded-sm"
               color={meta.color}
             >
-              <SettingsSourceMark id={harness} size={11} />
+              <SourceMark id={harness} size={11} />
             </SourceIdentityMark>
             <span className="sr-only">{label}</span>
           </span>
@@ -752,7 +752,7 @@ function DemoWorkspacePreview({ onBack }: { onBack: () => void }) {
               className="inline-flex shrink-0"
               style={{ color: HUD.textDim }}
             >
-              <SettingsSourceMark id={agent.harness} size={12} />
+              <SourceMark id={agent.harness} size={12} />
             </span>
           </li>
         ))}
@@ -1153,7 +1153,7 @@ export function StartScreenStudy() {
               className="mt-2 list-disc space-y-1 ps-4 text-chrome-label"
               style={{ color: HUD.textDim }}
             >
-              <li>Button, SourceIdentityMark, SettingsSourceMark</li>
+              <li>Button, SourceIdentityMark, SourceMark</li>
               <li>StatusLight over the Voltaic Demo fixture</li>
               <li>
                 AgentLauncher and the launcher bench fixtures (the hand-off)

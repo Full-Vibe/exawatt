@@ -453,8 +453,10 @@ html:has([data-architecture-loading]) body {
 /* Agent Source Settings graduated from /hud-gallery into a shared production
    shell. These calmer operational neutrals are intentionally scoped: fleet
    surfaces keep the higher-energy HUD palette, while settings favors dense,
-   legible source truth over ambient spectacle. */
-[data-settings-shell] {
+   legible source truth over ambient spectacle. The shared Agent Source card
+   carries the same roles wherever it is placed (ENG-003 S5.3.1). */
+[data-settings-shell],
+[data-source-card] {
   --settings-page: var(--exa-foundation-canvas);
   --settings-shell: var(--exa-foundation-surface);
   --settings-panel: var(--exa-foundation-surface-raised);

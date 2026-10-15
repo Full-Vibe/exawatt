@@ -1314,3 +1314,34 @@ shaping, and may complicate our architecture and may not fit within our
 vision." It stays the deferred "conversation kind". The honest product answer
 today is that a Gemini or Claude Agent in Exawatt is a working agent in a
 folder, and the on-ramp (ENG-046) and the Gemini face make that one click.
+
+### 2026-10-15 — S5.3.1 step 1: the Settings source card is a shared, controlled component
+
+**The source card is now `SourceCard` in
+`src/components/agent-sources/source-card.tsx`, and Settings renders through
+it unchanged.** ENG-046's Start screen study had to copy the card because it
+lived inside `AgentSourcesSettings`, bound to the registry IPC; the Start
+screen (ENG-046 O2) now imports it instead.
+
+- **Props, no IPC.** `identity` (`adapterId`, `label`, `secondary`, `color`),
+  `state` and `stateLabel` (the pill), `summary`, `attention`, `step` with
+  `onStep` (the one next step), `onRecheck` (the secondary action), `busy` and
+  `busyLabel`, `disclosure` (a slot), `message`, `checkedAt` and `now`
+  (freshness), and `children` for detail sections. `layout="detail"` is the
+  head of Settings → Agent Sources; `layout="card"` is the compact tile the
+  Start screen study drew.
+- **The step is derived once.** `sourceCardStep(snapshot)` returns the one
+  step a state offers, or null when only Recheck applies;
+  `sourceAttention(snapshot)` returns the fact behind a non-ready state. A
+  missing CLI gets its installation guide and never a sign-in.
+- **Primitives moved with it**: `SourceMark` (was `SettingsSourceMark`),
+  `SourceStatePill`, `SourceStateGlyph`, `sourceStateTone`,
+  `SourceObservationTime`, and the `SourceTonePill`, `SourceReadyGlyph` and
+  `SourceWorkingGlyph` the connected-source pill and glyphs now reuse instead
+  of a second copy.
+- **Paint**: design-system rung 3's operational neutrals scope onto the card's
+  `[data-source-card]` root, so it reads the same outside the settings shell.
+- **Evidence**: Settings captured before and after on a fake desktop bridge
+  (Antigravity signed in, unknown and not installed, light and dark, 1400×900)
+  differ by zero pixels on the Settings surface. A contract test renders every
+  source state in both layouts and finds at most one step and one Recheck.

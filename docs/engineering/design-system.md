@@ -153,7 +153,7 @@ not a second source to mirror manually. The values below are Classic exemplars.
 
 ### 3. Settings operational neutrals (`[data-settings-shell]`)
 
-Graduated from the gallery: calmer scoped palette for dense source-truth surfaces (`--settings-*` in `globals.css`). Text ladder: `--settings-text` → `-soft` → `-dim` → `-faint`; accents teal/amber/red with matching `-wash` fills. Use it only inside the settings shell.
+Graduated from the gallery: calmer scoped palette for dense source-truth surfaces (`--settings-*` in `globals.css`). Text ladder: `--settings-text` → `-soft` → `-dim` → `-faint`; accents teal/amber/red with matching `-wash` fills. Use it only inside the settings shell and on the shared Agent Source card (`src/components/agent-sources/source-card.tsx`), whose `[data-source-card]` root carries the same roles so a source reads identically in Settings and wherever else it is placed (the Start screen).
 
 ### 4. Consumption channel
 
@@ -633,6 +633,14 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-10-15 — ENG-003 S5.3.1: the Settings source card (identity, state
+  pill, one next step, Recheck, disclosure, freshness) is one controlled
+  component, `SourceCard`, and rung 3's operational neutrals scope onto its
+  `[data-source-card]` root as well as the settings shell. Settings renders
+  pixel-identical through it (before/after captures compared at zero
+  differing pixels on the Settings surface); the connection pill and glyphs
+  reuse its pill and ready/working primitives.
 
 - 2026-10-09 — ENG-031 W16 adds the scoped homepage terrain study boundary above; existing production tokens and surfaces remain authoritative.
 
