@@ -122,6 +122,15 @@ const isBoardCanvas = file =>
 
 export const SURFACE_GATES = [
   {
+    gate: 'eval:settings:navigation',
+    why: 'Settings remains searchable, deep-linkable and responsive as Fleet preferences grow',
+    match: file =>
+      /^src\/app\/settings\/(settings-client|settings-registry|fleet-settings|keyboard-settings|settings-controls)\.tsx?$/.test(file) ||
+      (file.startsWith('src/components/presentation/') && !/\.test\.tsx?$/.test(file)) ||
+      (file.startsWith('src/lib/presentation/') && !/\.test\.tsx?$/.test(file)) ||
+      file === 'scripts/settings-navigation-eval.mjs',
+  },
+  {
     gate: 'eval:spatial:tiles-bench',
     why: 'the v2 review bench must paint every material at 10, 100 and 1k Agents in all themes',
     match: file =>
@@ -1479,6 +1488,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:workspace:team': GATE,
   'eval:navigation:spine': GATE,
   'eval:electron:packaged': GATE,
+  'eval:settings:navigation': GATE,
   'eval:spatial:tiles-bench': GATE,
   'eval:spatial:viewport': GATE,
   'eval:spatial:attention': GATE,
