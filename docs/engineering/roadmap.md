@@ -1316,6 +1316,7 @@ Scope:
 - the join key is the git common directory, so an Agent of any harness opened in a known folder lands in the one Project (decision `0037` §3 applied to discovery); a chat product's Project with no listing API is user-linked, never discovered
 - local reads only, disclosed on the download page's machine disclosures; ENG-047's `project_opened` carries a source and a harness hint, never a name or path
 - boundary: not a wizard, not an importer, not a watcher (decision `0013` stands); the account card stays an invitation; with no harness installed the chooser shows setup choices and Try Demo
+- posture (operator, 2026-10-15): an overlay first, a system of record only by an explicit later per-Project choice; see the vision's strategic posture
 - two-way door (operator, 2026-10-15: "we'll tweak this over time so make sure this is a two-way door technical decision"): bindings are additive and dated, the join rule is one function, folding worktrees is a flag, `root_path` is removed only after a reversible backfill, and no harness store is ever written, so any mapping rule can change without a migration a user feels
 - transparent to the user (same instruction: "make sure it's very clear what's happening to the user so they can understand as they onboard"): the Start screen says in one line where each row came from and that opening one creates a Project in Exawatt and changes nothing in Claude Code, Codex or Antigravity; a row's badges name the harnesses that know the folder; the download page's machine disclosures list the reads
 

@@ -54,6 +54,25 @@ OpenClaw local control is the first implementation target, not the product bound
 
 Positions taken during the 2026-08-02 grooming session. They are canonical direction, deliberately held loosely — the operator expects them to evolve.
 
+### The bus: ours on one machine now, hosted later, standards as adapters (operator, 2026-10-15)
+
+Asked where Exawatt stands in the agent-to-agent layer five years out, the
+operator chose both: Exawatt is the message bus between Agents on one
+machine today; the hosted control plane carries the same bus across machines
+and clouds later, which is part of the moat named above; and any standard
+that arrives (A2A, a harness's own channel, a hosted relay) plugs in as one
+more transport adapter behind the same plugin boundary (decision `0052`).
+Architecture must keep all three the same code path.
+
+### Projects: an overlay first, a system of record only by choice (operator, 2026-10-15)
+
+Exawatt reads what the user's tools already know and never writes their
+stores; a Project exists because the user opened it; the user's tools stay
+primary. Later, an explicit per-Project choice may let Exawatt create folders
+and hand its project to a harness that accepts one. Bijection with any
+harness's store is shown where it holds and never promised (ENG-046,
+decisions `0013` and `0037`).
+
 ### Energy is true north, correctly deferred
 
 The energy framing — allocating wattage to goals rather than tasks to agents (ENG-014) — is the genuine long-range thesis and the company's name. It is also **not yet earnable**: presenting watts as measured before the data supports it would violate principle 4. Energy therefore lives in naming, marketing, and the concept model now, and the product earns it as Consumption normalization matures (ENG-008 E3). Do not fabricate watts to make the metaphor land sooner.

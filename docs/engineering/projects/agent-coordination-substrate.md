@@ -235,6 +235,10 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
   harness's user-input door (the terminal for Claude Code, since its TUI
   queues typed input while busy; `codex queue` for Codex; the terminal for
   Antigravity), so the message is the user's turn, not a peer's note.
+- **Horizon (operator, 2026-10-15).** Local bus now, the hosted control
+  plane carrying the same bus across machines later, standards as adapters;
+  recorded in the vision's strategic posture. The plugin boundary below is
+  what keeps those three one code path.
 - **Plugin boundary (operator, 2026-10-15).** The transport is a plugin of
   the Agent Source: each harness's launch descriptor declares a `messaging`
   capability (outbound tool reach plus one `deliver(envelope)` adapter) in
