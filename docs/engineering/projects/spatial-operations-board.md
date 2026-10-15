@@ -3516,6 +3516,17 @@ frames and no tasks over 50ms. The parked 10k scene drew zero frames and used
 180 to 60 and CPU from 9.5% to 5.6% of one core. These are measured samples,
 not universal upper bounds or a claim about battery-life duration.
 
+Live-update profiling also found a shared 1Hz pause: routine Demo metadata
+reconciled hundreds of unchanged Drei status instances. The status draw groups
+and individual instances now memoize the exact paint inputs, with animation
+and emergence sampling outside that boundary. Real status, unread, theme and
+burn-lens changes still update. v2 passed every live Voltaic and 1k motion
+flight at the existing 50ms hitch threshold. A warmed 3-second live-Demo v2
+sample measured 15.5% of one core on AC and 10.9% in economy, with 178 versus
+75 paints and no tasks over 50ms in either sample. The shared tile renderer
+also retained exact homepage parity: zero differing pixels in all ten
+captures (five scenes at desktop and mobile widths).
+
 The delivery floor runs each declared gate on its exact committed candidate.
 Browser and Electron Session/source journeys now select and assert both actual
 renderers, rather than allowing a v2 preference write to masquerade as coverage.
