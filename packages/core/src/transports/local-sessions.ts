@@ -21,6 +21,7 @@
  * detection) — the fleet surfaces show the SAME result-vs-needs-you truth the
  * tab strip does. Quiet completion is not promoted into the blocker queue.
  */
+import { isAgentSourceAdapterId } from '../agent-sources';
 import { attentionNeedsOperator } from '../session-attention';
 import {
   sessionHasBackgroundWork,
@@ -188,6 +189,9 @@ export function sessionToAgent(
 ): ExawattAgent {
   return {
     id: session.id,
+    ...(isAgentSourceAdapterId(session.harness)
+      ? { sourceAdapterId: session.harness }
+      : {}),
     name: `${basename(session.cwd)} · ${session.title}`,
     status: sessionStatus(session, lastActivityAt, now, workingWindowMs),
     goal:
@@ -343,7 +347,7 @@ export class LocalSessionsTransport {
           `${child.id}\u001f${child.agentType ?? ''}\u001f${child.description ?? ''}`
       )
       .join('\u001e');
-    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${JSON.stringify(agent.attention)}:${delegationKey}`;
+    const key = `${agent.sourceAdapterId ?? ''}:${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${JSON.stringify(agent.attention)}:${delegationKey}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

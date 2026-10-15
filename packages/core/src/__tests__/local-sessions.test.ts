@@ -8,6 +8,7 @@ import type {
   LocalSessionSnapshot,
   LocalSessionsSource,
 } from '../transports/local-sessions';
+import { AGENT_SOURCE_ADAPTER_IDS } from '../agent-sources';
 import { FleetManager } from '../state/fleet-manager';
 
 const snap = (
@@ -192,6 +193,23 @@ describe('sessionStatus', () => {
 });
 
 describe('sessionToAgent', () => {
+  it('preserves declared source identity without assigning a brand to unknown sources', () => {
+    for (const harness of AGENT_SOURCE_ADAPTER_IDS) {
+      expect(sessionToAgent(snap({ harness }), 0, 0, 0).sourceAdapterId).toBe(
+        harness
+      );
+    }
+    for (const harness of ['shell', 'future-source', '']) {
+      const agent = sessionToAgent(
+        snap({ harness, title: 'Claude Code' }),
+        0,
+        0,
+        0
+      );
+      expect(agent).not.toHaveProperty('sourceAdapterId');
+    }
+  });
+
   it('maps a session to an ExawattAgent (name from cwd basename, project from projectName)', () => {
     const a = sessionToAgent(snap(), 2_000, 3_000, 15_000);
     expect(a.id).toBe('pty-1');
@@ -331,6 +349,20 @@ describe('LocalSessionsTransport', () => {
   const flush = async () => {
     await vi.advanceTimersByTimeAsync(0);
   };
+
+  it('publishes a changed source identity even when other Session facts are unchanged', async () => {
+    transport.start();
+    await flush();
+    expect(manager.getAgent('pty-1')?.sourceAdapterId).toBe(
+      sessions[0].harness
+    );
+    sessions[0] = { ...sessions[0], harness: 'codex' };
+    await transport.refresh();
+    expect(manager.getAgent('pty-1')?.sourceAdapterId).toBe('codex');
+    sessions[0] = { ...sessions[0], harness: 'shell' };
+    await transport.refresh();
+    expect(manager.getAgent('pty-1')).not.toHaveProperty('sourceAdapterId');
+  });
 
   it('keeps operator reminders orthogonal to work and blockers', async () => {
     sessions[0] = {

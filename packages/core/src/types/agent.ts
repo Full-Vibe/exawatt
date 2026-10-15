@@ -166,6 +166,8 @@ export interface AgentPresence {
 
 export interface ExawattAgent {
   id: string;
+  /** Source-owned harness identity; absent when unknown, never inferred from a name. */
+  sourceAdapterId?: AgentSourceAdapterId;
   name: string;
   /**
    * The work state, or `null` when the source has evidenced none (ENG-010).

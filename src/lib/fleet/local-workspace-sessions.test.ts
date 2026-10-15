@@ -59,6 +59,9 @@ describe('mergeLocalWorkspaceSessions', () => {
       const [snapshot] = mergeLocalWorkspaceSessions(runtime, layout);
       expect(snapshot.contextSummary).toBe(purpose);
       expect(sessionToAgent(snapshot, 0, 0, 0).goal).toBe(purpose);
+      expect(sessionToAgent(snapshot, 0, 0, 0).sourceAdapterId).toBe(
+        session.harness
+      );
     }
   });
 

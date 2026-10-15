@@ -56,6 +56,7 @@ export class FleetAdapter {
 
     // Build a minimal agent from the session key
     return createAgent({
+      sourceAdapterId: 'openclaw',
       id: key,
       name: key,
       goal,
@@ -74,6 +75,7 @@ export class FleetAdapter {
     const status = this._deriveStatus(session, cronJob);
 
     return createAgent({
+      sourceAdapterId: 'openclaw',
       id: session.key,
       name: session.key,
       status,

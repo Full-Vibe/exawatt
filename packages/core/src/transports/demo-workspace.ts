@@ -164,6 +164,7 @@ export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
   const burn = demoAgentBurn(agent);
   return {
     id: agent.id,
+    sourceAdapterId: agent.harness,
     name: agent.name,
     status: agent.status,
     // The six-word context label (ENG-016 D33) — the same field the live
@@ -207,6 +208,7 @@ export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
 /** The facts whose change re-maps an Agent into the manager. */
 function frameSignature(agent: DemoFleetAgent): string {
   return [
+    agent.harness,
     agent.status,
     agent.lastActivityAtMs,
     agent.turns,

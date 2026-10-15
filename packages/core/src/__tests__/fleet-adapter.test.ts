@@ -293,6 +293,15 @@ describe('FleetAdapter', () => {
     });
   });
 
+  it('identifies OpenClaw at its adapter boundary for fetched and created Agents', async () => {
+    const { adapter } = makeAdapter();
+    const agents = await adapter.fetchAgents();
+    for (const agent of agents) expect(agent.sourceAdapterId).toBe('openclaw');
+    expect((await adapter.createAgent('Task')).sourceAdapterId).toBe(
+      'openclaw'
+    );
+  });
+
   describe('createAgent()', () => {
     it('creates an agent with the given goal', async () => {
       const { adapter } = makeAdapter();

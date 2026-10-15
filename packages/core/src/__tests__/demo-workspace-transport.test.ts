@@ -11,6 +11,12 @@ import { demoFleetAgents, demoDelegatedRunCount } from '../demo/scale';
 import { DemoFleetSimulation } from '../demo/simulation';
 
 describe('DemoWorkspaceTransport (ENG-027 W2)', () => {
+  it('preserves every fixture source through the shared Agent boundary', () => {
+    for (const source of demoFleetAgents('scale')) {
+      expect(demoWorkspaceAgent(source).sourceAdapterId).toBe(source.harness);
+    }
+  });
+
   it('marks a working Session unread without fabricating a source request or result', () => {
     const manager = new FleetManager();
     const transport = new DemoWorkspaceTransport({ tier: 'base' });

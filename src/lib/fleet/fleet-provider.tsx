@@ -91,6 +91,7 @@ export function remoteAgentToExawattAgent(
 ): ExawattAgent {
   return {
     id: remote.id,
+    sourceAdapterId: remote.adapterId,
     name: remote.displayName,
     /*
      * Null is the source having evidenced no state at all, and it is carried

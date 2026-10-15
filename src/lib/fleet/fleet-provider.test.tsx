@@ -126,6 +126,14 @@ afterEach(() => {
 });
 
 describe('remoteAgentToExawattAgent', () => {
+  it('copies source identity independently of placement and reported work state', () => {
+    const source = remoteAgent({ adapterId: 'codex', workState: null });
+    const mapped = remoteAgentToExawattAgent(source);
+    expect(mapped.sourceAdapterId).toBe(source.adapterId);
+    expect(mapped.status).toBeNull();
+    expect(mapped.presence?.source.adapterId).toBe(mapped.sourceAdapterId);
+  });
+
   it('shapes a remote coworker exactly like a local Agent', () => {
     const agent = remoteAgentToExawattAgent(remoteAgent());
     expect(agent.id).toBe('remote-abc123');
