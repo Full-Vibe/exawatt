@@ -67,24 +67,35 @@ function studioScene(): THREE.Scene {
 
 export function useRoomEnvironment(
   intensity = 1,
-  kind: EnvironmentKind = 'room'
+  kind: EnvironmentKind = 'room',
+  enabled = true
 ) {
   const { gl, scene } = useThree();
   const textureRef = useRef<THREE.Texture | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     const pmrem = new THREE.PMREMGenerator(gl);
     const room = kind === 'studio' ? studioScene() : new RoomEnvironment();
-    const texture = pmrem.fromScene(
-      room,
-      kind === 'studio' ? 0.02 : 0.04
-    ).texture;
+    const target = pmrem.fromScene(room, kind === 'studio' ? 0.02 : 0.04);
+    const texture = target.texture;
+    // The capture owns GPU geometry/materials too; no scene survives PMREM.
+    if (room instanceof RoomEnvironment) room.dispose();
+    else
+      room.traverse(object => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.geometry.dispose();
+        const materials = Array.isArray(object.material)
+          ? object.material
+          : [object.material];
+        for (const material of materials) material.dispose();
+      });
     textureRef.current = texture;
     applyEnvironment(scene, texture, intensity);
     pmrem.dispose();
     return () => {
       if (scene.environment === texture) applyEnvironment(scene, null, 1);
-      texture.dispose();
+      target.dispose();
       textureRef.current = null;
     };
-  }, [gl, scene, intensity, kind]);
+  }, [gl, scene, intensity, kind, enabled]);
 }

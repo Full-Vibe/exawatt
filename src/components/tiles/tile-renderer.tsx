@@ -406,6 +406,7 @@ export function TileRenderer({
   requestFrame,
   transmission = true,
   detail = 'full',
+  lighting = true,
   interactive = true,
   onMotionFrame,
   theme,
@@ -495,7 +496,7 @@ export function TileRenderer({
   const sig = useMemo(() => crustSignal(signal), [signal]);
   const corner = shapeCorner(shape);
   useEffect(() => () => disposeCrustMaterial(spec), [spec]);
-  useRoomEnvironment(spec.environment, light);
+  useRoomEnvironment(spec.environment, light, lighting);
   const jelly = material === 'gummy';
   const kicks = jelly ? JELLY_KICK : FIRM_KICK;
   const play = usePressSound(sound);
@@ -562,7 +563,12 @@ export function TileRenderer({
     return slots;
   }, [model]);
   const maxRadius = useMemo(
-    () => tiles.reduce((radius, tile) => Math.max(radius, tile.radius ?? 1), 0),
+    () =>
+      tiles.reduce(
+        (radius, tile) =>
+          tile.agentId ? Math.max(radius, tile.radius ?? 1) : radius,
+        0
+      ),
     [tiles]
   );
   const lowDetail = useRef(false);
@@ -958,7 +964,7 @@ export function TileRenderer({
         (2 * TILE_RADIUS * maxRadius * camera.zoom * size.height) /
         Math.max(1e-6, camera.top - camera.bottom);
       lowDetail.current = lowDetail.current ? diameter < 18 : diameter < 14;
-    } else lowDetail.current = false;
+    } else lowDetail.current = detail === 'coarse';
     ground.geometry = lowDetail.current ? coarseGeometry : geometry;
     agents.geometry = lowDetail.current ? coarseAgentGeometry : agentGeometry;
     cores.geometry = lowDetail.current ? coarseCoreGeometry : coreGeometry;
@@ -1828,15 +1834,19 @@ export function TileRenderer({
 
   return (
     <group ref={groupRef}>
-      <hemisphereLight args={[0xcfe6ff, 0x101420, 0.9 * spec.lightScale]} />
-      <directionalLight
-        position={[30, 60, 20]}
-        intensity={1.6 * spec.lightScale}
-      />
-      <directionalLight
-        position={[-40, 20, -30]}
-        intensity={0.35 * spec.lightScale}
-      />
+      {lighting ? (
+        <>
+          <hemisphereLight args={[0xcfe6ff, 0x101420, 0.9 * spec.lightScale]} />
+          <directionalLight
+            position={[30, 60, 20]}
+            intensity={1.6 * spec.lightScale}
+          />
+          <directionalLight
+            position={[-40, 20, -30]}
+            intensity={0.35 * spec.lightScale}
+          />
+        </>
+      ) : null}
 
       <instancedMesh
         ref={groundRef}

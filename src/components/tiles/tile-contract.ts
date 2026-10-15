@@ -74,7 +74,9 @@ export interface TileRendererProps {
   /** Overview/low-power hosts can remove the extra transmission pass. */
   transmission?: boolean;
   /** Product batches use inexpensive geometry when their tiles are subpixel detail. */
-  detail?: 'full' | 'adaptive';
+  detail?: 'full' | 'adaptive' | 'coarse';
+  /** Multiple bounded cohorts share one primary scene light/environment owner. */
+  lighting?: boolean;
   /** DOM overlays can own all input without paying mesh raycasting cost. */
   interactive?: boolean;
   /** No timer/loop here: the host schedules transition and ambient frames. */
