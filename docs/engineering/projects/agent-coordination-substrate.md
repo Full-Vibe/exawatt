@@ -203,8 +203,26 @@ sender Agent ──(tool: send_message / CLI: exawatt send)──▶ Exawatt bus
   never silently truncated mid-record). Machine-local; the repo blackboard
   under `.exawatt/` stays the deliberately curated durable store, and an
   export of one thread into it is an operator verb, never automatic.
-- **Viewer (C1, live).** A second sidebar in Team beside the roadmap panel, docked
-  at the same breakpoint and a ⌘-drawer below it: a per-Project list of
+- **Viewer (C1, live).** Chatter is a second TAB in Team's existing
+  right-hand dock beside Roadmap, with an unread count on the tab (operator,
+  2026-10-15: "1 but make the UI very good and predictable; find another app
+  that has similar UI and does it well and follow their guidance"). The model
+  to follow is VS Code's side bar: one view container visible at a time, a
+  badge count on the tab, one toggle shortcut for the whole dock, the last
+  tab remembered, and the same docked-or-drawer behaviour at every width
+  ([user interface](https://code.visualstudio.com/docs/getstarted/userinterface),
+  [UX guidelines](https://code.visualstudio.com/api/ux-guidelines/overview));
+  Figma's two-tab properties panel (Design, Prototype) is the second
+  reference for a dock that never surprises
+  ([help center](https://help.figma.com/hc/en-us/articles/360039832014)).
+  The visual reference pass (2026-10-15, under `docs/research/ui-references/`)
+  supplies the row and thread shapes: the list opens with one row per
+  message, newest first (`claude-1 → codex-2 · first line · 4m · delivered`;
+  the operator's own Direct messages in the same list, marked as the
+  operator; "not sure, we'll iterate" on this part); a row opens a
+  chronological thread of two-line collapsed messages that expand in place,
+  showing Exawatt's stamped envelope, with "Send as operator" at the bottom;
+  no chat bubbles. The earlier shape, kept for the record: a per-Project list of
   messages newest first (`sender → recipient`, first line, time, delivery
   glyph), an unread count in the sidebar's tab, and a thread view on click (every
   message between those two Sessions, full text, with "Send as operator" at
