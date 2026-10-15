@@ -1,5 +1,8 @@
 import { app } from 'electron';
-import { parsePresentationPreferences } from '@exawatt/core/desktop-bridge';
+import {
+  parseAnalyticsDeviceRecord,
+  parsePresentationPreferences,
+} from '@exawatt/core/desktop-bridge';
 import {
   readJsonFile,
   writeJsonFileAtomic,
@@ -535,6 +538,10 @@ const SETTINGS_SCHEMA: {
     }
     return parsed;
   },
+  // BUG-171: the analytics opt-out and installation id. A record without an
+  // explicit opt-out is absent, so a damaged one starts over rather than
+  // reading as a choice nobody made.
+  analytics: parseAnalyticsDeviceRecord,
 };
 
 /** Every field the settings file may carry, in schema order. */
@@ -609,7 +616,9 @@ function validStoredSettings(value: unknown): boolean {
     const parsed = SETTINGS_SCHEMA[key](raw[key]);
     // Presentation is a forward-compatible optional record (decision 0050).
     // An older build must not quarantine unrelated settings for a newer view.
-    if (key === 'presentation') continue;
+    // Analytics likewise: its parser keeps what it knows and starts a damaged
+    // record over, which never needs the whole file quarantined.
+    if (key === 'presentation' || key === 'analytics') continue;
     if (parsed === undefined) return false;
     const fields = knownProperties[key];
     if (!fields) continue;
@@ -701,18 +710,26 @@ function recoverySettings(): StoredSettings {
   };
 }
 
-export function loadSettings(): StoredSettings {
+export type SettingsRead =
+  | { status: 'ready'; settings: StoredSettings }
+  | { status: 'unreadable' };
+
+/**
+ * The settings as stored, or `unreadable`. An absent file is an empty answer;
+ * an inaccessible or corrupt one is no answer at all, and a caller holding a
+ * choice that must not silently revert (a safety control, the analytics
+ * opt-out) reads through this rather than `loadSettings`.
+ */
+export function readSettings(): SettingsRead {
   let result;
   try {
     result = readJsonFile(settingsFile(), validStoredSettings);
   } catch {
-    // Native appearance is read before the first window. An inaccessible file
-    // must not prevent the recovery UI from opening or enable outbound work.
     reportJsonStoreReadFailure(settingsFile());
-    return recoverySettings();
+    return { status: 'unreadable' };
   }
-  if (result.status === 'absent') return {};
-  if (result.status === 'corrupt') return recoverySettings();
+  if (result.status === 'absent') return { status: 'ready', settings: {} };
+  if (result.status === 'corrupt') return { status: 'unreadable' };
   const raw = result.value as Record<string, unknown>;
   const settings = parseSettings(raw);
   if (
@@ -723,7 +740,17 @@ export function loadSettings(): StoredSettings {
       CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
     );
   }
-  return settings;
+  return { status: 'ready', settings };
+}
+
+/**
+ * The settings, or the recovery set when the file cannot be read. Native
+ * appearance is read before the first window: an inaccessible file must not
+ * prevent the recovery UI from opening or enable outbound work.
+ */
+export function loadSettings(): StoredSettings {
+  const read = readSettings();
+  return read.status === 'ready' ? read.settings : recoverySettings();
 }
 
 /**
@@ -732,19 +759,10 @@ export function loadSettings(): StoredSettings {
  * choices; read through it, a control the operator turned on would look off.
  */
 export function readSafetyControls(): SafetyControlsRead {
-  let result;
-  try {
-    result = readJsonFile(settingsFile(), validStoredSettings);
-  } catch {
-    reportJsonStoreReadFailure(settingsFile());
-    return { status: 'unreadable' };
-  }
-  if (result.status === 'absent') return { status: 'ready', controls: {} };
-  if (result.status === 'corrupt') return { status: 'unreadable' };
-  return {
-    status: 'ready',
-    controls: parseSettings(result.value).safety ?? {},
-  };
+  const read = readSettings();
+  return read.status === 'ready'
+    ? { status: 'ready', controls: read.settings.safety ?? {} }
+    : { status: 'unreadable' };
 }
 
 /**

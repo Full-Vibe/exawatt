@@ -122,6 +122,8 @@ import type {
   RoadmapWriteResult,
 } from './roadmap';
 import type {
+  AnalyticsIdentityRead,
+  AnalyticsIdentityRequest,
   AppearancePreferencesV1,
   PresentationPreferencesV1,
   ExawattSettings,
@@ -167,6 +169,12 @@ interface RequestTable {
   /** Main's queued analytics facts, drained atomically. Re-validated in the
    *  renderer before any reaches the emission path. */
   'analytics:drain-main-events': Call<[], unknown[]>;
+  /** BUG-171: the device's analytics identity, held by main. */
+  'analytics:identity': Call<
+    [request: AnalyticsIdentityRequest],
+    AnalyticsIdentityRead
+  >;
+  'analytics:set-opt-out': Call<[optedOut: boolean], AnalyticsIdentityRead>;
 
   'app:command-engine': Call<[], CommandEnginePhase>;
   'app:device-power': Call<[], DevicePowerStatus>;

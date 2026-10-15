@@ -104,6 +104,10 @@ const FIXTURES: {
   appearance: DEFAULT_ELECTRON_APPEARANCE_PREFERENCES,
   presentation: { schemaVersion: 1, fleetView: 'v2', fleetMaterial: 'glazed' },
   keyboardShortcuts: REBIND,
+  analytics: {
+    optedOut: false,
+    installationId: '0b8e4f5e-3c1d-4a2b-9f6e-7d8c9b0a1e2f',
+  },
 };
 
 const settingsFile = () => path.join(electronState.userData, 'settings.json');

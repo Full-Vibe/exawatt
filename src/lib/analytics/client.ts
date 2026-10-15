@@ -11,76 +11,22 @@
  * - The off switches suppress *initialization and emission*. When analytics
  *   are off, `posthog-js` is never even imported, so there is no queue, no
  *   local buffer, and nothing to flush later.
- * - Identity is an anonymous per-installation UUID held in this machine's
- *   local storage. We never call `identify()`, never set person properties,
- *   and never send an Exawatt account id. Installation identity and account
- *   identity stay separate.
+ * - Identity is an anonymous per-installation UUID (`identity.ts`: the
+ *   browser's storage on the website, Electron main's settings in the app).
+ *   We never call `identify()`, never set person properties, and never send
+ *   an Exawatt account id. Installation identity and account identity stay
+ *   separate.
  */
 
 import {
+  detectElectron,
   resolveDistributionAnalyticsDecision,
   type AnalyticsDecision,
 } from './config';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { toAnalyticsPayload, type AnalyticsEvent } from './events';
+import { loadAnalyticsIdentity, persistAnalyticsOptOut } from './identity';
 import { ANALYTICS_PROPERTY_DENYLIST, scrubAnalyticsCapture } from './redact';
-
-export const ANALYTICS_OPT_OUT_STORAGE_KEY = 'exawatt.analytics.opt-out.v1';
-export const ANALYTICS_INSTALLATION_ID_STORAGE_KEY =
-  'exawatt.analytics.installation-id.v1';
-
-type MinimalStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
-
-function localStorageOrNull(): MinimalStorage | null {
-  try {
-    return typeof window === 'undefined' ? null : window.localStorage;
-  } catch {
-    // Blocked storage (private mode, embedded contexts) is not an error here.
-    return null;
-  }
-}
-
-/** Opt-out is sticky and defaults to false; unreadable storage means opted in. */
-export function readAnalyticsOptOut(
-  storage: MinimalStorage | null = localStorageOrNull()
-): boolean {
-  try {
-    return storage?.getItem(ANALYTICS_OPT_OUT_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-export function writeAnalyticsOptOut(
-  optedOut: boolean,
-  storage: MinimalStorage | null = localStorageOrNull()
-): void {
-  try {
-    if (optedOut) storage?.setItem(ANALYTICS_OPT_OUT_STORAGE_KEY, 'true');
-    else storage?.removeItem(ANALYTICS_OPT_OUT_STORAGE_KEY);
-  } catch {
-    // An unpersisted preference still takes effect for this session.
-  }
-}
-
-/**
- * The anonymous installation identity. Distinct from any account: it is
- * generated locally, never derived from a user id, and cleared by an opt-out.
- */
-export function readInstallationId(
-  storage: MinimalStorage | null = localStorageOrNull(),
-  generate: () => string = () => crypto.randomUUID()
-): string | null {
-  try {
-    const existing = storage?.getItem(ANALYTICS_INSTALLATION_ID_STORAGE_KEY);
-    if (existing) return existing;
-    const created = generate();
-    storage?.setItem(ANALYTICS_INSTALLATION_ID_STORAGE_KEY, created);
-    return created;
-  } catch {
-    return null;
-  }
-}
 
 /** The slice of `posthog-js` this module uses. */
 interface AnalyticsSink {
@@ -91,6 +37,8 @@ interface AnalyticsSink {
 
 let sink: AnalyticsSink | null = null;
 let emitting = false;
+/** Between a configured build's start and the device's identity answering. */
+let deciding = false;
 let started: Promise<AnalyticsDecision> | null = null;
 /** Events captured between the decision and the SDK finishing its import. */
 const pending: AnalyticsEvent[] = [];
@@ -114,26 +62,38 @@ function flushPending(): void {
 }
 
 /**
- * Initialize PostHog if — and only if — this is a production build with a key,
- * no build switch, and no runtime opt-out. Safe to call more than once.
+ * Initialize PostHog if, and only if, this is a production build whose
+ * distribution configures analytics, the device's identity can be read, and
+ * the runtime opt-out is off. Safe to call more than once.
  */
 export function initAnalytics(): Promise<AnalyticsDecision> {
   if (started) return started;
 
-  const decision = resolveDistributionAnalyticsDecision(
+  // The build decides before the device is asked anything: a community build
+  // neither reads nor creates analytics identity.
+  const configured = resolveDistributionAnalyticsDecision(
     resolvedDistribution(),
-    { optedOut: readAnalyticsOptOut() },
+    { optedOut: false },
     process.env.NODE_ENV
   );
-
-  if (!decision.enabled) {
+  if (!configured.enabled) {
     pending.length = 0;
-    started = Promise.resolve(decision);
+    started = Promise.resolve(configured);
     return started;
   }
 
-  emitting = true;
-  started = (async () => {
+  deciding = true;
+  started = (async (): Promise<AnalyticsDecision> => {
+    const identity = await loadAnalyticsIdentity({ ensureId: true });
+    if (!identity?.installationId) {
+      deciding = false;
+      pending.length = 0;
+      return identity?.optedOut
+        ? { enabled: false, reason: 'opted_out' }
+        : { enabled: false, reason: 'identity_unavailable' };
+    }
+    deciding = false;
+    emitting = true;
     // ─────────────────────────────────────────────────────────────────────
     // READ THIS BEFORE DEBUGGING "analytics are not arriving" (2026-08-06).
     //
@@ -160,8 +120,8 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
     // capture would be a bad trade.
     const { default: posthog } =
       await import('posthog-js/dist/module.full.no-external');
-    posthog.init(decision.key, {
-      api_host: decision.apiHost,
+    posthog.init(configured.key, {
+      api_host: configured.apiHost,
       // No `ui_host`: decision `0034` keeps PostHog hostnames out of ordinary
       // builds, and the toolbar is never loaded.
       defaults: '2025-05-24',
@@ -178,19 +138,22 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
       advanced_disable_flags: true,
       // The crash signal. Messages are stripped in `before_send`.
       capture_exceptions: true,
-      // localStorage, not cookies: nothing about this stream needs a cookie.
-      persistence: 'localStorage',
+      // Nothing about this stream needs a cookie. The desktop renderer keeps
+      // nothing on its loopback origin at all (BUG-171): the id is main's,
+      // so the SDK's own state lives in memory for the launch.
+      persistence: detectElectron() ? 'memory' : 'localStorage',
       person_profiles: 'never',
       mask_personal_data_properties: true,
       property_denylist: [...ANALYTICS_PROPERTY_DENYLIST],
       before_send: scrubAnalyticsCapture,
       // Anonymous, per-installation, generated locally. Never an account id.
-      bootstrap: { distinctID: readInstallationId() ?? undefined },
+      bootstrap: { distinctID: identity.installationId },
     });
     sink = posthog as unknown as AnalyticsSink;
     flushPending();
-    return decision;
+    return configured;
   })().catch(() => {
+    deciding = false;
     emitting = false;
     pending.length = 0;
     return { enabled: false, reason: 'load_failed' } as AnalyticsDecision;
@@ -204,7 +167,7 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
  * it in the type system, and a caller with garbage at runtime gets a no-op.
  */
 export function captureAnalyticsEvent(event: AnalyticsEvent): void {
-  if (!emitting) return;
+  if (!emitting && !deciding) return;
   if (sink) {
     send(event);
     return;
@@ -217,29 +180,43 @@ export function isAnalyticsEmitting(): boolean {
   return emitting;
 }
 
+/** The persisted opt-out. A device whose identity cannot be read reads as
+ *  off, which is what it is: nothing is collected on that launch. */
+export async function readAnalyticsOptOut(): Promise<boolean> {
+  const identity = await loadAnalyticsIdentity({ ensureId: false });
+  return identity?.optedOut ?? true;
+}
+
 /**
  * The runtime opt-out. Opting out stops emission immediately, drops anything
- * queued, and clears the SDK's local state; opting back in takes effect on the
- * next launch, so the choice is never ambiguous mid-session.
+ * queued, clears the SDK's state, and forgets the installation id; opting
+ * back in takes effect on the next launch, so the choice is never ambiguous
+ * mid-session. Resolves to the opt-out now in force.
  */
-export function setAnalyticsOptOut(optedOut: boolean): void {
-  writeAnalyticsOptOut(optedOut);
-  if (!optedOut) return;
-  emitting = false;
-  pending.length = 0;
-  try {
-    sink?.opt_out_capturing?.();
-    sink?.reset?.(true);
-  } catch {
-    // Nothing to recover: emission is already off.
+export async function setAnalyticsOptOut(optedOut: boolean): Promise<boolean> {
+  if (optedOut) {
+    emitting = false;
+    deciding = false;
+    pending.length = 0;
+    try {
+      sink?.opt_out_capturing?.();
+      sink?.reset?.(true);
+    } catch {
+      // Nothing to recover: emission is already off.
+    }
+    sink = null;
   }
-  sink = null;
+  // An unpersisted opt-out still holds for this session (emission stopped
+  // above); an unpersisted opt-in changes nothing until it can be kept.
+  const persisted = await persistAnalyticsOptOut(optedOut);
+  return persisted?.optedOut ?? true;
 }
 
 /** Test seam: forget initialization so a suite can exercise a fresh launch. */
 export function __resetAnalyticsForTests(): void {
   sink = null;
   emitting = false;
+  deciding = false;
   started = null;
   pending.length = 0;
 }

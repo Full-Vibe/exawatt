@@ -149,6 +149,69 @@ export interface ExawattSettings<ThemeId extends string = string> {
    * never stored a choice, which is not the same as storing none.
    */
   keyboardShortcuts?: KeyboardShortcutOverridesV1;
+  /**
+   * Product analytics on this device (BUG-171): the runtime opt-out and the
+   * anonymous installation id, held by main so a launch that serves from a
+   * fallback port neither forgets the opt-out nor mints a new id. Absent
+   * means analytics have never asked; it never means opted out.
+   */
+  analytics?: AnalyticsDeviceRecord;
+}
+
+/** BUG-171: main's record of this device's product analytics identity. */
+export interface AnalyticsDeviceRecord {
+  /** Decision `0031`'s runtime opt-out. */
+  optedOut: boolean;
+  /** Anonymous, generated on this device, held only while opted in. */
+  installationId?: string;
+}
+
+/**
+ * What the renderer learns about analytics identity. `unavailable` is a read
+ * that failed (the settings file is unreadable or a new id could not be
+ * kept), which is never the same answer as "opted in with no id yet": the
+ * renderer starts no analytics for that launch.
+ */
+export type AnalyticsIdentityRead =
+  | { status: 'ready'; optedOut: boolean; installationId: string | null }
+  | { status: 'unavailable' };
+
+/**
+ * The renderer-origin values a desktop install kept before BUG-171, offered
+ * once so main can adopt them. Untrusted input: main validates both.
+ */
+export interface AnalyticsLegacyIdentity {
+  optedOut: boolean;
+  installationId: string | null;
+}
+
+export interface AnalyticsIdentityRequest {
+  legacy: AnalyticsLegacyIdentity | null;
+  /** Mint an id when none is held. Only a starting analytics client asks;
+   *  reading the switch's state must not create identity. */
+  ensureId: boolean;
+}
+
+const ANALYTICS_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** An anonymous analytics id is a lowercase UUID, and nothing else. */
+export function isAnalyticsId(value: unknown): value is string {
+  return typeof value === 'string' && ANALYTICS_ID_PATTERN.test(value);
+}
+
+/** Total over `unknown`: a record without an explicit opt-out is absent. */
+export function parseAnalyticsDeviceRecord(
+  raw: unknown
+): AnalyticsDeviceRecord | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const candidate = raw as Record<string, unknown>;
+  if (typeof candidate.optedOut !== 'boolean') return undefined;
+  const record: AnalyticsDeviceRecord = { optedOut: candidate.optedOut };
+  if (!candidate.optedOut && isAnalyticsId(candidate.installationId)) {
+    record.installationId = candidate.installationId;
+  }
+  return record;
 }
 
 /** What `settings:record-operator-profile-state` may write. */

@@ -12,11 +12,7 @@ export {
   initAnalytics,
   isAnalyticsEmitting,
   readAnalyticsOptOut,
-  readInstallationId,
   setAnalyticsOptOut,
-  writeAnalyticsOptOut,
-  ANALYTICS_INSTALLATION_ID_STORAGE_KEY,
-  ANALYTICS_OPT_OUT_STORAGE_KEY,
 } from './client';
 
 export {

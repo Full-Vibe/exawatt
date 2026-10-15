@@ -24,4 +24,9 @@ export {
   isCanonicalSessionRecordField,
 } from '../session-record-extensions';
 
-export { parsePresentationPreferences, FLEET_MATERIALS } from './settings';
+export {
+  FLEET_MATERIALS,
+  isAnalyticsId,
+  parseAnalyticsDeviceRecord,
+  parsePresentationPreferences,
+} from './settings';

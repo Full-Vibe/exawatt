@@ -162,7 +162,13 @@ export function PrivacySettings() {
   );
 
   useEffect(() => {
-    setAnalyticsEnabled(!readAnalyticsOptOut());
+    let current = true;
+    void readAnalyticsOptOut().then(optedOut => {
+      if (current) setAnalyticsEnabled(!optedOut);
+    });
+    return () => {
+      current = false;
+    };
   }, []);
 
   // Absent keys mean default, never off — `isHostedFeatureEnabled` owns that.
@@ -276,8 +282,11 @@ export function PrivacySettings() {
             control={OUTBOUND_CONTROLS.productAnalytics}
             checked={analyticsEnabled}
             onChange={next => {
-              setAnalyticsOptOut(!next);
-              setAnalyticsEnabled(!readAnalyticsOptOut());
+              // Show the choice at once; settle on what was kept.
+              setAnalyticsEnabled(next);
+              void setAnalyticsOptOut(!next).then(optedOut =>
+                setAnalyticsEnabled(!optedOut)
+              );
             }}
           />
         </SettingsGroup>

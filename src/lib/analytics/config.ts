@@ -22,6 +22,8 @@ export type AnalyticsDisabledReason =
   | 'no_distribution_config'
   | 'not_production'
   | 'opted_out'
+  /** The device's opt-out and id could not be read (BUG-171). */
+  | 'identity_unavailable'
   /** The SDK chunk failed to load. Emission stays off; product is unaffected. */
   | 'load_failed';
 

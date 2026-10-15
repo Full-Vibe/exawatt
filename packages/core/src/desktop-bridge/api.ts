@@ -387,6 +387,9 @@ interface DesktopShortcutsApi {
 interface DesktopAnalyticsApi {
   drainMainProcessEvents: BridgeInvoke<'analytics:drain-main-events'>;
   onMainProcessEvents: BridgeSubscribe<'analytics:main-process-events'>;
+  /** BUG-171: the opt-out and installation id live in main's settings. */
+  identity: BridgeInvoke<'analytics:identity'>;
+  setOptOut: BridgeInvoke<'analytics:set-opt-out'>;
 }
 
 interface DesktopBridgeShape {

@@ -20,7 +20,6 @@ import {
   COMMUNITY_DISTRIBUTION,
   type DistributionContractV2,
 } from '@exawatt/core/distribution';
-import { readAnalyticsOptOut } from '@/lib/analytics';
 import {
   HOSTED_FEATURE_IDS,
   OUTBOUND_CONTROLS,
@@ -107,6 +106,9 @@ type SettingsBridge = {
 
 /** The desktop settings store, as this surface sees it: a local read, a live
  *  change stream, and one setter per hosted feature. */
+/** Main's analytics record (BUG-171), as `analytics:*` would answer it. */
+const analyticsDevice = { optedOut: false };
+
 function installSettingsBridge(
   initial: ExawattSettings = {},
   options: { pendingRead?: boolean } = {}
@@ -149,7 +151,22 @@ function installSettingsBridge(
     ),
   };
 
-  installBridgeDouble({ platform: 'darwin', settings: bridge });
+  const answer = () => ({
+    status: 'ready' as const,
+    optedOut: analyticsDevice.optedOut,
+    installationId: null,
+  });
+  installBridgeDouble({
+    platform: 'darwin',
+    settings: bridge,
+    analytics: {
+      identity: vi.fn(async () => answer()),
+      setOptOut: vi.fn(async (optedOut: boolean) => {
+        analyticsDevice.optedOut = optedOut;
+        return answer();
+      }),
+    },
+  });
   return bridge;
 }
 
@@ -183,6 +200,7 @@ describe('Settings → Privacy', () => {
   beforeEach(() => {
     distributionState.current = COMMUNITY_DISTRIBUTION;
     window.localStorage.clear();
+    analyticsDevice.optedOut = false;
     goalVisualSource.reset();
     goalVisualSource.save.mockClear();
   });
@@ -515,17 +533,17 @@ describe('Settings → Privacy', () => {
     });
     expect(analytics).toHaveAttribute('aria-checked', 'true');
 
-    fireEvent.click(analytics);
-    expect(readAnalyticsOptOut()).toBe(true);
+    await act(async () => fireEvent.click(analytics));
+    expect(analyticsDevice.optedOut).toBe(true);
     expect(analytics).toHaveAttribute('aria-checked', 'false');
 
-    fireEvent.click(analytics);
-    expect(readAnalyticsOptOut()).toBe(false);
+    await act(async () => fireEvent.click(analytics));
+    expect(analyticsDevice.optedOut).toBe(false);
     expect(analytics).toHaveAttribute('aria-checked', 'true');
   });
 
   it('starts from a saved analytics opt-out', async () => {
-    window.localStorage.setItem('exawatt.analytics.opt-out.v1', 'true');
+    analyticsDevice.optedOut = true;
     installSettingsBridge();
     await renderPrivacy();
 

@@ -83,3 +83,33 @@ analytics (decision `0036`).
 ## Roadmap milestone log
 
 ### 2026-10-14 — created from the operator brief and decision `0053`
+
+### 2026-10-15 — F0: the opt-out and the installation id are main's
+
+BUG-171 closed. Electron main holds the analytics record in `settings.json`
+(`analytics: { optedOut, installationId? }`, parsed by
+`parseAnalyticsDeviceRecord` in the settings schema, forward-compatible so an
+older build never quarantines the file over it). The renderer reads it
+through `analytics:identity` and writes the switch through
+`analytics:set-opt-out` (`electron/main/analytics-identity.ts`,
+`src/lib/analytics/identity.ts`). A launch on a fallback port reads the same
+answer as every other launch, and the desktop SDK now keeps its state in
+memory (`persistence: 'memory'`), so the loopback origin holds no analytics
+state at all.
+
+Choices made:
+
+- **Migration is one offer, and an opt-out always wins it.** A desktop origin
+  that kept the pre-F0 keys offers them with the identity read; a device
+  without a record adopts both, a device with one keeps its own id, and a
+  legacy opt-out overrides an opted-in record. The renderer deletes its copy
+  once main answers, so the offer happens once per origin.
+- **Reading is strict.** `readSettings` (new, shared with
+  `readSafetyControls`) answers `unreadable` for an inaccessible or corrupt
+  file; analytics then do not start that launch, and an id that could not be
+  written is never used. Absence is not an answer.
+- **Opting out forgets the id** (the client comment already claimed it did);
+  opting back in mints a new one at the next launch.
+- **Only a starting client mints.** The Privacy switch reads without
+  `ensureId`, and a community build asks main nothing because the
+  distribution decides before identity is read.

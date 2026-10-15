@@ -1367,7 +1367,7 @@ Exit criteria:
 
 Milestones:
 
-- F0 Stable installation id (BUG-171)
+- F0 Stable installation id (BUG-171) — landed 2026-10-15
 - F1 Events, manifest, Privacy page and tests in one landing
 - F2 The web-to-app link
 - F3 Dashboard

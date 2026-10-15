@@ -412,6 +412,10 @@ const bridge = {
   analytics: {
     drainMainProcessEvents: () => invoke('analytics:drain-main-events'),
     onMainProcessEvents: subscribe('analytics:main-process-events'),
+    // BUG-171: the opt-out and the installation id are main's, so a launch
+    // on a fallback port reads the same answer as every other launch.
+    identity: request => invoke('analytics:identity', request),
+    setOptOut: optedOut => invoke('analytics:set-opt-out', optedOut),
   },
 } satisfies DesktopBridge;
 
