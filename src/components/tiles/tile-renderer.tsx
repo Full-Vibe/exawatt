@@ -311,6 +311,7 @@ function makeAnim(tileCount: number, partCount: number) {
     partCount: new Int32Array(partCount),
     /** Which tile each packed slot draws, for picking. */
     agentTile: new Int32Array(tileCount),
+    bodyIds: Array<string>(tileCount).fill(''),
     tileOfGhost: new Int32Array(tileCount).fill(-1),
     /** Agents in the fleet right now: an agent past this is leaving. */
     agents: 0,
@@ -404,6 +405,9 @@ export function TileRenderer({
   readClock,
   requestFrame,
   transmission = true,
+  detail = 'full',
+  interactive = true,
+  onMotionFrame,
   theme,
   onFocusPoint,
   reducedMotion,
@@ -468,7 +472,11 @@ export function TileRenderer({
     [allocation, groundSurface]
   );
   const planePickRadius = useMemo(
-    () => Math.max(6, ...placements.map(p => p.position.length() + 6)),
+    () =>
+      placements.reduce(
+        (radius, p) => Math.max(radius, p.position.length() + 6),
+        6
+      ),
     [placements]
   );
   const planePickCenter = useMemo(() => new THREE.Vector3(), []);
@@ -545,6 +553,19 @@ export function TileRenderer({
   }
   const anim = animRef.current;
   const { size, gl } = useThree();
+  const agentSlots = useMemo(() => {
+    const slots = new Map<string, number>();
+    for (let i = 0; i < model.agents.length; i += 1) {
+      const key = model.agents[i].key;
+      if (key) slots.set(key, i);
+    }
+    return slots;
+  }, [model]);
+  const maxRadius = useMemo(
+    () => tiles.reduce((radius, tile) => Math.max(radius, tile.radius ?? 1), 0),
+    [tiles]
+  );
+  const lowDetail = useRef(false);
   const tileOfAgent = useMemo(() => {
     const map = new Int32Array(model.agents.length).fill(-1);
     model.tiles.forEach((t, i) => {
@@ -573,6 +594,26 @@ export function TileRenderer({
     addWorkAttributes(g, tileCount);
     return g;
   }, [corner, tileCount]);
+  const coarseGeometry = useMemo(
+    () => tilePrismGeometry(TILE_RADIUS, TILE_HEIGHT, 0, null),
+    []
+  );
+  const coarseAgentGeometry = useMemo(() => {
+    const geometry = coarseGeometry.clone();
+    // Share preallocated per-instance light buffers across detail levels.
+    geometry.setAttribute('aWork', agentGeometry.getAttribute('aWork'));
+    geometry.setAttribute('aWander', agentGeometry.getAttribute('aWander'));
+    return geometry;
+  }, [coarseGeometry, agentGeometry]);
+  const coarseCoreGeometry = useMemo(() => {
+    const geometry = tilePrismGeometry(0.42, 1, 0, null);
+    geometry.setAttribute('aWork', coreGeometry.getAttribute('aWork'));
+    geometry.setAttribute('aWander', coreGeometry.getAttribute('aWander'));
+    return geometry;
+  }, [coreGeometry]);
+  useEffect(() => () => coarseGeometry.dispose(), [coarseGeometry]);
+  useEffect(() => () => coarseAgentGeometry.dispose(), [coarseAgentGeometry]);
+  useEffect(() => () => coarseCoreGeometry.dispose(), [coarseCoreGeometry]);
   const coreMaterial = useMemo(
     () =>
       withSurfaceLight(
@@ -705,10 +746,14 @@ export function TileRenderer({
   // when the browser takes the gesture (a scroll on glass) or the window
   // loses focus.
   useEffect(() => {
-    const up = () => letGo(anim, play);
+    const up = () => {
+      letGo(anim, play);
+      requestFrame?.();
+    };
     const drop = () => {
       anim.press = -1;
       anim.slotPressed = -1;
+      requestFrame?.();
     };
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', drop);
@@ -718,7 +763,7 @@ export function TileRenderer({
       window.removeEventListener('pointercancel', drop);
       window.removeEventListener('blur', drop);
     };
-  }, [anim, play]);
+  }, [anim, play, requestFrame]);
 
   const setCursor = (pointing: boolean) => {
     gl.domElement.style.setProperty('cursor', pointing ? 'pointer' : '');
@@ -865,12 +910,14 @@ export function TileRenderer({
     // projected below lands on this frame's picture, not the last one's.
     state.camera.updateMatrixWorld();
     const input = readFrame();
-    const selected = model.agents.findIndex(
-      a => a.key !== '' && a.key === input.focusId
-    );
-    const exemplar = model.agents.findIndex(
-      a => a.key !== '' && a.key === input.exemplarId
-    );
+    const selected = agentSlots.get(input.focusId ?? '') ?? -1;
+    const exemplar = agentSlots.get(input.exemplarId ?? '') ?? -1;
+    if (input.hoveredId !== undefined)
+      anim.hover = agentSlots.get(input.hoveredId ?? '') ?? -1;
+    if (input.pressedId !== undefined) {
+      anim.press = agentSlots.get(input.pressedId ?? '') ?? -1;
+      anim.pressTouch = false;
+    }
 
     const ground = groundRef.current;
     const agents = agentsRef.current;
@@ -903,6 +950,18 @@ export function TileRenderer({
     )
       return;
     for (let p = 0; p < parts.length; p += 1) if (!partMeshes[p]) return;
+    // Orthographic board diameter in CSS pixels (not device pixels). Keep
+    // hysteresis so a boundary cannot rebuild buffers or flicker during zoom.
+    const camera = state.camera;
+    if (detail === 'adaptive' && camera instanceof THREE.OrthographicCamera) {
+      const diameter =
+        (2 * TILE_RADIUS * maxRadius * camera.zoom * size.height) /
+        Math.max(1e-6, camera.top - camera.bottom);
+      lowDetail.current = lowDetail.current ? diameter < 18 : diameter < 14;
+    } else lowDetail.current = false;
+    ground.geometry = lowDetail.current ? coarseGeometry : geometry;
+    agents.geometry = lowDetail.current ? coarseAgentGeometry : agentGeometry;
+    cores.geometry = lowDetail.current ? coarseCoreGeometry : coreGeometry;
     const work = agents.geometry.getAttribute(
       'aWork'
     ) as THREE.InstancedBufferAttribute;
@@ -940,11 +999,18 @@ export function TileRenderer({
     const facing = Math.atan2(-forward.x, -forward.z);
     yaw.setFromAxisAngle(yAxis, facing);
     turnSurfaceLight(surface, facing);
-    const marked = mark !== 'off';
+    const marked = mark !== 'off' && !lowDetail.current;
     const markDepth = marked ? MARK_DEPTH[mark] : 0;
     // A bright top face takes dark ink; a dark one takes light.
     const brightFace = spec.core || sig.bodyStatus === 1;
     const moving = !reducedMotion;
+    const workMoves =
+      motion.wander ||
+      motion.sheen ||
+      motion.breathe ||
+      motion.pulse ||
+      motion.spin ||
+      motion.lift !== 'still';
     const colorRate = reducedMotion ? 1 : 1 - Math.exp(-STATUS_RATE * delta);
     const liftSpring = jelly ? JELLY_LIFT_SPRING : LIFT_SPRING;
     const squashSpring = jelly ? JELLY_SQUASH_SPRING : SQUASH_SPRING;
@@ -961,6 +1027,8 @@ export function TileRenderer({
         ? anim.slotPressed
         : -1;
 
+    let settling = false;
+    let workingMotion = false;
     let agentCount = 0;
     let groundCount = 0;
     let ghostCount = 0;
@@ -998,12 +1066,19 @@ export function TileRenderer({
           RING_RATE,
           delta
         );
+    settling =
+      Math.abs(anim.ring - (selectedTile >= 0 ? 1 : 0)) > 0.001 ||
+      anim.fading > 0.001;
     selection.visible = false;
     fadingRing.visible = false;
     anim.partCount.fill(0);
     for (let i = 0; i < tileCount; i += 1) {
       const tile = model.tiles[i];
       const place = placements[i];
+      const hostScale = input.tileScale?.(tile.id) ?? 1;
+      const radius =
+        (tile.radius ?? 1) *
+        (Number.isFinite(hostScale) ? Math.max(0, hostScale) : 0);
       if (anim.owners[i] !== tile.id) {
         anim.owners[i] = tile.id;
         anim.scale[i] = anim.lift[i] = anim.liftVelocity[i] = anim.spin[i] = 0;
@@ -1042,12 +1117,14 @@ export function TileRenderer({
         anim.slotHover[i] = slotHoverTarget ? 1 : 0;
         anim.slotPress[i] = slotPressTarget ? 1 : 0;
       } else {
-        anim.scale[i] = THREE.MathUtils.damp(
-          anim.scale[i],
-          scaleTarget,
-          ARRIVE_RATE,
-          delta
-        );
+        anim.scale[i] = input.tileScale
+          ? scaleTarget
+          : THREE.MathUtils.damp(
+              anim.scale[i],
+              scaleTarget,
+              ARRIVE_RATE,
+              delta
+            );
         anim.agentness[i] = THREE.MathUtils.damp(
           anim.agentness[i],
           agentTarget,
@@ -1073,9 +1150,18 @@ export function TileRenderer({
           delta
         );
       }
+      if (
+        !reducedMotion &&
+        (Math.abs(anim.scale[i] - scaleTarget) > 0.001 ||
+          Math.abs(anim.agentness[i] - agentTarget) > 0.001 ||
+          Math.abs(anim.weight[i] - weightTarget) > 0.001 ||
+          Math.abs(anim.slotHover[i] - Number(slotHoverTarget)) > 0.001 ||
+          Math.abs(anim.slotPress[i] - Number(slotPressTarget)) > 0.001)
+      )
+        settling = true;
       const s = anim.scale[i];
       const a = anim.agentness[i];
-      const w = anim.weight[i];
+      const w = anim.weight[i] * (input.tileEmphasis?.(tile.id) ?? 1);
       const slotHover = anim.slotHover[i];
       const slotPress = anim.slotPress[i];
       const agent = known !== null && a > AGENT_MIN ? known : null;
@@ -1090,13 +1176,27 @@ export function TileRenderer({
       // here, none as ground, and in between as it arrives or leaves, so a
       // light inside never cuts in or out part way (it did at half way).
       const live =
-        agent !== null && agent.status === 'active' && moving
+        agent !== null &&
+        agent.status === 'active' &&
+        moving &&
+        radius > 0 &&
+        tile.ambient !== false
           ? a * a * (3 - 2 * a)
           : 0;
       const working = live > 0;
+      if (
+        working &&
+        (motion.wander ||
+          motion.sheen ||
+          motion.breathe ||
+          motion.pulse ||
+          motion.spin ||
+          motion.lift !== 'still')
+      )
+        workingMotion = true;
       const phase = agent ? agent.phase * 0.9 : 0;
       // Wander: where the light inside is, in the tile's own plane.
-      const wandering = working && motion.wander;
+      const wandering = working && motion.wander && !lowDetail.current;
       const wanderAngle = clock * WANDER_TURN + phase * 2.1;
       const wanderReach =
         WANDER_REACH * (0.86 + 0.14 * Math.sin(clock * 0.83 + phase));
@@ -1199,6 +1299,17 @@ export function TileRenderer({
         );
       }
 
+      if (
+        !reducedMotion &&
+        (!working || !workMoves) &&
+        (Math.abs(anim.lift[i] - liftTarget) > 0.001 ||
+          Math.abs(anim.liftVelocity[i]) > 0.01 ||
+          Math.abs(anim.squash[i] - squashTarget) > 0.001 ||
+          Math.abs(anim.squashVelocity[i]) > 0.01 ||
+          anim.spin[i] !== 0)
+      )
+        settling = true;
+
       // The body's height and width: the lift raises it along the normal,
       // a squeeze trades height for width at the same volume, a breath
       // draws in a little of both.
@@ -1217,6 +1328,9 @@ export function TileRenderer({
       anim.ghost[i] = reducedMotion
         ? ghostTarget
         : THREE.MathUtils.damp(anim.ghost[i], ghostTarget, 7, delta);
+      if (!reducedMotion && Math.abs(anim.ghost[i] - ghostTarget) > 0.001)
+        settling = true;
+      if (radius === 0) continue;
       surfaceNormal(groundSurface, place.position, normal);
       // Arriving and leaving: the tile rises out of the globe or sinks into
       // it, everything that stands on it with it.
@@ -1232,11 +1346,11 @@ export function TileRenderer({
         dummy.quaternion.copy(place.quaternion);
         const gs = g * (1 + 0.05 * slotHover - 0.05 * slotPress);
         dummy.scale.set(gs, 1, gs);
-        if (tile.radius !== undefined && tile.radius !== 1) {
-          dummy.scale.multiplyScalar(tile.radius);
+        if (radius !== 1) {
+          dummy.scale.multiplyScalar(radius);
           dummy.position
             .sub(place.position)
-            .multiplyScalar(tile.radius)
+            .multiplyScalar(radius)
             .add(place.position);
         }
         dummy.updateMatrix();
@@ -1274,11 +1388,11 @@ export function TileRenderer({
         anim.statusReady[i] = 0;
         // as wide as the body it was, if it was one still settling
         dummy.scale.set(foot * pinch, thickness, foot * pinch);
-        if (tile.radius !== undefined && tile.radius !== 1) {
-          dummy.scale.multiplyScalar(tile.radius);
+        if (radius !== 1) {
+          dummy.scale.multiplyScalar(radius);
           dummy.position
             .sub(place.position)
-            .multiplyScalar(tile.radius)
+            .multiplyScalar(radius)
             .add(place.position);
         }
         dummy.updateMatrix();
@@ -1291,11 +1405,11 @@ export function TileRenderer({
 
       const wide = foot * pinch;
       dummy.scale.set(wide, thickness, wide);
-      if (tile.radius !== undefined && tile.radius !== 1) {
-        dummy.scale.multiplyScalar(tile.radius);
+      if (radius !== 1) {
+        dummy.scale.multiplyScalar(radius);
         dummy.position
           .sub(place.position)
-          .multiplyScalar(tile.radius)
+          .multiplyScalar(radius)
           .add(place.position);
       }
       dummy.updateMatrix();
@@ -1313,6 +1427,13 @@ export function TileRenderer({
         anim.status[si + 1] += (target.g - anim.status[si + 1]) * colorRate;
         anim.status[si + 2] += (target.b - anim.status[si + 2]) * colorRate;
       }
+      if (
+        !reducedMotion &&
+        (Math.abs(anim.status[si] - target.r) > 0.001 ||
+          Math.abs(anim.status[si + 1] - target.g) > 0.001 ||
+          Math.abs(anim.status[si + 2] - target.b) > 0.001)
+      )
+        settling = true;
       statusColor.setRGB(
         anim.status[si],
         anim.status[si + 1],
@@ -1348,6 +1469,7 @@ export function TileRenderer({
         color.lerp(groundColor, handover);
       }
       agents.setColorAt(agentCount, color);
+      anim.bodyIds[agentCount] = tile.id;
       // the light on its surface: the sheen's phase and strength, and the
       // glow of its own colour a breath or a wave gives it
       const sheenStrength =
@@ -1373,11 +1495,11 @@ export function TileRenderer({
           .addScaledVector(normal, bodyTop + CAP_PROUD - capHeight / 2);
         dummy.quaternion.copy(place.quaternion);
         dummy.scale.set(sw * 0.9, sa * capHeight, sw * 0.9);
-        if (tile.radius !== undefined && tile.radius !== 1) {
-          dummy.scale.multiplyScalar(tile.radius);
+        if (radius !== 1) {
+          dummy.scale.multiplyScalar(radius);
           dummy.position
             .sub(place.position)
-            .multiplyScalar(tile.radius)
+            .multiplyScalar(radius)
             .add(place.position);
         }
         dummy.updateMatrix();
@@ -1404,11 +1526,11 @@ export function TileRenderer({
             .addScaledVector(normal, bodyTop - bodyHeight * 0.42);
           const r = sa * ORB_RADIUS;
           dummy.scale.set(r, r, r);
-          if (tile.radius !== undefined && tile.radius !== 1) {
-            dummy.scale.multiplyScalar(tile.radius);
+          if (radius !== 1) {
+            dummy.scale.multiplyScalar(radius);
             dummy.position
               .sub(place.position)
-              .multiplyScalar(tile.radius)
+              .multiplyScalar(radius)
               .add(place.position);
           }
           dummy.updateMatrix();
@@ -1446,11 +1568,11 @@ export function TileRenderer({
                 part.layer * LAYER_STEP * markDepth
             );
           dummy.scale.set(ms, sa * markDepth, ms);
-          if (tile.radius !== undefined && tile.radius !== 1) {
-            dummy.scale.multiplyScalar(tile.radius);
+          if (radius !== 1) {
+            dummy.scale.multiplyScalar(radius);
             dummy.position
               .sub(place.position)
-              .multiplyScalar(tile.radius)
+              .multiplyScalar(radius)
               .add(place.position);
           }
           dummy.updateMatrix();
@@ -1476,11 +1598,11 @@ export function TileRenderer({
             .addScaledVector(normal, faceTop + LIFT_OFF + COIN_HEIGHT / 2);
           dummy.quaternion.copy(place.quaternion);
           dummy.scale.set(sw, sa, sw);
-          if (tile.radius !== undefined && tile.radius !== 1) {
-            dummy.scale.multiplyScalar(tile.radius);
+          if (radius !== 1) {
+            dummy.scale.multiplyScalar(radius);
             dummy.position
               .sub(place.position)
-              .multiplyScalar(tile.radius)
+              .multiplyScalar(radius)
               .add(place.position);
           }
           dummy.updateMatrix();
@@ -1507,11 +1629,11 @@ export function TileRenderer({
         const ls =
           sw * (beside ? 0.2 : (0.75 + 0.25 * w) * sig.glyphScale * 1.12);
         dummy.scale.set(ls, sa * 0.05, ls);
-        if (tile.radius !== undefined && tile.radius !== 1) {
-          dummy.scale.multiplyScalar(tile.radius);
+        if (radius !== 1) {
+          dummy.scale.multiplyScalar(radius);
           dummy.position
             .sub(place.position)
-            .multiplyScalar(tile.radius)
+            .multiplyScalar(radius)
             .add(place.position);
         }
         dummy.updateMatrix();
@@ -1537,11 +1659,11 @@ export function TileRenderer({
         dummy.position.copy(origin).addScaledVector(normal, bodyTop - 0.09);
         dummy.quaternion.copy(place.quaternion);
         dummy.scale.set(sw, 1, sw);
-        if (tile.radius !== undefined && tile.radius !== 1) {
-          dummy.scale.multiplyScalar(tile.radius);
+        if (radius !== 1) {
+          dummy.scale.multiplyScalar(radius);
           dummy.position
             .sub(place.position)
-            .multiplyScalar(tile.radius)
+            .multiplyScalar(radius)
             .add(place.position);
         }
         dummy.updateMatrix();
@@ -1571,11 +1693,11 @@ export function TileRenderer({
         }
         const gs = sa * (0.8 + 0.3 * w + attention * 0.08 * w + breath * 0.1);
         dummy.scale.set(gs, 1, gs);
-        if (tile.radius !== undefined && tile.radius !== 1) {
-          dummy.scale.multiplyScalar(tile.radius);
+        if (radius !== 1) {
+          dummy.scale.multiplyScalar(radius);
           dummy.position
             .sub(place.position)
-            .multiplyScalar(tile.radius)
+            .multiplyScalar(radius)
             .add(place.position);
         }
         dummy.updateMatrix();
@@ -1602,11 +1724,11 @@ export function TileRenderer({
         dummy.quaternion.copy(place.quaternion);
         const ps = sw * (0.94 + ph * PULSE_REACH);
         dummy.scale.set(ps, 1, ps);
-        if (tile.radius !== undefined && tile.radius !== 1) {
-          dummy.scale.multiplyScalar(tile.radius);
+        if (radius !== 1) {
+          dummy.scale.multiplyScalar(radius);
           dummy.position
             .sub(place.position)
-            .multiplyScalar(tile.radius)
+            .multiplyScalar(radius)
             .add(place.position);
         }
         dummy.updateMatrix();
@@ -1631,10 +1753,10 @@ export function TileRenderer({
           .addScaledVector(normal, TILE_HEIGHT / 2 + 0.05);
         selection.quaternion.copy(place.quaternion);
         const rs = foot * (0.9 + 0.1 * anim.ring);
-        selection.scale.set(rs, 1, rs).multiplyScalar(tile.radius ?? 1);
+        selection.scale.set(rs, 1, rs).multiplyScalar(radius);
         selection.position
           .sub(place.position)
-          .multiplyScalar(tile.radius ?? 1)
+          .multiplyScalar(radius)
           .add(place.position);
         (selection.material as THREE.MeshBasicMaterial).opacity = anim.ring;
       }
@@ -1644,10 +1766,10 @@ export function TileRenderer({
           .copy(origin)
           .addScaledVector(normal, TILE_HEIGHT / 2 + 0.05);
         fadingRing.quaternion.copy(place.quaternion);
-        fadingRing.scale.set(foot, 1, foot).multiplyScalar(tile.radius ?? 1);
+        fadingRing.scale.set(foot, 1, foot).multiplyScalar(radius);
         fadingRing.position
           .sub(place.position)
-          .multiplyScalar(tile.radius ?? 1)
+          .multiplyScalar(radius)
           .add(place.position);
         (fadingRing.material as THREE.MeshBasicMaterial).opacity = anim.fading;
       }
@@ -1656,6 +1778,7 @@ export function TileRenderer({
 
     flush(ground, groundCount);
     flush(agents, agentCount);
+    agents.userData.boardTileBodyIds = anim.bodyIds;
     flush(ghosts, ghostCount);
     if (slots) flush(slots, ghostCount);
     flush(cores, coreCount);
@@ -1693,6 +1816,10 @@ export function TileRenderer({
         onFocusPoint?.(input.focusId, point.x, point.y);
       } else onFocusPoint?.(null, 0, 0);
     } else onFocusPoint?.(null, 0, 0);
+    onMotionFrame?.(
+      !reducedMotion && settling,
+      !reducedMotion && workingMotion
+    );
     // A demand host schedules motion itself through its ambient cadence.
     // Interaction requests one wake-up; no continuous invalidate pump here.
   });
@@ -1711,6 +1838,7 @@ export function TileRenderer({
 
       <instancedMesh
         ref={groundRef}
+        name="tile-ground-bodies"
         args={[geometry, spec.ground, tileCount]}
         raycast={() => null}
         frustumCulled={false}
@@ -1718,6 +1846,8 @@ export function TileRenderer({
 
       <instancedMesh
         ref={agentsRef}
+        name="tile-agent-bodies"
+        raycast={interactive ? undefined : () => null}
         args={[agentGeometry, spec.agent, tileCount]}
         onPointerMove={hoverTile}
         onPointerOut={leaveTile}

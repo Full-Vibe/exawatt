@@ -29,11 +29,19 @@ export interface TileInstance {
   mark?: string;
   /** Stable motion phase; unrelated to the renderer's instance ordering. */
   phase?: number;
+  /** Aggregate population can carry Active truth without individual work motion. */
+  ambient?: boolean;
   ring?: number;
 }
 
 export interface TileFrame {
   focusId: string | null;
+  /** DOM interaction owners supply stable Agent ids; absent keeps mesh input. */
+  hoveredId?: string | null;
+  pressedId?: string | null;
+  /** Host-owned semantic transition samples, applied without a second ease. */
+  tileScale?: (tileId: string) => number;
+  tileEmphasis?: (tileId: string) => number;
   selection: ReadonlySet<string>;
   exemplarId?: string | null;
   highlightWeights?: Partial<Record<StatusLightState, number>>;
@@ -65,6 +73,12 @@ export interface TileRendererProps {
   readClock?: () => number;
   /** Overview/low-power hosts can remove the extra transmission pass. */
   transmission?: boolean;
+  /** Product batches use inexpensive geometry when their tiles are subpixel detail. */
+  detail?: 'full' | 'adaptive';
+  /** DOM overlays can own all input without paying mesh raycasting cost. */
+  interactive?: boolean;
+  /** No timer/loop here: the host schedules transition and ambient frames. */
+  onMotionFrame?: (settling: boolean, working: boolean) => void;
   sound?: PressSoundSetting;
   onExpand?: () => void;
   expandable?: boolean;

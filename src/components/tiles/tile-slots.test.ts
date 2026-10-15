@@ -30,6 +30,23 @@ describe('tile instance identity', () => {
     expect(shrunk.slots.filter(Boolean)).toHaveLength(2);
     expect(shrunk.slots[0]?.id).toBe('anchor');
   });
+  it('keeps every identity through a 10k fleet reorder and count churn', () => {
+    const pool = new TileSlots();
+    const fleet = Array.from({ length: 10_000 }, (_, i) => tile(`agent-${i}`));
+    const first = pool.reconcile(fleet);
+    const reordered = pool.reconcile([...fleet].reverse());
+    expect(reordered.capacity).toBe(first.capacity);
+    expect(reordered.slots.map(tile => tile?.id)).toEqual(
+      first.slots.map(tile => tile?.id)
+    );
+    const survivors = fleet.filter((_, index) => index % 2 === 0);
+    const next = pool.reconcile([...survivors, tile('new-agent')]);
+    for (let i = 0; i < fleet.length; i += 2)
+      expect(next.slots[i]?.id).toBe(fleet[i].id);
+    expect(new Set(next.slots.filter(Boolean).map(tile => tile?.id)).size).toBe(
+      survivors.length + 1
+    );
+  });
   it('rejects duplicate identity instead of aliasing two agents in one slot', () => {
     expect(() =>
       new TileSlots().reconcile([tile('same'), tile('same')])

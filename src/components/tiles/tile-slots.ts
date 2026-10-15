@@ -17,7 +17,8 @@ export class TileSlots {
       this.ids.set(tile.id, free);
       used.add(free);
     }
-    const needed = Math.max(1, ...used) + 1;
+    let needed = 1;
+    for (const slot of used) needed = Math.max(needed, slot + 1);
     while (this.capacity < needed)
       this.capacity = Math.max(16, this.capacity * 2);
     const slots: (TileInstance | null)[] = Array(this.capacity).fill(null);

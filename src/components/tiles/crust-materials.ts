@@ -10,40 +10,13 @@
 
 import * as THREE from 'three';
 
-export type CrustMaterialId =
-  | 'matte'
-  | 'glazed'
-  | 'gummy'
-  | 'acrylic'
-  | 'anodized';
+import {
+  FLEET_MATERIALS,
+  type FleetMaterial,
+} from '@exawatt/core/desktop-bridge';
 
-export const CRUST_MATERIALS: {
-  id: CrustMaterialId;
-  name: string;
-  note: string;
-}[] = [
-  { id: 'matte', name: 'Matte', note: 'Painted ceramic. The W15 baseline.' },
-  {
-    id: 'glazed',
-    name: 'Glazed',
-    note: 'A clear glaze over the painted body. Wet highlights, nothing see-through.',
-  },
-  {
-    id: 'gummy',
-    name: 'Gummy',
-    note: 'A jelly: half clear, a wet gloss, puffy edges, and a wobble when you touch it.',
-  },
-  {
-    id: 'acrylic',
-    name: 'Acrylic',
-    note: 'Satin coloured slabs on frosted clear ground. After together.ai.',
-  },
-  {
-    id: 'anodized',
-    name: 'Anodized',
-    note: 'Brushed metal body with the status as an inlaid light.',
-  },
-];
+export type CrustMaterialId = FleetMaterial;
+export const CRUST_MATERIALS = FLEET_MATERIALS;
 
 interface CrustEdge {
   /** Outline inset taken by the bevel, tile units. */
