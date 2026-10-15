@@ -77,6 +77,7 @@ const ENTRYPOINTS: Record<string, Disposition> = {
 const OVERLAY_ENTRYPOINTS: Record<string, Disposition> = {
   // No account service means no operator to authorise; both verbs refuse.
   'admin/invites/actions.ts': 'degrades',
+  'admin/homepage/actions.ts': 'degrades',
   'api/context-labels/route.ts': 'degrades',
   'api/conversations/summarize/route.ts': 'degrades',
   'api/feedback/route.ts': 'degrades',
@@ -87,10 +88,7 @@ const OVERLAY_ENTRYPOINTS: Record<string, Disposition> = {
   'download/artifact/route.ts': 'account-free',
 };
 
-const OVERLAY_APP_ROOT = path.join(
-  REPO_ROOT,
-  'company/overlay/web/src/app'
-);
+const OVERLAY_APP_ROOT = path.join(REPO_ROOT, 'company/overlay/web/src/app');
 
 function walk(directory: string, root = directory): string[] {
   const found: string[] = [];

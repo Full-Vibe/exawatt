@@ -170,7 +170,20 @@ composes nothing and withdraws anything a previous official build applied. The
 public tree keeps the typed request/response contracts and answers 404, and the
 runtime census in `src/lib/distribution/community-runtime.test.ts` spans both
 trees: an entrypoint must be declared on exactly one side, and nothing under
-`src/` may import across the boundary. Agent Source WebSockets are separate from service origins and remain
+`src/` may import across the boundary.
+
+The ENG-031 homepage copy contract is public and versioned: five stable scene
+keys and the two homepage action labels. The official hosted page reads one
+anon-readable `homepage_copy_current` snapshot per request, shares it with
+server metadata and the client story, and falls back to checked-in copy when
+the account store is absent or unavailable. The private company overlay owns
+`/admin`, a separate homepage-editor allowlist, request-bound confirmed-user
+checks, named variants, and service-role-only atomic publish/restore operations.
+Only the singleton published document is public; variants and immutable
+publication history remain server-side. Community and desktop compositions
+include the read contract and baseline, but no editor or hosted store.
+
+Agent Source WebSockets are separate from service origins and remain
 available to community builds for operator-configured Gateways. A configured
 Agent Source is an Electron-main capability: main reads the source-owned
 config, keeps the Gateway secret, device key/token, SSH tunnel, endpoint

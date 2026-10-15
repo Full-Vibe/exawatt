@@ -780,7 +780,7 @@ export const architectureManifest = {
           id: 'supabase-data',
           label: 'Configured Account + Hosted Data',
           summary:
-            'Optional account auth plus private hosted adapters for quota, feedback, operator aggregates, app data, artifacts, and signed updates. Public callers consume source-neutral DTOs and server-derived capabilities rather than database schemas or browser allowlists.',
+            'Optional account auth plus private hosted adapters for quota, feedback, operator aggregates, app data, artifacts, signed updates, and homepage copy editing. The homepage reads one public published snapshot through a versioned contract, with a checked-in Community fallback; private variants, history, and atomic writes require the separately authorized homepage-editor capability. Public callers consume source-neutral DTOs and server-derived capabilities rather than database schemas or browser allowlists.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 760,
