@@ -7,7 +7,7 @@ import {
   type HomepageCopyDocument,
 } from './contract';
 
-export interface PublishedHomepageCopy {
+interface PublishedHomepageCopy {
   document: HomepageCopyDocument;
   publicationId: string | null;
 }
