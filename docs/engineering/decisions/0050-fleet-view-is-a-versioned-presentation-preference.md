@@ -1,7 +1,7 @@
 # 0050 Fleet view is a versioned presentation preference over one shared tile renderer
 
 Date: 2026-10-14
-Status: accepted; P3 look accepted 2026-10-15, P4 implementation active
+Status: accepted; P4 integrated and P5 opt-in Preview available, 2026-10-15
 
 **The Fleet board gains a second presentation, Fleet view v2: the
 homepage's agent tiles drawn flat over the board's existing layout, chosen
@@ -89,10 +89,9 @@ as future projects add preferences.
    Gummy, and resets independently of the view. A pure shared catalog owns
    material ids and labels; Settings does not import Three.js.
 6. **Settings is the flag, and it only offers what works.** No separate
-   feature-flag system is built. Until v2 reaches parity (V4.1 P5), the
-   v2 option appears only in development builds and on the board bench;
-   no released build can select it. At P5 every build offers it, labelled
-   Preview, and a stored `v2` from a development build stays honoured.
+   feature-flag system is built. P4 parity passed and P5 removes the temporary
+   development-only offer: every build offers v2 (Preview), while v1 remains
+   the runtime default. A stored `v2` from a development build stays honoured.
    Material is now requested and included in P4. Future motion, camera or
    sound choices enter this record only when requested. Settings uses named
    destinations, grouped navigation, search and stable direct links. A small

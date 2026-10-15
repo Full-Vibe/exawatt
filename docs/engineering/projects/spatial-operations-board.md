@@ -2603,6 +2603,8 @@ gate fails as recorded above.
 
 ### V4.1 Fleet Tiles: Fleet view v2 (shaped 2026-10-14)
 
+Status: P1–P5 landed 2026-10-15. v2 (Preview) is opt-in in every build; v1 remains default. Hands-on operator review follows installation.
+
 Decision `0050`. The operator's brief, 2026-10-14: "Do you see the recent
 homepage upgrades and various material / studies that went into refining the
 agent board experience? I want a less spherical version in the product.
@@ -3539,5 +3541,21 @@ metadata tick rebuilt Agent ownership zones and therefore the selection handler,
 invalidating the neutral-body memo despite unchanged geometry. A browser trace
 confirmed two such updates with all 164 body inputs otherwise unchanged. The
 selection dependency now uses semantic Agent-to-Project ownership;
-the existing 50ms motion budget remains unchanged for final delivery.
-P5 remains a separate small availability slice after P4 integrates.
+the existing 50ms motion budget remains unchanged. Both views then passed every
+live and 1k motion flight. P4 integrated as `abcb46e37182` through ticket 658,
+with all 17 declared gates and the repository floor passing. The final v2 10k
+Fleet flat/angled probes measured 16.8ms painted-frame p95 and zero parked
+frames. Live power checks retained full resolution and working indicators
+while lock and suspend produced zero rendering passes.
+
+### 2026-10-15 — V4.1 P5 opt-in Preview for hands-on review
+
+**Every build now offers v2 (Preview) in Settings → Fleet; v1 remains the default.**
+P5 removes only the temporary development-build offer gate after P4 parity
+passed. Gummy remains the leading material, alongside Matte, Glazed, Acrylic
+and Anodized. Explicit choices persist, resetting a material preserves the
+view choice, and a fresh installation writes no implicit preference.
+
+P5 uses a separate normal landing and queued dogfood update. Installation is
+verified from the worker receipt; the running app is not restarted automatically.
+The next look review is the operator using the actual app, as requested.
