@@ -1,7 +1,7 @@
 # 0048 Homepage copy editing belongs in a bounded admin surface
 
 Date: 2026-10-14
-Status: accepted for planning; implementation pending ENG-031 W22
+Status: accepted; implemented in ENG-031 W22, production verification pending
 
 **Two authorized editors may draft, preview, and publish homepage copy from `/admin/homepage` without an approval step.**
 
