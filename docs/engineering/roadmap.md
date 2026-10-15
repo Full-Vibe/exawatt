@@ -1332,7 +1332,7 @@ Exit criteria:
 
 Milestones:
 
-- O1 Harness project suggestions in main (readers, filter, folding, diagnostics, IPC): LANDED 2026-10-15; 23 rows on the operator's Mac, 9 recent; no store written ([O1 record](projects/first-run-on-ramp.md#2026-10-15--o1-landed))
+- O1 Harness project suggestions in main (readers, filter, folding, diagnostics, IPC): LANDED 2026-10-15 (`d4c622ee`); 23 rows on the operator's Mac, 9 recent; no store written ([O1 record](projects/first-run-on-ramp.md#2026-10-15--o1-landed))
 - O2 "Your projects" in the chooser with one-click open and "Open all recent"
 - O3 First-Agent hand-off: composer focused on the suggesting harness, recent conversations visible
 - O4 Bindings beyond the folder (Antigravity project, chat-Project links): spec written 2026-10-15 (`first-run-on-ramp.md` → "Bindings spec"); build unshaped until a user asks Several folders per Project: one folder per Project for now (operator, 2026-10-15: "leaning toward 2", wants to see how other apps do it; the Codex desktop app, Zed and multi-root VS Code/Cursor allow several, Claude Desktop and Conductor do not); `bindings[]` keeps the door open.

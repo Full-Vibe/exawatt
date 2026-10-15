@@ -460,7 +460,8 @@ with its three questions. His answers, verbatim in the brief:
 The study is revised to these answers before O2/O5 copy anything from it.
 ### 2026-10-15 — O1 landed
 
-**Harness project suggestions ship in main, read-only and proven so.**
+**Harness project suggestions ship in main, read-only and proven so**
+(integrated as `d4c622ee`).
 `electron/main/projects/harness-project-suggestions.ts` reads six stores
 behind the bridge contract (`HarnessProjectSuggestion`, `HarnessStoreRead`;
 IPC `projects:suggestions`, preload `projects.suggestions({ refresh })`):
