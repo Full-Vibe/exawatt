@@ -3474,7 +3474,7 @@ is made from development-host measurements.
 
 ### 2026-10-15 — V4.1 P4 app parity and power controls
 
-**Fleet v2 now implements the real board contract; final delivery remains gated on performance evidence.**
+**Fleet v2 implements the real board contract with measured CPU, geometry and power controls.**
 One lazy view registry selects the canvas. Both presentations share layout,
 source-owned status and harness identity, selection, child delegation,
 keyboard/pointer controls and Session addresses. Five materials come from the
@@ -3507,8 +3507,14 @@ refreshes while source updates continued. The 10k Project probe reduced
 geometry from 31.13M to 1.085M triangles per frame and median painted intervals
 from 32.3ms to 16.6ms (17.4ms p95). CPU submission alone was insufficient: a
 whole-main-thread probe found avoidable aggregate transforms during continuous
-camera input, so final acceptance also measures that workload. These are
-development-host measurements, not a claim about battery-life duration.
+camera input. Static aggregate instance buffers now upload only when render
+inputs change; individual Agent animation remains live. On the Apple M2 Max
+development host, a 3-second continuous 10k camera sample dropped from 2,547ms
+to 243ms of main-thread work (84.8% to 8.1% of one core), with 179 painted
+frames and no tasks over 50ms. The parked 10k scene drew zero frames and used
+0.20% of one core. The 150-Agent active/economy sample reduced paints from
+180 to 60 and CPU from 9.5% to 5.6% of one core. These are measured samples,
+not universal upper bounds or a claim about battery-life duration.
 
 The delivery floor runs each declared gate on its exact committed candidate.
 Browser and Electron Session/source journeys now select and assert both actual
