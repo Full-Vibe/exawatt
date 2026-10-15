@@ -4472,3 +4472,17 @@ for changes that reach it; passes on identical trees are reused), and the
 load-tied concurrency cap is shaped in the
 [audit](projects/agent-development-loop.md#delivery-efficiency-audit--2026-10-15);
 neither is a longer bound, and neither closes this.
+
+### BUG-289 `test:agent-delivery` fails under load: id:next's concurrency test
+
+Status: open · agent delivery · found 2026-10-15 while landing ENG-029 B3.
+
+`scripts/append-merge.test.mjs` "id:next allocates past origin/master and
+the queue, once each, under concurrency" failed the landing floor twice at a
+load average of 180 to 230. The first run asserted a DUPLICATE allocation
+(`BUG-26 BUG-22 BUG-23 BUG-24 BUG-27 BUG-23 BUG-25 BUG-28`, seven distinct of
+eight), which is the defect id:next exists to prevent, not only slowness;
+the second timed out after 890 s ("Timed out waiting for the id counter
+owned by process 14786"). Not diagnosed: whether the counter lock can be
+taken twice when its holder is starved past a staleness bound, or whether
+the fixture's processes share a counter with a real concurrent id:next.
