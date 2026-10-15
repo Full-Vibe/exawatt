@@ -9,26 +9,23 @@ vi.mock('@/components/feedback/use-untriaged-feedback', () => ({
   useUntriagedFeedbackCount,
 }));
 
-import { RoadmapRail } from './roadmap-rail';
+import { RoadmapPanel } from './roadmap-panel';
 import { ROADMAP_LAB_STATES } from './lab-fixtures';
 
 function renderRail(untriagedFeedback?: number | null) {
   return render(
-    <RoadmapRail
+    <RoadmapPanel
       view={ROADMAP_LAB_STATES[0].view}
       projectDir="/fixtures/lab"
       projectName="lab"
       projectColor="#50e6ff"
-      mode="open"
-      onModeChange={() => {}}
       onSelectSession={() => {}}
-      overlay={false}
       untriagedFeedback={untriagedFeedback}
     />
   );
 }
 
-describe('RoadmapRail untriaged feedback line (ENG-025 F2.1)', () => {
+describe('RoadmapPanel untriaged feedback line (ENG-025 F2.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useUntriagedFeedbackCount.mockReturnValue(null);

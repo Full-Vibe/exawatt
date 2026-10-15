@@ -85,11 +85,15 @@ import {
 } from '@/components/status-light';
 import { Cloud, Monitor, Server } from 'lucide-react';
 import type { RoadmapItemView } from '@exawatt/ui-model';
+import { RoadmapPanel } from '@/components/roadmap/roadmap-panel';
+import { TeamDock, useTeamDockTab } from '@/components/team/team-dock';
 import {
-  RoadmapRail,
-  ROADMAP_RAIL_FOCUS_EVENT,
-  hasRoadmapRailSummon,
-} from '@/components/roadmap/roadmap-rail';
+  TEAM_DOCK_FOCUS_EVENT,
+  hasTeamDockSummon,
+} from '@/components/team/team-dock-summon';
+import { ChatterView } from '@/components/team/chatter/chatter-view';
+import type { ChatterParticipant } from '@/components/team/chatter/chatter-endpoint';
+import { useBusMessages, useProjectUnread } from '@/lib/bus/use-bus';
 import {
   useProjectRoadmap,
   type RoadmapLandingsSource,
@@ -162,7 +166,7 @@ function selectionKey(item: SelectionItem): string {
 }
 
 // Team is a comparison altitude: four tiles should fit beside the resting
-// roadmap rail on a common 1512px laptop viewport without shrinking type.
+// dock on a common 1512px laptop viewport without shrinking type.
 const TILE_W = 272;
 const TILE_H = 252;
 
@@ -484,7 +488,7 @@ export function ExposeOverlay({
   /**
    * Measure the tiles and ask the pure model where a direction key lands
    * (FIX-002). Geometry is read at keypress rather than tracked, because the
-   * only thing that can be wrong is a stale rect: the rail docks and
+   * only thing that can be wrong is a stale rect: the dock docks and
    * undocks, tiles wrap on resize, and Projects come and go.
    *
    * This function MEASURES and DELEGATES; it decides nothing. A tile with no
@@ -511,29 +515,28 @@ export function ExposeOverlay({
     [items]
   );
 
-  // ── Roadmap home (ENG-017 S12) ───────────────────────────────────────
-  // Sessions is the zoomed-out altitude, so the Project roadmap lives HERE:
-  // a permanent rail scoped to the SELECTED Project — roving across tiles
-  // re-scopes the plan. Docked beside the grid when the window affords it;
-  // summoned as a drawer (⌘B) when it doesn't.
-  const [railDocks, setRailDocks] = useState(true);
+  // ── The dock (ENG-017 S12, ENG-029 B3) ──────────────────────────────
+  // Team is the zoomed-out altitude, so the Project's roadmap and its agent
+  // chatter live HERE, as the two tabs of one dock scoped to the SELECTED
+  // Project — roving across tiles re-scopes both. Docked beside the grid
+  // when the window affords it; summoned as a drawer (⌘B) when it doesn't.
+  const [dockDocked, setDockDocked] = useState(true);
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return; // jsdom
     const mq = window.matchMedia('(min-width: 1100px)');
-    const apply = () => setRailDocks(mq.matches);
+    const apply = () => setDockDocked(mq.matches);
     apply();
     mq.addEventListener('change', apply);
     return () => mq.removeEventListener('change', apply);
   }, []);
-  const [railSummoned, setRailSummoned] = useState(() =>
-    hasRoadmapRailSummon()
-  );
+  const [dockSummoned, setDockSummoned] = useState(() => hasTeamDockSummon());
   useEffect(() => {
-    const summon = () => setRailSummoned(true);
-    window.addEventListener(ROADMAP_RAIL_FOCUS_EVENT, summon);
-    return () => window.removeEventListener(ROADMAP_RAIL_FOCUS_EVENT, summon);
+    const summon = () => setDockSummoned(true);
+    window.addEventListener(TEAM_DOCK_FOCUS_EVENT, summon);
+    return () => window.removeEventListener(TEAM_DOCK_FOCUS_EVENT, summon);
   }, []);
-  const railVisible = projects.length > 0 && (railDocks || railSummoned);
+  const dockVisible = projects.length > 0 && (dockDocked || dockSummoned);
+  const [dockTab, setDockTab] = useTeamDockTab();
 
   const selectedDir = items[sel]?.dir ?? activeProjectDir ?? null;
   const selectedProject = projects.find(p => p.dir === selectedDir) ?? null;
@@ -559,21 +562,60 @@ export function ExposeOverlay({
     write: writeRoadmap,
     undo: undoRoadmap,
   } = useProjectRoadmap(
-    railVisible ? selectedRootPath : null,
+    dockVisible ? selectedRootPath : null,
     roadmapSessions,
     declaredLinks,
     roadmapRead,
     roadmapLandings
   );
-  const exitRailFocus = useCallback(() => {
-    if (!railDocks) setRailSummoned(false);
+  const exitDockFocus = useCallback(() => {
+    if (!dockDocked) setDockSummoned(false);
     focusSelection();
-  }, [railDocks, focusSelection]);
+  }, [dockDocked, focusSelection]);
+
+  const selectSessionTab = useCallback(
+    (tabId: string) => {
+      const dir = projects.find(p => p.tabs.some(t => t.id === tabId))?.dir;
+      if (dir) onPick(dir, tabId);
+    },
+    [onPick, projects]
+  );
+
+  // Chatter reads the selected Project's messages whether or not its tab is
+  // showing: the tab's unread badge is how chatter announces itself
+  const chatterProjectId = dockVisible ? selectedDir : null;
+  const chatter = useBusMessages(chatterProjectId);
+  const chatterUnread = useProjectUnread(chatterProjectId, chatter.state);
+  const sendChatter = chatter.send;
+  const sendAsOperator = useCallback(
+    (to: string, text: string) => sendChatter({ to, text, kind: 'operator' }),
+    [sendChatter]
+  );
+  // Chatter names a Session the way its tile does, and opens its tab
+  const chatterParticipants = useMemo(() => {
+    const map = new Map<string, ChatterParticipant>();
+    for (const tile of tiles) {
+      if (tile.dir !== selectedDir) continue;
+      const participant = {
+        label: sessionDisplayCopy({
+          harness: tile.harness,
+          title: tile.title,
+          titleKind: tile.titleKind,
+          lifecycle: tile.lifecycle,
+          summary: summaries[tile.durableSessionId],
+        }).primary,
+        tabId: tile.tabId,
+      };
+      map.set(tile.durableSessionId, participant);
+      if (tile.sessionId) map.set(tile.sessionId, participant);
+    }
+    return map;
+  }, [selectedDir, summaries, tiles]);
 
   // tiles can shrink while open (a session exits) — selection stays in range.
   // Refocus only when the clamp actually MOVES the selection: this effect
   // also fires on mount, where an unconditional focus stole the keyboard
-  // from a summoned roadmap rail (S12).
+  // from a summoned dock (S12).
   useEffect(() => {
     setSel(s => {
       const next = Math.min(s, Math.max(0, items.length - 1));
@@ -649,15 +691,15 @@ export function ExposeOverlay({
   }, [focusSelection, items.length, navigationSelection]);
 
   // take the keyboard away from xterm; entrance flag flips post-mount so
-  // tiles transition in (staggered). When a roadmap summon is in flight the
-  // rail owns first focus (S12) — the entrance must not steal it back.
-  const railSummonedAtMountRef = useRef(hasRoadmapRailSummon());
+  // tiles transition in (staggered). When a dock summon is in flight the
+  // dock owns first focus (S12) — the entrance must not steal it back.
+  const dockSummonedAtMountRef = useRef(hasTeamDockSummon());
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       setEntered(true);
       // Entry centers the active tile: `nearest` would leave a below-the-fold
       // tile hugging the grid's bottom edge on arrival.
-      if (!railSummonedAtMountRef.current) {
+      if (!dockSummonedAtMountRef.current) {
         focusSelection(undefined, 'center');
       }
     });
@@ -690,12 +732,9 @@ export function ExposeOverlay({
   }, [onClose]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    // keys born inside the roadmap rail belong to it (it stops propagation
-    // for everything it handles; the rest must not move tile selection)
-    if (
-      e.target instanceof Element &&
-      e.target.closest('[data-roadmap-rail]')
-    ) {
+    // keys born inside the dock belong to it (its panels stop propagation
+    // for everything they handle; the rest must not move tile selection)
+    if (e.target instanceof Element && e.target.closest('[data-team-dock]')) {
       return;
     }
     // …and so do keys born inside anything that owns text or its own
@@ -1443,38 +1482,61 @@ export function ExposeOverlay({
           </div>
         </div>
       </div>
-      {railVisible && (
-        <RoadmapRail
-          view={roadmapView}
-          projectDir={selectedDir}
-          projectName={selectedProject?.name ?? null}
-          projectColor={selectedProject?.color ?? null}
-          mode="open"
-          onModeChange={() => exitRailFocus()}
-          onSelectSession={tabId => {
-            const dir = projects.find(p =>
-              p.tabs.some(t => t.id === tabId)
-            )?.dir;
-            if (dir) onPick(dir, tabId);
-          }}
-          onStartAgent={item =>
-            selectedDir
-              ? onStartRoadmapAgent(selectedDir, item)
-              : Promise.resolve(false)
-          }
-          onStartRemediation={() =>
-            selectedDir
-              ? onStartRoadmapRemediation(selectedDir)
-              : Promise.resolve(false)
-          }
-          onAttachSession={(tabId, itemId) =>
-            onAttachRoadmapSession(tabId, itemId)
-          }
-          onWrite={writeRoadmap}
-          onUndo={undoRoadmap}
-          overlay={!railDocks}
-          permanent
-          onExitFocus={exitRailFocus}
+      {dockVisible && (
+        <TeamDock
+          overlay={!dockDocked}
+          tab={dockTab}
+          onTabChange={setDockTab}
+          panels={[
+            {
+              id: 'roadmap',
+              label: 'Roadmap',
+              content: (
+                <RoadmapPanel
+                  view={roadmapView}
+                  projectDir={selectedDir}
+                  projectName={selectedProject?.name ?? null}
+                  projectColor={selectedProject?.color ?? null}
+                  onSelectSession={selectSessionTab}
+                  onStartAgent={item =>
+                    selectedDir
+                      ? onStartRoadmapAgent(selectedDir, item)
+                      : Promise.resolve(false)
+                  }
+                  onStartRemediation={() =>
+                    selectedDir
+                      ? onStartRoadmapRemediation(selectedDir)
+                      : Promise.resolve(false)
+                  }
+                  onAttachSession={(tabId, itemId) =>
+                    onAttachRoadmapSession(tabId, itemId)
+                  }
+                  onWrite={writeRoadmap}
+                  onUndo={undoRoadmap}
+                  onExitFocus={exitDockFocus}
+                />
+              ),
+            },
+            {
+              id: 'chatter',
+              label: 'Chatter',
+              badge: dockTab === 'chatter' ? 0 : chatterUnread,
+              badgeLabel: `${chatterUnread} unread`,
+              content: (
+                <ChatterView
+                  projectId={chatterProjectId}
+                  projectName={selectedProject?.name ?? null}
+                  projectColor={selectedProject?.color ?? null}
+                  state={chatter.state}
+                  send={sendAsOperator}
+                  participants={chatterParticipants}
+                  visible={dockTab === 'chatter'}
+                  onSelectSession={selectSessionTab}
+                  onExitFocus={exitDockFocus}
+                />
+              ),
+            },
+          ]}
         />
       )}
     </div>

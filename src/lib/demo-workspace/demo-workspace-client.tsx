@@ -50,6 +50,7 @@ import {
   CLOSE_ACTIVE_EVENT,
   REOPEN_LAST_CLOSED_EVENT,
   JUMP_ATTENTION_EVENT,
+  OPEN_ROADMAP_EVENT,
   consumePendingSessionJump,
   consumePendingReopenLastClosed,
 } from '@/components/workspace/session-jump';
@@ -106,6 +107,12 @@ import {
   demoTabLifecycle,
 } from './model';
 import { DemoSessionPane } from './demo-session-pane';
+import { BusClientProvider } from '@/lib/bus/use-bus';
+import { createDemoBusClient } from '@/lib/bus/demo-client';
+import {
+  TEAM_DOCK_FOCUS_EVENT,
+  requestTeamDockSummon,
+} from '@/components/team/team-dock-summon';
 import type { DemoFleetAgent } from '@exawatt/core';
 import type { SessionModelChange } from '@exawatt/core/desktop-bridge';
 import {
@@ -236,6 +243,9 @@ export function DemoWorkspaceClient() {
   // (`useProjectRoadmap`): a new function exactly when a landing landed, so
   // the Project roadmap shows the flipped milestone and nothing re-parses on
   // every tick.
+  // Voltaic's authored agent chatter through the same bus seam Team reads
+  // live (ENG-029 B3); one client per load, on the shell's one clock
+  const demoBus = useMemo(() => createDemoBusClient(demoShellNowMs()), []);
   const roadmapRead = useMemo(
     () => (projectDir: string) => demoRoadmapRead(projectDir, landed),
     [landed]
@@ -922,6 +932,22 @@ export function DemoWorkspaceClient() {
     [router]
   );
 
+  // The palette's and the menu's Roadmap verb (⌘B) opens Team's dock on the
+  // tab last used, as it does in a live Workspace; the Demo had no listener,
+  // so the row the palette offered here did nothing
+  useEffect(() => {
+    const onOpenDock = () => {
+      requestTeamDockSummon();
+      if (overviewOpen) {
+        window.dispatchEvent(new CustomEvent(TEAM_DOCK_FOCUS_EVENT));
+      } else {
+        router.replace('/workspace?view=sessions', { scroll: false });
+      }
+    };
+    window.addEventListener(OPEN_ROADMAP_EVENT, onOpenDock);
+    return () => window.removeEventListener(OPEN_ROADMAP_EVENT, onOpenDock);
+  }, [overviewOpen, router]);
+
   const activeRoadmapChip = roadmapByTab[activeId];
   const visibleKeyHints = DEMO_KEY_HINTS.filter(
     hint =>
@@ -1144,36 +1170,38 @@ export function DemoWorkspaceClient() {
 
       {/* Team altitude — the real exposé over demo Projects */}
       {overviewOpen && (
-        <ExposeOverlay
-          projects={ribbonProjects}
-          summaries={summaries}
-          attention={attention}
-          activity={activity}
-          engaged={engaged}
-          delegation={delegation}
-          roadmapByTab={roadmapByTab}
-          agentTypeByTab={agentTypeByTab}
-          initiativeByTab={initiativeByTab}
-          goalVisuals={goalVisuals}
-          consumptionByTab={consumptionByTab}
-          activeTabId={activeAgent?.id ?? null}
-          activeProjectDir={activeProject?.dir ?? null}
-          navigationSelection={teamSelection}
-          roadmapRead={roadmapRead}
-          roadmapLandings={roadmapLandings}
-          onSelectionChange={publishTeamSelection}
-          onPick={(_dir, tabId) => {
-            setActiveId(tabId);
-            closeOverview();
-          }}
-          onPickProject={dir => {
-            const project = projects.find(p => p.dir === dir);
-            const first = project?.tabs[0];
-            if (first) setActiveId(first.id);
-            closeOverview();
-          }}
-          onClose={closeOverview}
-        />
+        <BusClientProvider client={demoBus}>
+          <ExposeOverlay
+            projects={ribbonProjects}
+            summaries={summaries}
+            attention={attention}
+            activity={activity}
+            engaged={engaged}
+            delegation={delegation}
+            roadmapByTab={roadmapByTab}
+            agentTypeByTab={agentTypeByTab}
+            initiativeByTab={initiativeByTab}
+            goalVisuals={goalVisuals}
+            consumptionByTab={consumptionByTab}
+            activeTabId={activeAgent?.id ?? null}
+            activeProjectDir={activeProject?.dir ?? null}
+            navigationSelection={teamSelection}
+            roadmapRead={roadmapRead}
+            roadmapLandings={roadmapLandings}
+            onSelectionChange={publishTeamSelection}
+            onPick={(_dir, tabId) => {
+              setActiveId(tabId);
+              closeOverview();
+            }}
+            onPickProject={dir => {
+              const project = projects.find(p => p.dir === dir);
+              const first = project?.tabs[0];
+              if (first) setActiveId(first.id);
+              closeOverview();
+            }}
+            onClose={closeOverview}
+          />
+        </BusClientProvider>
       )}
 
       {projectPause.confirmation && (

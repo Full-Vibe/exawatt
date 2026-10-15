@@ -151,13 +151,13 @@ const openProject = (page, dir) =>
  * The rail SCOPED to a named Project. Every read names the Project it is
  * about, because the rail follows the selected tile and the selection is not
  * this script's to assume: ⌘J is a fleet-wide queue (BUG-026) and moves it
- * across Projects. Reading a bare `[data-roadmap-rail]` therefore read
+ * across Projects. Reading a bare `[data-roadmap-panel]` therefore read
  * whichever plan happened to be in front, which is how the empty-queue case
  * asserted three times against a DIFFERENT Project's rail and reported the
  * designed empty state as regressed (BUG-040).
  */
 const rail = (page, dir) =>
-  page.locator(`[data-roadmap-rail][data-roadmap-project="${dir}"]`);
+  page.locator(`[data-roadmap-panel][data-roadmap-project="${dir}"]`);
 const railText = async (page, dir) => {
   await rail(page, dir).waitFor();
   return rail(page, dir).innerText();
@@ -186,7 +186,7 @@ await withElectronApp(
 
     const railFocused = () =>
       page.evaluate(
-        () => !!document.activeElement?.closest('[data-roadmap-rail]')
+        () => !!document.activeElement?.closest('[data-roadmap-panel]')
       );
     const inSessions = () => page.url().includes('view=sessions');
     const toTerminal = async () => {
@@ -221,7 +221,7 @@ await withElectronApp(
     // S12: the Terminal view carries NO rail and no strip — the lens lives
     // at the Sessions altitude
     results.terminalHasNoRail =
-      (await page.locator('[data-roadmap-rail]').count()) === 0;
+      (await page.locator('[data-roadmap-panel]').count()) === 0;
     await shot(page, '0-terminal-no-rail');
 
     // healthy fixture
@@ -318,11 +318,11 @@ await withElectronApp(
 
     // S12: Escape at queue level leaves rail FOCUS but the rail stays — it
     // is a fixture of the Sessions altitude, not a dismissable panel
-    await page.locator('[data-roadmap-rail]').focus();
+    await page.locator('[data-roadmap-panel]').focus();
     await page.keyboard.press('Escape');
     await page.waitForTimeout(400);
     results.escKeepsRailVisible =
-      (await page.locator('[data-roadmap-rail]').count()) === 1;
+      (await page.locator('[data-roadmap-panel]').count()) === 1;
     results.escReturnsToTiles = await page.evaluate(
       () => !!document.activeElement?.closest('[data-expose-tile]')
     );

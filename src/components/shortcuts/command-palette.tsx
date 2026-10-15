@@ -809,13 +809,15 @@ export function CommandPalette({
       },
       {
         id: WORKSPACE_PALETTE_ROW_ID.roadmap,
-        label: 'Open the Project roadmap',
+        label: 'Open the roadmap and agent chatter',
         value: paletteValue(
-          'Open the Project roadmap',
+          'Open the roadmap and agent chatter',
           WORKSPACE_PALETTE_ROW_ID.roadmap
         ),
         keywords: [
           'roadmap',
+          'chatter',
+          'agent messages',
           'plan',
           'queue',
           'milestones',

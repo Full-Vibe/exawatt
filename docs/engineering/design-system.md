@@ -483,7 +483,7 @@ The gallery has been the de facto design system. With this document as the writt
 | `/hud-gallery/agent-field`                                                                                                                             | **Retire**                                                                         | pre–Operations-Board scale demo; the shared R3F machinery it exercises is already production (`operations-board-surface`), and `/eval/t3-spatial-sparse` + `/eval/t4-agent-station` are the deterministic rigs. ENG-004 V3.1 (P5) does demo-scale work on the real surface, not here |
 | `/hud-gallery/agent-sources`                                                                                                                           | **Retire**                                                                         | graduated to production `/settings` (settings shell + `agent-sources-settings.tsx`); the 1,182-line lab duplicates a shipped surface and carries its own off-scale type (17/22/25/28px)                                                                                              |
 | `/hud-gallery/consumption-lab` | **Retired 2026-08-03** (pulled forward from the planned E5 fold-in) | its subject shipped as `/usage` (E8); a study of a shipped surface only drifts. `/hud-gallery/consumption-redesign` and the `#ambient-consumption-meter` four-form study retired in the same pass once the operator picks (composite page, bar meter form) were live |
-| `/hud-gallery/roadmap-lab`                                                                                                                             | **Keep**                                                                           | deterministic review rig driving the shipped strip/rail through the real parser against canned states — exactly the workbench role                                                                                                                                                   |
+| `/hud-gallery/roadmap-lab`                                                                                                                             | **Keep**                                                                           | deterministic review rig driving the shipped roadmap panel (the Roadmap tab of Team's dock) through the real parser against canned states — exactly the workbench role; the collapsed strip retired 2026-10-15 with the dock extraction (ENG-029 B3)                                                                                                                                                   |
 | `/hud-gallery/project-ribbon` + `/project-ribbon/bench`                                                                                                | **Keep**                                                                           | active dogfood bench (ENG-016 D42, 2026-08-02 round)                                                                                                                                                                                                                                 |
 | `/hud-gallery/agent-launcher`                                                                                                                          | **Keep**                                                                           | deterministic D49 state/interaction rig rendering the production `AgentLauncher`; browser gates cover stable skeleton geometry, card overflow, drawer attachment, and keyboard focus handoff                                                                                         |
 | `/hud-gallery/paused-agent`                                                                                                                            | **Keep**                                                                           | ENG-016 BUG-012/013: the state matrix for the paused-Agent record, driven by an injected bridge so it needs no Electron; `eval:workspace:paused` runs here                                                                                                                                        |
@@ -642,6 +642,18 @@ snapshot, never an intermediate layout storm.
   the goal beneath. A rename the name rules refuse keeps its editor open and
   shows the reason under the field (`text-chrome-meta`, red keyline), never
   over the strip. One owner: `sessionDisplayCopy` (`primaryKind: 'name'`).
+
+- 2026-10-15 — ENG-029 B3: Team's right-hand dock becomes a tabbed container
+  (`src/components/team/team-dock.tsx`) holding Roadmap and Chatter on VS
+  Code's side-bar model: one panel at a time, underline tabs at
+  `text-chrome-label` with a `text-chrome-micro` mono count badge, one ⌘B for
+  the dock, the last tab remembered, docked at ≥1100px and a drawer below.
+  Chatter rows are two lines (`text-chrome-label` endpoints with harness
+  marks, `text-chrome-meta` first line, `text-chrome-micro` age) with a
+  shape-distinct delivery mark per result (shape, color and spoken label);
+  the thread opens messages in place at `text-chrome-title` with a mono
+  `text-chrome-micro` stamp. No new rungs or colors; specimen at
+  `/hud-gallery/team-dock`.
 
 - 2026-10-15 — ENG-003 S5.3.1: the Settings source card (identity, state
   pill, one next step, Recheck, disclosure, freshness) is one controlled

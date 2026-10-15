@@ -1,14 +1,16 @@
 // No 'use client': only imported by the client workspace surface.
 
 /**
- * Roadmap rail (ENG-017 S2): the workspace expression of the roadmap lens.
- * A feed line — the Project's queue as stations on a spine in the Project's
- * identity color, the now station dominant, resolution falling off with
- * distance (the altitude principle inside one panel).
+ * The roadmap panel (ENG-017 S2, S12): the workspace expression of the
+ * roadmap lens, the Roadmap tab of Team's dock. A feed line — the Project's
+ * queue as stations on a spine in the Project's identity color, the now
+ * station dominant, resolution falling off with distance (the altitude
+ * principle inside one panel). The dock owns the frame (width, docking,
+ * focus ring); this panel owns only its content.
  *
- * Keyboard-first: ⌘B summons (wired in the workspace shortcut layer), the
- * rail owns plain keys while focused (roving selection, Enter/→ drill,
- * Esc/← back out, `o` opens the file, `g` jumps to the now station).
+ * Keyboard-first: ⌘B summons the dock, the panel owns plain keys while
+ * focused (roving selection, Enter/→ drill, Esc/← back out, `o` opens the
+ * file, `g` jumps to the now station).
  * Manipulation appears only for explicitly conformant roadmap files. Every
  * operation is shown inline and still delegates the actual compare/write to
  * the main-process boundary from decision 0035.
@@ -21,11 +23,11 @@ import {
   useRef,
   useState,
 } from 'react';
+import { takeTeamDockSummon } from '@/components/team/team-dock-summon';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha as withAlpha,
 } from '@/components/workspace/workspace-theme';
-import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../workspace/session-jump';
 import { useUntriagedFeedbackCount } from '../feedback/use-untriaged-feedback';
 import type {
   RoadmapItemView,
@@ -50,49 +52,7 @@ import type {
   RoadmapWriteResult,
 } from '@exawatt/core/desktop-bridge';
 
-export type RoadmapRailMode = 'strip' | 'open';
-
-/** dispatched by the workspace ⌘B verb to move focus into the rail */
-export const ROADMAP_RAIL_FOCUS_EVENT = 'exawatt:focus-roadmap-rail';
-/** dispatched (detail: item id) to open the rail drilled into one item */
-export const ROADMAP_DRILL_EVENT = 'exawatt:roadmap-drill';
-
-// Cross-surface summons (S12): the rail lives in the Sessions overlay, but
-// ⌘B / the context chip / starving-attention jumps fire from Terminal before
-// the overlay exists. The request is parked here and read on mount. Reads are
-// IDEMPOTENT within a short freshness window instead of consume-once:
-// StrictMode's dev double-mount re-runs the rail's effects (including the
-// [projectDir] reset that clears the drill), so a destructive consume left
-// the second pass with nothing to re-apply.
-const SUMMON_FRESH_MS = 3000;
-let pendingSummon: { drillId: string | null; at: number } | null = null;
-
-export function requestRoadmapRailSummon(drillId?: string): void {
-  pendingSummon = { drillId: drillId ?? null, at: Date.now() };
-}
-
-export function takeRoadmapRailSummon(): { drillId: string | null } | null {
-  if (!pendingSummon) return null;
-  if (Date.now() - pendingSummon.at > SUMMON_FRESH_MS) {
-    pendingSummon = null;
-    return null;
-  }
-  return pendingSummon;
-}
-
-/** non-consuming peek — the Sessions overlay reveals the drawer and holds
- *  its entrance focus when a summon is in flight */
-export function hasRoadmapRailSummon(): boolean {
-  return (
-    pendingSummon !== null && Date.now() - pendingSummon.at <= SUMMON_FRESH_MS
-  );
-}
-
-export const ROADMAP_RAIL_WIDTH = 320;
-export const ROADMAP_RAIL_FOCUSED_WIDTH = 420;
-export const ROADMAP_STRIP_WIDTH = 36;
-
-type RailRow =
+type PanelRow =
   | { kind: 'group'; group: 'shipped' | 'parked'; label: string }
   | {
       kind: 'item';
@@ -108,7 +68,7 @@ function itemViewKey(item: RoadmapItemView): string {
   return `${item.id}:${item.sourceLine}`;
 }
 
-function rowKey(row: RailRow): string {
+function rowKey(row: PanelRow): string {
   return row.kind === 'item'
     ? itemViewKey(row.item)
     : row.kind === 'chip'
@@ -127,114 +87,6 @@ function formatUpdated(mtimeMs: number): string {
   const mo = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `updated ${d.getFullYear()}-${mo}-${dd}`;
-}
-
-/**
- * The collapsed strip's spine (S6): one node per queue position, top-to-
- * bottom as the queue reads. The CURRENT node (live agent attached) carries
- * the strip's only motion; blocked/starving/unmapped are the only color.
- */
-function RoadmapStripSpine({
-  view,
-  color,
-}: {
-  view: RoadmapLensView;
-  color: string;
-}) {
-  const nodes = useMemo(() => buildRoadmapStrip(view), [view]);
-  if (nodes.length === 0) return null;
-  return (
-    <span className="flex flex-col items-center gap-[6px]">
-      {nodes.map((node, i) => {
-        if (node.kind === 'unmapped') {
-          return (
-            <span
-              key={`u-${i}`}
-              data-strip-node="unmapped"
-              title={node.label}
-              aria-hidden
-              className="h-1.5 w-1.5 rotate-45"
-              style={{ background: HUD.amber }}
-            />
-          );
-        }
-        if (node.kind === 'starving') {
-          return (
-            <span
-              key="starving"
-              data-strip-node="starving"
-              title={node.label}
-              aria-hidden
-              className="grid h-3.5 w-3.5 place-items-center rounded-full font-mono text-chrome-nano font-bold motion-safe:[animation:roadmap-node-pulse_2.4s_ease-in-out_infinite]"
-              style={
-                {
-                  color: HUD.amber,
-                  border: `1.5px solid ${HUD.amber}`,
-                  '--roadmap-pulse-color': withAlpha(HUD.amber, 0.8),
-                } as React.CSSProperties
-              }
-            >
-              !
-            </span>
-          );
-        }
-        if (node.kind === 'aggregate') {
-          return (
-            <span
-              key={`agg-${node.group}`}
-              data-strip-node={`agg-${node.group}`}
-              title={node.label}
-              aria-hidden
-              className="font-mono text-chrome-nano leading-none"
-              style={{
-                color:
-                  node.group === 'shipped'
-                    ? withAlpha(HUD.green, 0.65)
-                    : HUD.textDim,
-              }}
-            >
-              {node.group === 'shipped' ? `✓${node.count}` : `+${node.count}`}
-            </span>
-          );
-        }
-        const loud = node.blocked || node.needsAttention;
-        const nodeColor = loud
-          ? HUD.amber
-          : node.role === 'shipped'
-            ? withAlpha(HUD.green, 0.55)
-            : node.role === 'current' || node.role === 'now'
-              ? color
-              : HUD.idle;
-        const size = node.role === 'current' ? 10 : 7;
-        const filled =
-          node.role === 'shipped' || node.role === 'current' || node.blocked;
-        return (
-          <span
-            key={`${node.id}-${i}`}
-            data-strip-node={node.role}
-            data-strip-item={node.id}
-            title={node.label}
-            aria-hidden
-            className={`shrink-0 rounded-full ${
-              node.role === 'current'
-                ? 'motion-safe:[animation:roadmap-node-pulse_2.4s_ease-in-out_infinite]'
-                : ''
-            }`}
-            style={
-              {
-                width: size,
-                height: size,
-                background: filled ? nodeColor : 'transparent',
-                border: `1.5px solid ${nodeColor}`,
-                opacity: node.role === 'later' ? 0.55 : 1,
-                '--roadmap-pulse-color': withAlpha(nodeColor, 0.85),
-              } as React.CSSProperties
-            }
-          />
-        );
-      })}
-    </span>
-  );
 }
 
 /**
@@ -322,19 +174,12 @@ function trustLine(view: RoadmapLensView): string {
   return parts.join(' · ');
 }
 
-export function RoadmapRail({
+export function RoadmapPanel({
   view,
   projectDir,
   projectName,
   projectColor,
-  mode,
-  onModeChange,
   onSelectSession,
-  /** dock beside the stage, or float over it on narrow windows */
-  overlay,
-  /** Sessions home (S12): the rail is a fixture — no collapse chrome, and
-   *  leaving it moves focus to the overview instead of the terminal */
-  permanent = false,
   onExitFocus,
   untriagedFeedback,
   onStartAgent = async () => false,
@@ -354,12 +199,9 @@ export function RoadmapRail({
   projectDir: string | null;
   projectName: string | null;
   projectColor: string | null;
-  mode: RoadmapRailMode;
-  onModeChange: (mode: RoadmapRailMode) => void;
   /** focus the terminal tab a chip points at */
   onSelectSession: (tabId: string) => void;
-  overlay: boolean;
-  permanent?: boolean;
+  /** Escape at the queue: leave the panel (Team returns to its tiles) */
   onExitFocus?: () => void;
   /** ENG-025 F2.1: operator inbox pressure. Omit to sample live Supabase
    *  state, which returns a count for operator accounts only (F3.1); the lab
@@ -388,8 +230,7 @@ export function RoadmapRail({
   const [sel, setSel] = useState(0);
   // milestone roving inside the drill (S7, the deferred R2 level)
   const [msel, setMsel] = useState(0);
-  const [focused, setFocused] = useState(false);
-  // one clock for every relative time on the rail (landing marks, header)
+  // one clock for every relative time on the panel (landing marks, header)
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -409,13 +250,11 @@ export function RoadmapRail({
 
   // entrance stagger (exposé recipe): flag flips post-mount
   useEffect(() => {
-    if (mode !== 'open') return;
-    setEntered(false);
     const raf = requestAnimationFrame(() => setEntered(true));
     return () => cancelAnimationFrame(raf);
-  }, [mode]);
+  }, []);
 
-  // project switch re-scopes the rail: drill resets, selection returns home
+  // project switch re-scopes the panel: drill resets, selection returns home
   useEffect(() => {
     writeScope.current += 1;
     mutationInFlight.current = false;
@@ -427,39 +266,17 @@ export function RoadmapRail({
     setParkedOpen(false);
   }, [projectDir]);
 
-  // the workspace ⌘B verb moves focus here
+  // the context chip's summon (S12) opens the panel drilled into its item;
+  // it is parked before Team mounts, so it is read on mount (the dock moves
+  // focus here and shows this tab)
   useEffect(() => {
-    const onFocusRail = () => rootRef.current?.focus();
-    window.addEventListener(ROADMAP_RAIL_FOCUS_EVENT, onFocusRail);
-    return () =>
-      window.removeEventListener(ROADMAP_RAIL_FOCUS_EVENT, onFocusRail);
+    const drill = takeTeamDockSummon()?.drillId;
+    if (drill) setDrillId(drill);
   }, []);
 
-  // a summon fired before this rail existed (⌘B / chip / starving jump from
-  // Terminal) lands as soon as it mounts (S12)
-  useEffect(() => {
-    const request = takeRoadmapRailSummon();
-    if (!request) return;
-    if (request.drillId) setDrillId(request.drillId);
-    requestAnimationFrame(() => rootRef.current?.focus());
-  }, []);
-
-  // the context-bar reciprocal chip opens the rail drilled into its item
-  useEffect(() => {
-    const onDrill = (e: Event) => {
-      const itemId = (e as CustomEvent<string>).detail;
-      if (typeof itemId === 'string') {
-        setDrillId(itemId);
-        rootRef.current?.focus();
-      }
-    };
-    window.addEventListener(ROADMAP_DRILL_EVENT, onDrill);
-    return () => window.removeEventListener(ROADMAP_DRILL_EVENT, onDrill);
-  }, []);
-
-  const rows = useMemo<RailRow[]>(() => {
+  const rows = useMemo<PanelRow[]>(() => {
     if (view.status !== 'ok' || view.queueEmpty) return [];
-    const list: RailRow[] = [];
+    const list: PanelRow[] = [];
     for (const session of view.unmappedSessions) {
       list.push({ kind: 'unmapped', session });
     }
@@ -597,9 +414,6 @@ export function RoadmapRail({
     [projectDir]
   );
 
-  const focusTerminal = () =>
-    window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
-
   const mutate = useCallback(
     async (action: RoadmapWriteAction, confirmed = false) => {
       if (mutationInFlight.current) return;
@@ -653,7 +467,7 @@ export function RoadmapRail({
     }
   }, [onUndo, writeState]);
 
-  const activateRow = (row: RailRow) => {
+  const activateRow = (row: PanelRow) => {
     if (row.kind === 'group') {
       if (row.group === 'shipped') setShippedOpen(open => !open);
       else setParkedOpen(open => !open);
@@ -687,14 +501,9 @@ export function RoadmapRail({
       if (drillId) setDrillId(null);
       else if (key === 'Escape') {
         // the lens is scoped to the project, and Escape backs out of it
-        // (operator, 2026-07-12): drill → queue → out. In the Sessions home
-        // (S12) "out" is the overview's tiles, not the terminal.
-        if (permanent) {
-          onExitFocus?.();
-        } else {
-          onModeChange('strip');
-          focusTerminal();
-        }
+        // (operator, 2026-07-12): drill → queue → out, and "out" is Team's
+        // tiles (S12)
+        onExitFocus?.();
       }
       return;
     }
@@ -746,7 +555,7 @@ export function RoadmapRail({
   };
 
   // keep the selected row in view as selection roves — but only while the
-  // rail owns focus; otherwise a re-render (project switch, lab state flip)
+  // panel owns focus; otherwise a re-render (project switch, lab state flip)
   // scrolls every scrollable ancestor, including the page
   useEffect(() => {
     const row = rows[sel];
@@ -766,53 +575,6 @@ export function RoadmapRail({
       ?.scrollIntoView({ block: 'nearest' });
   }, [sel, rows]);
 
-  const remaining =
-    view.status === 'ok'
-      ? view.now.length +
-        view.next.length +
-        view.later.length +
-        view.backlog.length
-      : 0;
-  const healthAlert =
-    view.status === 'ok' &&
-    (view.queueEmpty ||
-      (view.trust?.warningCount ?? 0) > 0 ||
-      view.unmappedSessions.length > 0 ||
-      [...view.now, ...view.next].some(item => item.blocked));
-
-  if (mode === 'strip') {
-    return (
-      <button
-        type="button"
-        aria-label={`Open roadmap rail${healthAlert ? ', needs attention' : ''}`}
-        title="Roadmap (⌘B)"
-        onClick={() => onModeChange('open')}
-        className="relative flex shrink-0 flex-col items-center border-l pb-2 pt-3 outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
-        style={{
-          width: ROADMAP_STRIP_WIDTH,
-          borderColor: HUD.strokeFaint,
-          background: HUD.bg.deep,
-        }}
-      >
-        <RoadmapStripSpine view={view} color={color} />
-        <span
-          aria-hidden
-          className="my-1.5 w-px flex-1"
-          style={{ background: withAlpha(color, 0.3) }}
-        />
-        {view.status === 'ok' && (
-          <span
-            data-strip-remaining
-            className="font-mono text-chrome-micro"
-            style={{ color: healthAlert ? HUD.amber : HUD.textDim }}
-          >
-            {view.queueEmpty ? '!' : remaining}
-          </span>
-        )}
-      </button>
-    );
-  }
-
   const stagger = (i: number): React.CSSProperties => ({
     opacity: entered ? 1 : 0,
     transform: entered ? 'none' : 'translateY(10px)',
@@ -824,42 +586,21 @@ export function RoadmapRail({
   return (
     <div
       ref={rootRef}
-      data-roadmap-rail
+      data-roadmap-panel
+      data-dock-focus
       // WHICH Project's plan this is, machine-readably. The header renders the
       // Project NAME, which is enough for a human and useless to anything that
-      // has to be sure — and the rail follows the SELECTED tile, which the
+      // has to be sure — and the panel follows the SELECTED tile, which the
       // fleet-wide ⌘J queue can move to another Project at any time. An
-      // evaluator that read `[data-roadmap-rail]` therefore read whatever
-      // Project happened to be in front and could not tell; that is how three
-      // checks reported the empty state as regressed when the empty state was
-      // healthy and the rail was simply scoped elsewhere (BUG-040).
+      // evaluator that read the panel bare therefore read whatever Project
+      // happened to be in front and could not tell; that is how three checks
+      // reported the empty state as regressed when the empty state was
+      // healthy and the panel was simply scoped elsewhere (BUG-040).
       data-roadmap-project={projectDir ?? undefined}
-      role="complementary"
       aria-label="Project roadmap"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      onFocusCapture={() => setFocused(true)}
-      onBlurCapture={event => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-          setFocused(false);
-      }}
-      // keyboard ownership must be VISIBLE (D27): while the rail holds
-      // focus it wears an accent ring + an esc hint, so the drill →
-      // rail-blur → out ladder gives feedback at every rung
-      className={`group/rail flex shrink-0 flex-col border-l outline-none transition-shadow duration-150 focus-within:ring-1 focus-within:ring-inset focus-within:ring-hud-cyan/60 motion-reduce:transition-none motion-reduce:[&_*]:!transition-none ${
-        overlay ? 'absolute inset-y-0 right-0 z-10' : ''
-      }`}
-      style={{
-        width:
-          permanent && focused
-            ? ROADMAP_RAIL_FOCUSED_WIDTH
-            : ROADMAP_RAIL_WIDTH,
-        borderColor: HUD.strokeFaint,
-        background: HUD.bg.deep,
-        boxShadow: overlay
-          ? `-12px 0 32px ${withAlpha(HUD.bg.void, 0.55)}`
-          : undefined,
-      }}
+      className="flex min-h-0 flex-1 flex-col outline-none motion-reduce:[&_*]:!transition-none"
     >
       {/* header: whose roadmap this is, from which file */}
       <div
@@ -890,31 +631,6 @@ export function RoadmapRail({
           >
             {projectName ?? 'No project'}
           </span>
-          <span className="font-ui text-xs" style={{ color: HUD.textDim }}>
-            Roadmap
-          </span>
-          <span
-            data-rail-focus-hint
-            className="hidden shrink-0 font-mono text-chrome-micro group-focus-within/rail:inline"
-            style={{ color: HUD.textMono }}
-          >
-            esc · {permanent ? 'back to tiles' : 'back to terminal'}
-          </span>
-          {!permanent && (
-            <button
-              type="button"
-              aria-label="Collapse roadmap rail"
-              title="Collapse (⌘B)"
-              onClick={() => {
-                onModeChange('strip');
-                focusTerminal();
-              }}
-              className="ml-auto grid h-6 w-6 shrink-0 place-items-center rounded outline-none hover:bg-hud-fill-hi"
-              style={{ color: HUD.textDim }}
-            >
-              ×
-            </button>
-          )}
         </div>
         {view.status === 'ok' && view.file && (
           <div
@@ -1256,7 +972,7 @@ export function RoadmapRail({
         )}
       </div>
 
-      {/* trust strip + rail keys: file provenance and manipulation posture */}
+      {/* trust strip + panel keys: file provenance and manipulation posture */}
       <div
         className="flex shrink-0 flex-col gap-0.5 border-t px-3 py-1.5 font-mono text-chrome-micro"
         style={{ borderColor: HUD.strokeFaint, color: HUD.textDim }}
@@ -1293,11 +1009,7 @@ export function RoadmapRail({
             {view.file.split('/').pop()}
           </span>
         )}
-        <span>
-          {permanent
-            ? 'move ↑↓ · open ⏎ · start agent a · to Team esc'
-            : 'move ↑↓ · open ⏎ · back esc · close ⌘B'}
-        </span>
+        <span>move ↑↓ · open ⏎ · start agent a · to Team esc</span>
       </div>
     </div>
   );

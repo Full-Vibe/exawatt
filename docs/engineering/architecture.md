@@ -1435,6 +1435,15 @@ Built:
   renders nothing, never an empty queue. The Demo tenant feeds the same lens
   input from its tick's landings through the injected-source seam the Demo
   roadmap text already uses (ENG-027 W14, 2026-10-05), never from a repository
+- ENG-029 B3 Team dock and Chatter (2026-10-15): Team's right-hand dock is a
+  tabbed container (Roadmap, Chatter; one panel at a time, last tab
+  remembered, ⌘B for the dock). Chatter reads and sends agent messages only
+  through the renderer `BusClient` seam (`src/lib/bus/`): a Live client over
+  the preload's `bus` namespace that reports `unavailable` (never an empty
+  list) when the namespace is absent, and a Demo client that stamps Voltaic's
+  authored chatter on the shell clock and refuses to send. Unread is the
+  operator's forward-only reading position per Project, shared by every
+  surface that counts it (the tab badge, Fleet's selected Agent).
 - ENG-021 E1 Session-context inference: operator-submission-triggered evidence,
   authenticated server-owned structured labeling, durable last-good failure
   behavior, immediate correction, a repository gold corpus, and a reusable

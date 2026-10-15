@@ -7,7 +7,7 @@ import {
   type RoadmapLensView,
 } from '@exawatt/ui-model';
 import { RoadmapItemDetail } from './roadmap-item-detail';
-import { RoadmapRail } from './roadmap-rail';
+import { RoadmapPanel } from './roadmap-panel';
 
 function viewFor(body: string): RoadmapLensView {
   const doc = parseRoadmap(`---\nexawatt-roadmap: v2\n---\n\n${body}`, {
@@ -95,16 +95,12 @@ describe('roadmap write controls', () => {
     );
     const startAgent = vi.fn().mockResolvedValue(true);
     render(
-      <RoadmapRail
+      <RoadmapPanel
         view={view}
         projectDir="/repo"
         projectName="Repo"
         projectColor="#19e6ff"
-        mode="open"
-        onModeChange={vi.fn()}
         onSelectSession={vi.fn()}
-        overlay={false}
-        permanent
         untriagedFeedback={null}
         onStartAgent={startAgent}
       />

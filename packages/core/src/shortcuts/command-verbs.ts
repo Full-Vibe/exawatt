@@ -482,8 +482,9 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
   },
   {
     id: 'workspace-roadmap',
-    label: 'Roadmap',
-    description: 'Open the Project roadmap at the Team altitude',
+    label: 'Roadmap and Chatter',
+    description:
+      "Open Team's dock on its last tab: the Project roadmap or its agent chatter",
     keys: { key: 'b', modifiers: ['meta'] },
     category: 'workspace',
     contexts: ['workspace'],
@@ -491,7 +492,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     palette: { rowId: 'ws-roadmap' },
     menu: {
       commandId: 'open-roadmap',
-      label: 'Project Roadmap',
+      label: 'Roadmap and Chatter',
       section: 'go',
     },
   },

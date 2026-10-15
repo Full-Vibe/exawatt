@@ -197,8 +197,8 @@ await withElectronApp(
     );
   }
   check(
-    'Go>Project Roadmap displays Command+B',
-    goMenu.sub.some(s => s.includes('Project Roadmap|Command+B|reg:false'))
+    'Go>Roadmap and Chatter displays Command+B',
+    goMenu.sub.some(s => s.includes('Roadmap and Chatter|Command+B|reg:false'))
   );
   const submitFeedbackRow = helpMenu.sub.find(row => row.startsWith('Submit Feedback…'));
   check(

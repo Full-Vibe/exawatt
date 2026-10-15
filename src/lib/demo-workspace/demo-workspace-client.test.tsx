@@ -424,7 +424,7 @@ describe('Demo landings reach the roadmap lens (ENG-027 W14 → ENG-017 S16)', (
     await waitFor(() => expect(header()).not.toBeNull());
     expect(header()?.textContent).toContain(landing.roadmapItemId);
     const mark = container.querySelector(
-      `[data-roadmap-rail] [data-roadmap-landing="${landing.state}"]`
+      `[data-roadmap-panel] [data-roadmap-landing="${landing.state}"]`
     );
     expect(mark).not.toBeNull();
   });
@@ -433,7 +433,7 @@ describe('Demo landings reach the roadmap lens (ENG-027 W14 → ENG-017 S16)', (
     route.query = 'view=sessions';
     const { container } = teamView();
     await waitFor(() =>
-      expect(container.querySelector('[data-roadmap-rail]')).not.toBeNull()
+      expect(container.querySelector('[data-roadmap-panel]')).not.toBeNull()
     );
     await waitFor(() =>
       expect(container.querySelector('[data-roadmap-readiness]')).not.toBeNull()

@@ -125,9 +125,9 @@ import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import {
-  ROADMAP_RAIL_FOCUS_EVENT,
-  requestRoadmapRailSummon,
-} from '@/components/roadmap/roadmap-rail';
+  TEAM_DOCK_FOCUS_EVENT,
+  requestTeamDockSummon,
+} from '@/components/team/team-dock-summon';
 import {
   useProjectRoadmap,
   type RoadmapSessionDescriptor,
@@ -822,14 +822,15 @@ export function WorkspaceClient() {
       );
   };
 
-  // roadmap home (ENG-017 S12): the lens lives at the Sessions altitude —
-  // Terminal keeps only per-session mirrors (context chip, tile chips,
-  // roadmap-derived attention) and summons Sessions for the full plan.
+  // roadmap home (ENG-017 S12): the lens lives in Team's dock — Terminal
+  // keeps only per-session mirrors (context chip, tile chips, roadmap-derived
+  // attention) and summons Team for the full plan. ⌘B opens the dock on the
+  // tab last used (ENG-029 B3); a chip names its item, so it opens Roadmap.
   const summonRoadmap = useCallback(
     (drillId?: string) => {
-      requestRoadmapRailSummon(drillId);
+      requestTeamDockSummon({ drillId });
       if (searchParams.get('view') === 'sessions') {
-        window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT));
+        window.dispatchEvent(new CustomEvent(TEAM_DOCK_FOCUS_EVENT));
       } else {
         activateCommandAltitude('sessions');
       }

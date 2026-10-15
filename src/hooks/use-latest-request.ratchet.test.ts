@@ -56,7 +56,7 @@ const KNOWN_GUARDS: Record<string, { why: string; count?: number }> = {
   'app/settings/connected-sources-section.tsx:mounted': {
     why: 'also gates the per-source actions, not only the two reads',
   },
-  'components/roadmap/roadmap-rail.tsx:writeScope': {
+  'components/roadmap/roadmap-panel.tsx:writeScope': {
     why: 'a scope change, not a newer write, supersedes a write; it also clears the in-flight lock',
   },
   'components/workspace/remote-agent/use-remote-coworkers.ts:readGeneration': {

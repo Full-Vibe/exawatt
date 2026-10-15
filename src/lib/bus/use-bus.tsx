@@ -47,7 +47,7 @@ export function useBusClient(): BusClient {
   return useContext(BusClientContext) ?? defaultClient();
 }
 
-type BusMessagesState =
+export type BusMessagesState =
   | { status: 'loading' }
   | { status: 'ok'; messages: BusMessage[] }
   | { status: 'unavailable'; reason: string }

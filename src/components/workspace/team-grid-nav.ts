@@ -10,7 +10,7 @@
  * Geometry comes from MEASURED rectangles rather than a column count,
  * because the layout has neither a fixed column count nor uniform tiles:
  * tiles are grouped per Project, a Project's last row is ragged, the docked
- * roadmap rail changes the available width, and an empty Project contributes
+ * dock changes the available width, and an empty Project contributes
  * a single wide row. Anything derived from "columns" would be a second,
  * weaker model of a layout CSS has already solved. Rows are therefore
  * discovered by vertical overlap, which is also what makes a Project
@@ -199,7 +199,7 @@ export function teamPointerMoved(
  * is the durable half, and the grid must not have to be told again.
  *
  * So the grid yields to any focused control that owns text or its own
- * activation, the same way the roadmap rail already does.
+ * activation, the same way the dock already does.
  */
 const YIELDS_TO =
   'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"], [role="combobox"], [role="menuitem"], [cmdk-root], .xterm-helper-textarea';

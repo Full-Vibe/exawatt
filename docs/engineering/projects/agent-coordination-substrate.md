@@ -612,3 +612,43 @@ Found while building it, and now in the design:
   YOLO). The MCP door (B2) runs outside that sandbox.
 - Codex leaves a managed app-server daemon running from whatever home it ran
   in; the live probe stops the one it started.
+
+### 2026-10-15 — B3 Team dock and the Chatter tab (packet P4, second landing)
+
+**Chatter is the second tab of Team's dock, over Demo and Live through one
+client.** The first landing (`0364bb14`) put the renderer bus client in
+`src/lib/bus/`; this one builds the viewer on it.
+
+- **The dock.** `src/components/team/team-dock.tsx` owns the frame the
+  roadmap panel used to own: width (320, 420 while it holds focus), docked at
+  ≥1100px and a drawer below, the focus ring and esc hint, and an ARIA tab
+  strip (←/→ switch, Shift+Tab from a panel reaches it). Inactive panels stay
+  mounted and hidden, so a tab switch keeps a panel where it was left. The
+  last tab is remembered per window. Summons go through
+  `team-dock-summon.ts`: ⌘B, the palette row and the native menu open the
+  dock on its last tab (the verb is now "Roadmap and Chatter"); the context
+  chip names a roadmap item, so it opens Roadmap drilled into it.
+- **Boy Scout.** `roadmap-rail.tsx` became `roadmap-panel.tsx`
+  (`RoadmapPanel`, `data-roadmap-panel`), content only. The collapsed strip
+  and the Terminal-docked mode had no production caller since S12 and are
+  deleted, as is an unreferenced drill event; the roadmap lab renders the
+  panel in a dock-width frame. Every reference moved (evals, the stale-async
+  ratchet, the Demo test); nothing aliases the old names.
+- **Chatter.** `src/components/team/chatter/`: one row per message, newest
+  first (`ChatterRow`, the small component to iterate on: sender → recipient
+  with harness marks, first line, age, a delivery mark with the reason on
+  hover; the operator's own messages read "You"); a thread of the pair's
+  messages plus the operator's messages to either, oldest first, two lines
+  each, opened in place with Exawatt's stamp (from, to, harness, Project,
+  sent, result); Send as operator to either Session of the pair with the
+  delivery result or the refusal shown where it was sent. Names are the
+  tile's label until P8's short names land. Unread is the badge on the tab;
+  showing the list moves the reading position, and rows keep a dot for what
+  arrived since the last look. Unavailable, empty, loading and a failed read
+  are four different renderings.
+- **Demo.** The Demo Workspace provides the Demo client to Team, and its
+  palette and menu Roadmap verb now opens the dock (it had no listener, so
+  the row did nothing in Demo).
+- **Specimen.** `/hud-gallery/team-dock` renders the production dock with
+  both panels over Demo data, every delivery result as a row, and the four
+  panel states.

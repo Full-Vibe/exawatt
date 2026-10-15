@@ -522,6 +522,13 @@ export default function HudGallery() {
                   Open the Roadmap lab →
                 </a>{' '}
                 <a
+                  href="/hud-gallery/team-dock"
+                  className="underline underline-offset-2"
+                  style={{ color: HUD.cyan }}
+                >
+                  Open the Team dock (Roadmap and Chatter) →
+                </a>{' '}
+                <a
                   href="/hud-gallery/project-ribbon/bench"
                   className="underline underline-offset-2"
                   style={{ color: HUD.cyan }}

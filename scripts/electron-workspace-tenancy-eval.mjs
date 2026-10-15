@@ -550,8 +550,8 @@ try {
         ].join(', ')}`
       );
       const railText =
-        (await page.locator('[data-roadmap-rail]').count()) > 0
-          ? await page.locator('[data-roadmap-rail]').innerText()
+        (await page.locator('[data-roadmap-panel]').count()) > 0
+          ? await page.locator('[data-roadmap-panel]').innerText()
           : '';
       check(
         'roadmap rail renders the Voltaic roadmap in-tenant',
