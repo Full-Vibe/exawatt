@@ -125,8 +125,11 @@ try {
         );
         return data;
       };
+      // Aggregate Off intentionally uses alpha 0.54 in its shader. Detect
+      // diagnostic magenta by chroma, not an opaque RGB threshold, so the
+      // visibility oracle preserves the real protocol opacity on every ground.
       const ink = (data, index) =>
-        data[index] > 200 && data[index + 1] < 60 && data[index + 2] > 200;
+        Math.min(data[index], data[index + 2]) - data[index + 1] > 80;
       const physical = meshes.filter(
         mesh => mesh.material?.isMeshPhysicalMaterial
       );
