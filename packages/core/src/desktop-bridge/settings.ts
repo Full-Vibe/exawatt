@@ -160,9 +160,31 @@ export interface OperatorProfileStateUpdate {
 
 /** Device-local presentation choices are independent of theme and data source. */
 export type FleetView = 'v1' | 'v2';
+/** Pure material catalog shared by Settings and the renderer; no Three import. */
+export const FLEET_MATERIALS = [
+  { id: 'matte', name: 'Matte', note: 'Soft painted ceramic.' },
+  { id: 'glazed', name: 'Glazed', note: 'Glossy ceramic with a clear glaze.' },
+  {
+    id: 'gummy',
+    name: 'Gummy',
+    note: 'Soft translucent color and rounded edges.',
+  },
+  {
+    id: 'acrylic',
+    name: 'Acrylic',
+    note: 'Satin colored slabs on frosted ground.',
+  },
+  {
+    id: 'anodized',
+    name: 'Anodized',
+    note: 'Brushed metal with an inlaid status light.',
+  },
+] as const;
+export type FleetMaterial = (typeof FLEET_MATERIALS)[number]['id'];
 export interface PresentationPreferencesV1 {
   schemaVersion: 1;
   fleetView?: FleetView;
+  fleetMaterial?: FleetMaterial;
 }
 
 /** Unknown versions and malformed records are absent, never a store failure. */
@@ -172,8 +194,21 @@ export function parsePresentationPreferences(
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const candidate = raw as Record<string, unknown>;
   if (candidate.schemaVersion !== 1) return undefined;
-  if (candidate.fleetView === undefined) return { schemaVersion: 1 };
-  if (candidate.fleetView !== 'v1' && candidate.fleetView !== 'v2')
+  if (
+    candidate.fleetView !== undefined &&
+    candidate.fleetView !== 'v1' &&
+    candidate.fleetView !== 'v2'
+  )
     return undefined;
-  return { schemaVersion: 1, fleetView: candidate.fleetView };
+  const material = FLEET_MATERIALS.find(
+    item => item.id === candidate.fleetMaterial
+  );
+  if (candidate.fleetMaterial !== undefined && !material) return undefined;
+  return {
+    schemaVersion: 1,
+    ...(candidate.fleetView === undefined
+      ? {}
+      : { fleetView: candidate.fleetView }),
+    ...(material ? { fleetMaterial: material.id } : {}),
+  };
 }

@@ -102,7 +102,7 @@ const FIXTURES: {
     10
   ),
   appearance: DEFAULT_ELECTRON_APPEARANCE_PREFERENCES,
-  presentation: { schemaVersion: 1, fleetView: 'v2' },
+  presentation: { schemaVersion: 1, fleetView: 'v2', fleetMaterial: 'glazed' },
   keyboardShortcuts: REBIND,
 };
 
@@ -219,6 +219,14 @@ describe('device-local power preference', () => {
 });
 
 describe('presentation choices', () => {
+  it('keeps an explicit material without requiring a view choice', () => {
+    setPresentationPreferences({ schemaVersion: 1, fleetMaterial: 'acrylic' });
+    expect(loadSettings().presentation).toEqual({
+      schemaVersion: 1,
+      fleetMaterial: 'acrylic',
+    });
+  });
+
   it('does not persist a default, preserves an explicit v1, and can clear a choice', () => {
     expect(loadSettings().presentation).toBeUndefined();
     setPresentationPreferences({ schemaVersion: 1, fleetView: 'v1' });

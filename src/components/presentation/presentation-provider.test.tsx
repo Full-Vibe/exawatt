@@ -29,6 +29,7 @@ describe('presentation persistence', () => {
     const view = mount();
     await waitFor(() => expect(view.result.current.ready).toBe(true));
     expect(view.result.current.fleetView).toBe('v1');
+    expect(view.result.current.fleetMaterial).toBe('gummy');
     expect(localStorage.getItem(PRESENTATION_STORAGE_KEY)).toBeNull();
     await act(() => view.result.current.setFleetView('v1'));
     expect(JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!)).toEqual(
@@ -40,6 +41,29 @@ describe('presentation persistence', () => {
     await waitFor(() => expect(reopened.result.current.fleetView).toBe('v2'));
     await act(() => reopened.result.current.resetFleetView());
     expect(reopened.result.current.fleetView).toBe('v1');
+    expect(localStorage.getItem(PRESENTATION_STORAGE_KEY)).toBeNull();
+  });
+  it('persists material independently and resets only the requested choice', async () => {
+    const view = mount();
+    await waitFor(() => expect(view.result.current.ready).toBe(true));
+    await act(() => view.result.current.setFleetMaterial('anodized'));
+    expect(JSON.parse(localStorage.getItem(PRESENTATION_STORAGE_KEY)!)).toEqual(
+      {
+        schemaVersion: 1,
+        fleetMaterial: 'anodized',
+      }
+    );
+    await act(() => view.result.current.setFleetView('v2'));
+    expect(view.result.current.fleetMaterial).toBe('anodized');
+    await act(() => view.result.current.resetFleetView());
+    expect(view.result.current.fleetView).toBe('v1');
+    expect(view.result.current.fleetMaterial).toBe('anodized');
+    view.unmount();
+    const reopened = mount();
+    await waitFor(() =>
+      expect(reopened.result.current.fleetMaterial).toBe('anodized')
+    );
+    await act(() => reopened.result.current.resetFleetMaterial());
     expect(localStorage.getItem(PRESENTATION_STORAGE_KEY)).toBeNull();
   });
   it.each([

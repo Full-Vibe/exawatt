@@ -1193,7 +1193,8 @@ export function setPresentationPreferences(raw: unknown): StoredSettings {
   if (raw !== null && !presentation)
     throw new Error('Invalid presentation preference');
   const settings = loadSettings();
-  if (presentation?.fleetView) settings.presentation = presentation;
+  if (presentation?.fleetView || presentation?.fleetMaterial)
+    settings.presentation = presentation;
   else delete settings.presentation;
   writeSettings(settings);
   return settings;

@@ -50,7 +50,8 @@ export function createPresentationPreferenceSource(): PresentationPreferenceSour
     },
     async save(preference) {
       const parsed = parsePresentationPreferences(preference);
-      const choice = parsed?.fleetView ? parsed : undefined;
+      const choice =
+        parsed?.fleetView || parsed?.fleetMaterial ? parsed : undefined;
       try {
         if (choice)
           window.localStorage.setItem(
