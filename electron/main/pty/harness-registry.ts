@@ -26,6 +26,11 @@ import type { BusTransport } from '../bus/transports/types';
 import { claudeSocketTransport } from '../bus/transports/claude-socket';
 import { codexQueueTransport } from '../bus/transports/codex-queue';
 import { terminalInputTransport } from '../bus/transports/terminal-input';
+import {
+  codexMcpOverrides,
+  mcpServersDocument,
+  type LaunchMcpServer,
+} from './launch-mcp';
 
 /**
  * How a source is wired to Exawatt's harness event channel (ENG-023).
@@ -107,14 +112,41 @@ export type DelegationCapability =
  * is the door for the user's own turn (Direct, "Send as operator"). Null is
  * a real answer: every message to that door reads `undeliverable`.
  * `outbound` is how an Agent of this source reaches the bus: `path` puts the
- * `exawatt` executable on the Session's PATH; `mcp` is the per-launch MCP
- * door B2 adds.
+ * `exawatt` executable on the Session's PATH; `mcp` hands the launch the
+ * Exawatt MCP server through the harness's own per-launch seam (B2), and is
+ * null where the harness has none.
  */
 interface HarnessMessagingCapability {
   agent: BusTransport | null;
   operator: BusTransport | null;
-  outbound: { path: boolean; mcp: null };
+  outbound: { path: boolean; mcp: HarnessMcpBinding | null };
 }
+
+/**
+ * How one launch hands this harness an MCP server (ENG-029 B2), in the
+ * harness's own per-launch seam and never its user configuration:
+ *
+ * - `file`: a document Exawatt writes for the launch, named on the argv;
+ * - `directory`: a document inside the launch's own directory, the one the
+ *   event channel may already hand over (then it is not handed over twice);
+ * - `arguments`: the declaration itself travels on the argv.
+ */
+export type HarnessMcpBinding =
+  | {
+      kind: 'file';
+      settings: (server: LaunchMcpServer) => string;
+      invocation: (invocation: string, documentPath: string) => string;
+    }
+  | {
+      kind: 'directory';
+      file: string;
+      settings: (server: LaunchMcpServer) => string;
+      invocation: (invocation: string, directory: string) => string;
+    }
+  | {
+      kind: 'arguments';
+      invocation: (invocation: string, server: LaunchMcpServer) => string;
+    };
 
 /** The user's own turn: typed into the terminal once the recipient's turn
  *  has ended, as if the operator had typed it. Every terminal harness. */
@@ -137,7 +169,13 @@ const idlePeerTerminalDoor = terminalInputTransport({
   holdWhile: ['starting', 'running', 'blocked'],
 });
 
+/** The `exawatt` command only: no per-launch MCP seam has been measured for
+ *  this harness. */
 const shellOutbound = { path: true, mcp: null } as const;
+
+/** Antigravity reads `.agents/mcp_config.json` from an added directory
+ *  (B0, 1.3.5), the same place its injected hooks live. */
+const ANTIGRAVITY_MCP_FILE = '.agents/mcp_config.json';
 
 export interface HarnessLaunchDescriptor {
   id: AgentHarness;
@@ -272,7 +310,18 @@ const descriptors = {
     messaging: {
       agent: claudeSocketTransport(),
       operator: operatorTurnDoor,
-      outbound: shellOutbound,
+      outbound: {
+        path: true,
+        // `--mcp-config` ADDS to the user's own servers (no
+        // `--strict-mcp-config`). It is variadic, so it is placed where a
+        // flag always follows it (`--session-id` or `--resume`).
+        mcp: {
+          kind: 'file',
+          settings: mcpServersDocument,
+          invocation: (invocation, documentPath) =>
+            `${invocation} --mcp-config ${shellQuote(documentPath)}`,
+        },
+      },
     },
     permissionFlags: mode =>
       mode === 'prompt'
@@ -317,7 +366,23 @@ const descriptors = {
     messaging: {
       agent: codexQueueTransport('codex'),
       operator: operatorTurnDoor,
-      outbound: shellOutbound,
+      outbound: {
+        path: true,
+        // B2: the MCP door is the one that works from Codex's workspace-write
+        // sandbox, which turns network off and so refuses `exawatt send`'s
+        // loopback request. Any `-c` puts Codex in embedded mode, which
+        // `codex queue` still reaches (B0).
+        mcp: {
+          kind: 'arguments',
+          invocation: (invocation, server) =>
+            [
+              invocation,
+              ...codexMcpOverrides(server).map(
+                override => `-c ${shellQuote(override)}`
+              ),
+            ].join(' '),
+        },
+      },
     },
     permissionFlags: workspaceReviewFlags,
     modelInvocation: (invocation, quotedModel) =>
@@ -511,7 +576,16 @@ const descriptors = {
     messaging: {
       agent: queuedPeerTerminalDoor,
       operator: operatorTurnDoor,
-      outbound: shellOutbound,
+      outbound: {
+        path: true,
+        mcp: {
+          kind: 'directory',
+          file: ANTIGRAVITY_MCP_FILE,
+          settings: mcpServersDocument,
+          invocation: (invocation, directory) =>
+            `${invocation} --add-dir ${shellQuote(directory)}`,
+        },
+      },
     },
     eventChannel: {
       settings: antigravityHookSettings,

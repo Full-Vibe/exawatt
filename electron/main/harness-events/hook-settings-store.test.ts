@@ -49,6 +49,19 @@ describe('HookSettingsStore', () => {
     expect(fs.existsSync(target!)).toBe(false);
   });
 
+  it('writes a launch’s MCP declaration beside its settings and removes both', async () => {
+    const settings = await store.write('pty-1', '{"hooks":{}}');
+    const mcp = await store.write('pty-1', '{"mcpServers":{}}', 'mcp');
+    expect(mcp).toBe(path.join(root, 'harness-events', 'pty-1.mcp.json'));
+    expect(fs.statSync(mcp!).mode & 0o777).toBe(0o600);
+    expect(fs.readFileSync(settings!, 'utf8')).toBe('{"hooks":{}}');
+    await store.remove('pty-1');
+    expect([fs.existsSync(settings!), fs.existsSync(mcp!)]).toEqual([
+      false,
+      false,
+    ]);
+  });
+
   it('sweeps residue from a previous run', async () => {
     // Old tokens are already meaningless — the channel mints fresh ones and
     // binds a fresh port — so leaving them on disk is pure residue.
@@ -69,7 +82,9 @@ describe('HookSettingsStore', () => {
     );
     expect(directory).toBe(path.join(root, 'harness-events', 'pty-7'));
     const file = path.join(directory!, '.agents', 'hooks.json');
-    expect(await fs.promises.readFile(file, 'utf8')).toBe('{"exawatt-stop":{}}');
+    expect(await fs.promises.readFile(file, 'utf8')).toBe(
+      '{"exawatt-stop":{}}'
+    );
     expect((await fs.promises.stat(file)).mode & 0o777).toBe(0o600);
     expect((await fs.promises.stat(directory!)).mode & 0o777).toBe(0o700);
     // remove takes the whole directory, and a sweep on the next run does too
@@ -87,7 +102,9 @@ describe('HookSettingsStore', () => {
     expect(
       await store.writeDirectory('pty-7', '../escape.json', '{}')
     ).toBeNull();
-    expect(await store.writeDirectory('../up', '.agents/hooks.json', '{}')).toBeNull();
+    expect(
+      await store.writeDirectory('../up', '.agents/hooks.json', '{}')
+    ).toBeNull();
     expect(
       await fs.promises.readdir(path.join(root, 'harness-events'))
     ).toEqual([]);

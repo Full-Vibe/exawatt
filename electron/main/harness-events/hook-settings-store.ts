@@ -17,10 +17,21 @@ const FILE_MODE = 0o600;
 
 const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
-function fileName(sessionId: string): string | null {
+/** Documents a launch may carry beside its settings, each in its own file
+ *  (`pty-3.mcp.json`: the MCP declaration Claude Code reads, ENG-029 B2). */
+type LaunchDocument = 'settings' | 'mcp';
+const LAUNCH_DOCUMENTS: readonly LaunchDocument[] = ['settings', 'mcp'];
+
+function fileName(
+  sessionId: string,
+  document: LaunchDocument = 'settings'
+): string | null {
   // Session ids are Exawatt-generated (`pty-3`), but this value ends up in a
   // filesystem path, so it is validated rather than trusted.
-  return SESSION_ID.test(sessionId) ? `${sessionId}.json` : null;
+  if (!SESSION_ID.test(sessionId)) return null;
+  return document === 'settings'
+    ? `${sessionId}.json`
+    : `${sessionId}.${document}.json`;
 }
 
 /** A launch's directory, for sources that scan a workspace directory for
@@ -66,8 +77,12 @@ export class HookSettingsStore {
    * null when it could not be written — the launch then simply reports no
    * delegation instead of failing.
    */
-  async write(sessionId: string, contents: string): Promise<string | null> {
-    const name = fileName(sessionId);
+  async write(
+    sessionId: string,
+    contents: string,
+    document: LaunchDocument = 'settings'
+  ): Promise<string | null> {
+    const name = fileName(sessionId, document);
     if (!name) return null;
     const target = path.join(this.directory, name);
     try {
@@ -120,12 +135,15 @@ export class HookSettingsStore {
   }
 
   async remove(sessionId: string): Promise<void> {
-    const name = fileName(sessionId);
-    if (!name) return;
+    if (!SESSION_ID.test(sessionId)) return;
     await Promise.all([
-      fs.promises
-        .rm(path.join(this.directory, name), { force: true })
-        .catch(() => {}),
+      ...LAUNCH_DOCUMENTS.map(document =>
+        fs.promises
+          .rm(path.join(this.directory, fileName(sessionId, document)!), {
+            force: true,
+          })
+          .catch(() => {})
+      ),
       fs.promises
         .rm(path.join(this.directory, sessionId), {
           force: true,

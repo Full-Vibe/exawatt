@@ -7,7 +7,7 @@
  * here names a harness.
  */
 import path from 'path';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import {
   BUS_OPERATOR_ID,
   busThread,
@@ -23,7 +23,8 @@ import { harnessDescriptor } from '../pty/harness-registry';
 import { ptySessions } from '../pty/session-manager';
 import { BusDirectory } from './directory';
 import { BusDispatcher } from './dispatch';
-import { installBusExecutable } from './executable';
+import { installBusExecutable, installBusMcpServer } from './executable';
+import { BUS_MCP_SERVER_NAME } from './mcp-server';
 import { createBusHttpHandler } from './http';
 import { JsonlBusStore } from './ledger';
 import { createRecipientStateSource } from './recipient-state';
@@ -129,23 +130,42 @@ export function registerBusIPC(userData: string): void {
     createBusHttpHandler({ directory, dispatcher, store, harnessLabel })
   );
 
-  // The command each Session finds on its PATH. Installed once; a launch
-  // that races the install waits for it rather than launching without it.
+  // The command each Session finds on its PATH and the MCP server a
+  // harness runs. Installed once; a launch that races the install waits for
+  // it rather than launching without it.
   const executableDirectory = installBusExecutable(path.join(root, 'bin'));
+  const mcpScript = installBusMcpServer(
+    path.join(root, 'bin'),
+    path.join(__dirname, 'mcp-server.js')
+  );
   ptySessions.setLaunchEnvironmentProvider(async launch => {
     if (launch.harness === 'shell') return null;
-    if (!harnessDescriptor(launch.harness).messaging.outbound.path) return null;
+    const outbound = harnessDescriptor(launch.harness).messaging.outbound;
+    if (!outbound.path && !outbound.mcp) return null;
     if (!(await harnessEventChannel.start())) return null;
     const registration = harnessEventChannel.registerBus(launch.id);
     if (!registration) return null;
-    const bin = await executableDirectory;
+    const [bin, script] = await Promise.all([executableDirectory, mcpScript]);
+    const env = {
+      EXAWATT_BUS_PORT: String(registration.port),
+      EXAWATT_BUS_TOKEN: registration.token,
+      EXAWATT_SESSION_ID: launch.durableSessionId,
+    };
     return {
-      env: {
-        EXAWATT_BUS_PORT: String(registration.port),
-        EXAWATT_BUS_TOKEN: registration.token,
-        EXAWATT_SESSION_ID: launch.durableSessionId,
-      },
-      pathPrepend: bin ? [bin] : [],
+      env,
+      pathPrepend: outbound.path && bin ? [bin] : [],
+      // Exawatt's own executable runs the server as Node, in development
+      // and in the packaged app alike.
+      mcpServer:
+        outbound.mcp && script
+          ? {
+              name: BUS_MCP_SERVER_NAME,
+              command: process.execPath,
+              args: [script, app.getVersion()],
+              env: { ELECTRON_RUN_AS_NODE: '1', ...env },
+              inherited: Object.keys(env),
+            }
+          : null,
       release: () => harnessEventChannel.releaseBus(launch.id),
     };
   });

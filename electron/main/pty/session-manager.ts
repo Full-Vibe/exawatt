@@ -11,6 +11,7 @@ import { ScrollbackStore } from './scrollback-store';
 import { randomUUID } from 'crypto';
 import { buildHarnessCommand } from './harness-command';
 import type { HarnessLaunchWiring } from './harness-command';
+import type { LaunchMcpServer } from './launch-mcp';
 import { harnessEventChannel } from '../harness-events/channel';
 import { HookSettingsStore } from '../harness-events/hook-settings-store';
 import {
@@ -177,6 +178,9 @@ interface LaunchEnvironmentExtension {
   env: Record<string, string>;
   /** Directories put in front of the inherited PATH. */
   pathPrepend: readonly string[];
+  /** An MCP server offered to the launch, handed over through the harness's
+   *  own per-launch binding when it declares one (the bus's MCP door). */
+  mcpServer?: LaunchMcpServer | null;
   release(): void;
 }
 
@@ -368,6 +372,37 @@ export class PtySessionManager extends EventEmitter {
       this.emit('identity', info.id, info.durableSessionId, harnessSessionId);
       this.emit('session', { ...info });
     });
+  }
+
+  /**
+   * Write the launch's MCP declaration where the harness's binding reads it
+   * (ENG-029 B2). Silent like the event channel: a declaration that cannot
+   * be written launches the Agent without the MCP door, never not at all.
+   */
+  private async declareLaunchMcp(
+    id: string,
+    harness: PtyHarness,
+    server: LaunchMcpServer | null | undefined
+  ): Promise<HarnessLaunchWiring['mcp']> {
+    if (harness === 'shell' || !server) return undefined;
+    const binding = harnessDescriptor(harness).messaging.outbound.mcp;
+    if (!binding) return undefined;
+    if (binding.kind === 'arguments') return { server };
+    if (!this.hookSettings) return undefined;
+    try {
+      const document = binding.settings(server);
+      const documentPath =
+        binding.kind === 'directory'
+          ? await this.hookSettings.writeDirectory(id, binding.file, document)
+          : await this.hookSettings.write(id, document, 'mcp');
+      return documentPath ? { server, documentPath } : undefined;
+    } catch (error) {
+      console.warn(
+        `[session-manager] ${harness} launches without its MCP server:`,
+        error instanceof Error ? error.message : error
+      );
+      return undefined;
+    }
   }
 
   /** Drop one Session's ephemeral event configuration files. */
@@ -564,6 +599,11 @@ export class PtySessionManager extends EventEmitter {
     // observable; a channel joined after launch would miss it.
     const opencodeLaunchAgentName =
       options.harness === 'opencode' ? `exawatt-${randomUUID()}` : null;
+    const mcp = await this.declareLaunchMcp(
+      id,
+      options.harness,
+      extension?.mcpServer
+    );
     const wiring = {
       ...(await this.subscribeToEventChannel(
         id,
@@ -572,6 +612,7 @@ export class PtySessionManager extends EventEmitter {
         // The same default the launch command applies.
         options.permissionMode ?? 'unrestricted'
       )),
+      ...(mcp ? { mcp } : {}),
       ...(opencodeLaunchAgentName
         ? { launchAgentName: opencodeLaunchAgentName }
         : {}),

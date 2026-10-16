@@ -3,7 +3,8 @@ import { isAgentPermissionMode } from '@exawatt/core';
 import type { PtyPowerControl } from '@exawatt/core/desktop-bridge';
 import type { AgentPermissionMode } from './session-manager';
 import type { AgentHarness } from './harness-types';
-import { harnessDescriptor } from './harness-registry';
+import { harnessDescriptor, type HarnessMcpBinding } from './harness-registry';
+import type { LaunchMcpServer } from './launch-mcp';
 
 const SAFE_SESSION_ID = /^[a-zA-Z0-9_-]{8,128}$/;
 
@@ -25,6 +26,9 @@ export interface HarnessLaunchWiring {
   cwd?: string;
   /** Main-owned probe evidence, never part of renderer launch options. */
   powerControl?: PtyPowerControl;
+  /** An MCP server offered to this launch (ENG-029 B2), with the document
+   *  Exawatt wrote for it when the harness's binding reads one. */
+  mcp?: { server: LaunchMcpServer; documentPath?: string };
 }
 
 export function buildHarnessCommand(
@@ -131,14 +135,20 @@ export function buildHarnessCommand(
     settingsPath && descriptor.eventChannel
       ? descriptor.eventChannel.invocation(permissionInvocation, settingsPath)
       : permissionInvocation;
+  const mcpInvocation = offerMcpServer(
+    descriptor.messaging.outbound.mcp,
+    subscribedInvocation,
+    wiring.mcp,
+    settingsPath
+  );
   const launchCwd = wiring.cwd?.trim() ?? '';
   if (launchCwd && !path.isAbsolute(launchCwd)) {
     throw new Error('Launch directory must be absolute');
   }
   const baseInvocation =
     launchCwd && descriptor.cwdInvocation
-      ? descriptor.cwdInvocation(subscribedInvocation, launchCwd)
-      : subscribedInvocation;
+      ? descriptor.cwdInvocation(mcpInvocation, launchCwd)
+      : mcpInvocation;
   const modelInvocation =
     selectedModel && !descriptor.launchAgent
       ? descriptor.modelInvocation(baseInvocation, shellQuote(selectedModel))
@@ -156,4 +166,30 @@ export function buildHarnessCommand(
   return prompt
     ? descriptor.initialTaskInvocation(fresh, shellQuote(prompt))
     : fresh;
+}
+
+/** Hand the launch its MCP server through the harness's own binding; a
+ *  harness without one, or a document that was never written, launches
+ *  without it. */
+function offerMcpServer(
+  binding: HarnessMcpBinding | null,
+  invocation: string,
+  mcp: HarnessLaunchWiring['mcp'],
+  eventChannelPath: string | undefined
+): string {
+  if (!binding || !mcp) return invocation;
+  if (binding.kind === 'arguments') {
+    return binding.invocation(invocation, mcp.server);
+  }
+  const documentPath = mcp.documentPath;
+  if (!documentPath) return invocation;
+  if (!path.isAbsolute(documentPath)) {
+    throw new Error('MCP declaration path must be absolute');
+  }
+  // The launch's own directory may already be on the argv for the event
+  // channel; the harness reads both documents from it.
+  if (binding.kind === 'directory' && documentPath === eventChannelPath) {
+    return invocation;
+  }
+  return binding.invocation(invocation, documentPath);
 }

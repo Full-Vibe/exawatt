@@ -921,7 +921,12 @@ describe('buildHarnessCommand', () => {
         undefined,
         { eventChannelSettingsPath: '/tmp/hooks/pty-1', cwd: '/work/app' }
       );
-      for (const forbidden of ['--gemini_dir', 'install', '--continue', ' -c ']) {
+      for (const forbidden of [
+        '--gemini_dir',
+        'install',
+        '--continue',
+        ' -c ',
+      ]) {
         expect(command).not.toContain(forbidden);
       }
       const { source } = harnessDescriptor('antigravity');
@@ -929,5 +934,112 @@ describe('buildHarnessCommand', () => {
       expect(source.authLoginArgs).toEqual([]);
       expect(source.authStatusArgs).toEqual(['models']);
     });
+  });
+});
+
+/** The bus's MCP door, handed over per launch (ENG-029 B2). */
+describe('MCP door wiring', () => {
+  const server = {
+    name: 'exawatt',
+    command: '/Applications/Exawatt.app/Contents/MacOS/Exawatt',
+    args: [
+      '/Users/x/Library/Application Support/Exawatt/bus/bin/exawatt-mcp.cjs',
+      '1.0.0',
+    ],
+    env: {
+      ELECTRON_RUN_AS_NODE: '1',
+      EXAWATT_BUS_PORT: '4321',
+      EXAWATT_BUS_TOKEN: 'secret-token',
+    },
+    inherited: ['EXAWATT_BUS_PORT', 'EXAWATT_BUS_TOKEN'],
+  };
+  /** The argv a shell hands the harness. */
+  const argv = (command: string): string[] =>
+    execFileSync('/bin/sh', [
+      '-c',
+      `set -- ${command}; for a in "$@"; do printf '%s\\0' "$a"; done`,
+    ])
+      .toString()
+      .split('\0')
+      .slice(0, -1);
+  const build = (
+    harness: 'claude' | 'codex' | 'antigravity' | 'grok',
+    wiring: Parameters<typeof buildHarnessCommand>[8],
+    task?: string,
+    resume = false
+  ) =>
+    buildHarnessCommand(
+      harness,
+      harness === 'claude' ? '11111111-1111-4111-8111-111111111111' : null,
+      resume,
+      undefined,
+      task,
+      'prompt',
+      undefined,
+      undefined,
+      wiring
+    );
+
+  it('names Claude Code’s per-launch document, and a flag always ends the variadic list', () => {
+    const document = '/tmp/exawatt hooks/pty-1.mcp.json';
+    for (const [task, resume] of [
+      ['review the diff', false],
+      [undefined, false],
+      [undefined, true],
+    ] as const) {
+      const args = argv(
+        build(
+          'claude',
+          { mcp: { server, documentPath: document } },
+          task,
+          resume
+        )
+      );
+      const at = args.indexOf('--mcp-config');
+      expect(args[at + 1]).toBe(document);
+      // `--mcp-config <configs...>` would swallow a positional task.
+      expect(args[at + 2]).toMatch(/^--/);
+      if (task) expect(args.at(-1)).toBe(task);
+    }
+  });
+
+  it('declares the server on Codex’s argv and never spells the token out there', () => {
+    const command = build('codex', { mcp: { server } });
+    expect(command).not.toContain('secret-token');
+    const overrides = argv(command).filter(
+      (_, index, all) => all[index - 1] === '-c'
+    );
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        `mcp_servers.exawatt.command="${server.command}"`,
+        'mcp_servers.exawatt.env={ELECTRON_RUN_AS_NODE="1"}',
+        'mcp_servers.exawatt.env_vars=["EXAWATT_BUS_PORT","EXAWATT_BUS_TOKEN"]',
+      ])
+    );
+  });
+
+  it('hands Antigravity its launch directory once, beside the hooks that share it', () => {
+    const directory = '/tmp/hooks/pty-1';
+    expect(
+      argv(
+        build('antigravity', {
+          eventChannelSettingsPath: directory,
+          mcp: { server, documentPath: directory },
+        })
+      ).filter(arg => arg === directory)
+    ).toHaveLength(1);
+    // Without the event channel, the MCP declaration adds the directory itself.
+    expect(
+      argv(build('antigravity', { mcp: { server, documentPath: directory } }))
+    ).toContain(directory);
+  });
+
+  it('launches without the door where the harness has no seam or nothing was written', () => {
+    expect(harnessDescriptor('grok').messaging.outbound.mcp).toBeNull();
+    expect(build('grok', { mcp: { server } })).toBe(build('grok', {}));
+    expect(build('claude', { mcp: { server } })).toBe(build('claude', {}));
+    expect(() =>
+      build('claude', { mcp: { server, documentPath: 'relative.json' } })
+    ).toThrow(/absolute/);
   });
 });
