@@ -39,12 +39,31 @@ Supporting mechanisms, in order of yield:
    day (lint 187, type-check 70, the delivery suite about 400, the community
    build 66); run once per batch of three, that is about 240, a further 480
    check-minutes a day, and the head's separate rebase re-check (139 minutes)
-   folds into the batch run. Risks: a
-   red batch costs a bisection (log2 n + 1 runs) and delays every ticket in
-   it, so the train needs the module checks to keep batches mostly green; and
+   folds into the batch run. Risks: a red batch costs a bisection (log2 n + 1
+   runs) and delays every ticket in it, so the train needs the module checks to keep batches mostly green; and
    it trades the September finding (deaths, not re-checks, were the lever)
    only once deaths are rare, which is why it sits under module checks rather
    than ahead of them.
+
+   First instance, the same evening. The operator: "I'm fine with
+   dramatically cutting down repeat unit test / lint execution here because
+   we'll get a chance to review everything at the end." The coordinator ran
+   the front's packets as a manual train. Packets stop landing, push linear branches and report
+   ready; the coordinator stacks them onto one integration branch, resolves the
+   overlaps, lands once with every declared gate, and requests one dogfood build
+   (`pnpm dogfood:request`). What it saves: the per-packet whole-repo checks,
+   head re-checks, gate runs and dogfood builds become one of each per front.
+   What it costs: a coordinator's hand on the stacking and the overlap
+   resolution, every packet waiting for the slowest, and a red train that names
+   the train rather than the packet. What `agent:land` needs to make it
+   first-class rather than manual: a `--train <branches...>` mode that composes
+   the branches in order onto `origin/master` in a temporary integration
+   worktree (refusing a conflict with the branch named, as the probe does
+   today), runs the required checks and the union of declared gates once on the
+   stacked tree, lands every branch's commits linearly in one push under one
+   ticket that records per-branch evidence, bisects a red result to name the
+   branch that broke it, and writes one dogfood request when any branch is
+   Electron-facing.
 2. **A concurrency cap tied to load.** The slot pool releases a waiter
    unslotted after 20 minutes, which is when load runs away (5 of 8 unslotted
    suite runs failed). Cap `node --test` concurrency for the delivery suite

@@ -1153,6 +1153,8 @@ export function deliveryAffectingPath(file) {
  * renderers over the documents, and the runbook links. About 40 seconds
  * together; they run on every landing the whole suite does not.
  */
+// `pnpm test:delivery-pins` runs exactly these; `delivery-policy.test.mjs`
+// holds the package script to this list.
 export const PRODUCT_TREE_PINS = Object.freeze([
   'scripts/delivery-documentation.test.mjs',
   'scripts/delivery-policy.test.mjs',
@@ -1190,8 +1192,8 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
         }
       : {
           id: 'delivery-pins',
-          command: 'node',
-          args: ['--test', ...PRODUCT_TREE_PINS],
+          command: 'pnpm',
+          args: ['run', 'test:delivery-pins'],
         },
   ];
 
@@ -1597,6 +1599,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'type-check': LANDING,
   'type-check:electron-tests': LANDING,
   'test:agent-delivery': LANDING,
+  'test:delivery-pins': LANDING,
   'test:related': LANDING,
   'open-source:paths:check': LANDING,
   'content:scan': LANDING,

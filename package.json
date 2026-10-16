@@ -47,6 +47,7 @@
     "copy:check": "node scripts/check-screen-copy.mjs",
     "test:screen-copy": "node --test scripts/check-screen-copy.test.mjs",
     "test:fonts": "node --test scripts/font-self-hosting.test.mjs",
+    "test:delivery-pins": "node --test scripts/delivery-documentation.test.mjs scripts/delivery-policy.test.mjs scripts/font-self-hosting.test.mjs scripts/recipe-renderers.test.mjs scripts/suite-environment.test.mjs",
     "distribution:prepare": "pnpm --filter @exawatt/core types:build && node scripts/prepare-distribution.mjs",
     "test:distribution": "pnpm --filter @exawatt/core types:build && vitest run packages/core/src/distribution/contract.test.ts src/lib/distribution/community-neutrality.test.ts src/lib/distribution/community-closure.test.ts electron/main/distribution.test.ts --maxWorkers=25% && node --test scripts/distribution-build.test.mjs",
     "test:enrichment-distribution": "pnpm --filter @exawatt/core types:build && vitest run electron/main/pty/enrichment-distribution.test.ts electron/main/pty/context-summarizer.test.ts electron/main/pty/conversation-catalog.test.ts src/app/hud-gallery/goal-visuals/page.test.tsx src/components/workspace/recent-conversations.test.tsx --maxWorkers=25%",

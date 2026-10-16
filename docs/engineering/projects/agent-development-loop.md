@@ -106,7 +106,7 @@ nothing a change is verified against:
   licences, Electron resources, `@exawatt/core`'s manifest and build files and
   the import closure of the two entry points delivery scripts load, and the
   named product files the trace found). Any other change runs only
-  `PRODUCT_TREE_PINS`, the five suite files that read the product tree (the
+  `pnpm test:delivery-pins`, the five suite files that read the product tree (the
   font scan, the suite-environment walk, the route derivation, the
   public-variant renderers, the runbook links; seconds together). CI's batched
   run still runs the whole suite on every batch. The release, custody and
@@ -151,7 +151,10 @@ below; never a longer bound.
 The structural answer is shaped, not built, in ENG-039 M3:
 [module-owned verification is the delivery architecture](module-topology.md#2026-10-15--m3-shaped-module-owned-verification-is-the-delivery-architecture),
 with a merge train, a load-tied concurrency cap and incremental type-check
-under it.
+under it. The same evening the coordinator ran the front as a manual train
+(packets push ready branches, one stacked landing with every declared gate,
+one `pnpm dogfood:request`); the entry records what it saves, what it costs,
+and the `agent:land --train` mode it needs.
 
 ## Delivery contention audit — 2026-08-03
 

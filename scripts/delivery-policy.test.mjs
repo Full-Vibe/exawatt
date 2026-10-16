@@ -1585,8 +1585,8 @@ test('a product-only change runs the product-tree pins, a delivery change the wh
     const pins = checks.find(check => check.id === 'delivery-pins');
     assert.deepEqual(pins, {
       id: 'delivery-pins',
-      command: 'node',
-      args: ['--test', ...PRODUCT_TREE_PINS],
+      command: 'pnpm',
+      args: ['run', 'test:delivery-pins'],
     });
   }
   for (const paths of [
@@ -1619,6 +1619,13 @@ test('the product-tree pins are delivery tests, and the boundary is not a glob o
   const suite = JSON.parse(
     readFileSync(path.join(root, 'package.json'), 'utf8')
   ).scripts['test:agent-delivery'];
+  assert.equal(
+    JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).scripts[
+      'test:delivery-pins'
+    ],
+    `node --test ${PRODUCT_TREE_PINS.join(' ')}`,
+    'test:delivery-pins runs exactly the product-tree pins'
+  );
   for (const pin of PRODUCT_TREE_PINS) {
     assert.ok(suite.includes(pin), `${pin} is in test:agent-delivery`);
     assert.ok(existsSync(path.join(root, pin)), `${pin} exists`);
