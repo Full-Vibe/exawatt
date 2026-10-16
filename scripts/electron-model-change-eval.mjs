@@ -7,6 +7,7 @@ import {
   createHarnessFixture,
   fixtureLaunch,
   openFixtureSession,
+  readSavedLayout,
 } from './lib/harness-event-fixture.mjs';
 import { FIXTURE_CLAUDE_MODEL_ID } from './lib/harness-probe-fixture.mjs';
 
@@ -92,9 +93,8 @@ try {
     );
     assert.equal(live.length, 1);
     const saved = await until(async () => {
-      const workspace = JSON.parse(
-        readFileSync(join(fixture.userData, 'workspace.json'), 'utf8')
-      );
+      const workspace = readSavedLayout(fixture);
+      if (!workspace) return null;
       const tabs = workspace.projects
         .flatMap(project => project.tabs)
         .filter(tab => tab.durableSessionId === claude.durableSessionId);

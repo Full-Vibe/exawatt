@@ -5,7 +5,7 @@
 // from Claude Code 2.1.206. Everything from the settings file to the rendered
 // strip is production code — only the model is replaced, so a permutation
 // costs nothing and lands on an exact boundary instead of a plausible one.
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -413,6 +413,23 @@ setInterval(() => {}, 1 << 30);
 }
 
 /** Launch options for `withElectronApp` against a fixture. */
+/**
+ * The fixture profile's saved layout, or null before the first save. The
+ * renderer saves the layout 400 ms after it settles, so a fresh profile can
+ * list a Session before `workspace.json` exists: no file is "not saved yet",
+ * for an `until` to wait on. Any other read failure still throws.
+ */
+export function readSavedLayout(fixture) {
+  let raw;
+  try {
+    raw = readFileSync(join(fixture.userData, 'workspace.json'), 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+  return JSON.parse(raw);
+}
+
 export function fixtureLaunch(fixture, extraEnv = {}) {
   return {
     args: [
