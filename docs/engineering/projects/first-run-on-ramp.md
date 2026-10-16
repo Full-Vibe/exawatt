@@ -555,8 +555,11 @@ than its authored 820px (`sm:max-w-lg` survived the `max-w-none` override),
 and its grid layout let a long list clip the footer; it now lays out as a
 column at its authored width.
 
-**Not done.** `project_opened` with `source: 'suggested'` waits on ENG-047
-F1 (a TODO names it at the call site). The getting-started guide, the
+**Wired in the train.** A suggestion row and Open all recent open with
+`{ source: 'suggested', harnessHint }` (`suggestionOpenedContext`: the
+harness whose store knew the folder most recently), Pick a folder with
+`browse`, and ⌘K's Project rows with `recent`, so ENG-047's `project_opened`
+records each. The getting-started guide, the
 architecture doc and the download page's machine disclosures (every store
 the suggestions read) are updated; the `/hud-gallery/start-screen` study is
 retired with its index entry.

@@ -3620,10 +3620,10 @@ The seam is P4's `BusClient` (`src/lib/bus/`), read through the client, never
 `window.electron.bus`, and typed against the core contract
 (`@exawatt/core` bus types). A send's answer is reduced to a row in exactly
 one function, `directResultOf`, which reads the published `{delivery,
-record}` result and, until P4's retype of the client lands, the client's
-pre-contract answer; delete that branch then. Whether this build can send
+record}` result (the pre-contract branch was deleted when the train landed
+P4's retype with this packet). Whether this build can send
 is the client's own answer: the Demo board provides the Demo client ("Demo
-cannot send" on every row, Send disabled), and a desktop build without the
+cannot send", core's `DEMO_BUS_SEND_REASON`, on every row, Send disabled), and a desktop build without the
 bus reports the live client's unavailable reason. The bus address is the
 durable Session id (B1 contract), resolved from this machine's Sessions at
 the board, since the board's Agent id is a runtime handle; a shell or a
@@ -3639,8 +3639,10 @@ registry binds it in the `workspace` context and the native menu item does
 not register the accelerator), so on the board it was free; D13 keeps
 board keys in the board keymap, and the help modal lists it from there.
 Escape clears the Direct text first, then the selection, then ascends.
-`agent_directed` is a TODO naming ENG-047 F1 until P6's allowlisted event
-lands. Names are the current labels until P8's name module lands.
+Each Send records ENG-047's `agent_directed` once, with `recipients` and
+`delivered` (recipients handed over or waiting at their door:
+`directReached`). Recipient names are the Agent names (P8): the Fleet's
+Agents carry them from main's name store.
 
 Specimens: `/hud-gallery/direct-agents` renders the production panel before
 Send, after Send and in Demo, and the ghost at Project altitude over the Demo

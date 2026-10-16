@@ -4473,28 +4473,49 @@ load-tied concurrency cap is shaped in the
 [audit](projects/agent-development-loop.md#delivery-efficiency-audit--2026-10-15);
 neither is a longer bound, and neither closes this.
 
-### BUG-289 `test:agent-delivery` fails under load: id:next's concurrency test
+### BUG-289 `id:next` handed one BUG id to two concurrent callers under load
 
-Status: open · agent delivery · found 2026-10-15 while landing ENG-029 B3.
+Status: open · agent delivery · found 2026-10-15 while landing ENG-029 B3,
+seen again the same day while landing ENG-004 V4.2 (filed there as BUG-290,
+now a pointer here).
 
 `scripts/append-merge.test.mjs` "id:next allocates past origin/master and
-the queue, once each, under concurrency" failed the landing floor twice at a
-load average of 180 to 230. The first run asserted a DUPLICATE allocation
-(`BUG-26 BUG-22 BUG-23 BUG-24 BUG-27 BUG-23 BUG-25 BUG-28`, seven distinct of
-eight), which is the defect id:next exists to prevent, not only slowness;
-the second timed out after 890 s ("Timed out waiting for the id counter
-owned by process 14786"). Not diagnosed: whether the counter lock can be
-taken twice when its holder is starved past a staleness bound, or whether
+the queue, once each, under concurrency" failed the landing checks of both
+landings at a load average of 180 to 230 with the friend-cohort packets
+landing in parallel. Each landing saw a DUPLICATE allocation (eight callers
+receiving `BUG-22` to `BUG-28` with `BUG-23` twice, seven distinct of eight),
+which is the defect id:next exists to prevent (BUG-203), not only slowness;
+B3's second attempt timed out after 890 s ("Timed out waiting for the id counter owned by
+process 14786"). Passes alone. Not diagnosed: whether the counter lock can
+be taken twice when its holder is starved past a staleness bound, or whether
 the fixture's processes share a counter with a real concurrent id:next.
 
-### BUG-290 `id:next` handed one BUG id to two concurrent callers under load
+### BUG-290 Duplicate of BUG-289
 
-Status: open · agent delivery · found 2026-10-15 while landing ENG-004 V4.2.
+Status: done · agent delivery · closed 2026-10-15 as a duplicate of BUG-289:
+the same id:next duplicate allocation under load, filed by a parallel
+landing. The id is not reused.
 
-`scripts/append-merge.test.mjs` "id:next allocates past origin/master and the
-queue, once each, under concurrency" failed the landing floor with eight
-callers receiving `BUG-22` to `BUG-28` and `BUG-23` twice (7 distinct of 8),
-at a load average near 230 with the friend-cohort packets landing in
-parallel. A duplicate id is the defect `id:next` exists to prevent (BUG-203).
-Not diagnosed: whether the counter's lock admits two writers when a holder is
-slow, or the fixture's concurrency differs from real callers.
+### BUG-292 Codex's mark is near-invisible in the launcher on light themes
+
+Status: open · ENG-003 · found 2026-10-15 while building the Gemini face
+(S5.3.1); pre-existing.
+
+The ⌘T launcher's engine glyph paints each harness's brand colour straight
+onto the row's ground. Codex's brand colour is near-white, so on a light
+theme its row shows a faint smudge where the mark should be, while Claude
+and Gemini read normally. The Agent Source identity rung draws a light brand
+colour in the surrounding ink on a light ground (as the homepage draws
+Codex's mark); the launcher departs from it. Repair belongs to the identity
+rung's one glyph primitive, not a launcher-only colour override.
+
+### BUG-293 A Demo Team tile's harness mark disagrees with Chatter's
+
+Status: open · ENG-029 B3 · found 2026-10-15 while building Chatter.
+
+In the Demo Workspace, a Team tile takes its harness mark from the Session's
+usage source while Chatter's rows take it from the bus endpoint's harness,
+so the same Demo Agent can wear one harness's mark on its tile and another's
+beside its name in Chatter. One Agent must show one mark on every surface.
+Not diagnosed: whether the Demo fixture's usage source is wrong for those
+Agents or the tile reads the wrong field.
