@@ -120,6 +120,10 @@ const KNOWN_GUARDS: Record<string, { why: string; count?: number }> = {
     count: 3,
     why: 'each effect owns a manager subscription or poll beside its read',
   },
+  // Module state outside React: no hook can own it.
+  'lib/analytics/client.ts:optedOutThisLaunch': {
+    why: 'a sticky per-launch opt-out the module-level analytics start re-checks after each await; it orders no requests and is never cleared',
+  },
 };
 
 interface GuardSite {
