@@ -85,6 +85,74 @@ describe('JsonlBusStore', () => {
     });
   });
 
+  it('reads a torn final line (a crash mid-append) as the whole lines before it', async () => {
+    const dir = root();
+    const before = new JsonlBusStore(dir);
+    await before.append(record('m1', 1));
+    await before.append(record('m2', 2));
+    const file = before.fileFor('/work/app');
+    fs.appendFileSync(file, '{"v":1,"type":"message","record":{"id":"m3"');
+    const read = await new JsonlBusStore(dir).read('/work/app');
+    expect(read.ok && read.records.map(item => item.id)).toEqual(['m1', 'm2']);
+  });
+
+  it('repairs a torn final line on the next write: the torn bytes are kept aside, the log stays whole', async () => {
+    const dir = root();
+    const before = new JsonlBusStore(dir);
+    await before.append(record('m1', 1));
+    const file = before.fileFor('/work/app');
+    const torn = '{"v":1,"type":"message","record":{"id":"m2"';
+    fs.appendFileSync(file, torn);
+    // The app restarts and logs again.
+    const after = new JsonlBusStore(dir);
+    await after.append(record('m3', 3));
+    await after.appendDelivery('/work/app', 'm3', {
+      state: 'delivered',
+      adapter: 'terminal-input',
+      at: 4,
+    });
+    const read = await after.read('/work/app');
+    expect(read.ok && read.records.map(item => item.id)).toEqual(['m1', 'm3']);
+    expect(read.ok && read.records[1].delivery.state).toBe('delivered');
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    expect(lines.at(-1)).toBe('');
+    expect(lines.slice(0, -1).every(line => JSON.parse(line))).toBeTruthy();
+    expect(fs.readFileSync(`${file}.torn`, 'utf8')).toContain(torn);
+  });
+
+  it('ends a whole final line that only lost its newline, keeping it', async () => {
+    const dir = root();
+    const before = new JsonlBusStore(dir);
+    await before.append(record('m1', 1));
+    const file = before.fileFor('/work/app');
+    fs.appendFileSync(
+      file,
+      JSON.stringify({ v: 1, type: 'message', record: record('m2', 2) })
+    );
+    const after = new JsonlBusStore(dir);
+    await after.append(record('m3', 3));
+    const read = await after.read('/work/app');
+    expect(read.ok && read.records.map(item => item.id)).toEqual([
+      'm1',
+      'm2',
+      'm3',
+    ]);
+  });
+
+  it('prunes a ledger whose last write was torn', async () => {
+    const bounds = { messages: 2, bytes: 1_000_000, lowWater: 0.5 };
+    const dir = root();
+    const before = new JsonlBusStore(dir, bounds);
+    await before.append(record('m1', 1));
+    await before.append(record('m2', 2));
+    const file = before.fileFor('/work/app');
+    fs.appendFileSync(file, '{"v":1,"type":"mess');
+    const after = new JsonlBusStore(dir, bounds);
+    await after.append(record('m3', 3));
+    const read = await after.read('/work/app');
+    expect(read.ok && read.records.map(item => item.id)).toEqual(['m3']);
+  });
+
   it('prunes the oldest whole messages on write once over its count bound', async () => {
     const bounds = { messages: 8, bytes: 1_000_000, lowWater: 0.5 };
     const store = new JsonlBusStore(root(), bounds);
@@ -124,6 +192,21 @@ describe('JsonlBusStore', () => {
     );
     const read = await store.read('/work/app');
     expect(read.ok && read.records.at(-1)?.id).toBe('m30');
+  });
+
+  it('still fails loud on a damaged line in the middle, torn tail or not', async () => {
+    const dir = root();
+    const before = new JsonlBusStore(dir);
+    await before.append(record('m1', 1));
+    const file = before.fileFor('/work/app');
+    fs.appendFileSync(file, 'not json\n');
+    await before.append(record('m2', 2));
+    fs.appendFileSync(file, '{"v":1,"ty');
+    const read = await new JsonlBusStore(dir).read('/work/app');
+    expect(read).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/damaged at line 2/),
+    });
   });
 
   it('never rewrites a damaged ledger to prune it', async () => {

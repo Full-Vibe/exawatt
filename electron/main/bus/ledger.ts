@@ -15,6 +15,13 @@
  * a record is never cut mid-line. A damaged line makes the read fail with its
  * line number (BUG-125: a damaged ledger is never an empty one), and a
  * damaged file is never rewritten, so nothing it holds is lost to pruning.
+ *
+ * One damage is expected, not a fault: a crash mid-append leaves a torn
+ * FINAL line with no newline after it. A read takes the whole lines before
+ * it; the next write moves the torn bytes to `<file>.torn` (kept, never
+ * deleted) and ends the file at its last newline before appending, so a
+ * later line is never written onto the torn one. Only an unterminated last
+ * line is read as torn: a bad line anywhere else still fails the read.
  */
 import { createHash } from 'crypto';
 import fs from 'fs';
@@ -106,7 +113,9 @@ type Folded =
     }
   | { ok: false; reason: string };
 
-/** Fold a ledger's text into records, oldest first. */
+/** Fold a ledger's text into records, oldest first. An unterminated last
+ *  line that does not parse is a torn append and is left out; every other
+ *  bad line fails the fold. */
 function fold(text: string): Folded {
   const records = new Map<string, MessageRecord>();
   const lines = new Map<string, string[]>();
@@ -115,6 +124,7 @@ function fold(text: string): Folded {
     const raw = rows[index];
     if (!raw.trim()) continue;
     const line = parseLine(raw);
+    if (!line && index === rows.length - 1) continue;
     if (!line) {
       return {
         ok: false,
@@ -148,6 +158,8 @@ export class JsonlBusStore implements BusStore {
   private chains = new Map<string, Promise<void>>();
   /** Messages per file, learned on first touch and kept on every write. */
   private counts = new Map<string, number>();
+  /** Files known to end in a newline: checked once, kept by every write. */
+  private terminated = new Set<string>();
 
   constructor(
     private readonly root: string,
@@ -205,11 +217,18 @@ export class JsonlBusStore implements BusStore {
     const previous = this.chains.get(file) ?? Promise.resolve();
     const next = previous.then(async () => {
       await fs.promises.mkdir(this.root, { recursive: true, mode: 0o700 });
+      await this.repairTail(file);
       const count = await this.countOf(file);
-      await fs.promises.appendFile(file, `${JSON.stringify(line)}\n`, {
-        encoding: 'utf8',
-        mode: 0o600,
-      });
+      try {
+        await fs.promises.appendFile(file, `${JSON.stringify(line)}\n`, {
+          encoding: 'utf8',
+          mode: 0o600,
+        });
+      } catch (error) {
+        // A failed append may have written part of its line.
+        this.terminated.delete(file);
+        throw error;
+      }
       this.counts.set(file, count + addsMessage);
       await this.pruneIfOver(file);
     });
@@ -219,6 +238,43 @@ export class JsonlBusStore implements BusStore {
       next.catch(() => {})
     );
     return next;
+  }
+
+  /**
+   * Make the file end in a newline before anything is appended to it. A
+   * whole last line that only lost its newline keeps it; a torn one is
+   * moved to `<file>.torn` and cut off at the last newline. Anything that
+   * cannot be checked fails the write: appending onto an unknown tail could
+   * turn a torn line into a damaged middle one.
+   */
+  private async repairTail(file: string): Promise<void> {
+    if (this.terminated.has(file)) return;
+    let text: string;
+    try {
+      text = await fs.promises.readFile(file, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      this.terminated.add(file);
+      return;
+    }
+    if (text === '' || text.endsWith('\n')) {
+      this.terminated.add(file);
+      return;
+    }
+    const cut = text.lastIndexOf('\n') + 1;
+    const tail = text.slice(cut);
+    if (parseLine(tail)) {
+      await fs.promises.appendFile(file, '\n', 'utf8');
+    } else {
+      await fs.promises.appendFile(`${file}.torn`, `${tail}\n`, {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+      await fs.promises.truncate(file, Buffer.byteLength(text.slice(0, cut)));
+      // A torn message line was counted as a message.
+      this.counts.delete(file);
+    }
+    this.terminated.add(file);
   }
 
   private async countOf(file: string): Promise<number> {
@@ -267,5 +323,6 @@ export class JsonlBusStore implements BusStore {
     );
     await fs.promises.rename(temporary, file);
     this.counts.set(file, kept.length);
+    this.terminated.add(file);
   }
 }
