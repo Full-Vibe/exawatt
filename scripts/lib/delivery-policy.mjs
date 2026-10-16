@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { loadavg, tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { acquireMachineSlot } from './machine-slots.mjs';
 
@@ -128,9 +130,13 @@ export const SURFACE_GATES = [
     gate: 'eval:settings:navigation',
     why: 'Settings remains searchable, deep-linkable and responsive as Fleet preferences grow',
     match: file =>
-      /^src\/app\/settings\/(settings-client|settings-registry|fleet-settings|keyboard-settings|settings-controls)\.tsx?$/.test(file) ||
-      (file.startsWith('src/components/presentation/') && !/\.test\.tsx?$/.test(file)) ||
-      (file.startsWith('src/lib/presentation/') && !/\.test\.tsx?$/.test(file)) ||
+      /^src\/app\/settings\/(settings-client|settings-registry|fleet-settings|keyboard-settings|settings-controls)\.tsx?$/.test(
+        file
+      ) ||
+      (file.startsWith('src/components/presentation/') &&
+        !/\.test\.tsx?$/.test(file)) ||
+      (file.startsWith('src/lib/presentation/') &&
+        !/\.test\.tsx?$/.test(file)) ||
       file === 'scripts/settings-navigation-eval.mjs',
   },
   {
@@ -1023,6 +1029,138 @@ export function surfaceGateMessage(missing) {
   ].join('\n');
 }
 
+/**
+ * What `test:agent-delivery` reads (ENG-022, 2026-10-15).
+ *
+ * The suite pins the delivery system: 70 `node --test` files, three to seven
+ * minutes under fleet load, and 48% of all landing-check compute on
+ * 2026-10-15, when it ran on every landing whatever changed. Almost all of it
+ * is fixture-driven: it reads `scripts/`, the package manifests and lockfile,
+ * the root configuration, CI and hooks, and two `@exawatt/core` entry points,
+ * and nothing else in the product tree. A traced run on 2026-10-15 (every file read
+ * and every git call the suite and its children made) found the exceptions,
+ * which are either listed here or are a product-tree pin below.
+ *
+ * So the whole suite runs when a changed path is one of these, and otherwise
+ * only `PRODUCT_TREE_PINS` run. CI's batched run still runs the whole suite on
+ * every batch (`.github/workflows/ci.yml`), so nothing goes unverified. A new
+ * delivery test that reads a product path adds that path here or joins the
+ * pins in the same change.
+ */
+const DELIVERY_SYSTEM_PREFIXES = [
+  'scripts/',
+  '.github/',
+  '.githooks/',
+  '.codex/',
+  'patches/',
+  'LICENSES/',
+  // Icon masters and macOS resources the packaging pins read.
+  'electron/resources/',
+  'contracts/distribution/',
+  // Terms the public content scanner and its pins read.
+  'docs/research/partner-conversations/',
+  'public/images/readme/',
+];
+const DELIVERY_SYSTEM_FILES = new Set([
+  'docs/engineering/agent-delivery.md',
+  'contracts/agent-sources.json',
+  'contracts/README.md',
+  'docs/product/reference/roadmap-convention.md',
+  'public/icon-community.png',
+  'src/app/icon.png',
+  'src/generated/agent-source-declarations.ts',
+  'electron/main/pty/generated-agent-source-declarations.ts',
+]);
+
+/**
+ * The release, custody and packaging pins load `@exawatt/core`'s built
+ * runtime through exactly these entry points (`@exawatt/core/distribution`
+ * and `@exawatt/core/release-provenance`; delivery scripts never load the
+ * package root, and `delivery-policy.test.mjs` holds them to it). A core
+ * source file reaches the delivery suite only through their import closure,
+ * read from the tree being landed; everything else in the package (its
+ * manifest, build configuration and scripts) always does. Unreadable sources
+ * count as reaching it.
+ */
+export const CORE_DELIVERY_ENTRIES = Object.freeze([
+  'packages/core/src/distribution/index.ts',
+  'packages/core/src/release-provenance.ts',
+]);
+const REPOSITORY_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../..'
+);
+let coreClosure;
+
+function resolveCoreImport(from, specifier) {
+  const base = path.posix
+    .join(path.posix.dirname(from), specifier)
+    .replace(/\.js$/u, '');
+  for (const candidate of [base, `${base}.ts`, `${base}/index.ts`]) {
+    const absolute = path.join(REPOSITORY_ROOT, candidate);
+    if (existsSync(absolute) && statSync(absolute).isFile()) return candidate;
+  }
+  return null;
+}
+
+/** The core sources the delivery suite loads, or null when unreadable. */
+function coreDeliveryClosure() {
+  if (coreClosure !== undefined) return coreClosure;
+  try {
+    const seen = new Set();
+    const pending = [...CORE_DELIVERY_ENTRIES];
+    while (pending.length > 0) {
+      const file = pending.pop();
+      if (seen.has(file)) continue;
+      seen.add(file);
+      const source = readFileSync(path.join(REPOSITORY_ROOT, file), 'utf8');
+      for (const match of source.matchAll(
+        /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"](\.{1,2}\/[^'"]+)['"]/gu
+      )) {
+        const target = resolveCoreImport(file, match[1]);
+        if (!target) throw new Error(`${file}: cannot resolve ${match[1]}`);
+        pending.push(target);
+      }
+    }
+    coreClosure = seen;
+  } catch {
+    coreClosure = null;
+  }
+  return coreClosure;
+}
+
+export function deliveryAffectingPath(file) {
+  if (file.startsWith('packages/core/src/')) {
+    const closure = coreDeliveryClosure();
+    return closure === null || closure.has(file);
+  }
+  return (
+    // Every root file: package.json, the lockfile, AGENTS.md, README.md,
+    // build and test configuration, licensing.
+    !file.includes('/') ||
+    // Core's manifest, build configuration and runtime-package script.
+    file.startsWith('packages/core/') ||
+    DELIVERY_SYSTEM_PREFIXES.some(prefix => file.startsWith(prefix)) ||
+    DELIVERY_SYSTEM_FILES.has(file) ||
+    /^packages\/[^/]+\/package\.json$/.test(file)
+  );
+}
+
+/**
+ * The delivery pins that read the product tree itself, so any change can
+ * break them: the font scan over `src/`, the suite-environment walk over every
+ * test file, the route derivation over every tracked path, the public-variant
+ * renderers over the documents, and the runbook links. About 40 seconds
+ * together; they run on every landing the whole suite does not.
+ */
+export const PRODUCT_TREE_PINS = Object.freeze([
+  'scripts/delivery-documentation.test.mjs',
+  'scripts/delivery-policy.test.mjs',
+  'scripts/font-self-hosting.test.mjs',
+  'scripts/recipe-renderers.test.mjs',
+  'scripts/suite-environment.test.mjs',
+]);
+
 export function classifyDeliveryPolicy(changedPaths, extras = []) {
   const paths = [...new Set(changedPaths)].sort();
   const checks = [
@@ -1044,11 +1182,17 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
     // way the delivery-script pins are unconditional in CI.
     { id: 'lint', command: 'pnpm', args: ['run', 'lint'] },
     { id: 'type-check', command: 'pnpm', args: ['run', 'type-check'] },
-    {
-      id: 'test:agent-delivery',
-      command: 'pnpm',
-      args: ['run', 'test:agent-delivery'],
-    },
+    paths.some(deliveryAffectingPath)
+      ? {
+          id: 'test:agent-delivery',
+          command: 'pnpm',
+          args: ['run', 'test:agent-delivery'],
+        }
+      : {
+          id: 'delivery-pins',
+          command: 'node',
+          args: ['--test', ...PRODUCT_TREE_PINS],
+        },
   ];
 
   const related = paths.filter(file => /\.(?:[cm]?[jt]sx?)$/.test(file));
@@ -1380,9 +1524,9 @@ const DOCS_FLOOR_CHECK_IDS = new Set([
 ]);
 
 /**
- * The public-variant renderer contract. The floor runs this file inside
- * `test:agent-delivery`, which is far too slow for a pre-push check, so the
- * docs subset names it on its own.
+ * The public-variant renderer contract. The landing checks run this file as
+ * one of `PRODUCT_TREE_PINS` or inside the whole `test:agent-delivery`; the
+ * docs subset, a pre-push check, names it on its own.
  */
 export const RECIPE_RENDERERS_CHECK = Object.freeze({
   id: 'recipe-renderers',
@@ -1891,6 +2035,11 @@ export async function runDeliveryChecks(
     // its own message. The landing refreshes its dev server here, right
     // before the first gate that reads it (BUG-246).
     beforeCheck = async () => {},
+    // A session from `openCheckReuse` (scripts/lib/check-reuse.mjs): a check
+    // that already passed on exactly these inputs is reported as reused
+    // instead of run again. Absent, every check runs.
+    reuse = null,
+    candidateSha = null,
   } = {}
 ) {
   const evidence = [];
@@ -1911,6 +2060,25 @@ export async function runDeliveryChecks(
   });
   try {
     for (const check of checks) {
+      const reused = await reuse?.lookup(check);
+      if (reused) {
+        console.log(
+          `[agent-land] ${phase}: ${check.id} reused: it passed on these exact inputs at ${reused.candidateSha?.slice(0, 12) ?? 'an earlier run'} (${reused.at})`
+        );
+        const result = {
+          id: check.id,
+          phase,
+          status: 'passed',
+          durationMs: 0,
+          completedAt: new Date().toISOString(),
+          slotMode: slot.mode,
+          slotWaitMs: slot.waitedMs,
+          reused: { candidateSha: reused.candidateSha, at: reused.at },
+        };
+        evidence.push(result);
+        await onResult(result);
+        continue;
+      }
       await beforeCheck(check);
       const startedAt = Date.now();
       console.log(
@@ -1942,6 +2110,8 @@ export async function runDeliveryChecks(
             : outcome.message
         );
       }
+      if (outcome.status === 'passed')
+        await reuse?.record(check, { candidateSha });
       evidence.push(result);
       await onResult(result);
     }

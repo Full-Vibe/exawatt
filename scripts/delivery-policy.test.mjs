@@ -15,11 +15,15 @@ import { fileURLToPath } from 'node:url';
 
 import { parse as parseYaml } from 'yaml';
 
+import { openCheckReuse, REUSABLE_CHECKS } from './lib/check-reuse.mjs';
 import {
   classifyDeliveryPolicy,
+  CORE_DELIVERY_ENTRIES,
+  deliveryAffectingPath,
   failedVitestFiles,
   inconclusiveRerunReport,
   isVerificationScript,
+  PRODUCT_TREE_PINS,
   missingSurfaceGates,
   quarantinedSurfaceGates,
   reproducedFailureReport,
@@ -58,14 +62,14 @@ test('the cheap changed-file floor cannot be weakened by the caller', () => {
     'content:scan',
     'lint',
     'type-check',
-    'test:agent-delivery',
+    'delivery-pins',
   ]);
   assert.deepEqual(ids(['src/lib/raw-tokens.ts'], ['test:fonts']), [
     'open-source:paths:check',
     'content:scan',
     'lint',
     'type-check',
-    'test:agent-delivery',
+    'delivery-pins',
     'exports:check',
     'vitest-related',
     'copy:check',
@@ -114,7 +118,7 @@ test('provider composition changes receive related consumer tests', () => {
       'content:scan',
       'lint',
       'type-check',
-      'test:agent-delivery',
+      'delivery-pins',
       'exports:check',
       'vitest-related',
       'copy:check',
@@ -236,7 +240,7 @@ test('routable and distribution-seam changes receive the community build', () =>
     'content:scan',
     'lint',
     'type-check',
-    'test:agent-delivery',
+    'delivery-pins',
     'exports:check',
     'vitest-related',
     'copy:check',
@@ -312,7 +316,7 @@ test('roadmap corpus changes receive the canonical parser contract', () => {
     'content:scan',
     'lint',
     'type-check',
-    'test:agent-delivery',
+    'delivery-pins',
     'roadmap-contract',
   ]);
 });
@@ -744,7 +748,7 @@ test('the vitest checks declare the isolated rerun; the others do not', () => {
     'content:scan',
     'lint',
     'exports:check',
-    'test:agent-delivery',
+    'delivery-pins',
   ]) {
     assert.equal(
       classifyDeliveryPolicy(['src/lib/raw-tokens.ts']).find(
@@ -1138,8 +1142,11 @@ test('a passing check and a non-vitest failure behave exactly as before', async 
 // `scripts/*.test.mjs` pin ran only through `test:agent-delivery` on landing,
 // never in CI, so a Dependabot bump could break a release guard with CI
 // green; the BUG-057 lint rule ran only in CI, so a landing could reintroduce
-// a wall-clock assertion and learn of it at the next batch. Both run on both
-// sides now, unconditionally, and this is the pin on both halves.
+// a wall-clock assertion and learn of it at the next batch. Lint runs on every
+// landing and the whole delivery suite in every CI batch. On a landing the
+// whole suite runs when the change can reach the delivery system, and the
+// pins that read the product tree run on every other one (ENG-022,
+// 2026-10-15).
 test('lint and the delivery-script pins run on every landing and in every CI batch', async () => {
   for (const paths of [
     [],
@@ -1151,8 +1158,9 @@ test('lint and the delivery-script pins run on every landing and in every CI bat
     const checks = ids(paths);
     assert.ok(checks.includes('lint'), `lint owed by ${JSON.stringify(paths)}`);
     assert.ok(
-      checks.includes('test:agent-delivery'),
-      `test:agent-delivery owed by ${JSON.stringify(paths)}`
+      checks.includes('test:agent-delivery') ||
+        checks.includes('delivery-pins'),
+      `delivery pins owed by ${JSON.stringify(paths)}`
     );
   }
   const lint = classifyDeliveryPolicy([]).find(check => check.id === 'lint');
@@ -1555,4 +1563,266 @@ test('a surface gate owns its script and every source file the script names', ()
       );
     }
   }
+});
+
+// ENG-022, 2026-10-15: `test:agent-delivery` was 48% of the day's landing
+// compute and ran on every landing whatever changed. It now runs whole when a
+// change can reach what it reads, and the product-tree pins run otherwise.
+test('a product-only change runs the product-tree pins, a delivery change the whole suite', () => {
+  for (const paths of [
+    ['src/components/workspace/tab-strip.tsx'],
+    ['src/lib/raw-tokens.ts', 'electron/main/main.ts'],
+    ['docs/engineering/roadmap.md', 'docs/product/concepts.md'],
+    ['company/overlay/web/src/app/admin/page.tsx'],
+    ['themes/v1/exawatt-air-light.json', 'packages/ui-model/src/index.ts'],
+    ['packages/core/src/desktop-bridge/api.ts', 'packages/core/src/index.ts'],
+  ]) {
+    const checks = classifyDeliveryPolicy(paths);
+    assert.ok(
+      !checks.some(check => check.id === 'test:agent-delivery'),
+      `${JSON.stringify(paths)} cannot reach the delivery system`
+    );
+    const pins = checks.find(check => check.id === 'delivery-pins');
+    assert.deepEqual(pins, {
+      id: 'delivery-pins',
+      command: 'node',
+      args: ['--test', ...PRODUCT_TREE_PINS],
+    });
+  }
+  for (const paths of [
+    ['scripts/lib/delivery-policy.mjs'],
+    ['scripts/agent-land.test.mjs'],
+    ['package.json'],
+    ['pnpm-lock.yaml'],
+    ['AGENTS.md'],
+    ['.github/workflows/ci.yml'],
+    ['.githooks/pre-push'],
+    ['docs/engineering/agent-delivery.md'],
+    ['packages/core/src/distribution/contract.ts'],
+    ['packages/ui-model/package.json'],
+    ['electron/resources/icon.icns'],
+    ['src/app/icon.png'],
+    ['src/generated/agent-source-declarations.ts'],
+    ['docs/research/partner-conversations/2026-06-24-kevin-ridsdale.md'],
+    ['src/lib/raw-tokens.ts', 'scripts/check-screen-copy.mjs'],
+  ]) {
+    const ids = classifyDeliveryPolicy(paths).map(check => check.id);
+    assert.ok(
+      ids.includes('test:agent-delivery'),
+      `${JSON.stringify(paths)} owes the whole delivery suite`
+    );
+    assert.ok(!ids.includes('delivery-pins'), 'the whole suite contains them');
+  }
+});
+
+test('the product-tree pins are delivery tests, and the boundary is not a glob of the product', async () => {
+  const suite = JSON.parse(
+    readFileSync(path.join(root, 'package.json'), 'utf8')
+  ).scripts['test:agent-delivery'];
+  for (const pin of PRODUCT_TREE_PINS) {
+    assert.ok(suite.includes(pin), `${pin} is in test:agent-delivery`);
+    assert.ok(existsSync(path.join(root, pin)), `${pin} exists`);
+  }
+  // The trigger set is the delivery system, not the product: a renderer,
+  // Electron main or a product document alone never reaches it.
+  for (const file of [
+    'src/app/page.tsx',
+    'electron/main/main.ts',
+    'packages/ui-model/src/index.ts',
+    'docs/engineering/roadmap.md',
+  ]) {
+    assert.equal(deliveryAffectingPath(file), false, file);
+  }
+});
+
+// ENG-022, 2026-10-15: 277 of the day's 1,385 landing-check minutes re-ran a
+// check that had already passed on the byte-identical tree.
+test('a recorded pass is reused only on identical inputs, and never for a gate', async () => {
+  const directory = await realpath(
+    await mkdtemp(path.join(tmpdir(), 'exawatt-check-reuse-'))
+  );
+  const counter = path.join(directory, 'runs.log');
+  const check = (id, extra = '') => ({
+    id,
+    command: process.execPath,
+    args: [
+      '-e',
+      `require('node:fs').appendFileSync(${JSON.stringify(counter)}, ${JSON.stringify(id + '\n')})${extra}`,
+    ],
+  });
+  const runs = () =>
+    existsSync(counter)
+      ? readFileSync(counter, 'utf8').split('\n').filter(Boolean)
+      : [];
+  const land = async (checks, env = {}) =>
+    runDeliveryChecks(directory, checks, {
+      reuse: await openCheckReuse(directory, { env }),
+      candidateSha: git(directory, ['rev-parse', 'HEAD']),
+    });
+  try {
+    git(directory, ['init', '--initial-branch=master']);
+    await writeFile(path.join(directory, '.gitignore'), 'runs.log\n');
+    await writeFile(path.join(directory, 'a.txt'), 'one\n');
+    git(directory, ['add', '.']);
+    git(directory, ['commit', '-m', 'one']);
+
+    assert.ok(REUSABLE_CHECKS.has('lint'));
+    assert.ok(!REUSABLE_CHECKS.has('eval:spatial:attention'));
+    assert.ok(!REUSABLE_CHECKS.has('electron:compile'));
+    assert.ok(
+      !REUSABLE_CHECKS.has('type-check'),
+      'type-check builds the core runtime the delivery suite loads'
+    );
+
+    await land([check('lint'), check('eval:spatial:attention')]);
+    assert.deepEqual(runs(), ['lint', 'eval:spatial:attention']);
+
+    // The same tree again: lint stands on its recorded pass, the gate runs.
+    const evidence = await land([
+      check('lint'),
+      check('eval:spatial:attention'),
+    ]);
+    assert.deepEqual(runs(), [
+      'lint',
+      'eval:spatial:attention',
+      'eval:spatial:attention',
+    ]);
+    assert.equal(evidence[0].status, 'passed');
+    assert.ok(evidence[0].reused, 'the reused pass says so');
+    assert.equal(evidence[1].reused, undefined);
+
+    // A different command is a different check.
+    await land([check('lint', '; 0')]);
+    assert.equal(runs().filter(id => id === 'lint').length, 2);
+
+    // An environment that changes what a check proves is part of the key.
+    await land([check('lint')], { EXAWATT_DISTRIBUTION_PROFILE: 'official' });
+    assert.equal(runs().filter(id => id === 'lint').length, 3);
+
+    // Reuse off: every check runs.
+    await land([check('lint')], { EXAWATT_CHECK_REUSE: '0' });
+    assert.equal(runs().filter(id => id === 'lint').length, 4);
+
+    // A new tree is new evidence.
+    await writeFile(path.join(directory, 'a.txt'), 'two\n');
+    git(directory, ['commit', '-am', 'two']);
+    await land([check('lint')]);
+    assert.equal(runs().filter(id => id === 'lint').length, 5);
+
+    // A dirty worktree neither reuses nor records.
+    await writeFile(path.join(directory, 'a.txt'), 'dirty\n');
+    await land([check('lint')]);
+    assert.equal(runs().filter(id => id === 'lint').length, 6);
+    git(directory, ['checkout', '--', 'a.txt']);
+
+    // A check that dirties the tree is never recorded, so it always reruns.
+    const dirtying = check(
+      'exports:check',
+      `; require('node:fs').writeFileSync(${JSON.stringify(path.join(directory, 'b.txt'))}, 'x')`
+    );
+    await land([dirtying]);
+    await rm(path.join(directory, 'b.txt'));
+    await land([dirtying]);
+    await rm(path.join(directory, 'b.txt'));
+    assert.equal(runs().filter(id => id === 'exports:check').length, 2);
+
+    // A failure records nothing.
+    const failing = {
+      id: 'content:scan',
+      command: process.execPath,
+      args: [
+        '-e',
+        `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'content:scan\\n'); process.exit(1)`,
+      ],
+    };
+    await assert.rejects(land([failing]));
+    await assert.rejects(land([failing]));
+    assert.equal(runs().filter(id => id === 'content:scan').length, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// The delivery suite's dependency on @exawatt/core is declared, not assumed:
+// a core source file outside `CORE_DELIVERY_ENTRIES`' import closure does
+// not run the whole suite, so no script the suite loads or launches may
+// reach core any other way.
+test('the delivery suite reaches @exawatt/core only through its declared entry points', () => {
+  const suite = JSON.parse(
+    readFileSync(path.join(root, 'package.json'), 'utf8')
+  ).scripts['test:agent-delivery'];
+  const tests = [...suite.matchAll(/scripts\/[\w./-]+\.test\.mjs/gu)].map(
+    match => match[0]
+  );
+  const testSources = tests
+    .map(file => readFileSync(path.join(root, file), 'utf8'))
+    .join('\n');
+  // Every script the tests import, transitively, and every script they name
+  // (and so may launch).
+  const pending = [
+    ...tests,
+    ...readdirSync(path.join(root, 'scripts'), { recursive: true })
+      .map(file => `scripts/${file}`)
+      .filter(file => /\.[cm]?js$/u.test(file))
+      .filter(file => testSources.includes(path.basename(file))),
+  ];
+  const seen = new Set();
+  const coreSpecifiers = new Map();
+  while (pending.length > 0) {
+    const file = pending.pop();
+    if (seen.has(file) || !existsSync(path.join(root, file))) continue;
+    seen.add(file);
+    const source = readFileSync(path.join(root, file), 'utf8');
+    for (const match of source.matchAll(
+      /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\)\s*\(\s*)['"]([^'"]+)['"]/gu
+    )) {
+      const specifier = match[1];
+      if (specifier.startsWith('@exawatt/core')) {
+        coreSpecifiers.set(`${file}: ${specifier}`, specifier);
+      } else if (specifier.startsWith('.')) {
+        pending.push(
+          path.posix.normalize(
+            path.posix.join(path.posix.dirname(file), specifier)
+          )
+        );
+      }
+    }
+  }
+  assert.ok(seen.size > 100, 'the walk reaches the delivery scripts');
+  const declared = new Map([
+    ['@exawatt/core/distribution', 'packages/core/src/distribution/index.ts'],
+    [
+      '@exawatt/core/release-provenance',
+      'packages/core/src/release-provenance.ts',
+    ],
+  ]);
+  assert.deepEqual(
+    [...declared.values()].sort(),
+    [...CORE_DELIVERY_ENTRIES].sort()
+  );
+  for (const [where, specifier] of coreSpecifiers) {
+    assert.ok(
+      declared.has(specifier),
+      `${where} loads ${specifier}; the delivery suite may load only ${[...declared.keys()].join(' or ')} (or declare a new entry in CORE_DELIVERY_ENTRIES)`
+    );
+  }
+  assert.ok(coreSpecifiers.size > 0, 'the walk sees the core entry points');
+  // A core change outside the closure is a product change, and one inside it
+  // reaches the delivery suite.
+  assert.equal(
+    deliveryAffectingPath('packages/core/src/desktop-bridge/api.ts'),
+    false
+  );
+  assert.equal(
+    deliveryAffectingPath('packages/core/src/distribution/contract.ts'),
+    true
+  );
+  assert.equal(
+    deliveryAffectingPath('packages/core/src/release-provenance.ts'),
+    true
+  );
+  assert.equal(
+    deliveryAffectingPath('packages/core/tsconfig.runtime.json'),
+    true
+  );
 });

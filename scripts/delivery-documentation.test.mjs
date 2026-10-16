@@ -41,7 +41,7 @@ test('the operational reference covers lifecycle, state, policy, recovery, and e
   for (const heading of [
     '## Normal agent contract',
     '## Three-stage flow',
-    '## Candidate and repository-owned floor',
+    '## Candidate and repository-owned landing checks',
     '## Queue state and lifecycle',
     '## Head-of-queue integration',
     '## Superseding dogfood',

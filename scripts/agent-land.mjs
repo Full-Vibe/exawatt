@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { appendMergeGitArgs } from './lib/append-merge.mjs';
+import { openCheckReuse } from './lib/check-reuse.mjs';
 import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 import {
   allocateTicket,
@@ -549,6 +550,8 @@ async function main() {
       refreshInstall: async () => null,
       // The docs lane runs no surface gate, so it has no server to own.
       devServer: null,
+      // Its checks take seconds; nothing to reuse.
+      openReuse: async () => null,
     };
   } else {
     // Surface gates are declared, not run here: they need a dev server the
@@ -594,6 +597,7 @@ async function main() {
         base: process.env.EXA_BASE,
         run,
       }),
+      openReuse: () => openCheckReuse(invokingRoot),
     };
   }
   try {
@@ -624,8 +628,13 @@ async function landThroughQueue({
   // reported, never swallowed (BUG-090). The status line carries the count so
   // a landing cannot look unconditionally clean when the floor had to re-run.
   const flakes = [];
+  const reusedChecks = [];
   const recordFloorCheck = extra => async result => {
     if (result.status === 'flaked') flakes.push(result);
+    if (result.reused)
+      reusedChecks.push(
+        result.phase === 'rebase' ? `${result.id}(rebase)` : result.id
+      );
     await appendDeliveryMetric(root, 'floor_check', { ...extra, ...result });
   };
 
@@ -737,6 +746,8 @@ async function landThroughQueue({
     phase: 'candidate',
     onResult: recordFloorCheck({ candidateSha }),
     beforeCheck: freshServerBefore('candidate', files, { candidateSha }),
+    reuse: await lane.openReuse(),
+    candidateSha,
   });
   await requireClean(root, 'Agent worktree after verification');
 
@@ -1067,6 +1078,8 @@ async function landThroughQueue({
             ticketId: ticket.id,
             candidateSha: rebasedSha,
           }),
+          reuse: await lane.openReuse(),
+          candidateSha: rebasedSha,
         });
         await requireClean(
           root,
@@ -1325,8 +1338,12 @@ async function landThroughQueue({
     serverRefreshes.length === 0
       ? ''
       : ` server_refreshed=${serverRefreshes.join(',')}`;
+  // Absent when every check ran; otherwise the checks whose recorded pass on
+  // exactly these inputs stood in for a re-run (scripts/lib/check-reuse.mjs).
+  const reusedState =
+    reusedChecks.length === 0 ? '' : ` reused=${reusedChecks.join(',')}`;
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${reinstalledState}${serverState}${laneState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${reinstalledState}${serverState}${reusedState}${laneState}`
   );
   for (const result of flakes) {
     for (const entry of result.flakedFiles ?? []) {

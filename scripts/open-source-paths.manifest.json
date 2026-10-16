@@ -172,6 +172,7 @@
         "scripts/contribution-pull.mjs",
         "scripts/discard-electron-snapshot.mjs",
         "scripts/docs-check.mjs",
+        "scripts/dogfood-request.mjs",
         "scripts/dogfood-worker.mjs",
         "scripts/electron-dev.mjs",
         "scripts/electron-packaged-smoke.mjs",

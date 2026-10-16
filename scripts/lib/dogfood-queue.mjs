@@ -57,7 +57,11 @@ async function masterWorktree(root) {
   return null;
 }
 
-export async function requestDogfoodInstall(root, sourceSha) {
+export async function requestDogfoodInstall(
+  root,
+  sourceSha,
+  { startWorker = startDogfoodWorker } = {}
+) {
   try {
     await execFileAsync(
       'git',
@@ -95,7 +99,11 @@ export async function requestDogfoodInstall(root, sourceSha) {
     desiredSha: sourceSha,
     sequence: request.sequence,
   });
+  await startWorker(root, sourceSha, paths.log);
+  return request;
+}
 
+async function startDogfoodWorker(root, sourceSha, logPath) {
   let workerRoot = (await masterWorktree(root)) ?? root;
   let workerScript = path.join(workerRoot, 'scripts', 'dogfood-worker.mjs');
   try {
@@ -104,10 +112,10 @@ export async function requestDogfoodInstall(root, sourceSha) {
     workerRoot = root;
     workerScript = path.join(root, 'scripts', 'dogfood-worker.mjs');
   }
-  const log = await open(paths.log, 'a', 0o600);
+  const log = await open(logPath, 'a', 0o600);
   let worker;
   try {
-    await chmod(paths.log, 0o600);
+    await chmod(logPath, 0o600);
     await log.write(
       `\n[dogfood-worker] queued ${sourceSha} at ${new Date().toISOString()}\n`
     );
@@ -115,16 +123,37 @@ export async function requestDogfoodInstall(root, sourceSha) {
       cwd: workerRoot,
       detached: true,
       stdio: ['ignore', log.fd, log.fd],
-      env: { ...process.env, EXAWATT_DOGFOOD_LOG: paths.log },
+      env: { ...process.env, EXAWATT_DOGFOOD_LOG: logPath },
     });
     worker.unref();
   } finally {
     await log.close();
   }
   console.log(
-    `[agent-land] dogfood queued for ${sourceSha.slice(0, 12)}; log: ${paths.log}`
+    `[agent-land] dogfood queued for ${sourceSha.slice(0, 12)}; log: ${logPath}`
   );
-  return request;
+}
+
+/**
+ * One dogfood build for a front of landings (ENG-022, 2026-10-15). A
+ * coordinator lands N Electron-facing subworkstreams WITHOUT `--dogfood` and
+ * asks once, at the end, for the integrated `origin/master` they compose. The
+ * request is the same superseding record `--dogfood` writes, so a later
+ * request (from either path) replaces it rather than queueing a second build.
+ */
+export async function requestMasterDogfood(
+  root,
+  { sha, fetch = true, startWorker } = {}
+) {
+  if (fetch) {
+    await execFileAsync('git', ['fetch', 'origin', 'master'], { cwd: root });
+  }
+  const target =
+    sha ??
+    (
+      await execFileAsync('git', ['rev-parse', 'origin/master'], { cwd: root })
+    ).stdout.trim();
+  return requestDogfoodInstall(root, target, { startWorker });
 }
 
 export async function runDogfoodWorker(

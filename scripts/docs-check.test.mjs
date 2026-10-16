@@ -67,6 +67,12 @@ test('docs:check runs the floor’s own check definitions', () => {
       .split(' ')
       .includes(RECIPE_RENDERERS_CHECK.args.at(-1))
   );
+  // A documentation-only change runs it as one of the product-tree pins.
+  assert.ok(
+    classifyDeliveryPolicy(['docs/engineering/roadmap.md'])
+      .find(check => check.id === 'delivery-pins')
+      .args.includes(RECIPE_RENDERERS_CHECK.args.at(-1))
+  );
   // Outside docs/engineering the roadmap contract is not owed, as on the floor.
   assert.equal(
     classifyDocsChecks(['README.md']).some(

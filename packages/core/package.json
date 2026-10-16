@@ -34,6 +34,12 @@
       "require": "./dist-cjs/desktop-bridge/index.js",
       "import": "./src/desktop-bridge/index.ts",
       "default": "./src/desktop-bridge/index.ts"
+    },
+    "./release-provenance": {
+      "types": "./dist/release-provenance.d.ts",
+      "require": "./dist-cjs/release-provenance.js",
+      "import": "./src/release-provenance.ts",
+      "default": "./src/release-provenance.ts"
     }
   },
   "typesVersions": {
@@ -46,6 +52,9 @@
       ],
       "desktop-bridge": [
         "dist/desktop-bridge/index.d.ts"
+      ],
+      "release-provenance": [
+        "dist/release-provenance.d.ts"
       ],
       "*": [
         "dist/index.d.ts"

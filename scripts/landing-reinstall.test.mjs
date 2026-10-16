@@ -120,7 +120,7 @@ test('a queue rebase that changes the lockfile reinstalls exactly once, before t
     const install = lines.indexOf(INSTALL);
     const rebaseChecks = lines.slice(install + 1);
     assert.ok(
-      rebaseChecks.some(line => line === 'run test:agent-delivery'),
+      rebaseChecks.some(line => line === 'run type-check'),
       'the rebased floor ran after the reinstall'
     );
     assert.match(

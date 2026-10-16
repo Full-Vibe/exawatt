@@ -5,7 +5,11 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { runDogfoodWorker } from './lib/dogfood-queue.mjs';
+import {
+  readDogfoodRequest,
+  requestMasterDogfood,
+  runDogfoodWorker,
+} from './lib/dogfood-queue.mjs';
 import { deliveryStateRoot, writeJsonAtomic } from './lib/delivery-state.mjs';
 import { gitAsync } from './lib/hermetic-git.mjs';
 
@@ -177,4 +181,44 @@ test('the private package requires official custody and the detached worker pres
     packageFile.scripts['electron:install-dogfood'],
     /--env-file-if-exists=\.env\.local/
   );
+});
+
+// ENG-022, 2026-10-15: a front of N Electron-facing landings asks for ONE
+// build of the master they compose, through the same superseding record
+// `--dogfood` writes, instead of one build per landing.
+test('a front requests one superseding dogfood build of integrated master', async () => {
+  const { root } = await fixture();
+  const starts = [];
+  const startWorker = async (_root, sha) => starts.push(sha);
+  try {
+    await gitAsync(root, ['config', 'user.name', 'Dogfood Request Test']);
+    await gitAsync(root, ['config', 'user.email', 'dogfood@example.com']);
+    await gitAsync(root, ['commit', '--allow-empty', '-m', 'first landing']);
+    const first = (await gitAsync(root, ['rev-parse', 'HEAD'])).trim();
+    await gitAsync(root, ['commit', '--allow-empty', '-m', 'second landing']);
+    const second = (await gitAsync(root, ['rev-parse', 'HEAD'])).trim();
+    await gitAsync(root, ['update-ref', 'refs/remotes/origin/master', second]);
+
+    // A subworkstream that still passed --dogfood, then the front's request.
+    await requestMasterDogfood(root, { sha: first, fetch: false, startWorker });
+    const request = await requestMasterDogfood(root, {
+      fetch: false,
+      startWorker,
+    });
+    assert.equal(request.desiredSha, second, 'defaults to origin/master');
+    assert.equal(request.sequence, 2, 'one record, superseded in place');
+    const pending = await readDogfoodRequest(root);
+    assert.equal(pending.desiredSha, second);
+    assert.deepEqual(starts, [first, second]);
+
+    await gitAsync(root, ['commit', '--allow-empty', '-m', 'not integrated']);
+    const unlanded = (await gitAsync(root, ['rev-parse', 'HEAD'])).trim();
+    await assert.rejects(
+      requestMasterDogfood(root, { sha: unlanded, fetch: false, startWorker }),
+      /not an integrated origin\/master commit/
+    );
+    assert.equal((await readDogfoodRequest(root)).desiredSha, second);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
