@@ -1149,6 +1149,13 @@ const CLAUDE_SETTINGS_GRAMMAR: ConfigFileGrammar<Record<string, unknown>> = {
   parse: parseClaudeSettingsText,
 };
 
+/**
+ * The harness-relevant variables (`MODEL_ENV_KEYS`: `CODEX_HOME`,
+ * `CLAUDE_CONFIG_DIR`, ...) as the user's login shell sets them, over this
+ * process's environment. A Finder-launched app inherits no shell rc
+ * variables, so anything that locates a harness's files resolves through
+ * this rather than `process.env`.
+ */
 export async function loginModelEnvironment(
   shell: string,
   cwd: string

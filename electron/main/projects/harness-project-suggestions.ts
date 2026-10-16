@@ -42,7 +42,10 @@ import type {
   ProjectSuggestionsRequest,
   ProjectSuggestionsResult,
 } from '@exawatt/core/desktop-bridge';
-import { parseCodexConfigText } from '../pty/agent-models';
+import {
+  loginModelEnvironment,
+  parseCodexConfigText,
+} from '../pty/agent-models';
 import {
   antigravityHome,
   antigravitySummariesFile,
@@ -61,6 +64,7 @@ import {
   joinProjectFolder,
   type ProjectFolder,
 } from '../pty/project-resolve';
+import { defaultShell } from '../pty/session-manager';
 import { readSqliteSnapshot } from '../pty/sqlite-snapshot';
 
 /** ENG-046: activity older than this sits behind "Show older". */
@@ -106,7 +110,8 @@ const HARNESS_ORDER: readonly ProjectSuggestionHarness[] = [
 ];
 
 interface HarnessProjectSuggestionOptions {
-  /** The environment the harnesses resolve their homes from. */
+  /** The environment the harnesses resolve their homes from. Defaults to
+   *  the login shell's, because a Finder-launched app has no rc variables. */
   env?: NodeJS.ProcessEnv;
   home?: string;
   now?: number;
@@ -687,8 +692,9 @@ function rankSuggestions(
 export async function readHarnessProjectSuggestions(
   options: HarnessProjectSuggestionOptions = {}
 ): Promise<HarnessProjectSuggestions> {
-  const env = options.env ?? process.env;
   const home = path.resolve(options.home ?? os.homedir());
+  const env =
+    options.env ?? (await loginModelEnvironment(await defaultShell(), home));
   const now = options.now ?? Date.now();
   const foldWorktrees = options.foldWorktrees ?? FOLD_WORKTREES;
   const join = options.join ?? joinProjectFolder;
