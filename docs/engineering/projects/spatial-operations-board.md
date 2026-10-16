@@ -3627,7 +3627,11 @@ cannot send" on every row, Send disabled), and a desktop build without the
 bus reports the live client's unavailable reason. The bus address is the
 durable Session id (B1 contract), resolved from this machine's Sessions at
 the board, since the board's Agent id is a runtime handle; a shell or a
-connected coworker answers why it takes no messages.
+connected coworker says why it takes no messages before Send. With B1's
+core on master the desktop board sends for real (the two-shell eval reads
+"undeliverable · A shell does not take messages" on both rows before Send).
+The per-recipient unread reads P4's `useAgentUnread`, which needs P4's
+retype of `list` to the core `BusLedgerRead`; it must land with this.
 
 Keyboard: ⌘D focuses Direct while a working set exists (`fixed-board-direct`,
 owner `client`). ⌘D is Split on the Agent altitude only (the workspace

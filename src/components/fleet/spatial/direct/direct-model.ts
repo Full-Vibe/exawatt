@@ -116,7 +116,10 @@ const STATE_WORD: Record<BusDeliveryState, string> = {
 export function recipientNote(
   recipient: DirectRecipient,
   availability: DirectAvailability,
-  result: DirectResult | undefined
+  result: DirectResult | undefined,
+  /** why this recipient has no bus address (a shell, a connected coworker),
+   *  known before Send so the row can say so before Send */
+  refused?: string
 ): RecipientNote | null {
   if (result) {
     if (result.state === 'sending')
@@ -137,6 +140,9 @@ export function recipientNote(
   }
   if (availability.kind === 'unavailable') {
     return { text: availability.reason, tone: 'quiet' };
+  }
+  if (refused) {
+    return { text: `undeliverable · ${refused}`, tone: 'fault' };
   }
   if (recipient.readiness === 'stopped') {
     return {

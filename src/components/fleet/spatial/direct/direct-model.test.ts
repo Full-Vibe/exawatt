@@ -49,6 +49,17 @@ describe('recipientNote', () => {
     expect(recipientNote(recipient('ready'), ready, undefined)).toBeNull();
   });
 
+  it('says before Send why a recipient has no address', () => {
+    const note = recipientNote(
+      recipient('busy'),
+      ready,
+      undefined,
+      'A shell does not take messages'
+    );
+    expect(note?.tone).toBe('fault');
+    expect(note?.text).toContain('A shell does not take messages');
+  });
+
   it('lists a stopped Session as undeliverable before anything is sent', () => {
     expect(recipientNote(recipient('stopped'), ready, undefined)?.tone).toBe(
       'fault'

@@ -127,6 +127,10 @@ function ScopeCount({
   );
 }
 
+function refusalOf(address: RecipientAddress | undefined): string | undefined {
+  return address && 'refused' in address ? address.refused : undefined;
+}
+
 /** Unread messages one recipient sent or received, from the same reading
  *  position as Team's Chatter tab, so the two never disagree. */
 function RecipientUnread({
@@ -255,7 +259,8 @@ function MultiSelectionCommand({
                   ? recipientNote(
                       recipient,
                       direct.availability,
-                      direct.results.get(agent.id)
+                      direct.results.get(agent.id),
+                      refusalOf(direct.addresses.get(agent.id))
                     )
                   : null;
               return (
