@@ -3,6 +3,10 @@ import {
   COMMUNITY_DISTRIBUTION,
   parseDistributionContract,
 } from '@exawatt/core/distribution';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 import { EVERY_ANALYTICS_EVENT } from './examples.test-support';
 import { ANALYTICS_INSTALLATION_ID_STORAGE_KEY } from './identity';
 
@@ -16,6 +20,21 @@ const state = vi.hoisted(() => ({
   distribution: null as unknown,
   captured: [] as Array<{ name: string; properties: unknown }>,
   initialized: [] as Array<Record<string, unknown>>,
+  streams: { started: 0, stopped: 0, captured: 0 },
+}));
+
+vi.mock('./account-stream', () => ({
+  startAccountStream: () => {
+    state.streams.started += 1;
+    return {
+      capture: () => {
+        state.streams.captured += 1;
+      },
+      stop: () => {
+        state.streams.stopped += 1;
+      },
+    };
+  },
 }));
 
 vi.mock('@/lib/distribution/resolved', () => ({
@@ -24,7 +43,7 @@ vi.mock('@/lib/distribution/resolved', () => ({
   resetResolvedDistributionForTest: () => undefined,
 }));
 
-vi.mock('posthog-js/dist/module.full.no-external', () => ({
+const recordingPosthog = vi.hoisted(() => () => ({
   default: {
     init: (_key: string, config: Record<string, unknown>) => {
       state.initialized.push(config);
@@ -34,6 +53,8 @@ vi.mock('posthog-js/dist/module.full.no-external', () => ({
     },
   },
 }));
+
+vi.mock('posthog-js/dist/module.full.no-external', recordingPosthog);
 
 const OFFICIAL = parseDistributionContract({
   ...COMMUNITY_DISTRIBUTION,
@@ -56,6 +77,7 @@ let fetchSpy: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   state.captured = [];
   state.initialized = [];
+  state.streams = { started: 0, stopped: 0, captured: 0 };
   window.localStorage.clear();
   fetchSpy = vi.fn(async () => new Response(null, { status: 200 }));
   vi.stubGlobal('fetch', fetchSpy);
@@ -74,7 +96,8 @@ describe('a community build sends nothing (decision 0036)', () => {
     await expect(client.initAnalytics()).resolves.toMatchObject({
       enabled: false,
     });
-    for (const event of EVERY_ANALYTICS_EVENT) client.captureAnalyticsEvent(event);
+    for (const event of EVERY_ANALYTICS_EVENT)
+      client.captureAnalyticsEvent(event);
     client.recordWebAlias(OTHER_ID);
     expect(client.currentWebAnalyticsId()).toBeNull();
     expect(state.initialized).toEqual([]);
@@ -96,7 +119,8 @@ describe('an official website build', () => {
   it('sends the installation stream through the SDK, never an account-only event', async () => {
     const client = await freshClient();
     await client.initAnalytics();
-    for (const event of EVERY_ANALYTICS_EVENT) client.captureAnalyticsEvent(event);
+    for (const event of EVERY_ANALYTICS_EVENT)
+      client.captureAnalyticsEvent(event);
     const names = state.captured.map(capture => capture.name);
     expect(names).toContain('page_viewed');
     expect(names).toContain('agent_launched');
@@ -151,9 +175,96 @@ describe('an official website build', () => {
       enabled: false,
       reason: 'opted_out',
     });
-    for (const event of EVERY_ANALYTICS_EVENT) client.captureAnalyticsEvent(event);
+    for (const event of EVERY_ANALYTICS_EVENT)
+      client.captureAnalyticsEvent(event);
     client.recordWebAlias(OTHER_ID);
     expect(state.captured).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('an opt-out during the desktop start is authoritative', () => {
+  const DESKTOP_ID = '3f2b8c1d-5e6a-4b7c-8d9e-0a1b2c3d4e5f';
+  let answerIdentity: () => void;
+  let identityAsked: Promise<void>;
+
+  beforeEach(() => {
+    state.distribution = OFFICIAL;
+    vi.stubEnv('NODE_ENV', 'production');
+    let asked: () => void = () => undefined;
+    identityAsked = new Promise(resolve => (asked = resolve));
+    const answered = new Promise<void>(resolve => (answerIdentity = resolve));
+    installBridgeDouble({
+      analytics: {
+        identity: async () => {
+          asked();
+          await answered;
+          // Main read the id before the opt-out reached it.
+          return {
+            status: 'ready' as const,
+            optedOut: false,
+            installationId: DESKTOP_ID,
+          };
+        },
+        setOptOut: async () => ({
+          status: 'ready' as const,
+          optedOut: true,
+          installationId: null,
+        }),
+      },
+    });
+  });
+
+  afterEach(() => removeBridgeDouble());
+
+  function expectNothingStarted() {
+    expect(state.initialized).toEqual([]);
+    expect(state.captured).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(state.streams.captured).toBe(0);
+    expect(state.streams.started).toBe(state.streams.stopped);
+  }
+
+  it('while the identity read is pending: PostHog never initializes', async () => {
+    const client = await freshClient();
+    const decision = client.initAnalytics();
+    await identityAsked;
+    client.captureAnalyticsEvent(EVERY_ANALYTICS_EVENT[0]);
+    await client.setAnalyticsOptOut(true);
+    answerIdentity();
+    await expect(decision).resolves.toEqual({
+      enabled: false,
+      reason: 'opted_out',
+    });
+    for (const event of EVERY_ANALYTICS_EVENT)
+      client.captureAnalyticsEvent(event);
+    client.recordWebAlias(OTHER_ID);
+    expect(client.isAnalyticsEmitting()).toBe(false);
+    expect(state.streams.started).toBe(0);
+    expectNothingStarted();
+  });
+
+  it('while the SDK import is in flight: PostHog never initializes and the account stream stops', async () => {
+    let releaseImport: () => void = () => undefined;
+    const importGate = new Promise<void>(resolve => (releaseImport = resolve));
+    // A factory that resolves only when released: the import is in flight.
+    vi.doMock('posthog-js/dist/module.full.no-external', async () => {
+      await importGate;
+      return recordingPosthog();
+    });
+    const client = await freshClient();
+    const decision = client.initAnalytics();
+    answerIdentity();
+    await vi.waitFor(() => expect(state.streams.started).toBe(1));
+    await client.setAnalyticsOptOut(true);
+    releaseImport();
+    await expect(decision).resolves.toEqual({
+      enabled: false,
+      reason: 'opted_out',
+    });
+    for (const event of EVERY_ANALYTICS_EVENT)
+      client.captureAnalyticsEvent(event);
+    expect(client.isAnalyticsEmitting()).toBe(false);
+    expectNothingStarted();
   });
 });

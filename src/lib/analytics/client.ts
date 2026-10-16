@@ -52,6 +52,14 @@ let emitting = false;
 /** Between a configured build's start and the device's identity answering. */
 let deciding = false;
 let started: Promise<AnalyticsDecision> | null = null;
+/**
+ * Set by an opt-out and never cleared in this launch (opting back in takes
+ * effect on the next one). The start awaits main's identity answer and then
+ * the SDK's import; it re-checks this after each, so an opt-out that lands
+ * while either is in flight is never overtaken by the start finishing.
+ */
+let optedOutThisLaunch = false;
+const OPTED_OUT: AnalyticsDecision = { enabled: false, reason: 'opted_out' };
 /** Events captured between the decision and the SDK finishing its import. */
 const pending: AnalyticsEvent[] = [];
 const MAX_PENDING = 20;
@@ -100,6 +108,7 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
   deciding = true;
   started = (async (): Promise<AnalyticsDecision> => {
     const identity = await loadAnalyticsIdentity({ ensureId: true });
+    if (optedOutThisLaunch) return OPTED_OUT;
     if (!identity?.installationId) {
       deciding = false;
       pending.length = 0;
@@ -139,6 +148,8 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
     // capture would be a bad trade.
     const { default: posthog } =
       await import('posthog-js/dist/module.full.no-external');
+    // The opt-out already stopped the account stream and dropped the queue.
+    if (optedOutThisLaunch) return OPTED_OUT;
     posthog.init(configured.key, {
       api_host: configured.apiHost,
       // No `ui_host`: decision `0034` keeps PostHog hostnames out of ordinary
@@ -212,6 +223,7 @@ export async function readAnalyticsOptOut(): Promise<boolean> {
  */
 export async function setAnalyticsOptOut(optedOut: boolean): Promise<boolean> {
   if (optedOut) {
+    optedOutThisLaunch = true;
     try {
       sink?.opt_out_capturing?.();
       sink?.reset?.(true);
@@ -274,4 +286,5 @@ export function recordWebAlias(webId: unknown): void {
 export function __resetAnalyticsForTests(): void {
   stopEmission();
   started = null;
+  optedOutThisLaunch = false;
 }
