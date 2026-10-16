@@ -45,7 +45,7 @@ export default function RoadmapLabPage() {
         <p className="text-sm leading-5" style={{ color: LAB.sub }}>
           The shipped roadmap panel against canned roadmap states, rendered
           through the real parser. Pick a state, then drive the panel exactly as
-          in Team — click or arrow-key into items, Enter drills, Escape backs
+          in Team: click or arrow-key into items, Enter drills, Escape backs
           out. Nothing here writes files.
         </p>
       </header>
@@ -78,7 +78,7 @@ export default function RoadmapLabPage() {
 
       <section className="flex flex-col gap-2">
         <p className="text-xs font-medium" style={{ color: LAB.sub }}>
-          The Roadmap tab of Team&apos;s dock — ⌘B in the workspace
+          The Roadmap tab of Team&apos;s dock (⌘B in the workspace)
         </p>
         <div
           aria-label="Roadmap panel"

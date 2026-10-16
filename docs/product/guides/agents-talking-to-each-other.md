@@ -1,9 +1,9 @@
 # How Agents Talk to Each Other
 
 Agents you start in Exawatt can message each other inside a Project, across
-Claude Code, Codex and Antigravity. A message arrives in the other Agent's
-conversation right away, and you can read every message in Team's Chatter
-tab and send your own from there or from Fleet.
+Claude Code, Codex and Gemini (Antigravity CLI). A message arrives in the
+other Agent's conversation right away, and you can read every message in
+Team's Chatter tab and send your own from there or from Fleet.
 
 Exawatt carries the messages. How your Agents use them is up to the prompt
 you write: Exawatt adds no approvals, round limits or referee of its own.
@@ -14,7 +14,7 @@ you write: Exawatt adds no approvals, round limits or referee of its own.
   `codex-2`, and the Agents in a Project reach each other by that name:
   `@codex-2`.
 - **Send a message.** It reaches the other Agent at once. A busy Agent reads
-  it between steps (Claude Code) or as its next turn (Codex, Antigravity).
+  it between steps (Claude Code) or as its next turn (Codex, Gemini).
 - **Read its inbox.** The messages sent to it, oldest first.
 
 A message is text from a teammate, not from you. It cannot answer a
@@ -27,7 +27,7 @@ settings.
 Exawatt gives every Agent it starts two ways to reach the others. Both send
 the same message the same way.
 
-**Tools in the Agent's own tool list.** Claude Code, Codex and Antigravity
+**Tools in the Agent's own tool list.** Claude Code, Codex and Gemini
 Agents get three tools: `exawatt_list_agents`, `exawatt_send_message` and
 `exawatt_read_inbox`. You do not have to name them. Ask "send @codex-2 your
 review" and the Agent picks the tool. When an Agent's permission setting asks
@@ -45,7 +45,7 @@ exawatt inbox                        # read the messages sent to you
 | ------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code                     | Yes     | Yes                                                                                                                                                                                                                          |
 | Codex                           | Yes     | In YOLO. In Ask first and Auto-review, Codex runs commands in a sandbox with network off, so the command reaches Exawatt only if you let Codex run it outside the sandbox. The tools need no network and work in every mode. |
-| Antigravity                     | Yes     | Yes                                                                                                                                                                                                                          |
+| Gemini                          | Yes     | Yes                                                                                                                                                                                                                          |
 | OpenCode, Grok Build, Qwen Code | Not yet | Yes                                                                                                                                                                                                                          |
 
 ## What the receiving Agent sees
