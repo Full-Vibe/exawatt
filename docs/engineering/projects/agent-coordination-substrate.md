@@ -769,3 +769,31 @@ names, bus and Direct train (`f506931d`):
   `useAgentUnread` (one ledger read per selected row), and Direct asks the
   client's synchronous `unavailableReason()` instead of reading the ledger to
   learn whether a bus exists.
+
+### 2026-10-16 — Code-review fixes to the bus (branch `agent/fix-bus-review`)
+
+Five confirmed review findings against the shipped bus, each fixed at its
+cause with a test written to fail first:
+
+- **One hold queue per recipient.** A held message takes its place in the
+  recipient's queue before the ledger write is awaited and is typed only
+  once logged, so two concurrent sends to a busy Agent both arrive, in
+  order; a send whose log write fails leaves the queue without breaking it.
+- **A torn last ledger line is recoverable.** A crash mid-append leaves an
+  unterminated last line: reads leave it out, and the next write moves it to
+  `<file>.torn` and cuts the file at its last newline, so pruning works
+  again. A bad line anywhere else still fails the read (BUG-125).
+- **An exited recipient reads undeliverable.** The session manager's write
+  says whether it landed, the keystroke door reports "The Agent exited
+  before it could read this", and the core re-reads the recipient's state
+  when a send's turn in line comes.
+- **The reply hint follows the recipient's own launch.** The session
+  manager reports whether the MCP server actually reached the launch; the
+  stamp names the send tool only then, else the `exawatt` command, and for a
+  recipient whose sandbox refuses the command (a descriptor's
+  `outbound.commandSandboxed`, Codex in Ask first and Auto review) it says
+  the reply may be blocked.
+- **The Claude socket is found where that Claude registered.** The door
+  reads `CLAUDE_CONFIG_DIR` (else `~/.claude` under `HOME`) from the
+  Session's login-shell environment, not from Exawatt's own, which a
+  Finder launch lacks.
