@@ -319,6 +319,37 @@ describe('resolveAgentAddress', () => {
     });
   });
 
+  it("never counts the sender among a family name's candidates", () => {
+    const pair = [
+      {
+        durableSessionId: 'a',
+        projectKey: 'p',
+        harness: 'claude',
+        name: 'claude-1',
+      },
+      {
+        durableSessionId: 'b',
+        projectKey: 'p',
+        harness: 'claude',
+        name: 'claude-2',
+      },
+    ];
+    // Its only same-harness peer, not an ambiguity with itself.
+    expect(
+      resolveAgentAddress(pair, 'p', '@claude', { sender: 'a' })
+    ).toMatchObject({ kind: 'agent', agent: { durableSessionId: 'b' } });
+    // Alone in its family: nobody else, said as such, never "That is you".
+    const alone = resolveAgentAddress(pair.slice(0, 1), 'p', '@claude', {
+      sender: 'a',
+    });
+    expect(alone).toMatchObject({ kind: 'none', elsewhere: [] });
+    expect(alone.kind === 'none' && alone.reason).toMatch(/no other/i);
+    // An exact name still resolves to the sender; refusing it is the bus's.
+    expect(
+      resolveAgentAddress(pair, 'p', '@claude-1', { sender: 'a' })
+    ).toMatchObject({ kind: 'agent', agent: { durableSessionId: 'a' } });
+  });
+
   it('fails a name that lives only in another Project, naming where', () => {
     const result = resolveAgentAddress(directory, 'p', '@gemini-1');
     expect(result).toMatchObject({

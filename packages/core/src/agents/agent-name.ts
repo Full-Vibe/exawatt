@@ -279,14 +279,18 @@ type AgentAddressResolution<T extends AgentDirectoryEntry> =
  * (decision 0052: an address resolves within the Project only).
  *
  * An exact name wins. A harness's short name (`@codex`) reaches the one
- * Agent of that harness in the Project, and lists the candidates when there
- * are several. A name that exists only in another Project fails with that
- * reason, and the matches are returned so a caller can name them.
+ * Agent of that harness in the Project other than the sender, and lists the
+ * candidates when there are several: an Agent saying `@claude` means its
+ * peer, never itself. A name that exists only in another Project fails with
+ * that reason, and the matches are returned so a caller can name them.
+ * Exact names and Session ids still resolve to the sender; refusing a send
+ * to oneself is the bus's rule, with its own reason.
  */
 export function resolveAgentAddress<T extends AgentDirectoryEntry>(
   directory: readonly T[],
   projectKey: string,
-  address: string
+  address: string,
+  options: { sender?: string | null } = {}
 ): AgentAddressResolution<T> {
   const raw = address.trim();
   if (!raw) return { kind: 'none', reason: 'Name an Agent', elsewhere: [] };
@@ -316,10 +320,13 @@ export function resolveAgentAddress<T extends AgentDirectoryEntry>(
     };
   }
 
-  const family = inProject.filter(
+  const wholeFamily = inProject.filter(
     entry =>
       agentNamePrefix(entry.harness) === key ||
       agentNameKey(entry.harness) === key
+  );
+  const family = wholeFamily.filter(
+    entry => entry.durableSessionId !== options.sender
   );
   if (family.length === 1) return { kind: 'agent', agent: family[0]! };
   if (family.length > 1) {
@@ -329,6 +336,14 @@ export function resolveAgentAddress<T extends AgentDirectoryEntry>(
         .map(entry => entry.name)
         .join(', ')}`,
       candidates: family,
+    };
+  }
+
+  if (wholeFamily.length > 0) {
+    return {
+      kind: 'none',
+      reason: `No other ${wanted} Agent in this Project`,
+      elsewhere: [],
     };
   }
 
