@@ -667,3 +667,68 @@ client** (`<sha pending>`). The first landing (`0364bb14`) put the renderer bus 
 - **Specimen.** `/hud-gallery/team-dock` renders the production dock with
   both panels over Demo data, every delivery result as a row, and the four
   panel states.
+
+### 2026-10-15 — B2 MCP door and B5 guide (packet P7)
+
+**The Exawatt MCP server is every launched Claude Code, Codex and
+Antigravity Agent's second way onto the bus, and the one that works from
+Codex's sandbox.** Landed in `<sha pending>`.
+
+Codex sandbox verdict, measured on Codex 0.162.1 in a scratch `CODEX_HOME`:
+under `workspace-write` (the sandbox of every Ask-first and Auto-review
+Codex launch) a loopback request is refused. `codex sandbox -c
+sandbox_mode="workspace-write" -- curl … http://127.0.0.1:<port>/bus/agents`
+exits 7 ("Couldn't connect to server") and succeeds with
+`sandbox_workspace_write.network_access=true`; a real `codex exec --sandbox
+workspace-write` turn ran the same `curl` and got exit 7. So `exawatt send`
+cannot reach Exawatt from those modes unless the operator lets Codex run it
+outside the sandbox. The MCP server is spawned by Codex itself, outside the
+command sandbox, and reached the bus in the same turn.
+
+| Harness                         | Outbound doors              | Seam (per launch, never the user's config)                                                                                           | Verified how                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code 2.1.301             | MCP + `exawatt`             | `--mcp-config <userData>/harness-events/<pty>.mcp.json` (adds to the user's servers; variadic, so a flag always follows it)          | the document's server connects (`claude mcp list` in a scratch `CLAUDE_CONFIG_DIR`: "✔ Connected", initialize answered); no model turn, no Claude credential was available to the probe                                                                                                                                                                                                                         |
+| Codex 0.162.1                   | MCP + `exawatt` (YOLO only) | `-c mcp_servers.exawatt.command/args/env` plus `env_vars` forwarding the port, token and address by name, so no token is on the argv | `codex exec` in a scratch home: a generic "send a message to @codex-2" called `exawatt_list_agents` then `exawatt_send_message` and the fake bus received the token and body; then in the Electron app, `pnpm eval:electron:bus-mcp-live`: a Codex tab in Auto-review messaged another Codex tab, ledger `queued` then `delivered` through `codex-queue`, and the recipient read the stamp naming its send tool |
+| Antigravity 1.3.6               | MCP + `exawatt`             | `.agents/mcp_config.json` in the per-launch `--add-dir` directory beside the injected hooks (the directory is handed over once)      | `agy -p` with that directory: a generic ask found the tool and the fake bus received `@codex-2\nhello from agy` with the token                                                                                                                                                                                                                                                                                  |
+| OpenCode, Grok Build, Qwen Code | `exawatt` only              | none measured (`outbound.mcp: null`)                                                                                                 | n/a                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+What landed:
+
+- `electron/main/bus/mcp-server.ts`: three tools over stdio JSON-RPC
+  (`initialize`, `ping`, `tools/list`, `tools/call`), each the `exawatt`
+  command's own request to `/bus/agents|send|inbox` with the Session's bus
+  token; refused sends, a closed Exawatt and a launch Exawatt did not start
+  are tool errors with the bus's reason. Node built-ins only, test-enforced
+  with the compiler's import list. Main copies the compiled file to
+  `userData/bus/bin/exawatt-mcp.cjs`; the harness runs it with
+  `process.execPath` under `ELECTRON_RUN_AS_NODE`, the packaged renderer
+  server's own pattern, so nothing new ships.
+- `messaging.outbound.mcp` in the launch descriptors (`file`, `directory`,
+  `arguments` bindings; `electron/main/pty/launch-mcp.ts` renders the
+  `mcpServers` document and the Codex overrides). The launch-environment
+  provider offers the server; the session manager writes the document
+  through `HookSettingsStore` (owner-only, removed at exit) and hands it over
+  without knowing what it is. The core still names no harness.
+- The stamp offers the recipient's own send tool first when its harness
+  declares the door (`BusStampLabels.replyTool`), and the `exawatt` script's
+  connection failure now names the sandbox as a cause and points at the tool
+  instead of saying Exawatt is not running.
+- B5: `docs/product/guides/agents-talking-to-each-other.md`.
+
+Found while building it:
+
+- **Codex has its own `send_message` tool** (for its own subagents, names in
+  `snake_case`). With the tools named `send_message` and `list_agents`, a
+  generic ask went to Codex's built-in tool and failed ("agent*name must use
+  only lowercase letters, digits, and underscores"). Prefixed
+  `exawatt*\*` names, with descriptions that say "a separate Claude Code,
+  Codex or Antigravity session, not your own subagents", were found from the
+  same generic ask.
+- **Codex's MCP approval follows the launch policy.** With approval policy
+  `never` (`codex exec`), every MCP call failed "requires approval, but
+  approval policy is never"; Auto-review's reviewer approved each call itself
+  ("Reviewing approval request", 7 s and 13 s); Ask-first shows Codex's own
+  "Allow the exawatt MCP server to run tool" (B0). Exawatt sets no
+  `default_tools_approval_mode`: the user's policy applies to one more tool.
+- **Every Codex launch now runs in embedded mode**, since any `-c` does
+  (B0); `codex queue` and the live exchange were unaffected.

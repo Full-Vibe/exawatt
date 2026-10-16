@@ -1053,6 +1053,23 @@ through the session manager's launch-environment seam, with
 renderer reaches it as `window.electron.bus` (`bus:send`, `bus:list`,
 `bus:thread`, push `bus:message`); the renderer is always the operator.
 
+The second outbound door (B2) is the Exawatt MCP server
+(`electron/main/bus/mcp-server.ts`: `exawatt_list_agents`,
+`exawatt_send_message`, `exawatt_read_inbox` over stdio). It is another way
+onto the same `/bus/<verb>` paths with the same token, never a second send.
+The file is self-contained (Node built-ins only); main copies its compiled
+form to `userData/bus/bin/exawatt-mcp.cjs` and a harness runs it with
+Exawatt's own executable under `ELECTRON_RUN_AS_NODE`, so nothing is shipped
+for it (BUG-030). A harness takes it through `messaging.outbound.mcp` in its
+launch descriptor: a per-launch `--mcp-config` file for Claude Code, `-c
+mcp_servers.exawatt.*` arguments for Codex (the token forwarded by name in
+`env_vars`, never on the argv), `.agents/mcp_config.json` in Antigravity's
+per-launch `--add-dir` directory; null for the rest. The session manager
+hands over the server the launch-environment provider offers without knowing
+what it is. A stamped message names the recipient's send tool first when its
+harness declares the door, because Codex's workspace-write sandbox refuses
+the `exawatt` command's loopback request.
+
 ### Persistence size classes
 
 Everything Exawatt writes under Electron `userData` declares a **size class**:
