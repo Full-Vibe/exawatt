@@ -888,6 +888,24 @@ async function checkExtendAndGhost(page) {
   if (fleetView !== 'v1') return { multi, results, ghosts: null };
   const ghosts = page.locator('button[data-board-ghost]');
   await ghosts.first().waitFor({ state: 'visible' });
+  // Releasing a working set the walk carried across Projects hands focus to
+  // the selected Agent's Project: the previous Project's ghost can show for a
+  // frame, then none while the new one mounts. Count once the focused
+  // Project and its ghost row have held still for 400 ms.
+  await page.waitForFunction(() => {
+    const project = new URL(location.href).searchParams.get('project');
+    const zones = [...document.querySelectorAll('button[data-board-ghost]')]
+      .map(ghost => ghost.getAttribute('data-board-ghost'))
+      .join('|');
+    const key = `${project} ${zones}`;
+    const now = performance.now();
+    const seen = window.__EVAL_GHOST_SETTLE__;
+    if (!seen || seen.key !== key) {
+      window.__EVAL_GHOST_SETTLE__ = { key, since: now };
+      return false;
+    }
+    return zones.length > 0 && now - seen.since >= 400;
+  });
   const ghostCount = await ghosts.count();
   check(ghostCount === 1, `Focused Project offered ${ghostCount} ghost slots`);
   await ghosts.first().focus();
