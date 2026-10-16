@@ -12,12 +12,18 @@ function idleSource() {
 describe('screen-lock snapshot source', () => {
   it('reads the macOS capability instead of treating idle as unlocked', () => {
     const idle = idleSource();
-    const native = { read: vi.fn(() => 'locked') };
+    const native = {
+      read: vi.fn(() => ({ locked: true, onConsole: true, loginDone: true })),
+    };
     const load = vi.fn(() => native);
     const read = createScreenLockReader(idle, 'darwin', load);
     expect(native.read).not.toHaveBeenCalled();
     expect(read()).toBe('locked');
-    native.read.mockReturnValue('unlocked');
+    native.read.mockReturnValue({
+      locked: false,
+      onConsole: true,
+      loginDone: true,
+    });
     expect(read()).toBe('unlocked');
     expect(load).toHaveBeenCalledOnce();
     expect(idle.getSystemIdleState).not.toHaveBeenCalled();
@@ -44,6 +50,40 @@ describe('screen-lock snapshot source', () => {
       ).toBe('unknown');
     }
   );
+
+  it.each([false, 'absent'])(
+    'recognizes unlocked encoding %j only for a logged-in console session',
+    locked => {
+      const readFacts = (onConsole: unknown, loginDone: unknown) =>
+        createScreenLockReader(idleSource(), 'darwin', () => ({
+          read: () => ({ locked, onConsole, loginDone }),
+        }))();
+      expect(readFacts(true, true)).toBe('unlocked');
+      for (const invalid of [false, 'absent', 'invalid', undefined, null, 1]) {
+        expect(readFacts(invalid, true)).toBe('unknown');
+        expect(readFacts(true, invalid)).toBe('unknown');
+      }
+    }
+  );
+
+  it.each(['invalid', undefined, null, 0, 1, 'false', 'true'])(
+    'does not infer unlocked from malformed lock fact %j',
+    locked => {
+      expect(
+        createScreenLockReader(idleSource(), 'darwin', () => ({
+          read: () => ({ locked, onConsole: true, loginDone: true }),
+        }))()
+      ).toBe('unknown');
+    }
+  );
+
+  it('gives an explicit lock precedence over unavailable session metadata', () => {
+    expect(
+      createScreenLockReader(idleSource(), 'darwin', () => ({
+        read: () => ({ locked: true, onConsole: 'invalid', loginDone: false }),
+      }))()
+    ).toBe('locked');
+  });
 
   it('contains both native loading and reading failures', () => {
     const fail = () => {

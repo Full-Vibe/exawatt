@@ -1,30 +1,45 @@
-// Read-only startup/resume capability. CGSessionCopyCurrentDictionary is a
-// public API; CGSSessionScreenIsLocked is an optional, undocumented field.
-// Missing dictionaries, fields, and non-booleans are unknown, never unlock.
-// Electron's macOS idle monitor caches future notifications, so it cannot
-// establish whether the session was already locked when the process started.
+// Read-only startup/resume facts. CGSessionCopyCurrentDictionary and the
+// console/login keys are public; CGSSessionScreenIsLocked is undocumented.
+// Preserve absent versus malformed values so the policy can interpret the
+// observed sparse lock flag without treating an unavailable session as unlock.
 #include <CoreGraphics/CGSession.h>
 #include <node_api.h>
 
 namespace {
 
-napi_value Read(napi_env env, napi_callback_info) {
-  const char* answer = "unknown";
-  CFDictionaryRef session = CGSessionCopyCurrentDictionary();
-  if (session != nullptr) {
-    CFTypeRef locked =
-        CFDictionaryGetValue(session, CFSTR("CGSSessionScreenIsLocked"));
-    if (locked != nullptr && CFGetTypeID(locked) == CFBooleanGetTypeID()) {
-      answer = CFBooleanGetValue(static_cast<CFBooleanRef>(locked))
-                   ? "locked"
-                   : "unlocked";
-    }
-    CFRelease(session);
+napi_status SetFact(napi_env env, napi_value result, CFDictionaryRef session,
+                    CFStringRef key, const char* name) {
+  CFTypeRef fact = CFDictionaryGetValue(session, key);
+  napi_value value;
+  napi_status status;
+  if (fact != nullptr && CFGetTypeID(fact) == CFBooleanGetTypeID()) {
+    status = napi_get_boolean(
+        env, CFBooleanGetValue(static_cast<CFBooleanRef>(fact)), &value);
+  } else {
+    status = napi_create_string_utf8(env, fact == nullptr ? "absent" : "invalid",
+                                     NAPI_AUTO_LENGTH, &value);
   }
+  return status == napi_ok
+             ? napi_set_named_property(env, result, name, value)
+             : status;
+}
+
+napi_value Read(napi_env env, napi_callback_info) {
+  CFDictionaryRef session = CGSessionCopyCurrentDictionary();
   napi_value result;
-  if (napi_create_string_utf8(env, answer, NAPI_AUTO_LENGTH, &result) != napi_ok)
-    return nullptr;
-  return result;
+  if (session == nullptr) {
+    return napi_get_null(env, &result) == napi_ok ? result : nullptr;
+  }
+  napi_status status = napi_create_object(env, &result);
+  if (status == napi_ok)
+    status = SetFact(env, result, session, CFSTR("CGSSessionScreenIsLocked"),
+                     "locked");
+  if (status == napi_ok)
+    status = SetFact(env, result, session, kCGSessionOnConsoleKey, "onConsole");
+  if (status == napi_ok)
+    status = SetFact(env, result, session, kCGSessionLoginDoneKey, "loginDone");
+  CFRelease(session);
+  return status == napi_ok ? result : nullptr;
 }
 
 napi_value Init(napi_env env, napi_value exports) {

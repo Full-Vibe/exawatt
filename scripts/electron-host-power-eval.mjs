@@ -239,7 +239,19 @@ try {
       const initial = await page.evaluate(() =>
         window.electron.app.hostPower()
       );
-      const nativeScreenLock = nativeLock?.read();
+      const nativeSession = nativeLock?.read();
+      // Inspect the native facts independently from the production decoder.
+      // A missing lock flag is valid only in a logged-in console session.
+      const nativeScreenLock = !nativeLock
+        ? undefined
+        : nativeSession?.locked === true
+          ? 'locked'
+          : (nativeSession?.locked === false ||
+                nativeSession?.locked === 'absent') &&
+              nativeSession.onConsole === true &&
+              nativeSession.loginDone === true
+            ? 'unlocked'
+            : 'unknown';
       assert.equal(initial.powerSource, actual.powerSource);
       assert.equal(
         initial.screenLock,
@@ -250,7 +262,15 @@ try {
               ? 'unknown'
               : 'unlocked')
       );
+      if (process.env.EXAWATT_EVAL_EXPECT_SCREEN_LOCK) {
+        assert.equal(
+          initial.screenLock,
+          process.env.EXAWATT_EVAL_EXPECT_SCREEN_LOCK,
+          'initial bridge state must match the independently confirmed host state'
+        );
+      }
       let initialParkedRenderPasses = null;
+      let initialAmbient = null;
       if (initial.screenLock !== 'unlocked') {
         const parkedStart = await renderPasses(page, 90);
         initialParkedRenderPasses =
@@ -259,6 +279,14 @@ try {
           initialParkedRenderPasses,
           0,
           'a locked or unknown startup must not animate before any synthetic event'
+        );
+      }
+      if (initial.screenLock === 'unlocked') {
+        await renderPasses(page, 90);
+        initialAmbient = await ambientSample(page, 30);
+        assert(
+          initialAmbient.rotors > 0 && initialAmbient.moving > 0,
+          'an unlocked startup must animate before any synthetic event'
         );
       }
       await event(app, 'on-ac');
@@ -342,7 +370,9 @@ try {
         JSON.stringify({
           result: 'pass',
           initial,
+          nativeSession,
           nativeScreenLock,
+          initialAmbient,
           electronIdle: actual.idle,
           initialParkedRenderPasses,
           liveDemo,
