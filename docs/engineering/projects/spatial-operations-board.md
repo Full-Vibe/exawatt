@@ -3562,7 +3562,7 @@ The next look review is the operator using the actual app, as requested.
 
 ### 2026-10-15 — V4.2 L1: ghost slots and the keyboard path
 
-**Ghost slots and Shift+arrows, landed with Direct (L2) in one landing.** Each Project
+**Ghost slots and Shift+arrows, landed with Direct (L2) in one landing (`<sha pending>`).** Each Project
 zone drawn as individual Agents offers one ghost at its next free slot
 (`selectSpatialGhostSlots`, beside the layout's own `stableSlots`, so the
 Agent started from a ghost lands exactly on it; a contract test proves the
