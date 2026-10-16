@@ -48,7 +48,9 @@
     "main/pty/harness-power-*.ts",
     "main/pty/session-power-control.test.ts",
     "main/untrusted-input.ts",
-    "main/gateway-identity.ts"
+    "main/gateway-identity.ts",
+    "main/bus/**/*.test.ts",
+    "main/pty/session-launch-environment.test.ts"
   ],
   "exclude": ["node_modules"]
 }

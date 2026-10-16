@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PtySessionManager } from './session-manager';
 
 /**
  * ENG-029 C4: a capability adds to a launch's environment through one seam
@@ -34,8 +35,6 @@ vi.mock('node-pty', () => ({
     return proc;
   },
 }));
-
-const { PtySessionManager } = await import('./session-manager');
 
 let cwd: string;
 beforeEach(() => {
