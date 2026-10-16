@@ -4519,3 +4519,19 @@ so the same Demo Agent can wear one harness's mark on its tile and another's
 beside its name in Chatter. One Agent must show one mark on every surface.
 Not diagnosed: whether the Demo fixture's usage source is wrong for those
 Agents or the tile reads the wrong field.
+
+### BUG-295 `eval:electron:host-power` loses the main-process context about one run in seven
+
+Status: open · ENG-022 · found 2026-10-15 while landing the friend-cohort
+train.
+
+On the Fleet v1 pass, the first `powerMonitor.emit('resume')` of the live
+Demo step (`liveDemoPower`) fails with Playwright's "electronApplication.evaluate:
+Execution context was destroyed, most likely because of a navigation",
+36 s into the run, right after an identical emit succeeded. Measured alone at
+low load: 1 of 6 runs on the train's tree and 1 of 8 on master `3a2ed0b9`,
+with the same stack, so the train did not introduce it; it is not the blank
+Demo canvas P5 saw under load. The train's landing waived the gate on that
+evidence. Not diagnosed: what in main resets the context Playwright's main
+evaluate holds (nothing in main navigates, and nothing on the `resume` path
+opens an inspector or a new context).
