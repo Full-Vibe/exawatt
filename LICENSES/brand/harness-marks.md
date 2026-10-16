@@ -363,27 +363,22 @@ Every concept source below was retrieved on **2026-10-14**; Gemini's on 2026-10-
   Google's current Gemini product logo, referenced by `https://aistudio.google.com/` (served
   `last-modified: Mon, 20 Apr 2026`; SHA-256 of the file as fetched
   `9a29ed5bb1428a000d4b3fa551c6f9fd4201684b46c55de140931d0632517d31`). Its outline is a vector clip
-  path in a 192 box; its colour is a 384 px raster clipped to that outline. Cross-checked against
-  `https://www.gstatic.com/images/branding/productlogos/gemini_2025/v1/192px.svg` (the same spark,
-  whose vector gradient names the blue `#3186FF`) and the `gemini.google.com` favicon
-  (`gemini_sparkle_4g_512_lt_f94943af3be039176192d.png`), which draws the same four colours in the
-  same places.
+  path in a 192 box; its colour is a 384 px raster of Google's four colours clipped to that outline.
 - **What was drawn** (`src/components/site/fleet-story/gemini-mark.ts`): the clip path, byte for
-  byte, in its own 192 box, as the spark's whole silhouette, painted `#3186FF`. Google's blended
-  colours cannot be carried by a part of one colour, so they are posterised: every pixel of
-  Google's raster put to the nearest of its four colours divides the spark into four sectors about
-  the point (64, 86), and the red, yellow and green sectors are the outline clipped to those sectors
-  and flattened to lines, standing on the blue in the tile's layers. The red, yellow and green are
-  sampled at the spark's tips in Google's raster (`#F94240`, `#FBC80B`, `#17BB66`). The same parts
-  draw the 15 px glyph in the story's agent card and the extruded mark on its tiles.
+  byte, in its own 192 box, as one part: the spark's silhouette alone, in the surrounding ink, as
+  Codex's and OpenCode's marks are drawn. The same part draws the 15 px glyph in the story's agent
+  card and the extruded mark on its tiles. The mark first shipped (W15q, `f1eb302f`) with Google's
+  four colours posterised into flat zones on a blue spark; the operator judged that it stood out
+  ("Gemini logo sticks out too much, make it less colorful or single-color", 2026-10-15), and the
+  zones and their colours were removed.
 - **Trademark terms:** Google's guidelines quoted under Antigravity above: "Use only
   Google-approved artwork", "Don't remove, distort, or alter any element of a Google Brand
-  Feature", and a permission request first for most uses. Posterising the colours and extruding
-  the mark on a tile are alterations, and no permission was requested. **Accepted risk, under the
-  same terms as the decision above** (decision `0047`; the operator's 2026-10-15 request is the
-  instruction to draw it): on the homepage's synthetic fleet only, not in the product's chrome.
-  If Google objects, delete the `antigravity` entry in `fleet-story/story-marks.ts`; the Gemini
-  agents then draw no mark.
+  Feature", and a permission request first for most uses. Recolouring the spark to one ink and
+  extruding it on a tile are alterations, and no permission was requested. **Accepted risk, under
+  the same terms as the decision above** (decision `0047`; the operator's 2026-10-15 requests are
+  the instruction to draw it, and to draw it in one colour): on the homepage's synthetic fleet only,
+  not in the product's chrome. If Google objects, delete the `antigravity` entry in
+  `fleet-story/story-marks.ts`; the Gemini agents then draw no mark.
 - **Retrieved:** 2026-10-15.
 
 ---

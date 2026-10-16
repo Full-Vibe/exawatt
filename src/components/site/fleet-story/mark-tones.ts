@@ -11,8 +11,9 @@
  * forbid recolouring their marks and supply black and white only
  * (LICENSES/brand/harness-marks.md). The exceptions are where the vendor
  * itself supplies a colour: Anthropic draws Claude's mark in its terracotta,
- * OpenClaw's mascot is coral by its own artwork, Meta draws Muse's in blue,
- * and Google draws the Gemini spark in its four colours.
+ * OpenClaw's mascot is coral by its own artwork, and Meta draws Muse's in
+ * blue. Google draws the Gemini spark in four colours, but the story draws
+ * its silhouette in the ink, so it reads as a peer of the others (W15q).
  */
 
 import type { StoryMarkId } from './story-marks';
@@ -23,14 +24,6 @@ import { harnessMarkTone } from '@/components/workspace/harness-mark-tones';
 const TONES: Partial<Record<StoryMarkId, Record<string, string>>> = {
   // the middle stop of Meta's gradient
   muse: { brand: '#0064E0' },
-  // Gemini's four zones (`gemini-mark.ts`): the blue Google's 2025 vector
-  // logo names, the others sampled at the tips of its 2026 raster
-  antigravity: {
-    blue: '#3186FF',
-    red: '#F94240',
-    yellow: '#FBC80B',
-    green: '#17BB66',
-  },
 };
 
 /** Which mark an agent source draws, from its adapter id. A harness whose

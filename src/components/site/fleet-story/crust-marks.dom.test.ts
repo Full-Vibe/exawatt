@@ -128,25 +128,13 @@ describe('the marks as geometry', () => {
     expect((b.min.z + b.max.z) / 2).toBeCloseTo(0, 2);
   });
 
-  it("stands Gemini's colours on its spark, inside its outline", () => {
-    // the spark is Google's outline; the zones are cut from it (W15q), so
-    // none reaches past it and each stands above it
+  it("stands Gemini's spark in the middle of its tile", () => {
     const index = markIndexFor('antigravity');
-    const mine = parts.filter(part => part.mark === index);
-    const [spark, ...zones] = mine;
-    const outline = box(spark.geometry);
-    expect(zones).toHaveLength(3);
-    for (const zone of zones) {
-      expect(zone.layer).toBeGreaterThan(spark.layer);
-      const b = box(zone.geometry);
-      expect(b.min.x).toBeGreaterThanOrEqual(outline.min.x - 1e-6);
-      expect(b.max.x).toBeLessThanOrEqual(outline.max.x + 1e-6);
-      expect(b.min.z).toBeGreaterThanOrEqual(outline.min.z - 1e-6);
-      expect(b.max.z).toBeLessThanOrEqual(outline.max.z + 1e-6);
-    }
-    // the spark is centred on its tile
-    expect((outline.min.x + outline.max.x) / 2).toBeCloseTo(0, 2);
-    expect((outline.min.z + outline.max.z) / 2).toBeCloseTo(0, 2);
+    const spark = parts.find(part => part.mark === index);
+    if (!spark) throw new Error('no Gemini mark');
+    const b = box(spark.geometry);
+    expect((b.min.x + b.max.x) / 2).toBeCloseTo(0, 2);
+    expect((b.min.z + b.max.z) / 2).toBeCloseTo(0, 2);
   });
 
   it('gives a stroked antenna a real width, not a hairline', () => {
