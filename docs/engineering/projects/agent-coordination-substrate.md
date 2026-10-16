@@ -616,7 +616,7 @@ Found while building it, and now in the design:
 ### 2026-10-15 — B3 Team dock and the Chatter tab (packet P4, second landing)
 
 **Chatter is the second tab of Team's dock, over Demo and Live through one
-client.** The first landing (`0364bb14`) put the renderer bus client in
+client** (`<sha pending>`). The first landing (`0364bb14`) put the renderer bus client in
 `src/lib/bus/`; this one builds the viewer on it.
 
 - **The dock.** `src/components/team/team-dock.tsx` owns the frame the
