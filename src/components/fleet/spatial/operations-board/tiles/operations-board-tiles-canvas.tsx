@@ -83,10 +83,10 @@ export function OperationsBoardTilesCanvas({
 }: OperationsBoardTilesProps) {
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
-  const { onBattery, visible } = useHostRenderPolicy();
+  const { onBattery, renderAllowed, ambientAllowed } = useHostRenderPolicy();
   const cadence = resolveAmbientCadence({
     reduced,
-    visible,
+    visible: ambientAllowed,
     lowPower,
     onBattery,
   });
@@ -124,7 +124,7 @@ export function OperationsBoardTilesCanvas({
   return (
     <Canvas
       orthographic
-      frameloop={visible ? 'demand' : 'never'}
+      frameloop={renderAllowed ? 'demand' : 'never'}
       dpr={lowPower ? [1, 1.25] : [1, 2]}
       camera={{ position: [0, 0, 100], zoom: 1, near: 0.1, far: 200 }}
       gl={{ antialias: true, preserveDrawingBuffer }}

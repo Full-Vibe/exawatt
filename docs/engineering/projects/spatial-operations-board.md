@@ -3770,7 +3770,9 @@ Before implementation, the ownership plan is:
   private native function calls, sleep assertions or Session lifecycle actions.
 - Let Electron ambient rendering run only after an observed unlocked/awake
   state; a missing read cannot assert visibility. Hosted browser visibility
-  remains independent of the desktop observation contract.
+  remains independent of the desktop observation contract. Keep demand-render
+  availability separate: unknown desktop state remains interactive, while
+  known lock/suspend or page hiding parks the whole canvas.
 - Prove cold startup while the OS is already locked against an independent OS
   observation and real renderer frame counters. Preserve ordinary event,
   resume, battery-cadence and unlocked interaction checks. Comparing the bridge

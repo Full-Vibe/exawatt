@@ -164,10 +164,10 @@ export function OperationsBoardCanvas({
   // Weak hardware alone trades resolution and bloom. Battery is a cadence
   // input below and never reaches `dpr` (BUG-263).
   const lowPower = useLowPowerMode();
-  const { onBattery, visible: pageVisible } = useHostRenderPolicy();
+  const { onBattery, renderAllowed, ambientAllowed } = useHostRenderPolicy();
   const cadence: AmbientCadence = resolveAmbientCadence({
     reduced,
-    visible: pageVisible,
+    visible: ambientAllowed,
     lowPower,
     onBattery,
   });
@@ -225,7 +225,7 @@ export function OperationsBoardCanvas({
   return (
     <Canvas
       orthographic
-      frameloop={pageVisible ? 'demand' : 'never'}
+      frameloop={renderAllowed ? 'demand' : 'never'}
       dpr={lowPower ? [1, 1.25] : [1, 2]}
       camera={{ position: [0, 0, 100], zoom: 1, near: 0.1, far: 200 }}
       gl={{ antialias: true, preserveDrawingBuffer }}

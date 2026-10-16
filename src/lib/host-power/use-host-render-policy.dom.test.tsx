@@ -36,16 +36,18 @@ describe('host rendering policy', () => {
       },
     });
     const { result } = renderHook(() => useHostRenderPolicy());
-    expect(result.current.visible).toBe(false);
+    expect(result.current.ambientAllowed).toBe(false);
+    expect(result.current.renderAllowed).toBe(true);
     await act(async () => {
       resolveRead({ ...initial, screenLock: 'unknown' });
       await read;
     });
-    expect(result.current.visible).toBe(false);
+    expect(result.current.ambientAllowed).toBe(false);
+    expect(result.current.renderAllowed).toBe(true);
     act(() => push({ ...initial, revision: 1 }));
-    expect(result.current.visible).toBe(true);
+    expect(result.current.ambientAllowed).toBe(true);
     act(() => push({ ...initial, revision: 2, screenLock: 'unknown' }));
-    expect(result.current.visible).toBe(false);
+    expect(result.current.ambientAllowed).toBe(false);
   });
 
   it('keeps desktop ambience parked when the host read fails', async () => {
@@ -58,7 +60,8 @@ describe('host rendering policy', () => {
     });
     const { result } = renderHook(() => useHostRenderPolicy());
     await act(async () => {});
-    expect(result.current.visible).toBe(false);
+    expect(result.current.ambientAllowed).toBe(false);
+    expect(result.current.renderAllowed).toBe(true);
   });
 
   it('stops ambient visibility while locked and reports battery as its own fact', async () => {
@@ -75,17 +78,31 @@ describe('host rendering policy', () => {
     });
     const { result, unmount } = renderHook(() => useHostRenderPolicy());
     await act(async () => {});
-    expect(result.current).toEqual({ onBattery: false, visible: true });
+    expect(result.current).toEqual({
+      onBattery: false,
+      renderAllowed: true,
+      ambientAllowed: true,
+    });
     act(() => push({ ...initial, revision: 1, screenLock: 'locked' }));
-    expect(result.current.visible).toBe(false);
+    expect(result.current.ambientAllowed).toBe(false);
+    expect(result.current.renderAllowed).toBe(false);
     // Battery leaves the board visible: it changes the ambient cadence, not
     // whether the board renders or at what resolution (BUG-263).
     act(() => push({ ...initial, revision: 2, powerSource: 'battery' }));
-    expect(result.current).toEqual({ onBattery: true, visible: true });
+    expect(result.current).toEqual({
+      onBattery: true,
+      renderAllowed: true,
+      ambientAllowed: true,
+    });
     act(() => push({ ...initial, revision: 3, systemSleep: 'suspended' }));
-    expect(result.current.visible).toBe(false);
+    expect(result.current.ambientAllowed).toBe(false);
+    expect(result.current.renderAllowed).toBe(false);
     act(() => push({ ...initial, revision: 4 }));
-    expect(result.current).toEqual({ onBattery: false, visible: true });
+    expect(result.current).toEqual({
+      onBattery: false,
+      renderAllowed: true,
+      ambientAllowed: true,
+    });
     unmount();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
@@ -118,12 +135,20 @@ describe('host rendering policy', () => {
       resolveRead(initial);
       await read;
     });
-    expect(result.current).toEqual({ onBattery: true, visible: false });
+    expect(result.current).toEqual({
+      onBattery: true,
+      renderAllowed: false,
+      ambientAllowed: false,
+    });
   });
 
   it('preserves the hosted browser visibility policy without a host bridge', () => {
     const { result } = renderHook(() => useHostRenderPolicy());
-    expect(result.current).toEqual({ onBattery: false, visible: true });
+    expect(result.current).toEqual({
+      onBattery: false,
+      renderAllowed: true,
+      ambientAllowed: true,
+    });
     act(() => {
       Object.defineProperty(document, 'visibilityState', {
         configurable: true,
@@ -131,7 +156,7 @@ describe('host rendering policy', () => {
       });
       document.dispatchEvent(new Event('visibilitychange'));
     });
-    expect(result.current.visible).toBe(false);
+    expect(result.current.ambientAllowed).toBe(false);
     act(() => {
       Object.defineProperty(document, 'visibilityState', {
         configurable: true,
@@ -139,6 +164,6 @@ describe('host rendering policy', () => {
       });
       document.dispatchEvent(new Event('visibilitychange'));
     });
-    expect(result.current.visible).toBe(true);
+    expect(result.current.ambientAllowed).toBe(true);
   });
 });

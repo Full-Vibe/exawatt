@@ -13,7 +13,8 @@ import type { HostPowerSnapshot } from '@exawatt/core/desktop-bridge';
  * board's resolution or freeze a Working mark (BUG-263). */
 export function useHostRenderPolicy(): {
   onBattery: boolean;
-  visible: boolean;
+  renderAllowed: boolean;
+  ambientAllowed: boolean;
 } {
   const reads = useLatestRequest();
   const desktop = typeof window !== 'undefined' && !!window.electron;
@@ -50,13 +51,18 @@ export function useHostRenderPolicy(): {
       document.removeEventListener('visibilitychange', updateVisibility);
     };
   }, [reads]);
+  // Only a definite hidden/locked/suspended observation disables demand
+  // renders. Unknown desktop state stays interactive, but cannot authorize
+  // a continuous ambient loop. Hosted browsers need no native observation.
+  const renderAllowed =
+    pageVisible &&
+    host?.screenLock !== 'locked' &&
+    host?.systemSleep !== 'suspended';
   return {
     onBattery: host?.powerSource === 'battery',
-    visible:
-      pageVisible &&
-      // A desktop read that is pending, unavailable or unknown cannot prove
-      // that ambient animation is visible. Browser visibility has no native
-      // observation dependency; interactive demand renders remain available.
+    renderAllowed,
+    ambientAllowed:
+      renderAllowed &&
       (!desktop ||
         (host?.screenLock === 'unlocked' && host?.systemSleep === 'awake')),
   };
