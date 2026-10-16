@@ -3632,6 +3632,9 @@ core on master the desktop board sends for real (the two-shell eval reads
 "undeliverable · A shell does not take messages" on both rows before Send).
 The per-recipient unread reads P4's `useAgentUnread`, which needs P4's
 retype of `list` to the core `BusLedgerRead`; it must land with this.
+(2026-10-16: replaced by `useSessionUnread`, one read per distinct Project
+for the whole working set; recipients are scoped by the Agent's
+`busProjectId`, see the substrate doc's review-fixes entry.)
 
 Keyboard: ⌘D focuses Direct while a working set exists (`fixed-board-direct`,
 owner `client`). ⌘D is Split on the Agent altitude only (the workspace

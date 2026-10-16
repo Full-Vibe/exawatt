@@ -465,9 +465,10 @@ interface BusClient {
   clears the other.
 - `use-bus.tsx`: `BusClientProvider` (the Demo Workspace provides the Demo
   client; the default is the live one), `useBusMessages(projectId)`,
-  `useProjectUnread`, and `useAgentUnread(projectId, sessionId)`, the per-Agent
-  selector Fleet's selection panel imports. The pure `agentUnreadCount` serves
-  a surface that already holds the Project's messages.
+  `useProjectUnread`, and `useSessionUnread(participants)`, the per-Agent
+  counts Fleet's selection panel reads (one read per distinct Project,
+  amended 2026-10-16). The pure `agentUnreadCount` serves a surface that
+  already holds the Project's messages.
 
 ### 2026-10-15 — Agent names (packet P8)
 
@@ -732,3 +733,39 @@ Found while building it:
   `default_tools_approval_mode`: the user's policy applies to one more tool.
 - **Every Codex launch now runs in embedded mode**, since any `-c` does
   (B0); `codex queue` and the live exchange were unaffected.
+
+### 2026-10-16 — Names, addressing and Direct: review fixes
+
+**One owner for a name, one key for the bus.** From the code review of the
+names, bus and Direct train (`f506931d`):
+
+- **A name change lands in one place.** `applyAgentNames` in the session
+  manager takes every deal, re-key and rename, updates each live row of a
+  changed record and publishes `agent-names`. A re-key to another Project
+  used to leave the live row on its old name, and a same-count re-key reached
+  only the asking window. The bus directory reads the name record for the
+  name and the Project; a row's `agentName` is only a fallback for a source
+  with no records.
+- **`pty:ensure-agent-names` answers `{records, skipped}`** (core
+  `AgentNameEnsureResult`). A request main can never satisfy (not a Session
+  id, no Project, a shell, names unavailable) is skipped with its reason; the
+  renderer sends a request once while it is in flight and never again once
+  skipped, until its inputs change.
+- **A family name never counts its sender.** `resolveAgentAddress(directory,
+  projectKey, address, {sender})`: `@claude` from a Claude Agent reaches its
+  one Claude peer; alone in its family the sender reads "No other claude
+  Agent in this Project". Exact names and Session ids are unchanged, so a send
+  to yourself by name is still refused ("That is you").
+- **The bus Project key is the name record's `projectKey`** (the workspace
+  Project key names are unique within, the B1 contract's amendment), else
+  `projectDir` for a Session main has not named. It is exposed on the Fleet
+  Agent as `busProjectId` (`ExawattAgent`, `LocalSessionSnapshot`); Direct
+  sends and counts unread by it, Chatter reads the group key, and every send
+  therefore names the ledger by the same key. A worktree-keyed group (group
+  folder not the cwd's folded git root) used to be refused "in another
+  Project" from Direct. Demo Agents carry their Project's folder, the key the
+  Demo chatter is filed under.
+- **Direct reads the bus once per Project.** `useSessionUnread` replaces
+  `useAgentUnread` (one ledger read per selected row), and Direct asks the
+  client's synchronous `unavailableReason()` instead of reading the ledger to
+  learn whether a bus exists.
