@@ -5,6 +5,7 @@ import {
   provenanceLine,
   splitByRecency,
   suggestedSource,
+  suggestionOpenedContext,
   unreadableStoreLines,
 } from './project-suggestions';
 import { harnessStoreName } from './store-names';
@@ -84,5 +85,15 @@ describe('folder display', () => {
   it('abbreviates the home directory and leaves other paths alone', () => {
     expect(displayPath('/Users/operator/Code/x')).toBe('~/Code/x');
     expect(displayPath('/Volumes/work/x')).toBe('/Volumes/work/x');
+  });
+});
+
+describe('why an opened suggestion opened', () => {
+  it('is suggested, hinted by the harness that knew the folder most recently', () => {
+    const row = suggestionFixture('atlas', ['codex', 'claude'], 1);
+    expect(suggestionOpenedContext(row)).toEqual({
+      source: 'suggested',
+      harnessHint: 'codex',
+    });
   });
 });

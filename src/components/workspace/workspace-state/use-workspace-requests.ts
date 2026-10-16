@@ -21,7 +21,12 @@ import {
   consumePendingOpenProject,
   type LaunchRequest,
 } from '../session-jump';
+import type { ProjectOpenedContext } from '@/lib/projects/registry';
 import type { Latest } from './workspace-model';
+
+/** ⌘K's Project rows are the Projects this machine already knows: the
+ *  registry's and the local recency record's (ENG-047 `project_opened`). */
+const PALETTE_PROJECT_OPEN: ProjectOpenedContext = { source: 'recent' };
 
 export function useWorkspaceRequests({
   ready,
@@ -40,7 +45,7 @@ export function useWorkspaceRequests({
     harness: PtyHarness,
     options?: { shellCommand?: string }
   ) => boolean;
-  openProject: (dir: string) => Promise<boolean>;
+  openProject: (dir: string, opened?: ProjectOpenedContext) => Promise<boolean>;
   togglePin: () => boolean;
 }): void {
   // ---- palette requests (S2): the ⌘K switcher lives at the app root and
@@ -77,7 +82,7 @@ export function useWorkspaceRequests({
     const onOpenProject = (e: Event) => {
       if (!readyRef.current) return;
       consumePendingOpenProject();
-      void openProject((e as CustomEvent<string>).detail);
+      void openProject((e as CustomEvent<string>).detail, PALETTE_PROJECT_OPEN);
     };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
     window.addEventListener(TAB_SELECT_EVENT, onTabSelect);
@@ -111,6 +116,6 @@ export function useWorkspaceRequests({
     const launchRequest = consumePendingLaunch();
     if (launchRequest) launchHere(launchRequest.harness, launchRequest);
     const proj = consumePendingOpenProject();
-    if (proj) void openProject(proj);
+    if (proj) void openProject(proj, PALETTE_PROJECT_OPEN);
   }, [ready, activateSession, selectExistingTab, launchHere, openProject]);
 }

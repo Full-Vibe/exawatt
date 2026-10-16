@@ -295,7 +295,12 @@ export function useWorkspaceProjects({
    *  Answers each requested folder's canonical Project folder, in order, or
    *  null when nothing opened. */
   const importProjectsAt = useCallback(
-    async (directories: string[]): Promise<Map<string, string> | null> => {
+    async (
+      directories: string[],
+      /** Why each folder opened, keyed by the folder as passed; a folder
+       *  without an entry opened through Import. */
+      openedFor?: ReadonlyMap<string, ProjectOpenedContext>
+    ): Promise<Map<string, string> | null> => {
       const unique = [...new Set(directories)];
       if (unique.length === 0) return null;
       const claim = operatorPosition.claimHere();
@@ -328,12 +333,12 @@ export function useWorkspaceProjects({
       if (mayMove) moveOperator(first.projectDir, null);
       setLastUsedDir(first.projectDir);
       setError(null);
-      for (const ref of refs) {
+      refs.forEach((ref, index) => {
         syncProjectIdentity(
           { rootPath: ref.projectDir, name: ref.projectName },
-          { source: 'import' }
+          openedFor?.get(unique[index]) ?? { source: 'import' }
         );
-      }
+      });
       return new Map(unique.map((dir, index) => [dir, refs[index].projectDir]));
     },
     [moveOperator, setError, setLastUsedDir, setProjects, syncProjectIdentity]

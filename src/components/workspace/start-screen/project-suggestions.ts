@@ -13,6 +13,7 @@ import type {
   HarnessStoreRead,
   ProjectSuggestionHarness,
 } from '@exawatt/core/desktop-bridge';
+import type { ProjectOpenedContext } from '@/lib/projects/registry';
 import type { AgentSourceId } from '../agent-sources';
 import { describeUnreadableStore, harnessStoreName } from './store-names';
 
@@ -59,6 +60,14 @@ export function suggestedSource(
     if (snapshot && launchable(snapshot)) return harness;
   }
   return undefined;
+}
+
+/** Why an opened suggestion opened (ENG-047 `project_opened`): suggested,
+ *  hinted by the harness whose store knew the folder most recently. */
+export function suggestionOpenedContext(
+  suggestion: Pick<HarnessProjectSuggestion, 'harnesses'>
+): ProjectOpenedContext {
+  return { source: 'suggested', harnessHint: suggestion.harnesses[0] ?? null };
 }
 
 /** The harnesses that contributed at least one row, in a stable order. */

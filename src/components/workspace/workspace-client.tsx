@@ -59,6 +59,7 @@ import { operatorPosition } from '@/components/nav/operator-position';
 import { ProjectOpener, useProjectOpenerState } from './project-opener';
 import { StartScreen } from './start-screen/start-screen';
 import type { SuggestionOpen } from './start-screen/your-projects';
+import { suggestionOpenedContext } from './start-screen/project-suggestions';
 import { ExposeOverlay, type TeamSelection } from './expose-overlay';
 import { teamViewProjects } from './team-order';
 import { useTeamOrderPreference } from './team-order-preference';
@@ -463,12 +464,14 @@ export function WorkspaceClient() {
     []
   );
   // Opening a suggestion is Browse with the folder already chosen: the same
-  // verb, so it makes exactly the Project Browse would have (inert, D14).
-  // TODO(ENG-047 F1): emit `project_opened` with {source: 'suggested'} once
-  // the funnel's allowlisted event and the registry verbs' `source` land.
+  // verb, so it makes exactly the Project Browse would have (inert, D14),
+  // and `project_opened` records it as suggested by the store that knew it.
   const openSuggestion = useCallback(
     async ({ suggestion, source }: SuggestionOpen): Promise<boolean> => {
-      const dir = await openProjectAt(suggestion.path);
+      const dir = await openProjectAt(
+        suggestion.path,
+        suggestionOpenedContext(suggestion)
+      );
       if (dir === null) return false;
       rememberSuggestedSources([[dir, source]]);
       return true;
@@ -480,7 +483,13 @@ export function WorkspaceClient() {
   const openAllSuggestions = useCallback(
     async (opens: SuggestionOpen[]): Promise<boolean> => {
       const dirs = await importProjectsAt(
-        opens.map(({ suggestion }) => suggestion.path)
+        opens.map(({ suggestion }) => suggestion.path),
+        new Map(
+          opens.map(({ suggestion }) => [
+            suggestion.path,
+            suggestionOpenedContext(suggestion),
+          ])
+        )
       );
       if (dirs === null) return false;
       rememberSuggestedSources(
@@ -500,7 +509,7 @@ export function WorkspaceClient() {
     const dir = await window.electron?.dialog
       ?.openDirectory('Open Project')
       .catch(() => null);
-    if (dir) await openProject(dir);
+    if (dir) await openProject(dir, { source: 'browse' });
   }, [openProject]);
   const importFromStart = useCallback(async () => {
     const dir = await window.electron?.dialog
