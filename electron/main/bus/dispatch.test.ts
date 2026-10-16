@@ -13,7 +13,7 @@ import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 import { BusDirectory } from './directory';
 import { BUS_MCP_SEND_TOOL } from './mcp-server';
 import { BusDispatcher, type BusDoors } from './dispatch';
-import { JsonlBusStore } from './ledger';
+import { JsonlBusStore, type BusStore } from './ledger';
 import type { RecipientStateSource } from './recipient-state';
 import { BUS_MAX_TEXT_CHARS } from './stamping';
 import type { BusTransport, RecipientState } from './transports/types';
@@ -109,7 +109,8 @@ function fixtureDoor(
 function world(
   sessions: PtySessionRecord[],
   doors: Partial<Record<AgentHarness, BusDoors>>,
-  states: Record<string, RecipientState> = {}
+  states: Record<string, RecipientState> = {},
+  wrapStore: (store: BusStore) => BusStore = store => store
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bus-dispatch-'));
   roots.push(root);
@@ -120,7 +121,7 @@ function world(
   let clock = 100;
   const dispatcher = new BusDispatcher({
     directory: new BusDirectory({ list: () => sessions }),
-    store,
+    store: wrapStore(store),
     recipients: live,
     doorsOf: harness => doors[harness] ?? { agent: null, operator: null },
     contextFor: () => ({
@@ -440,6 +441,77 @@ describe('an operator message (the user’s turn)', () => {
       '\x1b[200~first\x1b[201~',
       '\x1b[200~second\x1b[201~',
     ]);
+  });
+
+  it('delivers two concurrent sends to a busy recipient, both, in order, at turn end', async () => {
+    const { dispatcher, live, terminal, pushed, store } = world(
+      sessions,
+      { claude: { agent: null, operator: operatorDoor } },
+      { 'pty-2': 'running' }
+    );
+    const send = (text: string) =>
+      dispatcher.send({
+        from: operator,
+        projectId: '/work/app',
+        to: 'session-pty-2',
+        text,
+      });
+    const results = await Promise.all([send('first'), send('second')]);
+    expect(results.map(result => result.delivery.state)).toEqual([
+      'queued',
+      'queued',
+    ]);
+    live.set('pty-2', 'ready');
+    await expect
+      .poll(
+        () =>
+          pushed.filter(record => record.delivery.state === 'delivered').length
+      )
+      .toBe(2);
+    expect(terminal.writes.filter(write => write !== '\r')).toEqual([
+      '\x1b[200~first\x1b[201~',
+      '\x1b[200~second\x1b[201~',
+    ]);
+    const read = await store.read('/work/app');
+    expect(read.ok && read.records.map(record => record.delivery.state)).toEqual(
+      ['delivered', 'delivered']
+    );
+  });
+
+  it('refuses a held message its log write failed, and still delivers the one behind it', async () => {
+    let failNext = true;
+    const { dispatcher, live, terminal, pushed } = world(
+      sessions,
+      { claude: { agent: null, operator: operatorDoor } },
+      { 'pty-2': 'running' },
+      store => ({
+        append: async record => {
+          if (failNext) {
+            failNext = false;
+            // Slow, then fails: the second send is accepted meanwhile.
+            await new Promise(resolve => setTimeout(resolve, 20));
+            throw new Error('disk full');
+          }
+          return store.append(record);
+        },
+        appendDelivery: (...args) => store.appendDelivery(...args),
+        read: projectId => store.read(projectId),
+      })
+    );
+    const send = (text: string) =>
+      dispatcher.send({
+        from: operator,
+        projectId: '/work/app',
+        to: 'session-pty-2',
+        text,
+      });
+    const [first, second] = await Promise.all([send('first'), send('second')]);
+    expect(first.record).toBeNull();
+    expect(first.delivery.reason).toMatch(/could not log/);
+    expect(second.delivery.state).toBe('queued');
+    live.set('pty-2', 'ready');
+    await expect.poll(() => pushed.at(-1)?.delivery.state).toBe('delivered');
+    expect(terminal.writes).toEqual(['\x1b[200~second\x1b[201~', '\r']);
   });
 
   it('reads undeliverable when the recipient ends before its turn does', async () => {

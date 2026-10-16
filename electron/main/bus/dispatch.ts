@@ -81,6 +81,10 @@ interface HeldMessage {
   target: BusTarget;
   transport: BusTransport;
   text: string;
+  /** False until its message line is in the ledger: a message takes its
+   *  place in the queue the moment it is accepted, so a send that logs
+   *  sooner can never pass it, and nothing types it before it is logged. */
+  logged: boolean;
 }
 
 function refused(reason: string, candidates?: BusSendResult['candidates']) {
@@ -186,10 +190,9 @@ export class BusDispatcher {
     );
 
     const state = this.deps.recipients.state(target.ptyId);
-    const waiting = this.held.get(target.ptyId) ?? [];
     const mustHold =
       transport.holdWhile.length > 0 &&
-      (waiting.length > 0 ||
+      (!!this.held.get(target.ptyId)?.length ||
         (transport.holdWhile as readonly string[]).includes(state));
     if (mustHold) {
       const record = this.recordOf(envelope, {
@@ -197,13 +200,26 @@ export class BusDispatcher {
         reason: holdReason(addressee.entry.handle, state),
         adapter: transport.kind,
       });
+      // The queue is taken (or made) and the message placed in it with no
+      // await in between, so two concurrent sends share one queue in the
+      // order they were accepted.
+      const held: HeldMessage = {
+        record,
+        target,
+        transport,
+        text: delivered,
+        logged: false,
+      };
+      this.heldQueue(target.ptyId).push(held);
       try {
         await this.deps.store.append(record);
       } catch (error) {
+        this.unhold(target.ptyId, held);
+        // What waited behind it may go now.
+        this.release(target.ptyId);
         return refused(`Exawatt could not log the message (${String(error)})`);
       }
-      waiting.push({ record, target, transport, text: delivered });
-      this.held.set(target.ptyId, waiting);
+      held.logged = true;
       this.deps.onRecord?.(this.copy(record));
       // The state may already allow it (a change raced this send).
       this.release(target.ptyId);
@@ -324,17 +340,39 @@ export class BusDispatcher {
       });
   }
 
+  /** The recipient's one hold queue, made on first use. */
+  private heldQueue(ptyId: string): HeldMessage[] {
+    let queue = this.held.get(ptyId);
+    if (!queue) {
+      queue = [];
+      this.held.set(ptyId, queue);
+    }
+    return queue;
+  }
+
+  /** Take one message out of its queue, and the queue away once empty. */
+  private unhold(ptyId: string, message: HeldMessage): void {
+    const queue = this.held.get(ptyId);
+    if (!queue) return;
+    const index = queue.indexOf(message);
+    if (index >= 0) queue.splice(index, 1);
+    if (!queue.length) this.held.delete(ptyId);
+  }
+
   /** Type every held message its door now allows, in order. */
   private release(ptyId: string): void {
     if (!this.held.get(ptyId)?.length && !this.awaitingTurn.get(ptyId)?.length)
       return;
     void this.inOrder(ptyId, async () => {
-      const waiting = this.held.get(ptyId) ?? [];
-      while (waiting.length) {
+      // Read at each step, never kept across an await: a send may add to
+      // the queue while a message is being typed.
+      for (;;) {
+        const head = this.held.get(ptyId)?.[0];
+        // Not logged yet: its send releases again once it is.
+        if (!head || !head.logged) break;
         const state = this.deps.recipients.state(ptyId);
-        const head = waiting[0];
         if (state === 'ended') {
-          waiting.shift();
+          this.unhold(ptyId, head);
           await this.update(head.record, {
             state: 'undeliverable',
             reason: `@${busHandle(head.target.name)} ended before it could read this`,
@@ -344,7 +382,7 @@ export class BusDispatcher {
         }
         if ((head.transport.holdWhile as readonly string[]).includes(state))
           break;
-        waiting.shift();
+        this.unhold(ptyId, head);
         const result = await this.deliver(
           head.transport,
           head.record,
@@ -354,7 +392,6 @@ export class BusDispatcher {
         await this.update(head.record, result);
         this.awaitTurnIfQueued(head.transport, head.target, head.record);
       }
-      if (!waiting.length) this.held.delete(ptyId);
       if (this.deps.recipients.state(ptyId) === 'ended') {
         const orphaned = this.awaitingTurn.get(ptyId) ?? [];
         this.awaitingTurn.delete(ptyId);
