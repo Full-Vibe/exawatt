@@ -3753,3 +3753,30 @@ across live source transitions. The unchanged v1 gate passed in isolation.
 The eval now fixes Date before source startup, retaining real timers and the
 animation clock, so exact filter-total equality tests one source snapshot.
 No product clock, filter behavior, performance budget or timeout changed.
+
+### Startup lock observation: repair plan (2026-10-15)
+
+The power verification found a separate source-truth gap: macOS reported an
+already locked session while a fresh Electron process reported `unlocked`.
+Synthetic lock/unlock transitions correctly park both views, so adding another
+renderer guard around those events would not repair the missing initial fact.
+Before implementation, the ownership plan is:
+
+- Keep one main-process host-power observer. Separate the current lock snapshot
+  from Electron's future event stream; subscribe before sampling the snapshot.
+- Validate an in-process macOS snapshot adapter through the existing N-API build
+  boundary. Read only at startup and resume, with explicit `unknown` on an
+  unavailable or malformed observation. Do not add polling, shell probes,
+  private native function calls, sleep assertions or Session lifecycle actions.
+- Let Electron ambient rendering run only after an observed unlocked/awake
+  state; a missing read cannot assert visibility. Hosted browser visibility
+  remains independent of the desktop observation contract.
+- Prove cold startup while the OS is already locked against an independent OS
+  observation and real renderer frame counters. Preserve ordinary event,
+  resume, battery-cadence and unlocked interaction checks. Comparing the bridge
+  to the same cached Electron API is not sufficient startup evidence.
+
+Native snapshot feasibility and the already-locked reproduction are being
+checked before this plan is implemented. The original five review repairs and
+their motion, scale, visibility, interaction and persistence checks are complete;
+integration still requires an unlocked host for the native-focus gate.
