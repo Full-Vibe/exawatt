@@ -20,6 +20,47 @@ afterEach(() => {
 });
 
 describe('host rendering policy', () => {
+  it('parks desktop ambience until the host positively reports unlocked and awake', async () => {
+    let resolveRead: (snapshot: HostPowerSnapshot) => void = () => {};
+    const read = new Promise<HostPowerSnapshot>(resolve => {
+      resolveRead = resolve;
+    });
+    let push: (snapshot: HostPowerSnapshot) => void = () => {};
+    installBridgeDouble({
+      app: {
+        hostPower: () => read,
+        onHostPowerChanged: handler => {
+          push = handler;
+          return () => {};
+        },
+      },
+    });
+    const { result } = renderHook(() => useHostRenderPolicy());
+    expect(result.current.visible).toBe(false);
+    await act(async () => {
+      resolveRead({ ...initial, screenLock: 'unknown' });
+      await read;
+    });
+    expect(result.current.visible).toBe(false);
+    act(() => push({ ...initial, revision: 1 }));
+    expect(result.current.visible).toBe(true);
+    act(() => push({ ...initial, revision: 2, screenLock: 'unknown' }));
+    expect(result.current.visible).toBe(false);
+  });
+
+  it('keeps desktop ambience parked when the host read fails', async () => {
+    installBridgeDouble({
+      app: {
+        hostPower: async () => {
+          throw new Error('Native observation unavailable');
+        },
+      },
+    });
+    const { result } = renderHook(() => useHostRenderPolicy());
+    await act(async () => {});
+    expect(result.current.visible).toBe(false);
+  });
+
   it('stops ambient visibility while locked and reports battery as its own fact', async () => {
     let push: (snapshot: HostPowerSnapshot) => void = () => {};
     const unsubscribe = vi.fn();

@@ -16,6 +16,7 @@ export function useHostRenderPolicy(): {
   visible: boolean;
 } {
   const reads = useLatestRequest();
+  const desktop = typeof window !== 'undefined' && !!window.electron;
   const [host, setHost] = useState<HostPowerSnapshot | null>(null);
   const [pageVisible, setPageVisible] = useState(
     () =>
@@ -53,7 +54,10 @@ export function useHostRenderPolicy(): {
     onBattery: host?.powerSource === 'battery',
     visible:
       pageVisible &&
-      host?.screenLock !== 'locked' &&
-      host?.systemSleep !== 'suspended',
+      // A desktop read that is pending, unavailable or unknown cannot prove
+      // that ambient animation is visible. Browser visibility has no native
+      // observation dependency; interactive demand renders remain available.
+      (!desktop ||
+        (host?.screenLock === 'unlocked' && host?.systemSleep === 'awake')),
   };
 }

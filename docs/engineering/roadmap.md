@@ -4823,3 +4823,15 @@ with this fix in the tag.
 2026-10-19: 0.1.22 (run 39236641396) passed every container check, DMG
 included, and published; the check stays intermittent with its cause
 unread. The next refusal prints stapler's own line.
+
+### BUG-294 A fresh Electron process reports an already locked Mac as unlocked
+
+Status: open · ENG-004 · found 2026-10-15 during V4.1 review repair verification.
+
+Electron's initial macOS idle cache misses an earlier lock event. Separate the
+startup/resume native lock snapshot from future events and park desktop ambient
+rendering until unlocked/awake is known. Exit: independent locked and unlocked
+startup observations, zero locked render advancement, unchanged event/battery
+behavior, and integrated/installed evidence. No polling or Agent lifecycle action.
+[Diagnosis](incidents/0038-locked-startup-reports-unlocked.md) ·
+[Repair contract](projects/spatial-operations-board.md#startup-lock-observation-repair-plan-2026-10-15).
