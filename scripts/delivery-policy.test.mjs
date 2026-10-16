@@ -38,6 +38,7 @@ import {
   vitestReportArgs,
 } from './lib/delivery-policy.mjs';
 import { git } from './lib/hermetic-git.mjs';
+import { PARTNER_CONVERSATIONS_DIRECTORY } from './lib/recipe-renderers.mjs';
 import { PUBLICATION_GATES } from './publication-check.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1603,7 +1604,7 @@ test('a product-only change runs the product-tree pins, a delivery change the wh
     ['electron/resources/icon.icns'],
     ['src/app/icon.png'],
     ['src/generated/agent-source-declarations.ts'],
-    ['docs/research/partner-conversations/2026-06-24-kevin-ridsdale.md'],
+    [`${PARTNER_CONVERSATIONS_DIRECTORY}/2026-06-24-a-call.md`],
     ['src/lib/raw-tokens.ts', 'scripts/check-screen-copy.mjs'],
   ]) {
     const ids = classifyDeliveryPolicy(paths).map(check => check.id);

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { acquireMachineSlot } from './machine-slots.mjs';
+import { PARTNER_CONVERSATIONS_DIRECTORY } from './recipe-renderers.mjs';
 
 /**
  * Flake-aware reruns for the vitest checks (BUG-090).
@@ -1058,7 +1059,7 @@ const DELIVERY_SYSTEM_PREFIXES = [
   'electron/resources/',
   'contracts/distribution/',
   // Terms the public content scanner and its pins read.
-  'docs/research/partner-conversations/',
+  `${PARTNER_CONVERSATIONS_DIRECTORY}/`,
   'public/images/readme/',
 ];
 const DELIVERY_SYSTEM_FILES = new Set([
