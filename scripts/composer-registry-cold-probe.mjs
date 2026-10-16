@@ -31,7 +31,7 @@ import { execFileSync } from 'node:child_process';
 
 const repo = process.cwd();
 if (!process.env.EXA_BASE) {
-  throw new Error('Set EXA_BASE to this checkout\'s dev server.');
+  throw new Error("Set EXA_BASE to this checkout's dev server.");
 }
 const samplesWanted = Math.max(
   1,
@@ -111,7 +111,12 @@ async function arm(page, name) {
           probe.startLiveMs = elapsed;
         }
         const status = composer?.querySelector('[data-launcher-status]');
-        if (status && probe.statusAtStartLive === undefined && start && !start.disabled) {
+        if (
+          status &&
+          probe.statusAtStartLive === undefined &&
+          start &&
+          !start.disabled
+        ) {
           probe.statusAtStartLive = status.textContent;
         }
         if (probe.rowReadyMs !== undefined && probe.startLiveMs !== undefined) {
@@ -173,6 +178,7 @@ try {
       await page.locator('[data-project-opener]').waitFor();
       const openedAt = Date.now();
       await page
+        .locator('[data-project-opener]')
         .getByRole('button', { name: 'Browse Folder', exact: true })
         .click();
       await page.locator('[data-agent-composer]').waitFor();

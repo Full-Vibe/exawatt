@@ -1,11 +1,6 @@
 #!/usr/bin/env node
 
-import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
@@ -181,7 +176,10 @@ try {
       await page.locator('[data-command-altitude]').waitFor();
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
-      await page.getByRole('button', { name: 'Browse Folder' }).click();
+      await page
+        .locator('[data-project-opener]')
+        .getByRole('button', { name: 'Browse Folder' })
+        .click();
       await page.locator('[data-agent-composer]').waitFor();
       const target = page.locator(`[data-conversation-id="${targetId}"]`);
       await target.waitFor();

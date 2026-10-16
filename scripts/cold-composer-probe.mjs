@@ -1,12 +1,7 @@
 // Opt-in diagnostic, not a delivery gate. See the D70 cold-renderer evidence
 // in docs/engineering/projects/daily-driver-adoption.md. Fixtures never send
 // an agent turn; timing is reported, never asserted against the host.
-import {
-  mkdtempSync,
-  mkdirSync,
-  writeFileSync,
-  rmSync,
-} from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir, loadavg, cpus } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -281,6 +276,7 @@ try {
           await page.keyboard.press('Meta+KeyN');
           await page.locator('[data-project-opener]').waitFor();
           await page
+            .locator('[data-project-opener]')
             .getByRole('button', { name: 'Browse Folder', exact: true })
             .click();
           await page.locator('[data-agent-composer]').waitFor();

@@ -1,11 +1,6 @@
 #!/usr/bin/env node
 
-import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -228,7 +223,8 @@ async function closeTab(page, title) {
 }
 
 async function waitForBuffer(page, sessionId, fragment) {
-  await waitForPageCondition(page,
+  await waitForPageCondition(
+    page,
     async ({ id, text }) =>
       ((await window.electron?.pty?.buffer(id)) ?? '').includes(text),
     { id: sessionId, text: fragment }
@@ -347,6 +343,7 @@ try {
       check(
         'Browse Folder participates in the Project chooser tab cycle',
         await page
+          .locator('[data-project-opener]')
           .getByRole('button', { name: 'Browse Folder' })
           .evaluate(
             button =>
@@ -358,7 +355,10 @@ try {
       await page.keyboard.press('Shift+Tab');
       await page.screenshot({ path: join(output, '01-project-chooser.png') });
 
-      await page.getByRole('button', { name: 'Browse Folder' }).click();
+      await page
+        .locator('[data-project-opener]')
+        .getByRole('button', { name: 'Browse Folder' })
+        .click();
       await page.locator('[data-agent-composer]').waitFor();
       const [pickerCall] = await directoryPickerCalls(app);
       check(

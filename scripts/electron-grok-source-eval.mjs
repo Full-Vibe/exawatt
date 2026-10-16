@@ -17,12 +17,7 @@
  *   3. exact resume from the source's own `summary.json`, never `--continue`
  *   4. consumption: `updates.jsonl` becomes rows under the `grok` source
  */
-import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
@@ -264,7 +259,10 @@ try {
       await page.locator('[data-command-altitude]').waitFor();
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
-      await page.getByRole('button', { name: 'Browse Folder' }).click();
+      await page
+        .locator('[data-project-opener]')
+        .getByRole('button', { name: 'Browse Folder' })
+        .click();
       await page.locator('[data-agent-composer]').waitFor();
 
       const registry = await page.evaluate(() =>
