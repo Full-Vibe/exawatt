@@ -48,6 +48,9 @@ export interface LocalSessionSnapshot {
   cwd: string;
   projectDir: string;
   projectName: string;
+  /** The Project the bus scopes this Session to: its Agent name record's
+   *  Project key (the workspace Project's key), else `projectDir`. */
+  busProjectId?: string;
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
@@ -202,6 +205,7 @@ export function sessionToAgent(
       session.contextSummary?.trim() ||
       `Interactive ${session.title} session in ${session.cwd}`,
     projectId: session.projectDir,
+    ...(session.busProjectId ? { busProjectId: session.busProjectId } : {}),
     project: session.projectName,
     sessionKey: session.sessionKey ?? session.id,
     sessionState: session.sessionState ?? (session.exited ? 'stopped' : 'live'),
@@ -351,7 +355,7 @@ export class LocalSessionsTransport {
           `${child.id}\u001f${child.agentType ?? ''}\u001f${child.description ?? ''}`
       )
       .join('\u001e');
-    const key = `${agent.sourceAdapterId ?? ''}:${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${JSON.stringify(agent.attention)}:${delegationKey}`;
+    const key = `${agent.sourceAdapterId ?? ''}:${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.busProjectId ?? ''}:${agent.project}:${JSON.stringify(agent.attention)}:${delegationKey}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

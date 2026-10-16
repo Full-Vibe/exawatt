@@ -301,7 +301,7 @@ export function FleetProvider({
                   live,
                   layout,
                   new Map(
-                    names.map(record => [record.durableSessionId, record.name])
+                    names.map(record => [record.durableSessionId, record])
                   )
                 ),
                 live,

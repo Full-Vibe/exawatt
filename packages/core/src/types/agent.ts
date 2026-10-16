@@ -180,6 +180,15 @@ export interface ExawattAgent {
   goal: string;
   /** Source-owned stable Project identity. `project` remains the display label. */
   projectId?: string;
+  /**
+   * The Project the agent bus scopes this Agent to (decision `0052`, the B1
+   * contract): the workspace Project's key its name is unique within, the
+   * one key Direct sends with, unread counts read by and the ledger is
+   * named by. It differs from `projectId` when a workspace Project is keyed
+   * by a folder that is not its cwd's folded git root (a worktree). Absent
+   * when the source has no bus.
+   */
+  busProjectId?: string;
   project: string;
   sessionKey: string; // source-owned runtime or durable Session reference
   sessionState?: AgentSessionState;

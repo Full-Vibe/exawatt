@@ -27,7 +27,8 @@ export interface DirectRecipient {
   name: string;
   /** source-owned harness id; null when the source did not say */
   harness: string | null;
-  /** the Project directory the bus scopes the message to */
+  /** the Project the bus scopes the message to: the Agent's bus Project
+   *  (the workspace Project's key), the key Chatter and the ledger use */
   projectId: string | null;
   readiness: RecipientReadiness;
 }
@@ -39,7 +40,7 @@ export function directRecipients(
     agentId: agent.id,
     name: agent.name,
     harness: agent.sourceAdapterId ?? null,
-    projectId: agent.projectId ?? null,
+    projectId: agent.busProjectId ?? null,
     readiness:
       agent.sessionState === 'stopped'
         ? 'stopped'

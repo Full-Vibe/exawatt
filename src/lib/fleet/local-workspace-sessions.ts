@@ -1,5 +1,6 @@
 import {
   readPtyAttention,
+  type AgentNameRecord,
   type LocalSessionSnapshot,
   type ProjectCatalogEntry,
 } from '@exawatt/core';
@@ -74,15 +75,25 @@ export function extractLocalWorkspaceProjects(
 export function mergeLocalWorkspaceSessions(
   live: PtySessionInfo[],
   layout: unknown,
-  /** Agent names by durable Session id (ENG-029 C4); main's, as read. */
-  agentNames: ReadonlyMap<string, string> = new Map()
+  /** Agent name records by durable Session id (ENG-029 C4); main's, as
+   *  read. The record's Project is the Session's Project on the bus. */
+  agentNames: ReadonlyMap<
+    string,
+    Pick<AgentNameRecord, 'name' | 'projectKey'>
+  > = new Map()
 ): LocalSessionSnapshot[] {
   const nameOf = (durableSessionId: string, own?: string | null) =>
-    agentNames.get(durableSessionId) ?? own ?? null;
+    agentNames.get(durableSessionId)?.name ?? own ?? null;
+  // The one bus Project key (decision 0052): the name record's, which is the
+  // workspace Project the name is unique within; before main has named a
+  // Session, where main's bus directory puts it.
+  const busProjectOf = (durableSessionId: string, fallback: string) =>
+    agentNames.get(durableSessionId)?.projectKey ?? fallback;
   const rawLive = () =>
     live.map(session => ({
       ...session,
       agentName: nameOf(session.durableSessionId, session.agentName),
+      busProjectId: busProjectOf(session.durableSessionId, session.projectDir),
       ...(session.exited
         ? { sessionKey: session.durableSessionId }
         : { sessionKey: session.id }),
@@ -117,6 +128,7 @@ export function mergeLocalWorkspaceSessions(
   const merged: LocalSessionSnapshot[] = live.map(session => ({
     ...session,
     agentName: nameOf(session.durableSessionId, session.agentName),
+    busProjectId: busProjectOf(session.durableSessionId, session.projectDir),
     sessionKey: session.exited
       ? (tabByDurableId.get(session.durableSessionId) ??
         tabByRuntimeId.get(session.id) ??
@@ -204,6 +216,7 @@ export function mergeLocalWorkspaceSessions(
         cwd: tab.cwd,
         projectDir: group.dir,
         projectName,
+        busProjectId: busProjectOf(durableSessionId, group.dir),
         startedAt: 0,
         exited: true,
         exitCode: failed ? 1 : 0,

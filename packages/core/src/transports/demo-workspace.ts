@@ -47,10 +47,7 @@ import type { DemoFleetAgent, DemoFleetTier } from '../demo/types';
 import { DEMO_PROJECTS, DEMO_PROJECTS_BY_KEY } from '../demo/projects';
 import { demoAgentBurn } from '../demo/burn';
 import { demoFleetAgents } from '../demo/scale';
-import {
-  DemoFleetSimulation,
-  type DemoFleetFrame,
-} from '../demo/simulation';
+import { DemoFleetSimulation, type DemoFleetFrame } from '../demo/simulation';
 
 /** How often the Demo fleet is advanced on a product surface. Coarse on
  *  purpose: the tick carries state changes, never ambient motion, so it is
@@ -171,6 +168,9 @@ export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
     // path fills from the goal summarizer.
     goal: agent.contextLabel,
     projectId: agent.projectKey,
+    // The Demo bus files its chatter under the Project's folder, the key
+    // the Demo Workspace groups tabs by (decision 0052's one bus key).
+    ...(project ? { busProjectId: project.dir } : {}),
     project: project?.name ?? agent.projectKey,
     sessionKey: agent.id,
     // A failed fixture Session reads as stopped — the same "Open stopped

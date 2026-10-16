@@ -21,6 +21,18 @@ function recipient(readiness: DirectRecipient['readiness']): DirectRecipient {
 }
 
 describe('directRecipients', () => {
+  it("scopes each send to the Agent's bus Project, not its git Project", () => {
+    const [recipient] = directRecipients([
+      createAgent({
+        id: 'wt',
+        name: 'claude-1',
+        projectId: '/code/alpha',
+        busProjectId: '/code/alpha-wt/feature',
+      }),
+    ]);
+    expect(recipient.projectId).toBe('/code/alpha-wt/feature');
+  });
+
   it('reads busy from a running turn and stopped from an ended Session', () => {
     const recipients = directRecipients([
       createAgent({ id: 'idle', name: 'Idle', status: 'idle' }),

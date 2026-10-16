@@ -54,13 +54,66 @@ describe('mergeLocalWorkspaceSessions', () => {
     const merged = mergeLocalWorkspaceSessions(
       [live({ agentName: 'claude-1', contextSummary: 'Fix login' })],
       layout,
-      new Map([['durable-2', 'reviewer']])
+      new Map([
+        ['durable-2', { name: 'reviewer', projectKey: '/code/exawatt' }],
+      ])
     );
     const agents = merged.map(session => sessionToAgent(session, 0, 0, 1));
     expect(agents.map(agent => [agent.name, agent.goal])).toEqual([
       ['claude-1', 'Fix login'],
       ['reviewer', expect.any(String)],
     ]);
+  });
+
+  it('scopes each Agent to its workspace Project on the bus, not its git root', () => {
+    // A worktree-keyed group: the tab's group is the worktree folder, while
+    // main folds the tab's cwd to the repository's git root.
+    const worktree = '/code/exawatt-wt/feature';
+    const layout = {
+      projects: [
+        {
+          dir: worktree,
+          tabs: [
+            {
+              id: 'live-tab',
+              durableSessionId: 'durable-1',
+              sessionId: 'pty-1',
+              harness: 'claude',
+              title: 'Claude Code',
+              cwd: worktree,
+              lifecycle: 'running',
+            },
+            {
+              id: 'stopped-tab',
+              durableSessionId: 'durable-2',
+              harness: 'codex',
+              title: 'Codex',
+              cwd: worktree,
+              lifecycle: 'stopped-clean',
+            },
+          ],
+        },
+      ],
+    };
+    const merged = mergeLocalWorkspaceSessions(
+      [live({ cwd: worktree, projectDir: '/code/exawatt' })],
+      layout,
+      new Map([
+        ['durable-1', { name: 'claude-1', projectKey: worktree }],
+        ['durable-2', { name: 'codex-1', projectKey: worktree }],
+      ])
+    );
+    const agents = merged.map(session => sessionToAgent(session, 0, 0, 1));
+    expect(agents.map(agent => agent.busProjectId)).toEqual([
+      worktree,
+      worktree,
+    ]);
+    // Before main has named it, a live Agent is where main's bus puts it.
+    const [unnamed] = mergeLocalWorkspaceSessions(
+      [live({ cwd: worktree, projectDir: '/code/exawatt' })],
+      null
+    );
+    expect(sessionToAgent(unnamed, 0, 0, 1).busProjectId).toBe('/code/exawatt');
   });
 
   it('keeps the same purpose through live, exited and restored Fleet snapshots', () => {
