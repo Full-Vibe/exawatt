@@ -3786,9 +3786,9 @@ or malformed capability stays unknown. Source/native build contracts and the
 conservative policy tests pass; independent review required separate demand
 and ambient permissions so unknown capability cannot freeze the interface.
 The original five review repairs and their motion, scale, visibility,
-interaction and persistence checks are complete. An actual unlocked native
-snapshot remains necessary to accept the optional dictionary capability;
-integration also requires an unlocked host for the native-focus gate.
+interaction and persistence checks are complete. The unlocked native observation
+below supersedes the initial dictionary expectation; integration still requires
+all native-focus and combined-tree gates.
 
 
 ### Startup lock compatibility amendment (2026-10-16)
@@ -3811,3 +3811,12 @@ retain the single snapshot owner and define the compatibility boundary:
 - Recheck cold unlocked startup and native focus; preserve the actual locked
   startup evidence and unknown-capability interaction contract. All final
   integration gates run on the rebased combination with parallel work.
+
+
+The independent unlocked probe confirmed both public session flags as typed
+true. Native facts and the production decoder agree on unlocked; both Fleet
+views passed cold-start unlocked/moving assertions, and both passed real native
+attention. The full v2 host-power matrix passed. A v1 main execution-context
+loss requires a matrix rerun; the host then relocked, correctly failing an
+explicit expected-unlocked assertion. No timeout or assertion was weakened.
+Final integration evidence remains owned by the delivery receipt.

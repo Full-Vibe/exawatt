@@ -99,6 +99,8 @@ Electron main also owns read-only host-power observations (`host-power.ts`):
 revisioned AC/battery, screen-lock, and suspend/resume facts on the same typed
 bridge. macOS startup/resume lock reads use a typed optional CoreGraphics
 snapshot through the existing N-API boundary; Electron owns subsequent events.
+The native boundary preserves typed session facts; one decoder interprets the
+sparse lock flag only inside a validated logged-in console session.
 Missing native capabilities remain unknown. Fleet separates demand-render
 availability from ambient eligibility: known lock/suspend or page hiding parks
 the canvas; unknown desktop state retains interaction but cannot authorize
