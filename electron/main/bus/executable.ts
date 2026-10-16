@@ -1,4 +1,7 @@
 /**
+ * The outbound doors Exawatt installs into its own state: the `exawatt`
+ * command, and the MCP server's script (B2).
+ *
  * The `exawatt` command an Agent runs (ENG-029 C4): the universal outbound
  * door, for every harness that has a shell tool, with no per-harness wiring.
  *
@@ -37,7 +40,7 @@ post() {
     --data-binary @- "http://127.0.0.1:\${EXAWATT_BUS_PORT}/bus/$1"
   status=$?
   if [ "$status" -eq 7 ]; then
-    echo "exawatt: Exawatt is not running, so the message was not sent." >&2
+    echo "exawatt: could not reach Exawatt, so nothing was sent. Exawatt is not running, or this shell's sandbox blocks local network access; the exawatt_send_message tool works from a sandbox." >&2
     exit 69
   fi
   [ "$status" -eq 0 ] || exit 1
@@ -90,6 +93,44 @@ export async function installBusExecutable(
     return directory;
   } catch (error) {
     console.warn('[bus] the exawatt command could not be installed', error);
+    return null;
+  }
+}
+
+/** The MCP server's file name in Exawatt's state: `.cjs`, so Node runs it as
+ *  CommonJS whatever `package.json` sits above Exawatt's state directory. */
+const BUS_MCP_SCRIPT_NAME = 'exawatt-mcp.cjs';
+
+/**
+ * Copy the compiled MCP server (`mcp-server.ts`, self-contained) out of the
+ * app into `directory`, where a harness can run it with Exawatt's executable
+ * as Node; the app's own copy may sit inside an archive Node cannot run a
+ * script from. Returns the script's path, or null when it could not be
+ * written: a launch then simply has no MCP door.
+ */
+export async function installBusMcpServer(
+  directory: string,
+  compiledServer: string
+): Promise<string | null> {
+  const target = path.join(directory, BUS_MCP_SCRIPT_NAME);
+  try {
+    const source = await fs.promises.readFile(compiledServer, 'utf8');
+    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
+    const current = await fs.promises
+      .readFile(target, 'utf8')
+      .catch(() => null);
+    if (current !== source) {
+      const temporary = `${target}.${process.pid}.tmp`;
+      await fs.promises.writeFile(temporary, source, {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+      await fs.promises.rename(temporary, target);
+    }
+    await fs.promises.chmod(target, 0o600);
+    return target;
+  } catch (error) {
+    console.warn('[bus] the Exawatt MCP server could not be installed', error);
     return null;
   }
 }

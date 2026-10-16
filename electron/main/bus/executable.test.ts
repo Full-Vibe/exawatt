@@ -128,6 +128,6 @@ describe('the exawatt command', () => {
       EXAWATT_BUS_TOKEN: 't',
     });
     expect(closed.code).toBe(69);
-    expect(closed.stderr).toMatch(/Exawatt is not running/);
+    expect(closed.stderr).toMatch(/could not reach Exawatt/);
   });
 });
