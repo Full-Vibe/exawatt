@@ -3,6 +3,7 @@
 // Real Electron bridge and Fleet rendering; synthetic events affect only
 // this isolated app. Never locks, sleeps, or changes power on the operator's Mac.
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +17,17 @@ import {
   runFleetViewMatrix,
 } from './lib/fleet-view-eval.mjs';
 await runFleetViewMatrix(import.meta.url);
+
+const require = createRequire(import.meta.url);
+// Read the native capability independently of the bridge. Electron's macOS
+// idle API is notification history, not an initial lock snapshot. A missing
+// binary is a packaging/build failure in this gate, not a passing unknown.
+const nativeLock =
+  process.platform === 'darwin'
+    ? require(
+        join(process.cwd(), 'dist-electron/native/screen-lock-snapshot.node')
+      )
+    : null;
 
 const base = process.env.EXA_BASE || 'http://localhost:7000';
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-electron-host-power-'));
@@ -227,15 +239,28 @@ try {
       const initial = await page.evaluate(() =>
         window.electron.app.hostPower()
       );
+      const nativeScreenLock = nativeLock?.read();
       assert.equal(initial.powerSource, actual.powerSource);
       assert.equal(
         initial.screenLock,
-        actual.idle === 'locked'
-          ? 'locked'
-          : actual.idle === 'unknown'
-            ? 'unknown'
-            : 'unlocked'
+        nativeScreenLock ??
+          (actual.idle === 'locked'
+            ? 'locked'
+            : actual.idle === 'unknown'
+              ? 'unknown'
+              : 'unlocked')
       );
+      let initialParkedRenderPasses = null;
+      if (initial.screenLock !== 'unlocked') {
+        const parkedStart = await renderPasses(page, 90);
+        initialParkedRenderPasses =
+          (await renderPasses(page, 90)) - parkedStart;
+        assert.equal(
+          initialParkedRenderPasses,
+          0,
+          'a locked or unknown startup must not animate before any synthetic event'
+        );
+      }
       await event(app, 'on-ac');
       await event(app, 'unlock-screen');
       await renderPasses(page, 90);
@@ -317,6 +342,9 @@ try {
         JSON.stringify({
           result: 'pass',
           initial,
+          nativeScreenLock,
+          electronIdle: actual.idle,
+          initialParkedRenderPasses,
           liveDemo,
           ac,
           lockedRenderPasses: lockedEnd - lockedStart,

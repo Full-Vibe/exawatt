@@ -18,7 +18,7 @@ files:
 
 asarUnpack:
   - dist-electron/node_modules/node-pty/build/Release/**/*
-  # First-party N-API addon (ENG-045): a native library cannot load from the asar.
+  # First-party N-API addons: native libraries cannot load from the asar.
   - dist-electron/native/*.node
 
 extraResources:

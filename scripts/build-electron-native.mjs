@@ -1,14 +1,14 @@
 // Compiles the first-party native addons the Electron main loads (ENG-045).
 //
-// There is one: `electron/native/notification-authorization.mm`, the read and
-// request of macOS's notification authorization, which Electron does not
-// expose. It uses N-API only, so a single build loads in any Electron version
+// The addons read/request notification authorization and read the current
+// screen-lock snapshot, capabilities Electron does not expose reliably.
+// They use N-API only, so a single build loads in any Electron version
 // and nothing here needs an Electron ABI rebuild or node-gyp. The output sits
 // beside the compiled main (`dist-electron/native`), and the packaged app
 // unpacks it from the asar (`electron-builder.yml`).
 //
-// Runs as part of `electron:compile`. Other platforms have no such prompt, so
-// there is nothing to build there and main treats the grant as always given.
+// Runs as part of `electron:compile`. Other platforms use their own source
+// adapters and do not load these macOS capabilities.
 // A missing addon at runtime is not an error: the status reads `unknown`.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -16,6 +16,10 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 const ADDONS = [
+  {
+    name: 'screen-lock-snapshot',
+    frameworks: ['CoreGraphics', 'CoreFoundation'],
+  },
   {
     name: 'notification-authorization',
     frameworks: ['Foundation', 'UserNotifications'],

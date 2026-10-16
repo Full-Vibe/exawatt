@@ -5,17 +5,71 @@ import { observeHostPower } from './host-power';
 function powerSource() {
   return Object.assign(new EventEmitter(), {
     isOnBatteryPower: vi.fn(() => false),
-    getSystemIdleState: vi.fn<() => 'active' | 'locked' | 'unknown'>(
-      () => 'active'
+    getScreenLockState: vi.fn<() => 'unlocked' | 'locked' | 'unknown'>(
+      () => 'unlocked'
     ),
   });
 }
 
 describe('host power observations', () => {
+  it('subscribes before sampling and reads only at startup and resume', () => {
+    const source = powerSource();
+    source.getScreenLockState.mockImplementation(() => {
+      expect(source.listenerCount('lock-screen')).toBe(1);
+      expect(source.listenerCount('unlock-screen')).toBe(1);
+      return 'locked';
+    });
+    const observer = observeHostPower(source, vi.fn());
+    expect(observer.getSnapshot().revision).toBe(0);
+    source.emit('on-battery');
+    source.emit('unlock-screen');
+    source.emit('lock-screen');
+    source.emit('suspend');
+    observer.getSnapshot();
+    expect(source.getScreenLockState).toHaveBeenCalledOnce();
+    source.emit('resume');
+    expect(source.getScreenLockState).toHaveBeenCalledTimes(2);
+    expect(observer.getSnapshot().screenLock).toBe('locked');
+    observer.dispose();
+  });
+
+  it('does not overwrite a newer lock event delivered during a snapshot read', () => {
+    const source = powerSource();
+    source.getScreenLockState.mockImplementation(() => {
+      source.emit('lock-screen');
+      return 'unlocked';
+    });
+    const changed = vi.fn();
+    const observer = observeHostPower(source, changed);
+    expect(observer.getSnapshot().screenLock).toBe('locked');
+    expect(changed).not.toHaveBeenCalled();
+    source.emit('unlock-screen');
+    source.emit('resume');
+    expect(observer.getSnapshot().screenLock).toBe('locked');
+    observer.dispose();
+  });
+
+  it('preserves unknown on resume instead of inventing an unlock', () => {
+    const source = powerSource();
+    const observer = observeHostPower(source, vi.fn());
+    source.emit('lock-screen');
+    source.getScreenLockState.mockReturnValue('unknown');
+    source.emit('resume');
+    expect(observer.getSnapshot().screenLock).toBe('unknown');
+    source.getScreenLockState.mockImplementation(() => {
+      throw new Error('native snapshot unavailable');
+    });
+    source.emit('resume');
+    expect(observer.getSnapshot().screenLock).toBe('unknown');
+    source.emit('unlock-screen');
+    expect(observer.getSnapshot().screenLock).toBe('unlocked');
+    observer.dispose();
+  });
+
   it('reports initial power and lock, then independently follows their events', () => {
     const source = powerSource();
     source.isOnBatteryPower.mockReturnValue(true);
-    source.getSystemIdleState.mockReturnValue('locked');
+    source.getScreenLockState.mockReturnValue('locked');
     const changed = vi.fn();
     const observer = observeHostPower(source, changed);
     expect(observer.getSnapshot()).toMatchObject({
@@ -64,7 +118,7 @@ describe('host power observations', () => {
     source.emit('suspend');
     expect(observer.getSnapshot().systemSleep).toBe('suspended');
     source.isOnBatteryPower.mockReturnValue(true);
-    source.getSystemIdleState.mockReturnValue('locked');
+    source.getScreenLockState.mockReturnValue('locked');
     source.emit('resume');
     expect(observer.getSnapshot()).toMatchObject({
       powerSource: 'battery',
@@ -79,7 +133,7 @@ describe('host power observations', () => {
     source.isOnBatteryPower.mockImplementation(() => {
       throw new Error('unavailable');
     });
-    source.getSystemIdleState.mockReturnValue('unknown');
+    source.getScreenLockState.mockReturnValue('unknown');
     const sibling = vi.fn();
     source.on('on-battery', sibling);
     const changed = vi.fn();

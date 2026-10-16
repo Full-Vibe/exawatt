@@ -21,6 +21,7 @@ import { testNotificationAuthorization } from './permissions/test-authorization'
 import { commandVerbCapabilities } from '@exawatt/core';
 import { registerMainChannels } from './app-ipc';
 import { observeHostPower } from './host-power';
+import { createScreenLockReader } from './screen-lock-snapshot';
 import { broadcastToWindows } from './window-broadcast';
 import {
   applyNativeAppearancePreference,
@@ -456,13 +457,21 @@ app.whenReady().then(() => {
     })
   );
   installUnreadableStateNotice(identity.productName);
-  const hostPower = observeHostPower(powerMonitor, snapshot => {
-    broadcastToWindows(
-      BrowserWindow.getAllWindows(),
-      'app:host-power-changed',
-      snapshot
-    );
-  });
+  const hostPower = observeHostPower(
+    {
+      isOnBatteryPower: () => powerMonitor.isOnBatteryPower(),
+      getScreenLockState: createScreenLockReader(powerMonitor),
+      on: powerMonitor.on.bind(powerMonitor),
+      removeListener: powerMonitor.removeListener.bind(powerMonitor),
+    },
+    snapshot => {
+      broadcastToWindows(
+        BrowserWindow.getAllWindows(),
+        'app:host-power-changed',
+        snapshot
+      );
+    }
+  );
   runtime.hostPower = hostPower;
   handleTrusted('app:host-power', () => hostPower.getSnapshot());
   app.once('will-quit', hostPower.dispose);

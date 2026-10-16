@@ -10,7 +10,7 @@ type HostPowerEvent =
 
 interface HostPowerSource {
   isOnBatteryPower(): boolean;
-  getSystemIdleState(seconds: number): 'active' | 'idle' | 'locked' | 'unknown';
+  getScreenLockState(): HostPowerSnapshot['screenLock'];
   on(event: HostPowerEvent, listener: () => void): unknown;
   removeListener(event: HostPowerEvent, listener: () => void): unknown;
 }
@@ -36,26 +36,26 @@ export function observeHostPower(
   };
   const readLock = (): HostPowerSnapshot['screenLock'] => {
     try {
-      const state = source.getSystemIdleState(1);
-      return state === 'locked'
-        ? 'locked'
-        : state === 'active' || state === 'idle'
-          ? 'unlocked'
-          : 'unknown';
+      return source.getScreenLockState();
     } catch {
       return 'unknown';
     }
   };
   let snapshot: HostPowerSnapshot = {
     revision: 0,
-    powerSource: readPower(),
-    screenLock: readLock(),
+    powerSource: 'unknown',
+    screenLock: 'unknown',
     systemSleep: 'awake',
   };
   let disposed = false;
+  let initializing = true;
+  let powerObservation = 0;
+  let lockObservation = 0;
   const subscribers = new Set<(snapshot: HostPowerSnapshot) => void>();
   const update = (patch: Partial<Omit<HostPowerSnapshot, 'revision'>>) => {
     if (disposed) return;
+    if ('powerSource' in patch) powerObservation += 1;
+    if ('screenLock' in patch) lockObservation += 1;
     const next = { ...snapshot, ...patch };
     if (
       next.powerSource === snapshot.powerSource &&
@@ -63,9 +63,25 @@ export function observeHostPower(
       next.systemSleep === snapshot.systemSleep
     )
       return;
-    snapshot = { ...next, revision: snapshot.revision + 1 };
+    snapshot = {
+      ...next,
+      revision: snapshot.revision + (initializing ? 0 : 1),
+    };
+    if (initializing) return;
     changed({ ...snapshot });
     for (const listener of subscribers) listener({ ...snapshot });
+  };
+  // A newer event wins if a source delivers it during the snapshot read.
+  const refresh = (awake = false) => {
+    const powerBefore = powerObservation;
+    const lockBefore = lockObservation;
+    const powerSource = readPower();
+    const screenLock = readLock();
+    update({
+      ...(awake ? { systemSleep: 'awake' as const } : {}),
+      ...(powerBefore === powerObservation ? { powerSource } : {}),
+      ...(lockBefore === lockObservation ? { screenLock } : {}),
+    });
   };
   const listeners: Record<HostPowerEvent, () => void> = {
     'on-ac': () => update({ powerSource: 'ac' }),
@@ -75,16 +91,15 @@ export function observeHostPower(
     suspend: () => update({ systemSleep: 'suspended' }),
     // Power/lock can change while the process is suspended. Re-read both;
     // never convert wake into an invented unlock event.
-    resume: () =>
-      update({
-        systemSleep: 'awake',
-        powerSource: readPower(),
-        screenLock: readLock(),
-      }),
+    resume: () => refresh(true),
   };
   for (const event of Object.keys(listeners) as HostPowerEvent[]) {
     source.on(event, listeners[event]);
   }
+  // Subscribe first: a lock between monitor construction and this sample
+  // must not be lost. Reads happen only here and on resume, never on a timer.
+  refresh();
+  initializing = false;
   return {
     getSnapshot: () => ({ ...snapshot }),
     subscribe: listener => {
