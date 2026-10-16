@@ -261,3 +261,16 @@ account UUID as the person; join it to a name in Supabase, never in PostHog:
   }
 }
 ```
+
+### 2026-10-16 — review fixes: the opt-out during start, the effective permission mode
+
+- **An opt-out during the start wins.** `initAnalytics` awaits main's
+  identity answer and then the SDK import. An opt-out in either gap used to
+  be overtaken: emission started, the account stream started, and PostHog
+  initialized with `capture_exceptions`. The opt-out now sets a launch-wide
+  flag that the start re-checks after each await.
+- **`agent_launched.permission_mode` is the mode main ran.** A request
+  with no mode launches `unrestricted`, but the event reported `null`.
+  `DEFAULT_LAUNCH_PERMISSION_MODE` (`pty/harness-command.ts`) is now the one
+  default shared by the command, the event-channel subscription and the
+  event.

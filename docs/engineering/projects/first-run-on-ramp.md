@@ -572,3 +572,28 @@ and dark at desktop and 560px; and the real Electron app on a fresh
 userData against the operator's real stores (fixture CLIs on PATH): 9
 recent rows and 23 in all, the first painted 0.24 s after the Start screen,
 no diagnostic.
+
+### 2026-10-16 — O1 review fixes: the SQLite copy, a failed Codex index, the login environment
+
+**Harness SQLite reads no longer block the main thread.**
+`pty/sqlite-snapshot.ts` copied the database and its log with
+`copyFileSync` on every read. It now copies asynchronously and keeps the
+copy, keyed by each file's identity, size and mtime: an unchanged store
+reuses it, a write Codex has not checkpointed re-copies only the log, and a
+checkpoint takes a new copy. The copy opens read-only, so it stays the
+database it was copied from. Node's libuv has no macOS clone
+(`COPYFILE_FICLONE_FORCE` answers ENOSYS), so on APFS it is a real copy on
+the thread pool. The no-write proof still goes red when the read points at
+the source. No worker: main has none, and the remaining synchronous part is
+one indexed query on a private copy.
+
+**A Codex thread database that exists and fails is named.** With no
+`sessions/` directory the store used to report `missing`. It now reports
+`unreadable` (`thread database: <SQLite's error>`) and keeps any rollout
+rows.
+
+**`CLAUDE_CONFIG_DIR` and `CODEX_HOME` come from the login shell**
+(`loginModelEnvironment`, exported from `pty/agent-models.ts` as the one
+shared helper), because a Finder-launched app has no rc variables. The
+conversation catalog's Codex roots still read `process.env` at module load.
+That is a follow-up.
