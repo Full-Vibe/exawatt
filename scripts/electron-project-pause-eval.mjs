@@ -25,10 +25,21 @@ try {
       page,
       fixture
     );
-    const storedTab = () =>
-      JSON.parse(readFileSync(join(fixture.userData, 'workspace.json'), 'utf8'))
+    // The layout is saved 400 ms after it settles, so on a fresh profile the
+    // Session can be listed before the first save: no file yet is "not
+    // persisted yet", and any other read failure is still a failure.
+    const storedTab = () => {
+      let raw;
+      try {
+        raw = readFileSync(join(fixture.userData, 'workspace.json'), 'utf8');
+      } catch (error) {
+        if (error?.code === 'ENOENT') return null;
+        throw error;
+      }
+      return JSON.parse(raw)
         .projects.flatMap(project => project.tabs)
         .find(tab => tab.durableSessionId === claude.durableSessionId);
+    };
     const before = await until(storedTab, 'persisted Session');
     const projectMenu = async action => {
       await page
