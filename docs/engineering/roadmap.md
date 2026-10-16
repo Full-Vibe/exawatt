@@ -162,7 +162,9 @@ Status (2026-10-15, one train landing `f506931d` and one dogfood build):
 - P7 MCP tools and the guide LANDED (`b1f40dae`, guide `844a3e62`).
 - Agent names on every surface (C4 display) LANDED (`2c0f2e1b`).
 - Open from the train: BUG-289 (id:next duplicate under load), BUG-292,
-  BUG-293, BUG-295 (host-power context loss, also on master).
+  BUG-293, BUG-295 (host-power context loss, also on master); from its
+  review fixes BUG-296 (a freed name stays in other windows) and BUG-297
+  (the catalog's Codex store ignores the shell's CODEX_HOME).
 
 Rules for the front: the daily-driver arc's correctness wins any surface
 conflict (unchanged); visual evidence before landing; the 2026-10-04 polish
@@ -4554,3 +4556,28 @@ Demo canvas P5 saw under load. The train's landing waived the gate on that
 evidence. Not diagnosed: what in main resets the context Playwright's main
 evaluate holds (nothing in main navigates, and nothing on the `resume` path
 opens an inspector or a new context).
+
+### BUG-296 Deleting or purging a Session frees its Agent name without telling other windows
+
+Status: open · ENG-029 · found 2026-10-16 by the names review fix
+(`agent/fix-names-review`); pre-existing.
+
+`kill`, `deleteSession` and `purgeHistory` in the session manager delete the
+Session's record from the Agent name store but never publish `agent-names`,
+so every other window keeps the freed name in its roster until something
+else changes a name. `applyAgentNames` is the one owner that publishes; a
+freed name should pass through it (or its delete twin) rather than a second
+publish at each call site.
+
+### BUG-297 The conversation catalog reads `CODEX_HOME` from Exawatt's own environment at module load
+
+Status: open · ENG-046 · found 2026-10-16 by the analytics review fix
+(`agent/fix-analytics-review`); pre-existing.
+
+`conversation-catalog.ts` fixes `DEFAULT_CODEX_SESSIONS_ROOT` and
+`DEFAULT_CODEX_STATE_DATABASE` from `process.env` when the module loads. A
+Finder-launched app inherits no shell rc variables, so a user who sets
+`CODEX_HOME` in their shell gets Codex conversations read from `~/.codex`,
+the wrong store. Project suggestions already resolve it through
+`loginModelEnvironment`; the catalog should do the same, per read rather
+than at load.
