@@ -17,7 +17,7 @@ wrong checkout.
 The active follow-up makes delivery composable at fleet scale by removing the
 measured contention rather than serializing verification: dogfood leaves the
 delivery critical section, a FIFO ticket makes the wait fair and the lock
-hold seconds long, and a cheap repository-owned floor reruns on the exact
+hold seconds long, and a cheap repository-owned set of landing checks reruns on the exact
 tree at the head of the queue when the base moved. Expensive verification
 stays parallel in the authors' worktrees. `pnpm agent:land` remains the sole
 public delivery entrypoint; queue, policy, and post-integration work are
@@ -37,14 +37,121 @@ internal modules rather than new package-script verbs.
   ref is necessarily sequenced; the FIFO ticket order is infrastructure, not
   a lead agent and not an owner of product decisions.
 - Candidate, integration, and post-integration work are separate pipelines. A
-  candidate may fail without blocking other authors; the exact-tree floor at
-  the head of the queue proves the tree to be integrated; dogfood consumes
+  candidate may fail without blocking other authors; the exact-tree landing checks at
+  the head of the queue prove the tree to be integrated; dogfood consumes
   integrated commits without holding the integration critical section.
-- Repository-owned policy provides a conservative verification floor from the
-  changed paths. Callers may add evidence but cannot select a weaker floor.
+- Repository-owned policy provides conservative required checks from the
+  changed paths. Callers may add evidence but cannot select weaker ones.
 - Preserve the existing immutable build snapshot, atomic app replacement, and
   stale-base refusal. The contention problem is orchestration around those
   sound primitives, not a reason to weaken them.
+
+## Delivery efficiency audit — 2026-10-15
+
+The operator, with eight agents landing parallel packets: "I don't need to run
+the same 1,000 unit tests 50 times, especially in disparate orthogonal areas,
+when there's overlapping work here." And, the same day: rigorous testing and
+agentic test-fix-test loops stay; the low-value, high-time-cost duplicates go,
+and the architectural answer is "aggressive, smart modularization", where work
+inside a module is checked by that module's own checks and the full suite and
+lint run only rarely.
+
+Measured from `metrics.jsonl` for 2026-10-15 (UTC), joined to the queue
+tickets, the git trees of every candidate SHA, and a traced run of
+`test:agent-delivery` that recorded every file and git call the suite and its
+children made:
+
+- **Where the compute goes.** 1,423 check-minutes across 144 landing-check runs
+  on 121 distinct trees, for 55 tickets (29 worktree, 26 docs; 49 integrated).
+  `test:agent-delivery` alone was 681 minutes (48%, 96 runs, mean 7.1, max 41);
+  lint 187, surface gates and evals 241, `vitest-related` 112, `type-check` 70,
+  the community build 66. Runs waited 371 minutes for machine slots. Eleven
+  dogfood builds were requested and started, 3 to 20 minutes each, plus one
+  that failed after 80.
+- **Most of it is spent on runs that fail.** 952 minutes (67%) went to the 52
+  runs that ended red. September's lever was the same shape (BUG-200: 67% of
+  wall time on tickets that died); the deaths have moved from conflicts to
+  checks.
+- **The largest single failure is load.** `test:agent-delivery` failed 20
+  times, 11 of them on four trees that later passed it unchanged, the BUG-288
+  shape.
+  A failed run overlapped 3.1 other runs of the suite on average, a passing one
+  1.7; runs that had waited out the 20-minute slot deadline and proceeded
+  unslotted failed 5 of 8, slotted ones 16 of 93. The suite runs its 70 files
+  at Node's default concurrency (11 on this 12-core machine) on every landing,
+  and load average reached 220 to 330.
+- **The same check re-ran on the same inputs.** 285 minutes (20%) re-ran a
+  check that had already passed on the byte-identical tree: a later check
+  failed (the suite under load, a surface gate), the author resubmitted the
+  same commit, and every check before the failure ran again. 184 of those
+  minutes were the delivery suite itself.
+- **Unconditional checks ran on changes that cannot reach them.** 46 of the
+  day's 96 suite runs (288 minutes) were on trees whose changes touched
+  nothing the suite reads. The traced run shows the suite reads `scripts/`,
+  the root files, CI and hooks, licences, a dozen named product files, two
+  `@exawatt/core` entry points, and, in five files, the whole product tree.
+- **Rebase re-checks are not the lever.** The head's re-check after a rebase
+  was 28 runs and 139 minutes (10%), consistent with September's 18%; only the
+  head re-checks, so that compute is already linear in tickets.
+- **Per-landing dogfood barely coalesces.** The worker starts as soon as the
+  queue drains, and a queue with eight agents drains between almost every pair
+  of landings, so 11 requests became 11 builds and only one was superseded.
+
+What changed on 2026-10-15, each backward compatible, tested, and weakening
+nothing a change is verified against:
+
+- **The delivery suite runs when a change can reach it.** `classifyDeliveryPolicy`
+  runs the whole of `test:agent-delivery` when a changed path is in
+  `deliveryAffectingPath` (every root file, `scripts/`, CI, hooks, patches,
+  licences, Electron resources, `@exawatt/core`'s manifest and build files and
+  the import closure of the two entry points delivery scripts load, and the
+  named product files the trace found). Any other change runs only
+  `PRODUCT_TREE_PINS`, the five suite files that read the product tree (the
+  font scan, the suite-environment walk, the route derivation, the
+  public-variant renderers, the runbook links; seconds together). CI's batched
+  run still runs the whole suite on every batch. The release, custody and
+  distribution scripts and their tests now load `@exawatt/core/release-provenance`
+  and `@exawatt/core/distribution` instead of the package root, and
+  `delivery-policy.test.mjs` refuses any script the suite loads or names that
+  reaches core another way, so the boundary is declared and enforced rather
+  than assumed. On the day's tickets: 46 of 96 runs (288 minutes) become a
+  pins run, about 250 check-minutes a day net.
+- **A pass is reused only on identical inputs.** `scripts/lib/check-reuse.mjs`
+  keys a recorded pass by SHA-256 over the exact committed tree, the command
+  and arguments, pnpm's installed lockfile, the Node version and platform, the
+  worktree's real path, and the distribution environment. Only listed checks
+  are eligible: never a surface gate or eval, never `type-check` (it builds
+  the core runtime the suite then loads), `electron:compile` or the community
+  build, never a caller's extra. A dirty worktree neither reuses nor records,
+  a pass is recorded only if the check left the tree clean, and a failed,
+  flaked or unreadable record is a miss. The ticket evidence, the metric
+  (`reused`) and the `STATUS` line (`reused=`) name every reuse.
+  `EXAWATT_CHECK_REUSE=0` turns it off. About 200 check-minutes a day.
+  Path-scoped reuse across a rebase was not built: lint and type-check are
+  whole-program, the related Vitest selection follows the import graph, and
+  five suite files read the whole tree, so no check on the list can show that
+  its inputs are a path subset today. ENG-039's module closure is what makes
+  that sound.
+- **One dogfood build per front.** `pnpm dogfood:request` writes the same
+  superseding request `--dogfood` writes, for `origin/master` (or `--sha`), and
+  starts the same worker. A coordinator lands N Electron-facing subworkstreams
+  without `--dogfood` and requests one build at the end.
+
+Together that is about 450 of the day's 1,423 check-minutes (32%), before the
+second-order effect: fewer concurrent suite runs is less load, which is fewer
+of the load failures that caused the 952 red minutes.
+
+BUG-288's cause, in this light: not a defect in `queue-hold.test.mjs`. Its
+fixture landing goes silent past the 60-second no-progress bound when three or
+four copies of the suite (11 workers each, every fixture spawning git and
+Node) overlap with unslotted runs and dev servers on 12 cores. The repair is
+less concurrent work, which the two changes above deliver, plus the cap shaped
+below; never a longer bound.
+
+The structural answer is shaped, not built, in ENG-039 M3:
+[module-owned verification is the delivery architecture](module-topology.md#2026-10-15--m3-shaped-module-owned-verification-is-the-delivery-architecture),
+with a merge train, a load-tied concurrency cap and incremental type-check
+under it.
 
 ## Delivery contention audit — 2026-08-03
 
@@ -89,7 +196,7 @@ cross-change contracts: `ExposeOverlay` was rendered without the newly required
 goal-visual preference provider, and a roadmap backlog addition did not update
 the parser's own-corpus expectation. The Linux gate found both only after
 `master` moved. H7 repairs the baseline and H10 moves this composition
-evidence to the exact pre-integration tree via the cheap changed-path floor;
+evidence to the exact pre-integration tree via the cheap changed-path landing checks;
 the hosted check remains as batched post-integration evidence.
 
 The earlier note below about two green branches composing a red master was
@@ -116,7 +223,7 @@ sequencer is retained as a measured contingency, not built as the first mile.
 
 ### Candidate: decentralized and cheap to abandon
 
-An agent verifies the repository-defined floor for its changed paths in its
+An agent verifies the repository-defined landing checks for its changed paths in its
 own worktree, in parallel with every other author, pushes the immutable
 `agent-attempts/*` ref, and takes a FIFO ticket. Expensive verification stays out
 here, where it serializes no one. Pull requests are a possible future
@@ -127,7 +234,7 @@ envelope for status and human review, but are not the architecture.
 Tickets are served strictly in order. The lander at the head of the queue
 holds the delivery lock for seconds: fetch, ancestor check, non-fast-forward
 push. Only if `origin/master` moved since the candidate's verification does
-it rerun the cheap exact-tree floor (generated route types, type-check, fast
+it rerun the cheap exact-tree landing checks (generated route types, type-check, fast
 tests chosen by changed-path policy) on the rebased tree — the scope that
 would have caught all three audited composition failures. The mechanism is
 explicit: the rebase happens in the author's own bootstrapped worktree, the
@@ -136,7 +243,7 @@ candidate is a new creation-only immutable attempt ref, so published
 history is never rewritten and the integrated SHA always equals the
 ticket's current pushed attempt. There is no separate gate checkout — a
 fresh detached worktree would need its own dependency bootstrap and would
-not be lightweight. A failing floor is a terminal candidate result with
+not be lightweight. A failing landing check is a terminal candidate result with
 actionable evidence; the next ticket proceeds, and no other author rebases
 or repeats a matrix because of it. The shared `master` checkout is off this
 path entirely: it receives a best-effort non-blocking sync after
@@ -212,7 +319,7 @@ architectural room, not active hosted work.
 Keep this infrastructure small: no HTTP service, database, always-on daemon,
 coordinator process, queue UI, pull-request automation, or second package
 command. The implementation is a ticket store, head-of-queue integration
-inside `agent:land`, the changed-path floor, and tests behind the existing
+inside `agent:land`, the changed-path landing checks, and tests behind the existing
 command.
 
 The authoritative operator/agent runbook is
@@ -236,7 +343,7 @@ authority never depends on a hosted result in this plan.
 
 Amended 2026-08-03 with decision `0030`'s contention-first amendment. The
 order is the leverage order: dogfood out of the lock is most of the win, the
-FIFO ticket makes the remainder fair, the floor makes it exact, and the
+FIFO ticket makes the remainder fair, the landing checks make it exact, and the
 verdict milestone decides whether the sequencer contingency is ever built.
 
 - **H7 CI truth, measurement, and the retry trap:** classify the current CI
@@ -244,7 +351,7 @@ verdict milestone decides whether the sequencer contingency is ever built.
   (`agent:land` ordinary-pushes an already-published candidate branch whose
   history the prescribed rebase rewrote — use a lease-protected update or a
   per-attempt ref), add cancellation for obsolete candidate runs, and record
-  queue wait (p50/p95), lock-hold duration, stale-stop count, floor failures,
+  queue wait (p50/p95), lock-hold duration, stale-stop count, check failures,
   Actions minutes, and dogfood freshness from one schema. Exit when ten
   consecutive current-master Linux runs are green and the measurements are
   emitted. Nothing else blocks on H7; H8 proceeds in parallel.
@@ -263,31 +370,31 @@ verdict milestone decides whether the sequencer contingency is ever built.
   (live-pid stale heartbeats surface to the operator, never auto-take); an
   operator-only bypass; the shared `master` checkout demoted to a
   best-effort post-integration sync that cannot block a landing. Requires
-  H7's attempt-ref fix, and authority is never floorless: until H10 lands,
-  a base-moved head landing reruns a hardcoded static floor (generated
+  H7's attempt-ref fix, and authority never goes unchecked: until H10 lands,
+  a base-moved head landing reruns a hardcoded static set of checks (generated
   route types, type-check, fast delivery tests) on the rebased tree. Exit
   when stress trials acquire strictly in ticket order, a killed head lander
   is taken over without duplicated integration or a lost candidate, a
   surviving-but-stalled head lander is NOT taken over, no orphaned
   candidate can disappear without a terminal result, and a dirty shared
   checkout no longer stops anyone.
-- **H10 Exact-tree floor and changed-path policy:** a repository-owned
-  classifier selects the always-on cheap floor (generated route types,
+- **H10 Exact-tree landing checks and changed-path policy:** a repository-owned
+  classifier selects the always-on cheap checks (generated route types,
   type-check, fast tests) plus explicit conditional Electron, browser, R3F,
   CI, and documentation checks from the changed paths; callers may add
-  evidence but cannot weaken the floor; the head lander reruns exactly the
-  floor when the base moved since candidate verification, replacing H9's
-  hardcoded static floor. Exit when only a commit whose exact integrated
-  tree passed the declared floor can reach `master`, the evidence is
+  evidence but cannot weaken them; the head lander reruns exactly those
+  checks when the base moved since candidate verification, replacing H9's
+  hardcoded static set. Exit when only a commit whose exact integrated
+  tree passed the declared checks can reach `master`, the evidence is
   attached to the candidate identity, and regression tests pin all three
   audited composition-failure classes.
 - **H11 Measured verdict:** run 30 representative landings and compare the H7
   schema against the audit baseline. "No red integrations" is defined
   observably — batched, cancellable CI cannot see every intermediate commit,
-  so the criteria are zero exact-floor escapes (no landing's floor run fails
+  so the criteria are zero exact-tree check escapes (no landing's check run fails
   against already-integrated `master`) and every completed queue-drain Linux
   batch green. Exit green when the 30 landings show zero stale-base
-  re-verification loops, zero floor escapes, all-green drain batches, p95
+  re-verification loops, zero check escapes, all-green drain batches, p95
   queue wait under three minutes at comparable load, and lower Actions
   minutes per integrated commit; otherwise exit with an explicit decision
   activating the `0030` elected-coordinator sequencer contingency. Remote
@@ -297,7 +404,7 @@ verdict milestone decides whether the sequencer contingency is ever built.
 Rollback is one switch: stop admitting local tickets, drain or cancel queued
 candidates, and return `agent:land` to the guarded direct fast-forward path.
 Remote candidate branches remain recoverable throughout. The existing delivery
-tests remain the recovery floor during the rollout.
+tests remain the recovery baseline during the rollout.
 
 ## Findings log
 
@@ -344,7 +451,7 @@ tests remain the recovery floor during the rollout.
   lockfile; this is the same guarantee for the server. `pnpm dev` now stamps
   the commit it started from (`EXAWATT_DEV_SOURCE_HEAD`, reported as
   `sourceHead` by `/api/dev-identity`). `runDeliveryChecks` gained a
-  `beforeCheck` hook, and before the first gate of each floor run that reads
+  `beforeCheck` hook, and before the first gate of each landing-check run that reads
   the server (every `SURFACE_GATES` entry but the three marked
   `server: 'packaged'`), `scripts/lib/landing-dev-server.mjs` compares the
   stamp with HEAD. It trusts a server started on an ancestor of HEAD whose
@@ -358,7 +465,7 @@ tests remain the recovery floor during the rollout.
   recognisably ours; a server another checkout or host owns is never
   touched, and a gate is refused when that server cannot show it serves HEAD.
   The refresh is lazy (a rebase whose gates all stood restarts nothing) and
-  runs inside the floor's machine slot, after the cheap checks passed.
+  runs inside the landing checks' machine slot, after the cheap checks passed.
   `scripts/landing-dev-server.test.mjs` drives real queues with a stand-in
   server that reports its start commit and a stand-in gate that fails unless
   it is HEAD: a head rebase over the gate's surface restarts the server
@@ -377,7 +484,7 @@ tests remain the recovery floor during the rollout.
   `electron/`, `packages/core/` and the lockfile; none under `src/`, because
   nothing upstream touched it). With `--verify eval:electron:delegation
   --verify eval:navigation-paint`, the landing reinstalled (lockfile moved),
-  ran the floor, then before the first gate printed `started before a
+  ran the landing checks, then before the first gate printed `started before a
   rebase; restarting it on cc08dc8fe0ff`, stopped the server's process group,
   cleared `.next/dev`, recompiled the Electron main, and had Next serving
   `sourceHead=cc08dc8f` 8.2 s later. Both gates ran on that one restart
@@ -512,7 +619,7 @@ tests remain the recovery floor during the rollout.
   module list from the directory, so a module added later owes project-agent
   without an edit; mutation-checked by removing that route.
 
-- 2026-09-24, BUG-219: **the landing now reinstalls before any floor checks a
+- 2026-09-24, BUG-219: **the landing now reinstalls before any landing check reads a
   stale tree.** Ticket 476 (the ENG-039 split) was admitted on
   `ea23a4a9`, rebased at the head onto `45418b49`, which carried
   `e3115004`'s jsdom 27.4 lockfile bump, and failed `test:agent-delivery` in
@@ -520,7 +627,7 @@ tests remain the recovery floor during the rollout.
   later. Nothing between the rebase and the re-check compared the install
   with the lockfile, although `install-freshness.mjs` already could.
   `reinstallWhenStale` now does, for the worktree lane only: before the
-  candidate floor (so a submitter's stale install is repaired, or refused
+  candidate checks (so a submitter's stale install is repaired, or refused
   before a ticket exists) and after every head rebase. It runs the frozen
   install `install-dogfood.mjs` uses, re-checks, and rebuilds node-pty when
   the install removed a binding the tree had, as `worktree:setup` would.
@@ -613,18 +720,18 @@ tests remain the recovery floor during the rollout.
   stale-async ratchet red on master for the same reason. An audit of all 110
   verification commands in `package.json` (`lint`, `type-check*`, `test*`,
   `eval:*`, `verify:*`, `qa:*`, `security:*`, `*:check|audit|scan|proof`),
-  deriving what runs each from the floor over every tracked path, the gate map,
+  deriving what runs each from the landing checks over every tracked path, the gate map,
   the pre-push hook and `ci.yml` (including what those run in turn, a Node test
   list inside a larger one, and a Vitest subset of the suite `test:ci` runs
   whole), found 46 run by nothing. Dispositions:
-  - Floor, by changed path: `theme:check` (anything under `src/`, `themes/`,
+  - Landing checks, by changed path: `theme:check` (anything under `src/`, `themes/`,
     `packages/ui-model/`, the generator or the ratchet; about two seconds),
     `agent-sources:check` and `icon:check` (their one editable source, the
     generator or an output), `company:proof` (`company/` or the composition
     scripts; thirteen seconds). Into `test:agent-delivery`:
     `check-production-theme-literals.test.mjs` (0.7 s) and the private
     `public-repository-security.test.mjs` (0.04 s). Nothing was added to the
-    unconditional floor. `icon:check` was already enforced indirectly, since
+    unconditional landing checks. `icon:check` was already enforced indirectly, since
     `app-icon.test.mjs` calls it at import; routing it by path keeps the
     derivation honest.
   - CI: `security:secrets`, the pinned gitleaks over the whole history
@@ -660,7 +767,7 @@ tests remain the recovery floor during the rollout.
   `eval:context-labels` naming `src/app/api/context-labels/route.test.ts`,
   which moved to the company overlay on 2026-08-17; Vitest ignored the stale
   filter and ran three of the four files. Eight mutations, all killed:
-  an unclassified command, `theme:check` unrouted from the floor, a stale
+  an unclassified command, `theme:check` unrouted from the landing checks, a stale
   entry, the spine gate without `src/app/layout.tsx`, the rail gate without
   its own script, a manual entry with no reason, a false gate claim, and a
   Vitest subset naming a moved file. The projected public tree omits
@@ -695,7 +802,7 @@ tests remain the recovery floor during the rollout.
   1.5 s, and passed twice more. Its surface gains the launcher's roadmap
   control, the declared-link projection and its script.
 
-- 2026-09-24, BUG-218: the two renderer tests the floor flagged as suspected
+- 2026-09-24, BUG-218: the two renderer tests the landing checks flagged as suspected
   flakes at load 35.9 (`privacy-settings`, `session-state-tile-study`) spent
   their time in jsdom's style engine, not in their own logic. A CPU profile of
   the tile study put 46% of it in `getComputedStyle` and 29% in building
@@ -738,13 +845,13 @@ tests remain the recovery floor during the rollout.
   the gallery's keyswitch workbench (1.0 s), `settings-client`'s shortcut
   policy (1.0 s) and `launch-controls.launching`'s six-menu drafts walk
   (1.0 s). None shares the loop shape; they are listed, not changed. Proposed,
-  not built: record per-test durations from the floor's Vitest checks in
+  not built: record per-test durations from the landing's Vitest checks in
   `metrics.jsonl` and report tests whose median passes a tenth of their
   timeout. A duration gate would flake by construction, and `scripts/` was
   being changed on another branch.
 
 - 2026-09-24, BUG-205: the stacked landing, ticket 466 (`516dccb9`),
-  showed that a head rebase re-ran the repository floor and never a declared
+  showed that a head rebase re-ran the repository's landing checks and never a declared
   surface gate, so gate evidence could describe a tree that never integrated.
   `surfaceGateRecheck` intersects each declared gate's `SURFACE_GATES` match
   set with `git diff --name-only <last verified base> <new base>`; an
@@ -778,7 +885,7 @@ tests remain the recovery floor during the rollout.
   request waits, a freed reserve stays closed to non-head work), and
   `scripts/queue-head-slot.test.mjs` drives a real queue with one pool slot
   held by a candidate's first check: the head rebases, re-checks with
-  `slotMode: acquired` and integrates while a new candidate's floor is still
+  `slotMode: acquired` and integrates while a new candidate's checks are still
   waiting for the pool. Four mutations, all killed. Together the five changes
   close H19; `test:agent-delivery`, 52% of all check time, is the open lever
   if check time is ever what dominates.
@@ -829,7 +936,7 @@ tests remain the recovery floor during the rollout.
   each against its own parent as the base and chaining the trees, the way
   `git rebase` applies them, so a commit that conflicts is caught even if a
   later one undoes it; it writes objects only, never the worktree, index or a
-  ref. `agent:land` runs it before the candidate floor, where a conflict is
+  ref. `agent:land` runs it before the candidate checks, where a conflict is
   refused with no ticket taken, and every `EXAWATT_AGENT_LAND_PROBE_SECONDS`
   (30) while the ticket waits, against origin's `master` read into the
   checkout's own `FETCH_HEAD` (`--refmap=`), so waiters never contend for the
@@ -841,19 +948,19 @@ tests remain the recovery floor during the rollout.
   while each waited: the probe reaches the head's verdict on all 20, would have
   failed them 2.2 of their 2.3 queued hours earlier (421 and 422 alone waited
   67 and 61 minutes), and 10 of the 20 already conflicted when their candidate
-  floor began, 45 minutes of floor time that now never runs.
+  checks began, 45 minutes of check time that now never runs.
   `scripts/conflict-probe.test.mjs` pins the replay (commit-by-commit, nothing
   on disk touched) and drives a real queue: with the head held at the delivery
   lock, a waiter whose file master rewrote leaves as `failed` while the head is
   still `integrating`, a clean waiter keeps its place and both land; a change
-  that already conflicts is refused before any floor check or admission; a
+  that already conflicts is refused before any landing check or admission; a
   zero interval turns the probe off. Six mutations, all killed.
 
 - 2026-09-24, BUG-201: the second change turns the public latch from a
   death into a wait. 11 of the 38 September deaths were the latch, 10 on one
   night and 6 of those after a complete re-check, because the head met the
   latch inside its final critical section, after rebasing and re-running its
-  floor, and failed with something its owner could not fix. The head now asks
+  landing checks, and failed with something its owner could not fix. The head now asks
   `checkPublicLatch` before any rebase: no public remote costs nothing,
   otherwise inside the delivery lock it honours a maintenance hold or repairs
   the pending catch-up of the integrated tip. A latch holds the head in
@@ -927,25 +1034,25 @@ tests remain the recovery floor during the rollout.
   the shared `master`, is never rebased and never has to be clean; afterwards
   it moves by `git reset --keep`, which refuses rather than overwrite another
   session's edit. The pre-push hook now refuses every push to origin's
-  `master` except the SHA `agent:land` states: its floor-verified final push
-  or the operator-gated `--direct` path. `scripts/docs-lane.test.mjs` drives
+  `master` except the SHA `agent:land` states: the final push of the SHA its
+  checks verified or the operator-gated `--direct` path. `scripts/docs-lane.test.mjs` drives
   this tree's real `agent-land.mjs` and hook against a bare local origin: a
   direct docs or code push is refused and origin does not move; the lane
   lands a docs commit from a shared checkout holding another session's dirty
   and untracked files and leaves them intact; it rebases onto a moved master
-  and re-runs the docs checks, not the full floor; and it refuses code and a
+  and re-runs the docs checks, not the full landing checks; and it refuses code and a
   failing docs check before taking a ticket.
 
 - 2026-09-23, BUG-195: the docs-only in-place path to `master` is sanctioned
   so the operator's question is answered before any landing, and it ran no
-  landing check at all. Three pushes on it broke things the floor would have
+  landing check at all. Three pushes on it broke things the landing checks would have
   refused: `e4b35dcf` and `23a6b2f8` wrote public-variant directives the
   projector rejects (BUG-131), and `0cbcb226` doubled one blank line before
   `### BUG-163`, so the public roadmap rendered with a seam, recipe-renderers
   failed eight subtests on master's own roadmap, and every queued landing
   failed its rebase checks until `594df51c`. The latency reason stands; the
   missing piece was a guard fast enough to sit in front of a push.
-  `pnpm docs:check` runs the floor's own docs checks (`classifyDocsChecks`:
+  `pnpm docs:check` runs the landing's own docs checks (`classifyDocsChecks`:
   recipe renderers, the roadmap contract, path classification, and the public
   content scan of the changed paths) in parallel and unslotted, about five
   seconds with the renderer test as the critical path. The versioned
@@ -954,12 +1061,12 @@ tests remain the recovery floor during the rollout.
   `master` that changes docs, and refuses it naming the failing check. It
   refuses before checking when the pushed commit is not the checkout or the
   checkout is dirty, since a pass over other files proves nothing.
-  `agent:land` excuses exactly the SHA its floor verified, and `--direct` is
+  `agent:land` excuses exactly the SHA its landing checks verified, and `--direct` is
   not excused. `scripts/docs-check.test.mjs` pushes to a local bare remote
   through the real hook: the recreated `0cbcb226` seam is refused on
   `recipe-renderers` and the remote does not move, a clean roadmap edit
-  passes, a push with no docs changes never starts the check, and a floor
-  signal for a different SHA does not excuse the seam. Disabling the hook
+  passes, a push with no docs changes never starts the check, and a
+  landing-check signal for a different SHA does not excuse the seam. Disabling the hook
   turns the seam test red.
 
 - 2026-09-23, H18 follow-up (BUG-160): the first thing the delivery-script
@@ -1028,7 +1135,7 @@ tests remain the recovery floor during the rollout.
   asserts the prerequisite precedes the resolver instead of merely asserting
   that both commands exist.
 
-- 2026-08-18, BUG-090: the floor's named test failures were the machine's, not
+- 2026-08-18, BUG-090: the landing's named test failures were the machine's, not
   the author's, and it took six landing attempts and most of an evening to
   establish that once. `agent:land` selects `test:related` from the changed
   paths, and for a module the whole app imports — the distribution contract in
@@ -1041,9 +1148,9 @@ tests remain the recovery floor during the rollout.
   delay: named failures read as "your change broke these", and a capable agent
   nearly went hunting in unrelated surfaces.
 
-  The floor now runs the diagnostic `agent-delivery.md` already prescribed. A
+  The landing now runs the diagnostic `agent-delivery.md` already prescribed. A
   failed vitest check re-runs exactly the files it named, once, in a single
-  worker (`pnpm test:alone`). Every file passing alone is `flaked`: the floor
+  worker (`pnpm test:alone`). Every file passing alone is `flaked`: the landing
   continues, and the flake is reported on the `STATUS` line, in the ticket
   evidence, and in `metrics.jsonl` with the file identities, the failing test
   names, and the load average at both runs, tallied per file so a genuine
@@ -1059,7 +1166,7 @@ tests remain the recovery floor during the rollout.
   to surface. A concurrency-aware admission gate was rejected on `0030`'s own
   arithmetic (it serializes expensive verification back into the critical path,
   and the evidence includes a landing that waited for load 12 and still failed);
-  narrowing the `test:related` selection was rejected as weakening the floor for
+  narrowing the `test:related` selection was rejected as weakening the landing checks for
   a machine condition, and belongs to ENG-039's module-owned verification;
   quarantining the `app-dom` files was rejected because their identities are not
   stable, so there is nothing to quarantine but the coverage itself.
@@ -1099,7 +1206,7 @@ tests remain the recovery floor during the rollout.
   CI now uses both CPUs on the dedicated private runner instead of inheriting
   the local fleet-safe 25% cap, and restores Node's compile cache. Local full,
   changed, and related commands keep the composable cap and share that cache;
-  the H10 related-test floor calls the same cached command. `test:changed` is an
+  the H10 related-test landing check calls the same cached command. `test:changed` is an
   immediate dependency-graph feedback loop, not a claim that file-level
   relatedness is the final architecture. ENG-039 records the larger accepted
   direction: explicit source modules own their public contracts, runtime
@@ -1113,7 +1220,7 @@ tests remain the recovery floor during the rollout.
   heartbeats, dead-PID-only recovery, immutable per-attempt remote refs, and a
   v1 JSONL metric stream. The head lander rebases in its own bootstrapped
   worktree, republishes the new immutable attempt, reruns the repository-owned
-  floor on that exact tree, and holds the legacy delivery lock only for the
+  landing checks on that exact tree, and holds the legacy delivery lock only for the
   final fetch/non-force push. The shared `master` checkout is best-effort
   post-integration state and a dirty checkout cannot reject a landing. A
   guarded `--direct` path requires the operator-only
@@ -1274,7 +1381,7 @@ not include the affected type gate.
 
 The earlier candidate remedies—another cheap check or an advisory lock—are
 superseded by decision `0030`. The lock already exists and is non-FIFO; the
-durable fix is a repository-owned policy floor attached to the exact tree at
+durable fix is repository-owned required checks attached to the exact tree at
 the head of the delivery queue (decision `0030` as amended). This record
 remains because it is the first observed product failure from the delivery
 model, not because its initial race theory remains active.
@@ -1283,7 +1390,7 @@ model, not because its initial race theory remains active.
 ## 2026-10-02 — one license inventory, both platform policies
 
 **Validate every platform from one inventory.** ENG-025 backend delivery ticket
-550 passed its initial floor, then its docs-only upstream rebase hit the license
+550 passed its initial landing checks, then its docs-only upstream rebase hit the license
 suite's 30-second guard: 699 delivery tests passed and that one test was
 cancelled. Install freshness remained true; the exact license file passed all
 11 cases alone, distinguishing contention from dependency or notice drift. The

@@ -5,6 +5,64 @@ this doc holds the narrative of each seam as it is adopted.
 
 ## Roadmap milestone log
 
+### 2026-10-15 — M3 shaped: module-owned verification is the delivery architecture
+
+From ENG-022's [delivery efficiency audit](agent-development-loop.md#delivery-efficiency-audit--2026-10-15)
+and the operator's direction the same day: "the architectural solution to
+this build mess is aggressive, smart modularization. Module boundaries are
+clear and rigid and well-defined, and work within a module gets [checked] by
+that module's [own checks]. Only under rare cases does 'the' full suite of
+tests / linting run. Maybe even separate repos in the future if we need to
+unclog delivery even further."
+
+Recommendation: module-owned verification is the delivery architecture, and
+ENG-022 builds its mechanisms rather than a parallel plan. Rigid module
+boundaries with declared public contracts and dependencies; a landing runs the
+checks of the modules it touches plus their dependents' contract tests; the
+whole-repo suite, whole-repo lint and whole-program type-check run only in the
+batched CI run, on a contract change, at a release, and once per merge-train
+batch. Nothing a change inside a module is verified against gets weaker: the
+module's own tests and its dependents' contract tests are the test-fix-test
+loop, and the whole-repo checks still run before anything ships.
+The delivery system is the first module and already works this way as of
+today: its own suite runs on its own changes, and its dependency on core is
+two declared entry points.
+
+Supporting mechanisms, in order of yield:
+
+1. **A merge train for the whole-repo checks.** The head takes every ready
+   ticket (each already green on its own module checks in its author's
+   worktree), composes them onto `master` in ticket order as one candidate
+   tree, runs the whole-repo checks once, and lands all of them; on failure it
+   bisects (GitHub merge queue and Bors both work this way). On 2026-10-15's
+   volume the whole-repo checks left after ENG-022 H22 are about 720 minutes a
+   day (lint 187, type-check 70, the delivery suite about 400, the community
+   build 66); run once per batch of three, that is about 240, a further 480
+   check-minutes a day, and the head's separate rebase re-check (139 minutes)
+   folds into the batch run. Risks: a
+   red batch costs a bisection (log2 n + 1 runs) and delays every ticket in
+   it, so the train needs the module checks to keep batches mostly green; and
+   it trades the September finding (deaths, not re-checks, were the lever)
+   only once deaths are rare, which is why it sits under module checks rather
+   than ahead of them.
+2. **A concurrency cap tied to load.** The slot pool releases a waiter
+   unslotted after 20 minutes, which is when load runs away (5 of 8 unslotted
+   suite runs failed). Cap `node --test` concurrency for the delivery suite
+   the way Vitest is capped at 25%, and scale the slot count with the load
+   average instead of a fixed three.
+3. **Incremental type-check.** `tsc --build` with project references per
+   module makes the whole-program check proportional to what changed; 70
+   minutes a day today, more once module checks make it the remaining
+   whole-program cost.
+4. **One dev server per worktree pool for gates.** 241 eval minutes and 22
+   restarts; worth doing only after the above.
+
+Separate repositories are a later option, not a plan: the trigger is that,
+with module-owned verification and the train in place, whole-repo checks
+still exceed half of check compute or p95 queue wait exceeds ten minutes at
+eight concurrent agents. The delivery tooling and `@exawatt/core` are the
+first candidates, since their boundaries are now declared.
+
 ### 2026-09-24 — the renderer's workspace state is a composition root
 
 **`use-workspace-state.ts` went from 3,718 lines to 518 and now composes 16
@@ -87,8 +145,8 @@ reworked on its own branch; the evals above are the ones it should name.
 ### 2026-09-24 — the stale-async ratchet finds guards by shape (BUG-206)
 
 **The ratchet that keeps the M0 `useLatestRequest` seam from eroding now
-finds guards by what they do, not what they are called, and the floor runs
-it.** It had matched a name list, so it saw 15 of the renderer's 33
+finds guards by what they do, not what they are called, and the landing
+checks run it.** It had matched a name list, so it saw 15 of the renderer's 33
 hand-rolled guards, counted two things that are not guards, and went red on
 master when `11825936` renamed a listed counter, because related-test
 selection never picks a test that imports nothing.
@@ -112,7 +170,7 @@ passed by name, and the three things it must ignore).
 | listed | 19 counts by file, no reasons | 26 by `file:name`, one reason each |
 | migrated to `useLatestRequest` | | 6: `update-password`, the Settings hotkey read, the untriaged-feedback sample (a flag and a counter, now one channel), the composer clipboard visit (`current()` + `invalidate()`, so pastes in one visit still all commit), the goal-visual study load |
 | a rename | red on master | one failure naming the old key under `gone` and the new site under `unlisted` |
-| run by | the full suite only | the landing floor, for any `src/` change |
+| run by | the full suite only | the landing checks, for any `src/` change |
 
 The 26 that stay fall in three groups, each line saying which: request
 generations whose owner holds them (the Agent Source settings channels, the

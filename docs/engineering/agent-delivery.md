@@ -19,7 +19,7 @@ sequencer-contingency review in decision `0030`.
 2. Implement and verify proportionally to the change. Commit every intended
    file and leave the worktree clean.
 3. Run `pnpm agent:land -- --verify <extra-script>`. Repeat `--verify` for
-   relevant evidence not already selected by the repository floor. Add
+   relevant evidence not already selected by the repository's landing checks. Add
    `--dogfood` for Electron-facing changes.
 4. Leave the process running until it reports a terminal result. Waiting for a
    FIFO turn is idle and holds no delivery lock.
@@ -41,14 +41,14 @@ when the CLI, access, network, or service is unavailable. This keeps a clean
 public clone self-sufficient without taking away the operator's linked-worktree
 convenience.
 
-`--verify` strengthens the candidate evidence; it does not define the minimum
-floor. The repository always owns that floor. `--keep-branch` retains immutable
+`--verify` strengthens the candidate evidence; it does not define the required
+checks. The repository always owns them. `--keep-branch` retains immutable
 attempt refs for diagnosis. `--direct` is an operator-only incident path, not a
 second normal workflow.
 
-Every floor run holds one machine slot while its checks execute (ENG-022
+Every landing-check run holds one machine slot while its checks execute (ENG-022
 H15, `scripts/lib/machine-slots.mjs`): a small machine-wide pool bounds how
-many floors, full test runs, and builds compute at once, so concurrent
+many landing-check runs, full test runs, and builds compute at once, so concurrent
 worktrees queue briefly instead of inflating each other's check durations by
 two orders of magnitude. The slot token is exported to child commands, making
 nested heavy commands reentrant. The pool is QoS, never a gate — acquisition
@@ -79,10 +79,10 @@ Recorded rather than closed. If it recurs, capture the FULL output (not the
 tail): a run that fails with no `×` line is an unhandled error or a dead
 worker, and that distinction is the whole diagnosis.
 
-Since BUG-090 the floor says this itself. A vitest check that exits non-zero
+Since BUG-090 the landing says this itself. A vitest check that exits non-zero
 and names no failing test file is reported as exactly that — an unhandled
 error or a dead worker, which no rerun can narrow — and nothing is re-run for
-it. The second intermittent below is the one the floor acts on.
+it. The second intermittent below is the one the landing acts on.
 
 ## A second intermittent: named failures under machine load
 
@@ -108,15 +108,15 @@ re-run the named files alone, and if that is ambiguous, run them against a
 detached `origin/master` worktree. A failure that reproduces on clean master
 is not yours. A failure whose IDENTITY changes between runs is nobody's.
 
-**The floor now runs the first step itself (BUG-090).** A failed vitest check
+**The landing now runs the first step itself (BUG-090).** A failed vitest check
 re-runs exactly the files it named, once, in a single worker
 (`pnpm test:alone <files...>`, which is also the hand command for the manual
-diagnostic). No timeout is raised anywhere; the rerun changes what the floor
+diagnostic). No timeout is raised anywhere; the rerun changes what the landing
 BELIEVES about a failure, never how long a test may take.
 
-| Rerun outcome                     | Floor result | What the author reads                                                                                                      |
+| Rerun outcome                     | Check result | What the author reads                                                                                                      |
 | --------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| every named file passes alone     | `flaked`     | `SUSPECTED FLAKE`, the files, the failing test names, both load averages; the floor **continues** and the landing proceeds |
+| every named file passes alone     | `flaked`     | `SUSPECTED FLAKE`, the files, the failing test names, both load averages; the checks **continue** and the landing proceeds |
 | any file fails again              | `failed`     | which files failed AGAIN in isolation (deterministic, and the author's), listed separately from the ones that did not      |
 | the rerun ran none of those files | `failed`     | inconclusive; the original failure stands, because a rerun that matched nothing is not evidence of a flake                 |
 | more than 25 files failed         | `failed`     | too wide for a targeted rerun; dozens of files failing at once is a break, not contention                                  |
@@ -138,14 +138,14 @@ load, not to edit tests. The cheap checks that stay honest under load are
 
 ## Surface gates
 
-The repository owns 31 eval gates and the changed-path floor routes to one.
+The repository owns 31 eval gates and the changed-path landing checks route to one.
 That is structural, not neglect: every browser and Electron eval needs a dev
-server the floor does not own (`EXA_BASE`), so it cannot run them unattended.
+server the landing checks do not own (`EXA_BASE`), so it cannot run them unattended.
 The consequence was that the most motion-sensitive surfaces in the app could
 change and land with no gate run at all, as long as the author forgot — and
 forgetting was silent.
 
-So the floor does not run these; it requires them to be **declared**.
+So the landing does not run these by default; it requires them to be **declared**.
 `missingSurfaceGates` in `scripts/lib/delivery-policy.mjs` maps changed paths
 to the gates they owe. `agent:land` refuses before any expensive work, naming
 the gate, the files that triggered it, and the exact commands:
@@ -201,7 +201,7 @@ from the checkout where the docs were committed, including the shared
   `floor_check` events with `lane: "docs"`.
 - It takes a queue ticket (`lane: "docs"`) and from then on is an ordinary
   ticket: it waits its turn, rebases at the head, re-runs the docs checks on
-  the rebased tree, and pushes with the floor-verified SHA.
+  the rebased tree, and pushes with the SHA its checks verified.
 - After integration it moves the invoking checkout to the integrated commit
   with `git reset --keep`, only when that checkout still points at the landed
   commit. `--keep` refuses rather than overwrite an uncommitted edit; the
@@ -218,7 +218,7 @@ so the setting re-asserts itself. A relative path means each checkout runs its
 own tree's hook. Any push to origin's `master` is refused, docs or code, and
 the refusal names both lanes. Two variables excuse exactly one SHA each:
 `agent:land` sets `EXAWATT_AGENT_LAND_FLOOR_SHA` on its final push to the SHA
-its floor just verified, and the operator-gated `--direct` path sets
+its landing checks just verified, and the operator-gated `--direct` path sets
 `EXAWATT_AGENT_LAND_DIRECT_SHA` to the SHA it pushes. Deleting `master` is
 refused too. Every push that does not target a master ref returns from the
 shell before node starts. `git push --no-verify` is for the recovery path
@@ -229,7 +229,7 @@ to a refusal is the docs lane or a worktree.
 
 | Stage     | Parallel or serialized               | Durable identity                                                        | Completion boundary                                                                                                   |
 | --------- | ------------------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Candidate | Parallel in each author's worktree   | committed candidate SHA and immutable `refs/heads/agent-attempts/*` ref | candidate floor passes and a FIFO ticket is admitted                                                                  |
+| Candidate | Parallel in each author's worktree   | committed candidate SHA and immutable `refs/heads/agent-attempts/*` ref | candidate checks pass and a FIFO ticket is admitted                                                                   |
 | Integrate | FIFO; only the head mutates `master` | ticket number, ownership epoch, current attempt SHA/ref                 | exact current attempt is reachable from `origin/master` and the ticket is terminal `integrated`                       |
 | Post      | Detached and superseding             | newest requested integrated SHA                                         | hosted CI is dispatched for the latest eligible batch; requested Electron work separately records `dogfood_installed` |
 
@@ -238,7 +238,7 @@ remote push, `agent:land` fetches and fast-forwards it only when it is clean and
 compatible. A dirty, absent, or stale shared checkout produces a warning and
 cannot turn a successful remote integration into a failure.
 
-## Candidate and repository-owned floor
+## Candidate and repository-owned landing checks
 
 `scripts/lib/delivery-policy.mjs` classifies paths changed from the candidate's
 merge base. Checks run before admission and their result, duration, phase, and
@@ -246,7 +246,7 @@ candidate SHA enter both the ticket evidence and the JSONL metric stream.
 
 | Condition                                                                               | Required check                                                                                                |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm lint`, `pnpm type-check`, and `pnpm test:agent-delivery` |
+| Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm lint`, `pnpm type-check`, and the delivery pins: the whole `pnpm test:agent-delivery` when a changed path can reach what it reads (`deliveryAffectingPath`), otherwise `PRODUCT_TREE_PINS`, the five suite files that read the product tree |
 | Changed JavaScript or TypeScript                                                        | the consumer-less export check (`pnpm exports:check`: a NEW export must have a consumer; existing ones are not counted), then the related Vitest selection, bounded to 25% workers, with one isolated rerun of any file it names failing |
 | Renderer source (`src/**`, `packages/ui-model/src/**`, the company overlay's `web/src/**`) | `pnpm copy:check` (no em dash in screen copy, BUG-207); for `src/**`, the stale-async ratchet (`src/hooks/use-latest-request.ratchet.test.ts`, BUG-206). Both read the whole tree and import nothing they check, so related-test selection cannot pick them |
 | Anything that paints or decides paint (`src/**`, `themes/**`, `packages/ui-model/**`, the theme generator and ratchet) | `pnpm theme:check` (themes valid, generated artifacts current, no production source invents a colour, BUG-208) |
@@ -261,9 +261,9 @@ candidate SHA enter both the ticket evidence and the JSONL metric stream.
 Every verification command in `package.json` (`lint`, `type-check*`,
 `test*`, `eval:*`, `verify:*`, `qa:*`, `security:*`, and `*:check`, `*:audit`,
 `*:scan`, `*:proof`) is classified in `VERIFICATION_ROUTES` in the same module
-as exactly one of: run by this floor, a declared surface gate, run in CI, or
+as exactly one of: run by these landing checks, a declared surface gate, run in CI, or
 manual with a one-line reason (BUG-208, BUG-211). `delivery-policy.test.mjs`
-derives what actually runs each command from this floor, `SURFACE_GATES`, the
+derives what actually runs each command from these landing checks, `SURFACE_GATES`, the
 pre-push hook and `ci.yml`, and fails on an unclassified command, a stale
 entry, or a route that does not run it. Adding a check therefore means routing
 it in the same change.
@@ -272,7 +272,31 @@ The command rejects an unknown extra script and forbids recursive delivery or
 dogfood installation as verification scripts. Verification must not dirty the
 worktree. Expensive checks may remain candidate-only evidence; when a base
 moves, the exact-tree rerun is the repository classifier's complete current
-floor, not the caller's arbitrary extra list.
+set of required checks, not the caller's arbitrary extra list.
+
+The whole delivery suite reads `scripts/`, the root files, CI and hooks,
+licences, Electron resources, a few named product files, and two
+`@exawatt/core` entry points (`@exawatt/core/distribution` and
+`@exawatt/core/release-provenance`, whose import closure is read from the tree
+being landed); `delivery-policy.test.mjs` refuses a delivery script that
+reaches core any other way. A change to anything else cannot change its
+verdict, so it runs only the pins that read the product tree. CI's batched
+run still runs the whole suite on every batch. A new delivery test that reads
+a product path adds that path to `deliveryAffectingPath` or joins
+`PRODUCT_TREE_PINS` in the same change.
+
+A check that already passed on exactly these inputs is reused instead of run
+again (`scripts/lib/check-reuse.mjs`). The key is a SHA-256 over the committed
+tree, the command and arguments, pnpm's installed lockfile, the Node version
+and platform, the worktree's real path, and the distribution environment, so
+a reuse can only stand in for an identical run: a resubmitted commit after a
+later check failed, or a rebased tree resubmitted as a candidate. Surface
+gates and evals, `type-check` (it builds the core runtime the delivery suite
+loads), `electron:compile`, the community build and caller extras always run.
+A dirty worktree neither reuses nor records, a pass is recorded only if the
+check left the tree clean, and a failed, flaked or unreadable record is a
+miss. The evidence and the metric carry `reused`, `STATUS` carries
+`reused=<checks>`, and `EXAWATT_CHECK_REUSE=0` turns reuse off.
 
 After candidate checks, the lander creates a new immutable remote attempt ref.
 It never force-updates published candidate history. A rebase creates a new SHA
@@ -355,14 +379,14 @@ When its ticket becomes head, the author process fetches `origin/master`.
   evidence for the exact attempted tree.
 - If not, the process rebases its own bootstrapped worktree. A conflict is
   aborted and becomes a terminal failure. A clean rebase gets a new immutable
-  attempt ref and reruns the repository floor against the rebased tree, plus
+  attempt ref and reruns the repository's landing checks against the rebased tree, plus
   every declared surface gate whose surface the commits it rebased over
   touched (BUG-205, below). When the rebase left `node_modules` behind the
   lockfile, it reinstalls before that re-check (BUG-219, below).
 - The process then acquires the repository delivery lock for only the final
   fetch, ancestor check, and non-force `HEAD:master` push.
 - If another writer wins that final race, the lock is released and the same
-  head ticket repeats the fetch/rebase/floor loop; the agent does not exit into
+  head ticket repeats the fetch/rebase/re-check loop; the agent does not exit into
   a conversational retry cycle.
 - If push output is ambiguous, the process fetches and checks attempt
   reachability before choosing a terminal result.
@@ -448,7 +472,7 @@ So the landing owns the dev server its gates read (BUG-246,
 `scripts/lib/landing-dev-server.mjs`). `run-next-with-distribution.mjs` stamps
 every dev server with the commit it started from, and `/api/dev-identity`
 reports it as `sourceHead`. Before each check that reads the server (the R3F
-floor and every gate except the `server: 'packaged'` ones in `SURFACE_GATES`),
+landing check and every gate except the `server: 'packaged'` ones in `SURFACE_GATES`),
 the landing compares that stamp with HEAD. A server that
 started on this tree, or on an ancestor of HEAD with every path changed since
 then one of the change's own, is trusted: the author's edits reached it
@@ -474,14 +498,14 @@ Each restart prints a line, records `server_refreshed`, and adds
 `server_refreshed=<phase>,...` to the status line. With no `EXA_BASE` the
 landing leaves each gate to choose its own target, as before.
 
-### A floor never checks a tree nobody installed
+### No landing check runs on a tree nobody installed
 
 Ticket 476's head rebase brought in `e3115004`, a jsdom lockfile bump. Nothing
 reinstalled, so its re-check ran `test:agent-delivery` against the pre-bump
 `node_modules` and failed on a combination nobody committed; the same change
 landed on its second ticket untouched.
 
-Now every worktree-lane floor run, the candidate's before admission and the
+Now every worktree-lane landing-check run, the candidate's before admission and the
 head's after each rebase, first asks `scripts/lib/install-freshness.mjs`
 whether `node_modules/.pnpm/lock.yaml` is the checked-out `pnpm-lock.yaml`.
 When it is not, `reinstallWhenStale` runs
@@ -494,7 +518,7 @@ Each reinstall prints a line, records an `install_refreshed` metric, and adds
 `reinstalled=<phase>,...` to the status line.
 
 A frozen install that fails means the committed lockfile does not satisfy
-`package.json`. At admission that stops the landing before the floor and
+`package.json`. At admission that stops the landing before its checks and
 before a ticket exists, naming the remedy; at the head it fails the ticket.
 Both record `install_refresh_failed`. The docs lane never installs: its
 temporary checkout borrows the invoking checkout's `node_modules` through
@@ -509,10 +533,10 @@ reaching the head. The verdict was knowable when the conflicting commit landed.
 So the conflict probe (BUG-202, `scripts/lib/conflict-probe.mjs`) asks
 earlier, with the head's own question:
 
-- Before the candidate floor, against the `origin/master` just fetched. A
+- Before the candidate checks, against the `origin/master` just fetched. A
   change that already conflicts is refused with the paths named, before any
   check runs and without a ticket. 10 of September's 20 conflicted tickets
-  were in this state when their floor started (45 minutes of floor time).
+  were in this state when their checks started (45 minutes of check time).
 - While the ticket waits, every `EXAWATT_AGENT_LAND_PROBE_SECONDS` (30), it
   reads where origin's `master` is (a fetch into this checkout's own
   `FETCH_HEAD` only, so waiters never contend for the `origin/master` ref
@@ -573,7 +597,7 @@ non-fast-forward refusal remains the last race guard.
 Success output distinguishes:
 
 - `implemented=<sha>`: the original committed candidate;
-- `verified=<checks>`: repository floor plus caller extras that passed;
+- `verified=<checks>`: repository landing checks plus caller extras that passed;
 - `pushed=<ref>`: the current immutable remote attempt identity;
 - `integrated=<sha>`: the exact SHA now reachable from `origin/master`;
 - `ci=queued|unsupported-remote|queue-failed`: whether the superseding hosted
@@ -590,6 +614,8 @@ Success output distinguishes:
 - `gates=rerun:<gate>,stood:<gate>`: after a head rebase, which declared
   surface gates re-ran on the rebased tree and whose pre-rebase evidence
   stood. Absent when the head did not rebase or declared no gate.
+- `reused=<check>,<check>(rebase)`: checks whose recorded pass on identical
+  inputs stood in for a run. Absent when every check ran.
 
 ## Batched hosted CI
 
@@ -602,11 +628,11 @@ are true:
 - no newer integration has replaced the request for 60 seconds;
 - the last paid dispatch is at least two hours old.
 
-The two-hour floor is the budget boundary from ENG-022's measured arithmetic:
+The two-hour minimum interval is the budget boundary from ENG-022's measured arithmetic:
 at the observed four-to-six-minute job duration it caps automatic dispatch at
 twelve per day instead of the 78 landings observed on a peak day. There is no
 maximum-wait escape hatch. A continuously busy queue may delay hosted evidence
-because the exact local floor, not GitHub Actions, owns merge authority. An
+because the exact local landing checks, not GitHub Actions, owns merge authority. An
 urgent operator check remains available through the workflow's manual dispatch.
 
 When eligible, the worker fetches current `origin/master` and advances the
@@ -667,6 +693,16 @@ only after successful installation; `dogfood_installed` records freshness. A
 failure emits `dogfood_failed` and leaves the request recoverable for a later
 worker.
 
+**One build per front.** The worker starts as soon as the queue drains, and
+with several agents landing the queue drains between almost every pair of
+landings, so per-landing `--dogfood` produced one build per landing on
+2026-10-15 (11 requests, 11 builds). A coordinator landing N Electron-facing
+subworkstreams lands each without `--dogfood` and, once the last one has
+integrated, runs `pnpm dogfood:request` (or `pnpm dogfood:request -- --sha
+<integrated-sha>`). It writes the same superseding request and starts the same
+worker, so the front costs one build of the `master` that composes all of it.
+The installation evidence rule below is unchanged.
+
 For closeout requiring installation proof, check either the metric stream or
 the machine-local update state and compare its `installedSha` to the requested
 integrated SHA. A landing's `installed=queued` line alone is insufficient.
@@ -712,7 +748,7 @@ it records the reason in the source lock.
 never merged into by a human — that would end the fast-forward property — so an
 approved pull request is fetched, refused unless its CLA check is green,
 applied onto a fresh `agent/contrib-<n>` worktree with `git am --3way`, and
-handed to the normal landing floor. `git am` preserves authorship, so the
+handed to the normal landing checks. `git am` preserves authorship, so the
 contributor's own commit is what the projector publishes.
 
 ## Metrics and rollout verdict
@@ -721,7 +757,7 @@ contributor's own commit is what the projector publishes.
 
 | Event                                                                                                         | Important fields                                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `floor_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, the run's `slotMode` and `slotWaitMs`, and for a flake the file identities, failing test names, and load average at the failure and the rerun |
+| `floor_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, the run's `slotMode` and `slotWaitMs`, `reused` (the candidate SHA and time of the pass it stood on) when no run happened, and for a flake the file identities, failing test names, and load average at the failure and the rerun |
 | `queue_admitted`                                                                                              | ticket ID/number and candidate SHA                                                                                                                                                                            |
 | `stale_owner`                                                                                                 | ticket, live PID, heartbeat age; no takeover occurred                                                                                                                                                         |
 | `stale_stop`                                                                                                  | prior and current bases before an automatic rebase                                                                                                                                                            |
@@ -733,15 +769,15 @@ contributor's own commit is what the projector publishes.
 | `public_projection`                                                                                           | projection state, private/public SHA pair, duration, and when it did not publish the failure class (`deterministic`/`transient`) and the unrenderable private commit, file and check                         |
 | `public_reseed`                                                                                               | deliberate non-fast-forward: SHA pair, replaced public tip, reason                                                                                                                                            |
 | `gate_recheck`                                                                                                | a head rebase with declared surface gates: ticket, old and new base, the gates that re-ran with the upstream paths on their surface, and the gates whose evidence stood |
-| `install_refreshed` / `install_refresh_failed`                                                                 | a floor run found `node_modules` stale against the lockfile: `phase` (`candidate`/`rebase`), ticket, SHA, what was stale, install duration, whether node-pty was rebuilt; or the install's failure |
+| `install_refreshed` / `install_refresh_failed`                                                                 | a landing-check run found `node_modules` stale against the lockfile: `phase` (`candidate`/`rebase`), ticket, SHA, what was stale, install duration, whether node-pty was rebuilt; or the install's failure |
 | `server_refreshed` / `server_refresh_failed` / `server_refused`                                                | the landing restarted the `EXA_BASE` dev server before a gate: `phase`, `gate`, `reason` (`rebased`, `merged`, `unstamped`, `not-running`, ...), the commit it had started from and the HEAD it serves now, moved-path count, stopped PIDs, whether the Electron main was recompiled, duration; or why it did not come back, or why a server it does not own was refused |
-| `probe_conflict`                                                                                              | `phase` (`candidate` before the floor, `queued` while waiting), ticket, the `origin/master` it replayed onto, the first conflicting commit, the paths, and for a queued ticket how long it had waited |
+| `probe_conflict`                                                                                              | `phase` (`candidate` before the checks, `queued` while waiting), ticket, the `origin/master` it replayed onto, the first conflicting commit, the paths, and for a queued ticket how long it had waited |
 | `queue_hold` / `queue_hold_released`                                                                          | the head held on a latched publication: ticket, `failure` class and the `publicLatch` record; on release the `outcome` (`released`/`expired`) and `heldMs`. A failed ticket's `queue_terminal` carries `publicLatch` and `queueHold` |
 
 `summarizeDeliveryMetrics` computes integrated and failed counts, queue p50/p95,
-lock p95, stale-stop and floor-failure counts, suspected-flake counts with a
+lock p95, stale-stop and check-failure counts, suspected-flake counts with a
 per-file tally, Actions minutes, and dogfood freshness p95. ENG-022 H11—not an individual successful landing—owns the
-30-landing verdict: zero exact-floor escapes, every completed queue-drain Linux
+30-landing verdict: zero exact-tree check escapes, every completed queue-drain Linux
 batch green, no stale-base conversational loops, p95 queue wait below three
 minutes at comparable load, and lower Actions minutes per integrated commit.
 
@@ -762,7 +798,7 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Candidate verification fails before admission                    | Fix the root cause in the same worktree, commit, and run `agent:land` again. No ticket exists yet.                                                                                                                                                                |
 | A landing stops with `pnpm install --frozen-lockfile --prefer-offline` failed | The committed `pnpm-lock.yaml` does not satisfy `package.json`. Run `pnpm install`, commit the lockfile it writes, and land again. At admission no ticket was taken. |
 | A rebase or probe prints `[exawatt-append] ... both sides introduce <id>` | Two changes took the same id. Renumber yours with `pnpm id:next <kind>`, update every reference, and land again. |
-| A change or ticket reports `would conflict when rebased onto origin/master` | The conflict probe reached the head's verdict early: before the floor (no ticket was taken) or while the ticket waited (it is `failed` with `probeConflict` in its result). Rebase onto `origin/master`, resolve the named paths, re-verify, and land again. |
+| A change or ticket reports `would conflict when rebased onto origin/master` | The conflict probe reached the head's verdict early: before the checks (no ticket was taken) or while the ticket waited (it is `failed` with `probeConflict` in its result). Rebase onto `origin/master`, resolve the named paths, re-verify, and land again. |
 | A landing fails with `surface gate <gate> re-ran on the rebased tree` | The commits it rebased over touched that gate's surface, and the gate failed on the combination against a server the landing had just made serve that tree. Rebase, reproduce the gate, and fix it. |
 | A landing stops with `the dev server at <base> did not come back after the <phase> refresh` | The landing restarted the server for the tree it was about to gate and `pnpm dev` never served it. Read `.next/landing-dev-server.log` in the worktree, fix what stops `pnpm dev`, and land again. |
 | A landing stops with `refusing to run <gate> against <base>` | `EXA_BASE` names a server this worktree does not own (another checkout's, a remote host) that cannot show it serves HEAD. Point `EXA_BASE` at a local port this worktree serves, or at a free one. |
@@ -797,7 +833,7 @@ EXAWATT_AGENT_LAND_ALLOW_DIRECT=1 pnpm agent:land -- --direct
 
 It still requires a clean committed `agent/*` worktree whose `HEAD` is a current
 fast-forward of `origin/master`, and it still uses the final delivery lock and a
-non-force push. It bypasses queue admission, repository-floor execution,
+non-force push. It bypasses queue admission, the repository's landing checks,
 dogfood request handling, ticket metrics, and normal attempt cleanup. Use it
 only for a diagnosed queue incident or explicit rollback—not to avoid waiting,
 verification, or a live owner's ticket.
@@ -816,7 +852,7 @@ verification, or a live owner's ticket.
   `.gitattributes`, and `scripts/hooks-install.mjs`: the append-only docs
   merge driver, its scope, and its install.
 - `scripts/id-next.mjs` and `scripts/lib/id-counter.mjs`: the id counter.
-- `scripts/lib/delivery-policy.mjs`: changed-path floor and check evidence.
+- `scripts/lib/delivery-policy.mjs`: changed-path landing checks and check evidence.
 - `scripts/lib/delivery-state.mjs`: common-dir paths, atomic JSON, metrics, and
   rollup calculations.
 - `electron/main/roadmap/roadmap-landings.ts` (ENG-017 S16): the roadmap
@@ -830,9 +866,12 @@ verification, or a live owner's ticket.
 - `scripts/lib/ci-batch.mjs` and `scripts/ci-batch-worker.mjs`:
   superseding CI request, queue-drain/cadence eligibility, and the dedicated
   remote batch ref.
-- `scripts/lib/dogfood-queue.mjs`, `scripts/dogfood-worker.mjs`, and
-  `scripts/install-dogfood.mjs`: superseding request, detached consumption, and
-  verified atomic install.
+- `scripts/lib/dogfood-queue.mjs`, `scripts/dogfood-worker.mjs`,
+  `scripts/dogfood-request.mjs`, and `scripts/install-dogfood.mjs`: superseding
+  request (per landing or once per front), detached consumption, and verified
+  atomic install.
+- `scripts/lib/check-reuse.mjs`: the content-hash key and records behind
+  reused landing-check passes.
 - `scripts/lib/public-delivery.mjs`, `scripts/lib/public-projection.mjs`,
   `scripts/lib/public-source-lock.mjs`, and `scripts/open-source-reseed.mjs`:
   the outbound projection, its fast-forward refusal, the recorded SHA pairs,
@@ -841,7 +880,7 @@ verification, or a live owner's ticket.
   refusal.
 - `scripts/docs-check.mjs`, `scripts/lib/docs-check.mjs`,
   `scripts/lib/docs-lane.mjs`, and `.githooks/pre-push`: the docs subset of
-  the floor, the docs lane's temporary checkout and invoking-checkout sync,
+  the landing checks, the docs lane's temporary checkout and invoking-checkout sync,
   and the pre-push guard that leaves `agent:land` the only writer of
   `master`.
 - `scripts/agent-land.test.mjs`, `scripts/ci-batch.test.mjs`,
