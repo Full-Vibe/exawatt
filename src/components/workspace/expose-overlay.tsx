@@ -94,7 +94,6 @@ import {
 import { ChatterView } from '@/components/team/chatter/chatter-view';
 import type { ChatterParticipant } from '@/components/team/chatter/chatter-endpoint';
 import { useBusMessages, useProjectUnread } from '@/lib/bus/use-bus';
-import { agentNameOf, useAgentNames } from '@/lib/agent-names/agent-name-store';
 import {
   useProjectRoadmap,
   type RoadmapLandingsSource,
@@ -588,9 +587,8 @@ export function ExposeOverlay({
   const chatter = useBusMessages(chatterProjectId);
   const chatterUnread = useProjectUnread(chatterProjectId, chatter.state);
   // Chatter names a Session by its Agent name (claude-1, codex-2; ENG-029
-  // C4), falling back to the tile's label while main has not named it, and
-  // opens its tab
-  const agentNames = useAgentNames();
+  // C4) from the same names the tiles print, falling back to the tile's label
+  // while main has not named it, and opens its tab
   const chatterParticipants = useMemo(() => {
     const map = new Map<string, ChatterParticipant>();
     for (const tile of tiles) {
