@@ -83,6 +83,8 @@ export function context(
       commands.push({ executable, args });
       return { exitCode: 0, stdout: '', stderr: '' };
     },
+    // A Session whose environment names nothing: the door falls back.
+    sourceEnvironment: async () => ({}),
     commands,
     ...overrides,
   };

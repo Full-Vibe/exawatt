@@ -11,7 +11,8 @@
  * carries `crossSessionInbound: accept`, so a YOLO launch delivers too.
  *
  * Exawatt allocates the session id (`--session-id`), so the registry entry is
- * found by that id, never by recency or cwd.
+ * found by that id, never by recency or cwd, in the config directory the
+ * Session's own environment names.
  */
 import fs from 'fs';
 import net from 'net';
@@ -30,15 +31,17 @@ interface ClaudeRegistryEntry {
 }
 
 interface ClaudeSocketOptions {
-  /** `CLAUDE_CONFIG_DIR`, else `~/.claude`: where Claude Code registers. */
-  configDir?: () => string;
   /** Whether a registered pid is still running. */
   alive?: (pid: number) => boolean;
 }
 
-function defaultConfigDir(): string {
+/** Where this Session's Claude Code registered: its own `CLAUDE_CONFIG_DIR`,
+ *  else `~/.claude` under its own HOME. Never Exawatt's environment, which
+ *  lacks what a shell startup file sets when the app is opened from Finder. */
+function configDirOf(environment: Record<string, string | undefined>): string {
   return (
-    process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), '.claude')
+    environment.CLAUDE_CONFIG_DIR?.trim() ||
+    path.join(environment.HOME?.trim() || os.homedir(), '.claude')
   );
 }
 
@@ -121,7 +124,6 @@ function postLine(socketPath: string, line: string): Promise<string | null> {
 export function claudeSocketTransport(
   options: ClaudeSocketOptions = {}
 ): BusTransport {
-  const configDir = options.configDir ?? defaultConfigDir;
   const alive = options.alive ?? processAlive;
   return {
     kind: ADAPTER,
@@ -137,7 +139,7 @@ export function claudeSocketTransport(
         };
       }
       const socket = await findClaudeSocket(
-        path.join(configDir(), 'sessions'),
+        path.join(configDirOf(await context.sourceEnvironment()), 'sessions'),
         target.harnessSessionId,
         alive
       );

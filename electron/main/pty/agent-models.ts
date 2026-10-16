@@ -1149,7 +1149,7 @@ const CLAUDE_SETTINGS_GRAMMAR: ConfigFileGrammar<Record<string, unknown>> = {
   parse: parseClaudeSettingsText,
 };
 
-async function loginModelEnvironment(
+export async function loginModelEnvironment(
   shell: string,
   cwd: string
 ): Promise<NodeJS.ProcessEnv> {

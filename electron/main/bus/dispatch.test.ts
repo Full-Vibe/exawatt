@@ -133,6 +133,7 @@ function world(
     contextFor: () => ({
       terminal: terminal.door,
       runSourceCommand: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      sourceEnvironment: async () => ({}),
     }),
     harnessLabel: harness =>
       harness === 'operator' ? 'the operator' : `${harness}-label`,

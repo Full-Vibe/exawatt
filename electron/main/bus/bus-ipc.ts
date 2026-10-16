@@ -20,7 +20,8 @@ import { harnessEventChannel } from '../harness-events/channel';
 import { delegationMonitor } from '../harness-events/delegation-monitor';
 import { attentionMonitor } from '../pty/attention-monitor';
 import { harnessDescriptor } from '../pty/harness-registry';
-import { ptySessions } from '../pty/session-manager';
+import { loginModelEnvironment } from '../pty/agent-models';
+import { defaultShell, ptySessions } from '../pty/session-manager';
 import { BusDirectory } from './directory';
 import { BusDispatcher, type BusReplyDoor } from './dispatch';
 import { installBusExecutable, installBusMcpServer } from './executable';
@@ -111,6 +112,21 @@ export function registerBusIPC(userData: string): void {
     },
   });
 
+  // Each Session's login-shell environment, resolved once per process: a
+  // launch's environment does not change while it runs.
+  const sourceEnvironments = new Map<string, Promise<NodeJS.ProcessEnv>>();
+  const sourceEnvironmentOf = (target: { ptyId: string; cwd: string }) => {
+    let environment = sourceEnvironments.get(target.ptyId);
+    if (!environment) {
+      environment = defaultShell().then(shell =>
+        loginModelEnvironment(shell, target.cwd)
+      );
+      sourceEnvironments.set(target.ptyId, environment);
+    }
+    return environment;
+  };
+  ptySessions.on('exit', (id: string) => sourceEnvironments.delete(id));
+
   // How each Session can answer, recorded from what its launch actually
   // received; a Session with no record is offered the command alone.
   const replyDoors = new Map<string, BusReplyDoor>();
@@ -125,6 +141,7 @@ export function registerBusIPC(userData: string): void {
       terminal: terminals.doorFor(target.ptyId),
       runSourceCommand: (executable, args) =>
         runSourceCommand(target.cwd, process.env, executable, args),
+      sourceEnvironment: () => sourceEnvironmentOf(target),
     }),
     harnessLabel,
     onRecord: record =>

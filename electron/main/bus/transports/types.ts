@@ -60,6 +60,11 @@ export interface BusDeliveryContext {
     executable: string,
     args: readonly SourceCommandArg[]
   ): Promise<SourceCommandResult>;
+  /** The environment the Session's source runs with: its login shell's,
+   *  resolved in its directory from the launch's own, so a variable set in
+   *  a shell startup file is there even when Exawatt was opened from the
+   *  Finder. */
+  sourceEnvironment(): Promise<Record<string, string | undefined>>;
 }
 
 /** What the recipient is doing, from the existing turn truth and its

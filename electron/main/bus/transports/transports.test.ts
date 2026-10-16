@@ -61,14 +61,19 @@ async function claudeSession(dir: string, sessionId: string) {
   return { socketPath, received, server, firstMessage };
 }
 
+/** The Session's own environment, naming `dir` as Claude's config dir. */
+function claudeHome(dir: string) {
+  return async () => ({ CLAUDE_CONFIG_DIR: dir });
+}
+
 describe('claude-socket', () => {
   const sessionId = target().harnessSessionId!;
 
   it('posts one JSON user line carrying exactly the stamped text, and reads delivered', async () => {
     const dir = scratch();
     const claude = await claudeSession(dir, sessionId);
-    const transport = claudeSocketTransport({ configDir: () => dir });
-    const ctx = context();
+    const transport = claudeSocketTransport();
+    const ctx = context({ sourceEnvironment: claudeHome(dir) });
     const result = await transport.deliver(envelope, target(), ctx);
     expect(result).toEqual({ state: 'delivered', adapter: 'claude-socket' });
     await claude.firstMessage;
@@ -101,19 +106,22 @@ describe('claude-socket', () => {
   it('reads undeliverable, with the reason, when no live session holds the id', async () => {
     const dir = scratch();
     await claudeSession(dir, sessionId);
-    const dead = claudeSocketTransport({
-      configDir: () => dir,
-      alive: () => false,
-    });
-    const result = await dead.deliver(envelope, target(), context());
+    const dead = claudeSocketTransport({ alive: () => false });
+    const result = await dead.deliver(
+      envelope,
+      target(),
+      context({ sourceEnvironment: claudeHome(dir) })
+    );
     expect(result.state).toBe('undeliverable');
     expect(result.reason).toMatch(/socket/);
   });
 
   it('reads undeliverable before Claude Code has named its conversation', async () => {
-    const result = await claudeSocketTransport({
-      configDir: () => scratch(),
-    }).deliver(envelope, target({ harnessSessionId: null }), context());
+    const result = await claudeSocketTransport().deliver(
+      envelope,
+      target({ harnessSessionId: null }),
+      context({ sourceEnvironment: claudeHome(scratch()) })
+    );
     expect(result.state).toBe('undeliverable');
   });
 
@@ -121,11 +129,45 @@ describe('claude-socket', () => {
     const dir = scratch();
     const claude = await claudeSession(dir, sessionId);
     await new Promise<void>(resolve => claude.server.close(() => resolve()));
-    const result = await claudeSocketTransport({
-      configDir: () => dir,
-    }).deliver(envelope, target(), context());
+    const result = await claudeSocketTransport().deliver(
+      envelope,
+      target(),
+      context({ sourceEnvironment: claudeHome(dir) })
+    );
     expect(result.state).toBe('undeliverable');
     expect(result.reason).toMatch(/refused/);
+  });
+
+  it('looks where the Session’s own environment says Claude registered, never Exawatt’s', async () => {
+    const dir = scratch();
+    const claude = await claudeSession(dir, sessionId);
+    // A Finder-launched Exawatt lacks the shell's CLAUDE_CONFIG_DIR (here,
+    // it even names another one); the Session's login shell has it.
+    const before = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = scratch();
+    cleanups.push(() => {
+      if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = before;
+    });
+    const result = await claudeSocketTransport().deliver(
+      envelope,
+      target(),
+      context({ sourceEnvironment: claudeHome(dir) })
+    );
+    expect(result.state).toBe('delivered');
+    await claude.firstMessage;
+  });
+
+  it('falls back to the Session’s own HOME when it sets no CLAUDE_CONFIG_DIR', async () => {
+    const home = scratch();
+    const claude = await claudeSession(path.join(home, '.claude'), sessionId);
+    const result = await claudeSocketTransport().deliver(
+      envelope,
+      target(),
+      context({ sourceEnvironment: async () => ({ HOME: home }) })
+    );
+    expect(result.state).toBe('delivered');
+    await claude.firstMessage;
   });
 });
 
