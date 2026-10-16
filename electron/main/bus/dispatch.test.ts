@@ -12,11 +12,15 @@ import {
 import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 import { BusDirectory } from './directory';
 import { BUS_MCP_SEND_TOOL } from './mcp-server';
-import { BusDispatcher, type BusDoors } from './dispatch';
+import { BusDispatcher, type BusDoors, type BusReplyDoor } from './dispatch';
 import { JsonlBusStore, type BusStore } from './ledger';
 import type { RecipientStateSource } from './recipient-state';
 import { BUS_MAX_TEXT_CHARS } from './stamping';
-import type { BusTransport, RecipientState } from './transports/types';
+import type {
+  BusTarget,
+  BusTransport,
+  RecipientState,
+} from './transports/types';
 import { terminalInputTransport } from './transports/terminal-input';
 import { recordingTerminal } from './transports/fixtures.test-support';
 
@@ -110,7 +114,8 @@ function world(
   sessions: PtySessionRecord[],
   doors: Partial<Record<AgentHarness, BusDoors>>,
   states: Record<string, RecipientState> = {},
-  wrapStore: (store: BusStore) => BusStore = store => store
+  wrapStore: (store: BusStore) => BusStore = store => store,
+  replyDoorOf: (target: BusTarget) => BusReplyDoor | undefined = () => undefined
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bus-dispatch-'));
   roots.push(root);
@@ -124,6 +129,7 @@ function world(
     store: wrapStore(store),
     recipients: live,
     doorsOf: harness => doors[harness] ?? { agent: null, operator: null },
+    replyDoorOf,
     contextFor: () => ({
       terminal: terminal.door,
       runSourceCommand: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
@@ -334,7 +340,9 @@ describe('a peer message', () => {
     const result = await second;
     expect(result.delivery).toMatchObject({
       state: 'undeliverable',
-      reason: expect.stringMatching(/@claude-1 ended before it could read this/),
+      reason: expect.stringMatching(
+        /@claude-1 ended before it could read this/
+      ),
       adapter: 'claude-socket',
     });
     expect(handed).toHaveLength(1);
@@ -512,9 +520,9 @@ describe('an operator message (the user’s turn)', () => {
       '\x1b[200~second\x1b[201~',
     ]);
     const read = await store.read('/work/app');
-    expect(read.ok && read.records.map(record => record.delivery.state)).toEqual(
-      ['delivered', 'delivered']
-    );
+    expect(
+      read.ok && read.records.map(record => record.delivery.state)
+    ).toEqual(['delivered', 'delivered']);
   });
 
   it('refuses a held message its log write failed, and still delivers the one behind it', async () => {
@@ -606,17 +614,32 @@ describe('an operator message (the user’s turn)', () => {
 });
 
 describe('the reply hint', () => {
-  it('names the send tool when the recipient’s harness declares an MCP door, and only then', async () => {
-    const withTool = fixtureDoor('claude-socket');
-    const withoutTool = fixtureDoor('codex-queue');
-    const { dispatcher } = world(sessions, {
-      claude: {
-        agent: withTool.transport,
-        operator: null,
-        outbound: { mcp: {} },
+  const claudeSender: BusSender = {
+    ...codexSender,
+    sessionId: 'session-pty-2',
+    name: 'claude-1',
+    harness: 'claude',
+  };
+
+  it('comes from what the recipient’s own launch received, not what its harness declares', async () => {
+    const claude = fixtureDoor('claude-socket');
+    const codex = fixtureDoor('codex-queue');
+    const replyDoors: Record<string, BusReplyDoor> = {
+      // Its launch received the MCP server.
+      'pty-2': { tool: true, commandSandboxed: false },
+      // Its harness declares an MCP binding, but this launch went without.
+      'pty-1': { tool: false, commandSandboxed: false },
+    };
+    const { dispatcher } = world(
+      sessions,
+      {
+        claude: { agent: claude.transport, operator: null },
+        codex: { agent: codex.transport, operator: null },
       },
-      codex: { agent: withoutTool.transport, operator: null },
-    });
+      {},
+      undefined,
+      target => replyDoors[target.ptyId]
+    );
     await dispatcher.send({
       from: codexSender,
       projectId: '/work/app',
@@ -625,20 +648,37 @@ describe('the reply hint', () => {
       senderSessionId: codexSender.sessionId,
     });
     await dispatcher.send({
-      from: {
-        ...codexSender,
-        sessionId: 'session-pty-2',
-        name: 'claude-1',
-        harness: 'claude',
-      },
+      from: claudeSender,
       projectId: '/work/app',
       to: '@codex-2',
       text: 'two',
       senderSessionId: 'session-pty-2',
     });
-    expect(withTool.handed[0].text.split('\n')[0]).toContain(BUS_MCP_SEND_TOOL);
-    expect(withoutTool.handed[0].text.split('\n')[0]).not.toContain(
-      BUS_MCP_SEND_TOOL
+    expect(claude.handed[0].text.split('\n')[0]).toContain(BUS_MCP_SEND_TOOL);
+    const withoutTool = codex.handed[0].text.split('\n')[0];
+    expect(withoutTool).not.toContain(BUS_MCP_SEND_TOOL);
+    expect(withoutTool).toContain('exawatt send @claude-1');
+    expect(withoutTool).not.toMatch(/sandbox/);
+  });
+
+  it('warns a recipient whose sandbox refuses the command and that has no tool', async () => {
+    const codex = fixtureDoor('codex-queue');
+    const { dispatcher } = world(
+      sessions,
+      { codex: { agent: codex.transport, operator: null } },
+      {},
+      undefined,
+      () => ({ tool: false, commandSandboxed: true })
+    );
+    await dispatcher.send({
+      from: claudeSender,
+      projectId: '/work/app',
+      to: '@codex-2',
+      text: 'two',
+      senderSessionId: 'session-pty-2',
+    });
+    expect(codex.handed[0].text.split('\n')[0]).toMatch(
+      /exawatt send @claude-1.*sandbox may block/
     );
   });
 });

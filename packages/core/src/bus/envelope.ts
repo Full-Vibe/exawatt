@@ -34,6 +34,10 @@ export interface BusStampLabels {
    *  its harness takes the MCP door; offered first because it works where a
    *  shell sandbox refuses the `exawatt` command's network request. */
   replyTool?: string | null;
+  /** The recipient's own sandbox refuses the `exawatt` command's network
+   *  request (Codex's workspace-write, B2). Said plainly when it has no
+   *  send tool, so a refused reply is not a mystery. */
+  replyCommandSandboxed?: boolean;
 }
 
 /** The first line a recipient Agent reads. Never starts with `/`. */
@@ -48,7 +52,9 @@ export function busStampLine(
     `${labels.projectName}. ` +
     (labels.replyTool
       ? `Reply with your ${labels.replyTool} tool (to: @${handle}) or run: ${command}`
-      : `Reply with: ${command}`)
+      : labels.replyCommandSandboxed
+        ? `Reply with: ${command} (your sandbox may block it from reaching Exawatt; if it does, ask to run it outside the sandbox)`
+        : `Reply with: ${command}`)
   );
 }
 

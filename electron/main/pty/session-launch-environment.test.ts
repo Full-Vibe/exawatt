@@ -66,7 +66,13 @@ describe('the launch environment seam', () => {
       durableSessionId: 'session-env',
     });
     expect(launches).toEqual([
-      { id: session.id, durableSessionId: 'session-env', harness: 'claude' },
+      {
+        id: session.id,
+        durableSessionId: 'session-env',
+        harness: 'claude',
+        // The default every launch applies.
+        permissionMode: 'unrestricted',
+      },
     ]);
     const env = spawned[0].env;
     expect(env.EXAWATT_BUS_PORT).toBe('4321');
@@ -76,6 +82,44 @@ describe('the launch environment seam', () => {
     expect(released).toEqual([]);
     spawned[0].exit();
     expect(released).toEqual([session.id]);
+  });
+
+  it('tells the provider whether its MCP server reached the launch, not whether one was offered', async () => {
+    const manager = new PtySessionManager();
+    const declared: [string, boolean][] = [];
+    manager.setLaunchEnvironmentProvider(async launch => ({
+      env: {},
+      pathPrepend: [],
+      mcpServer: {
+        name: 'exawatt',
+        command: '/bin/node',
+        args: ['/state/bus/bin/exawatt-mcp.cjs'],
+        env: {},
+        inherited: [],
+      },
+      declared: outcome => declared.push([launch.harness, outcome.mcpServer]),
+      release: () => {},
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Codex takes the server on its argv: handed over.
+    await manager.create({
+      harness: 'codex',
+      cwd,
+      durableSessionId: 'session-codex',
+      permissionMode: 'auto',
+    });
+    // Claude Code takes it as a file this manager has nowhere to write:
+    // offered, never handed over.
+    await manager.create({
+      harness: 'claude',
+      cwd,
+      durableSessionId: 'session-claude',
+    });
+    warn.mockRestore();
+    expect(declared).toEqual([
+      ['codex', true],
+      ['claude', false],
+    ]);
   });
 
   it('launches without the extension when the provider fails', async () => {

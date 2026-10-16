@@ -51,7 +51,15 @@ export function deliveredText(
   envelope: MessageEnvelope,
   senderHarness: string,
   projectName: string,
-  replyTool: string | null = null
+  reply: { tool: string | null; commandSandboxed: boolean } = {
+    tool: null,
+    commandSandboxed: false,
+  }
 ): string {
-  return busDeliveredText(envelope, { senderHarness, projectName, replyTool });
+  return busDeliveredText(envelope, {
+    senderHarness,
+    projectName,
+    replyTool: reply.tool,
+    replyCommandSandboxed: reply.commandSandboxed,
+  });
 }

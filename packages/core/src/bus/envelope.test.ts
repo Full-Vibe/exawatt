@@ -71,6 +71,25 @@ describe('the bus stamp', () => {
     expect(line).not.toContain('\n');
   });
 
+  it('says plainly that the command may be refused when the recipient’s sandbox blocks it and it has no tool', () => {
+    const handle = busHandle('Codex 2');
+    const line = busStampLine(envelope(), {
+      ...labels,
+      replyCommandSandboxed: true,
+    });
+    expect(line).toContain(`exawatt send @${handle}`);
+    expect(line).toMatch(/sandbox may block/);
+    expect(line).not.toContain('\n');
+    // With the tool, the tool is the answer and no warning is needed.
+    expect(
+      busStampLine(envelope(), {
+        ...labels,
+        replyTool: 'exawatt_send_message',
+        replyCommandSandboxed: true,
+      })
+    ).not.toMatch(/sandbox/);
+  });
+
   it('never lets an agent message begin with a slash', () => {
     for (const text of ['/help', '/clear everything', ' /x']) {
       expect(busDeliveredText(envelope({ text }), labels)).not.toMatch(

@@ -114,12 +114,18 @@ export type DelegationCapability =
  * `outbound` is how an Agent of this source reaches the bus: `path` puts the
  * `exawatt` executable on the Session's PATH; `mcp` hands the launch the
  * Exawatt MCP server through the harness's own per-launch seam (B2), and is
- * null where the harness has none.
+ * null where the harness has none; `commandSandboxed` says in which
+ * permission modes the source's own sandbox refuses the `exawatt` command's
+ * loopback request, so a reply hint without the tool can say so.
  */
 interface HarnessMessagingCapability {
   agent: BusTransport | null;
   operator: BusTransport | null;
-  outbound: { path: boolean; mcp: HarnessMcpBinding | null };
+  outbound: {
+    path: boolean;
+    mcp: HarnessMcpBinding | null;
+    commandSandboxed?: (mode: AgentPermissionMode) => boolean;
+  };
 }
 
 /**
@@ -382,6 +388,9 @@ const descriptors = {
               ),
             ].join(' '),
         },
+        // B2, measured on 0.162.1: `workspace-write` (Ask first and Auto
+        // review, `workspaceReviewFlags`) refuses the loopback request.
+        commandSandboxed: mode => mode !== 'unrestricted',
       },
     },
     permissionFlags: workspaceReviewFlags,

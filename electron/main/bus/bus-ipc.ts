@@ -22,7 +22,7 @@ import { attentionMonitor } from '../pty/attention-monitor';
 import { harnessDescriptor } from '../pty/harness-registry';
 import { ptySessions } from '../pty/session-manager';
 import { BusDirectory } from './directory';
-import { BusDispatcher } from './dispatch';
+import { BusDispatcher, type BusReplyDoor } from './dispatch';
 import { installBusExecutable, installBusMcpServer } from './executable';
 import { BUS_MCP_SERVER_NAME } from './mcp-server';
 import { createBusHttpHandler } from './http';
@@ -111,11 +111,16 @@ export function registerBusIPC(userData: string): void {
     },
   });
 
+  // How each Session can answer, recorded from what its launch actually
+  // received; a Session with no record is offered the command alone.
+  const replyDoors = new Map<string, BusReplyDoor>();
+
   const dispatcher = new BusDispatcher({
     directory,
     store,
     recipients,
     doorsOf: harness => harnessDescriptor(harness).messaging,
+    replyDoorOf: target => replyDoors.get(target.ptyId),
     contextFor: target => ({
       terminal: terminals.doorFor(target.ptyId),
       runSourceCommand: (executable, args) =>
@@ -146,6 +151,8 @@ export function registerBusIPC(userData: string): void {
     const registration = harnessEventChannel.registerBus(launch.id);
     if (!registration) return null;
     const [bin, script] = await Promise.all([executableDirectory, mcpScript]);
+    const commandSandboxed =
+      outbound.commandSandboxed?.(launch.permissionMode) ?? false;
     const env = {
       EXAWATT_BUS_PORT: String(registration.port),
       EXAWATT_BUS_TOKEN: registration.token,
@@ -166,7 +173,12 @@ export function registerBusIPC(userData: string): void {
               inherited: Object.keys(env),
             }
           : null,
-      release: () => harnessEventChannel.releaseBus(launch.id),
+      declared: ({ mcpServer }) =>
+        replyDoors.set(launch.id, { tool: mcpServer, commandSandboxed }),
+      release: () => {
+        replyDoors.delete(launch.id);
+        harnessEventChannel.releaseBus(launch.id);
+      },
     };
   });
 

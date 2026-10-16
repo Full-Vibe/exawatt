@@ -182,6 +182,10 @@ interface LaunchEnvironmentExtension {
   /** An MCP server offered to the launch, handed over through the harness's
    *  own per-launch binding when it declares one (the bus's MCP door). */
   mcpServer?: LaunchMcpServer | null;
+  /** Told once the launch's MCP declaration is settled: whether the server
+   *  actually reached the launch (a declaration that cannot be written
+   *  launches without it). */
+  declared?(outcome: { mcpServer: boolean }): void;
   release(): void;
 }
 
@@ -189,6 +193,8 @@ type LaunchEnvironmentProvider = (launch: {
   id: string;
   durableSessionId: string;
   harness: PtyHarness;
+  /** The permission mode the launch applies (its default included). */
+  permissionMode: AgentPermissionMode;
 }) => Promise<LaunchEnvironmentExtension | null>;
 
 export class PtySessionManager extends EventEmitter {
@@ -226,12 +232,18 @@ export class PtySessionManager extends EventEmitter {
   private async extendLaunchEnvironment(
     id: string,
     durableSessionId: string,
-    harness: PtyHarness
+    harness: PtyHarness,
+    permissionMode: AgentPermissionMode
   ): Promise<LaunchEnvironmentExtension | null> {
     const provider = this.launchEnvironmentProvider;
     if (!provider) return null;
     try {
-      const extension = await provider({ id, durableSessionId, harness });
+      const extension = await provider({
+        id,
+        durableSessionId,
+        harness,
+        permissionMode,
+      });
       if (extension) this.launchEnvironmentReleases.set(id, extension.release);
       return extension;
     } catch (error) {
@@ -565,7 +577,9 @@ export class PtySessionManager extends EventEmitter {
     const extension = await this.extendLaunchEnvironment(
       id,
       durableSessionId,
-      options.harness
+      options.harness,
+      // The same default the launch command applies.
+      options.permissionMode ?? 'unrestricted'
     );
     const launchEnvironment = {
       ...process.env,
@@ -605,6 +619,14 @@ export class PtySessionManager extends EventEmitter {
       options.harness,
       extension?.mcpServer
     );
+    try {
+      extension?.declared?.({ mcpServer: !!mcp });
+    } catch (error) {
+      console.warn(
+        '[session-manager] launch extension declared() threw',
+        error
+      );
+    }
     const wiring = {
       ...(await this.subscribeToEventChannel(
         id,

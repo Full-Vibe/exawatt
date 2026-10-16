@@ -46,10 +46,26 @@ import { undeliverableTransport } from './transports/undeliverable';
 export interface BusDoors {
   agent: BusTransport | null;
   operator: BusTransport | null;
-  /** How the recipient's Agents reach the bus: with an MCP door, the reply
-   *  hint names the send tool in their own tool list. */
-  outbound?: { mcp: unknown };
 }
+
+/**
+ * How one recipient Session can answer, as its own launch set it up: what
+ * it received, never what its harness merely declares (the MCP server's
+ * install or declaration can fail, and an older Session predates it).
+ */
+export interface BusReplyDoor {
+  /** The launch handed the Agent Exawatt's MCP server: the send tool is in
+   *  its own tool list. */
+  tool: boolean;
+  /** The Agent's own sandbox refuses the `exawatt` command's request. */
+  commandSandboxed: boolean;
+}
+
+/** A Session whose launch recorded nothing: the command, without a tool. */
+const NO_RECORDED_REPLY_DOOR: BusReplyDoor = {
+  tool: false,
+  commandSandboxed: false,
+};
 
 interface BusDispatchDeps {
   directory: BusDirectory;
@@ -57,6 +73,8 @@ interface BusDispatchDeps {
   recipients: RecipientStateSource;
   /** The recipient harness's declared doors. */
   doorsOf(harness: AgentHarness): BusDoors;
+  /** How the recipient Session can answer, as its launch recorded it. */
+  replyDoorOf(target: BusTarget): BusReplyDoor | undefined;
   /** What a transport is handed besides the text. */
   contextFor(target: BusTarget): Omit<BusDeliveryContext, 'text'>;
   /** A harness as the operator reads it (`Claude Code`, `Codex`). */
@@ -182,11 +200,15 @@ export class BusDispatcher {
       text,
       at: this.now(),
     });
+    const reply = this.deps.replyDoorOf(target) ?? NO_RECORDED_REPLY_DOOR;
     const delivered = deliveredText(
       envelope,
       this.deps.harnessLabel(input.from.harness),
       addressee.entry.projectName,
-      doors.outbound?.mcp ? BUS_MCP_SEND_TOOL : null
+      {
+        tool: reply.tool ? BUS_MCP_SEND_TOOL : null,
+        commandSandboxed: reply.commandSandboxed,
+      }
     );
 
     const state = this.deps.recipients.state(target.ptyId);
