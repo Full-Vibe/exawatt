@@ -22,7 +22,8 @@ interface TerminalSessions {
     event: 'data',
     listener: (id: string, data: string) => void
   ): unknown;
-  write(id: string, data: string): void;
+  /** False when the Session is gone or has exited: nothing was written. */
+  write(id: string, data: string): boolean;
 }
 
 interface TerminalDoorOptions {
@@ -102,12 +103,13 @@ export function createTerminalDoors(
         bracketedPaste: () => paste.get(ptyId) ?? false,
         write(data) {
           answered = settled(ptyId);
-          sessions.write(ptyId, data);
+          return sessions.write(ptyId, data);
         },
         settled: () => answered ?? Promise.resolve(),
         submit() {
+          if (!sessions.write(ptyId, '\r')) return false;
           options.engage?.(ptyId);
-          sessions.write(ptyId, '\r');
+          return true;
         },
       };
     },

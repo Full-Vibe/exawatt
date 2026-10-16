@@ -33,22 +33,34 @@ export function target(overrides: Partial<BusTarget> = {}): BusTarget {
   };
 }
 
-/** A terminal that records every write, in order, and when Enter came. */
-export function recordingTerminal(bracketed = true) {
+/** A terminal that records every write, in order, and when Enter came.
+ *  Like the real one, a write to an exited Session lands nowhere and says
+ *  so; `exitedBefore` makes the Session exit before that write. */
+export function recordingTerminal(
+  bracketed = true,
+  options: { exitedBefore?: 'write' | 'submit' } = {}
+) {
   const writes: string[] = [];
   const events: string[] = [];
+  let exited = false;
   const door: TerminalDoor = {
     bracketedPaste: () => bracketed,
     write: data => {
+      if (options.exitedBefore === 'write') exited = true;
+      if (exited) return false;
       writes.push(data);
       events.push('write');
+      return true;
     },
     settled: async () => {
       events.push('settled');
     },
     submit: () => {
+      if (options.exitedBefore === 'submit') exited = true;
+      if (exited) return false;
       writes.push('\r');
       events.push('submit');
+      return true;
     },
   };
   return { door, writes, events };

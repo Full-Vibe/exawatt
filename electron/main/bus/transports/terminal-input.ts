@@ -44,15 +44,23 @@ export function terminalInputTransport(
           adapter: 'terminal-input',
         };
       }
-      terminal.write(
+      // A write to an exited Session lands nowhere, so each write says
+      // whether it landed, and only one that did counts.
+      const exited = {
+        state: 'undeliverable',
+        reason: 'The Agent exited before it could read this',
+        adapter: 'terminal-input',
+      } as const;
+      const pasted = terminal.write(
         terminal.bracketedPaste()
           ? `${PASTE_START}${context.text}${PASTE_END}`
           : // Without bracketed paste a newline would submit early, so the
             // message arrives as one line.
             context.text.replace(/\s*\n\s*/g, ' ')
       );
+      if (!pasted) return exited;
       await terminal.settled();
-      terminal.submit();
+      if (!terminal.submit()) return exited;
       return { state: options.delivered, adapter: 'terminal-input' };
     },
   };

@@ -226,8 +226,17 @@ export class BusDispatcher {
       return { delivery: { ...record.delivery }, record: this.copy(record) };
     }
 
+    // The state is read again once this message's turn in line comes: a
+    // recipient that ended meanwhile is never handed to a door, which could
+    // not tell (a queue to an ended thread is accepted and never read).
     const result = await this.inOrder(target.ptyId, () =>
-      this.deliver(transport, envelope, target, delivered)
+      this.deps.recipients.state(target.ptyId) === 'ended'
+        ? Promise.resolve<DeliveryResult>({
+            state: 'undeliverable',
+            reason: `@${addressee.entry.handle} ended before it could read this`,
+            adapter: transport.kind,
+          })
+        : this.deliver(transport, envelope, target, delivered)
     );
     const record = this.recordOf(envelope, result);
     try {

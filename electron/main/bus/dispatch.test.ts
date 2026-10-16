@@ -301,6 +301,45 @@ describe('a peer message', () => {
     );
   });
 
+  it('reads undeliverable, never handing it to the door, when the recipient ended while it waited its turn in line', async () => {
+    let finishFirst!: () => void;
+    const handed: string[] = [];
+    const slow: BusTransport = {
+      kind: 'claude-socket',
+      holdWhile: [],
+      async deliver(_envelope, _target, context) {
+        handed.push(context.text);
+        if (handed.length === 1)
+          await new Promise<void>(resolve => (finishFirst = resolve));
+        return { state: 'delivered', adapter: 'claude-socket' };
+      },
+    };
+    const { dispatcher, live } = world(sessions, {
+      claude: { agent: slow, operator: null },
+    });
+    const send = (text: string) =>
+      dispatcher.send({
+        from: codexSender,
+        projectId: '/work/app',
+        to: '@claude-1',
+        text,
+        senderSessionId: codexSender.sessionId,
+      });
+    const first = send('first');
+    await expect.poll(() => handed.length).toBe(1);
+    const second = send('second');
+    live.set('pty-2', 'ended');
+    finishFirst();
+    expect((await first).delivery.state).toBe('delivered');
+    const result = await second;
+    expect(result.delivery).toMatchObject({
+      state: 'undeliverable',
+      reason: expect.stringMatching(/@claude-1 ended before it could read this/),
+      adapter: 'claude-socket',
+    });
+    expect(handed).toHaveLength(1);
+  });
+
   it('reads unknown when a door throws, and the send still answers', async () => {
     const { dispatcher } = world(sessions, {
       claude: {

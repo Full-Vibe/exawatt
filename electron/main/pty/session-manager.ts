@@ -911,11 +911,13 @@ export class PtySessionManager extends EventEmitter {
     }
   }
 
-  write(id: string, data: string): void {
+  /** False when the Session is gone or has exited: nothing was written.
+   *  Input held for an identity capture counts as written; it is sent. */
+  write(id: string, data: string): boolean {
     const s = this.sessions.get(id);
-    if (!s || s.info.exited) return;
-    if (s.codexInput.hold(data)) return;
-    if (s.opencodeInput.hold(data)) return;
+    if (!s || s.info.exited) return false;
+    if (s.codexInput.hold(data)) return true;
+    if (s.opencodeInput.hold(data)) return true;
     if (
       s.info.harness === 'codex' &&
       !s.info.harnessSessionId &&
@@ -932,13 +934,13 @@ export class PtySessionManager extends EventEmitter {
       ) {
         s.codexTrustAccepted = true;
         s.proc.write(data);
-        return;
+        return true;
       }
       s.codexIdentityStarted = true;
       s.codexIdentityBoundaryAt = Date.now();
       s.codexInput.begin(data);
       this.beginCodexIdentityCapture(s);
-      return;
+      return true;
     }
     if (
       s.info.harness === 'opencode' &&
@@ -950,9 +952,10 @@ export class PtySessionManager extends EventEmitter {
       s.opencodeIdentityBoundaryAt = Date.now();
       s.opencodeInput.begin(data);
       this.beginOpencodeIdentityCapture(s);
-      return;
+      return true;
     }
     s.proc.write(data);
+    return true;
   }
 
   private beginCodexIdentityCapture(session: Session): void {

@@ -232,6 +232,32 @@ describe('terminal-input', () => {
     expect(terminal.writes[0]).toBe('\x1b[200~/compact\x1b[201~');
   });
 
+  it('reads undeliverable, the Agent exited, when the paste lands on an exited Session', async () => {
+    const terminal = recordingTerminal(true, { exitedBefore: 'write' });
+    const result = await peer.deliver(
+      envelope,
+      target(),
+      context({ terminal: terminal.door, text: 'hello' })
+    );
+    expect(result).toEqual({
+      state: 'undeliverable',
+      reason: expect.stringMatching(/The Agent exited/),
+      adapter: 'terminal-input',
+    });
+    expect(terminal.writes).toEqual([]);
+  });
+
+  it('reads undeliverable when the Agent exits between the paste and Enter', async () => {
+    const terminal = recordingTerminal(true, { exitedBefore: 'submit' });
+    const result = await operator.deliver(
+      envelope,
+      target(),
+      context({ terminal: terminal.door, text: 'hello' })
+    );
+    expect(result.state).toBe('undeliverable');
+    expect(result.reason).toMatch(/The Agent exited/);
+  });
+
   it('reads undeliverable for a Session with no terminal', async () => {
     expect((await peer.deliver(envelope, target(), context())).state).toBe(
       'undeliverable'

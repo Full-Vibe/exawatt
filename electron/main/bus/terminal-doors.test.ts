@@ -10,7 +10,10 @@ function sessions() {
     writes,
     on: emitter.on.bind(emitter) as never,
     removeListener: emitter.removeListener.bind(emitter) as never,
-    write: (id: string, data: string) => writes.push([id, data]),
+    write: (id: string, data: string) => {
+      writes.push([id, data]);
+      return true;
+    },
   };
 }
 

@@ -26,14 +26,15 @@ export interface BusTarget {
 export interface TerminalDoor {
   /** True while the recipient's TUI has bracketed paste switched on. */
   bracketedPaste(): boolean;
-  /** One write to the PTY. */
-  write(data: string): void;
+  /** One write to the PTY. False when it landed nowhere: the Session has
+   *  exited (checked at the write itself, not before a wait). */
+  write(data: string): boolean;
   /** Resolves once the TUI has answered the last write (its echo went
    *  quiet), or at a bound if it never does. */
   settled(): Promise<void>;
   /** Press Enter, as its own write: the turn this opens is work given to
    *  the Session, exactly as if the operator had pressed it. */
-  submit(): void;
+  submit(): boolean;
 }
 
 /** One argument of a source command. A literal is shell-quoted; free text
