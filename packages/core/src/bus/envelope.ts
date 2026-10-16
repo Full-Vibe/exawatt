@@ -30,6 +30,10 @@ export interface BusStampLabels {
   senderHarness: string;
   /** The Project's display name. */
   projectName: string;
+  /** The send tool the recipient's own tool list carries (ENG-029 B2), when
+   *  its harness takes the MCP door; offered first because it works where a
+   *  shell sandbox refuses the `exawatt` command's network request. */
+  replyTool?: string | null;
 }
 
 /** The first line a recipient Agent reads. Never starts with `/`. */
@@ -38,9 +42,13 @@ export function busStampLine(
   labels: BusStampLabels
 ): string {
   const handle = busHandle(envelope.from.name);
+  const command = `exawatt send @${handle} "<your reply>"`;
   return (
     `[Exawatt] Message from @${handle} (${labels.senderHarness}) in Project ` +
-    `${labels.projectName}. Reply with: exawatt send @${handle} "<your reply>"`
+    `${labels.projectName}. ` +
+    (labels.replyTool
+      ? `Reply with your ${labels.replyTool} tool (to: @${handle}) or run: ${command}`
+      : `Reply with: ${command}`)
   );
 }
 

@@ -58,6 +58,19 @@ describe('the bus stamp', () => {
     expect(rest.join('\n')).toBe(envelope().text);
   });
 
+  it('offers the recipient’s own send tool first when it has one, the command still beside it', () => {
+    const line = busStampLine(envelope(), {
+      ...labels,
+      replyTool: 'exawatt_send_message',
+    });
+    const handle = busHandle('Codex 2');
+    expect(line.indexOf('exawatt_send_message')).toBeGreaterThan(-1);
+    expect(line.indexOf('exawatt_send_message')).toBeLessThan(
+      line.indexOf(`exawatt send @${handle}`)
+    );
+    expect(line).not.toContain('\n');
+  });
+
   it('never lets an agent message begin with a slash', () => {
     for (const text of ['/help', '/clear everything', ' /x']) {
       expect(busDeliveredText(envelope({ text }), labels)).not.toMatch(

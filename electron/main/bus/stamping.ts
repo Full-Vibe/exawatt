@@ -50,7 +50,8 @@ export function stampEnvelope(input: {
 export function deliveredText(
   envelope: MessageEnvelope,
   senderHarness: string,
-  projectName: string
+  projectName: string,
+  replyTool: string | null = null
 ): string {
-  return busDeliveredText(envelope, { senderHarness, projectName });
+  return busDeliveredText(envelope, { senderHarness, projectName, replyTool });
 }

@@ -11,6 +11,7 @@ import {
 } from '@exawatt/core';
 import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 import { BusDirectory } from './directory';
+import { BUS_MCP_SEND_TOOL } from './mcp-server';
 import { BusDispatcher, type BusDoors } from './dispatch';
 import { JsonlBusStore } from './ledger';
 import type { RecipientStateSource } from './recipient-state';
@@ -490,6 +491,44 @@ describe('an operator message (the user’s turn)', () => {
     });
     expect(result.delivery.state).toBe('delivered');
     expect(terminal.writes).toEqual(['\x1b[200~go\x1b[201~', '\r']);
+  });
+});
+
+describe('the reply hint', () => {
+  it('names the send tool when the recipient’s harness declares an MCP door, and only then', async () => {
+    const withTool = fixtureDoor('claude-socket');
+    const withoutTool = fixtureDoor('codex-queue');
+    const { dispatcher } = world(sessions, {
+      claude: {
+        agent: withTool.transport,
+        operator: null,
+        outbound: { mcp: {} },
+      },
+      codex: { agent: withoutTool.transport, operator: null },
+    });
+    await dispatcher.send({
+      from: codexSender,
+      projectId: '/work/app',
+      to: '@claude-1',
+      text: 'one',
+      senderSessionId: codexSender.sessionId,
+    });
+    await dispatcher.send({
+      from: {
+        ...codexSender,
+        sessionId: 'session-pty-2',
+        name: 'claude-1',
+        harness: 'claude',
+      },
+      projectId: '/work/app',
+      to: '@codex-2',
+      text: 'two',
+      senderSessionId: 'session-pty-2',
+    });
+    expect(withTool.handed[0].text.split('\n')[0]).toContain(BUS_MCP_SEND_TOOL);
+    expect(withoutTool.handed[0].text.split('\n')[0]).not.toContain(
+      BUS_MCP_SEND_TOOL
+    );
   });
 });
 

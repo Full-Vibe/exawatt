@@ -33,6 +33,7 @@ import {
   deliveredText,
   stampEnvelope,
 } from './stamping';
+import { BUS_MCP_SEND_TOOL } from './mcp-server';
 import type {
   BusDeliveryContext,
   BusTarget,
@@ -45,6 +46,9 @@ import { undeliverableTransport } from './transports/undeliverable';
 export interface BusDoors {
   agent: BusTransport | null;
   operator: BusTransport | null;
+  /** How the recipient's Agents reach the bus: with an MCP door, the reply
+   *  hint names the send tool in their own tool list. */
+  outbound?: { mcp: unknown };
 }
 
 interface BusDispatchDeps {
@@ -177,7 +181,8 @@ export class BusDispatcher {
     const delivered = deliveredText(
       envelope,
       this.deps.harnessLabel(input.from.harness),
-      addressee.entry.projectName
+      addressee.entry.projectName,
+      doors.outbound?.mcp ? BUS_MCP_SEND_TOOL : null
     );
 
     const state = this.deps.recipients.state(target.ptyId);
