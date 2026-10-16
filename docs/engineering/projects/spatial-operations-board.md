@@ -3789,3 +3789,25 @@ The original five review repairs and their motion, scale, visibility,
 interaction and persistence checks are complete. An actual unlocked native
 snapshot remains necessary to accept the optional dictionary capability;
 integration also requires an unlocked host for the native-focus gate.
+
+
+### Startup lock compatibility amendment (2026-10-16)
+
+**Unlocked macOS omits the lock flag; the adapter must validate the session.**
+The operator unlocked the test host and the independent CoreGraphics probe
+changed from a typed true lock field to an absent field. This falsifies the
+initial expectation of an explicit false value. Before revising the adapter,
+retain the single snapshot owner and define the compatibility boundary:
+
+- Explicit typed lock true remains locked. A present wrong-type lock field
+  remains unknown.
+- An absent lock field can mean unlocked only inside a successfully read,
+  typed on-console and login-complete session. Validate those native session
+  fields on this host before implementing the inference. Missing, malformed
+  or off-console session evidence remains unknown.
+- Keep the undocumented-field inference localized and tested at the snapshot
+  boundary; do not fall back to Electron's cached idle state or renderer focus.
+  This is a best-effort rendering capability, never a security or Session gate.
+- Recheck cold unlocked startup and native focus; preserve the actual locked
+  startup evidence and unknown-capability interaction contract. All final
+  integration gates run on the rebased combination with parallel work.

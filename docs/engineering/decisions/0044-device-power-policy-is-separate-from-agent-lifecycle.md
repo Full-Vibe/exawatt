@@ -176,12 +176,16 @@ build boundary now reads `CGSessionCopyCurrentDictionary` in process only at
 startup/resume; no polling, subprocess or sleep assertion is introduced.
 
 The function is public, but its `CGSSessionScreenIsLocked` dictionary field is
-undocumented. Accept only a present typed boolean; missing/malformed capability
-is unknown, never inferred unlocked. Unknown desktop state permits demand
+undocumented. Actual unlock on 2026-10-16 removes that field rather than
+returning false. Amend the initial typed-boolean-only plan: accept an absent
+lock field as unlocked only with typed on-console and login-complete session
+facts. Explicit true is locked; malformed lock values, unavailable dictionaries,
+and unvalidated sessions remain unknown. This localized, best-effort inference
+is a rendering capability, never a security or Session-lifecycle boundary. Unknown desktop state permits demand
 rendering and interaction but not continuous ambience. A known lock or suspend
 parks the whole canvas. Hosted browsers retain their visibility policy.
 
-Both views passed actual locked-start parking. An unlocked native observation
-and final delivery remain pending. [Incident 0038](../incidents/0038-locked-startup-reports-unlocked.md)
+Both views passed actual locked-start parking. Native unlock now has an
+independent observation; adapter verification and final delivery remain pending. [Incident 0038](../incidents/0038-locked-startup-reports-unlocked.md)
 records the independent evidence and the compatibility boundary; this does not
 change Session lifecycle or establish historical battery attribution.
