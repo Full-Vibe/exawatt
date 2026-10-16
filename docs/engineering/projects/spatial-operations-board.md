@@ -3817,6 +3817,11 @@ The independent unlocked probe confirmed both public session flags as typed
 true. Native facts and the production decoder agree on unlocked; both Fleet
 views passed cold-start unlocked/moving assertions, and both passed real native
 attention. The full v2 host-power matrix passed. A v1 main execution-context
-loss requires a matrix rerun; the host then relocked, correctly failing an
-explicit expected-unlocked assertion. No timeout or assertion was weakened.
-Final integration evidence remains owned by the delivery receipt.
+loss prompted an isolated retry; the host then relocked, correctly failing an
+explicit expected-unlocked assertion. Both complete host-power matrices then
+passed on the real locked host (`/tmp/exawatt-fleet-final-host-power.log`).
+No timeout or assertion was weakened. The combined delivery floor passed lint,
+types, 1,355 affected tests, production build, R3F, Settings, all 22 visibility
+cases and the material bench, then stopped at native foreground because the
+Mac had relocked (`/tmp/exawatt-fleet-final-land.log`). Integration and installation
+remain pending; final evidence is owned by the delivery receipt.

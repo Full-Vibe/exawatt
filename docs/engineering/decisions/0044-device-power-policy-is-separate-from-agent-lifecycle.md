@@ -185,7 +185,8 @@ is a rendering capability, never a security or Session-lifecycle boundary. Unkno
 rendering and interaction but not continuous ambience. A known lock or suspend
 parks the whole canvas. Hosted browsers retain their visibility policy.
 
-Both views passed actual locked-start parking. Native unlock now has an
-independent observation; adapter verification and final delivery remain pending. [Incident 0038](../incidents/0038-locked-startup-reports-unlocked.md)
+Both views passed actual locked-start parking and unlocked startup motion.
+The complete host-power matrices pass with the revised adapter. Final delivery
+remains pending because the Mac relocked before the required foreground gate. [Incident 0038](../incidents/0038-locked-startup-reports-unlocked.md)
 records the independent evidence and the compatibility boundary; this does not
 change Session lifecycle or establish historical battery attribution.
