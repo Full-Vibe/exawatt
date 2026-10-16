@@ -94,20 +94,65 @@ export function agentNameOf(
   return durableSessionId ? (names.get(durableSessionId)?.name ?? null) : null;
 }
 
+/** One request's inputs: a changed input is a new question for main. */
+function requestKey(request: AgentNameRequest): string {
+  return [
+    request.durableSessionId,
+    request.projectKey,
+    request.harness,
+    request.preferredName ?? '',
+  ].join('\u001f');
+}
+
+/** Requests main is answering now: asked once, however often the layout
+ *  changes meanwhile. */
+const inFlight = new Set<string>();
+/** Requests main answered it can never satisfy, with its reason: never
+ *  asked again until their inputs change (a new key). */
+const skipped = new Map<string, string>();
+
 /**
  * Ask main to name Sessions that have none. Fire-and-forget by design: a
  * name that cannot be dealt leaves the surface on its fallback, never
- * blocks the workspace.
+ * blocks the workspace. A request already in flight is not re-sent, and one
+ * main skipped (or never answered) is terminal for those exact inputs.
  */
 export async function ensureAgentNames(
   requests: readonly AgentNameRequest[]
 ): Promise<void> {
   const pty = typeof window === 'undefined' ? undefined : window.electron?.pty;
-  if (!pty?.ensureAgentNames || requests.length === 0) return;
+  if (!pty?.ensureAgentNames) return;
+  const asking = requests.filter(request => {
+    const key = requestKey(request);
+    return !inFlight.has(key) && !skipped.has(key);
+  });
+  if (asking.length === 0) return;
+  const keys = asking.map(requestKey);
+  for (const key of keys) inFlight.add(key);
   try {
-    mergeAgentNames(await pty.ensureAgentNames([...requests]));
+    const answer = await pty.ensureAgentNames([...asking]);
+    mergeAgentNames(answer.records);
+    const reasons = new Map(
+      answer.skipped.map(skip => [skip.durableSessionId, skip.reason])
+    );
+    const answered = new Set(
+      answer.records.map(record => record.durableSessionId)
+    );
+    asking.forEach((request, index) => {
+      const reason =
+        reasons.get(request.durableSessionId) ??
+        (answered.has(request.durableSessionId) ? null : 'No answer');
+      if (reason !== null) skipped.set(keys[index]!, reason);
+    });
   } catch (error) {
     console.warn('Could not name Agents', error);
+    const reason =
+      error instanceof Error && error.message
+        ? error.message
+        : 'Could not name Agents';
+    for (const key of keys) skipped.set(key, reason);
+  } finally {
+    for (const key of keys) inFlight.delete(key);
   }
 }
 

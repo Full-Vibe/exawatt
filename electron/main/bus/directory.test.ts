@@ -22,8 +22,18 @@ describe('BusDirectory', () => {
     const directory = new BusDirectory({
       list: () => [session('1'), session('2')],
       agentDirectory: () => [
-        { durableSessionId: 'session-1', projectKey: '/repo/packages/web' },
-        { durableSessionId: 'session-2', projectKey: '/repo' },
+        {
+          durableSessionId: 'session-1',
+          projectKey: '/repo/packages/web',
+          harness: 'claude',
+          name: 'claude-1',
+        },
+        {
+          durableSessionId: 'session-2',
+          projectKey: '/repo',
+          harness: 'claude',
+          name: 'claude-2',
+        },
       ],
     });
     const scoped = directory
@@ -36,6 +46,50 @@ describe('BusDirectory', () => {
     expect(directory.resolve('/repo/packages/web', '@claude-2')).toMatchObject({
       ok: false,
       reason: expect.stringMatching(/another Project/),
+    });
+  });
+
+  it("reaches the sender's only same-harness peer by its family name", () => {
+    const directory = new BusDirectory({
+      list: () => [session('1'), session('2')],
+    });
+    expect(directory.resolve('/repo', '@claude', 'session-1')).toMatchObject({
+      ok: true,
+      addressee: { entry: { sessionId: 'session-2' } },
+    });
+    expect(directory.resolve('/repo', '@claude-1', 'session-1')).toMatchObject({
+      ok: false,
+      reason: 'That is you',
+    });
+  });
+
+  it('addresses by the name record, not a copy the live row carries', () => {
+    // The live row still wears the name it launched with; main moved the
+    // record to another Project and dealt it a fresh name there.
+    const directory = new BusDirectory({
+      list: () => [session('1'), session('2', { agentName: 'claude-1' })],
+      agentDirectory: () => [
+        {
+          durableSessionId: 'session-1',
+          projectKey: '/repo',
+          harness: 'claude',
+          name: 'claude-1',
+        },
+        {
+          durableSessionId: 'session-2',
+          projectKey: '/repo',
+          harness: 'claude',
+          name: 'claude-2',
+        },
+      ],
+    });
+    expect(directory.resolve('/repo', '@claude-2')).toMatchObject({
+      ok: true,
+      addressee: { entry: { sessionId: 'session-2', name: 'claude-2' } },
+    });
+    expect(directory.resolve('/repo', '@claude-1')).toMatchObject({
+      ok: true,
+      addressee: { entry: { sessionId: 'session-1' } },
     });
   });
 

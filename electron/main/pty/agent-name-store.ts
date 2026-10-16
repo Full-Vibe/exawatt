@@ -1,9 +1,11 @@
 import {
   AGENT_NAME_MAX_LENGTH,
   assignAgentNames,
+  harnessCarriesAgentName,
   renameAgentName,
   type AgentNameRecord,
   type AgentNameRequest,
+  type AgentNameSkip,
   type AgentRenameResult,
 } from '@exawatt/core';
 
@@ -66,19 +68,36 @@ export class AgentNameStore extends SessionRecordStore<AgentNameRecord> {
     });
   }
 
+  /** Why main can never name this request as asked, or null when it can. */
+  static skipReason(request: AgentNameRequest): string | null {
+    if (!SAFE_DURABLE_ID.test(request.durableSessionId))
+      return 'Not a Session id';
+    if (!request.projectKey) return 'No Project to name it within';
+    if (!harnessCarriesAgentName(request.harness))
+      return 'A shell carries no name';
+    return null;
+  }
+
   /**
-   * Name every requested Session that has none, in request order, and return
-   * the requested Sessions' records. Requests for ids that are not safe ids
-   * are skipped rather than failing the batch.
+   * Name every requested Session that has none (or deal it a name in the
+   * Project it moved to), in request order. Answers the requested Sessions'
+   * records, the records this call changed, and every request it skipped
+   * with the reason, so an asker never re-asks what can never be answered.
    */
-  async ensure(
-    requests: readonly AgentNameRequest[]
-  ): Promise<AgentNameRecord[]> {
+  async ensure(requests: readonly AgentNameRequest[]): Promise<{
+    records: AgentNameRecord[];
+    changed: AgentNameRecord[];
+    skipped: AgentNameSkip[];
+  }> {
     await this.initialize();
-    const usable = requests.filter(
-      request =>
-        SAFE_DURABLE_ID.test(request.durableSessionId) && !!request.projectKey
-    );
+    const skipped: AgentNameSkip[] = [];
+    const usable: AgentNameRequest[] = [];
+    for (const request of requests) {
+      const reason = AgentNameStore.skipReason(request);
+      if (reason)
+        skipped.push({ durableSessionId: request.durableSessionId, reason });
+      else usable.push(request);
+    }
     // Compute and commit with no await in between: a concurrent launch
     // cannot be dealt the same name.
     const current = this.list();
@@ -99,7 +118,7 @@ export class AgentNameStore extends SessionRecordStore<AgentNameRecord> {
     await persisted.catch(error => {
       console.error('Agent name checkpoint failed', error);
     });
-    return answer;
+    return { records: answer, changed: touched, skipped };
   }
 
   async rename(

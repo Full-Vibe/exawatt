@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveAgentAddress } from '@exawatt/core';
+import { BusDirectory } from '../bus/directory';
 
 /**
  * ENG-029 C4: a launched Agent is named by main, before its process starts,
@@ -126,6 +127,84 @@ describe('Agent names at launch', () => {
       kind: 'agent',
       agent: { durableSessionId: 'session-a', ptyId: session.id },
     });
+  });
+
+  it('re-keys a moved Agent into its live row, the bus, and every window', async () => {
+    const owner = await manager();
+    const announced: string[][] = [];
+    owner.on('agent-names', (records: { name: string }[]) =>
+      announced.push(records.map(record => record.name).sort())
+    );
+    await owner.create({
+      harness: 'claude',
+      cwd,
+      projectKey: 'project-one',
+      durableSessionId: 'session-a',
+    });
+    const moved = await owner.create({
+      harness: 'claude',
+      cwd,
+      projectKey: 'project-two',
+      durableSessionId: 'session-b',
+    });
+    expect(moved.agentName).toBe('claude-1');
+    announced.length = 0;
+
+    // Its tab moved into project-one, where claude-1 is taken: re-dealt,
+    // with the record count unchanged.
+    await owner.ensureAgentNames([
+      {
+        durableSessionId: 'session-b',
+        projectKey: 'project-one',
+        harness: 'claude',
+      },
+    ]);
+    expect(owner.list().find(row => row.id === moved.id)?.agentName).toBe(
+      'claude-2'
+    );
+    expect(announced).toEqual([['claude-1', 'claude-2']]);
+    const bus = new BusDirectory(owner);
+    expect(bus.resolve('project-one', '@claude-2')).toMatchObject({
+      ok: true,
+      addressee: { entry: { sessionId: 'session-b', name: 'claude-2' } },
+    });
+    expect(bus.resolve('project-one', '@claude-1')).toMatchObject({
+      ok: true,
+      addressee: { entry: { sessionId: 'session-a' } },
+    });
+
+    // Asking again for what it already is changes nothing and tells no one.
+    await owner.ensureAgentNames([
+      {
+        durableSessionId: 'session-b',
+        projectKey: 'project-one',
+        harness: 'claude',
+      },
+    ]);
+    expect(announced).toHaveLength(1);
+  });
+
+  it('answers a request it can never satisfy as skipped, with the reason', async () => {
+    const owner = await manager();
+    const answer = await owner.ensureAgentNames([
+      {
+        durableSessionId: 'not a session id',
+        projectKey: 'p',
+        harness: 'claude',
+      },
+      { durableSessionId: 'session-x', projectKey: '', harness: 'claude' },
+      { durableSessionId: 'session-y', projectKey: 'p', harness: 'shell' },
+      { durableSessionId: 'session-z', projectKey: 'p', harness: 'codex' },
+    ]);
+    expect(answer.records.map(record => record.durableSessionId)).toEqual([
+      'session-z',
+    ]);
+    expect(answer.skipped.map(skip => skip.durableSessionId)).toEqual([
+      'not a session id',
+      'session-x',
+      'session-y',
+    ]);
+    expect(answer.skipped.every(skip => skip.reason.length > 0)).toBe(true);
   });
 
   it('frees a name only when the Session is gone for good', async () => {

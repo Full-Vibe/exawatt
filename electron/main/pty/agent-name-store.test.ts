@@ -18,7 +18,9 @@ describe('AgentNameStore', () => {
       { durableSessionId: 'session-a', projectKey: '/p', harness: 'codex' },
     ]);
     const second = new AgentNameStore(file);
-    const [again] = await second.ensure([
+    const {
+      records: [again],
+    } = await second.ensure([
       { durableSessionId: 'session-a', projectKey: '/p', harness: 'codex' },
     ]);
     expect(again?.name).toBe('codex-1');
@@ -41,11 +43,9 @@ describe('AgentNameStore', () => {
         ])
       )
     );
-    expect(launches.map(([record]) => record?.name).sort()).toEqual([
-      'claude-1',
-      'claude-2',
-      'claude-3',
-    ]);
+    expect(
+      launches.map(({ records: [record] }) => record?.name).sort()
+    ).toEqual(['claude-1', 'claude-2', 'claude-3']);
   });
 
   it('persists a rename and refuses a taken name with the reason', async () => {
@@ -75,7 +75,9 @@ describe('AgentNameStore', () => {
       { durableSessionId: 'session-a', projectKey: '/p', harness: 'claude' },
     ]);
     await store.delete('session-a');
-    const [next] = await store.ensure([
+    const {
+      records: [next],
+    } = await store.ensure([
       { durableSessionId: 'session-b', projectKey: '/p', harness: 'claude' },
     ]);
     expect(next?.name).toBe('claude-1');
@@ -83,11 +85,15 @@ describe('AgentNameStore', () => {
 
   it('skips requests whose ids could not be persisted', async () => {
     const store = new AgentNameStore(await storeFile());
-    const records = await store.ensure([
+    const answer = await store.ensure([
       { durableSessionId: '../escape', projectKey: '/p', harness: 'claude' },
       { durableSessionId: 'session-a', projectKey: '', harness: 'claude' },
     ]);
-    expect(records).toEqual([]);
+    expect(answer.records).toEqual([]);
+    expect(answer.skipped.map(skip => skip.durableSessionId)).toEqual([
+      '../escape',
+      'session-a',
+    ]);
     expect(isAgentNameRequest({ durableSessionId: 'x' })).toBe(false);
     expect(
       isAgentNameRequest({

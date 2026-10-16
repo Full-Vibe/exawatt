@@ -52,7 +52,10 @@ describe('the renderer mirror of Agent names', () => {
   });
 
   it('merges what main deals and what a rename answers', async () => {
-    const ensure = vi.fn(async () => [record('b', 'claude-2')]);
+    const ensure = vi.fn(async () => ({
+      records: [record('b', 'claude-2')],
+      skipped: [],
+    }));
     installBridgeDouble({
       pty: {
         agentNames: async () => [record('a', 'claude-1')],
@@ -89,6 +92,52 @@ describe('the renderer mirror of Agent names', () => {
       await store.renameAgent('a', 'lead');
     });
     expect(store.agentNameOf(result.current, 'a')).toBe('lead');
+  });
+
+  it('asks once while a request is in flight and never again for one main skipped', async () => {
+    let answer: (value: {
+      records: AgentNameRecord[];
+      skipped: { durableSessionId: string; reason: string }[];
+    }) => void = () => {};
+    const ensure = vi.fn(
+      () =>
+        new Promise<{
+          records: AgentNameRecord[];
+          skipped: { durableSessionId: string; reason: string }[];
+        }>(resolve => {
+          answer = resolve;
+        })
+    );
+    installBridgeDouble({
+      pty: {
+        agentNames: async () => [],
+        onAgentNamesChanged: () => () => {},
+        ensureAgentNames: ensure,
+      },
+    });
+    const store = await freshStore();
+    const odd = {
+      durableSessionId: 'odd',
+      projectKey: '/p',
+      harness: 'claude',
+    };
+    const first = store.ensureAgentNames([odd]);
+    // Every layout change re-asks; none of those may reach main meanwhile.
+    void store.ensureAgentNames([odd]);
+    void store.ensureAgentNames([odd]);
+    expect(ensure).toHaveBeenCalledTimes(1);
+    answer({
+      records: [],
+      skipped: [{ durableSessionId: 'odd', reason: 'Not a Session id' }],
+    });
+    await first;
+    await store.ensureAgentNames([odd]);
+    expect(ensure).toHaveBeenCalledTimes(1);
+    // Its inputs changed (the tab moved Project): a new question.
+    const moved = store.ensureAgentNames([{ ...odd, projectKey: '/q' }]);
+    expect(ensure).toHaveBeenCalledTimes(2);
+    answer({ records: [record('odd', 'claude-1', '/q')], skipped: [] });
+    await moved;
   });
 
   it('answers a rename outside the desktop app with a reason', async () => {

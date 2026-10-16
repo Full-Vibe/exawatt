@@ -14,16 +14,19 @@
 import {
   busHandle,
   resolveAgentAddress,
+  type AgentDirectoryEntry,
   type AgentHarness,
   type BusDirectoryEntry,
 } from '@exawatt/core';
 import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 
-/** The live session roster, and the Project key each named Agent was
- *  named within (the workspace Project's `dir`, the key Team groups by). */
+/** The live session roster, and main's Agent name records: each named
+ *  Agent's name and the Project key it was named within (the workspace
+ *  Project's `dir`, the key Team groups by). The record is the one truth for
+ *  both; a live row's `agentName` is only what it launched with. */
 interface BusSessionSource {
   list(): PtySessionRecord[];
-  agentDirectory?(): { durableSessionId: string; projectKey: string }[];
+  agentDirectory?(): AgentDirectoryEntry[];
 }
 
 /** One addressable Session: the directory entry plus the record behind it. */
@@ -42,11 +45,17 @@ function isAgent(
   return session.harness !== 'shell';
 }
 
-/** The name a Session answers to: its Agent name, else (a Session from
- *  before names, or one that could not be named) its tab label, folded. */
-function nameOf(session: PtySessionRecord): string {
+/** The name a Session answers to: its name record's, else the name its row
+ *  carries (a source with no records), else (a Session from before names, or
+ *  one that could not be named) its tab label, folded. */
+function nameOf(
+  session: PtySessionRecord,
+  record: AgentDirectoryEntry | undefined
+): string {
   return (
-    session.agentName?.trim() || busHandle(session.title || session.harness)
+    record?.name.trim() ||
+    session.agentName?.trim() ||
+    busHandle(session.title || session.harness)
   );
 }
 
@@ -55,16 +64,17 @@ export class BusDirectory {
 
   /** Every addressable Session, live first; one per durable Session. */
   addressees(): BusAddressee[] {
-    const projectKeys = new Map(
+    const records = new Map(
       (this.sessions.agentDirectory?.() ?? []).map(record => [
         record.durableSessionId,
-        record.projectKey,
+        record,
       ])
     );
     const byDurable = new Map<string, BusAddressee>();
     for (const session of this.sessions.list()) {
       if (!isAgent(session)) continue;
-      const name = nameOf(session);
+      const record = records.get(session.durableSessionId);
+      const name = nameOf(session, record);
       const addressee: BusAddressee = {
         session,
         entry: {
@@ -73,8 +83,7 @@ export class BusDirectory {
           harness: session.harness,
           // The Project an Agent's name is unique within; a Session launched
           // without one is in its git Project.
-          projectId:
-            projectKeys.get(session.durableSessionId) ?? session.projectDir,
+          projectId: record?.projectKey ?? session.projectDir,
           projectName: session.projectName,
           handle: busHandle(name),
           state: session.exited ? 'ended' : 'live',
@@ -122,7 +131,9 @@ export class BusDirectory {
         item,
       })),
       projectId,
-      to
+      to,
+      // `@claude` from a Claude Agent means its peer, never itself
+      { sender: senderSessionId }
     );
     if (resolution.kind === 'none') {
       return {

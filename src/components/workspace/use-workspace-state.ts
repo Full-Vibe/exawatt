@@ -195,7 +195,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     useClosedSessionCount(ready);
   // Agent names (ENG-029 C4): main names every launch; this asks it to name
   // what the layout holds without one, which is also how a layout saved
-  // before names existed is named on its first read.
+  // before names existed is named on its first read. It runs on every layout
+  // change; the store sends a request once while it is in flight and never
+  // again once main has skipped it, until that request's inputs change.
   const agentNames = useAgentNames();
   useEffect(() => {
     if (!ready) return;

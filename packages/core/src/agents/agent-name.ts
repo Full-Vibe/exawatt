@@ -45,6 +45,20 @@ export interface AgentNameRequest {
   preferredName?: string | null;
 }
 
+/** A request main will never satisfy as asked, and why. The asker stops
+ *  asking for that request until its inputs change. */
+export interface AgentNameSkip {
+  durableSessionId: string;
+  reason: string;
+}
+
+/** Main's answer to a naming request: the requested Sessions' records, and
+ *  every request it skipped. A request is in exactly one of the two. */
+export interface AgentNameEnsureResult {
+  records: AgentNameRecord[];
+  skipped: AgentNameSkip[];
+}
+
 type AgentNameRefusal = 'empty' | 'length' | 'characters' | 'reserved';
 
 type AgentNameValidation =

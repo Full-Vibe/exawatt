@@ -17,6 +17,7 @@ import { HookSettingsStore } from '../harness-events/hook-settings-store';
 import {
   harnessCarriesAgentName,
   type AgentDirectoryEntry,
+  type AgentNameEnsureResult,
   type AgentNameRecord,
   type AgentNameRequest,
   type AgentRenameResult,
@@ -1209,18 +1210,36 @@ export class PtySessionManager extends EventEmitter {
 
   /**
    * Deal names to Sessions that have none (a first read of an existing
-   * layout, ENG-029 C4) and answer the requested Sessions' names. Never
-   * fails a caller over persistence: a dealt name stays in memory and is
-   * written by the shutdown checkpoint.
+   * layout, ENG-029 C4), or a name in the Project a Session moved to, and
+   * answer the requested Sessions' names plus every request that can never
+   * be satisfied as asked, with the reason. Never fails a caller over
+   * persistence: a dealt name stays in memory and is written by the shutdown
+   * checkpoint.
    */
   async ensureAgentNames(
     requests: readonly AgentNameRequest[]
-  ): Promise<AgentNameRecord[]> {
-    if (!this.agentNames) return [];
-    const before = this.agentNames.list().length;
-    const records = await this.agentNames.ensure(requests);
-    if (this.agentNames.list().length !== before) this.publishAgentNames();
-    return records;
+  ): Promise<AgentNameEnsureResult> {
+    const skipAll = (reason: string): AgentNameEnsureResult => ({
+      records: [],
+      skipped: requests.map(request => ({
+        durableSessionId: request.durableSessionId,
+        reason,
+      })),
+    });
+    if (!this.agentNames) return skipAll('Agent names are unavailable');
+    try {
+      const { records, changed, skipped } =
+        await this.agentNames.ensure(requests);
+      this.applyAgentNames(changed);
+      return { records, skipped };
+    } catch (error) {
+      console.warn('[session-manager] Agents could not be named:', error);
+      return skipAll(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Agent names are unavailable'
+      );
+    }
   }
 
   agentNameRecords(): AgentNameRecord[] {
@@ -1260,13 +1279,7 @@ export class PtySessionManager extends EventEmitter {
     }
     const result = await this.agentNames.rename(durableSessionId, name);
     if (!result.ok) return result;
-    // Not a `session` event: that one means a process changed, and its
-    // observers (attention, the Codex app-server) would re-attach.
-    for (const session of this.sessions.values()) {
-      if (session.info.durableSessionId === durableSessionId)
-        session.info.agentName = result.record.name;
-    }
-    this.publishAgentNames();
+    this.applyAgentNames([result.record]);
     return result;
   }
 
@@ -1286,10 +1299,13 @@ export class PtySessionManager extends EventEmitter {
     if (known && (!projectKey || known.projectKey === projectKey))
       return known.name;
     try {
-      const [record] = await this.agentNames.ensure([
+      const {
+        records: [record],
+        changed,
+      } = await this.agentNames.ensure([
         { ...session, projectKey: projectKey ?? fallbackProjectKey },
       ]);
-      this.publishAgentNames();
+      this.applyAgentNames(changed);
       return record?.name ?? null;
     } catch (error) {
       // A Session must never fail to start because it could not be named.
@@ -1298,7 +1314,22 @@ export class PtySessionManager extends EventEmitter {
     }
   }
 
-  private publishAgentNames(): void {
+  /**
+   * The one place a name change lands: every live row of a changed record
+   * wears its new name, and every window hears of it. Called on every deal,
+   * re-key and rename, so no row or window keeps a name the record no
+   * longer has. Not a `session` event: that one means a process changed,
+   * and its observers (attention, the Codex app-server) would re-attach.
+   */
+  private applyAgentNames(changed: readonly AgentNameRecord[]): void {
+    if (changed.length === 0) return;
+    const byId = new Map(
+      changed.map(record => [record.durableSessionId, record])
+    );
+    for (const session of this.sessions.values()) {
+      const record = byId.get(session.info.durableSessionId);
+      if (record) session.info.agentName = record.name;
+    }
     this.emit('agent-names', this.agentNameRecords());
   }
 

@@ -1,4 +1,5 @@
 import type {
+  AgentNameEnsureResult,
   AgentNameRecord,
   AgentNameRequest,
   AgentRenameResult,
@@ -322,7 +323,7 @@ interface RequestTable {
   'pty:agent-names': Call<[], AgentNameRecord[]>;
   'pty:ensure-agent-names': Call<
     [requests: AgentNameRequest[]],
-    AgentNameRecord[]
+    AgentNameEnsureResult
   >;
   'pty:rename-agent': Call<
     [durableSessionId: string, name: string],
