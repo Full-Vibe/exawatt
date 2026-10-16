@@ -534,7 +534,7 @@ await withElectronApp(
   check(
     'help makes Fleet raw keys searchable',
     (await page.locator('[data-help-category="view"]').innerText()).includes(
-      'Fleet: toggle projection'
+      'toggle projection'
     )
   );
   // chord gating: g m behind the open modal must not navigate

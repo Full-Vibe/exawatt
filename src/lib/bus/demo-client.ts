@@ -9,9 +9,10 @@ import {
   DEMO_BASE_AGENTS,
   DEMO_CHATTER,
   DEMO_PROJECTS_BY_KEY,
+  demoBusSendResult,
   isAgentHarness,
 } from '@exawatt/core';
-import { refusedSend, type BusClient } from './client';
+import type { BusClient } from './client';
 import type { BusEndpoint, MessageRecord } from '@exawatt/core';
 import { BUS_OPERATOR } from './operator';
 
@@ -52,8 +53,6 @@ export function demoBusMessages(nowMs: number): MessageRecord[] {
   }).sort((a, b) => a.at - b.at);
 }
 
-export const DEMO_CANNOT_SEND = 'Demo cannot send';
-
 export function createDemoBusClient(nowMs: number): BusClient {
   const messages = demoBusMessages(nowMs);
   return {
@@ -76,7 +75,7 @@ export function createDemoBusClient(nowMs: number): BusClient {
       };
     },
     async send() {
-      return refusedSend(DEMO_CANNOT_SEND, 'demo');
+      return demoBusSendResult();
     },
     subscribe() {
       return () => {};

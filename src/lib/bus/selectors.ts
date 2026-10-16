@@ -3,8 +3,7 @@
  * flags or counts rounds (decision `0052`); the only number derived is
  * unread, which is the operator's own reading position.
  */
-import { BUS_OPERATOR } from './operator';
-import type { MessageRecord } from '@exawatt/core';
+import { BUS_OPERATOR_ID, busThread, type MessageRecord } from '@exawatt/core';
 
 /** Ledger order (oldest first), with a later record for an id replacing it:
  *  how a `queued` message becomes `delivered` without a second row. */
@@ -42,17 +41,16 @@ export function threadOf(
   a: string,
   b: string
 ): MessageRecord[] {
-  const pair = new Set([a, b]);
-  return messages.filter(message => {
-    const from = message.from.sessionId;
-    const to = message.to.sessionId;
-    if (pair.has(from) && pair.has(to) && from !== to) return true;
-    return (
-      message.from.kind === 'operator' &&
-      from === BUS_OPERATOR.sessionId &&
-      pair.has(to)
-    );
-  });
+  const pair = busThread(messages, a, b);
+  if (a === BUS_OPERATOR_ID || b === BUS_OPERATOR_ID) return pair;
+  const seen = new Set(pair.map(message => message.id));
+  const fromOperator = [
+    ...busThread(messages, BUS_OPERATOR_ID, a),
+    ...busThread(messages, BUS_OPERATOR_ID, b),
+  ].filter(
+    message => message.from.kind === 'operator' && !seen.has(message.id)
+  );
+  return [...pair, ...fromOperator].sort((x, y) => x.at - y.at);
 }
 
 export function firstLine(text: string): string {

@@ -6,13 +6,14 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEMO_BASE_AGENTS, DEMO_CHATTER, DEMO_PROJECTS } from '@exawatt/core';
-import type { BusClient } from './client';
 import {
-  createDemoBusClient,
-  DEMO_CANNOT_SEND,
-  demoBusMessages,
-} from './demo-client';
+  demoBusSendResult,
+  DEMO_BASE_AGENTS,
+  DEMO_CHATTER,
+  DEMO_PROJECTS,
+} from '@exawatt/core';
+import type { BusClient } from './client';
+import { createDemoBusClient, demoBusMessages } from './demo-client';
 import { createLiveBusClient, type BusBridge } from './live-client';
 import { BUS_OPERATOR } from './operator';
 import {
@@ -215,14 +216,7 @@ describe('demo client', () => {
         text: 'x',
         kind: 'operator',
       })
-    ).toEqual({
-      delivery: {
-        state: 'undeliverable',
-        reason: DEMO_CANNOT_SEND,
-        adapter: 'demo',
-      },
-      record: null,
-    });
+    ).toEqual(demoBusSendResult());
   });
 });
 

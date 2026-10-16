@@ -140,6 +140,15 @@ export function ChatterThreadMessage({
   );
 }
 
+/** A refusal in one line; an ambiguous name lists who it could mean. */
+function refusalLine(result: BusSendResult): string {
+  const reason = result.delivery.reason ?? 'Not sent';
+  const candidates = result.candidates ?? [];
+  return candidates.length > 0
+    ? `${reason}: ${candidates.map(candidate => candidate.name).join(', ')}`
+    : reason;
+}
+
 type ComposerState =
   | { phase: 'idle' }
   | { phase: 'sending' }
@@ -289,7 +298,7 @@ export function ChatterComposer({
             : state.phase === 'done'
               ? state.result.record
                 ? `${DELIVERY_LABEL[state.result.record.delivery.state]} · ${state.to}`
-                : (state.result.delivery.reason ?? 'Not sent')
+                : refusalLine(state.result)
               : null}
         </span>
         <button

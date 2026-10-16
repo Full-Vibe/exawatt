@@ -657,9 +657,13 @@ client.** The first landing (`0364bb14`) put the renderer bus client in
   Chatter names a Session by its Agent name (`claude-1`, from the agent-names
   mirror) and falls back to the tile's label until main names it. The Demo
   chatter addresses only launched Sessions, as the bus does.
-- **Not yet live.** Main's bus core is not on master, so the desktop app's
-  Chatter tab reads the one honest unavailable line; the live two-Agent check
-  waits for it.
+- **Core helpers.** A pair's thread is core's `busThread` plus the
+  operator's messages to either Session; the Demo answers sends with core's
+  `demoBusSendResult`; a refusal that carries `candidates` (an ambiguous
+  name) lists them under Send as operator.
+- **Live.** Main's bus core is integrated (`965f2003`), so the desktop app's
+  Chatter tab reads the real ledger; a check with two real Agents exchanging
+  messages has not been run yet.
 - **Specimen.** `/hud-gallery/team-dock` renders the production dock with
   both panels over Demo data, every delivery result as a row, and the four
   panel states.

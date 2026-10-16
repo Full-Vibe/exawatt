@@ -222,6 +222,50 @@ describe('Chatter keyboard and thread', () => {
   });
 });
 
+describe('Chatter refusals', () => {
+  it('names the Sessions an ambiguous recipient could mean', async () => {
+    const send = async () => ({
+      ...refusedSend('Two Agents are named reviewer'),
+      candidates: [
+        {
+          sessionId: 's1',
+          name: 'claude-1',
+          harness: 'claude' as const,
+          projectId: PROJECT,
+          projectName: 'Alpha',
+          handle: 'claude-1',
+          state: 'live' as const,
+        },
+        {
+          sessionId: 's2',
+          name: 'codex-2',
+          harness: 'codex' as const,
+          projectId: PROJECT,
+          projectName: 'Alpha',
+          handle: 'codex-2',
+          state: 'live' as const,
+        },
+      ],
+    });
+    const { container } = renderChatter(
+      { status: 'ok', messages: [message('q', 'a', 'b', 10)] },
+      { send }
+    );
+    fireEvent.click(container.querySelector('[data-chatter-row="q"]')!);
+    const field = container.querySelector(
+      '[data-chatter-field]'
+    ) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: 'x' } });
+    await act(async () => {
+      fireEvent.submit(container.querySelector('[data-chatter-composer]')!);
+    });
+    const text =
+      container.querySelector('[data-chatter-send-result]')?.textContent ?? '';
+    expect(text).toContain('claude-1');
+    expect(text).toContain('codex-2');
+  });
+});
+
 function Dock() {
   const [tab, setTab] = useTeamDockTab();
   return (
