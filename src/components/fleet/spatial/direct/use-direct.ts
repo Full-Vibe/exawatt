@@ -11,8 +11,10 @@ import {
 import type { BusClient } from '@/lib/bus/client';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import { DEMO_BUS_SEND_REASON } from '@exawatt/core';
+import { analyticsSurface, captureAnalyticsEvent } from '@/lib/analytics';
 import {
   SESSION_STOPPED_REASON,
+  directReached,
   directResultOf,
   type DirectAvailability,
   type DirectRecipient,
@@ -122,7 +124,9 @@ export function useDirect({
             ])
           )
         );
+        let delivered = 0;
         const settle = (agentId: string, result: DirectResult) => {
+          if (directReached(result)) delivered += 1;
           if (ticket.current) {
             setResults(previous => new Map(previous).set(agentId, result));
           }
@@ -153,8 +157,14 @@ export function useDirect({
               settle(recipient.agentId, directResultOf(result));
             })
         );
-        // TODO(ENG-047 F1): emit `agent_directed` {recipients, delivered} once
-        // the funnel's allowlisted event lands; nothing may send it before.
+        // ENG-047: counts only, once per Send, whatever the selection did
+        // meanwhile (the send happened either way)
+        captureAnalyticsEvent({
+          name: 'agent_directed',
+          surface: analyticsSurface(),
+          recipients: targets.length,
+          delivered,
+        });
         return true;
       } finally {
         setSending(false);

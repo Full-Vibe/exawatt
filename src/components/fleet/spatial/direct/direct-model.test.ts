@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createAgent } from '@exawatt/core';
 import {
+  directReached,
   directRecipients,
   directResultOf,
   recipientNote,
@@ -113,5 +114,16 @@ describe('directResultOf', () => {
         record: null,
       })
     ).toEqual({ state: 'queued' });
+  });
+});
+
+describe('directReached', () => {
+  it('counts a message handed over or waiting at the door, never a refusal or an unconfirmed send', () => {
+    expect(directReached({ state: 'delivered' })).toBe(true);
+    expect(directReached({ state: 'queued' })).toBe(true);
+    expect(directReached({ state: 'terminal' })).toBe(true);
+    expect(directReached({ state: 'undeliverable', reason: 'x' })).toBe(false);
+    expect(directReached({ state: 'unknown' })).toBe(false);
+    expect(directReached({ state: 'sending' })).toBe(false);
   });
 });

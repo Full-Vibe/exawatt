@@ -74,6 +74,18 @@ export function directResultOf(result: BusSendResult): DirectResult {
   };
 }
 
+/** Whether a recipient's message reached its harness: handed over now, or
+ *  waiting at its door for the turn to end. A refusal, an expiry and an
+ *  unconfirmed send did not (ENG-047 `agent_directed`'s `delivered`). */
+export function directReached(result: DirectResult): boolean {
+  return (
+    result.state === 'delivered' ||
+    result.state === 'queued' ||
+    result.state === 'held' ||
+    result.state === 'terminal'
+  );
+}
+
 export const SESSION_STOPPED_REASON = 'Session stopped';
 
 /** Rows are told what Send will do, not only what it did. */
