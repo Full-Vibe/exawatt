@@ -184,6 +184,12 @@ function isMissingError(error: unknown): boolean {
 function describeError(error: unknown): string {
   const code = errorCode(error);
   if (code === 'EACCES' || code === 'EPERM') return 'permission denied';
+  // SQLite's own name for the failure ("file is not a database"): a fixed
+  // string from the library, never the store's contents.
+  const sqlite = (error as { errstr?: unknown } | null)?.errstr;
+  if (code === 'ERR_SQLITE_ERROR' && typeof sqlite === 'string' && sqlite) {
+    return sqlite;
+  }
   if (code) return `read failed (${code})`;
   return 'could not be read';
 }
@@ -446,46 +452,55 @@ async function readCodexRollouts(
   return found.filter((item): item is HarnessProjectEvidence => item !== null);
 }
 
+/**
+ * Codex's threads: its state database when it can be read, otherwise its
+ * rollouts. A database that exists and fails is never silent: the store is
+ * `unreadable`, named, and still carries whatever the rollouts say, so it
+ * never reads as "Codex never wrote this" (the absence rule).
+ */
 const codexSessionsReader: StoreReader = {
   harness: 'codex',
   store: 'codex-sessions',
   async read({ env, home }) {
     const database = codexStateDatabase(env, home);
-    if (fs.existsSync(database)) {
-      try {
-        const rows = readSqliteSnapshot(database, db =>
-          db
-            .prepare(
-              'SELECT cwd, MAX(updated_at_ms) AS at FROM threads ' +
-                'WHERE cwd IS NOT NULL GROUP BY cwd'
-            )
-            .all()
-        ) as Array<Record<string, unknown>>;
-        return {
-          status: 'read',
-          evidence: rows.flatMap(row =>
-            typeof row.cwd === 'string' && row.cwd
-              ? [codexThreadEvidence(row.cwd, epochMs(row.at))]
-              : []
-          ),
-        };
-      } catch {
-        // A database Codex changed the shape of; its rollouts still say
-        // where it ran.
-      }
-    }
+    let databaseFailure: string | null = null;
     try {
+      const rows = (await readSqliteSnapshot(database, db =>
+        db
+          .prepare(
+            'SELECT cwd, MAX(updated_at_ms) AS at FROM threads ' +
+              'WHERE cwd IS NOT NULL GROUP BY cwd'
+          )
+          .all()
+      )) as Array<Record<string, unknown>>;
       return {
         status: 'read',
-        evidence: await readCodexRollouts(
-          path.join(codexHome(env, home), 'sessions')
+        evidence: rows.flatMap(row =>
+          typeof row.cwd === 'string' && row.cwd
+            ? [codexThreadEvidence(row.cwd, epochMs(row.at))]
+            : []
         ),
       };
     } catch (error) {
+      // No database is an older Codex, which keeps only rollouts.
+      if (!isMissingError(error)) {
+        databaseFailure = `thread database: ${describeError(error)}`;
+      }
+    }
+    let rollouts: HarnessProjectEvidence[];
+    try {
+      rollouts = await readCodexRollouts(
+        path.join(codexHome(env, home), 'sessions')
+      );
+    } catch (error) {
+      if (databaseFailure) return unreadable(databaseFailure);
       return isMissingError(error)
         ? missing()
         : unreadable(describeError(error));
     }
+    return databaseFailure
+      ? { status: 'unreadable', reason: databaseFailure, evidence: rollouts }
+      : { status: 'read', evidence: rollouts };
   },
 };
 
@@ -547,7 +562,7 @@ const antigravityConversationsReader: StoreReader = {
     const file = antigravitySummariesFile(antigravityHome(home));
     if (!fs.existsSync(file)) return missing();
     try {
-      const summaries = readAntigravityConversationSummaries(
+      const summaries = await readAntigravityConversationSummaries(
         file,
         MAX_ANTIGRAVITY_CONVERSATIONS
       );

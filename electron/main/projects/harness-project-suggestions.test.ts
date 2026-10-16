@@ -378,6 +378,56 @@ describe('harness project suggestions', () => {
     expect(directory?.status).toBe('unreadable');
   });
 
+  it('names an unreadable Codex thread database, never reporting it missing', async () => {
+    const fixture = buildFixture();
+    // The database exists and is not a database; Codex wrote no rollouts.
+    fs.writeFileSync(
+      path.join(fixture.codexDir, 'state_5.sqlite'),
+      'x'.repeat(8192)
+    );
+    fs.rmSync(path.join(fixture.codexDir, 'state_5.sqlite-wal'), {
+      force: true,
+    });
+    const result = await read(fixture);
+    const sessions = result.stores.find(
+      store => store.store === 'codex-sessions'
+    );
+    expect(sessions).toMatchObject({ status: 'unreadable', entries: 0 });
+    expect(sessions?.reason).toMatch(/thread database/);
+  });
+
+  it('keeps Codex rollouts beside an unreadable thread database', async () => {
+    const fixture = buildFixture();
+    fs.writeFileSync(
+      path.join(fixture.codexDir, 'state_5.sqlite'),
+      'x'.repeat(8192)
+    );
+    const rollout = path.join(
+      fixture.codexDir,
+      'sessions',
+      '2026',
+      '10',
+      '15',
+      'rollout-2026-10-15T10-00-00-abc.jsonl'
+    );
+    write(
+      rollout,
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'abc', cwd: fixture.beta },
+      }) + '\n'
+    );
+    fs.utimesSync(rollout, (NOW - HOUR) / 1000, (NOW - HOUR) / 1000);
+    const result = await read(fixture);
+    const sessions = result.stores.find(
+      store => store.store === 'codex-sessions'
+    );
+    expect(sessions).toMatchObject({ status: 'unreadable', entries: 1 });
+    expect(sessions?.reason).toMatch(/thread database/);
+    const beta = result.suggestions.find(row => row.path === fixture.beta);
+    expect(beta?.harnesses).toEqual(['codex', 'antigravity']);
+  });
+
   it('reports a machine with no harness as missing stores, not unreadable ones', async () => {
     const home = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'exawatt-suggest-empty-'))

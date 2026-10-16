@@ -469,7 +469,7 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
     try {
       // A private copy: opening Codex's WAL database in place writes its
       // `-shm` and `-wal` (BUG-287).
-      const records = readSqliteSnapshot(stateDatabase, database => {
+      const records = await readSqliteSnapshot(stateDatabase, database => {
         const predicates = scope.roots.map(
           () => `(cwd = ? OR cwd LIKE ? ESCAPE '\\')`
         );
@@ -1398,7 +1398,7 @@ export class AntigravityConversationAdapter implements ConversationCatalogAdapte
   ) {}
 
   async list(projectDir: string): Promise<ConversationDraft[]> {
-    const summaries = readAntigravityConversationSummaries(
+    const summaries = await readAntigravityConversationSummaries(
       this.summariesFile ?? antigravitySummariesFile(),
       this.maxSessions
     );

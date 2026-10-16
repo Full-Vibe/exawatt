@@ -248,21 +248,21 @@ describe('Antigravity timestamps and workspaces', () => {
 });
 
 describe('readAntigravityConversationSummaries', () => {
-  it('is empty when Antigravity never ran here', () => {
+  it('is empty when Antigravity never ran here', async () => {
     expect(
-      readAntigravityConversationSummaries(
+      await readAntigravityConversationSummaries(
         path.join(tempDir(), 'conversation_summaries.db')
       )
     ).toEqual([]);
   });
 
-  it('throws on a database that exists and cannot be read', () => {
+  it('throws on a database that exists and cannot be read', async () => {
     const file = path.join(tempDir(), 'conversation_summaries.db');
     fs.writeFileSync(file, 'this is not sqlite');
-    expect(() => readAntigravityConversationSummaries(file)).toThrow();
+    await expect(readAntigravityConversationSummaries(file)).rejects.toThrow();
   });
 
-  it('lists top-level conversations with steps, newest first, never the preview', () => {
+  it('lists top-level conversations with steps, newest first, never the preview', async () => {
     const file = path.join(tempDir(), 'conversation_summaries.db');
     writeSummaries(file, [
       {
@@ -292,7 +292,7 @@ describe('readAntigravityConversationSummaries', () => {
         workspaces: ['/work/app'],
       },
     ]);
-    const summaries = readAntigravityConversationSummaries(file);
+    const summaries = await readAntigravityConversationSummaries(file);
     expect(summaries.map(summary => summary.id)).toEqual(['newest', 'older']);
     expect(summaries[0]).toEqual({
       id: 'newest',

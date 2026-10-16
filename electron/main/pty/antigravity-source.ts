@@ -167,14 +167,14 @@ export function parseAntigravityWorkspaceUris(value: unknown): string[] {
  * never read as an empty one. Children of a delegation (rows with a parent)
  * and conversations with no step yet are left out.
  */
-export function readAntigravityConversationSummaries(
+export async function readAntigravityConversationSummaries(
   file = antigravitySummariesFile(),
   limit = 200
-): AntigravityConversationSummary[] {
+): Promise<AntigravityConversationSummary[]> {
   if (!fs.existsSync(file)) return [];
   // A private copy: opening Antigravity's WAL database in place creates its
   // `-shm` and `-wal` beside it (BUG-287).
-  const rows = readSqliteSnapshot(
+  const rows = await readSqliteSnapshot(
     file,
     database =>
       database
