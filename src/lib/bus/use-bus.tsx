@@ -17,7 +17,7 @@ import {
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import { refusedSend, type BusClient } from './client';
 import { createLiveBusClient } from './live-client';
-import { useSeenThrough } from './read-state';
+import { useSeenThrough, useSeenThroughEach } from './read-state';
 import { agentUnreadCount, unreadCount, upsertMessage } from './selectors';
 import type { MessageRecord, BusSendResult } from '@exawatt/core';
 
@@ -146,22 +146,90 @@ export function useProjectUnread(
   );
 }
 
+/** One Agent on the bus: the Session and the Project it is scoped to. */
+interface BusParticipant {
+  projectId: string;
+  sessionId: string;
+}
+
 /**
- * Unread messages one Agent sent or received, for Fleet's selection panel
- * (ENG-004 V4.2, packet P5). Reads the same Project messages and the same
- * reading position as the Chatter tab, so the two never disagree.
+ * Unread messages each Agent sent or received, for Fleet's selection panel
+ * (ENG-004 V4.2, packet P5), by Session id. Each distinct Project is read
+ * once and followed through one subscription, however many Agents are
+ * selected; the reading position is the Chatter tab's, so the two never
+ * disagree. An Agent whose Project could not be read counts nothing.
  */
-export function useAgentUnread(
-  projectId: string | null,
-  sessionId: string | null
-): number {
-  const { state } = useBusMessages(projectId);
-  const seen = useSeenThrough(projectId);
-  return useMemo(
-    () =>
-      state.status === 'ok' && sessionId
-        ? agentUnreadCount(state.messages, seen, sessionId)
-        : 0,
-    [seen, sessionId, state]
+export function useSessionUnread(
+  participants: readonly BusParticipant[]
+): ReadonlyMap<string, number> {
+  const client = useBusClient();
+  const reads = useLatestRequest();
+  const projectKey = [...new Set(participants.map(entry => entry.projectId))]
+    .sort()
+    .join('\u001f');
+  const projectIds = useMemo(
+    () => (projectKey ? projectKey.split('\u001f') : []),
+    [projectKey]
   );
+  const [messages, setMessages] = useState<
+    ReadonlyMap<string, MessageRecord[]>
+  >(() => new Map());
+
+  useEffect(() => {
+    if (projectIds.length === 0) {
+      reads.invalidate();
+      setMessages(new Map());
+      return;
+    }
+    const ticket = reads.begin();
+    const wanted = new Set(projectIds);
+    // a push that lands while a Project's read is in flight is merged in
+    const loaded = new Map<string, MessageRecord[]>();
+    const early = new Map<string, MessageRecord[]>();
+    const unsubscribe = client.subscribe(message => {
+      if (!wanted.has(message.projectId)) return;
+      const current = loaded.get(message.projectId);
+      if (!current) {
+        early.set(message.projectId, [
+          ...(early.get(message.projectId) ?? []),
+          message,
+        ]);
+        return;
+      }
+      loaded.set(message.projectId, upsertMessage(current, message));
+      setMessages(new Map(loaded));
+    });
+    for (const projectId of projectIds) {
+      void client.list(projectId).then(result => {
+        if (!ticket.current || !result.ok) return;
+        loaded.set(
+          projectId,
+          (early.get(projectId) ?? []).reduce<MessageRecord[]>(
+            (records, message) => upsertMessage(records, message),
+            result.records
+          )
+        );
+        setMessages(new Map(loaded));
+      });
+    }
+    return () => {
+      reads.invalidate();
+      unsubscribe();
+    };
+  }, [client, projectIds, reads]);
+
+  const seen = useSeenThroughEach(projectIds);
+  return useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const { projectId, sessionId } of participants) {
+      const records = messages.get(projectId);
+      counts.set(
+        sessionId,
+        records
+          ? agentUnreadCount(records, seen.get(projectId) ?? 0, sessionId)
+          : 0
+      );
+    }
+    return counts;
+  }, [messages, participants, seen]);
 }

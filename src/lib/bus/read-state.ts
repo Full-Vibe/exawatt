@@ -7,7 +7,7 @@
  * Kept in this window's localStorage as a per-viewer convenience: losing it
  * only means messages read again as unread, never a lost message.
  */
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'exawatt:bus-seen:v1';
 
@@ -56,6 +56,24 @@ export function markSeenThrough(projectId: string, at: number): void {
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** The reading position in each of several Projects, read as one value. */
+export function useSeenThroughEach(
+  projectIds: readonly string[]
+): ReadonlyMap<string, number> {
+  const snapshot = useSyncExternalStore(
+    subscribe,
+    () => projectIds.map(projectId => seenThrough(projectId)).join(','),
+    () => ''
+  );
+  return useMemo(() => {
+    const positions = snapshot ? snapshot.split(',').map(Number) : [];
+    return new Map(
+      projectIds.map((projectId, index) => [projectId, positions[index] ?? 0])
+    );
+    // the snapshot string carries every position; ids are its key
+  }, [projectIds, snapshot]);
 }
 
 export function useSeenThrough(projectId: string | null): number {

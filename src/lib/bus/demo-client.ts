@@ -57,6 +57,8 @@ export function createDemoBusClient(nowMs: number): BusClient {
   const messages = demoBusMessages(nowMs);
   return {
     kind: 'demo',
+    // the Demo's bus is always here to read; it says it cannot send
+    unavailableReason: () => null,
     async list(projectId) {
       return {
         ok: true,

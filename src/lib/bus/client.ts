@@ -29,6 +29,12 @@ export type BusReadResult =
 
 export interface BusClient {
   readonly kind: BusClientKind;
+  /**
+   * Why there is no bus here, or null when there is one, answered at once
+   * from what this build carries: a surface deciding whether it can send
+   * never reads the ledger to find out.
+   */
+  unavailableReason(): string | null;
   /** every message in one Project, in ledger order */
   list(projectId: string): Promise<BusReadResult>;
   /** every message between two addresses of one Project, in ledger order */

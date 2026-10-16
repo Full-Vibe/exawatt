@@ -12,7 +12,7 @@ import type { BusLedgerRead } from '@exawatt/core';
 export type BusBridge = NonNullable<DesktopBridge['bus']>;
 
 /** Why there is no bus here, in one line the operator can act on. */
-function unavailableReason(): string {
+function missingBusReason(): string {
   return typeof window !== 'undefined' && window.electron
     ? 'This version of Exawatt does not carry agent messages yet.'
     : 'Agent messages are in the Exawatt desktop app.';
@@ -51,21 +51,24 @@ export function createLiveBusClient(
 ): BusClient {
   return {
     kind: 'live',
+    unavailableReason() {
+      return resolve() ? null : missingBusReason();
+    },
     async list(projectId) {
       const bridge = resolve();
       if (!bridge)
-        return { ok: false, unavailable: true, reason: unavailableReason() };
+        return { ok: false, unavailable: true, reason: missingBusReason() };
       return read(() => bridge.list(projectId));
     },
     async thread(projectId, a, b) {
       const bridge = resolve();
       if (!bridge)
-        return { ok: false, unavailable: true, reason: unavailableReason() };
+        return { ok: false, unavailable: true, reason: missingBusReason() };
       return read(() => bridge.thread(projectId, a, b));
     },
     async send(request) {
       const bridge = resolve();
-      if (!bridge) return refusedSend(unavailableReason());
+      if (!bridge) return refusedSend(missingBusReason());
       try {
         return await bridge.send(request);
       } catch (reason) {

@@ -2,6 +2,7 @@ import {
   act,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
 } from '@testing-library/react';
@@ -207,6 +208,52 @@ describe('Direct N Agents', () => {
     await waitFor(() =>
       expect(document.querySelector('[data-direct-send]')).toBeDisabled()
     );
+  });
+
+  it('knows whether a bus exists without reading the ledger', () => {
+    const { double } = bridge({});
+    const list = vi.spyOn(double, 'list');
+    const ready = renderHook(() =>
+      useDirect({
+        client: createLiveBusClient(() => double),
+        recipients: RECIPIENTS,
+        resolveAddresses: addresses,
+      })
+    );
+    // Answered on the first render, not after a read comes back.
+    expect(ready.result.current.availability).toEqual({ kind: 'ready' });
+    const absent = renderHook(() =>
+      useDirect({
+        client: createLiveBusClient(() => null),
+        recipients: RECIPIENTS,
+        resolveAddresses: addresses,
+      })
+    );
+    expect(absent.result.current.availability.kind).toBe('unavailable');
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("reads the Project's messages once for every recipient's unread", async () => {
+    const { double } = bridge({});
+    const list = vi.fn(async () => ({
+      ok: true as const,
+      records: [
+        busMessage('1', 'session-a', 'session-b', 5, { projectId: PROJECT }),
+        busMessage('2', 'session-c', 'session-a', 6, { projectId: PROJECT }),
+      ],
+    }));
+    double.list = list;
+    render(<Harness client={createLiveBusClient(() => double)} />);
+    await waitFor(() =>
+      expect(document.querySelector('[data-direct-unread="2"]')).not.toBeNull()
+    );
+    expect(
+      [...document.querySelectorAll('[data-direct-unread]')].map(node =>
+        node.getAttribute('data-direct-unread')
+      )
+    ).toEqual(['2', '1', '1']);
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(list).toHaveBeenCalledWith(PROJECT);
   });
 
   it('clears the text on Escape first, then hands Escape to the board', async () => {

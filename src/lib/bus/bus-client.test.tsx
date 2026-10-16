@@ -34,14 +34,18 @@ import type { BusDeliveryState, MessageRecord } from '@exawatt/core';
 import { busMessage } from './bus.test-support';
 import {
   BusClientProvider,
-  useAgentUnread,
   useBusClient,
   useBusMessages,
   useProjectUnread,
+  useSessionUnread,
 } from './use-bus';
 
 const NOW = Date.parse('2026-10-15T12:00:00Z');
 const PROJECT = '/work/alpha';
+const PARTICIPANTS = [
+  { projectId: PROJECT, sessionId: 'a' },
+  { projectId: PROJECT, sessionId: 'b' },
+];
 
 function message(
   id: string,
@@ -351,10 +355,11 @@ describe('hooks', () => {
     const { result } = renderHook(
       () => {
         const { state } = useBusMessages(PROJECT);
+        const agents = useSessionUnread(PARTICIPANTS);
         return {
           project: useProjectUnread(PROJECT, state),
-          agentA: useAgentUnread(PROJECT, 'a'),
-          agentB: useAgentUnread(PROJECT, 'b'),
+          agentA: agents.get('a'),
+          agentB: agents.get('b'),
         };
       },
       { wrapper: wrapper(client) }

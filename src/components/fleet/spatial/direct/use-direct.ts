@@ -51,7 +51,6 @@ export function useDirect({
   const [addresses, setAddresses] = useState<
     ReadonlyMap<string, RecipientAddress>
   >(() => new Map());
-  const [busReason, setBusReason] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const recipientsRef = useRef(recipients);
   useLayoutEffect(() => {
@@ -73,22 +72,10 @@ export function useDirect({
     return () => addressReads.invalidate();
   }, [addressReads, key, resolveAddresses, sends]);
 
-  // Whether a bus exists here is the client's answer, read through the seam:
-  // an unavailable read names the reason the rows then show.
-  const probeProject = recipients.find(entry => entry.projectId)?.projectId;
-  const probes = useLatestRequest();
-  useEffect(() => {
-    if (client.kind === 'demo' || !probeProject) return;
-    const ticket = probes.begin();
-    void client.list(probeProject).then(read => {
-      if (ticket.current)
-        // only "no bus here" blocks Send; a damaged ledger read is the
-        // Chatter tab's to report, and a send still answers per recipient
-        setBusReason(!read.ok && 'unavailable' in read ? read.reason : null);
-    });
-    return () => probes.invalidate();
-  }, [client, probeProject, probes]);
-
+  // Whether a bus exists here is the client's synchronous answer, never a
+  // ledger read: only "no bus here" blocks Send. A damaged ledger is the
+  // Chatter tab's to report, and a send still answers per recipient.
+  const busReason = client.kind === 'demo' ? null : client.unavailableReason();
   const availability: DirectAvailability = useMemo(
     () =>
       client.kind === 'demo'

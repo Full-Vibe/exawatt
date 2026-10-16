@@ -11,7 +11,7 @@ import type {
   SpatialScopeActivity,
 } from '@exawatt/ui-model';
 import { Button } from '@/components/ui/button';
-import { useAgentUnread } from '@/lib/bus/use-bus';
+import { useSessionUnread } from '@/lib/bus/use-bus';
 import {
   STATUS_LIGHT_META,
   StatusLight,
@@ -131,17 +131,24 @@ function refusalOf(address: RecipientAddress | undefined): string | undefined {
   return address && 'refused' in address ? address.refused : undefined;
 }
 
+/** Each addressable recipient on the bus: its Session and its Project. */
+function busParticipants(direct: SelectionDirect | null) {
+  if (!direct) return [];
+  return direct.recipients.flatMap(recipient => {
+    const address = direct.addresses.get(recipient.agentId);
+    return recipient.projectId && address && 'address' in address
+      ? [{ projectId: recipient.projectId, sessionId: address.address }]
+      : [];
+  });
+}
+
+function sessionOf(address: RecipientAddress | undefined): string | null {
+  return address && 'address' in address ? address.address : null;
+}
+
 /** Unread messages one recipient sent or received, from the same reading
  *  position as Team's Chatter tab, so the two never disagree. */
-function RecipientUnread({
-  projectId,
-  address,
-}: {
-  projectId: string | null;
-  address: RecipientAddress | undefined;
-}) {
-  const sessionId = address && 'address' in address ? address.address : null;
-  const unread = useAgentUnread(sessionId ? projectId : null, sessionId);
+function RecipientUnread({ unread }: { unread: number }) {
   if (unread === 0) return null;
   return (
     <span
@@ -179,6 +186,8 @@ function MultiSelectionCommand({
   const recipients = new Map(
     direct?.recipients.map(recipient => [recipient.agentId, recipient])
   );
+  // One read per Project for the whole working set, never one per row.
+  const unread = useSessionUnread(busParticipants(direct));
   return (
     <>
       <div className="flex items-start justify-between gap-3">
@@ -282,8 +291,11 @@ function MultiSelectionCommand({
                         </span>
                         {direct && recipient && (
                           <RecipientUnread
-                            projectId={recipient.projectId}
-                            address={direct.addresses.get(agent.id)}
+                            unread={
+                              unread.get(
+                                sessionOf(direct.addresses.get(agent.id)) ?? ''
+                              ) ?? 0
+                            }
                           />
                         )}
                       </span>
