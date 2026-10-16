@@ -512,7 +512,7 @@ same `codexHome()` the suggestions use.
 
 ### 2026-10-15 — O2, O3, O5 landed: the Start screen
 
-**The empty-Project state is the Start screen** (`<sha pending>`), replacing
+**The empty-Project state is the Start screen** (`16fb2fb7`), replacing
 the lone Open Project button. It is the study as the operator's review amended it, built
 from production parts and arranged once
 (`src/components/workspace/start-screen/`):

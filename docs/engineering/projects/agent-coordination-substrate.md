@@ -616,7 +616,7 @@ Found while building it, and now in the design:
 ### 2026-10-15 — B3 Team dock and the Chatter tab (packet P4, second landing)
 
 **Chatter is the second tab of Team's dock, over Demo and Live through one
-client** (`<sha pending>`). The first landing (`0364bb14`) put the renderer bus client in
+client** (`7ee5711d`). The first landing (`0364bb14`) put the renderer bus client in
 `src/lib/bus/`; this one builds the viewer on it.
 
 - **The dock.** `src/components/team/team-dock.tsx` owns the frame the
@@ -672,7 +672,7 @@ client** (`<sha pending>`). The first landing (`0364bb14`) put the renderer bus 
 
 **The Exawatt MCP server is every launched Claude Code, Codex and
 Antigravity Agent's second way onto the bus, and the one that works from
-Codex's sandbox.** Landed in `<sha pending>`.
+Codex's sandbox.** Landed in `b1f40dae`.
 
 Codex sandbox verdict, measured on Codex 0.162.1 in a scratch `CODEX_HOME`:
 under `workspace-write` (the sandbox of every Ask-first and Auto-review
