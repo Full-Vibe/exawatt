@@ -15,7 +15,7 @@ import type {
   DirectResult,
 } from '@/components/fleet/spatial/direct/direct-model';
 import { boardStudyFleet } from '@/components/hud/board-study-fixtures';
-import { DEMO_CANNOT_SEND } from '@/lib/bus/demo-client';
+import { DEMO_BUS_SEND_REASON } from '@exawatt/core';
 
 /**
  * ENG-004 V4.2 specimens: Direct N Agents and the ghost slot, rendered by the
@@ -59,7 +59,7 @@ const STATES: Array<{
   {
     id: 'demo',
     title: 'Demo',
-    availability: { kind: 'unavailable', reason: DEMO_CANNOT_SEND },
+    availability: { kind: 'unavailable', reason: DEMO_BUS_SEND_REASON },
     results: () => new Map(),
   },
 ];

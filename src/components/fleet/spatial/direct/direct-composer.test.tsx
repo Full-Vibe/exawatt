@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import type { FleetAgentView } from '@exawatt/ui-model';
 import { createLiveBusClient, type BusBridge } from '@/lib/bus/live-client';
+import { busMessage } from '@/lib/bus/bus.test-support';
 import { createDemoBusClient } from '@/lib/bus/demo-client';
 import type { BusClient } from '@/lib/bus/client';
 import type { BusDeliveryState } from '@exawatt/core';
@@ -72,23 +73,17 @@ const RECIPIENTS: DirectRecipient[] = [
 function bridge(states: Record<string, BusDeliveryState>) {
   const sent: Parameters<BusBridge['send']>[0][] = [];
   const double: BusBridge = {
-    list: async () => [],
-    thread: async () => [],
+    list: async () => ({ ok: true, records: [] }),
+    thread: async () => ({ ok: true, records: [] }),
     send: async request => {
       sent.push(request);
-      return {
-        status: 'sent',
-        message: {
-          id: `m-${request.to}`,
-          projectId: request.projectId,
-          from: { sessionId: 'operator', name: 'You', harness: 'operator' },
-          to: { sessionId: request.to, name: request.to, harness: 'claude' },
-          kind: 'operator',
-          at: 1,
-          text: request.text,
-          delivery: { state: states[request.to] ?? 'unknown' },
-        },
-      };
+      const record = busMessage(`m-${request.to}`, 'operator', request.to, 1, {
+        operator: true,
+        projectId: request.projectId,
+        text: request.text,
+        state: states[request.to] ?? 'unknown',
+      });
+      return { delivery: record.delivery, record };
     },
     onMessage: () => () => undefined,
   };

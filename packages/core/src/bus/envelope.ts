@@ -53,13 +53,16 @@ export function busDeliveredText(
   return `${busStampLine(envelope, labels)}\n\n${envelope.text}`;
 }
 
-/** The one answer every Demo send gets: Demo Agents are authored, so a
- *  delivery to them would be invented. */
+/** Why the Demo never sends: its Agents are authored, so a delivery to them
+ *  would be invented. Direct shows it before Send; every Demo send answers it. */
+export const DEMO_BUS_SEND_REASON = 'Demo cannot send';
+
+/** The one answer every Demo send gets. */
 export function demoBusSendResult(): BusSendResult {
   return {
     delivery: {
       state: 'undeliverable',
-      reason: 'Demo cannot send',
+      reason: DEMO_BUS_SEND_REASON,
       adapter: 'demo',
     },
     record: null,

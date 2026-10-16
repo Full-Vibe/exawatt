@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { BusClient } from '@/lib/bus/client';
 import { useLatestRequest } from '@/hooks/use-latest-request';
-import { DEMO_CANNOT_SEND } from '@/lib/bus/demo-client';
+import { DEMO_BUS_SEND_REASON } from '@exawatt/core';
 import {
   SESSION_STOPPED_REASON,
   directResultOf,
@@ -80,7 +80,9 @@ export function useDirect({
     const ticket = probes.begin();
     void client.list(probeProject).then(read => {
       if (ticket.current)
-        setBusReason(read.status === 'unavailable' ? read.reason : null);
+        // only "no bus here" blocks Send; a damaged ledger read is the
+        // Chatter tab's to report, and a send still answers per recipient
+        setBusReason(!read.ok && 'unavailable' in read ? read.reason : null);
     });
     return () => probes.invalidate();
   }, [client, probeProject, probes]);
@@ -88,7 +90,7 @@ export function useDirect({
   const availability: DirectAvailability = useMemo(
     () =>
       client.kind === 'demo'
-        ? { kind: 'unavailable', reason: DEMO_CANNOT_SEND }
+        ? { kind: 'unavailable', reason: DEMO_BUS_SEND_REASON }
         : busReason
           ? { kind: 'unavailable', reason: busReason }
           : { kind: 'ready' },

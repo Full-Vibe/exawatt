@@ -62,31 +62,12 @@ export type DirectResult =
   | { state: BusDeliveryState; reason?: string };
 
 /**
- * The renderer client's answer from before it was typed against the core
- * contract (P4 is retyping it). Declared here, structurally, so Direct reads
- * either answer without depending on the renderer's own message types.
- */
-type PreContractSendAnswer =
-  | {
-      status: 'sent';
-      message: { delivery: { state: BusDeliveryState; reason?: string } };
-    }
-  | { status: 'refused'; reason: string };
-
-/**
  * The bus's answer to one send, reduced to the recipient's row. This is the
  * one place that reads a send result. A `null` record is a refusal before
  * anything was logged; its `delivery` says why.
  */
-export function directResultOf(
-  result: BusSendResult | PreContractSendAnswer
-): DirectResult {
-  const delivery =
-    'delivery' in result
-      ? result.delivery
-      : result.status === 'sent'
-        ? result.message.delivery
-        : { state: 'undeliverable' as const, reason: result.reason };
+export function directResultOf(result: BusSendResult): DirectResult {
+  const { delivery } = result;
   return {
     state: delivery.state,
     ...(delivery.reason ? { reason: delivery.reason } : {}),
