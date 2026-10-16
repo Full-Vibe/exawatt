@@ -166,3 +166,22 @@ that every historical assertion came from Claude or that Fleet was the main
 energy consumer. The operator accepted the AC default and supported-harness boundary on
 2026-09-25 and authorized implementation. The physical acceptance gates above remain open; synthetic-event verification
 is not physical sleep/wake or historical energy evidence.
+
+## Amendment: startup lock is a snapshot, not notification history (2026-10-15)
+
+BUG-294 separates the initial/resume screen-lock read from Electron's future
+events. An independently paired CoreGraphics observation proved that Electron
+43.1.0 reports idle when launched after the Mac was locked. The existing N-API
+build boundary now reads `CGSessionCopyCurrentDictionary` in process only at
+startup/resume; no polling, subprocess or sleep assertion is introduced.
+
+The function is public, but its `CGSSessionScreenIsLocked` dictionary field is
+undocumented. Accept only a present typed boolean; missing/malformed capability
+is unknown, never inferred unlocked. Unknown desktop state permits demand
+rendering and interaction but not continuous ambience. A known lock or suspend
+parks the whole canvas. Hosted browsers retain their visibility policy.
+
+Both views passed actual locked-start parking. An unlocked native observation
+and final delivery remain pending. [Incident 0038](../incidents/0038-locked-startup-reports-unlocked.md)
+records the independent evidence and the compatibility boundary; this does not
+change Session lifecycle or establish historical battery attribution.

@@ -3778,7 +3778,14 @@ Before implementation, the ownership plan is:
   resume, battery-cadence and unlocked interaction checks. Comparing the bridge
   to the same cached Electron API is not sufficient startup evidence.
 
-Native snapshot feasibility and the already-locked reproduction are being
-checked before this plan is implemented. The original five review repairs and
-their motion, scale, visibility, interaction and persistence checks are complete;
-integration still requires an unlocked host for the native-focus gate.
+BUG-294 implements this plan through the existing N-API packaging boundary.
+Both views now prove a locked initial snapshot and zero parked frames on an
+actually locked host, while Electron's idle cache still says idle. The observer
+owns subscriptions before sampling and reads again only on resume. A missing
+or malformed capability stays unknown. Source/native build contracts and the
+conservative policy tests pass; independent review required separate demand
+and ambient permissions so unknown capability cannot freeze the interface.
+The original five review repairs and their motion, scale, visibility,
+interaction and persistence checks are complete. An actual unlocked native
+snapshot remains necessary to accept the optional dictionary capability;
+integration also requires an unlocked host for the native-focus gate.

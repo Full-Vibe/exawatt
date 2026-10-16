@@ -15,15 +15,15 @@ wrong. Dense rules + short snippets; verify any API against the pinned versions.
 
 ## Pinned stack — verify against THESE, not generic tutorials
 
-| package                       | version | notes                                                                                            |
-| ----------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
-| `@react-three/fiber`          | ^9.6.1  | React 19 only. JSX types come from `ThreeElements`, **not** `JSX.IntrinsicElements`.             |
-| `@react-three/drei`           | ^10.7.7 | does **not** re-export `easing` (that's `maath`). `<StatsGl>` wraps stats-gl **v2**.             |
-| `@react-three/postprocessing` | ^3.0.4  | `<EffectComposer>`/`<Bloom>`. Heaviest import — lazy-load it.                                    |
-| `three`                       | ^0.184  | ColorManagement ON by default; manual `texture.colorSpace = THREE.SRGBColorSpace` on color maps. |
-| `react` / `react-dom`         | 19.2.x  |                                                                                                  |
-| `next`                        | 16.2.x  | App Router. R3F components are `'use client'`.                                                   |
-| `camera-controls`             | ^3.1.0  | direct dep; drei `<CameraControls>` wraps it. Use `fitToBox` instead of hand-rolled camera math. |
+| package | version | notes |
+|---|---|---|
+| `@react-three/fiber` | ^9.6.1 | React 19 only. JSX types come from `ThreeElements`, **not** `JSX.IntrinsicElements`. |
+| `@react-three/drei` | ^10.7.7 | does **not** re-export `easing` (that's `maath`). `<StatsGl>` wraps stats-gl **v2**. |
+| `@react-three/postprocessing` | ^3.0.4 | `<EffectComposer>`/`<Bloom>`. Heaviest import — lazy-load it. |
+| `three` | ^0.184 | ColorManagement ON by default; manual `texture.colorSpace = THREE.SRGBColorSpace` on color maps. |
+| `react` / `react-dom` | 19.2.x | |
+| `next` | 16.2.x | App Router. R3F components are `'use client'`. |
+| `camera-controls` | ^3.1.0 | direct dep; drei `<CameraControls>` wraps it. Use `fitToBox` instead of hand-rolled camera math. |
 
 **NOT installed (do not bare-import):** `maath` (transitive only — a direct
 import won't resolve under pnpm without `pnpm add maath`), `leva`, `r3f-perf`,
@@ -96,7 +96,7 @@ Current boundaries:
   and disabling its typesetter worker leaves the CPU SDF worker fallback
   (incident `0033`). The generated-texture keyswitch is a separate path.
 
-**Architecture (resolved):** WebGL renders the decorative/scalable _world_; ALL
+**Architecture (resolved):** WebGL renders the decorative/scalable *world*; ALL
 text and ALL interactivity for chrome live in a pixel-aligned **DOM overlay**
 (crisp + keyboard-accessible). Keep that split — see decision `0003`.
 "One spatial surface" means one route/command model, not one geometry regime at
@@ -114,7 +114,7 @@ must remain complete without bloom; Project identity stays data and is only
 contrast-corrected against the resolved ground.
 
 1. **Know your `frameloop`.** `demand` (spatial): `useFrame` runs but nothing
-   _paints_ without `invalidate()`. Every continuous animation must call
+   *paints* without `invalidate()`. Every continuous animation must call
    `state.invalidate()` each frame **while animating** and stop once settled (so
    the scene parks); programmatic changes (selection/resize) must `invalidate()`.
    `always` (gallery): paints every frame — fine for a few small canvases, but
@@ -127,7 +127,7 @@ contrast-corrected against the resolved ground.
    `phase += delta * radPerSec`. Continuous easing:
    `THREE.MathUtils.damp(current, target, lambda /*≈6–10*/, delta)`.
    `clock.elapsedTime` is wall-clock so `sin(elapsed*k)` is already fps-independent.
-   4b. **Split motion by kind — `damp` is not for semantic transitions.** `damp`
+4b. **Split motion by kind — `damp` is not for semantic transitions.** `damp`
    re-aims every frame and never needs to know where it is going, which makes it
    right for motion whose target is still moving: pan, wheel, pinch, follow,
    hover lift, a clamp rubber-band. It is wrong for a transition that several
@@ -140,14 +140,14 @@ contrast-corrected against the resolved ground.
    ONE clock with a real duration and an ease that leaves and arrives at rest,
    and every participating layer samples the same progress. See
    `operations-board-transition.ts` for the board's implementation.
-   4d. **The world is fixed; altitude is a camera state.** (ENG-004 V3.7.)
+4d. **The world is fixed; altitude is a camera state.** (ENG-004 V3.7.)
    Semantic navigation must never re-lay-out, re-size, or re-kind what is on
    the board; it moves the camera and changes what DETAIL is shown (labels,
    dimming, a reveal at the same anchor). Geometry that depends on the focused
    item produces a one-frame cut under a still camera before every flight —
    measured at 2–3x the flight's own peak diff — and no motion system can hide
    it. `eval:spatial:motion` is the gate.
-   4e. **No state that flips mid-flight above the layers.** A `useState` at the
+4e. **No state that flips mid-flight above the layers.** A `useState` at the
    canvas root re-renders every layer under it; if it can change during a
    camera move (a zoom-threshold label tier, a wall-clock tick) it lands as a
    50–60ms task in the middle of the flight. Hold such state in a small
@@ -156,12 +156,12 @@ contrast-corrected against the resolved ground.
    on one structure rather than subtree swaps. The board's `OperationsBoardSurface`
    is a `memo` boundary for the same reason: the React Compiler is not enabled
    here, so nothing is memoised unless you memoise it.
-   4f. **Hotkeys move the camera on the keystroke's frame.** Kick the imperative
+4f. **Hotkeys move the camera on the keystroke's frame.** Kick the imperative
    camera verb in the key handler, commit the route/state as a `startTransition`
    (a keydown is a discrete event and would otherwise flush synchronously
    before the browser paints), and make the commit JOIN a flight already in
    progress rather than restart it.
-   4g. **Pointer state is a store, and every layer is a memo boundary.** Hover and
+4g. **Pointer state is a store, and every layer is a memo boundary.** Hover and
    press are the 4e class of defect one level down: as root `useState` they
    re-rendered every layer and rebuilt every instance list on each pointer
    crossing. The board keeps them in `operations-board-hover.ts`; producers
@@ -171,14 +171,14 @@ contrast-corrected against the resolved ground.
    arrays inside a layer are `useMemo`d, and a parent never hands a layer a
    fresh closure. Consequence: layout objects are immutable to consumers — a
    layer that wrote into a piece would corrupt the previous frame too.
-   4h. **One place maps a layout point to a world point.** `ui-model` lays out
+4h. **One place maps a layout point to a world point.** `ui-model` lays out
    y-down; three.js draws y-up. The flip lives in `boardWorldY` /
    `boardWorldPoint` / `boardWorldPosition` in the camera module and nowhere
    else (`boardRectCenter` routes through them; per-frame loops take the scalar
    form so they allocate nothing). Never write `-piece.y` in a layer. A future
    view lens — a globe, a parallax stage — is this mapping plus
    `applyBoardCameraTarget` / `clientPointToBoard`, not a sweep of the layers.
-   4i. **Semantic transitions ease OUT.** The shared clock's ease answers on the
+4i. **Semantic transitions ease OUT.** The shared clock's ease answers on the
    input's frame and arrives at rest. An ease-in-out left ~30ms of
    sub-perceptual motion after a keypress, which reads as latency; response on
    the input's frame reads as causality. Arrival keeps zero velocity so the
@@ -186,7 +186,7 @@ contrast-corrected against the resolved ground.
    (emergence turnarounds) must stay monotone-safe, and a turnaround below the
    arrival origin resumes from where it is rather than projecting onto the
    curve.
-   4c. **Interpolate multiplicative quantities in log space.** Camera zoom and
+4c. **Interpolate multiplicative quantities in log space.** Camera zoom and
    uniform scale are ratios, not distances: 1 → 2 and 2 → 4 are the same visual
    change. Mixing them linearly front-loads zooming in and back-loads zooming
    out over the same journey — halfway through a linear 1 → 4 the operator has
@@ -212,83 +212,67 @@ contrast-corrected against the resolved ground.
     render targets. `useMemo` shared geometry; dispose on unmount.
 11. **Accessibility:** the `<canvas>` is opaque to assistive tech. Interactivity
     lives in the DOM overlay (focusable, ARIA, keyboard). Mesh interactivity is a
-    visual _enhancement_ mirroring DOM controls, never the only way to act. Mark
+    visual *enhancement* mirroring DOM controls, never the only way to act. Mark
     decorative canvases `aria-hidden`; match `hover:` with `focus-visible:`.
 12. **Reduced motion:** gate continuous motion on `useReducedMotion()`. Reduced
     motion kills MOTION, not bloom — a static glow is fine; a pulsing one isn't.
     For damp transitions, SNAP to target when reduced.
-    12b. **Power is a cadence, not a state** (BUG-263). Battery and weak hardware
-    slow the ambient paint through `operations-board-ambient.ts` (`display` /
-    `economy` / `parked`; one shared timer per canvas, requested from inside
-    `useFrame` in place of `state.invalidate()`); they never freeze a Working
-    mark and never lower `dpr`. Reduced motion, an unseen board (hidden,
-    locked, suspended), or an unknown desktop host observation parks ambient
-    cadence. Keep demand renders available when the native observation is
-    unknown; only known hiding/lock/suspend selects `frameloop="never"`. A cadence change requests one frame
-    so leaving `parked` does not wait for an unrelated paint. Transitions
-    (entrance, camera flights) still paint every refresh; an eval that measures
-    the economy bound waits for the first unpainted refresh first. The
-    2026-09-25 battery fix reused the weak-hardware `lowPower` gate (dpr 1.25,
-    no bloom, rotors at rest) and shipped a soft, frozen board five days later.
+12b. **Power is a cadence, not a state** (BUG-263). Battery and weak hardware
+   slow the ambient paint through `operations-board-ambient.ts` (`display` /
+   `economy` / `parked`; one shared timer per canvas, requested from inside
+   `useFrame` in place of `state.invalidate()`); they never freeze a Working
+   mark and never lower `dpr`. Reduced motion, an unseen board (hidden,
+   locked, suspended), or an unknown desktop host observation parks ambient
+   cadence. Keep demand renders available when the native observation is
+   unknown; only known hiding/lock/suspend selects `frameloop="never"`. A cadence
+   change requests one frame
+   so leaving `parked` does not wait for an unrelated paint. Transitions
+   (entrance, camera flights) still paint every refresh; an eval that measures
+   the economy bound waits for the first unpainted refresh first. The
+   2026-09-25 battery fix reused the weak-hardware `lowPower` gate (dpr 1.25,
+   no bloom, rotors at rest) and shipped a soft, frozen board five days later.
 13. **Input feel is velocity, not key-repeat or tap kicks.** Held camera input
-    damps current velocity toward a target and decays after release. Do not add an
-    immediate distance/angle kick before the rAF loop, and do not claim
-    CameraControls damping while passing `enableTransition=false` without your
-    own velocity smoothing.
+   damps current velocity toward a target and decays after release. Do not add an
+   immediate distance/angle kick before the rAF loop, and do not claim
+   CameraControls damping while passing `enableTransition=false` without your
+   own velocity smoothing.
 14. **Pointer-following DOM must not render React at pointer frequency.** Store
-    coordinates in refs and coalesce transform writes through one rAF. State is
-    for semantic hover identity, not every cursor pixel.
+   coordinates in refs and coalesce transform writes through one rAF. State is
+   for semantic hover identity, not every cursor pixel.
 15. **Stable identity survives filters.** Do not key the field, cluster, or
-    animation owner by `agents.length`. Preserve surviving agent/Project state by
-    stable IDs and animate actual additions/removals only.
+   animation owner by `agents.length`. Preserve surviving agent/Project state by
+   stable IDs and animate actual additions/removals only.
 
 ## Motion patterns (zero new deps — `THREE.MathUtils`)
 
 Idle shimmer (delta-phase, settles, demand-safe):
-
 ```ts
 const mat = useRef<THREE.MeshBasicMaterial>(null);
 const phase = useRef(0);
 useFrame((state, delta) => {
   if (!mat.current) return;
-  if (!shimmer) {
-    mat.current.opacity = glow;
-    return;
-  } // settle to base, then PARK
-  phase.current += delta * 2.2; // rad/sec
+  if (!shimmer) { mat.current.opacity = glow; return; } // settle to base, then PARK
+  phase.current += delta * 2.2;                          // rad/sec
   mat.current.opacity = glow + Math.sin(phase.current) * 0.14;
-  state.invalidate(); // keep frames coming (demand)
+  state.invalidate();                                    // keep frames coming (demand)
 });
 ```
-
 > **Bug to avoid (was live in console3d Panel):** early-returning
 > `if (!shimmer) return` BEFORE resetting opacity freezes the glow mid-sine when
 > the gate flips false. Always set the base value on the off-branch, then park.
 
 Hover lift/glow (damp, reduced-motion aware, parks when settled):
-
 ```ts
-const invalidate = useThree(s => s.invalidate);
+const invalidate = useThree((s) => s.invalidate);
 useFrame((state, delta) => {
   if (!ref.current || !mat.current) return;
-  const wantScale = hovered ? 1.05 : 1,
-    wantGlow = hovered ? 0.95 : glow;
-  if (reduced) {
-    ref.current.scale.setScalar(wantScale);
-    mat.current.opacity = wantGlow;
-  } else {
-    ref.current.scale.setScalar(
-      THREE.MathUtils.damp(ref.current.scale.x, wantScale, 9, delta)
-    );
-    mat.current.opacity = THREE.MathUtils.damp(
-      mat.current.opacity,
-      wantGlow,
-      9,
-      delta
-    );
+  const wantScale = hovered ? 1.05 : 1, wantGlow = hovered ? 0.95 : glow;
+  if (reduced) { ref.current.scale.setScalar(wantScale); mat.current.opacity = wantGlow; }
+  else {
+    ref.current.scale.setScalar(THREE.MathUtils.damp(ref.current.scale.x, wantScale, 9, delta));
+    mat.current.opacity = THREE.MathUtils.damp(mat.current.opacity, wantGlow, 9, delta);
   }
-  if (hovered || Math.abs(ref.current.scale.x - wantScale) > 0.001)
-    state.invalidate();
+  if (hovered || Math.abs(ref.current.scale.x - wantScale) > 0.001) state.invalidate();
 });
 // onPointerOver={(e) => { e.stopPropagation(); setHovered(true); invalidate(); }}
 // onPointerOut={() => { setHovered(false); invalidate(); }}
@@ -316,7 +300,7 @@ useFrame((state, delta) => {
 - drei `<Instances limit={N}><geom/><mat/>{items.map(<Instance/>)}</Instances>`
   = one draw call, per-instance color/scale/events. Good to ~5–10k React
   elements; beyond, raw `THREE.InstancedMesh` + `e.intersections[0].instanceId`
-  - `setColorAt`. `limit` sizes the GPU buffer (≥ max); `range` caps draw count.
+  + `setColorAt`. `limit` sizes the GPU buffer (≥ max); `range` caps draw count.
 - **Ortho px-space caveat:** `zoom 1` ⇒ DOM overlay is pixel-aligned. Any camera
   zoom/fit (`<Bounds>`, `<CameraControls>`) desyncs it. For ortho `<Bounds>`,
   `fit()` only changes ZOOM — use `reset()` to recenter. True zoom-one→thousands
@@ -336,14 +320,14 @@ useFrame((state, delta) => {
 
 ## Dependency rules
 
-| Want           | Do                                                              | Don't                                                                    |
-| -------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| eased motion   | `THREE.MathUtils.damp` (zero dep)                               | `import { easing } from '@react-three/drei'` (not re-exported in 10.7.7) |
-| maath easing   | `pnpm add maath` first                                          | bare `import 'maath'` (transitive-only won't resolve)                    |
-| spring feel    | usually `damp` is enough                                        | `@react-spring/three` (choppy under demand; v9 conflicts React 19)       |
-| 3D motion lib  | —                                                               | `framer-motion-3d` (removed in Motion 12.5; no React 19)                 |
-| stats panel    | drei `<Stats>`/`<StatsGl>` (bundles stats-gl v2)                | standalone `stats-gl@4`                                                  |
-| camera framing | `camera-controls` `fitToBox`, `THREE.Box3`, drei ortho auto-fit | hand-derived quaternion/Euler/projection math                            |
+| Want | Do | Don't |
+|---|---|---|
+| eased motion | `THREE.MathUtils.damp` (zero dep) | `import { easing } from '@react-three/drei'` (not re-exported in 10.7.7) |
+| maath easing | `pnpm add maath` first | bare `import 'maath'` (transitive-only won't resolve) |
+| spring feel | usually `damp` is enough | `@react-spring/three` (choppy under demand; v9 conflicts React 19) |
+| 3D motion lib | — | `framer-motion-3d` (removed in Motion 12.5; no React 19) |
+| stats panel | drei `<Stats>`/`<StatsGl>` (bundles stats-gl v2) | standalone `stats-gl@4` |
+| camera framing | `camera-controls` `fitToBox`, `THREE.Box3`, drei ortho auto-fit | hand-derived quaternion/Euler/projection math |
 
 ## The 3D-failure rubric (grade your own screenshot against this)
 
@@ -358,7 +342,6 @@ review — grade the axes.
 
 Use `pnpm eval:r3f` (the checked-in eval, `scripts/r3f-eval/`) and/or a Playwright
 shot. Rules:
-
 - `goto(url, { waitUntil: 'load' })` — **NOT** `networkidle` (never fires on a
   streaming/polling app; doesn't guarantee a painted frame).
 - Then `waitForFunction(() => { const c=document.querySelector('canvas'); return c && c.width>0 && c.height>0 })`, then a **double rAF**.
@@ -402,10 +385,9 @@ shot. Rules:
 ## Test-time strategy (how the agent should work, not which model)
 
 Stay on the primary model; add **test-time compute**, not a vendor swap:
-
 - **Vision-critic pass:** after building, the agent re-reads its own screenshot
   and grades pixels against the rubric as an explicit, blocking step. Keep the
-  _visual_ verdict separate from the _code_ edit. If a defect persists, switch
+  *visual* verdict separate from the *code* edit. If a defect persists, switch
   the critic's persona ("review as a motion designer", then "as a perf
   engineer") rather than re-running the identical prompt.
 - **Best-of-N + a real verifier** for hard surfaces (shaders, dense instanced
