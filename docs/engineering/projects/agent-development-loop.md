@@ -141,12 +141,15 @@ Together that is about 450 of the day's 1,423 check-minutes (32%), before the
 second-order effect: fewer concurrent suite runs is less load, which is fewer
 of the load failures that caused the 952 red minutes.
 
-BUG-288's cause, in this light: not a defect in `queue-hold.test.mjs`. Its
-fixture landing goes silent past the 60-second no-progress bound when three or
-four copies of the suite (11 workers each, every fixture spawning git and
-Node) overlap with unslotted runs and dev servers on 12 cores. The repair is
-less concurrent work, which the two changes above deliver, plus the cap shaped
-below; never a longer bound.
+BUG-288 in this light: load is the main driver. The fixture landing goes
+silent past the 60-second no-progress bound most often when three or four
+copies of the suite (11 workers each, every fixture spawning git and Node)
+overlap with unslotted runs and dev servers on 12 cores. It is not the whole
+cause: the same four-minute stall at the post-admission fixture `git fetch`
+recurred in this change's own landing and once at a one-minute load of 21,
+then not in four reruns, so what blocks in that step is still open. Less
+concurrent work (the changes above, and the cap shaped below) makes it rarer;
+a longer bound is not a repair.
 
 The structural answer is shaped, not built, in ENG-039 M3:
 [module-owned verification is the delivery architecture](module-topology.md#2026-10-15--m3-shaped-module-owned-verification-is-the-delivery-architecture),

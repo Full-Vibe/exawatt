@@ -4451,14 +4451,22 @@ at a fixture `git fetch`), and whether the step needs a heartbeat or the
 fixture does work it should not. The second attempt, at the same load,
 failed the same way; the landing then waited for the load to fall.
 
-Cause (2026-10-15, ENG-022 H22): contention, not the test. The day's 20
+Load evidence (2026-10-15, ENG-022 H22): contention is the main driver, but
+not the whole cause. The day's 20
 `test:agent-delivery` failures overlapped 3.1 other runs of the suite on
 average against 1.7 for passes, 11 were on trees that later passed unchanged,
 and runs released unslotted after the 20-minute slot deadline failed 5 of 8
 against 16 of 93 slotted. Each run starts 11 `node --test` workers whose
 fixtures spawn git and Node, so three or four overlapping runs on 12 cores put
-a fixture `git fetch` past the 60-second no-progress bound. H22 cuts the
-overlap (the suite runs only for changes that reach it; passes on identical
-trees are reused); the remaining repair is the load-tied concurrency cap
-shaped in the [audit](projects/agent-development-loop.md#delivery-efficiency-audit--2026-10-15),
-never a longer bound.
+a fixture `git fetch` past the 60-second no-progress bound. But the same
+stall, about four minutes at the post-admission fixture `git fetch`, then
+recurred twice in H22's own landing (in `queue-hold.test.mjs` and
+`landing-dev-server.test.mjs`) and once with only those two files running, at
+a one-minute load average of 21 (15-minute 61, just after a fleet burst);
+four back-to-back reruns minutes later passed in about 22 seconds each. So
+something in that step blocks for minutes, rarely, and load makes it likelier;
+what blocks is still undiagnosed. H22 cuts the overlap (the suite runs only
+for changes that reach it; passes on identical trees are reused), and the
+load-tied concurrency cap is shaped in the
+[audit](projects/agent-development-loop.md#delivery-efficiency-audit--2026-10-15);
+neither is a longer bound, and neither closes this.
