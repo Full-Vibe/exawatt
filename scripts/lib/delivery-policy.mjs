@@ -1777,6 +1777,9 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:bus-live': manual(
     'drives real signed-in Claude Code and Codex CLIs through paid provider turns to exchange bus messages'
   ),
+  'eval:electron:bus-mcp-live': manual(
+    'drives a real signed-in Codex (and Claude Code when CLAUDE_CODE_OAUTH_TOKEN is set) through paid provider turns over the MCP door'
+  ),
   'eval:electron:real-harness': manual(
     'drives real signed-in Claude Code and Codex CLIs through paid provider turns'
   ),
