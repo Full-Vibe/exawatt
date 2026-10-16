@@ -190,17 +190,6 @@ async function measureGlide(page) {
   return { ...sample, ...cadence };
 }
 
-async function pauseDemo(page, mobile) {
-  let summary;
-  if (mobile) {
-    summary = page.getByRole('button', { name: /Demo/i }).first();
-    if (await summary.isVisible()) await summary.click();
-  }
-  const pause = page.getByRole('button', { name: 'Pause simulation' });
-  if (await pause.isVisible()) await pause.click();
-  if (summary && (await summary.isVisible())) await summary.click();
-}
-
 async function waitForSpatialCanvas(page) {
   await assertFleetView(page);
   await page.waitForFunction(
@@ -1037,6 +1026,10 @@ async function runScenario(browser, scenario) {
   });
   await primeEvalBrowserPage(page);
   await prepareFleetViewPage(page);
+  // Compare filters against one Demo source snapshot. The retired simulation
+  // controls no longer pause the live source. Date-only clock control keeps
+  // its elapsed time fixed while timers, performance.now and rAF run normally.
+  await page.clock.setFixedTime(Date.now());
   if (scenario.lowPower) {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'hardwareConcurrency', {
@@ -1085,7 +1078,6 @@ async function runScenario(browser, scenario) {
     check(board.projects > 0, 'Operations Board rendered no visible Projects');
     check(board.pieces > 0, 'Operations Board rendered no visible pieces');
     result.board = board;
-    await pauseDemo(page, scenario.mobile);
     result.markStack = await checkMarkStackDrawOrder(page);
     result.workingMotion = await checkWorkingMotion(page, {
       expectMotion: !scenario.reduced,

@@ -3746,3 +3746,10 @@ motion, scale and theme checks. The immutable landing receipt owns final floor
 and gate evidence; dogfood installation is verified separately from queueing.
 Evidence: `/tmp/exawatt-fleet-repair-*.log`,
 `/tmp/exawatt-status-visibility/`, and `/tmp/exawatt-fleet-v2-settings/`.
+
+The first delivery pass exposed a stale scene-eval premise: its removed Demo
+pause control silently did nothing, so the filter assertion compared totals
+across live source transitions. The unchanged v1 gate passed in isolation.
+The eval now fixes Date before source startup, retaining real timers and the
+animation clock, so exact filter-total equality tests one source snapshot.
+No product clock, filter behavior, performance budget or timeout changed.
