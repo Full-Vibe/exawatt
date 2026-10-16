@@ -8,6 +8,14 @@ import type { LaunchMcpServer } from './launch-mcp';
 
 const SAFE_SESSION_ID = /^[a-zA-Z0-9_-]{8,128}$/;
 
+/**
+ * The mode an Agent launches in when its request names none. One value for
+ * the launch command, the event-channel subscription and `agent_launched`,
+ * so what the funnel reports is what main ran.
+ */
+export const DEFAULT_LAUNCH_PERMISSION_MODE: AgentPermissionMode =
+  'unrestricted';
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
@@ -37,7 +45,7 @@ export function buildHarnessCommand(
   resume: boolean,
   executable?: string,
   initialPrompt?: string,
-  permissionMode: AgentPermissionMode = 'unrestricted',
+  permissionMode: AgentPermissionMode = DEFAULT_LAUNCH_PERMISSION_MODE,
   model?: string,
   effort?: string,
   wiring: HarnessLaunchWiring = {}

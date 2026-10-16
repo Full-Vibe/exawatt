@@ -10,6 +10,7 @@ import {
   type AgentActivityDependencies,
 } from './analytics-activity';
 import type { MainProcessAnalyticsEvent } from './analytics-bridge';
+import { buildHarnessCommand } from './pty/harness-command';
 
 const WEB_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
@@ -46,10 +47,25 @@ describe('Agent activity main records (ENG-047)', () => {
       {
         name: 'agent_launched',
         harness: 'codex',
-        permissionMode: null,
+        // No mode asked for: main launched it with its default, and the
+        // event says which.
+        permissionMode: 'unrestricted',
         firstForInstall: false,
       },
     ]);
+  });
+
+  it('reports the permission mode the launch command was built with', () => {
+    const { dependencies, queued } = deps();
+    recordAgentLaunched({ id: 'pty-1', harness: 'claude' }, {}, dependencies);
+    const [launched] = queued;
+    if (launched?.name !== 'agent_launched') throw new Error('no launch');
+    const command = (mode: Parameters<typeof buildHarnessCommand>[5]) =>
+      buildHarnessCommand('claude', null, false, undefined, undefined, mode);
+    expect(launched.permissionMode).not.toBeNull();
+    expect(command(launched.permissionMode ?? undefined)).toBe(
+      command(undefined)
+    );
   });
 
   it('never counts a Shell, and finishes only an Agent it saw start', () => {
@@ -79,10 +95,16 @@ describe('the web-to-app link (ENG-047 F2)', () => {
   it('ignores a malformed or missing id without spending the one claim', () => {
     const claim = vi.fn(() => true);
     const { dependencies, queued } = deps();
-    for (const webId of [null, '', 'not-an-id', WEB_ID.toUpperCase(), `${WEB_ID}&x=1`]) {
-      expect(recordWebLink(webId, { ...dependencies, claimWebLink: claim })).toBe(
-        false
-      );
+    for (const webId of [
+      null,
+      '',
+      'not-an-id',
+      WEB_ID.toUpperCase(),
+      `${WEB_ID}&x=1`,
+    ]) {
+      expect(
+        recordWebLink(webId, { ...dependencies, claimWebLink: claim })
+      ).toBe(false);
     }
     expect(claim).not.toHaveBeenCalled();
     expect(queued).toEqual([]);

@@ -9,7 +9,10 @@ import * as pty from 'node-pty';
 import { expandTilde, resolveProject } from './project-resolve';
 import { ScrollbackStore } from './scrollback-store';
 import { randomUUID } from 'crypto';
-import { buildHarnessCommand } from './harness-command';
+import {
+  buildHarnessCommand,
+  DEFAULT_LAUNCH_PERMISSION_MODE,
+} from './harness-command';
 import type { HarnessLaunchWiring } from './harness-command';
 import type { LaunchMcpServer } from './launch-mcp';
 import { harnessEventChannel } from '../harness-events/channel';
@@ -633,7 +636,7 @@ export class PtySessionManager extends EventEmitter {
         options.harness,
         harnessSessionId,
         // The same default the launch command applies.
-        options.permissionMode ?? 'unrestricted'
+        options.permissionMode ?? DEFAULT_LAUNCH_PERMISSION_MODE
       )),
       ...(mcp ? { mcp } : {}),
       ...(opencodeLaunchAgentName

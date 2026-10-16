@@ -7,6 +7,7 @@ import {
 import { isAnalyticsId } from '@exawatt/core/desktop-bridge';
 import { queueMainAnalyticsEvent } from './analytics-bridge';
 import { claimWebLink, takeFirstAgentLaunch } from './analytics-identity';
+import { DEFAULT_LAUNCH_PERMISSION_MODE } from './pty/harness-command';
 
 /**
  * ENG-047 — the Agent activity and the web-to-app link, as main sees them.
@@ -44,11 +45,15 @@ export function recordAgentLaunched(
   if (!isAgentHarness(harness)) return;
   try {
     live.set(session.id, harness);
+    // The mode main launched with: a request that names none runs in the
+    // launch default (a mode main does not know never launches at all).
+    const permissionMode =
+      options.permissionMode ?? DEFAULT_LAUNCH_PERMISSION_MODE;
     deps.queue({
       name: 'agent_launched',
       harness,
-      permissionMode: isAgentPermissionMode(options.permissionMode)
-        ? options.permissionMode
+      permissionMode: isAgentPermissionMode(permissionMode)
+        ? permissionMode
         : null,
       firstForInstall: deps.firstAgentLaunch(),
     });
