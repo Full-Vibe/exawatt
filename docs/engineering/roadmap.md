@@ -4792,7 +4792,7 @@ workaround is deleted.
 ### BUG-301 v0.1.21's release run refused its DMG and the release log could not say why
 
 Status: open · ENG-030 · found 2026-10-19 on the first v0.1.21 dispatch
-(run 39233626801); release-blocking for 0.1.21.
+(run 39233626801); intermittent, not blocking (0.1.22 passed).
 
 The run notarized and stapled the app (Apple accepted it in 62 s), the
 release path's `spctl` and `xcrun stapler validate` both passed, and the ZIP
@@ -4817,3 +4817,7 @@ or cut 0.1.22 with this fix in the tag, read the line, then fix the cause.
 2026-10-19: v0.1.21 stays an unpublished private tag (no public tag, Release
 or feed entry was ever created). Its contents ship as 0.1.22, cut from master
 with this fix in the tag.
+
+2026-10-19: 0.1.22 (run 39236641396) passed every container check, DMG
+included, and published; the check stays intermittent with its cause
+unread. The next refusal prints stapler's own line.
