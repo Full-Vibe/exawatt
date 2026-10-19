@@ -29,7 +29,7 @@ export const MARK_MINIMUM_CONTRAST = 3;
 
 export const SHELL_SOURCE_COLOR = '#6A7585';
 
-export type AgentSourceMarkKind = 'vendor' | 'unmarked' | 'shell' | 'unknown';
+type AgentSourceMarkKind = 'vendor' | 'unmarked' | 'shell' | 'unknown';
 
 export interface AgentSourceIdentity {
   id: string;

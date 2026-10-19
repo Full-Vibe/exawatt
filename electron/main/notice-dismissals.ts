@@ -47,7 +47,7 @@ interface NoticeWindow {
   webContents: { send(channel: string, ...args: unknown[]): void };
 }
 
-export interface NoticeDismissalStore {
+interface NoticeDismissalStore {
   current(): NoticeDismissals;
   dismiss(id: string, version: string): NoticeDismissals;
   /** Forgets every dismissal whose id starts with `prefix`: the operator

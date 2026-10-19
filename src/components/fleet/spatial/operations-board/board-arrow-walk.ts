@@ -6,7 +6,7 @@ import {
   type SpatialSelectionDirection,
 } from '@exawatt/ui-model';
 
-export interface BoardArrowStep {
+interface BoardArrowStep {
   /** Where the walk lands, or null when the board has nothing to walk. */
   target: SpatialBoardTarget | null;
   /** Agents an extending step adds to the working set, else null. */

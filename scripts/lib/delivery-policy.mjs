@@ -1294,7 +1294,7 @@ export function scanningTests(root = REPOSITORY_ROOT) {
 }
 
 /** The scanning tests a change to `paths` can break, sorted. */
-export function scanningTestsFor(paths, tests = scanningTests()) {
+function scanningTestsFor(paths, tests = scanningTests()) {
   return tests
     .filter(test =>
       paths.some(file =>

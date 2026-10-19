@@ -15,7 +15,7 @@ import type {
  * build asks nothing new of him, so it does not bring the notice back,
  * while restarting onto a new build and being superseded again does.
  */
-export interface NoticeIdentity {
+interface NoticeIdentity {
   id: string;
   version: string;
 }

@@ -172,7 +172,7 @@ export interface LocalAgentSourceDeclaration extends AgentSourceDeclarationBase 
 }
 
 /** A gateway or simulated source: no local CLI, so no shell actions. */
-export interface RemoteAgentSourceDeclaration extends AgentSourceDeclarationBase {
+interface RemoteAgentSourceDeclaration extends AgentSourceDeclarationBase {
   harness: null;
   signIn?: never;
   chooseModel?: never;

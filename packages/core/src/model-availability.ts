@@ -30,13 +30,13 @@ import type { AgentModelCatalog } from './desktop-bridge/pty';
  * Source-owned knowledge, measured against the CLI; a harness absent here
  * accepts exactly the ids it lists.
  */
-export const SOURCE_MODEL_MODIFIERS: Partial<
+const SOURCE_MODEL_MODIFIERS: Partial<
   Record<AgentHarness, readonly string[]>
 > = {
   claude: ['[1m]'],
 };
 
-export type AgentModelAvailability =
+type AgentModelAvailability =
   /** The catalog lists it, or it is the model the source resolves to. */
   | { kind: 'listed' }
   /** A listed model with a modifier the source accepts. */
@@ -46,7 +46,7 @@ export type AgentModelAvailability =
   /** The source's own live catalog does not offer it. */
   | { kind: 'unlisted' };
 
-export function agentModelAvailability(
+function agentModelAvailability(
   catalog: AgentModelCatalog | null | undefined,
   modelId: string
 ): AgentModelAvailability {
