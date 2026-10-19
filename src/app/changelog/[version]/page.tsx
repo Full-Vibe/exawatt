@@ -2,21 +2,24 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChangelogEntryView } from '@/components/site/changelog/changelog-entry';
+import { changelogEntries } from '@/lib/changelog/entries';
 import { publishedChangelogEntries } from '@/lib/changelog/published';
 
-// A version published after the deploy renders on its first request; an
-// unpublished one is a 404 (`entryFor`). Must equal
-// CHANGELOG_REVALIDATE_SECONDS; Next reads this export statically.
+// Every entry is prerendered, drafts included, and nothing else is served.
+// A draft's prerender calls notFound() at build, so it is cached as a real
+// 404 and becomes the entry on the first revalidation after the feed
+// publishes its version. Rendering it on demand instead would stream under
+// the root loading boundary and answer 200 with the not-found page.
+export const dynamicParams = false;
+// Must equal CHANGELOG_REVALIDATE_SECONDS; Next reads this export statically.
 export const revalidate = 300;
 
 interface EntryPageProps {
   params: Promise<{ version: string }>;
 }
 
-export async function generateStaticParams() {
-  return (await publishedChangelogEntries()).map(entry => ({
-    version: entry.version,
-  }));
+export function generateStaticParams() {
+  return changelogEntries().map(entry => ({ version: entry.version }));
 }
 
 async function entryFor(version: string) {

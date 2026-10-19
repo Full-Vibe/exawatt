@@ -207,20 +207,26 @@ export function readChangelog(directory) {
 }
 
 /**
- * The entries a reader may see: every version at or below the published one.
- * An entry above it is a draft for a release that has not shipped; nothing
- * lists, renders, links or feeds it, so the site never announces a version
- * users cannot install.
+ * Whether `version` is above the published one: a draft for a release that
+ * has not shipped. The one rule every changelog surface and the proxy apply,
+ * so the site never announces a version users cannot install.
  */
-export function releasedEntries(entries, publishedVersion) {
-  if (!VERSION.test(publishedVersion)) {
-    throw new ChangelogError(
-      'published version',
-      `"${publishedVersion}" is not a version`
-    );
+export function isUnreleasedVersion(version, publishedVersion) {
+  for (const [label, value] of [
+    ['version', version],
+    ['published version', publishedVersion],
+  ]) {
+    if (!VERSION.test(value)) {
+      throw new ChangelogError(label, `"${value}" is not a version`);
+    }
   }
+  return compareVersions(version, publishedVersion) > 0;
+}
+
+/** The entries a reader may see: every version at or below the published one. */
+export function releasedEntries(entries, publishedVersion) {
   return entries.filter(
-    entry => compareVersions(entry.version, publishedVersion) <= 0
+    entry => !isUnreleasedVersion(entry.version, publishedVersion)
   );
 }
 

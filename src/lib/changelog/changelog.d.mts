@@ -18,6 +18,10 @@ export declare function parseChangelogEntry(
   source?: string
 ): ChangelogEntry;
 export declare function readChangelog(directory: string): ChangelogEntry[];
+export declare function isUnreleasedVersion(
+  version: string,
+  publishedVersion: string
+): boolean;
 export declare function releasedEntries(
   entries: readonly ChangelogEntry[],
   publishedVersion: string

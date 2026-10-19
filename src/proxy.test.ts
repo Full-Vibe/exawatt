@@ -26,6 +26,19 @@ vi.mock('@/lib/distribution/resolved', () => ({
   resolvedDistribution: () => distribution,
 }));
 
+const published = vi.hoisted(() => ({
+  read: vi.fn(
+    async (): Promise<
+      | { status: 'known'; version: string }
+      | { status: 'unknown'; reason: string }
+    > => ({ status: 'known', version: '0.1.22' })
+  ),
+}));
+
+vi.mock('@/lib/changelog/published-version', () => ({
+  readPublishedVersion: published.read,
+}));
+
 beforeEach(() => {
   distribution.account = {
     supabaseUrl: 'https://unit-test.supabase.co',
@@ -207,5 +220,40 @@ describe('proxy offline authority', () => {
     expect(response.status).toBeGreaterThanOrEqual(300);
     expect(response.status).toBeLessThan(400);
     expect(response.headers.get('location')).toContain('/sign-in');
+  });
+});
+
+describe('changelog drafts (ENG-031 W25)', () => {
+  const rewriteOf = (response: Response) =>
+    response.headers.get('x-middleware-rewrite');
+
+  it("answers a draft entry's page with the not-found route", async () => {
+    const response = await proxy(request('/changelog/0.1.23'));
+    expect(rewriteOf(response)).toMatch(/\/changelog\/unpublished$/u);
+  });
+
+  it('serves a published entry and the index untouched', async () => {
+    for (const path of [
+      '/changelog/0.1.22',
+      '/changelog/0.1.17',
+      '/changelog',
+    ]) {
+      expect(rewriteOf(await proxy(request(path))), path).toBeNull();
+    }
+  });
+
+  it('lets the page decide when the feed cannot be read', async () => {
+    published.read.mockResolvedValueOnce({
+      status: 'unknown',
+      reason: 'HTTP 503',
+    });
+    expect(rewriteOf(await proxy(request('/changelog/0.1.23')))).toBeNull();
+  });
+
+  it('asks the feed only for a changelog entry path', async () => {
+    published.read.mockClear();
+    await proxy(request('/workspace'));
+    await proxy(request('/changelog'));
+    expect(published.read).not.toHaveBeenCalled();
   });
 });

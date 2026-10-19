@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
+import { isUnreleasedVersion } from '@/lib/changelog/changelog.mjs';
+import { readPublishedVersion } from '@/lib/changelog/published-version';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 
 // Surfaces that render without a signed-in user. Everything the Electron
@@ -111,7 +113,37 @@ function signInRedirect(request: NextRequest) {
   return NextResponse.redirect(url);
 }
 
+const CHANGELOG_ENTRY_PATH = /^\/changelog\/(\d+\.\d+\.\d+)\/?$/u;
+
+/**
+ * A changelog entry above the published version is a draft, and its page is
+ * a real 404 (ENG-031 W25). The page itself cannot say so: it renders under
+ * the root loading boundary, so a notFound() after reading the feed streams
+ * as a 200. This runs before the render, only for `/changelog/<version>`.
+ * An unreadable feed lets the request through, where the page keeps its last
+ * good render rather than treating "unknown" as "unpublished".
+ */
+async function draftChangelogEntry(request: NextRequest) {
+  const version = CHANGELOG_ENTRY_PATH.exec(request.nextUrl.pathname)?.[1];
+  if (!version) return null;
+  const published = await readPublishedVersion();
+  if (
+    published.status !== 'known' ||
+    !isUnreleasedVersion(version, published.version)
+  ) {
+    return null;
+  }
+  // No entry page exists at this path (dynamicParams = false), so Next
+  // answers with its not-found page and a 404 status.
+  const notFound = request.nextUrl.clone();
+  notFound.pathname = '/changelog/unpublished';
+  return NextResponse.rewrite(notFound);
+}
+
 export async function proxy(request: NextRequest) {
+  const draft = await draftChangelogEntry(request);
+  if (draft) return draft;
+
   if (isPublicPath(request.nextUrl.pathname)) {
     return NextResponse.next({ request });
   }

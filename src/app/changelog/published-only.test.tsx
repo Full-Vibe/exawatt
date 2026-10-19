@@ -64,11 +64,11 @@ describe('the changelog shows only published versions (ENG-031 W25)', () => {
     expect(screen.queryByText(DRAFT.title)).toBeNull();
   });
 
-  it("serves a 404 for the draft's page and builds only published pages", async () => {
+  it("serves a 404 for the draft's page and the entry for a published one", async () => {
     const page = await import('./[version]/page');
-    expect(await page.generateStaticParams()).toEqual([
-      { version: PUBLISHED.version },
-    ]);
+    // Every entry is prerendered, so a draft's 404 is a real status; only
+    // unknown versions are refused before render.
+    expect(page.dynamicParams).toBe(false);
     await expect(
       page.default({ params: Promise.resolve({ version: DRAFT.version }) })
     ).rejects.toThrow('NEXT_NOT_FOUND');
