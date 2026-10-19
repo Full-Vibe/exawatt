@@ -22,6 +22,10 @@ import {
   prepareLoginShellScratchDir,
 } from './pty/login-shell';
 import {
+  configureLoginEnvironmentDiagnostics,
+  warmHarnessEnvironment,
+} from './pty/harness-homes';
+import {
   UnhandledRejectionTrace,
   installUnhandledRejectionTrace,
 } from './unhandled-rejection-trace';
@@ -55,8 +59,14 @@ function watchShellStartupArtifacts(
   record: DiagnosticRecorder
 ): void {
   configureLoginShellScratchDir(path.join(userDataPath, 'shell-startup'));
+  // A login shell that cannot say where the harnesses keep their state is
+  // named here, once per run of failures.
+  configureLoginEnvironmentDiagnostics(record);
   void prepareLoginShellScratchDir()
     .then(() => {
+      // Learn the login environment now, in the prepared scratch directory,
+      // so no launch or catalog read is the one that waits for it.
+      void warmHarnessEnvironment().catch(() => {});
       const timer = setTimeout(() => {
         void observedShellStartupArtifacts()
           .then(names => {
@@ -131,7 +141,9 @@ interface ProcessDeathApp {
  */
 export function watchProcessDeaths(
   app: ProcessDeathApp,
-  proc: { on(event: 'uncaughtExceptionMonitor', listener: () => void): unknown },
+  proc: {
+    on(event: 'uncaughtExceptionMonitor', listener: () => void): unknown;
+  },
   record: DiagnosticRecorder
 ): void {
   app.on('render-process-gone', (_event, _webContents, details) => {

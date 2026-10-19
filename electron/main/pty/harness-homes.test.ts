@@ -15,9 +15,16 @@ vi.mock('./login-shell', async importOriginal => ({
   defaultShell: async () => shell.path,
 }));
 
-const { harnessEnvironment, resetHarnessEnvironment } =
-  await import('./harness-homes');
+const {
+  LoginEnvironmentResolver,
+  harnessEnvironment,
+  harnessEnvironmentSettled,
+  loginModelEnvironment,
+  resetHarnessEnvironment,
+  warmHarnessEnvironment,
+} = await import('./harness-homes');
 const { CodexConversationAdapter } = await import('./conversation-catalog');
+const { shellQuote } = await import('./login-shell');
 
 const roots: string[] = [];
 function temporary(prefix: string): string {
@@ -26,23 +33,40 @@ function temporary(prefix: string): string {
   return root;
 }
 
-/** A stand-in login shell: answers the variable query as an rc file would,
- *  and counts how often it is asked. */
-function loginShell(variables: Record<string, string>): {
-  calls: () => number;
-} {
-  const directory = temporary('exawatt-login-shell-');
+/** A stand-in login shell: a real `/bin/sh` that runs whatever it is asked,
+ *  with the variables an rc file would have set ('' unsets one). It counts
+ *  how often it is started, and with `waitFor` it does not start the shell
+ *  until that file exists. */
+function loginShell(
+  variables: Record<string, string>,
+  options: { waitFor?: string; at?: string } = {}
+): { path: string; calls: () => number } {
+  const directory = options.at
+    ? path.dirname(options.at)
+    : temporary('exawatt-login-shell-');
   const counter = path.join(directory, 'calls');
-  const lines = Object.entries(variables)
-    .map(([key, value]) => `printf '%s\\n' '${key}=${value}'`)
-    .join('\n');
-  shell.path = path.join(directory, 'sh');
+  const file = options.at ?? path.join(directory, 'sh');
+  const lines = Object.entries(variables).map(([key, value]) =>
+    value ? `export ${key}=${shellQuote(value)}` : `unset ${key}`
+  );
+  const wait = options.waitFor
+    ? `while [ ! -e ${shellQuote(options.waitFor)} ]; do sleep 0.02; done`
+    : '';
   fs.writeFileSync(
-    shell.path,
-    `#!/bin/sh\nprintf x >> '${counter}'\n${lines}\n`,
+    file,
+    [
+      '#!/bin/sh',
+      `printf x >> ${shellQuote(counter)}`,
+      wait,
+      ...lines,
+      'exec /bin/sh "$@"',
+      '',
+    ].join('\n'),
     { mode: 0o755 }
   );
+  shell.path = file;
   return {
+    path: file,
     calls: () =>
       fs.existsSync(counter) ? fs.readFileSync(counter, 'utf8').length : 0,
   };
@@ -131,7 +155,11 @@ describe('harness homes', () => {
     expect(first.CLAUDE_CONFIG_DIR).toBe('/login/claude');
     expect(second.EXAWATT_CLAUDE_PROJECTS_ROOT).toBe('/sandbox/two');
 
-    await harnessEnvironment(start + 61_000);
+    // A minute on, the old answer is served and a refresh asks again.
+    expect((await harnessEnvironment(start + 61_000)).CLAUDE_CONFIG_DIR).toBe(
+      '/login/claude'
+    );
+    await harnessEnvironmentSettled();
     expect(asked.calls()).toBe(2);
   });
 
@@ -139,5 +167,230 @@ describe('harness homes', () => {
     vi.stubEnv('CODEX_HOME', '/inherited/codex');
     loginShell({ CODEX_HOME: '' });
     expect((await harnessEnvironment()).CODEX_HOME).toBeUndefined();
+  });
+
+  it('a warmed environment answers the next read without starting a shell', async () => {
+    const asked = loginShell({ CODEX_HOME: '/login/warm' });
+    await warmHarnessEnvironment();
+    expect(asked.calls()).toBe(1);
+
+    expect((await harnessEnvironment()).CODEX_HOME).toBe('/login/warm');
+    expect(asked.calls()).toBe(1);
+  });
+});
+
+/**
+ * The operator's login shell is fish, and fish, csh and PowerShell reject
+ * POSIX parameter expansion at parse time. The resolver must read
+ * variables without asking the shell to expand anything, and a value with
+ * a newline in it must survive.
+ */
+describe('the login environment under every shell family', () => {
+  const MULTILINE = 'line one\nline two';
+  const families: Array<{
+    name: string;
+    executable: string;
+    startup: string;
+    script: (codexHome: string) => string;
+  }> = [
+    {
+      name: 'fish',
+      executable: '/opt/homebrew/bin/fish',
+      startup: '.config/fish/config.fish',
+      script: codexHome =>
+        [
+          'echo welcome from config.fish',
+          `set -gx CODEX_HOME ${shellQuote(codexHome)}`,
+          `set -gx ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION '${MULTILINE}'`,
+          'set -e CLAUDE_CONFIG_DIR',
+        ].join('\n'),
+    },
+    {
+      name: 'zsh',
+      executable: '/bin/zsh',
+      startup: '.zprofile',
+      script: codexHome => posixStartup(codexHome),
+    },
+    {
+      name: 'bash',
+      executable: '/bin/bash',
+      startup: '.bash_profile',
+      script: codexHome => posixStartup(codexHome),
+    },
+    {
+      name: 'tcsh',
+      executable: '/bin/tcsh',
+      startup: '.tcshrc',
+      script: codexHome =>
+        [
+          'echo welcome from tcshrc',
+          `setenv CODEX_HOME ${shellQuote(codexHome)}`,
+          `setenv ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION "line one\\`,
+          'line two"',
+          'unsetenv CLAUDE_CONFIG_DIR',
+        ].join('\n'),
+    },
+  ];
+
+  function posixStartup(codexHome: string): string {
+    return [
+      'echo welcome from the profile',
+      `export CODEX_HOME=${shellQuote(codexHome)}`,
+      `export ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION='${MULTILINE}'`,
+      'unset CLAUDE_CONFIG_DIR',
+    ].join('\n');
+  }
+
+  for (const family of families) {
+    const executable = [
+      family.executable,
+      `/usr/local/bin/${family.name}`,
+      `/bin/${family.name}`,
+      `/usr/bin/${family.name}`,
+    ].find(candidate => fs.existsSync(candidate));
+    const title = executable
+      ? `${family.name}: reads what its startup sets and unsets`
+      : `${family.name}: skipped, ${family.name} is not installed on this host`;
+    it.skipIf(!executable)(title, async () => {
+      const home = temporary(`exawatt-login-${family.name}-home-`);
+      const startup = path.join(home, family.startup);
+      fs.mkdirSync(path.dirname(startup), { recursive: true });
+      fs.writeFileSync(startup, `${family.script(`/login/${family.name}`)}\n`);
+      const project = temporary(`exawatt-login-${family.name}-project-`);
+      vi.stubEnv('HOME', home);
+      vi.stubEnv('CODEX_HOME', '/inherited/codex');
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/inherited/claude');
+
+      const environment = await loginModelEnvironment(executable!, project);
+
+      expect(environment.CODEX_HOME).toBe(`/login/${family.name}`);
+      expect(environment.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION).toBe(
+        MULTILINE
+      );
+      expect(environment.CLAUDE_CONFIG_DIR).toBeUndefined();
+      expect(environment.HOME).toBe(home);
+    });
+  }
+});
+
+/** Absence is not an answer: a probe that failed must never read as a
+ *  shell that set nothing. */
+describe('a login shell that cannot answer', () => {
+  function recorder() {
+    const events: Array<{ event: string; fields: unknown }> = [];
+    return {
+      events,
+      record: (event: string, fields?: unknown) =>
+        void events.push({ event, fields }),
+    };
+  }
+
+  it('keeps the previous answer when a probe misses its deadline, and says so once', async () => {
+    const log = recorder();
+    const deadline = { ms: 20_000 };
+    const resolver = new LoginEnvironmentResolver({
+      deadlineMs: () => deadline.ms,
+      record: log.record,
+    });
+    const cwd = temporary('exawatt-login-cwd-');
+    const good = loginShell({ CODEX_HOME: '/login/good' });
+    expect((await resolver.fresh(good.path, cwd)).CODEX_HOME).toBe(
+      '/login/good'
+    );
+
+    // This shell never gets to answer: it waits for a file nobody writes.
+    loginShell(
+      { CODEX_HOME: '/login/late' },
+      { at: good.path, waitFor: path.join(cwd, 'never') }
+    );
+    deadline.ms = 100;
+    expect((await resolver.fresh(good.path, cwd)).CODEX_HOME).toBe(
+      '/login/good'
+    );
+    expect((await resolver.fresh(good.path, cwd)).CODEX_HOME).toBe(
+      '/login/good'
+    );
+
+    expect(log.events).toEqual([
+      {
+        event: 'login-environment.unavailable',
+        fields: expect.objectContaining({
+          reason: 'timed-out',
+          fallback: 'previous-answer',
+        }),
+      },
+    ]);
+  });
+
+  it("falls back to Exawatt's own environment only with no answer at all, records it, and asks again", async () => {
+    const log = recorder();
+    const resolver = new LoginEnvironmentResolver({ record: log.record });
+    const cwd = temporary('exawatt-login-cwd-');
+    const broken = temporary('exawatt-login-broken-');
+    const file = path.join(broken, 'sh');
+    // What fish did with the POSIX probe: a parse error, exit 127, nothing
+    // on stdout.
+    fs.writeFileSync(file, '#!/bin/sh\nexit 127\n', {
+      mode: 0o755,
+    });
+    vi.stubEnv('CODEX_HOME', '/inherited/codex');
+    const start = Date.now();
+
+    expect((await resolver.current(file, cwd, start)).CODEX_HOME).toBe(
+      '/inherited/codex'
+    );
+    expect(log.events).toEqual([
+      {
+        event: 'login-environment.unavailable',
+        fields: expect.objectContaining({
+          reason: 'no-answer',
+          fallback: 'process-environment',
+        }),
+      },
+    ]);
+
+    const fixed = loginShell({ CODEX_HOME: '/login/fixed' }, { at: file });
+    expect((await resolver.current(file, cwd, start + 1_000)).CODEX_HOME).toBe(
+      '/inherited/codex'
+    );
+    expect(fixed.calls()).toBe(0);
+
+    expect((await resolver.current(file, cwd, start + 11_000)).CODEX_HOME).toBe(
+      '/login/fixed'
+    );
+    expect(fixed.calls()).toBe(1);
+    expect(log.events.map(entry => entry.event)).toEqual([
+      'login-environment.unavailable',
+      'login-environment.recovered',
+    ]);
+  });
+
+  it('a stale answer is served at once and refreshed off the read path', async () => {
+    const resolver = new LoginEnvironmentResolver({
+      deadlineMs: () => 20_000,
+    });
+    const cwd = temporary('exawatt-login-cwd-');
+    const first = loginShell({ CODEX_HOME: '/login/first' });
+    const start = Date.now();
+    expect((await resolver.current(first.path, cwd, start)).CODEX_HOME).toBe(
+      '/login/first'
+    );
+
+    const release = path.join(cwd, 'release');
+    loginShell(
+      { CODEX_HOME: '/login/second' },
+      { at: first.path, waitFor: release }
+    );
+    // The refresh's shell is still waiting; this read must not wait on it.
+    expect(
+      (await resolver.current(first.path, cwd, start + 61_000)).CODEX_HOME
+    ).toBe('/login/first');
+
+    fs.writeFileSync(release, '');
+    await resolver.settled();
+    expect(
+      (await resolver.current(first.path, cwd, start + 62_000)).CODEX_HOME
+    ).toBe('/login/second');
+    expect(first.calls()).toBe(2);
   });
 });

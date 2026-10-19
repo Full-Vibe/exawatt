@@ -4695,6 +4695,25 @@ the wrong store. Project suggestions already resolve it through
 `loginModelEnvironment`; the catalog should do the same, per read rather
 than at load.
 
+**Review fix 2026-10-19** (`agent/fix-login-env`). The 0.1.22 fix probed
+the login shell with POSIX `"${KEY-}"`, which fish (the operator's shell),
+csh and PowerShell reject at parse time: the probe printed nothing (fish exit
+127) and every reader silently used Exawatt's own environment, so the fix
+did nothing on fish. A timed-out probe was also cached for a minute as the
+answer, and a Codex launch waited on a cold probe before its PTY spawned.
+`LoginEnvironmentResolver` (`harness-homes.ts`) is now the one owner: the
+shell only runs `/usr/bin/printf` (a NUL mark past startup noise) and
+`/usr/bin/env -0`, so nothing is expanded and values with newlines survive;
+a timed-out, failed or markless probe is a named failure, logged once per run
+of failures to `logs/main.jsonl` (`login-environment.unavailable`, with
+`fallback: previous-answer | process-environment`), never stored as an
+answer; reads are stale-while-revalidate and main warms the home context at
+start, so only the first read of a context can wait. The variables asked for
+are each harness's declared state variables (`HARNESS_STATE_VARIABLES`).
+`harness-homes.test.ts` runs the probe under real fish, zsh, bash and tcsh
+(skipped by name where one is missing); fish and tcsh fail on the old probe,
+zsh and bash lose the second line of a multi-line value.
+
 ### BUG-298 Registry and resume tests ran the operator's shell startup, so they timed out under load
 
 Status: fixed 2026-10-18 · ENG-022 · found 2026-10-16 when
@@ -4727,6 +4746,15 @@ login-shell test is hermetic without knowing it. With the tripwire HOME in
 place the same suite ran 0 operator startups; app-node results are otherwise
 unchanged (the three failures in it are BUG-276/277 and the file-read
 ratchet, owned elsewhere).
+
+**Review fix 2026-10-19** (`agent/fix-login-env`). The list missed
+`GROK_HOME`, `QWEN_RUNTIME_DIR`, the `OPENCODE_CONFIG*` variables,
+`ANTHROPIC_MODEL*` and `CLAUDE_CODE_EFFORT_LEVEL`, all of which the product
+resolves. It is now derived: `HERMETIC_VARIABLES`
+(`hermetic-environment.test-support.ts`) is the shell startup variables plus
+`LOGIN_ENVIRONMENT_KEYS`, the resolver's own declaration, and
+`hermetic-environment.test.ts` checks every variable the resolver reads is
+cleared.
 
 ### BUG-300 The live Demo board parked after a Project drill while AC and unlocked
 

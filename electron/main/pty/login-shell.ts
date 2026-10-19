@@ -305,11 +305,22 @@ export async function observedShellStartupArtifacts(): Promise<string[]> {
  * deadline is a probe that failed: callers already degrade to configured
  * values with honest provenance.
  */
+interface LoginShellRun {
+  stdout: string;
+  /** The deadline passed and the process group was killed. */
+  timedOut: boolean;
+  /** The shell's exit status; null when it was killed, timed out or never
+   *  started. */
+  exitCode: number | null;
+  /** Output passed `maxBuffer` and was cut: what was read is incomplete. */
+  overflowed: boolean;
+}
+
 export async function runLoginShell(
   shell: string,
   command: string,
   options: { cwd: string; timeout: number; maxBuffer: number }
-): Promise<{ stdout: string; timedOut: boolean }> {
+): Promise<LoginShellRun> {
   const plan = planLoginShell(shell, {
     command,
     directory: options.cwd,
@@ -350,16 +361,16 @@ export async function runLoginShell(
 
   return new Promise(resolve => {
     let settled = false;
-    const finish = (timedOut: boolean) => {
+    const finish = (timedOut: boolean, exitCode: number | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (timedOut) killGroup();
-      resolve({ stdout, timedOut });
+      resolve({ stdout, timedOut, exitCode, overflowed });
     };
-    const timer = setTimeout(() => finish(true), options.timeout);
+    const timer = setTimeout(() => finish(true, null), options.timeout);
     timer.unref?.();
-    child.on('close', () => finish(false));
-    child.on('error', () => finish(false));
+    child.on('close', code => finish(false, code));
+    child.on('error', () => finish(false, null));
   });
 }
