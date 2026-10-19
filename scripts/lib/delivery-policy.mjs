@@ -693,6 +693,29 @@ export const SURFACE_GATES = [
       file === 'scripts/electron-session-lifecycle-eval.mjs',
   },
   {
+    gate: 'eval:electron:app-lifecycle',
+    why: 'quit, restart and Restart to Update have one owner: every wait is named, bounded and cancellable, a dismissed notice stays dismissed, and what the run held comes back once after a restart',
+    // BUG-260, BUG-285, BUG-286 (2026-10-18). The eval landed with its owner
+    // and no route, so nothing would have made a change to the owner run it.
+    match: file =>
+      [
+        'electron/main/shutdown-coordinator.ts',
+        'electron/main/shutdown-sequence.ts',
+        'electron/main/run-state.ts',
+        'electron/main/notice-dismissals.ts',
+        'electron/main/installed-build.ts',
+        'electron/main/updater.ts',
+        'electron/main/updater-staging.ts',
+        'electron/main/updater-test-double.ts',
+        'src/components/nav/update-ready-notice.tsx',
+        'src/components/nav/held-state-bridge.tsx',
+        'src/lib/notices/notice-identity.ts',
+        'scripts/electron-app-lifecycle-eval.mjs',
+      ].includes(file) ||
+      (file.startsWith('src/lib/app-lifecycle/') &&
+        !/\.test\.tsx?$/u.test(file)),
+  },
+  {
     gate: 'eval:electron:idempotency',
     why: 'rehydration must adopt each Session exactly once, and it starts them through the same launcher driver',
     // Same driver, same fixtures, same first-axis defect; BUG-041 repaired it
@@ -1760,6 +1783,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:agent-sources': GATE,
   'eval:electron:connect-flow': GATE,
   'eval:electron:lifecycle': GATE,
+  'eval:electron:app-lifecycle': GATE,
   'eval:electron:idempotency': GATE,
   'eval:hero-board': GATE,
   'eval:terrain-story': GATE,
