@@ -102,7 +102,6 @@ function snapshot(
     actions: {
       recheck: true,
       authenticate: false,
-      chooseModel: false,
       installGuide: true,
     },
   };

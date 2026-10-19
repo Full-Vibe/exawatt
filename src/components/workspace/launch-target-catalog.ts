@@ -18,6 +18,7 @@
 
 import type { AgentSourceId } from './agent-sources';
 import {
+  agentModelLaunchable,
   agentSourceLaunchVerdict,
   createAgentLaunchConfiguration,
   type AgentLaunchConfiguration,
@@ -122,7 +123,10 @@ export function launchTargetAvailability(
   {
     sources,
     catalogs,
-  }: { sources: readonly LaunchSourceSnapshot[]; catalogs: LaunchSourceCatalogs }
+  }: {
+    sources: readonly LaunchSourceSnapshot[];
+    catalogs: LaunchSourceCatalogs;
+  }
 ): LaunchTargetAvailability {
   const snapshot = resolveLaunchSource(target, sources);
   if (!snapshot) {
@@ -139,17 +143,10 @@ export function launchTargetAvailability(
   if (verdict.kind === 'blocked') {
     return { available: false, reason: verdict.reason };
   }
-  const catalog = catalogs[snapshot.harness];
-  if (!catalog) {
-    // The catalog is still being read. A pool target is itself evidence that
-    // this exact model launched here before, so it stays available rather
-    // than dimming every remembered setup for the length of a probe.
-    return { available: true };
-  }
-  const exactModelAvailable =
-    target.modelId === catalog.effectiveModel ||
-    catalog.models.some(option => option.id === target.modelId);
-  return exactModelAvailable
+  // What the source accepts, by the one predicate every surface reads: a
+  // catalog nobody could read refuses nothing, and only the source's own
+  // live catalog can say a model is not offered (BUG-283).
+  return agentModelLaunchable(catalogs[snapshot.harness], target.modelId)
     ? { available: true }
     : {
         available: false,
@@ -181,10 +178,16 @@ export function launchTargetPresentation(
   sources: readonly LaunchSourceSnapshot[]
 ): LaunchTargetPresentation {
   const snapshot = resolveLaunchSource(target, sources);
-  const sourceLabel = target.labels.source ?? snapshot?.label ?? target.sourceId;
+  const sourceLabel =
+    target.labels.source ?? snapshot?.label ?? target.sourceId;
   const modelDisplay = target.labels.model ?? target.modelId;
   const effortDisplay = target.labels.effort ?? target.effort;
-  const identity = [sourceLabel, modelDisplay, effortDisplay, target.labels.type]
+  const identity = [
+    sourceLabel,
+    modelDisplay,
+    effortDisplay,
+    target.labels.type,
+  ]
     .filter(Boolean)
     .join(', ');
   return {

@@ -16,6 +16,8 @@ import {
   installBridgeDouble,
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
+import { localAgentSourceDeclaration } from '@/generated/agent-source-declarations';
+import { LAUNCH_EVENT, consumePendingLaunch } from '../session-jump';
 import { StartScreen } from './start-screen';
 import { YourProjects, type SuggestionOpen } from './your-projects';
 import { installedEngines } from './agents-you-can-run';
@@ -110,6 +112,42 @@ describe('Agents you can run', () => {
     )!;
     expect(ready.querySelectorAll('[data-source-step]')).toHaveLength(0);
     expect(signedOut.querySelectorAll('[data-source-step]')).toHaveLength(1);
+  });
+
+  it('signs an engine in through an Exawatt Shell, never through main (BUG-275)', async () => {
+    const act_ = vi.fn();
+    installBridgeDouble({
+      agentSources: {
+        list: async () => registryWith({ claude: 'action-required' }),
+        remembered: async () => registryWith({ claude: 'action-required' }),
+        act: act_,
+      },
+      projects: {
+        suggestions: vi.fn(async () => ({
+          ok: true as const,
+          suggestions: [],
+          stores: storeReads(),
+          readAt: FIXTURE_NOW,
+        })),
+      },
+    });
+    const launches: unknown[] = [];
+    const onLaunch = (event: Event) =>
+      launches.push((event as CustomEvent).detail);
+    window.addEventListener(LAUNCH_EVENT, onLaunch);
+    renderStart();
+    await settle();
+    const card = document.querySelector('[data-source-card="claude"]')!;
+    fireEvent.click(card.querySelector('[data-source-step]')!);
+    window.removeEventListener(LAUNCH_EVENT, onLaunch);
+    consumePendingLaunch();
+    expect(launches).toEqual([
+      {
+        harness: 'shell',
+        shellCommand: localAgentSourceDeclaration('claude').signIn.command,
+      },
+    ]);
+    expect(act_).not.toHaveBeenCalled();
   });
 
   it('with no engine installed, the Add an engine card is the whole remediation', async () => {

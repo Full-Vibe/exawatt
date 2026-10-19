@@ -8,6 +8,7 @@ import {
   PinOff,
   RefreshCw,
   Save,
+  SquareTerminal,
 } from 'lucide-react';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { Button } from '@/components/ui/button';
@@ -27,7 +28,6 @@ import {
   refreshAgentModelCatalog,
   rememberAgentPermissionMode,
   rememberAgentSource,
-  runAgentSourceAction,
   type AgentSourcePreferenceState,
   type AgentSourceId,
 } from './agent-sources';
@@ -83,6 +83,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { AgentLauncher } from './launcher/agent-launcher';
 import { sourceCardStep } from '@/components/agent-sources/source-card';
+import { localAgentSourceDeclaration } from '@/generated/agent-source-declarations';
 import { launcherSourceLines } from './launcher/source-lines';
 import { useComposerClipboard } from './launcher/use-composer-clipboard';
 import { EngineGlyph } from './launcher/setup-chip';
@@ -1109,10 +1110,12 @@ export function AgentComposer({
   };
   openShellRef.current = () => void openShell();
 
-  /** A source's guided sign-in: a Shell in this Project running its command,
-   *  where the source signs in on its own (ENG-003 S5.3.1). Not a launch
-   *  configuration, so nothing is ranked. */
-  const openSignInShell = async (command: string) => {
+  /** A source-owned action (its sign-in, its own model picker): a Shell in
+   *  this Project running the declared command, where the source does the
+   *  rest (BUG-275). The same Shell launch Settings and the Start screen
+   *  reach through `openSourceShell`. Not a launch configuration, so
+   *  nothing is ranked. */
+  const openSourceActionShell = async ({ command }: { command: string }) => {
     if (controlsDisabled || clipboard.pending) return;
     setLaunching('shell');
     try {
@@ -1370,6 +1373,8 @@ export function AgentComposer({
   };
 
   const selectedCatalog = catalogsBySource[effectiveSource] ?? modelCatalog;
+  const sourceModelChooser =
+    localAgentSourceDeclaration(effectiveSource).chooseModel ?? null;
   const selectedModelOption = selectedCatalog?.models.find(
     option => option.id === model
   );
@@ -1500,22 +1505,16 @@ export function AgentComposer({
       provenance: selectedCatalog?.catalogProvenance,
       searchable: modelAxisOptions.length > 10,
       footer:
-        selectedCatalog?.selectionAction === 'choose-in-source' ? (
+        selectedCatalog?.selectionAction === 'choose-in-source' &&
+        sourceModelChooser ? (
           <button
             type="button"
-            onClick={() => {
-              void runAgentSourceAction(effectiveSource, 'choose-model').then(
-                result =>
-                  setSourceActionMessage({
-                    ok: result.ok,
-                    text: result.message,
-                  })
-              );
-            }}
+            onClick={() => void openSourceActionShell(sourceModelChooser)}
+            title={sourceModelChooser.note}
             className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 font-mono text-chrome-meta text-hud-text-dim outline-none transition-colors hover:bg-hud-fill hover:text-hud-text focus-visible:ring-2 focus-visible:ring-hud-cyan motion-reduce:transition-none"
           >
-            Choose in {sourceMeta.label}
-            <ExternalLink aria-hidden="true" className="size-3.5" />
+            {sourceModelChooser.label}
+            <SquareTerminal aria-hidden="true" className="size-3.5" />
           </button>
         ) : undefined,
     },
@@ -1632,15 +1631,15 @@ export function AgentComposer({
               : sourceStatus;
   const launcherBlockedReason =
     launcherStatus.kind === 'blocked' ? launcherStatus.text : null;
-  // A source that signs in on its own first run (Antigravity CLI) offers
-  // that ONE step on the status line, with Recheck beside it, and its Shell
-  // opens here in Exawatt (ENG-003 S5.3.1).
+  // A source that reports a sign-in it can repair offers that ONE step on
+  // the status line, with Recheck beside it; its Shell opens here in
+  // Exawatt, for every source (ENG-003 S5.3.1, BUG-275).
   const sourceStep = sourceCardStep(sourceMeta);
-  const shellSignIn =
-    sourceStep?.kind === 'shell-sign-in' && launcherStatus.kind !== 'blocked'
+  const signInStep =
+    sourceStep?.kind === 'sign-in' && launcherStatus.kind !== 'blocked'
       ? sourceStep
       : null;
-  const launcherNotice = shellSignIn
+  const launcherNotice = signInStep
     ? {
         kind: 'notice' as const,
         text: `${sourceMeta.label}: ${sourceMeta.facts.authentication.value}`,
@@ -1648,12 +1647,12 @@ export function AgentComposer({
     : launcherStatus.kind === 'notice' || launcherStatus.kind === 'checking'
       ? launcherStatus
       : null;
-  const launcherNoticeActions = shellSignIn
+  const launcherNoticeActions = signInStep
     ? [
         {
           id: 'sign-in',
-          label: shellSignIn.label,
-          onClick: () => void openSignInShell(shellSignIn.command),
+          label: signInStep.label,
+          onClick: () => void openSourceActionShell(signInStep),
         },
         {
           id: 'recheck',
@@ -1662,10 +1661,7 @@ export function AgentComposer({
         },
       ]
     : [];
-  const launcherDetailSource = launcherSourceLines(
-    effectiveSource,
-    shellSignIn
-  );
+  const launcherDetailSource = launcherSourceLines(effectiveSource, signInStep);
 
   const controls = (
     <div

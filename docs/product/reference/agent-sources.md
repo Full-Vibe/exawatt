@@ -124,10 +124,12 @@ path neither adds a remote-only roster nor provisions a server. The complete
 plan is `docs/engineering/projects/connected-openclaw-and-hosted-agents.md`.
 
 Recheck repeats source discovery. When a local CLI reports that sign-in is
-required, Settings can open that source's own login command as a terminal tab and
-then reconcile through several bounded checks, waking immediately when the app
-regains focus. If authentication still is not ready, the visible recovery state
-ends with a manual Recheck action instead of pretending success. A missing CLI
+required, Settings, the Start screen and the composer offer one step that opens
+a Shell tab in Exawatt running that source's declared sign-in command (for
+example `claude auth login`), where the source signs in on its own terms; Recheck
+then reads the result. Every local source declares that command, and nothing is
+handed to another app. Claude Code's own model picker opens the same way when
+Exawatt cannot list its models. A missing CLI
 opens its adapter-declared installation guide. Only the minimum identity
 exposed by a status command crosses to the renderer. Provider tokens,
 organization metadata, and OpenClaw connection secrets do not.

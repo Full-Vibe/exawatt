@@ -61,8 +61,9 @@ moving their credentials into Exawatt. Facts identify whether they were observed
 declared by the adapter, or simulated. Local OpenClaw reports gateway
 configuration separately and claims reachability only after its protocol status
 check succeeds. Demo Mode labels its facts as simulated. Use **Recheck** after
-changing a CLI or gateway. A source-owned sign-in action opens as a terminal tab and
-Settings checks again while the flow completes; a missing CLI links to its
+changing a CLI or gateway. A source-owned sign-in opens as a Shell tab in Exawatt
+running that source's own sign-in command; Recheck reads the result once it
+finishes. A missing CLI links to its
 installation guide. Registry failures remain visibly stale or unavailable and
 cannot enable Agent launch. While a Codex Session is being observed, the
 Delegation row also reports whether its child census is complete, partially

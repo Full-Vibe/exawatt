@@ -18,6 +18,7 @@ import {
   settled,
 } from './launch-controls.test-support';
 import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
+import { localAgentSourceDeclaration } from '@/generated/agent-source-declarations';
 
 describe('Agent composer · sources and policy', () => {
   installComposerTestHarness();
@@ -295,10 +296,7 @@ describe('Agent composer · sources and policy', () => {
   });
 
   it('keeps an unknown Claude account default honest and routes selection to Claude Code', async () => {
-    const sourceAction = vi.fn(async () => ({
-      ok: true,
-      message: 'Claude Code opened in Terminal.',
-    }));
+    const sourceAction = vi.fn();
     window.electron!.agentSources.list = vi.fn(async () =>
       readyAgentSourceRegistry()
     );
@@ -343,15 +341,28 @@ describe('Agent composer · sources and policy', () => {
         screen.getByRole('button', { name: 'Model: Account default' })
       )
     );
+    const chooser = localAgentSourceDeclaration('claude').chooseModel!;
     const modelAction = await settled(() =>
-      screen.getByRole('button', {
-        name: 'Choose in Claude Code',
-      })
+      screen.getByRole('button', { name: chooser.label })
     );
     fireEvent.click(modelAction);
+    // BUG-275: Claude Code's own picker opens in a Shell here, never in
+    // Terminal.
     await settled(() =>
-      expect(sourceAction).toHaveBeenCalledWith('claude', 'choose-model')
+      expect(onLaunch).toHaveBeenCalledWith({
+        harness: 'shell',
+        dir: '/project',
+        shellCommand: chooser.command,
+      })
     );
+    expect(sourceAction).not.toHaveBeenCalled();
+    await settled(() =>
+      expect(document.querySelector('[data-agent-composer]')).toHaveAttribute(
+        'aria-busy',
+        'false'
+      )
+    );
+    onLaunch.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     await settled(() =>

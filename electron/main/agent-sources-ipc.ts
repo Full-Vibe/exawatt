@@ -4,7 +4,6 @@ import { delegationObservations } from './harness-events/delegation-observation'
 import { handleBounded } from './ipc-arguments';
 import {
   inspectAgentSources,
-  launchSourceOwnedAction,
   rememberedAgentSources,
   setAgentSourceObservationStore,
 } from './pty/agent-source-registry';
@@ -46,27 +45,18 @@ export function registerAgentSourcesIPC(): void {
     rememberedAgentSources(await defaultShell(), scope)
   );
 
+  // The one action main performs for a source. Sign-in and model choice
+  // are declared shell actions the renderer opens in an Exawatt Shell
+  // (BUG-275): nothing here drives another app.
   handleBounded('agent-sources:act', async (_event, adapterId, action) => {
     const declaration = agentSourceDeclaration(adapterId);
-    if (action === 'install-guide') {
-      if (!declaration.installationGuideUrl) {
-        throw new Error('This Agent Source has no installation guide');
-      }
-      await shell.openExternal(declaration.installationGuideUrl);
-      return {
-        ok: true,
-        message: `${declaration.label} installation guide opened.`,
-      };
+    if (action !== 'install-guide' || !declaration.installationGuideUrl) {
+      throw new Error('This Agent Source has no installation guide');
     }
-    // Sign-in and model choice run the source's own CLI, so only a source
-    // with a local harness has them.
-    const harness = declaration.harness;
-    if (harness === null) {
-      throw new Error('This Agent Source does not expose that action');
-    }
-    if (action === 'choose-model' && harness !== 'claude') {
-      throw new Error('This source exposes its model catalog in Exawatt');
-    }
-    return launchSourceOwnedAction(harness, action);
+    await shell.openExternal(declaration.installationGuideUrl);
+    return {
+      ok: true,
+      message: `${declaration.label} installation guide opened.`,
+    };
   });
 }

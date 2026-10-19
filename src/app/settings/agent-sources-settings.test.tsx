@@ -17,7 +17,10 @@ import {
   LAUNCH_EVENT,
   consumePendingLaunch,
 } from '@/components/workspace/session-jump';
-import { AGENT_SOURCE_DECLARATIONS } from '@/generated/agent-source-declarations';
+import {
+  AGENT_SOURCE_DECLARATIONS,
+  localAgentSourceDeclaration,
+} from '@/generated/agent-source-declarations';
 import { AgentSourcesSettings } from './agent-sources-settings';
 import {
   useConnectedSources,
@@ -100,7 +103,6 @@ describe('Agent Source Settings', () => {
               actions: {
                 recheck: true,
                 authenticate: true,
-                chooseModel: false,
                 installGuide: true,
               },
               facts: {
@@ -141,15 +143,26 @@ describe('Agent Source Settings', () => {
       screen.getByText('Credential remains with Claude Code.')
     ).toBeInTheDocument();
 
+    // BUG-275: the sign-in is the in-app Shell running the declared
+    // command; nothing is sent to main to drive Terminal.
+    const launches: unknown[] = [];
+    const onLaunch = (event: Event) =>
+      launches.push((event as CustomEvent).detail);
+    window.addEventListener(LAUNCH_EVENT, onLaunch);
     fireEvent.click(
-      screen.getByRole('button', { name: 'Sign in with Claude Code' })
+      screen.getByRole('button', {
+        name: localAgentSourceDeclaration('claude').signIn.label,
+      })
     );
-    await waitFor(() =>
-      expect(act).toHaveBeenCalledWith('claude', 'authenticate')
-    );
-    expect(
-      await screen.findByText(/Claude Code sign-in opened in Terminal\./)
-    ).toBeInTheDocument();
+    window.removeEventListener(LAUNCH_EVENT, onLaunch);
+    consumePendingLaunch();
+    expect(launches).toEqual([
+      {
+        harness: 'shell',
+        shellCommand: localAgentSourceDeclaration('claude').signIn.command,
+      },
+    ]);
+    expect(act).not.toHaveBeenCalled();
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Browse Agent Sources' })
@@ -164,73 +177,6 @@ describe('Agent Source Settings', () => {
     // grammar): sentence-case "Coming soon", never a bespoke "Soon" pill.
     expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0);
     expect(claude.label).toBe('Claude Code');
-  });
-
-  it('reconciles source-owned sign-in until the source is actually ready', async () => {
-    vi.useFakeTimers();
-    const base = fallbackAgentSourceRegistry('all');
-    const actionRequired = {
-      ...base,
-      sources: base.sources.map(source =>
-        source.adapterId === 'claude'
-          ? {
-              ...source,
-              state: 'action-required' as const,
-              stateLabel: 'Action required',
-              launchable: false,
-              actions: {
-                ...source.actions,
-                recheck: true,
-                authenticate: true,
-              },
-            }
-          : source
-      ),
-    };
-    const ready = {
-      ...actionRequired,
-      sources: actionRequired.sources.map(source =>
-        source.adapterId === 'claude'
-          ? {
-              ...source,
-              state: 'ready' as const,
-              stateLabel: 'Ready',
-              launchable: true,
-              actions: { ...source.actions, authenticate: false },
-            }
-          : source
-      ),
-    };
-    const list = vi
-      .fn()
-      .mockResolvedValueOnce(actionRequired)
-      .mockResolvedValueOnce(ready);
-    const act = vi.fn(async () => ({ ok: true, message: 'Sign-in opened.' }));
-    installBridgeDouble({
-      platform: 'darwin',
-      agentSources: { list, act },
-    });
-
-    render(<AgentSourcesSettings />);
-    await reactAct(async () => Promise.resolve());
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Sign in with Claude Code' })
-    );
-    await reactAct(async () => Promise.resolve());
-    expect(
-      screen.getByText(/Waiting for source-owned sign-in/)
-    ).toBeInTheDocument();
-
-    await reactAct(async () => {
-      await vi.advanceTimersByTimeAsync(1_200);
-    });
-    expect(list).toHaveBeenLastCalledWith('all', true);
-    expect(
-      screen.getByText('Claude Code is signed in and ready to launch.')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Claude Code, Local CLI, Ready' })
-    ).toBeInTheDocument();
   });
 
   it('shows a source-owned installation path for a missing CLI', async () => {
@@ -270,13 +216,13 @@ describe('Agent Source Settings', () => {
     ).toBeInTheDocument();
   });
 
-  it('opens a declared shell sign-in in a workspace Shell, never in Terminal', async () => {
+  it('opens an unconfirmed sign-in in a workspace Shell, with its disclosure', async () => {
     const base = fallbackAgentSourceRegistry('all');
     const declaration = AGENT_SOURCE_DECLARATIONS.find(
-      candidate => 'signIn' in candidate
+      candidate => candidate.harness !== null && 'disclosure' in candidate
     );
-    if (!declaration || !('signIn' in declaration)) {
-      throw new Error('no source declares a shell sign-in');
+    if (!declaration || declaration.harness === null) {
+      throw new Error('no local source declares a disclosure');
     }
     const registry = {
       ...base,
@@ -325,69 +271,63 @@ describe('Agent Source Settings', () => {
     ).toBe(declaration.disclosure?.href);
   });
 
-  it.each(['authenticate', 'install-guide'] as const)(
-    'ignores a late %s response after changing sources',
-    async action => {
-      const base = fallbackAgentSourceRegistry('all');
-      const registry = {
-        ...base,
-        sources: base.sources.map(source => ({
-          ...source,
-          state:
-            action === 'install-guide' && source.adapterId === 'claude'
-              ? ('not-installed' as const)
-              : source.state,
-          actions: {
-            ...source.actions,
-            authenticate:
-              action === 'authenticate' || source.adapterId !== 'claude',
-            installGuide: true,
-          },
-        })),
-      };
-      let finish!: (result: { ok: boolean; message: string }) => void;
-      const pending = new Promise<{ ok: boolean; message: string }>(resolve => {
-        finish = resolve;
-      });
-      const act = vi.fn(() => pending);
-      installBridgeDouble({
-        agentSources: { list: vi.fn(async () => registry), act },
-      });
-      render(<AgentSourcesSettings />);
-      const claude = registry.sources.find(
-        source => source.adapterId === 'claude'
-      )!;
-      const codex = registry.sources.find(
-        source => source.adapterId === 'codex'
-      )!;
-      const control = await screen.findByRole('button', {
-        name:
-          action === 'authenticate'
-            ? `Sign in with ${claude.label}`
-            : 'Open installation guide',
-      });
-      fireEvent.click(control);
-      fireEvent.click(
-        screen.getByRole('button', {
-          name: `${codex.label}, ${codex.connectionName}, ${codex.stateLabel}`,
-        })
-      );
-      await reactAct(async () =>
-        finish({ ok: true, message: 'Response from previous source' })
-      );
-      expect(
-        screen.queryByText(/Response from previous source/)
-      ).not.toBeInTheDocument();
-      expect(
-        screen.getByRole('button', {
-          name: `${claude.label}, ${claude.connectionName}, ${claude.stateLabel}`,
-        })
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole('button', { name: `Sign in with ${codex.label}` })
-      ).toBeEnabled();
-    }
-  );
+  it('ignores a late install-guide response after changing sources', async () => {
+    const base = fallbackAgentSourceRegistry('all');
+    const registry = {
+      ...base,
+      sources: base.sources.map(source => ({
+        ...source,
+        state:
+          source.adapterId === 'claude'
+            ? ('not-installed' as const)
+            : source.state,
+        actions: {
+          ...source.actions,
+          authenticate: source.adapterId !== 'claude',
+          installGuide: true,
+        },
+      })),
+    };
+    let finish!: (result: { ok: boolean; message: string }) => void;
+    const pending = new Promise<{ ok: boolean; message: string }>(resolve => {
+      finish = resolve;
+    });
+    const act = vi.fn(() => pending);
+    installBridgeDouble({
+      agentSources: { list: vi.fn(async () => registry), act },
+    });
+    render(<AgentSourcesSettings />);
+    const claude = registry.sources.find(
+      source => source.adapterId === 'claude'
+    )!;
+    const codex = registry.sources.find(
+      source => source.adapterId === 'codex'
+    )!;
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open installation guide' })
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: `${codex.label}, ${codex.connectionName}, ${codex.stateLabel}`,
+      })
+    );
+    await reactAct(async () =>
+      finish({ ok: true, message: 'Response from previous source' })
+    );
+    expect(
+      screen.queryByText(/Response from previous source/)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: `${claude.label}, ${claude.connectionName}, ${claude.stateLabel}`,
+      })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: localAgentSourceDeclaration('codex').signIn.label,
+      })
+    ).toBeEnabled();
+  });
 });
 
 /**

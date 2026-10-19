@@ -113,7 +113,6 @@ function ScenarioCase({ scenario }: { scenario: BenchScenario }) {
                     actions: {
                       recheck: true,
                       authenticate: true,
-                      chooseModel: false,
                       installGuide: true,
                     },
                   })

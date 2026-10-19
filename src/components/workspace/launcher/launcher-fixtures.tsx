@@ -28,6 +28,7 @@ import { ExternalLink } from 'lucide-react';
 import { EngineGlyph } from './setup-chip';
 import type { DetailAxis, DetailAxisOption } from './setup-detail';
 import type { PtyHarness } from '@exawatt/core';
+import { localAgentSourceDeclaration } from '@/generated/agent-source-declarations';
 
 export const BENCH_PROJECT = '/Users/example/Code/Projects/exawatt';
 const DAY = 24 * 60 * 60 * 1000;
@@ -347,16 +348,21 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
   {
     id: 'signed-out',
     title: 'Not signed in',
-    note: 'The engine reports no account. That fact informs and never blocks (incident 0021): Start stays live and the engine runs its own sign-in in the pane.',
+    note: "The engine reports no account. That fact informs and never blocks (incident 0021): Start stays live, and one step opens a Shell here running the engine's own sign-in (BUG-275), with Recheck beside it.",
     state: 'ready',
     setups: buildSetups(TRAINED_HISTORY),
     selectedIndex: 0,
-    detailOpen: false,
+    detailOpen: true,
     task: '',
     notice: {
       kind: 'notice',
-      text: 'Claude Code: not signed in · checked 2h ago',
+      text: 'Claude Code: Sign-in required',
     },
+    noticeActions: [
+      localAgentSourceDeclaration('claude').signIn.label,
+      'Recheck',
+    ],
+    sourceLines: 'claude',
     width: 768,
   },
   {

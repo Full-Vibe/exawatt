@@ -1,9 +1,9 @@
 import type { AgentHarness, AgentPermissionMode } from './harness-types';
 import type {
-  AgentSourceDeclaration,
+  LocalAgentSourceDeclaration,
   SafetyControlSettings,
 } from '@exawatt/core';
-import { agentSourceDeclaration } from './generated-agent-source-declarations';
+import { localAgentSourceDeclaration } from './generated-agent-source-declarations';
 import type { HarnessEventNormalizer } from '../harness-events/channel';
 import {
   claudeHookEvent,
@@ -187,15 +187,11 @@ export interface HarnessLaunchDescriptor {
   id: AgentHarness;
   /** Stable operator-facing source metadata. Renderer code receives this
    * through the normalized source registry; it must not grow a second copy. */
-  source: AgentSourceDeclaration & {
+  source: LocalAgentSourceDeclaration & {
     executable: string;
     versionArgs: readonly string[];
     authStatusArgs: readonly string[];
-    authLoginArgs: readonly string[];
     authOwner: string;
-    /** Set when sign-in happens inside the source's own session rather than
-     *  through a login subcommand: the command to type there. */
-    authSessionCommand?: string;
   };
   /** Some CLIs require Exawatt to allocate identity before a fresh launch. */
   allocatesFreshSessionId: boolean;
@@ -294,11 +290,10 @@ const descriptors = {
       reason: 'No supported Claude Code sleep-inhibitor opt-out is verified',
     },
     source: {
-      ...agentSourceDeclaration('claude'),
+      ...localAgentSourceDeclaration('claude'),
       executable: 'claude',
       versionArgs: ['--version'],
       authStatusArgs: ['auth', 'status', '--json'],
-      authLoginArgs: ['auth', 'login'],
       authOwner: 'Claude Code',
     },
     allocatesFreshSessionId: true,
@@ -356,11 +351,10 @@ const descriptors = {
       invocation: invocation => `${invocation} --disable prevent_idle_sleep`,
     },
     source: {
-      ...agentSourceDeclaration('codex'),
+      ...localAgentSourceDeclaration('codex'),
       executable: 'codex',
       versionArgs: ['--version'],
       authStatusArgs: ['login', 'status'],
-      authLoginArgs: ['login'],
       authOwner: 'Codex',
     },
     allocatesFreshSessionId: false,
@@ -407,11 +401,10 @@ const descriptors = {
   opencode: {
     id: 'opencode',
     source: {
-      ...agentSourceDeclaration('opencode'),
+      ...localAgentSourceDeclaration('opencode'),
       executable: 'opencode',
       versionArgs: ['--version'],
       authStatusArgs: ['auth', 'list'],
-      authLoginArgs: ['auth', 'login'],
       authOwner: 'OpenCode',
     },
     // OpenCode creates the source identity only when the first turn is
@@ -449,14 +442,13 @@ const descriptors = {
   grok: {
     id: 'grok',
     source: {
-      ...agentSourceDeclaration('grok'),
+      ...localAgentSourceDeclaration('grok'),
       executable: 'grok',
       versionArgs: ['--version'],
       // `grok models` is the only non-interactive command that reports auth
       // state; it prints a banner line naming the credential source before
       // the catalog. `grok login` with no subcommand starts the browser flow.
       authStatusArgs: ['models'],
-      authLoginArgs: ['login'],
       authOwner: 'Grok Build',
     },
     // Verified on grok 1.0.3: `-s/--session-id <UUID>` names a NEW conversation
@@ -505,16 +497,14 @@ const descriptors = {
   qwen: {
     id: 'qwen',
     source: {
-      ...agentSourceDeclaration('qwen'),
+      ...localAgentSourceDeclaration('qwen'),
       executable: 'qwen',
       versionArgs: ['--version'],
       // Qwen Code has no sign-in status or login subcommand: sign-in is
       // `/auth` inside its own session, so the status is read from its
-      // settings and "Sign in" opens the CLI itself.
+      // settings and its declared sign-in opens the CLI itself.
       authStatusArgs: [],
-      authLoginArgs: [],
       authOwner: 'Qwen Code',
-      authSessionCommand: '/auth',
     },
     // `--session-id <uuid>` is honored and echoed in every hook; reusing an
     // existing id is refused, so a fresh launch always gets a fresh id.
@@ -559,7 +549,7 @@ const descriptors = {
   antigravity: {
     id: 'antigravity',
     source: {
-      ...agentSourceDeclaration('antigravity'),
+      ...localAgentSourceDeclaration('antigravity'),
       executable: 'agy',
       versionArgs: ['--version'],
       // `agy models` is the one non-interactive command that needs a working
@@ -567,7 +557,6 @@ const descriptors = {
       // sign-in evidence. There is no login subcommand: sign-in happens
       // inside Antigravity itself.
       authStatusArgs: ['models'],
-      authLoginArgs: [],
       authOwner: 'Antigravity',
     },
     // No flag allocates a conversation id (upstream issue #7 is open), so

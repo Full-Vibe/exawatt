@@ -20,6 +20,7 @@ import {
   sourceCardStep,
 } from '@/components/agent-sources/source-card';
 import { runAgentSourceAction } from '../agent-sources';
+import { openSourceShell } from '../session-jump';
 import { WORKSPACE_HUD as HUD } from '../workspace-theme';
 import type {
   AgentSourceAdapterId,
@@ -125,7 +126,7 @@ export function AgentsYouCanRun({
   const act = useCallback(
     async (
       source: AgentSourceSnapshot,
-      action: 'authenticate' | 'install-guide' | 'recheck'
+      action: 'install-guide' | 'recheck'
     ) => {
       setBusyId(source.id);
       setMessages(current => {
@@ -203,13 +204,12 @@ export function AgentsYouCanRun({
                     stateLabel={source.stateLabel}
                     attention={sourceAttention(source)}
                     step={step}
-                    onStep={() =>
-                      void act(
-                        source,
-                        step?.kind === 'install-guide'
-                          ? 'install-guide'
-                          : 'authenticate'
-                      )
+                    onStep={
+                      step?.kind === 'sign-in'
+                        ? // The source signs in in a Shell tab here
+                          // (BUG-275); the card's Recheck reads it after.
+                          () => openSourceShell(step.command)
+                        : () => void act(source, 'install-guide')
                     }
                     // A ready engine has nothing to repair; its freshness is
                     // the whole story. Anything else can be asked again.

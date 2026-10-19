@@ -167,7 +167,6 @@ function fallbackLocalSource(id: AgentSourceId): AgentSourceSnapshot {
     actions: {
       recheck: false,
       authenticate: false,
-      chooseModel: false,
       installGuide: false,
     },
   };
@@ -203,7 +202,6 @@ function fallbackDemoSource(): AgentSourceSnapshot {
     actions: {
       recheck: false,
       authenticate: false,
-      chooseModel: false,
       installGuide: false,
     },
   };
@@ -239,7 +237,6 @@ function fallbackOpenClawSource(): AgentSourceSnapshot {
     actions: {
       recheck: false,
       authenticate: false,
-      chooseModel: false,
       installGuide: false,
     },
   };

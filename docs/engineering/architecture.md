@@ -974,11 +974,18 @@ main-owned evidence no more than five seconds old, so a stale or unavailable
 renderer cannot bypass launch truth without making ordinary launch incur two
 additional CLI probes.
 
-Local source authentication remains harness-owned: Electron may launch the
-source's supported sign-in flow and then run a bounded, cancellable
-reconciliation loop that also wakes when the app regains focus. The loop ends
-only when the source is launchable or its retry budget is exhausted; provider
-tokens do not cross into the renderer or Exawatt storage. Missing local CLIs
+Local source authentication remains harness-owned: every local source
+declares its sign-in command (and Claude Code its own model picker) in
+`contracts/agent-sources.json`, and every surface runs it the same way, as a
+Shell tab in Exawatt typing that command, where the source signs in on its own
+terms; Recheck reads the result (BUG-275). Nothing drives another app, so no
+Apple Events entitlement is needed; main's only source action is opening the
+installation guide. Provider tokens do not cross into the renderer or Exawatt
+storage. Whether a saved setup's model launches is one predicate,
+`agentModelAvailability` in `@exawatt/core`: only the source's own live
+catalog can refuse a model, a listed model with a modifier the source accepts
+(Claude Code's `[1m]`) is listed, and an unanswered catalog refuses nothing
+(BUG-283). Missing local CLIs
 offer a fixed, adapter-declared installation guide rather than a nonfunctional
 connection action. Subscription-backed harness entitlement and
 metered API authentication are distinct source-owned modes; Exawatt does not

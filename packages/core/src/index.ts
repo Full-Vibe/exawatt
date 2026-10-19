@@ -79,6 +79,7 @@ export * from './retention-anchor';
 export * from './operator-stats/index';
 export * from './demo/index';
 export * from './launch-configurations';
+export * from './model-availability';
 export * from './launch-recommendation';
 export * from './release-provenance';
 export * from './surface-names';

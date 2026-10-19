@@ -707,7 +707,7 @@ describe('buildHarnessCommand', () => {
       }
       // Sign-in is the source's own flow, and the readiness probe reads a
       // banner, never a token file.
-      expect(source.authLoginArgs).toEqual(['login']);
+      expect(source.signIn.command).toBe('grok login');
       expect(source.authStatusArgs).toEqual(['models']);
       expect(source.authOwner).toBe('Grok Build');
     });
@@ -782,8 +782,8 @@ describe('buildHarnessCommand', () => {
 
     it('guides an in-session sign-in instead of inventing a login command', () => {
       const { source } = harnessDescriptor('qwen');
-      expect(source.authLoginArgs).toEqual([]);
-      expect(source.authSessionCommand).toBe('/auth');
+      expect(source.signIn.command).toBe('qwen');
+      expect(source.signIn.note).toContain('/auth');
     });
   });
   describe('Antigravity CLI (ENG-003 S5.3)', () => {
@@ -931,7 +931,7 @@ describe('buildHarnessCommand', () => {
       }
       const { source } = harnessDescriptor('antigravity');
       expect(source.executable).toBe('agy');
-      expect(source.authLoginArgs).toEqual([]);
+      expect(source.signIn.command).toBe('agy');
       expect(source.authStatusArgs).toEqual(['models']);
     });
   });

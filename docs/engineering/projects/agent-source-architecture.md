@@ -1402,3 +1402,55 @@ catalog and needs-you are unchanged.
   (ENG-046 O2) owns the project-less case. The launcher's light-theme engine
   glyph paints the brand colour on the ground (Codex's near-white reads
   faint), a pre-existing departure from the Agent Source identity rung.
+
+### 2026-10-18 — Source-owned actions run in one place (BUG-275, BUG-283)
+
+**Every source-owned action is a declared command an Exawatt Shell runs, and
+one predicate decides whether a saved setup's model launches.** Operator
+direction 2026-10-18: upgrade the system so the bugs fall out, not patches.
+
+- **One action path (BUG-275).** `contracts/agent-sources.json` now requires
+  `signIn {label, command, note}` on every source with a local harness
+  (`claude auth login`, `codex login`, `opencode auth login`, `grok login`,
+  `qwen` then `/auth`, `agy`), and Claude Code declares `chooseModel`
+  (`claude`, then `/model`). The generator and the type
+  (`LocalAgentSourceDeclaration`) refuse a local source without one.
+  `sourceCardStep` returns one `sign-in` step for any source that reports a
+  sign-in; Settings and the Start screen open it with `openSourceShell`, the
+  composer through its own `onLaunch`; both reach the workspace's Shell launch
+  with `shellCommand`. With no Project open, that Shell runs in the home
+  directory. Falling out of it: Claude, Codex, OpenCode, Grok and Qwen now
+  get a working sign-in in the composer (only Antigravity had one), and the
+  Start screen no longer sent Antigravity's sign-in to main, which answered
+  with a sentence instead of a Shell.
+- **Deleted.** `launchSourceOwnedAction` and its `osascript` "tell application
+  Terminal", `sourceOwnedActionCommand`, the descriptor's `authLoginArgs` and
+  `authSessionCommand`, the snapshot's `actions.chooseModel` and the registry's
+  `modelChooser`, the `authenticate` and `choose-model` IPC actions (the
+  argument guard now refuses them; `install-guide` is main's only action), and
+  Settings' Terminal reconciliation loop and Connecting overlay. No source
+  needs Terminal, so no ENG-045 Automation step is added.
+- **One model predicate (BUG-283).** Reproduced 2026-10-18 from the
+  operator's own state: his pool holds `claude-fable-5[1m]` and `opus[1m]`
+  setups; Claude Code 2.1.303's live catalog lists `fable`, `opus`,
+  `claude-fable-5` and others but no `[1m]` rows; `claude -p --model
+'opus[1m]'` ran as `claude-opus-5-5[1m]` and `--model 'claude-fable-5[1m]'`
+  as `claude-fable-5`, while `bogus-model-x` was refused as
+  `unrecognized_model`. `launchTargetAvailability` tested exact row
+  membership, and the clone path repeated the test, so both read a picker's
+  rows as the accepted set, and read an unanswered catalog (the renderer's
+  fallback after a new Project's cold probe passes its 25 s deadline, or a
+  configured-values view) as "not available". `agentModelAvailability` in
+  `packages/core/src/model-availability.ts` replaces both: listed, a listed
+  model with a modifier the source accepts (`SOURCE_MODEL_MODIFIERS`, Claude
+  `[1m]`), unverified (no live catalog: launches, the source speaks in the
+  pane), or unlisted (the only refusal).
+- **Evidence.** `launch-target-catalog.test.ts` (failed 3 of 4 before),
+  the source card contract over every declaration, Settings, Start screen
+  and composer tests asserting a Shell launch with the declared command and
+  no IPC action, the IPC guard refusing `authenticate` and `choose-model`.
+  Settings and the launcher bench captured headless on a fake bridge, light
+  and dark.
+- **Left open.** A home-directory sign-in Shell becomes a Project for the
+  home folder, as any launch there does. Exawatt does not recheck by itself
+  when a sign-in Shell exits; Recheck does.

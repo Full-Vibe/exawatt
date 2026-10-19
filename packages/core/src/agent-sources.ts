@@ -143,28 +143,47 @@ export interface AgentSourceCapabilities {
   enforcementOwner: string;
 }
 
-export interface AgentSourceDeclaration {
+interface AgentSourceDeclarationBase {
   adapterId: AgentSourceAdapterId;
-  harness: AgentHarness | null;
   label: string;
   connectionName: string;
   color: string;
   installationGuideUrl: string | null;
   description: string;
   capabilities: AgentSourceCapabilities;
-  /**
-   * A source whose sign-in is its own first interactive run, with no login
-   * subcommand (Antigravity CLI): the step opens a Shell tab in Exawatt
-   * running `command`, and the source signs in there. Absent: the source's
-   * own login command opens in Terminal (`authenticate`).
-   */
-  signIn?: AgentSourceShellSignIn;
   /** One line the source card owes its reader, with its source (decision
    *  `0051`). */
   disclosure?: AgentSourceDisclosure;
 }
 
-export interface AgentSourceShellSignIn {
+/**
+ * A source Exawatt runs as a local CLI. Every source-owned action it offers
+ * (sign-in, choosing a model in its own picker) runs as its declared command
+ * in a Shell tab inside Exawatt, where the source does the rest on its own
+ * terms (BUG-275). Nothing is typed into another app: driving Terminal.app
+ * needs an Apple Events entitlement Exawatt deliberately does not carry.
+ */
+export interface LocalAgentSourceDeclaration extends AgentSourceDeclarationBase {
+  harness: AgentHarness;
+  /** Required: a local source always says how it signs in. */
+  signIn: AgentSourceShellAction;
+  /** Present when the source's model picker is its own (`/model`). */
+  chooseModel?: AgentSourceShellAction;
+}
+
+/** A gateway or simulated source: no local CLI, so no shell actions. */
+export interface RemoteAgentSourceDeclaration extends AgentSourceDeclarationBase {
+  harness: null;
+  signIn?: never;
+  chooseModel?: never;
+}
+
+export type AgentSourceDeclaration =
+  | LocalAgentSourceDeclaration
+  | RemoteAgentSourceDeclaration;
+
+/** One source-owned action, as the command a Shell tab runs. */
+export interface AgentSourceShellAction {
   label: string;
   command: string;
   /** What the operator meets in the Shell, in one line. */
@@ -220,7 +239,10 @@ export type AgentSourceObservation =
     }
   | { origin: 'declared' };
 
-export interface AgentSourceSnapshot extends AgentSourceDeclaration {
+/** A source as observed. The declaration's shell actions are read from the
+ *  declaration (`localAgentSourceDeclaration`), never from a snapshot. */
+export interface AgentSourceSnapshot extends AgentSourceDeclarationBase {
+  harness: AgentHarness | null;
   id: string;
   configured: boolean;
   /**
@@ -257,8 +279,9 @@ export interface AgentSourceSnapshot extends AgentSourceDeclaration {
   };
   actions: {
     recheck: boolean;
+    /** The source reports a sign-in it can repair: the card offers the
+     *  declaration's `signIn`. */
     authenticate: boolean;
-    chooseModel: boolean;
     installGuide: boolean;
   };
 }
@@ -466,10 +489,10 @@ export function launchableAgentSourceState(state: AgentSourceState): boolean {
   return state === 'ready' || state === 'action-required';
 }
 
-export type AgentSourceAction =
-  | 'authenticate'
-  | 'choose-model'
-  | 'install-guide';
+/** The one action main performs for a source: opening its installation
+ *  guide. Sign-in and model choice are shell actions the renderer opens
+ *  (`AgentSourceShellAction`), never a main-process hand-off. */
+export type AgentSourceAction = 'install-guide';
 
 export interface AgentSourceActionResult {
   ok: boolean;

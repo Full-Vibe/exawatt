@@ -130,6 +130,18 @@ describe('argument boundaries', () => {
       'Unsupported Agent Source',
     ],
     ['agent-sources:act', ['claude', 'rm'], 'Unsupported Agent Source action'],
+    // BUG-275: sign-in is a shell action the renderer opens, never a
+    // main-process hand-off to Terminal.
+    [
+      'agent-sources:act',
+      ['claude', 'authenticate'],
+      'Unsupported Agent Source action',
+    ],
+    [
+      'agent-sources:act',
+      ['claude', 'choose-model'],
+      'Unsupported Agent Source action',
+    ],
     [
       'consumption:snapshot',
       [{ sinceMs: '5' }],

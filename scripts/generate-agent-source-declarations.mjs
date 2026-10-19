@@ -55,6 +55,31 @@ for (const source of contract.sources) {
     throw new Error(`Harness ${source.harness} belongs to two Agent Sources`);
   }
   seenHarnesses.add(source.harness);
+  // Every source-owned action of a local source runs as a declared command
+  // in an Exawatt Shell (BUG-275): a local source without a declared sign-in
+  // would have no way to sign in at all.
+  for (const key of ['signIn', 'chooseModel']) {
+    const action = source[key];
+    if (action === undefined && key === 'chooseModel') continue;
+    const complete =
+      action &&
+      ['label', 'command', 'note'].every(
+        field => typeof action[field] === 'string' && action[field].trim()
+      );
+    if (!complete) {
+      throw new Error(
+        `Agent Source ${source.adapterId} needs a ${key} with a label, command and note`
+      );
+    }
+  }
+}
+for (const source of contract.sources) {
+  if (source.harness !== null) continue;
+  if (source.signIn !== undefined || source.chooseModel !== undefined) {
+    throw new Error(
+      `Agent Source ${source.adapterId} has no local CLI to run a shell action in`
+    );
+  }
 }
 
 const header = `// SPDX-License-Identifier: AGPL-3.0-or-later
@@ -86,9 +111,11 @@ export const AGENT_SOURCE_CATALOG_IDS = ${tuple(catalogIds)};
 
 const declarationsModule = `${header}
 import type {
+  AgentHarness,
   AgentSourceAdapterId,
   AgentSourceCatalogEntry,
   AgentSourceDeclaration,
+  LocalAgentSourceDeclaration,
 } from '@exawatt/core';
 
 export const AGENT_SOURCE_DECLARATIONS = ${JSON.stringify(contract.sources, null, 2)} as const satisfies readonly AgentSourceDeclaration[];
@@ -102,6 +129,19 @@ export function agentSourceDeclaration(
     candidate => candidate.adapterId === adapterId
   );
   if (!declaration) throw new Error(\`Unknown Agent Source: \${adapterId}\`);
+  return declaration;
+}
+
+/** The declaration of the source a local harness belongs to, with the shell
+ *  actions every local source declares. */
+export function localAgentSourceDeclaration(
+  harness: AgentHarness
+): LocalAgentSourceDeclaration {
+  const declaration: AgentSourceDeclaration | undefined =
+    AGENT_SOURCE_DECLARATIONS.find(candidate => candidate.harness === harness);
+  if (!declaration || declaration.harness === null) {
+    throw new Error(\`Unknown harness: \${harness}\`);
+  }
   return declaration;
 }
 `;

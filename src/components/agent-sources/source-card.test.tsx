@@ -36,7 +36,6 @@ function local(patch: Partial<AgentSourceSnapshot> = {}): AgentSourceSnapshot {
 const SIGN_IN_OFFERED = {
   recheck: true,
   authenticate: true,
-  chooseModel: false,
   installGuide: true,
 } as const;
 
@@ -79,7 +78,6 @@ describe('SourceCard', () => {
           actions: {
             recheck: true,
             authenticate: true,
-            chooseModel: false,
             installGuide: true,
           },
         });
@@ -101,7 +99,6 @@ describe('SourceCard', () => {
         actions: {
           recheck: true,
           authenticate: true,
-          chooseModel: false,
           installGuide: true,
         },
       })
@@ -117,7 +114,6 @@ describe('SourceCard', () => {
           actions: {
             recheck: true,
             authenticate: false,
-            chooseModel: false,
             installGuide: true,
           },
         })
@@ -131,7 +127,6 @@ describe('SourceCard', () => {
       actions: {
         recheck: true,
         authenticate: true,
-        chooseModel: false,
         installGuide: true,
       },
     });
@@ -148,42 +143,37 @@ describe('SourceCard', () => {
     expect(screen.getByText(local().label)).toBeInTheDocument();
   });
 
-  it('takes a shell sign-in from the declaration, for every source that declares one', () => {
-    const declared = AGENT_SOURCE_DECLARATIONS.filter(
-      declaration => 'signIn' in declaration && declaration.harness !== null
+  it('signs every local source in through an Exawatt Shell running its declared command', () => {
+    // BUG-275: a sign-in that drives Terminal.app needs an Apple Events
+    // entitlement Exawatt does not carry. Every source with a local harness
+    // declares its sign-in, and the step is always the in-app Shell.
+    const local_ = AGENT_SOURCE_DECLARATIONS.filter(
+      declaration => declaration.harness !== null
     );
-    expect(declared.length).toBeGreaterThan(0);
-    for (const declaration of declared) {
-      const source = local({
+    expect(local_.length).toBeGreaterThan(0);
+    for (const declaration of local_) {
+      for (const state of ['action-required', 'unknown'] as const) {
+        const source = local({
+          adapterId: declaration.adapterId,
+          state,
+          actions: SIGN_IN_OFFERED,
+        });
+        const step = sourceCardStep(source);
+        expect(step?.kind, declaration.adapterId).toBe('sign-in');
+        if (step?.kind !== 'sign-in') throw new Error('unreachable');
+        expect(step.command).toBe(declaration.signIn.command);
+        expect(step.command.trim()).not.toBe('');
+      }
+      // The fact behind an offered sign-in is the sign-in's, never a
+      // reachability line.
+      const unknown = local({
         adapterId: declaration.adapterId,
         state: 'unknown',
         actions: SIGN_IN_OFFERED,
       });
-      const step = sourceCardStep(source);
-      expect(step?.kind).toBe('shell-sign-in');
-      if (step?.kind !== 'shell-sign-in' || !('signIn' in declaration)) {
-        throw new Error('unreachable');
-      }
-      expect(step.command).toBe(declaration.signIn.command);
-      // The fact behind an offered sign-in is the sign-in's, never a
-      // reachability line.
-      expect(sourceAttention(source)?.detail).toBe(
-        source.facts.authentication.detail
+      expect(sourceAttention(unknown)?.detail).toBe(
+        unknown.facts.authentication.detail
       );
     }
-  });
-
-  it('keeps the Terminal sign-in for a source that declares no shell sign-in', () => {
-    const declaration = AGENT_SOURCE_DECLARATIONS.find(
-      candidate => !('signIn' in candidate) && candidate.harness !== null
-    )!;
-    const step = sourceCardStep(
-      local({
-        adapterId: declaration.adapterId,
-        state: 'action-required',
-        actions: SIGN_IN_OFFERED,
-      })
-    );
-    expect(step?.kind).toBe('sign-in');
   });
 });

@@ -15,7 +15,11 @@ import {
   type OperatorMoveClaim,
 } from '@/components/nav/operator-position';
 import { recordLaunchConfigurationSuccess } from '@/lib/launch-configurations';
-import type { AgentPermissionMode, PtyHarness } from '@exawatt/core';
+import {
+  agentModelLaunchable,
+  type AgentPermissionMode,
+  type PtyHarness,
+} from '@exawatt/core';
 import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 import { HARNESS_META } from '../harnesses';
 import {
@@ -415,9 +419,9 @@ export function useSessionLaunch({
       // A clone refuses exactly what the main-process gate refuses
       // (`cloneTargetSourceReady`, one verdict for every surface).
       const targetReady = cloneTargetSourceReady(registryLoad.snapshot, target);
-      const modelReady =
-        target.modelId === modelCatalog.effectiveModel ||
-        modelCatalog.models.some(model => model.id === target.modelId);
+      // The same model predicate the composer's saved setups read
+      // (BUG-283): an unanswered catalog is not a refusal.
+      const modelReady = agentModelLaunchable(modelCatalog, target.modelId);
       if (registryLoad.status !== 'live' || !targetReady || !modelReady) {
         setError(
           registryLoad.error?.message ??
@@ -496,12 +500,18 @@ export function useSessionLaunch({
   );
 
   /** launch in the active project's directory (fallback: last used) —
-   *  the one dir-resolution path for ⌘T, palette commands, and buttons */
+   *  the one dir-resolution path for ⌘T, palette commands, and buttons.
+   *  A source's own action (a sign-in Shell, BUG-275) needs a terminal, not
+   *  a Project, so with neither it runs in the home directory, as a new
+   *  terminal window would. */
   const launchHere = useCallback(
     (harness: PtyHarness, options: { shellCommand?: string } = {}): boolean => {
       const { projects: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
       const activeProject = gs.find(group => group.dir === ad);
-      const dir = activeProject ? projectRootPath(activeProject) : lu || null;
+      const sourceAction = harness === 'shell' && !!options.shellCommand;
+      const dir = activeProject
+        ? projectRootPath(activeProject)
+        : lu || (sourceAction ? '~' : null);
       if (!dir) {
         setError('Choose a Project directory for this session.');
         return false;

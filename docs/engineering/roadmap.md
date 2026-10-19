@@ -4110,10 +4110,15 @@ Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full landin
 
 ### BUG-283 New-Project Claude configurations appear unavailable
 
-Status: bug · ENG-016 · operator feedback 4acb9b2d, 2026-10-05; triaged 2026-10-15.
+Status: fixed in code 2026-10-18, branch `agent/fix-source-setup` · ENG-016 · operator feedback 4acb9b2d, 2026-10-05.
 
-Verify Fable/Opus availability against the exact source-owned Project catalog;
-never substitute another model. [Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-15--launcher-availability-and-repeated-update-notice-bug-283-bug-285).
+Cause: availability required the exact id among Claude Code's `/model` rows,
+but `--model` accepts `[1m]` on any listed model (the operator's
+`claude-fable-5[1m]` and `opus[1m]` setups launch), and an unanswered catalog
+(a new Project's cold probe) refused every saved setup. One predicate,
+`agentModelAvailability` in `@exawatt/core`, now decides it for the composer
+and Clone; only a live catalog can refuse, and no model is substituted.
+[Evidence](projects/agent-source-architecture.md#2026-10-18--source-owned-actions-run-in-one-place-bug-275-bug-283).
 
 ### BUG-284 Feedback screenshot capture loses the draft editing position
 
@@ -4407,8 +4412,12 @@ the primer belongs to ENG-045.
 
 ### BUG-275 "Sign in with {source}" drives Terminal without the Automation entitlement
 
-Status: bug · ENG-003 · found 2026-10-04 by the permissions research; failure
-inferred, not reproduced.
+Status: fixed in code 2026-10-18 by deletion, branch `agent/fix-source-setup`
+· ENG-003 · found 2026-10-04 by the permissions research; failure inferred,
+not reproduced. Every local source now declares its sign-in command and it
+runs in an Exawatt Shell tab; the `osascript` Terminal path and the
+`authenticate`/`choose-model` IPC actions are deleted, so no entitlement is
+needed. [Evidence](projects/agent-source-architecture.md#2026-10-18--source-owned-actions-run-in-one-place-bug-275-bug-283).
 
 `electron/main/pty/agent-source-registry.ts` runs `osascript` "tell
 application Terminal … do script" for Settings ▸ Agent Sources' sign-in and

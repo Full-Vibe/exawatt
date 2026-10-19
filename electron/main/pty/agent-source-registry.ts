@@ -9,7 +9,6 @@ import {
   agentSourceLaunchVerdict,
   launchableAgentSourceState,
   type AgentHarness,
-  type AgentSourceActionResult,
   type AgentSourceAdapterId,
   type AgentSourceCapabilities,
   type AgentSourceFact,
@@ -409,7 +408,6 @@ function unobservedSourceSnapshot(input: {
     actions: {
       recheck: true,
       authenticate: false,
-      chooseModel: false,
       installGuide: true,
     },
   };
@@ -431,8 +429,6 @@ interface SignInReading {
  */
 interface StatusCommandSource {
   readSignIn: (result: CommandResult) => SignInReading;
-  /** Settings offers the source's own model selector once signed in. */
-  modelChooser: boolean;
 }
 
 const STATUS_COMMAND_SOURCES = {
@@ -446,7 +442,6 @@ const STATUS_COMMAND_SOURCES = {
         signedInDetail: status?.detail ?? 'Signed in through Claude Code.',
       };
     },
-    modelChooser: true,
   },
   codex: {
     readSignIn: result => {
@@ -464,7 +459,6 @@ const STATUS_COMMAND_SOURCES = {
         signedInDetail: 'Codex reports an active source-owned login.',
       };
     },
-    modelChooser: false,
   },
 } satisfies Partial<Record<AgentHarness, StatusCommandSource>>;
 
@@ -552,7 +546,6 @@ async function inspectStatusCommandHarness(
       actions: {
         recheck: true,
         authenticate: false,
-        chooseModel: false,
         installGuide: true,
       },
     };
@@ -678,7 +671,6 @@ async function inspectStatusCommandHarness(
     actions: {
       recheck: true,
       authenticate: !authenticated,
-      chooseModel: statusSource.modelChooser && authenticated,
       installGuide: true,
     },
   };
@@ -796,7 +788,6 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
       actions: {
         recheck: true,
         authenticate: false,
-        chooseModel: false,
         installGuide: true,
       },
     };
@@ -948,7 +939,6 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
     actions: {
       recheck: true,
       authenticate: true,
-      chooseModel: false,
       installGuide: true,
     },
   };
@@ -1063,7 +1053,6 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
       actions: {
         recheck: true,
         authenticate: false,
-        chooseModel: false,
         installGuide: true,
       },
     };
@@ -1192,7 +1181,6 @@ async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
     actions: {
       recheck: true,
       authenticate: !auth?.authenticated,
-      chooseModel: false,
       installGuide: true,
     },
   };
@@ -1530,7 +1518,6 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
     actions: {
       recheck: true,
       authenticate: false,
-      chooseModel: false,
       installGuide: true,
     },
   };
@@ -1597,7 +1584,6 @@ function demoSource(): AgentSourceSnapshot {
     actions: {
       recheck: false,
       authenticate: false,
-      chooseModel: false,
       installGuide: false,
     },
   };
@@ -1677,7 +1663,6 @@ function notInstalledSourceSnapshot(input: {
     actions: {
       recheck: true,
       authenticate: false,
-      chooseModel: false,
       installGuide: true,
     },
   };
@@ -1860,7 +1845,6 @@ async function inspectQwen(shell: string): Promise<AgentSourceSnapshot> {
     actions: {
       recheck: true,
       authenticate: settingsKnown && !signIn,
-      chooseModel: false,
       installGuide: true,
     },
   };
@@ -2041,7 +2025,6 @@ async function inspectAntigravity(shell: string): Promise<AgentSourceSnapshot> {
     actions: {
       recheck: true,
       authenticate: signInOffered,
-      chooseModel: false,
       installGuide: true,
     },
   };
@@ -2491,72 +2474,5 @@ export function agentSourceLaunchReadiness(
               ? `${verdict.reason} Update it, then recheck in Settings → Agent Sources.`
               : `${verdict.reason} Open Settings → Agent Sources to recheck.`,
       };
-  }
-}
-
-export function sourceOwnedActionCommand(
-  harness: AgentHarness,
-  action: 'authenticate' | 'choose-model'
-): string {
-  const source = harnessDescriptor(harness).source;
-  if (action === 'authenticate') {
-    return sourceCommand(source.executable, source.authLoginArgs);
-  }
-  return sourceCommand(source.executable, []);
-}
-
-export async function launchSourceOwnedAction(
-  harness: AgentHarness,
-  action: 'authenticate' | 'choose-model'
-): Promise<AgentSourceActionResult> {
-  const descriptor = harnessDescriptor(harness).source;
-  const command = sourceOwnedActionCommand(harness, action);
-  // A source that signs in on its own first run signs in inside Exawatt's
-  // Shell, which the renderer opens; it is never sent to Terminal.
-  if (action === 'authenticate' && descriptor.signIn) {
-    return {
-      ok: false,
-      message: `Open a Shell in Exawatt and run ${descriptor.signIn.command}.`,
-    };
-  }
-  if (process.platform !== 'darwin') {
-    return {
-      ok: false,
-      message:
-        action === 'authenticate'
-          ? `Open a terminal and run: ${command}`
-          : `Open ${descriptor.label} and use its model selector.`,
-    };
-  }
-  const intro =
-    action === 'choose-model'
-      ? `printf '\\nChoose a model with /model inside ${descriptor.label}.\\n\\n'; `
-      : descriptor.authSessionCommand
-        ? `printf '\\nSign in with ${descriptor.authSessionCommand} inside ${descriptor.label}.\\n\\n'; `
-        : '';
-  const script = [
-    'tell application "Terminal"',
-    'activate',
-    `do script ${JSON.stringify(`${intro}${command}`)}`,
-    'end tell',
-  ].join('\n');
-  try {
-    await execFileAsync('/usr/bin/osascript', ['-e', script], {
-      timeout: 5_000,
-      maxBuffer: 64 * 1024,
-      encoding: 'utf8',
-    });
-    return {
-      ok: true,
-      message:
-        action === 'authenticate'
-          ? `${descriptor.label} sign-in opened in Terminal.`
-          : `${descriptor.label} opened in Terminal. Use /model there, then recheck Exawatt.`,
-    };
-  } catch {
-    return {
-      ok: false,
-      message: `Could not open ${descriptor.label}. Run ${command} in Terminal.`,
-    };
   }
 }

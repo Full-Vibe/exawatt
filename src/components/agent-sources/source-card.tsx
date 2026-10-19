@@ -42,12 +42,15 @@ import {
 import { SourceGlyph } from '@/components/workspace/harness-icons';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import { cn } from '@/lib/utils';
-import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
+import {
+  agentSourceDeclaration,
+  localAgentSourceDeclaration,
+} from '@/generated/agent-source-declarations';
 import type {
   AgentSourceAdapterId,
   AgentSourceCatalogId,
   AgentSourceDisclosure,
-  AgentSourceShellSignIn,
+  AgentSourceShellAction,
   AgentSourceSnapshot,
   AgentSourceState,
 } from '@exawatt/core';
@@ -243,10 +246,10 @@ export function SourceObservationTime({
 
 export type SourceCardStep =
   | { kind: 'install-guide'; label: string }
-  | { kind: 'sign-in'; label: string }
-  /** The source signs in on its own first interactive run (Antigravity
-   *  CLI): the step opens a Shell tab in Exawatt running `command`. */
-  | ({ kind: 'shell-sign-in' } & AgentSourceShellSignIn);
+  /** The source's own sign-in: a Shell tab in Exawatt runs its declared
+   *  command and the source signs in there, on every surface and for every
+   *  source (BUG-275). */
+  | ({ kind: 'sign-in' } & AgentSourceShellAction);
 
 /**
  * The ONE step that moves a source toward ready, or null when nothing but a
@@ -266,10 +269,10 @@ export function sourceCardStep(
       : null;
   }
   if (source.actions.authenticate && source.harness) {
-    const shell = agentSourceDeclaration(source.adapterId).signIn;
-    return shell
-      ? { kind: 'shell-sign-in', ...shell }
-      : { kind: 'sign-in', label: `Sign in with ${source.label}` };
+    return {
+      kind: 'sign-in',
+      ...localAgentSourceDeclaration(source.harness).signIn,
+    };
   }
   return null;
 }
@@ -403,7 +406,7 @@ function Actions({
           onClick={onStep}
           className={STEP_BUTTON}
         >
-          {step.kind === 'shell-sign-in' ? (
+          {step.kind === 'sign-in' ? (
             <SquareTerminal aria-hidden size={15} />
           ) : (
             <ExternalLink aria-hidden size={15} />
@@ -523,7 +526,7 @@ export function SourceCard({
             ) : null
           }
         />
-        {step?.kind === 'shell-sign-in' ? (
+        {step?.kind === 'sign-in' ? (
           <p
             data-source-step-note
             className="font-ui text-chrome-meta leading-4 text-[var(--settings-dim)]"
@@ -597,7 +600,7 @@ export function SourceCard({
         className="mt-6"
       />
 
-      {step?.kind === 'shell-sign-in' ? (
+      {step?.kind === 'sign-in' ? (
         <p
           data-source-step-note
           className="mt-3 max-w-xl font-ui text-chrome-label leading-5 text-[var(--settings-dim)]"

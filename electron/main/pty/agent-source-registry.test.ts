@@ -15,7 +15,6 @@ import {
   parseOpencodeVersion,
   parseGrokVersion,
   inspectOpencodeLaunchEnvironment,
-  sourceOwnedActionCommand,
 } from './agent-source-registry';
 import { configureLoginShellScratchDir } from './login-shell';
 import type {
@@ -361,19 +360,6 @@ describe('Agent Source registry truth', () => {
     }
   });
 
-  it('uses fixed source-owned commands for auth and catalog selection', () => {
-    expect(sourceOwnedActionCommand('claude', 'authenticate')).toBe(
-      "'claude' 'auth' 'login'"
-    );
-    expect(sourceOwnedActionCommand('codex', 'authenticate')).toBe(
-      "'codex' 'login'"
-    );
-    expect(sourceOwnedActionCommand('opencode', 'authenticate')).toBe(
-      "'opencode' 'auth' 'login'"
-    );
-    expect(sourceOwnedActionCommand('claude', 'choose-model')).toBe("'claude'");
-  });
-
   it('turns source observations into actionable main-process launch errors', () => {
     const snapshot = claudeSnapshot({
       state: 'not-installed',
@@ -574,12 +560,6 @@ describe('Grok Build source truth (ENG-003 S4)', () => {
     });
     // No version is UNKNOWN, never "compatible by default".
     expect(parseGrokVersion('grok')).toBeNull();
-  });
-
-  it('opens the source-owned sign-in rather than handling a credential', () => {
-    expect(sourceOwnedActionCommand('grok', 'authenticate')).toBe(
-      "'grok' 'login'"
-    );
   });
 
   it('names the source when a launch is refused', () => {

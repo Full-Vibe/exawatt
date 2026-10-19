@@ -17,7 +17,7 @@ export function launcherSourceLines(
   adapterId: AgentSourceAdapterId,
   step: SourceCardStep | null
 ): React.ReactNode {
-  const note = step?.kind === 'shell-sign-in' ? step.note : null;
+  const note = step?.kind === 'sign-in' ? step.note : null;
   const disclosure = agentSourceDeclaration(adapterId).disclosure;
   if (!note && !disclosure) return null;
   return (

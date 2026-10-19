@@ -204,11 +204,7 @@ export const ARGUMENT_BOUNDARIES = {
       if (!isAgentSourceAdapterId(adapterId)) {
         throw new Error('Unsupported Agent Source');
       }
-      if (
-        action !== 'authenticate' &&
-        action !== 'choose-model' &&
-        action !== 'install-guide'
-      ) {
+      if (action !== 'install-guide') {
         throw new Error('Unsupported Agent Source action');
       }
       return [adapterId, action];

@@ -136,7 +136,10 @@ This decision amends existing work rather than adding another plan:
 ## Consequences
 
 As of 2026-08-02, the first production implementation follows this decision:
-Electron main owns source inspection and source-owned actions; Settings and the
+Electron main owns source inspection and source-owned actions (amended
+2026-10-18, BUG-275: sign-in and a source's own model picker are declared
+commands the renderer opens in an Exawatt Shell; main's only action is the
+installation guide); Settings and the
 Terminal composer receive normalized facts; Claude Code's SDK-reported account
 catalog is consumed directly and its unavailable state is never replaced with
 aliases; and provider/gateway secrets do not cross the preload boundary. Local

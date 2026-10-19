@@ -209,7 +209,6 @@ const launchSourceRegistry = {
     actions: {
       recheck: true,
       authenticate: false,
-      chooseModel: true,
       installGuide: false,
     },
     facts: {

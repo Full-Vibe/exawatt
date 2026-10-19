@@ -21,6 +21,16 @@
         ],
         "delegationObservation": "Source-reported lifecycle events",
         "enforcementOwner": "Claude Code"
+      },
+      "signIn": {
+        "label": "Sign in to Claude Code",
+        "command": "claude auth login",
+        "note": "Runs claude auth login in a Shell tab. Your browser opens to finish."
+      },
+      "chooseModel": {
+        "label": "Choose in Claude Code",
+        "command": "claude",
+        "note": "Runs claude in a Shell tab. Pick a model with /model, then reopen this menu."
       }
     },
     {
@@ -44,6 +54,11 @@
         ],
         "delegationObservation": "Codex app-server parent/child lifecycle",
         "enforcementOwner": "Codex"
+      },
+      "signIn": {
+        "label": "Sign in to Codex",
+        "command": "codex login",
+        "note": "Runs codex login in a Shell tab. Your browser opens to finish."
       }
     },
     {
@@ -67,6 +82,11 @@
         ],
         "delegationObservation": "OpenCode PTY does not report delegated work",
         "enforcementOwner": "OpenCode"
+      },
+      "signIn": {
+        "label": "Sign in to a provider in OpenCode",
+        "command": "opencode auth login",
+        "note": "Runs opencode auth login in a Shell tab. Choose a provider there."
       }
     },
     {
@@ -90,6 +110,11 @@
         ],
         "delegationObservation": "Grok Build reports delegated work only to hooks Exawatt cannot inject per launch",
         "enforcementOwner": "Grok Build"
+      },
+      "signIn": {
+        "label": "Sign in to Grok Build",
+        "command": "grok login",
+        "note": "Runs grok login in a Shell tab. Your browser opens to finish."
       }
     },
     {
@@ -113,6 +138,11 @@
         ],
         "delegationObservation": "Source-reported lifecycle events",
         "enforcementOwner": "Qwen Code"
+      },
+      "signIn": {
+        "label": "Sign in to Qwen Code",
+        "command": "qwen",
+        "note": "Runs qwen in a Shell tab. Type /auth there to sign in."
       }
     },
     {

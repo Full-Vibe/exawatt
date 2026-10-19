@@ -21,7 +21,7 @@ import {
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import { useRouter } from 'next/navigation';
 import { runAgentSourceAction } from '@/components/workspace/agent-sources';
-import { requestLaunch } from '@/components/workspace/session-jump';
+import { openSourceShell } from '@/components/workspace/session-jump';
 import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
   SourceCard,
@@ -44,10 +44,6 @@ import type {
   AgentSourceFact,
   AgentSourceSnapshot,
 } from '@exawatt/core';
-
-export const SOURCE_AUTH_RECHECK_DELAYS_MS = [
-  1_200, 2_500, 4_000, 6_000,
-] as const;
 
 function InfoTip({ label }: { label: string }) {
   return (
@@ -238,9 +234,8 @@ function SourceDetail({
   message,
   now,
   onRecheck,
-  onAuthenticate,
   onInstall,
-  onShellSignIn,
+  onSignIn,
 }: {
   source: AgentSourceSnapshot;
   busy: boolean;
@@ -248,9 +243,8 @@ function SourceDetail({
   message: { ok: boolean; text: string } | null;
   now: number;
   onRecheck: () => void;
-  onAuthenticate: () => void;
   onInstall: () => void;
-  onShellSignIn: (command: string) => void;
+  onSignIn: (command: string) => void;
 }) {
   const step = sourceCardStep(source);
   const modelSelection =
@@ -288,9 +282,9 @@ function SourceDetail({
       onStep={
         step?.kind === 'install-guide'
           ? onInstall
-          : step?.kind === 'shell-sign-in'
-            ? () => onShellSignIn(step.command)
-            : onAuthenticate
+          : step?.kind === 'sign-in'
+            ? () => onSignIn(step.command)
+            : undefined
       }
       disclosure={
         agentSourceDeclaration(source.adapterId).disclosure ? (
@@ -537,7 +531,7 @@ export function AgentSourcesSettings({
   // Delegation observation is pushed live from main (ENG-023) on every
   // change, so the latest push per adapter is at least as new as any
   // registry read, whichever lands first. It is layered over the registry
-  // the hook paints, the same way a Connecting sign-in is.
+  // the hook paints.
   const [delegationPushes, setDelegationPushes] = useState<
     ReadonlyMap<string, AgentSourceFact | null>
   >(() => new Map());
@@ -548,79 +542,45 @@ export function AgentSourcesSettings({
       }),
     []
   );
-  // A sign-in the operator just opened shows as Connecting on its source
-  // until the reconciliation loop sees it ready or gives up. That is
-  // Settings' own transient, layered over the fact, never written into it.
-  const [connectingId, setConnectingId] = useState<string | null>(null);
   const registry = useMemo(() => {
-    if (!connectingId && delegationPushes.size === 0) {
-      return registryRead.registry;
-    }
+    if (delegationPushes.size === 0) return registryRead.registry;
     return {
       ...registryRead.registry,
       sources: registryRead.registry.sources.map(source => {
-        let next = source;
-        if (delegationPushes.has(source.adapterId)) {
-          const fact = delegationPushes.get(source.adapterId);
-          const facts = { ...next.facts };
-          if (fact) facts.delegation = fact;
-          else delete facts.delegation;
-          next = { ...next, facts };
-        }
-        if (next.id === connectingId) {
-          next = {
-            ...next,
-            state: 'connecting' as const,
-            stateLabel: 'Connecting',
-            summary: `${next.label} sign-in is open. Exawatt will recheck the source-owned session.`,
-          };
-        }
-        return next;
+        if (!delegationPushes.has(source.adapterId)) return source;
+        const fact = delegationPushes.get(source.adapterId);
+        const facts = { ...source.facts };
+        if (fact) facts.delegation = fact;
+        else delete facts.delegation;
+        return { ...source, facts };
       }),
     };
-  }, [connectingId, delegationPushes, registryRead.registry]);
+  }, [delegationPushes, registryRead.registry]);
   const registryStatus = registryRead.status;
   const [selectedId, setSelectedId] = useState(
     () => registryRead.registry.sources[0]?.id ?? ''
   );
   const [adding, setAdding] = useState(false);
   const [actionState, setActionState] = useState<
-    'idle' | 'checking' | 'opening-auth' | 'reconciling' | 'opening-guide'
+    'idle' | 'checking' | 'opening-guide'
   >('idle');
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
     null
   );
   const [now, setNow] = useState(() => Date.now());
-  // One channel for every setup action (sign-in, install guide) and the
-  // reconciliation loop behind sign-in: changing sources, cancelling, or
-  // unmounting supersedes whichever is in flight (BUG-119).
+  // One channel for the setup action main performs (the install guide):
+  // changing sources, cancelling, or unmounting supersedes it (BUG-119).
   const setupActions = useLatestRequest();
-  const reconciliationWait = useRef<{
-    timer: number;
-    finish: () => void;
-  } | null>(null);
   const busy = actionState !== 'idle' || registryStatus === 'checking';
 
-  const cancelReconciliation = useCallback(() => {
+  const cancelSetupAction = useCallback(() => {
     setupActions.invalidate();
-    reconciliationWait.current?.finish();
-    reconciliationWait.current = null;
     setActionState('idle');
-    // Leaving a setup action withdraws its Connecting state. The last source
-    // observation remains authoritative, even while the source-owned browser
-    // or terminal continues independently.
-    setConnectingId(null);
   }, [setupActions]);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(Date.now()), 30_000);
-    const wakeOnFocus = () => reconciliationWait.current?.finish();
-    window.addEventListener('focus', wakeOnFocus);
-    return () => {
-      window.clearInterval(clock);
-      window.removeEventListener('focus', wakeOnFocus);
-      reconciliationWait.current?.finish();
-    };
+    return () => window.clearInterval(clock);
   }, []);
 
   // A source that disappears from the registry takes its detail with it.
@@ -676,94 +636,15 @@ export function AgentSourcesSettings({
       return;
     }
     openedConnection.current = openConnection;
-    cancelReconciliation();
+    cancelSetupAction();
     setSelectedConnectionId(openConnection.id);
     setAdding(false);
     setMessage(null);
-  }, [cancelReconciliation, connected.sources, openConnection]);
-
-  const waitForReconciliation = useCallback((delay: number) => {
-    return new Promise<void>(resolve => {
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        window.clearTimeout(timer);
-        if (reconciliationWait.current?.finish === finish) {
-          reconciliationWait.current = null;
-        }
-        resolve();
-      };
-      const timer = window.setTimeout(finish, delay);
-      reconciliationWait.current = { timer, finish };
-    });
-  }, []);
-
-  const reconcileAuthentication = useCallback(
-    async (sourceId: string, ticket: { readonly current: boolean }) => {
-      setActionState('reconciling');
-      for (const delay of SOURCE_AUTH_RECHECK_DELAYS_MS) {
-        await waitForReconciliation(delay);
-        if (!ticket.current) return;
-        const next = await recheckRegistry(true);
-        if (!ticket.current) return;
-        const source = next.snapshot.sources.find(
-          candidate => candidate.id === sourceId
-        );
-        // Signed in means the source SAYS so: `ready`, not merely spawnable
-        // (a source that reports no account is launchable too, and would
-        // end this loop on the first tick with nothing repaired).
-        if (next.status === 'live' && source?.state === 'ready') {
-          setConnectingId(null);
-          setMessage({
-            ok: true,
-            text: `${source.label} is signed in and ready to launch.`,
-          });
-          setActionState('idle');
-          return;
-        }
-      }
-      if (ticket.current) {
-        setConnectingId(null);
-        setMessage({
-          ok: false,
-          text: 'Sign-in is still open. Finish there, then use Recheck.',
-        });
-        setActionState('idle');
-      }
-    },
-    [recheckRegistry, waitForReconciliation]
-  );
-
-  const authenticate = useCallback(async () => {
-    if (!selected?.harness) return;
-    cancelReconciliation();
-    const ticket = setupActions.begin();
-    setActionState('opening-auth');
-    setMessage(null);
-    setConnectingId(selected.id);
-    const result = await runAgentSourceAction(
-      selected.adapterId,
-      'authenticate'
-    );
-    if (!ticket.current) return;
-    setMessage({
-      ok: result.ok,
-      text: result.ok
-        ? `${result.message} Waiting for source-owned sign-in…`
-        : result.message,
-    });
-    if (result.ok) {
-      void reconcileAuthentication(selected.id, ticket);
-    } else {
-      setConnectingId(null);
-      setActionState('idle');
-    }
-  }, [cancelReconciliation, reconcileAuthentication, selected, setupActions]);
+  }, [cancelSetupAction, connected.sources, openConnection]);
 
   const openInstallGuide = useCallback(async () => {
     if (!selected) return;
-    cancelReconciliation();
+    cancelSetupAction();
     const ticket = setupActions.begin();
     setActionState('opening-guide');
     setMessage(null);
@@ -774,7 +655,7 @@ export function AgentSourcesSettings({
     if (!ticket.current) return;
     setMessage({ ok: result.ok, text: result.message });
     setActionState('idle');
-  }, [cancelReconciliation, selected, setupActions]);
+  }, [cancelSetupAction, selected, setupActions]);
 
   const selectAdapter = useCallback(
     (adapterId: AgentSourceAdapterId) => {
@@ -782,12 +663,12 @@ export function AgentSourcesSettings({
         candidate => candidate.adapterId === adapterId
       );
       if (!source) return;
-      cancelReconciliation();
+      cancelSetupAction();
       setSelectedId(source.id);
       setAdding(false);
       setMessage(null);
     },
-    [cancelReconciliation, registry.sources]
+    [cancelSetupAction, registry.sources]
   );
 
   return (
@@ -801,14 +682,14 @@ export function AgentSourcesSettings({
           selectedId={selectedConnection ? '' : selectedId}
           adding={adding}
           onSelect={id => {
-            cancelReconciliation();
+            cancelSetupAction();
             setSelectedConnectionId(null);
             setSelectedId(id);
             setAdding(false);
             setMessage(null);
           }}
           onAdd={() => {
-            cancelReconciliation();
+            cancelSetupAction();
             setAdding(true);
             setMessage(null);
           }}
@@ -819,7 +700,7 @@ export function AgentSourcesSettings({
               observations={connected.observations}
               selectedId={adding ? null : selectedConnectionId}
               onSelect={id => {
-                cancelReconciliation();
+                cancelSetupAction();
                 setSelectedConnectionId(id);
                 setAdding(false);
                 setMessage(null);
@@ -854,25 +735,20 @@ export function AgentSourcesSettings({
               source={selected}
               busy={busy}
               checkingLabel={
-                actionState === 'reconciling'
-                  ? 'Waiting for sign-in…'
-                  : actionState === 'opening-guide'
-                    ? 'Opening…'
-                    : 'Checking…'
+                actionState === 'opening-guide' ? 'Opening…' : 'Checking…'
               }
               message={message}
               now={now}
               onRecheck={() => {
-                cancelReconciliation();
+                cancelSetupAction();
                 void refresh();
               }}
-              onAuthenticate={() => void authenticate()}
               onInstall={() => void openInstallGuide()}
-              onShellSignIn={command => {
-                // The source signs in on its own first run, in a Shell tab
-                // the workspace opens; Recheck here once it has.
-                cancelReconciliation();
-                requestLaunch('shell', { shellCommand: command });
+              onSignIn={command => {
+                // The source signs in in a Shell tab the workspace opens
+                // (BUG-275); Recheck here once it has.
+                cancelSetupAction();
+                openSourceShell(command);
                 router.push('/workspace');
               }}
             />

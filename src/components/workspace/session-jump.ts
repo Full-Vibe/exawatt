@@ -198,7 +198,7 @@ export function consumePendingRemoteAgentOpen(): string | null {
 
 /**
  * A launch asked for from outside the workspace. `shellCommand` is the first
- * line a new Shell runs: a source's guided sign-in (ENG-003 S5.3.1), which
+ * line a new Shell runs: a source-owned action (`openSourceShell`), which
  * the operator then finishes in that Shell.
  */
 export interface LaunchRequest {
@@ -216,6 +216,16 @@ export function requestLaunch(
     : { harness };
   pendingLaunch = { value: request, at: Date.now() };
   window.dispatchEvent(new CustomEvent(LAUNCH_EVENT, { detail: request }));
+}
+
+/**
+ * The ONE way a source-owned action runs (BUG-275): a Shell tab in Exawatt
+ * types the source's declared command, and the source does the rest there
+ * (sign-in, its own model picker). Settings, the Start screen and the
+ * composer all arrive here; nothing drives another app.
+ */
+export function openSourceShell(command: string): void {
+  requestLaunch('shell', { shellCommand: command });
 }
 
 export function consumePendingSessionJump(): string | null {
