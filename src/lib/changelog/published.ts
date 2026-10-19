@@ -13,7 +13,7 @@ import { changelogEntries } from './entries';
 export const CHANGELOG_REVALIDATE_SECONDS = 300;
 
 /** The feed could not say which version is published. */
-export class ChangelogPublicationUnknownError extends Error {
+class ChangelogPublicationUnknownError extends Error {
   constructor(reason: string) {
     super(`[changelog] the update feed could not be read: ${reason}`);
     this.name = 'ChangelogPublicationUnknownError';
@@ -27,8 +27,9 @@ export class ChangelogPublicationUnknownError extends Error {
  * during revalidation Next keeps serving the last good page, and a guess
  * would either hide shipped releases or announce an unshipped one.
  */
-export const publishedChangelogVersion = cache(async (): Promise<string> => {
-  const read = await readDesktopBuild(resolvedDistribution(), fetch, {
+const publishedChangelogVersion = cache(async (): Promise<string> => {
+  // The request itself is desktop-build's, the declared outbound call site.
+  const read = await readDesktopBuild(resolvedDistribution(), undefined, {
     next: { revalidate: CHANGELOG_REVALIDATE_SECONDS },
   });
   if (read.status === 'published') return read.build.version;
