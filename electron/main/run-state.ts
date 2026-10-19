@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { replaceJsonFileAtomicAsync } from './atomic-json-file';
 import type {
   HeldOperatorState,
   ShutdownIntent,
@@ -125,15 +126,10 @@ export class RunStateStore {
   }
 
   private async write(state: StoredRunState): Promise<void> {
-    const directory = path.dirname(this.file);
-    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
-    const temporary = `${this.file}.tmp-${process.pid}-${Date.now()}`;
-    await fs.promises.writeFile(temporary, JSON.stringify(state), {
-      encoding: 'utf8',
-      mode: 0o600,
+    await fs.promises.mkdir(path.dirname(this.file), {
+      recursive: true,
+      mode: 0o700,
     });
-    await fs.promises.chmod(temporary, 0o600);
-    await fs.promises.rename(temporary, this.file);
-    await fs.promises.chmod(this.file, 0o600);
+    await replaceJsonFileAtomicAsync(this.file, state);
   }
 }

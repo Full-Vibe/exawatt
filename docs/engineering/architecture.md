@@ -1470,14 +1470,22 @@ Built:
   Sessions, close services, hand off. Every wait goes through one policy
   table (`SHUTDOWN_WAITS`): named on screen once it outlasts its threshold,
   ended at its deadline, cancellable while nothing has stopped; a closing
-  step past its deadline is recorded and skipped, never waited on. The run
+  step past its deadline is recorded and skipped, never waited on. The phase
+  order is a script with no handle on any step: it names a step, which runs
+  inside that step's wait (`STEP_WAITS`) with an `AbortSignal` that aborts
+  when the wait is cancelled or times out, so no step is awaited outside a
+  wait or keeps working behind one that ended (BUG-303). The run
   record (`run-state.ts`) is the one record of how the app went away: the
   clean exit's intent, the held state a restart or update saved, and a
   failed install's reason. Held state is what the layout cannot carry: any
   window answers the owner's request from registered holders
   (`src/lib/app-lifecycle/held-state.ts`: the run's `exawatt:` session
   storage such as the Fleet camera, and an unsent feedback report), and the
-  next launch hands it back once, synchronously, before any surface mounts.
+  next launch hands it back once, in the bridge's layout effect, before any
+  later surface's effects run; restoring is entry by entry and never throws,
+  each failure reported to `logs/main.jsonl` (BUG-303). Squirrel staging is
+  one operation per check (`updater-staging.ts`): a retry joins it, and a
+  late acceptance returns the notice to Restart to Update.
   Notices are dismissed in one persisted record
   (`notice-dismissals.ts`) keyed by notice identity and version
   (`src/lib/notices/notice-identity.ts`), so a reload, a new window or

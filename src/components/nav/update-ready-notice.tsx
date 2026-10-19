@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import {
+  useLatestRequest,
+  type LatestRequest,
+} from '@/hooks/use-latest-request';
 import { RefreshCw } from 'lucide-react';
 import type {
   NoticeDismissals,
@@ -23,17 +27,43 @@ const WAITING_ON: Record<ShutdownWait, string> = {
   'update-staging': 'Waiting for macOS to accept the update.',
   'agents-starting': 'Waiting for an agent that is still starting.',
   'window-saving': 'Waiting for the window to save your place.',
+  'history-saving': 'Waiting for terminal history to save.',
   'processes-stopping': 'Waiting for agents and shells to stop.',
+  'run-recording': 'Waiting to record that everything stopped.',
   'services-closing': 'Waiting for background services to close.',
   installer: 'Waiting for the installer.',
+  relaunching: 'Waiting to reopen the current version.',
 };
+
+/**
+ * One fact main both answers on request and pushes. Every push, and every
+ * change this window makes, supersedes a read still in flight, so a read
+ * commits only while nothing newer has landed (the 0.1.22 review: a mount
+ * read that answered late put an older answer back on screen).
+ */
+function orderedFact<T>(channel: LatestRequest, commit: (value: T) => void) {
+  return {
+    read(request: Promise<T> | undefined): void {
+      const ticket = channel.begin();
+      void request
+        ?.then(value => {
+          if (ticket.current) commit(value);
+        })
+        .catch(() => undefined);
+    },
+    push(value: T): void {
+      channel.begin();
+      commit(value);
+    },
+  };
+}
 
 /**
  * The update lane: a newer local build, the product updater's progress, and
  * the lifecycle owner's shutdown progress. Every fact is read from main on
- * mount as well as subscribed, and dismissal is main's one record, so a
- * reload, a new window or returning to the app shows exactly what the last
- * window showed (BUG-285).
+ * mount as well as subscribed, ordered against its pushes, and dismissal is
+ * main's one record, so a reload, a new window or returning to the app shows
+ * exactly what the last window showed (BUG-285).
  */
 export function UpdateReadyNotice() {
   const [productName, setProductName] = useState('Exawatt');
@@ -45,6 +75,10 @@ export function UpdateReadyNotice() {
   // installer refusing; one already showing when a quit began is not.
   const finalizing = useRef(false);
   const [installRefused, setInstallRefused] = useState(false);
+  const installedReads = useLatestRequest();
+  const statusReads = useLatestRequest();
+  const dismissalReads = useLatestRequest();
+  const shutdownReads = useLatestRequest();
 
   useEffect(() => {
     const api = window.electron?.app;
@@ -54,34 +88,32 @@ export function UpdateReadyNotice() {
       .getBuildInfo()
       .then(info => setProductName(info.distribution.identity.productName))
       .catch(ignore);
-    void api.installedBuild?.().then(setInstalled).catch(ignore);
-    void api.noticeDismissals?.().then(setDismissals).catch(ignore);
-    void api
-      .shutdownStatus?.()
-      .then(next => {
-        finalizing.current = next.phase === 'finalizing';
-        setShutdown(next);
-      })
-      .catch(ignore);
+    const installedFact = orderedFact(installedReads, setInstalled);
+    const dismissalFact = orderedFact(dismissalReads, setDismissals);
+    const shutdownFact = orderedFact<ShutdownStatus>(shutdownReads, next => {
+      finalizing.current = next.phase === 'finalizing';
+      setShutdown(next);
+    });
+    const statusFact = orderedFact(statusReads, setStatus);
+    installedFact.read(api.installedBuild?.());
+    dismissalFact.read(api.noticeDismissals?.());
+    shutdownFact.read(api.shutdownStatus?.());
     const updates = api.updates;
-    if (updates) {
-      void updates.getStatus().then(setStatus).catch(ignore);
-    }
-    const offLocal = api.onUpdateReady(setInstalled);
+    if (updates) statusFact.read(updates.getStatus());
+    const offLocal = api.onUpdateReady(installedFact.push);
     const offDismissals =
-      api.onNoticeDismissalsChanged?.(setDismissals) ?? ignore;
+      api.onNoticeDismissalsChanged?.(dismissalFact.push) ?? ignore;
     const offProduct = updates
       ? updates.onStatus(next => {
-          setStatus(next);
+          statusFact.push(next);
           if (next.phase === 'error' && finalizing.current) {
             setInstallRefused(true);
           }
         })
       : ignore;
     const offShutdown = api.onShutdownStatus(next => {
-      finalizing.current = next.phase === 'finalizing';
+      shutdownFact.push(next);
       if (!finalizing.current) setInstallRefused(false);
-      setShutdown(next);
     });
     return () => {
       offLocal();
@@ -89,7 +121,7 @@ export function UpdateReadyNotice() {
       offProduct();
       offShutdown();
     };
-  }, []);
+  }, [installedReads, statusReads, dismissalReads, shutdownReads]);
 
   const localNotice = localBuildNotice(installed);
   const productNotice = productUpdateNotice(status);
@@ -185,13 +217,18 @@ export function UpdateReadyNotice() {
             ? undefined
             : () => {
                 // Hidden at once; main's record makes it hold everywhere.
+                // The write supersedes any read in flight, and main's answer
+                // commits only if nothing newer arrived first.
+                const ticket = dismissalReads.begin();
                 setDismissals(current => ({
                   ...current,
                   [dismissed.id]: dismissed.version,
                 }));
                 void window.electron?.app
                   ?.dismissNotice?.(dismissed.id, dismissed.version)
-                  .then(setDismissals)
+                  .then(next => {
+                    if (ticket.current) setDismissals(next);
+                  })
                   .catch(() => undefined);
               }
         }

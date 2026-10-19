@@ -64,6 +64,34 @@ afterAll(() => {
 });
 
 describe('prepareProductUpdate', () => {
+  // Review of 0.1.22: the restart gave up on a slow Squirrel, the notice
+  // said the update failed, and Squirrel's later acceptance flipped
+  // `staged` underneath it, with no Restart to Update on screen.
+  it('offers Restart to Update again when Squirrel accepts after the restart gave up', async () => {
+    const slow = Object.assign(new EventEmitter(), {
+      checkForUpdates: vi.fn(() => undefined),
+    });
+    nativeUpdater.current = slow;
+    const controller = new AbortController();
+    const preparing = prepareProductUpdate(controller.signal);
+    controller.abort(new Error('timed out'));
+    await expect(preparing).rejects.toThrow('timed out');
+    reportUpdateRefused('Preparing the update did not finish.');
+    expect(sent.at(-1)).toMatchObject({ phase: 'error' });
+
+    slow.emit('update-downloaded');
+    expect(sent.at(-1)).toMatchObject({
+      phase: 'downloaded',
+      availableVersion: '1.1.0',
+      error: null,
+    });
+    await expect(prepareProductUpdate()).resolves.toBeNull();
+    expect(slow.checkForUpdates).toHaveBeenCalledOnce();
+    expect(slow.listenerCount('update-downloaded')).toBe(0);
+    // A new download is one Squirrel has not seen.
+    autoUpdater.listeners.get('update-downloaded')?.({ version: '1.1.0' });
+  });
+
   it('answers a Squirrel refusal with its reason', async () => {
     native(n => n.emit('error', new Error('Could not locate update bundle')));
 

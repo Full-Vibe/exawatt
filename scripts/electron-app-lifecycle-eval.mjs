@@ -240,24 +240,50 @@ try {
         heldKey
       );
       // The operator pans the Fleet camera: its viewport is what he holds.
-      // Move it once the arrival glide has settled (the stored pose is the
-      // same across a run of frames), so the board's own save cannot follow.
+      // Pan it through the board itself, as he would. Writing the stored
+      // pose behind the board's back raced the board's own save of its
+      // in-memory pose, which lands whenever the camera reports (2026-10-19:
+      // it overwrote the write within half a second).
+      const settledViewport = key =>
+        waitForPageCondition(
+          page,
+          async storageKey => {
+            const read = () => window.sessionStorage.getItem(storageKey);
+            const before = read();
+            for (let frame = 0; frame < 30; frame++) {
+              await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+            return before && read() === before ? before : null;
+          },
+          key,
+          { label: 'a settled Fleet camera' }
+        );
+      const arrived = await settledViewport(viewportKey);
+      const board = await page.locator('canvas').first().boundingBox();
+      assert.ok(board, 'the Fleet board has no canvas');
+      await page.mouse.move(
+        board.x + board.width / 2,
+        board.y + board.height / 2
+      );
+      await page.mouse.wheel(-120, 0);
       movedViewport = await waitForPageCondition(
         page,
-        async key => {
-          const read = () => window.sessionStorage.getItem(key);
+        async ([storageKey, from]) => {
+          const read = () => window.sessionStorage.getItem(storageKey);
           const before = read();
+          if (!before || before === from) return null;
           for (let frame = 0; frame < 30; frame++) {
             await new Promise(resolve => requestAnimationFrame(resolve));
           }
-          if (!before || read() !== before) return null;
-          const stored = JSON.parse(before);
-          const moved = { ...stored, centerX: stored.centerX + 3 };
-          window.sessionStorage.setItem(key, JSON.stringify(moved));
-          return moved;
+          return read() === before ? JSON.parse(before) : null;
         },
-        viewportKey,
-        { label: 'a settled Fleet camera' }
+        [viewportKey, arrived],
+        { label: 'the panned Fleet camera, settled' }
+      );
+      assert.notEqual(
+        movedViewport.centerX,
+        JSON.parse(arrived).centerX,
+        'the pan did not move the Fleet camera'
       );
       const closed = new Promise(resolve => app.once('close', resolve));
       await restartToUpdate(page).click();

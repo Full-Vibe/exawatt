@@ -16,22 +16,40 @@ import type { HeldOperatorState } from '@exawatt/core/desktop-bridge';
  * Not held, deliberately: the inside of a running provider's terminal (its
  * unsent input, its scroll position). Agents reopen paused, and a resumed
  * provider restores its own input; Exawatt must not replay terminal bytes.
+ *
+ * Restoring never throws (the 0.1.22 review: a refused `sessionStorage`
+ * write took the window down after a restart). A holder that throws costs
+ * only its own value, a holder restores entry by entry and names each entry
+ * it could not put back, and every failure goes to the reporter the
+ * hand-back was given.
  */
 export interface HeldStateHolder<T> {
   /** Null when there is nothing worth holding. */
   capture(): T | null;
   /** Rejects anything that is not this holder's shape. */
   parse(value: unknown): T | null;
-  restore(value: T): void;
+  /** Restores what it can; `failed` names each entry it could not. */
+  restore(value: T, failed: (entry: string, error: unknown) => void): void;
 }
+
+export interface HeldStateRestoreFailure {
+  holder: string;
+  /** The holder's own entry, or null when the holder itself failed. */
+  entry: string | null;
+  error: unknown;
+}
+
+type RestoreReporter = (failure: HeldStateRestoreFailure) => void;
 
 interface RegisteredHolder {
   capture(): unknown;
-  restoreUnknown(value: unknown): void;
+  restoreUnknown(value: unknown, report: RestoreReporter): void;
 }
 
 const holders = new Map<string, RegisteredHolder>();
 let pending: HeldOperatorState = {};
+/** The reporter of the hand-back whose values are still pending. */
+let pendingReport: RestoreReporter = () => {};
 
 export function registerHeldState<T>(
   id: string,
@@ -39,16 +57,23 @@ export function registerHeldState<T>(
 ): () => void {
   const registered: RegisteredHolder = {
     capture: () => holder.capture(),
-    restoreUnknown: value => {
-      const parsed = holder.parse(value);
-      if (parsed !== null) holder.restore(parsed);
+    restoreUnknown: (value, report) => {
+      try {
+        const parsed = holder.parse(value);
+        if (parsed === null) return;
+        holder.restore(parsed, (entry, error) =>
+          report({ holder: id, entry, error })
+        );
+      } catch (error) {
+        report({ holder: id, entry: null, error });
+      }
     },
   };
   holders.set(id, registered);
   if (id in pending) {
     const value = pending[id];
     delete pending[id];
-    registered.restoreUnknown(value);
+    registered.restoreUnknown(value, pendingReport);
   }
   return () => {
     if (holders.get(id) === registered) holders.delete(id);
@@ -69,11 +94,18 @@ export function captureHeldState(): HeldOperatorState | null {
   return Object.keys(held).length > 0 ? held : null;
 }
 
-/** The previous run's held state: restored now or on registration. */
-export function restoreHeldState(held: HeldOperatorState): void {
+/**
+ * The previous run's held state: restored now or on registration, holder by
+ * holder. Never throws; each failure goes to `report`.
+ */
+export function restoreHeldState(
+  held: HeldOperatorState,
+  report: RestoreReporter = () => {}
+): void {
+  pendingReport = report;
   for (const [id, value] of Object.entries(held)) {
     const holder = holders.get(id);
-    if (holder) holder.restoreUnknown(value);
+    if (holder) holder.restoreUnknown(value, report);
     else pending[id] = value;
   }
 }
@@ -82,4 +114,5 @@ export function restoreHeldState(held: HeldOperatorState): void {
 export function resetHeldStateForTest(): void {
   holders.clear();
   pending = {};
+  pendingReport = () => {};
 }

@@ -49,15 +49,20 @@ interface CheckpointBroker {
   owns(webContentsId: number): boolean;
   /** The renderer navigated away or went away: it no longer owns the state. */
   release(webContentsId: number): void;
-  /** Asks the owning renderer to save; false on refusal or no answer in time. */
+  /** Asks the owning renderer to save; false on refusal, no answer in
+   *  time, or `signal` aborting first. */
   request(
     win: CheckpointWindow,
     intent: ShutdownIntent,
-    stage: CheckpointStage
+    stage: CheckpointStage,
+    signal?: AbortSignal
   ): Promise<boolean>;
   /** Asks a window for what its holders captured (BUG-260); null on no
-   *  answer in time, or an answer too large to keep. */
-  requestHeld(win: CheckpointWindow): Promise<HeldOperatorState | null>;
+   *  answer in time, an answer too large to keep, or `signal` aborting. */
+  requestHeld(
+    win: CheckpointWindow,
+    signal?: AbortSignal
+  ): Promise<HeldOperatorState | null>;
   channels: TrustedChannels;
 }
 
@@ -92,18 +97,22 @@ export function createCheckpointBroker(deps: {
     release: id => {
       workspaceCheckpointOwners.delete(id);
     },
-    request(win, intent, stage) {
+    request(win, intent, stage, signal) {
       const requestId = deps.randomUUID();
       return new Promise<boolean>(resolve => {
         let settled = false;
+        const abandon = () => finish(false);
         const finish = (ok: boolean) => {
           if (settled) return;
           settled = true;
           clearTimeout(timeout);
+          signal?.removeEventListener('abort', abandon);
           pendingCheckpoints.delete(requestId);
           resolve(ok);
         };
         const timeout = setTimeout(() => finish(false), timeoutMs);
+        if (signal?.aborted) return finish(false);
+        signal?.addEventListener('abort', abandon, { once: true });
         pendingCheckpoints.set(requestId, finish);
         pushToRenderer(win.webContents, 'app:checkpoint-request', {
           requestId,
@@ -112,15 +121,19 @@ export function createCheckpointBroker(deps: {
         });
       });
     },
-    requestHeld(win) {
+    requestHeld(win, signal) {
       const requestId = deps.randomUUID();
       return new Promise(resolve => {
-        const timeout = setTimeout(() => finish(null), timeoutMs);
+        const abandon = () => finish(null);
+        const timeout = setTimeout(abandon, timeoutMs);
         const finish = (held: HeldOperatorState | null) => {
           clearTimeout(timeout);
+          signal?.removeEventListener('abort', abandon);
           pendingHeld.delete(requestId);
           resolve(held);
         };
+        if (signal?.aborted) return finish(null);
+        signal?.addEventListener('abort', abandon, { once: true });
         pendingHeld.set(requestId, finish);
         pushToRenderer(win.webContents, 'app:held-state-request', {
           requestId,
@@ -189,13 +202,15 @@ export interface ShutdownSequenceDependencies {
    *  bounded by the lifecycle owner and skipped past its deadline. */
   closing: ReadonlyArray<ClosingStep>;
   /** An update restart's first step after the confirmation (BUG-286):
-   *  null once the installer accepts the update, else its reason. */
-  prepareUpdate: () => Promise<string | null>;
+   *  null once the installer accepts the update, else its reason. Stops
+   *  waiting when `signal` aborts. */
+  prepareUpdate: (signal: AbortSignal) => Promise<string | null>;
   /** Shows why an update did not go ahead. */
   updateRefused: (reason: string) => void;
-  /** The last step. `installUpdate` resolves only if the install fails. */
+  /** The last step. `installUpdate` resolves only if the install fails,
+   *  and stops listening when `signal` aborts. */
   handOff: {
-    installUpdate(): Promise<string>;
+    installUpdate(signal: AbortSignal): Promise<string>;
     relaunch(): void;
     quit(): void;
   };
@@ -396,9 +411,11 @@ export function createShutdownSequence(
 
     async function checkpointRenderer(
       intent: ShutdownIntent,
-      stage: CheckpointStage
+      stage: CheckpointStage,
+      signal: AbortSignal
     ): Promise<boolean> {
       if (stage === 'pre-stop') await ptySessions.settleProviderIdentities();
+      if (signal.aborted) return false;
       const win = deps.window();
       // Workspace state is mutable only while the workspace hook is mounted;
       // otherwise the store on disk holds the layout and main lands the
@@ -407,17 +424,22 @@ export function createShutdownSequence(
       if (!deps.checkpoints.owns(win.webContents.id)) {
         return refreshPersistedHarnessIdentities();
       }
-      return await deps.checkpoints.request(win, intent, stage);
+      return await deps.checkpoints.request(win, intent, stage, signal);
     }
 
     /** Any window answers: held state is not workspace state, and the
      *  operator is as likely to be standing in Fleet or Settings. */
-    async function captureHeldState(): Promise<void> {
+    async function captureHeldState(
+      _intent: ShutdownIntent,
+      signal: AbortSignal
+    ): Promise<void> {
       const win = deps.window();
       const held =
         win && !win.isDestroyed()
-          ? await deps.checkpoints.requestHeld(win)
+          ? await deps.checkpoints.requestHeld(win, signal)
           : null;
+      // A wait that ended keeps the record as it was.
+      if (signal.aborted) return;
       await deps.runRecord.saveHeldState(held);
     }
 
@@ -434,16 +456,18 @@ export function createShutdownSequence(
       updateRefused: deps.updateRefused,
       pauseNewWork: () => ptySessions.pauseCreates(),
       resumeNewWork: () => ptySessions.resumeCreates(),
-      settleStarts: () => ptySessions.settleStarts(),
+      settleStarts: signal => ptySessions.settleStarts(signal),
       captureHeldState,
       checkpoint: checkpointRenderer,
       confirmWithoutCheckpoint,
       flushHistory: () => ptySessions.flushHistory(),
-      stopProcesses: () => ptySessions.stopAll(),
+      stopProcesses: signal => ptySessions.stopAll(signal),
       markClean: runtime.markClean,
       closing: deps.closing,
-      handOff: async intent => {
-        if (intent === 'update') return await deps.handOff.installUpdate();
+      handOff: async (intent, signal) => {
+        if (intent === 'update') {
+          return await deps.handOff.installUpdate(signal);
+        }
         // A restart must come back on its own; a quit must not.
         if (intent === 'restart') deps.handOff.relaunch();
         deps.handOff.quit();

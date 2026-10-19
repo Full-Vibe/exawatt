@@ -185,10 +185,16 @@ export type ShutdownWait =
   | 'agents-starting'
   /** The window saving its layout and the operator's place. */
   | 'window-saving'
+  /** Terminal history written to disk, before and after Sessions stop. */
+  | 'history-saving'
   | 'processes-stopping'
+  /** The run record noting that everything stopped cleanly. */
+  | 'run-recording'
   | 'services-closing'
   /** The installer replacing the app after everything closed. */
-  | 'installer';
+  | 'installer'
+  /** A failed install's reason saved, and the current version reopening. */
+  | 'relaunching';
 
 export interface ShutdownStatus {
   phase: ShutdownPhase;

@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  clearSessionOrigins,
   createRendererPortPolicy,
   type RendererPortPolicyDependencies,
 } from './renderer-port';
@@ -329,17 +330,47 @@ describe('createRendererPortPolicy', () => {
  * which origin is live sweeps every other one, once, after a launch has
  * served from the kept port, and again only after a launch made another.
  */
+/**
+ * Electron's `session.clearData` over storage the test names, honouring the
+ * documented options: `origins` clears only those, `excludeOrigins` clears
+ * every other, neither clears everything.
+ */
+function storageSession(origins: string[]) {
+  const stored = new Set(origins);
+  return {
+    stored,
+    clearData: async (options: {
+      dataTypes?: string[];
+      origins?: string[];
+      excludeOrigins?: string[];
+    }) => {
+      const only = options.origins ? new Set(options.origins) : null;
+      const except = new Set(options.excludeOrigins ?? []);
+      for (const origin of Array.from(stored)) {
+        if (only ? only.has(origin) : !except.has(origin)) {
+          stored.delete(origin);
+        }
+      }
+    },
+  };
+}
+
 describe('sweepDeadOrigins', () => {
-  function sweeping(overrides: Partial<RendererPortPolicyDependencies> = {}) {
+  function sweeping(
+    overrides: Partial<RendererPortPolicyDependencies> = {},
+    origins: string[] = []
+  ) {
     const busy = new Set<number>();
     const events: Array<{ event: string; fields?: Record<string, unknown> }> =
       [];
-    const sweeps: string[][] = [];
+    const session = storageSession(origins);
+    let sweeps = 0;
     let osPort = 50_000;
     return {
       busy,
       events,
-      sweeps,
+      session,
+      sweeps: () => sweeps,
       /** One launch, served, then its post-start housekeeping. */
       launchAndSweep: async (
         deps: Partial<RendererPortPolicyDependencies> = {}
@@ -350,8 +381,9 @@ describe('sweepDeadOrigins', () => {
           anyFreePort: async () => ++osPort,
           random: () => 0.25,
           record: (event, fields) => events.push({ event, fields }),
-          clearOtherOrigins: async keep => {
-            sweeps.push([keep]);
+          clearOrigins: async dead => {
+            sweeps += 1;
+            await clearSessionOrigins(session, dead);
           },
           ...overrides,
           ...deps,
@@ -364,12 +396,42 @@ describe('sweepDeadOrigins', () => {
     };
   }
 
-  it('sweeps every origin but the kept one once, on the first launch to serve from it', async () => {
+  // Review of 0.1.22: the sweep cleared every origin but two, so a worktree
+  // dev server's storage, or any site's in the shared default session, went
+  // with the dead launches'.
+  it("clears only the packaged server's abandoned origins", async () => {
+    fs.writeFileSync(
+      file(),
+      JSON.stringify({ port: 21_000, consecutiveFallbacks: 0 })
+    );
+    const live = [
+      'http://127.0.0.1:21000',
+      'http://localhost:7000',
+      'http://localhost:4317',
+      'http://localhost:54123',
+      'http://127.0.0.1:3000',
+      'https://accounts.example.com',
+    ];
+    const dead = [
+      // A launch before BUG-022, or a fallback: an OS-assigned port.
+      'http://127.0.0.1:54123',
+      'http://127.0.0.1:61001',
+      // A port kept before a re-home.
+      'http://127.0.0.1:24567',
+    ];
+    const { launchAndSweep, session } = sweeping({}, [...live, ...dead]);
+
+    expect(await launchAndSweep()).toBe(21_000);
+
+    expect(Array.from(session.stored).sort()).toEqual([...live].sort());
+  });
+
+  it('sweeps once, on the first launch to serve from the kept port', async () => {
     const { launchAndSweep, sweeps } = sweeping();
 
     const home = await launchAndSweep();
 
-    expect(sweeps).toEqual([[`http://127.0.0.1:${home}`]]);
+    expect(sweeps()).toBe(1);
     expect(kept()).toEqual({
       port: home,
       consecutiveFallbacks: 0,
@@ -377,7 +439,7 @@ describe('sweepDeadOrigins', () => {
     });
     await launchAndSweep();
     await launchAndSweep();
-    expect(sweeps).toHaveLength(1);
+    expect(sweeps()).toBe(1);
   });
 
   it('sweeps an install that kept its port before the sweep existed', async () => {
@@ -389,26 +451,26 @@ describe('sweepDeadOrigins', () => {
 
     expect(await launchAndSweep()).toBe(21_000);
 
-    expect(sweeps).toEqual([['http://127.0.0.1:21000']]);
+    expect(sweeps()).toBe(1);
   });
 
   it('never sweeps from a fallback launch, and sweeps its origin once the kept port is back', async () => {
-    const { launchAndSweep, sweeps, busy } = sweeping();
+    const { launchAndSweep, sweeps, busy, session } = sweeping();
     const home = await launchAndSweep();
     busy.add(home);
 
     const fallback = await launchAndSweep();
+    session.stored.add(`http://127.0.0.1:${home}`);
+    session.stored.add(`http://127.0.0.1:${fallback}`);
 
     expect(fallback).not.toBe(home);
-    expect(sweeps).toHaveLength(1);
+    expect(sweeps()).toBe(1);
     expect(kept()).toEqual({ port: home, consecutiveFallbacks: 1 });
 
     busy.delete(home);
     expect(await launchAndSweep()).toBe(home);
-    expect(sweeps).toEqual([
-      [`http://127.0.0.1:${home}`],
-      [`http://127.0.0.1:${home}`],
-    ]);
+    expect(sweeps()).toBe(2);
+    expect(Array.from(session.stored)).toEqual([`http://127.0.0.1:${home}`]);
     expect(kept()).toEqual({
       port: home,
       consecutiveFallbacks: 0,
@@ -430,14 +492,14 @@ describe('sweepDeadOrigins', () => {
       fs.chmodSync(file(), 0o600);
     }
 
-    expect(sweeps).toHaveLength(1);
+    expect(sweeps()).toBe(1);
     expect(kept()).toEqual({ port: home, consecutiveFallbacks: 0 });
   });
 
   it('marks nothing swept when the sweep fails, and tries again next launch', async () => {
     const { launchAndSweep, sweeps, events } = sweeping();
     const home = await launchAndSweep({
-      clearOtherOrigins: async () => {
+      clearOrigins: async () => {
         throw new Error('storage busy');
       },
     });
@@ -449,7 +511,7 @@ describe('sweepDeadOrigins', () => {
     });
 
     await launchAndSweep();
-    expect(sweeps).toEqual([[`http://127.0.0.1:${home}`]]);
+    expect(sweeps()).toBe(1);
     expect(kept().deadOriginsSwept).toBe(true);
   });
 });

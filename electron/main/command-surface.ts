@@ -79,11 +79,12 @@ export class CommandRuntime {
   isLinkOutcome: ((value: unknown) => boolean) | null = null;
   disposePty: () => Promise<void> = async () => {};
   disposeRoadmapWatchers: () => void = () => {};
-  prepareProductUpdate: () => Promise<string | null> = async () => {
-    throw new Error('Product updates are not ready.');
-  };
+  prepareProductUpdate: (signal: AbortSignal) => Promise<string | null> =
+    async () => {
+      throw new Error('Product updates are not ready.');
+    };
   reportUpdateRefused: (reason: string) => void = () => {};
-  installProductUpdate: () => Promise<string> = async () => {
+  installProductUpdate: (signal: AbortSignal) => Promise<string> = async () => {
     throw new Error('Product updates are not ready.');
   };
   installFailure: (reason: string) => {

@@ -121,16 +121,20 @@ export function readJsonDocument(
   return result.status === 'ok' ? result.value : null;
 }
 
-/** Every writer checks disk, including writers whose in-memory cache predates damage. */
-export function writeJsonFileAtomic(
-  file: string,
-  value: unknown,
-  valid?: (value: unknown) => boolean
-): void {
-  readJsonDocument(file, valid);
-  const dir = path.dirname(file);
-  fs.mkdirSync(dir, { recursive: true });
-  const temp = path.join(dir, `.${path.basename(file)}.${randomUUID()}.tmp`);
+const temporaryFor = (file: string) =>
+  path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
+
+/**
+ * The one way main replaces a JSON file: a uniquely named owner-only
+ * sibling, created exclusively, renamed over the file, and removed if
+ * anything fails, so a reader sees the old bytes or the new ones and never
+ * a torn write. It reads nothing first; `writeJsonFileAtomic` adds the
+ * recovery interlock, and a store without one (`persisted-state-file.ts`)
+ * calls this directly.
+ */
+export function replaceJsonFileAtomic(file: string, value: unknown): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temp = temporaryFor(file);
   try {
     fs.writeFileSync(temp, JSON.stringify(value, null, 2), {
       mode: 0o600,
@@ -141,6 +145,37 @@ export function writeJsonFileAtomic(
   } finally {
     fs.rmSync(temp, { force: true });
   }
+}
+
+/** `replaceJsonFileAtomic` for callers that must not block main. */
+export async function replaceJsonFileAtomicAsync(
+  file: string,
+  value: unknown,
+  beforeRename: () => void = () => {}
+): Promise<void> {
+  await fs.promises.mkdir(path.dirname(file), { recursive: true });
+  const temp = temporaryFor(file);
+  try {
+    await fs.promises.writeFile(temp, JSON.stringify(value, null, 2), {
+      mode: 0o600,
+      flag: 'wx',
+    });
+    beforeRename();
+    await fs.promises.rename(temp, file);
+    await fs.promises.chmod(file, 0o600);
+  } finally {
+    await fs.promises.rm(temp, { force: true });
+  }
+}
+
+/** Every writer checks disk, including writers whose in-memory cache predates damage. */
+export function writeJsonFileAtomic(
+  file: string,
+  value: unknown,
+  valid?: (value: unknown) => boolean
+): void {
+  readJsonDocument(file, valid);
+  replaceJsonFileAtomic(file, value);
 }
 
 /** Workspace checkpoints retain asynchronous I/O and invocation-order serialization. */
@@ -183,21 +218,10 @@ export async function writeJsonFileAtomicAsync(
   value: unknown
 ): Promise<void> {
   await readJsonDocumentAsync(file);
-  const dir = path.dirname(file);
-  await fs.promises.mkdir(dir, { recursive: true });
-  const temp = path.join(dir, `.${path.basename(file)}.${randomUUID()}.tmp`);
-  try {
-    await fs.promises.writeFile(temp, JSON.stringify(value, null, 2), {
-      mode: 0o600,
-      flag: 'wx',
-    });
+  await replaceJsonFileAtomicAsync(file, value, () => {
     if (fs.existsSync(`${file}.recovery-required`))
       throw new JsonStoreRecoveryError(file);
-    await fs.promises.rename(temp, file);
-    await fs.promises.chmod(file, 0o600);
-  } finally {
-    await fs.promises.rm(temp, { force: true });
-  }
+  });
 }
 
 function recoveryEvidence(file: string): string {

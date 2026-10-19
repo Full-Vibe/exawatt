@@ -324,8 +324,10 @@ The three fixes that fell out:
   store because it repairs the class, covers IndexedDB and sessionStorage, and
   stops a dead origin accumulating per launch. What it cannot do on a fallback
   launch is BUG-171. The same policy sweeps the origins earlier launches left
-  (BUG-170): every origin but the kept one, once per dead origin appearing,
-  through `session.clearData({ excludeOrigins })`.
+  (BUG-170): every origin the packaged server could have served from but the
+  kept one (`http://127.0.0.1:<port>`, stable range up), once per dead origin
+  appearing, through `session.clearData({ origins })`; a dev server's or any
+  site's storage is never touched (BUG-303).
 - **BUG-050.** The eval inferred "a native modal is up" from "did not close in
   2.5 s". Every shutdown dialog now names itself on main's console first, the
   eval fails on that line, and the product half (no dialog on a non-workspace

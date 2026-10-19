@@ -420,4 +420,83 @@ describe('UpdateReadyNotice', () => {
       screen.queryByRole('button', { name: 'Cancel' })
     ).not.toBeInTheDocument();
   });
+
+  // Review of 0.1.22: the mount-time reads committed whenever they arrived,
+  // so one that answered after a push, or after the operator dismissed,
+  // put the older answer back on screen.
+  describe('a read that answers after newer state', () => {
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>(settle => (resolve = settle));
+      return { promise, resolve };
+    }
+
+    function installSlowReads() {
+      const dismissals = deferred<Record<string, string>>();
+      const shutdown = deferred<ShutdownStatus>();
+      const installed = deferred<InstalledBuild | null>();
+      const status = deferred<ProductUpdateStatus>();
+      installApi();
+      const app = window.electron!.app!;
+      Object.assign(app, {
+        noticeDismissals: () => dismissals.promise,
+        shutdownStatus: () => shutdown.promise,
+        installedBuild: () => installed.promise,
+      });
+      Object.assign(app.updates!, { getStatus: () => status.promise });
+      return { dismissals, shutdown, installed, status };
+    }
+
+    it('keeps a dismissal the operator made before the read answered', async () => {
+      const slow = installSlowReads();
+      render(<UpdateReadyNotice />);
+      act(() =>
+        emitInstalled?.({ currentSha: 'running', installedSha: 'first' })
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Dismiss update notice' })
+      );
+      await act(async () => slow.dismissals.resolve({}));
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('keeps a pushed shutdown phase over an older idle read', async () => {
+      const slow = installSlowReads();
+      render(<UpdateReadyNotice />);
+      act(() => emitShutdown?.(shutdownAt({ phase: 'stopping', agents: 1 })));
+      await act(async () => slow.shutdown.resolve(idle));
+      expect(screen.getByRole('status')).toBeInTheDocument();
+    });
+
+    it('keeps a pushed installed build over an older empty read', async () => {
+      const slow = installSlowReads();
+      render(<UpdateReadyNotice />);
+      act(() =>
+        emitInstalled?.({ currentSha: 'running', installedSha: 'first' })
+      );
+      await act(async () => slow.installed.resolve(null));
+      expect(screen.getByText(/New local build installed/)).toBeInTheDocument();
+    });
+
+    it('keeps a pushed update status over an older idle read', async () => {
+      const slow = installSlowReads();
+      render(<UpdateReadyNotice />);
+      const ready: ProductUpdateStatus = {
+        phase: 'downloaded',
+        currentVersion: '1.0.0',
+        availableVersion: '1.1.0',
+        percent: 100,
+        liveSessions: 0,
+        error: null,
+        enabled: true,
+        disabledReason: null,
+        logPath: null,
+      };
+      act(() => emitStatus?.(ready));
+      await act(async () =>
+        slow.status.resolve({ ...ready, phase: 'idle', availableVersion: null })
+      );
+      expect(screen.getByText(/ready to install/)).toBeInTheDocument();
+    });
+  });
 });

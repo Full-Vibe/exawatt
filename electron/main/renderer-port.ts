@@ -1,6 +1,7 @@
 import fs from 'fs';
 import nodeNet from 'net';
 import path from 'path';
+import { replaceJsonFileAtomicAsync } from './atomic-json-file';
 import type { DiagnosticRecorder } from './diagnostics-log';
 
 /**
@@ -50,10 +51,17 @@ import type { DiagnosticRecorder } from './diagnostics-log';
  * launch and every re-home leaves an origin whose storage no later launch can
  * read. This policy is the one that knows which origin is live, so it owns
  * sweeping the rest: once a launch has served from the kept port,
- * `sweepDeadOrigins` clears every other origin's storage through Electron's
- * `session.clearData({ excludeOrigins })` (Chromium's own storage deletion;
- * there is no API that lists origins, and deleting LevelDB files under a live
- * session is not ours to do), then records `deadOriginsSwept`. Any later write
+ * `sweepDeadOrigins` clears the storage of every origin the packaged server
+ * could have served from but the kept one (`deadRendererOrigins`) through
+ * Electron's `session.clearData({ origins })`, Chromium's own storage
+ * deletion, then records `deadOriginsSwept`. There is no API that lists
+ * origins, and deleting LevelDB files under a live session is not ours to
+ * do, so the dead origins are named by the server's own pattern rather than
+ * found: `http://127.0.0.1:<port>`, for every port it can be handed. Every
+ * other origin in the session is left alone: a development run's
+ * `http://localhost:<port>` (which shares this userData), and any site the
+ * app has opened (the 0.1.22 review: the sweep cleared everything but the
+ * kept origin and `localhost:7000`). Any later write
  * of the record (a re-home, a fallback, a kept launch after fallbacks) is made
  * exactly when a new dead origin appeared, and it drops the flag, so the next
  * kept launch sweeps again. A temporary launch writes nothing, so the origin it
@@ -68,6 +76,16 @@ const STABLE_PORT_MIN = 20_000;
 const STABLE_PORT_MAX = 32_767;
 const STABLE_PORT_CANDIDATES = 16;
 const REHOME_AFTER_CONSECUTIVE_FALLBACKS = 3;
+/**
+ * The highest port an OS hands out. The packaged server has served from its
+ * stable range and from OS-assigned ports (every launch before BUG-022, and
+ * every fallback), which sit above it on every OS (macOS from 49152, Linux
+ * from 32768), so its origins are `127.0.0.1` at any port from
+ * `STABLE_PORT_MIN` up.
+ */
+const HIGHEST_PORT = 65_535;
+/** What a sweep clears: an abandoned origin's own storage. */
+const SWEPT_DATA_TYPES = ['localStorage', 'indexedDB'] as const;
 
 interface KeptPort {
   port: number;
@@ -108,10 +126,11 @@ export interface RendererPortPolicyDependencies {
   anyFreePort?: () => Promise<number>;
   random?: () => number;
   /**
-   * Clears the storage of every origin except `keptOrigin` (BUG-170). Without
-   * it, `sweepDeadOrigins` sweeps nothing.
+   * Clears the storage of exactly these origins (BUG-170), as
+   * `clearSessionOrigins` does. Without it, `sweepDeadOrigins` sweeps
+   * nothing.
    */
-  clearOtherOrigins?: (keptOrigin: string) => Promise<void>;
+  clearOrigins?: (origins: string[]) => Promise<void>;
 }
 
 export interface RendererPortPolicy {
@@ -132,6 +151,34 @@ export interface RendererPortPolicy {
 }
 
 const rendererOrigin = (port: number) => `http://127.0.0.1:${port}`;
+
+/** Every origin the packaged server could have served from, but `kept`. */
+function deadRendererOrigins(kept: number): string[] {
+  const origins: string[] = [];
+  for (let port = STABLE_PORT_MIN; port <= HIGHEST_PORT; port += 1) {
+    if (port !== kept) origins.push(rendererOrigin(port));
+  }
+  return origins;
+}
+
+/** The surface of Electron's `Session` a sweep uses. */
+interface StorageSession {
+  clearData(options: {
+    dataTypes: Array<(typeof SWEPT_DATA_TYPES)[number]>;
+    origins: string[];
+  }): Promise<void>;
+}
+
+/** Clears the swept storage of exactly `origins`, and of no other origin. */
+export async function clearSessionOrigins(
+  session: StorageSession,
+  origins: string[]
+): Promise<void> {
+  // An empty list would read as "no filter" to a careless caller; clear
+  // nothing instead.
+  if (origins.length === 0) return;
+  await session.clearData({ dataTypes: [...SWEPT_DATA_TYPES], origins });
+}
 
 async function osAssignedLoopbackPort(): Promise<number> {
   return await new Promise((resolve, reject) => {
@@ -237,12 +284,7 @@ async function readKeptPort(file: string): Promise<KeptPortRead> {
 }
 
 async function writeKeptPort(file: string, value: KeptPort): Promise<void> {
-  await fs.promises.mkdir(path.dirname(file), { recursive: true });
-  const temp = `${file}.${process.pid}.tmp`;
-  await fs.promises.writeFile(temp, `${JSON.stringify(value)}\n`, {
-    mode: 0o600,
-  });
-  await fs.promises.rename(temp, file);
+  await replaceJsonFileAtomicAsync(file, value);
 }
 
 export function createRendererPortPolicy(
@@ -345,14 +387,14 @@ export function createRendererPortPolicy(
     async sweepDeadOrigins() {
       const port = servedKept;
       servedKept = null;
-      if (port === null || !deps.clearOtherOrigins) return;
+      if (port === null || !deps.clearOrigins) return;
       // Only what the record durably says is kept is spared: a launch whose
       // record failed to write, or cannot be read, sweeps nothing.
       const kept = await readKeptPort(file());
       if (kept.status !== 'ok' || kept.value.port !== port) return;
       if (kept.value.deadOriginsSwept) return;
       try {
-        await deps.clearOtherOrigins(rendererOrigin(port));
+        await deps.clearOrigins(deadRendererOrigins(port));
       } catch (error) {
         record('renderer.origins.sweep-failed', {
           keptPort: port,

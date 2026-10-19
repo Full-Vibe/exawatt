@@ -75,4 +75,37 @@ describe('notice dismissals', () => {
     expect(store.current()).toEqual({ 'local-build-installed': 'sha' });
     expect(fs.statSync(file).isDirectory()).toBe(true);
   });
+
+  // Review of 0.1.22: the store re-read the file once it became readable
+  // and replaced what the operator had dismissed meanwhile.
+  it('keeps what was dismissed while the file was unreadable once it can be read', () => {
+    const { file, open } = fixture();
+    fs.mkdirSync(file);
+    const store = open();
+    store.dismiss('local-build-installed', 'running-sha');
+    store.dismiss('product-update:ready', '1.2.0');
+    store.forget('product-update:');
+
+    fs.rmSync(file, { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        v: 1,
+        dismissed: {
+          'local-build-installed': 'older-sha',
+          'product-update:available': '1.1.0',
+          'account-first-run': '1',
+        },
+      })
+    );
+    store.dismiss('product-update:error', '1.2.0');
+
+    const expected = {
+      'account-first-run': '1',
+      'local-build-installed': 'running-sha',
+      'product-update:error': '1.2.0',
+    };
+    expect(store.current()).toEqual(expected);
+    expect(open().current()).toEqual(expected);
+  });
 });

@@ -8088,3 +8088,88 @@ two consecutive passes; unit suites `shutdown-coordinator`,
 `session-storage-holder`, `product-feedback-provider`; the file-read
 ratchet no longer lists `updater.ts` (its remaining unlisted sites belong to
 other lanes).
+
+### 2026-10-19 — The lifecycle review: every step inside its wait (BUG-303)
+
+**Six review findings on the 0.1.22 lifecycle, fixed as three system
+changes.** Implemented and verified 2026-10-19 on `agent/fix-lifecycle-review`.
+Operator rule: fix by upgrading the system so the bugs fall out.
+
+The system changes.
+
+1. **Every wait bounded, structurally.** The phase order (`runShutdown` in
+   `shutdown-coordinator.ts`) holds no step. It names one to
+   `ShutdownScript.step`, which looks up the step's wait (`STEP_WAITS`, a
+   `Record` over every step, so a step without a wait does not compile),
+   bounds it by `SHUTDOWN_WAITS`, and passes an `AbortSignal` that aborts
+   when the wait is cancelled or reaches its deadline. Cancel is honoured
+   only in a phase where nothing has stopped. New named waits:
+   `history-saving`, `run-recording`, `relaunching`. A failing step is a
+   `failed` outcome the script judges per step.
+2. **One atomic store helper.** `replaceJsonFileAtomic` (and its async
+   twin) in `atomic-json-file.ts` is the one temp-then-rename;
+   `writeJsonFileAtomic` adds the recovery interlock on top, and
+   `writePersistedStateSync` is the interlock-free write that pairs with
+   `readPersistedStateSync`. The dismissal store, the run record and the
+   renderer port record write through it.
+3. **Reads ordered against writes.** The update notice reads each fact
+   through a `useLatestRequest` channel; every push and the optimistic
+   dismiss supersede a read still in flight.
+
+Per finding.
+
+- **Steps outside the waits.** Both history flushes, the post-stop
+  checkpoint and the clean mark were awaited directly, and `settleStarts`
+  polled on after its wait ended. Tests: each of the four stuck steps ends at
+  its deadline with its wait named; a cancelled or timed-out wait aborts its
+  step's signal; Cancel is not offered after Sessions stop. `settleStarts`
+  now waits on the start counter returning to zero and stops on abort.
+  Behaviour choices: a history flush that cannot finish before stopping
+  refuses the shutdown with nothing stopped; after stopping it keeps the app
+  open so a second quit retries; a clean mark past its deadline leaves the
+  run unclean, which recovery then believes.
+- **Staging listeners.** One Squirrel check is one operation with one
+  listener pair, removed when Squirrel answers or the call throws; a caller
+  that stops waiting removes only itself, and a retry joins the check in
+  flight. Squirrel cannot be called off, so a late answer still lands: a late
+  acceptance after the restart reported a failure sets the status back to
+  `downloaded`, with Restart to Update. Tests in `updater-staging.test.ts`
+  and `updater.prepare.test.ts`. The install watch removes its listener on
+  abort too.
+- **Dismissals after an unreadable file.** Changes made while the file
+  could not be read are kept as changes and replayed onto the file once it
+  reads, so the operator's newer dismissals and forgets win and entries only
+  the file held survive. Test: dismiss, dismiss, forget while the path is a
+  directory, then a readable file, then one more dismissal.
+- **Held-state restore.** The hand-back left module scope for a layout
+  effect in `HeldStateBridge`; the registry contains a throwing holder and
+  reports it; the session-storage holder restores entry by entry and names
+  each refused key. Failures go to `reportRenderError` (`source:
+  'held-state'`, key names only, never values). Tests: `held-state`,
+  `session-storage-holder`, `held-state-bridge` (nothing taken at import; a
+  refused `setItem` keeps the window up and is reported).
+- **Mount reads.** Tests: a late dismissal read after the operator
+  dismissed, a late idle shutdown read after a pushed phase, a late empty
+  installed-build read after a push, and a late update status after a push
+  each leave the newer state on screen.
+- **Dead-origin sweep.** `clearData({ excludeOrigins })` cleared every
+  origin in the default session but the kept one and `localhost:7000`.
+  Now `deadRendererOrigins` names the packaged server's own origins,
+  `http://127.0.0.1:<port>` from `STABLE_PORT_MIN` to 65535 except the
+  kept port (its stable range and every OS's ephemeral range), and
+  `clearSessionOrigins` clears exactly those. Test: a fixture session
+  holding the kept, two OS-port and one old stable origin, three
+  `localhost` dev origins, a `127.0.0.1:3000` dev server and a foreign
+  site keeps everything but the three dead ones. Probed against real
+  Electron: `clearData` over all 45,535 origins took 52 ms, cleared the
+  dead origins' localStorage and IndexedDB, and left the kept and dev
+  origins intact.
+
+Eval premise repaired. `eval:electron:app-lifecycle` part 3 moved the Fleet
+camera by writing its stored pose behind the board, which the board's own
+save of its in-memory pose overwrote within half a second (shown on the old
+bridge too by waiting before the restart); it passed only when the capture
+won the race. It now pans the camera with a wheel gesture on the board and
+waits for the board's own save to settle. Proof: two consecutive headless
+passes on this branch; `pnpm test:related` over every changed file.
+

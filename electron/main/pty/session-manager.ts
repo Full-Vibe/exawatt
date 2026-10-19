@@ -164,6 +164,8 @@ export class PtySessionManager extends EventEmitter {
   private nextId = 1;
   private acceptingCreates = true;
   private creating = 0;
+  /** `settleStarts` callers, released when `creating` returns to zero. */
+  private readonly startsSettled = new Set<() => void>();
   private creatingDurableIds = new Set<string>();
   private sessionOperations = new Set<string>();
   private claimedCodexIds = new Set<string>();
@@ -420,6 +422,11 @@ export class PtySessionManager extends EventEmitter {
     } finally {
       this.creating -= 1;
       this.creatingDurableIds.delete(durableSessionId);
+      if (this.creating === 0) {
+        const waiting = Array.from(this.startsSettled);
+        this.startsSettled.clear();
+        for (const settled of waiting) settled();
+      }
     }
   }
 
@@ -1842,19 +1849,32 @@ export class PtySessionManager extends EventEmitter {
   }
 
   /**
-   * Resolves once no Session is part-way through starting. Unbounded on
-   * purpose: the lifecycle owner bounds it, names it on screen and lets the
-   * operator cancel it, before anything has stopped (BUG-286).
+   * Resolves once no Session is part-way through starting, or rejects with
+   * `signal`'s reason once it aborts. The lifecycle owner bounds it, names
+   * it on screen and lets the operator cancel it, before anything has
+   * stopped (BUG-286); an abort ends the wait here too, so nothing keeps
+   * watching behind a shutdown that gave up.
    */
-  async settleStarts(): Promise<void> {
-    while (this.creating > 0) {
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
+  settleStarts(signal?: AbortSignal): Promise<void> {
+    if (this.creating === 0) return Promise.resolve();
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    return new Promise((resolve, reject) => {
+      const settled = () => {
+        signal?.removeEventListener('abort', abandoned);
+        resolve();
+      };
+      const abandoned = () => {
+        this.startsSettled.delete(settled);
+        reject(signal?.reason);
+      };
+      this.startsSettled.add(settled);
+      signal?.addEventListener('abort', abandoned, { once: true });
+    });
   }
 
-  async stopAll(): Promise<void> {
+  async stopAll(signal?: AbortSignal): Promise<void> {
     this.pauseCreates();
-    await this.settleStarts();
+    await this.settleStarts(signal);
     const active = Array.from(this.sessions.entries()).filter(
       ([, session]) => !session.info.exited
     );

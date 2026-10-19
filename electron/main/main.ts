@@ -66,7 +66,7 @@ import {
   sharedRecoveryPrompt,
   testHangChoice,
 } from './process-recovery';
-import { createRendererPortPolicy } from './renderer-port';
+import { clearSessionOrigins, createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
 import { loadSettings } from './settings-store';
 import { createNoticeDismissalStore } from './notice-dismissals';
@@ -156,14 +156,10 @@ const rendererServer = createRendererServer({
   ports: createRendererPortPolicy({
     userDataPath,
     record: mainDiagnostics,
-    // BUG-170: Chromium's own deletion, for every origin but the kept one.
-    // The dev server's origin is spared too: a development run of the same
-    // build shares this userData, and its storage is not a dead launch's.
-    clearOtherOrigins: keptOrigin =>
-      electronSession.defaultSession.clearData({
-        dataTypes: ['localStorage', 'indexedDB'],
-        excludeOrigins: [keptOrigin, new URL(DEV_URL).origin],
-      }),
+    // BUG-170: Chromium's own deletion, for exactly the packaged server's
+    // abandoned origins; every other origin in the session is left alone.
+    clearOrigins: origins =>
+      clearSessionOrigins(electronSession.defaultSession, origins),
   }),
   onUnexpectedExit: details => rendererServerSupervisor.exited(details),
 });
@@ -294,10 +290,10 @@ const shutdownSequence = createShutdownSequence({
       run: () => runtime.installedBuildWatch?.stop(),
     },
   ],
-  prepareUpdate: () => runtime.prepareProductUpdate(),
+  prepareUpdate: signal => runtime.prepareProductUpdate(signal),
   updateRefused: reason => runtime.reportUpdateRefused(reason),
   handOff: {
-    installUpdate: () => runtime.installProductUpdate(),
+    installUpdate: signal => runtime.installProductUpdate(signal),
     relaunch: () => app.relaunch(),
     quit: () => app.quit(),
   },

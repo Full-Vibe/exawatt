@@ -7,7 +7,11 @@ import {
   type ConfigFileRead,
   type ConfigFileUnreadableCause,
 } from '@exawatt/core/server';
-import { recordStoreDiagnostic, setAsideDamagedFile } from './atomic-json-file';
+import {
+  recordStoreDiagnostic,
+  replaceJsonFileAtomic,
+  setAsideDamagedFile,
+} from './atomic-json-file';
 
 /**
  * One read of state Exawatt wrote itself and can rebuild: Session resume
@@ -72,6 +76,15 @@ export async function readPersistedState<T>(
   grammar: ConfigFileGrammar<T>
 ): Promise<PersistedStateRead<T>> {
   return settle(file, await readConfigFile(file, grammar));
+}
+
+/**
+ * The write that pairs with `readPersistedStateSync`: the shared atomic
+ * replace, with no recovery interlock (see above). The caller never calls
+ * it while its last read was `unreadable`.
+ */
+export function writePersistedStateSync(file: string, value: unknown): void {
+  replaceJsonFileAtomic(file, value);
 }
 
 /** Strict JSON, the grammar every one of these stores is written in. */

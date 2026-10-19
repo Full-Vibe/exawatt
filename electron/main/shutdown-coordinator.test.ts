@@ -334,6 +334,125 @@ describe('ShutdownCoordinator', () => {
   });
 });
 
+// Review of 0.1.22: four steps were awaited outside `wait()` (both history
+// flushes, the post-stop checkpoint and the clean mark), so one that never
+// settled held the window on its phase for good, and a wait that ended left
+// its step's own work running.
+describe('ShutdownCoordinator bounds every step', () => {
+  const stuck: Array<{
+    step: string;
+    waitingOn: keyof typeof SHUTDOWN_WAITS;
+    patch: (order: string[]) => Partial<ShutdownDependencies>;
+  }> = [
+    {
+      step: 'the history flush before stopping',
+      waitingOn: 'history-saving',
+      patch: () => ({ flushHistory: () => never() }),
+    },
+    {
+      step: 'the history flush after stopping',
+      waitingOn: 'history-saving',
+      patch: order => ({
+        flushHistory: async () => {
+          if (order.includes('stop')) return never();
+          order.push('flush');
+        },
+      }),
+    },
+    {
+      step: 'the post-stop checkpoint',
+      waitingOn: 'window-saving',
+      patch: () => ({
+        checkpoint: async (_intent, stage) =>
+          stage === 'stopped' ? never<boolean>() : true,
+      }),
+    },
+    {
+      step: 'the clean mark',
+      waitingOn: 'run-recording',
+      patch: () => ({ markClean: () => never() }),
+    },
+  ];
+
+  for (const { step, waitingOn, patch } of stuck) {
+    it(`ends ${step} at its deadline, naming the wait`, async () => {
+      vi.useFakeTimers();
+      const record = vi.fn();
+      const { deps, order } = dependencies({
+        record,
+        failure: () => undefined,
+      });
+      Object.assign(deps, patch(order));
+      let settled = false;
+      void new ShutdownCoordinator(deps)
+        .request('quit')
+        .finally(() => (settled = true));
+      for (let elapsed = 0; elapsed < 120_000 && !settled; elapsed += 1_000) {
+        await vi.advanceTimersByTimeAsync(1_000);
+      }
+      expect(settled).toBe(true);
+      expect(record).toHaveBeenCalledWith(
+        'shutdown.wait-timed-out',
+        expect.objectContaining({ waitingOn })
+      );
+    });
+  }
+
+  it("stops a step's own work when the operator cancels its wait", async () => {
+    let seen: AbortSignal | undefined;
+    const { deps } = dependencies({
+      settleStarts: signal => ((seen = signal), never()),
+    });
+    const coordinator = new ShutdownCoordinator(deps);
+    const result = coordinator.request('quit');
+    await vi.waitFor(() => expect(seen).toBeDefined());
+    expect(seen?.aborted).toBe(false);
+    expect(coordinator.cancel()).toBe(true);
+    await expect(result).resolves.toBe(false);
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it("stops a step's own work when its wait reaches the deadline", async () => {
+    vi.useFakeTimers();
+    let seen: AbortSignal | undefined;
+    const { deps } = dependencies({
+      prepareUpdate: signal => ((seen = signal), never()),
+    });
+    const result = new ShutdownCoordinator(deps).request('update');
+    await vi.advanceTimersByTimeAsync(
+      SHUTDOWN_WAITS['update-staging'].deadlineMs
+    );
+    await expect(result).resolves.toBe(false);
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('offers Cancel only while nothing has stopped', async () => {
+    const seen: ShutdownStatus[] = [];
+    let release!: () => void;
+    const { deps } = dependencies({
+      checkpoint: async (_intent, stage) =>
+        stage === 'stopped'
+          ? await new Promise<boolean>(resolve => {
+              release = () => resolve(true);
+            })
+          : true,
+      status: status => void seen.push(status),
+    });
+    vi.useFakeTimers();
+    const result = new ShutdownCoordinator(deps).request('quit');
+    await vi.advanceTimersByTimeAsync(
+      SHUTDOWN_WAITS['window-saving'].visibleAfterMs
+    );
+    expect(seen.at(-1)).toMatchObject({
+      phase: 'stopping',
+      waitingOn: 'window-saving',
+      cancellable: false,
+    });
+    release();
+    await expect(result).resolves.toBe(true);
+  });
+});
+
 describe('shutdownCopy', () => {
   it('names agent and shell impact without implying shell resume', () => {
     const counts = { agents: 4, shells: 1 };

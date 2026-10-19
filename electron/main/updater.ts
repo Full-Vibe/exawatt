@@ -22,8 +22,9 @@ import type {
 } from '@exawatt/core/desktop-bridge';
 import { broadcastToWindows } from './window-broadcast';
 import {
-  stageNativeUpdate,
+  createNativeStaging,
   watchNativeInstall,
+  type NativeStaging,
   type NativeUpdater,
 } from './updater-staging';
 import type { InstallFailure } from './run-state';
@@ -75,9 +76,41 @@ let status: ProductUpdateStatus = {
 };
 let registered = false;
 let downloaded = false;
-/** Squirrel.Mac has fetched and verified the downloaded update (BUG-286). */
-let staged = false;
 let liveSessionCount = () => 0;
+
+/**
+ * Squirrel.Mac's view of the downloaded update (BUG-286): one staging per
+ * native updater, so a test launch's double gets its own.
+ */
+let staging: { native: NativeUpdater; staging: NativeStaging } | null = null;
+function nativeStaging(): NativeStaging {
+  const native = updaters().native;
+  if (staging?.native !== native) {
+    staging = {
+      native,
+      staging: createNativeStaging(native, {
+        accepted: ({ late }) => {
+          record('updater.staged', {
+            availableVersion: status.availableVersion,
+            late,
+          });
+          // The restart stopped waiting and said the update failed; Squirrel
+          // has it now, so the notice offers Restart to Update again.
+          if (late && downloaded && status.phase === 'error') {
+            setStatus({ phase: 'downloaded', error: null, percent: 100 });
+          }
+        },
+        refused: (reason, { late }) =>
+          record('updater.stage-failed', {
+            availableVersion: status.availableVersion,
+            reason,
+            late,
+          }),
+      }),
+    };
+  }
+  return staging.staging;
+}
 
 /**
  * Update failures used to leave no evidence anywhere (ENG-030 OS1.6). The
@@ -192,7 +225,7 @@ export function registerProductUpdater(
   });
   autoUpdater.on('update-downloaded', info => {
     downloaded = true;
-    staged = false;
+    nativeStaging().reset();
     record('updater.downloaded', { availableVersion: version(info) });
     setStatus({
       phase: 'downloaded',
@@ -257,23 +290,17 @@ export function currentUpdateStatus(): ProductUpdateStatus {
  * The restart's first step, before anything stops: hand the download to
  * Squirrel.Mac and wait for it to accept or refuse it (BUG-286). Resolves
  * null once it is accepted, or with the refusal. The lifecycle owner bounds
- * the wait and lets the operator cancel it.
+ * the wait and lets the operator cancel it; `signal` ends this wait, and
+ * Squirrel's later answer still lands (`nativeStaging`).
  */
-export async function prepareProductUpdate(): Promise<string | null> {
+export async function prepareProductUpdate(
+  signal?: AbortSignal
+): Promise<string | null> {
   if (!downloaded) throw new Error('No downloaded update is ready');
-  if (process.platform !== 'darwin' || staged) return null;
+  const native = nativeStaging();
+  if (process.platform !== 'darwin' || native.staged) return null;
   record('updater.staging', { availableVersion: status.availableVersion });
-  const refusal = await stageNativeUpdate(updaters().native);
-  if (refusal === null) {
-    staged = true;
-    record('updater.staged', { availableVersion: status.availableVersion });
-    return null;
-  }
-  record('updater.stage-failed', {
-    availableVersion: status.availableVersion,
-    reason: refusal,
-  });
-  return refusal;
+  return await native.stage(signal);
 }
 
 /** The update did not go ahead: the notice says why, every agent still runs. */
@@ -290,11 +317,15 @@ export function reportUpdateRefused(reason: string): void {
  * the install fails, with the reason, so the lifecycle owner can relaunch
  * the current version instead of sitting on "Closing…".
  */
-export async function installProductUpdate(): Promise<string> {
+export async function installProductUpdate(
+  signal?: AbortSignal
+): Promise<string> {
   if (!downloaded) throw new Error('No downloaded update is ready');
   record('updater.installing', { availableVersion: status.availableVersion });
-  const reason = await watchNativeInstall(updaters().native, () =>
-    updaters().updater.quitAndInstall(false, true)
+  const reason = await watchNativeInstall(
+    updaters().native,
+    () => updaters().updater.quitAndInstall(false, true),
+    signal
   );
   record('updater.install-failed', {
     availableVersion: status.availableVersion,

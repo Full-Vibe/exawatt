@@ -43,11 +43,16 @@ export function sessionStorageHolder(scope: {
       return parseEntries(entries);
     },
     parse: parseEntries,
-    restore: entries => {
+    restore: (entries, failed) => {
       for (const [key, value] of Object.entries(entries)) {
-        // This run's own value, if it already has one, is newer.
-        if (scope.sessionStorage.getItem(key) === null) {
-          scope.sessionStorage.setItem(key, value);
+        // One refused write (quota, a blocked storage) costs that entry.
+        try {
+          // This run's own value, if it already has one, is newer.
+          if (scope.sessionStorage.getItem(key) === null) {
+            scope.sessionStorage.setItem(key, value);
+          }
+        } catch (error) {
+          failed(key, error);
         }
       }
     },

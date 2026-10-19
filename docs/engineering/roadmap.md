@@ -4876,3 +4876,21 @@ startup observations, zero locked render advancement, unchanged event/battery
 behavior, and integrated/installed evidence. No polling or Agent lifecycle action.
 [Diagnosis](incidents/0038-locked-startup-reports-unlocked.md) ·
 [Repair contract](projects/spatial-operations-board.md#startup-lock-observation-repair-plan-2026-10-15).
+
+### BUG-303 The 0.1.22 lifecycle had steps outside its waits, a leaking staging listener, and an over-wide origin sweep
+
+Status: fixed in code 2026-10-19, not yet integrated · ENG-016, ENG-030 · review of the 0.1.22 lifecycle work (BUG-260, BUG-285, BUG-286, BUG-170).
+
+Six confirmed findings, three shared causes. Every wait bounded: four
+shutdown steps were awaited beside `SHUTDOWN_WAITS`, and a wait that ended
+left its step running (start polling, a Squirrel listener pair per attempt
+whose late answer flipped `staged` under an "Update failed" notice). The
+phase order is now a script that reaches a step only through its wait, which
+aborts the step's own signal. One atomic store helper: the dismissal store
+hand-rolled its write and replaced the operator's newer dismissals when an
+unreadable file became readable. Reads ordered against writes: the update
+notice's mount reads overwrote newer pushes and the optimistic dismiss.
+Also: held state is restored entry by entry in a layout effect, never at
+module evaluation; the dead-origin sweep clears exactly the packaged
+server's `127.0.0.1` origins, never a dev server's or a site's.
+[Evidence](projects/daily-driver-adoption.md#2026-10-19--the-lifecycle-review-every-step-inside-its-wait-bug-303).
