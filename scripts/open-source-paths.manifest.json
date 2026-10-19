@@ -26,6 +26,7 @@
         "vitest.config.app-dom.ts",
         "vitest.config.app-node.ts",
         "vitest.config.ts",
+        "vitest.setup.app-node.ts",
         "vitest.setup.ts"
       ],
       "exclude": []

@@ -6,6 +6,8 @@ export default defineConfig({
     name: 'app-node',
     globals: true,
     environment: 'node',
+    // BUG-298: a private HOME, so no test runs the operator's shell startup.
+    setupFiles: ['./vitest.setup.app-node.ts'],
     include: [
       'src/**/*.{test,spec}.ts',
       'electron/**/*.{test,spec}.ts',
