@@ -4813,3 +4813,7 @@ that line: a transient Apple ticket lookup during `validate` (it would read
 as a CloudKit or network error), or a DMG copy of the bundle missing its
 stapled ticket (`does not have a ticket stapled to it`). Next step: re-dispatch
 or cut 0.1.22 with this fix in the tag, read the line, then fix the cause.
+
+2026-10-19: v0.1.21 stays an unpublished private tag (no public tag, Release
+or feed entry was ever created). Its contents ship as 0.1.22, cut from master
+with this fix in the tag.
