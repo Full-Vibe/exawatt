@@ -3825,3 +3825,20 @@ types, 1,355 affected tests, production build, R3F, Settings, all 22 visibility
 cases and the material bench, then stopped at native foreground because the
 Mac had relocked (`/tmp/exawatt-fleet-final-land.log`). Integration and installation
 remain pending; final evidence is owned by the delivery receipt.
+
+
+### Review repair reconciliation (2026-10-19)
+
+**The five repairs remain applicable on the current release branch.** Rebased
+onto `ba566a4c` (0.1.22) and reviewed the 45 intervening commits before delivery.
+BUG-299's Project-bounded Shift+arrow walk composes with exact Agent hit targets;
+its focused-Project assertions remain intact. BUG-295's anchored main-process
+evaluation replaces the context-loss failure described above, and its host-power
+diagnostics remain alongside native startup assertions. The new app lifecycle,
+notice persistence, renderer-origin cleanup and source-identity ownership remain
+unchanged. Architecture prose retains both lifecycle and native host observation.
+No repair was superseded; delivery uses the current scanning-test routing and
+recomputed surface gates. BUG-300's intermittent live-Demo parking remains an
+open diagnostic, with its enriched failure evidence preserved; this reconciliation
+does not claim an unobserved cause or repair. Final combined verification and
+installation are still required through the delivery queue.
