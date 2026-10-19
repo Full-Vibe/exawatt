@@ -5,7 +5,6 @@ import {
 } from '@exawatt/core/distribution';
 import {
   fetchDesktopBuild,
-  formatBuildSize,
   formatReleaseDate,
   parseLatestMacFeed,
 } from './desktop-build';
@@ -89,10 +88,7 @@ describe('desktop build feed', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it('formats size and date for people', () => {
-    expect(formatBuildSize(151228341)).toBe('151 MB');
-    expect(formatBuildSize(2_400_000_000)).toBe('2.40 GB');
-    expect(formatBuildSize(null)).toBeNull();
+  it('formats the release date for people', () => {
     expect(formatReleaseDate('2026-07-22T17:47:25.929Z')).toBe('July 22, 2026');
     expect(formatReleaseDate('nope')).toBeNull();
   });

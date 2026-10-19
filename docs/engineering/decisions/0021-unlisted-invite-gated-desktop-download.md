@@ -4,6 +4,21 @@
 Date: 2026-07-24
 Status: superseded in part — the invite gate is retired (2026-08-14); an account may stand before the download (2026-09-13, not yet built); the trust surface continues
 
+## Amendment (2026-10-19): the plain account is one click away, not the page
+
+Operator, 2026-10-19, on `/download` at 650 visible words: the page "has like
+2k words on it right now", and every word must help the visitor act or decide.
+The page a first-time visitor reads is now the product in one line, the
+download with its version, date and Apple silicon, and after the click the
+three steps to a first agent with "Open Exawatt" (decision `0053`'s disclosure
+stays beside that button, in one sentence). The plain account of what the app
+does on the machine still ships on this page, unchanged and still shared with
+`/download/community` through `MachineDisclosures`, but collapsed behind one
+quiet "What Exawatt reads and sends" toggle. "Trust surface" now means the
+account is true and one click from the button, not that it is the first thing
+read. Deleted outright: the Gatekeeper and notarization sentence, the build
+size, the macOS version note, and "it is early" lines on the hosted page.
+
 ## Amendment (2026-09-13): an account may stand in front of the public download
 
 Operator decision, answering a question batched after a design-partner session

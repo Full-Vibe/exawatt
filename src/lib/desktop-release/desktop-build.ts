@@ -92,12 +92,6 @@ export async function fetchDesktopBuild(
   }
 }
 
-export function formatBuildSize(bytes: number | null): string | null {
-  if (!bytes || bytes <= 0) return null;
-  if (bytes < 1_000_000_000) return `${Math.round(bytes / 1_000_000)} MB`;
-  return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
-}
-
 export function formatReleaseDate(value: string | null): string | null {
   if (!value) return null;
   const parsed = Date.parse(value);
