@@ -1,11 +1,23 @@
 // Generated for the public repository by the "public-dogfood-tooling" recipe.
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { acquireDeliveryLock, deliveryLockPath } from './lib/delivery-lock.mjs';
+import {
+  acquireDeliveryLock,
+  acquireDirectoryLock,
+  deliveryLockPath,
+} from './lib/delivery-lock.mjs';
 import {
   commitStagedApp,
   recoverAtomicDogfoodSwap,
@@ -101,6 +113,106 @@ test('repository delivery locks recover an abandoned incomplete owner record', a
     assert.equal(lock.reentrant, false);
   } finally {
     await lock?.release();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(settle => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+async function lockOwner(lockPath) {
+  return JSON.parse(await readFile(path.join(lockPath, 'owner.json'), 'utf8'));
+}
+
+// BUG-289: the lock is exclusive however long a holder is starved. A grace of
+// -1 makes every ownerless lock older than the staleness bound, so a holder
+// paused at any point of its acquisition is past it; the pause is a promise
+// the test resolves, never a timer.
+test('a directory lock stays exclusive while its holder is starved mid-acquisition', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-lock-starved-'));
+  const lockPath = path.join(root, 'counter.lock');
+  const visible = deferred();
+  const starved = deferred();
+  const first = acquireDirectoryLock(lockPath, {
+    log() {},
+    hooks: {
+      async created() {
+        visible.resolve();
+        await starved.promise;
+      },
+    },
+  });
+  let second;
+  try {
+    await visible.promise;
+    await assert.rejects(
+      acquireDirectoryLock(lockPath, {
+        incompleteOwnerGraceMs: -1,
+        timeoutMs: 100,
+        pollMs: 5,
+        log() {},
+      }).then(lock => {
+        second = lock;
+      }),
+      /Timed out waiting for the delivery transaction/u
+    );
+    starved.resolve();
+    const held = await first;
+    assert.equal((await lockOwner(lockPath)).token, held.token);
+    await held.release();
+    assert.deepEqual(await readdir(root), []);
+  } finally {
+    starved.resolve();
+    await second?.release();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('two waiters that both judge a dead holder stale never both take its lock', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-lock-break-'));
+  const lockPath = path.join(root, 'counter.lock');
+  const deadPid = spawnSync(process.execPath, ['-e', '']).pid;
+  await mkdir(lockPath);
+  await writeFile(
+    path.join(lockPath, 'owner.json'),
+    JSON.stringify({ token: 'crashed', pid: deadPid })
+  );
+  // The late waiter read the dead owner, then starves before acting on it
+  // while the early waiter breaks the lock and takes it.
+  const judged = deferred();
+  const resume = deferred();
+  let late;
+  let early;
+  const lateAttempt = acquireDirectoryLock(lockPath, {
+    timeoutMs: 100,
+    pollMs: 5,
+    log() {},
+    hooks: {
+      async breaking(owner) {
+        if (owner?.token !== 'crashed') return;
+        judged.resolve();
+        await resume.promise;
+      },
+    },
+  }).then(lock => {
+    late = lock;
+  });
+  try {
+    await judged.promise;
+    early = await acquireDirectoryLock(lockPath, { pollMs: 5, log() {} });
+    resume.resolve();
+    await assert.rejects(lateAttempt, /Timed out waiting/u);
+    assert.equal((await lockOwner(lockPath)).token, early.token);
+  } finally {
+    resume.resolve();
+    await lateAttempt.catch(() => {});
+    await late?.release();
+    await early?.release();
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -361,6 +361,65 @@ test('two tickets appending backlog entries at one anchor both land through the 
   }
 });
 
+// BUG-289: twelve allocations contend for the counter while its first holder
+// is starved inside the lock. Every caller has tried the lock at least once
+// before the holder resumes, so the interleaving that duplicated BUG-23 under
+// load is forced here; a grace of -1 puts any ownerless lock past its
+// staleness bound at once.
+test('id:next never hands one id to two callers while the counter holder is starved', async () => {
+  const fixture = createQueueFixture('exawatt-id-starved-');
+  try {
+    const root = fixture.main;
+    write(root, ROADMAP, `${BASE}\n### BUG-7 Seven\n`);
+    commit(root, 'ids');
+    git(root, ['push', '--quiet', '--no-verify', 'origin', 'master']);
+
+    const callers = 12;
+    const arrived = new Set();
+    let everyoneTried;
+    const allTried = new Promise(resolve => {
+      everyoneTried = resolve;
+    });
+    const arrive = caller => {
+      arrived.add(caller);
+      if (arrived.size === callers) everyoneTried();
+    };
+    const results = await Promise.allSettled(
+      Array.from({ length: callers }, (_, caller) =>
+        allocateIds(root, 'BUG', {
+          fetch: false,
+          lockOptions: {
+            incompleteOwnerGraceMs: -1,
+            pollMs: 1,
+            hooks: {
+              async created() {
+                arrive(caller);
+                await allTried;
+              },
+              contended() {
+                arrive(caller);
+              },
+            },
+          },
+        })
+      )
+    );
+    const failures = results.filter(result => result.status === 'rejected');
+    assert.deepEqual(
+      failures.map(failure => String(failure.reason)),
+      []
+    );
+    const ids = results.map(result => result.value.ids[0]);
+    assert.deepEqual(
+      ids.map(id => Number(id.slice(4))).sort((a, b) => a - b),
+      Array.from({ length: callers }, (_, index) => 8 + index),
+      ids.join(' ')
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test('id:next allocates past origin/master and the queue, once each, under concurrency', async () => {
   const fixture = createQueueFixture('exawatt-id-next-');
   try {

@@ -594,6 +594,19 @@ directory, keyed by a hash of the Git common directory. It is final-push mutual
 exclusion, not queue order and not a dogfood lock. The remote's ordinary
 non-fast-forward refusal remains the last race guard.
 
+Every lock under the delivery state root, the delivery and install locks, and
+the machine slots share one protocol in `scripts/lib/delivery-lock.mjs`
+(BUG-289), and each of its transitions is a single rename, so no process ever
+sees a half-made or half-removed lock. A holder writes its owner record into a
+private staging directory and renames it onto the lock path; it releases by
+renaming the lock aside before deleting it; a waiter breaks a lock whose owner
+process is gone by renaming it to a tombstone named by the directory's inode,
+kept for a day, so a second waiter that judged the same lock stale is refused
+instead of deleting the next holder's lock. The mkdir-then-write protocol it
+replaced let a waiter delete the lock of a holder starved between creating the
+directory and writing its owner, which is how two `id:next` callers received
+the same BUG id under load.
+
 Success output distinguishes:
 
 - `implemented=<sha>`: the original committed candidate;

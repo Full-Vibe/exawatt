@@ -161,7 +161,7 @@ async function takenCommits(root, { fetch = true } = {}) {
 export async function allocateIds(
   root,
   kind,
-  { count = 1, fetch = true } = {}
+  { count = 1, fetch = true, lockOptions = {} } = {}
 ) {
   if (!ID_KINDS[kind]) {
     throw new Error(
@@ -180,6 +180,7 @@ export async function allocateIds(
       timeoutMs: 30_000,
       pollMs: 20,
       log() {},
+      ...lockOptions,
     }
   );
   try {

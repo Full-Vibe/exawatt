@@ -104,13 +104,29 @@ test('an unreadable owner inside the grace window still counts as held', async t
   const arena = await slotArena();
   t.after(() => rm(arena, { recursive: true, force: true }));
 
-  // a slot directory with no owner file yet: a racing acquisition mid-write.
-  // A failed read must never look like a free slot.
-  await mkdir(path.join(arena, 'slot-0.lock'));
+  // A slot whose owner file cannot be parsed. A failed read must never look
+  // like a free slot.
+  const slotPath = path.join(arena, 'slot-0.lock');
+  await mkdir(slotPath);
+  await writeFile(path.join(slotPath, 'owner.json'), '{"tok');
   const attempt = await acquireMachineSlot(
     options(arena, { slotCount: 1, env: {} })
   );
   assert.equal(attempt.mode, 'unslotted');
+});
+
+test('an empty slot directory is crash debris and is taken', async t => {
+  const arena = await slotArena();
+  t.after(() => rm(arena, { recursive: true, force: true }));
+
+  // Slots are published with their owner file in one rename (BUG-289), so
+  // a live acquisition is never an empty directory.
+  await mkdir(path.join(arena, 'slot-0.lock'));
+  const attempt = await acquireMachineSlot(
+    options(arena, { slotCount: 1, env: {} })
+  );
+  assert.equal(attempt.mode, 'acquired');
+  await attempt.release();
 });
 
 test('EXAWATT_MACHINE_SLOTS=0 disables the pool explicitly', async () => {
