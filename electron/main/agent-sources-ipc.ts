@@ -9,7 +9,7 @@ import {
   setAgentSourceObservationStore,
 } from './pty/agent-source-registry';
 import { AgentSourceObservationStore } from './pty/agent-source-observation-store';
-import { defaultShell } from './pty/session-manager';
+import { defaultShell } from './pty/login-shell';
 import { agentSourceDeclaration } from './pty/generated-agent-source-declarations';
 
 // The last complete observation of every source outlives the process, so a

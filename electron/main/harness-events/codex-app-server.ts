@@ -16,8 +16,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
-import { defaultShell } from '../pty/session-manager';
-import { planLoginShell, shellQuote } from '../pty/login-shell';
+import { defaultShell, planLoginShell, shellQuote } from '../pty/login-shell';
 import type { HarnessEvent } from './delegation-state';
 import type { DelegationReportSink } from './delegation-monitor';
 import {

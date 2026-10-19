@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 import { CodexAppServerClient } from '../harness-events/codex-app-server';
+import { claudeProjectsRoot, harnessEnvironment } from './harness-homes';
 
 const MAX_NATIVE_BYTES = 256 * 1024;
 const MAX_CONTEXT_CHARS = 16_000;
@@ -69,12 +69,7 @@ export function cloneConversationText(
 }
 
 async function claudeContext(identity: Identity): Promise<string> {
-  const root =
-    process.env.EXAWATT_CLAUDE_PROJECTS_ROOT ??
-    path.join(
-      process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
-      'projects'
-    );
+  const root = claudeProjectsRoot(await harnessEnvironment());
   const canonical = await fs.realpath(identity.cwd);
   for (const cwd of new Set([identity.cwd, canonical])) {
     const file = path.join(

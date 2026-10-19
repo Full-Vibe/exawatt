@@ -9,8 +9,7 @@
  */
 import { execFile } from 'child_process';
 import path from 'path';
-import { defaultShell } from '../pty/session-manager';
-import { planLoginShell, shellQuote } from '../pty/login-shell';
+import { defaultShell, planLoginShell, shellQuote } from '../pty/login-shell';
 import type { SourceCommandArg, SourceCommandResult } from './transports/types';
 
 const SOURCE_COMMAND_TIMEOUT_MS = 20_000;

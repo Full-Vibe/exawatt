@@ -1,9 +1,8 @@
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
-import { defaultShell } from './session-manager';
 import type { PtySessionManager } from './session-manager';
-import { planLoginShell } from './login-shell';
+import { defaultShell, planLoginShell } from './login-shell';
 import {
   recordHostedCallHttpFailure,
   recordHostedCallTransportFailure,

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parseCodexConversationItems } from '../harness-events/codex-app-server';
 import fs from 'fs/promises';
 import os from 'os';
@@ -7,6 +7,12 @@ import {
   cloneConversationText,
   readSessionCloneContext,
 } from './session-clone-context';
+
+// The login shell's environment is the default; a fixture never spawns one.
+vi.mock('./harness-homes', async importOriginal => ({
+  ...(await importOriginal<typeof import('./harness-homes')>()),
+  harnessEnvironment: async () => ({ ...process.env }),
+}));
 
 const identity = {
   harness: 'claude',

@@ -16,9 +16,10 @@
  */
 import fs from 'fs';
 import net from 'net';
-import os from 'os';
 import path from 'path';
 import type { DeliveryResult } from '@exawatt/core';
+import { readConfigFile, type ConfigFileGrammar } from '@exawatt/core/server';
+import { claudeConfigDir } from '../../pty/harness-homes';
 import type { BusTransport } from './types';
 
 const ADAPTER = 'claude-socket';
@@ -35,15 +36,21 @@ interface ClaudeSocketOptions {
   alive?: (pid: number) => boolean;
 }
 
-/** Where this Session's Claude Code registered: its own `CLAUDE_CONFIG_DIR`,
- *  else `~/.claude` under its own HOME. Never Exawatt's environment, which
- *  lacks what a shell startup file sets when the app is opened from Finder. */
-function configDirOf(environment: Record<string, string | undefined>): string {
-  return (
-    environment.CLAUDE_CONFIG_DIR?.trim() ||
-    path.join(environment.HOME?.trim() || os.homedir(), '.claude')
-  );
-}
+const REGISTRY_ENTRY: ConfigFileGrammar<ClaudeRegistryEntry> = {
+  name: 'JSON',
+  parse: text => {
+    const value: unknown = JSON.parse(text);
+    return value && typeof value === 'object'
+      ? (value as ClaudeRegistryEntry)
+      : null;
+  },
+};
+
+/** The live socket for a Session, or why none was found: a registry entry
+ *  that could not be read may have been this Session's. */
+type ClaudeSocketLookup =
+  | { socket: string }
+  | { socket: null; unreadable: number };
 
 function processAlive(pid: number): boolean {
   try {
@@ -54,33 +61,37 @@ function processAlive(pid: number): boolean {
   }
 }
 
-/** The socket of the live Claude Code process holding `sessionId`, or null. */
+/** The socket of the live Claude Code process holding `sessionId`. */
 export async function findClaudeSocket(
   sessionsDir: string,
   sessionId: string,
   alive: (pid: number) => boolean = processAlive
-): Promise<string | null> {
+): Promise<ClaudeSocketLookup> {
   let names: string[];
   try {
     names = await fs.promises.readdir(sessionsDir);
   } catch {
-    return null;
+    return { socket: null, unreadable: 0 };
   }
   const matches: { socket: string; updatedAt: number }[] = [];
+  let unreadable = 0;
   await Promise.all(
     names
       .filter(name => /^\d+\.json$/.test(name))
       .map(async name => {
-        let entry: ClaudeRegistryEntry;
-        try {
-          entry = JSON.parse(
-            await fs.promises.readFile(path.join(sessionsDir, name), 'utf8')
-          ) as ClaudeRegistryEntry;
-        } catch {
-          // Claude rewrites these files while it runs; a torn read is one
-          // entry skipped, not a failed delivery.
+        // Claude rewrites these files while it runs: an entry gone since
+        // the listing is one fewer process; one that cannot be read (torn,
+        // refused) is counted, so "no socket" is never claimed over it.
+        const read = await readConfigFile(
+          path.join(sessionsDir, name),
+          REGISTRY_ENTRY
+        );
+        if (read.status === 'missing') return;
+        if (read.status === 'unreadable') {
+          unreadable += 1;
           return;
         }
+        const entry = read.value;
         if (
           entry.sessionId !== sessionId ||
           typeof entry.messagingSocketPath !== 'string' ||
@@ -95,7 +106,9 @@ export async function findClaudeSocket(
       })
   );
   matches.sort((a, b) => b.updatedAt - a.updatedAt);
-  return matches[0]?.socket ?? null;
+  return matches[0]
+    ? { socket: matches[0].socket }
+    : { socket: null, unreadable };
 }
 
 /** Write one line to a Unix socket; resolves with the failure code or null. */
@@ -138,19 +151,25 @@ export function claudeSocketTransport(
           adapter: ADAPTER,
         };
       }
-      const socket = await findClaudeSocket(
-        path.join(configDirOf(await context.sourceEnvironment()), 'sessions'),
+      const lookup = await findClaudeSocket(
+        path.join(
+          claudeConfigDir(await context.sourceEnvironment()),
+          'sessions'
+        ),
         target.harnessSessionId,
         alive
       );
-      if (!socket) {
+      if (lookup.socket === null) {
         return {
           state: 'undeliverable',
           reason:
-            'Claude Code has no message socket for this Session (a version before peer messages, or it is still starting)',
+            lookup.unreadable > 0
+              ? "Claude Code's session registry could not be read, so its message socket is unknown"
+              : 'Claude Code has no message socket for this Session (a version before peer messages, or it is still starting)',
           adapter: ADAPTER,
         };
       }
+      const socket = lookup.socket;
       const failure = await postLine(
         socket,
         `${JSON.stringify({

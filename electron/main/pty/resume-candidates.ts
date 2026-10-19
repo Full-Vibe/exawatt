@@ -1,4 +1,3 @@
-import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -9,7 +8,7 @@ import {
   nativeHistoryAdapter,
   parseOpencodeSessionList,
 } from './conversation-catalog';
-import { planLoginShell, shellQuote } from './login-shell';
+import { defaultShell, planLoginShell, shellQuote } from './login-shell';
 import type {
   HarnessResumeCandidate,
   ReconciledResumeIdentity,
@@ -139,11 +138,16 @@ export async function opencodeSessionAgent(
   return null;
 }
 
+/** One catalog per harness; a Codex fixture root gets its own. Without a
+ *  root, each read resolves the harness's own home (BUG-297). */
 function catalogFor(
   harness: AgentHarness,
-  sessionsRoot = path.join(os.homedir(), '.codex', 'sessions')
+  sessionsRoot?: string
 ): RecentConversationCatalog {
-  const key = harness === 'codex' ? sessionsRoot : `default:${harness}`;
+  const key =
+    harness === 'codex' && sessionsRoot !== undefined
+      ? `codex:${sessionsRoot}`
+      : `default:${harness}`;
   let catalog = catalogs.get(key);
   if (!catalog) {
     // Only this harness's own reader runs to answer its resume question.
@@ -167,21 +171,21 @@ export function invalidateResumeCandidates(
 export async function listResumeCandidates(
   harness: PtyHarness,
   cwd: string,
-  sessionsRoot = path.join(os.homedir(), '.codex', 'sessions'),
-  shell = process.env.SHELL || '/bin/zsh',
+  sessionsRoot?: string,
+  shell?: string,
   timeoutMs = 15_000
 ): Promise<HarnessResumeCandidate[]> {
   if (harness === 'shell') return [];
   if (harness === 'opencode') {
-    return listOpencodeResumeCandidates(cwd, shell, timeoutMs);
+    return listOpencodeResumeCandidates(
+      cwd,
+      shell ?? (await defaultShell()),
+      timeoutMs
+    );
   }
   // The third argument is the legacy Codex fixture/injection seam. Do not
   // reinterpret a custom Codex root as a Claude projects root.
-  if (
-    harness !== 'codex' &&
-    harness !== 'grok' &&
-    sessionsRoot !== path.join(os.homedir(), '.codex', 'sessions')
-  ) {
+  if (harness !== 'codex' && harness !== 'grok' && sessionsRoot !== undefined) {
     return [];
   }
   return (

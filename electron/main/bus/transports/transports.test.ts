@@ -100,7 +100,7 @@ describe('claude-socket', () => {
     );
     expect(
       await findClaudeSocket(path.join(dir, 'sessions'), sessionId, () => true)
-    ).toBe(path.join(dir, 's.sock'));
+    ).toEqual({ socket: path.join(dir, 's.sock') });
   });
 
   it('reads undeliverable, with the reason, when no live session holds the id', async () => {
@@ -114,6 +114,20 @@ describe('claude-socket', () => {
     );
     expect(result.state).toBe('undeliverable');
     expect(result.reason).toMatch(/socket/);
+  });
+
+  it('names an unreadable registry rather than claiming there is no socket', async () => {
+    const dir = scratch();
+    fs.mkdirSync(path.join(dir, 'sessions'), { recursive: true });
+    // Claude was rewriting this entry: torn, and it may be this Session's.
+    fs.writeFileSync(path.join(dir, 'sessions', '7.json'), '{"pid": 7, "sess');
+    const result = await claudeSocketTransport({ alive: () => true }).deliver(
+      envelope,
+      target(),
+      context({ sourceEnvironment: claudeHome(dir) })
+    );
+    expect(result.state).toBe('undeliverable');
+    expect(result.reason).toMatch(/registry could not be read/);
   });
 
   it('reads undeliverable before Claude Code has named its conversation', async () => {

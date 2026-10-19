@@ -21,7 +21,7 @@ import { ptySessions } from './pty/session-manager';
 import { isAgentNameRequest } from './pty/agent-name-store';
 import type { AgentNameRecord, AgentNameRequest } from '@exawatt/core';
 import { recordAgentLaunched } from './analytics-activity';
-import { defaultShell } from './pty/session-manager';
+import { defaultShell } from './pty/login-shell';
 import { listAgentModels, setAgentModelCatalogCache } from './pty/agent-models';
 import { AgentModelCatalogCache } from './pty/agent-model-catalog-cache';
 import {
@@ -241,7 +241,7 @@ export function registerPtyIPC(
       'conversation-summary-cache.json'
     ),
     projectSessions: () => closedLedger.list(),
-    openCodeShell: defaultShell,
+    agentNames: () => ptySessions.conversationAgentNames(),
     hostedSummariesEnabled: () =>
       loadSettings().conversationSummaries?.hosted !== false,
   });

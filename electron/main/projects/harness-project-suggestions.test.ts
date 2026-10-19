@@ -12,15 +12,12 @@ import {
   readHarnessProjectSuggestions,
   type HarnessProjectSuggestions,
 } from './harness-project-suggestions';
-import { loginModelEnvironment } from '../pty/agent-models';
+import { harnessEnvironment } from '../pty/harness-homes';
 
 // The login shell's environment is the default; a fixture never spawns one.
-vi.mock('../pty/agent-models', async importOriginal => ({
-  ...(await importOriginal<typeof import('../pty/agent-models')>()),
-  loginModelEnvironment: vi.fn(async () => ({})),
-}));
-vi.mock('../pty/session-manager', () => ({
-  defaultShell: async () => '/bin/test-login-shell',
+vi.mock('../pty/harness-homes', async importOriginal => ({
+  ...(await importOriginal<typeof import('../pty/harness-homes')>()),
+  harnessEnvironment: vi.fn(async () => ({})),
 }));
 
 /*
@@ -391,16 +388,13 @@ describe('harness project suggestions', () => {
   it('resolves CLAUDE_CONFIG_DIR and CODEX_HOME through the login shell by default', async () => {
     // A Finder-launched app has no shell rc variables in process.env.
     const fixture = buildFixture({ viaEnvironment: true });
-    vi.mocked(loginModelEnvironment).mockResolvedValueOnce(fixture.env);
+    vi.mocked(harnessEnvironment).mockResolvedValueOnce(fixture.env);
     const result = await readHarnessProjectSuggestions({
       home: fixture.home,
       now: NOW,
       temporaryRoots: [path.join(fixture.home, 'scratch')],
     });
-    expect(loginModelEnvironment).toHaveBeenCalledWith(
-      '/bin/test-login-shell',
-      fixture.home
-    );
+    expect(harnessEnvironment).toHaveBeenCalled();
     expect(result.suggestions[0]?.path).toBe(fixture.alpha);
     expect(result.suggestions[0]?.harnesses).toEqual(['codex', 'claude']);
   });

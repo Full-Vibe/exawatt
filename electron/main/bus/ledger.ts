@@ -283,8 +283,11 @@ export class JsonlBusStore implements BusStore {
     let text = '';
     try {
       text = await fs.promises.readFile(file, 'utf8');
-    } catch {
-      // No file yet: nothing to count.
+    } catch (error) {
+      // No file yet: nothing to count. Any other failure is the write's: a
+      // ledger that cannot be read must not be counted as empty, or its
+      // bound would let it grow past the limit.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
     const count = text
       .split('\n')

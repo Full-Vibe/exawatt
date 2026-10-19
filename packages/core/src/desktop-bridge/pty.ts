@@ -379,6 +379,10 @@ export interface RecentConversation {
   description: string | null;
   titleSource: 'native' | 'generated' | 'fallback';
   needsSummary: boolean;
+  /** The Agent name of the Exawatt Session that ran this conversation, from
+   *  main's one name owner; null for a conversation no named Session ran.
+   *  A row with nothing the operator said is titled with it (BUG-117). */
+  agentName: string | null;
   /** Exact provider identity when known; null for retained-only Exawatt
    *  Sessions that cannot safely auto-resume a harness conversation. */
   providerSessionId: string | null;

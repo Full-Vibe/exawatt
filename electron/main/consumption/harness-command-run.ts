@@ -11,8 +11,7 @@
  * harness makes the request under its own sign-in.
  */
 import { spawn } from 'node:child_process';
-import { defaultShell } from '../pty/session-manager';
-import { planLoginShell, shellQuote } from '../pty/login-shell';
+import { defaultShell, planLoginShell, shellQuote } from '../pty/login-shell';
 
 const MAX_STDOUT_BYTES = 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;

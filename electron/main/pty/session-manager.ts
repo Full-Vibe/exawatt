@@ -1,7 +1,5 @@
 import { EventEmitter } from 'events';
 import { modelChangeResumeOptions } from './session-model-change';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -39,7 +37,7 @@ import {
   opencodeSessionAgent,
 } from './resume-candidates';
 import { ownerOfCodexCandidate } from './codex-identity-match';
-import { planLoginShell } from './login-shell';
+import { defaultShell, planLoginShell } from './login-shell';
 import { probeHarnessPowerControl } from './harness-power-control';
 import { createHarnessPowerLaunch } from './harness-power-launch';
 import { OrderedWriteBuffer } from './ordered-write-buffer';
@@ -62,7 +60,6 @@ import type {
   SessionModelChange,
 } from '@exawatt/core/desktop-bridge';
 
-const execFileAsync = promisify(execFile);
 const OPENCODE_IDENTITY_TIMEOUT_MS = 20_000;
 
 /**
@@ -88,50 +85,6 @@ function exitSignalName(signal: number): string {
     ([, value]) => value === signal
   );
   return entry ? entry[0] : `signal ${signal}`;
-}
-
-/**
- * The USER'S default (login) shell — fish/zsh/bash/... — not a hardcoded one.
- * Directory services is the source of truth (the SHELL env var lies whenever
- * the app was launched from a different shell or a harness), but every
- * candidate is VALIDATED for executability — a stale UserShell (uninstalled
- * brew shell, Intel-path leftover) must degrade to the next candidate, not
- * brick every launch. Async: no subprocess/fs waits on the main event loop.
- */
-let cachedShell: string | null = null;
-async function isExecutable(p: string): Promise<boolean> {
-  try {
-    await fs.promises.access(p, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-export async function defaultShell(): Promise<string> {
-  if (cachedShell) return cachedShell;
-  const candidates: string[] = [];
-  if (process.platform === 'darwin') {
-    try {
-      const { stdout } = await execFileAsync('/usr/bin/dscl', [
-        '.',
-        '-read',
-        path.posix.join('/Users', os.userInfo().username),
-        'UserShell',
-      ]);
-      candidates.push(stdout.replace('UserShell:', '').trim());
-    } catch {
-      // directory services unavailable — fall through to env
-    }
-  }
-  candidates.push((process.env.SHELL || '').trim(), '/bin/zsh');
-  for (const c of candidates) {
-    if (c && (await isExecutable(c))) {
-      cachedShell = c;
-      return c;
-    }
-  }
-  cachedShell = '/bin/sh';
-  return cachedShell;
 }
 
 interface Session {
@@ -1293,6 +1246,34 @@ export class PtySessionManager extends EventEmitter {
     }));
   }
 
+  /**
+   * Who ran each conversation the launcher lists (BUG-117): the Agent name
+   * of its Session, found by durable id or by the provider identity main
+   * recorded for it. One read of the identities per list, not per row.
+   */
+  conversationAgentNames(): (conversation: {
+    harness: string;
+    durableSessionId: string | null;
+    providerSessionId: string | null;
+  }) => string | null {
+    const names = this.agentNames;
+    if (!names) return () => null;
+    const byProvider = new Map(
+      (this.identities?.list() ?? []).map(record => [
+        `${record.harness}:${record.harnessSessionId}`,
+        record.durableSessionId,
+      ])
+    );
+    return ({ harness, durableSessionId, providerSessionId }) => {
+      const durable =
+        durableSessionId ??
+        (providerSessionId
+          ? byProvider.get(`${harness}:${providerSessionId}`)
+          : undefined);
+      return durable ? (names.get(durable)?.name ?? null) : null;
+    };
+  }
+
   /** The operator's rename: the name every surface and the bus read. */
   async renameAgent(
     durableSessionId: string,
@@ -1344,21 +1325,43 @@ export class PtySessionManager extends EventEmitter {
 
   /**
    * The one place a name change lands: every live row of a changed record
-   * wears its new name, and every window hears of it. Called on every deal,
-   * re-key and rename, so no row or window keeps a name the record no
-   * longer has. Not a `session` event: that one means a process changed,
-   * and its observers (attention, the Codex app-server) would re-attach.
+   * wears its new name, every row of a released one wears none, and every
+   * window hears of it. Called on every deal, re-key, rename and release,
+   * so no row or window keeps a name the record no longer has. Not a
+   * `session` event: that one means a process changed, and its observers
+   * (attention, the Codex app-server) would re-attach.
    */
-  private applyAgentNames(changed: readonly AgentNameRecord[]): void {
-    if (changed.length === 0) return;
-    const byId = new Map(
-      changed.map(record => [record.durableSessionId, record])
+  private applyAgentNames(
+    changed: readonly AgentNameRecord[],
+    released: readonly string[] = []
+  ): void {
+    if (changed.length === 0 && released.length === 0) return;
+    const byId = new Map<string, string | null>(
+      changed.map(record => [record.durableSessionId, record.name])
     );
+    for (const id of released) byId.set(id, null);
     for (const session of this.sessions.values()) {
-      const record = byId.get(session.info.durableSessionId);
-      if (record) session.info.agentName = record.name;
+      const name = byId.get(session.info.durableSessionId);
+      if (name !== undefined) session.info.agentName = name;
     }
     this.emit('agent-names', this.agentNameRecords());
+  }
+
+  /**
+   * Free a Session's name for good (delete, purge) through the one owner,
+   * so other windows drop it too (BUG-296). Published even when the write
+   * fails: the record is already gone from memory, and so from every read.
+   */
+  private async releaseAgentName(durableSessionId: string): Promise<void> {
+    const store = this.agentNames;
+    if (!store) return;
+    const held = store.get(durableSessionId) !== null;
+    try {
+      await store.delete(durableSessionId);
+    } finally {
+      if (held && store.get(durableSessionId) === null)
+        this.applyAgentNames([], [durableSessionId]);
+    }
   }
 
   assignRoadmapItem(
@@ -1589,7 +1592,7 @@ export class PtySessionManager extends EventEmitter {
     await Promise.all([
       this.history?.delete(durableSessionId),
       this.identities?.delete(durableSessionId),
-      this.agentNames?.delete(durableSessionId),
+      this.releaseAgentName(durableSessionId),
     ]);
   }
 
@@ -1609,7 +1612,7 @@ export class PtySessionManager extends EventEmitter {
     await Promise.all([
       this.history?.delete(s.info.durableSessionId),
       this.identities?.delete(s.info.durableSessionId),
-      this.agentNames?.delete(s.info.durableSessionId),
+      this.releaseAgentName(s.info.durableSessionId),
     ]);
   }
 
@@ -1626,7 +1629,7 @@ export class PtySessionManager extends EventEmitter {
     await Promise.all([
       this.history?.delete(durableSessionId),
       this.identities?.delete(durableSessionId),
-      this.agentNames?.delete(durableSessionId),
+      this.releaseAgentName(durableSessionId),
     ]);
   }
 

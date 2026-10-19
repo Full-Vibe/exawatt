@@ -42,29 +42,28 @@ import type {
   ProjectSuggestionsRequest,
   ProjectSuggestionsResult,
 } from '@exawatt/core/desktop-bridge';
-import {
-  loginModelEnvironment,
-  parseCodexConfigText,
-} from '../pty/agent-models';
+import { parseCodexConfigText } from '../pty/agent-models';
 import {
   antigravityHome,
   antigravitySummariesFile,
   readAntigravityConversationSummaries,
 } from '../pty/antigravity-source';
 import {
-  claudeConfigDir,
-  codexHome,
-  codexStateDatabase,
   datedEntries,
   newestFirst,
   readHead,
 } from '../pty/conversation-catalog';
 import {
+  claudeConfigDir,
+  codexHome,
+  codexStateDatabase,
+  harnessEnvironment,
+} from '../pty/harness-homes';
+import {
   FOLD_WORKTREES,
   joinProjectFolder,
   type ProjectFolder,
 } from '../pty/project-resolve';
-import { defaultShell } from '../pty/session-manager';
 import { readSqliteSnapshot } from '../pty/sqlite-snapshot';
 
 /** ENG-046: activity older than this sits behind "Show older". */
@@ -693,8 +692,7 @@ export async function readHarnessProjectSuggestions(
   options: HarnessProjectSuggestionOptions = {}
 ): Promise<HarnessProjectSuggestions> {
   const home = path.resolve(options.home ?? os.homedir());
-  const env =
-    options.env ?? (await loginModelEnvironment(await defaultShell(), home));
+  const env = options.env ?? (await harnessEnvironment());
   const now = options.now ?? Date.now();
   const foldWorktrees = options.foldWorktrees ?? FOLD_WORKTREES;
   const join = options.join ?? joinProjectFolder;

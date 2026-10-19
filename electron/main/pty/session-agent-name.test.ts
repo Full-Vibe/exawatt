@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveAgentAddress } from '@exawatt/core';
+import { resolveAgentAddress, type AgentNameRecord } from '@exawatt/core';
 import { BusDirectory } from '../bus/directory';
 
 /**
@@ -205,6 +205,109 @@ describe('Agent names at launch', () => {
       'session-y',
     ]);
     expect(answer.skipped.every(skip => skip.reason.length > 0)).toBe(true);
+  });
+
+  it('tells every window when a deleted or purged Session frees its name', async () => {
+    const owner = await manager();
+    // A second window's mirror: main's push replaces it whole, as the
+    // renderer's `publishAgentNames` does.
+    let mirror = new Map<string, string>();
+    let pushes = 0;
+    owner.on('agent-names', (records: AgentNameRecord[]) => {
+      pushes += 1;
+      mirror = new Map(
+        records.map(record => [record.durableSessionId, record.name])
+      );
+    });
+    const live = await owner.create({
+      harness: 'claude',
+      cwd,
+      projectKey: 'project-one',
+      durableSessionId: 'session-a',
+    });
+    await owner.create({
+      harness: 'claude',
+      cwd,
+      projectKey: 'project-one',
+      durableSessionId: 'session-b',
+    });
+    await owner.ensureAgentNames([
+      {
+        durableSessionId: 'session-c',
+        projectKey: 'project-one',
+        harness: 'codex',
+      },
+    ]);
+    expect([...mirror.values()].sort()).toEqual([
+      'claude-1',
+      'claude-2',
+      'codex-1',
+    ]);
+
+    // A live Session deleted: killed, and its name freed everywhere.
+    await owner.deleteSession('session-a');
+    expect(owner.list().some(row => row.id === live.id)).toBe(false);
+    expect([...mirror.keys()].sort()).toEqual(['session-b', 'session-c']);
+
+    // A Session with no process deleted.
+    await owner.deleteSession('session-c');
+    expect([...mirror.keys()]).toEqual(['session-b']);
+
+    // An exited Session's history purged: its row, too, wears no name.
+    processes.at(-1)!.exit();
+    await owner.purgeHistory('session-b');
+    expect(mirror.size).toBe(0);
+    expect(
+      owner
+        .list()
+        .filter(row => row.durableSessionId === 'session-b')
+        .every(row => row.agentName === null)
+    ).toBe(true);
+
+    // Freeing a name no Session had tells no one.
+    const before = pushes;
+    await owner.deleteSession('session-never-named');
+    expect(pushes).toBe(before);
+  });
+
+  it("names the launcher's rows by the Session that ran them (BUG-117)", async () => {
+    const owner = await manager();
+    await owner.create({
+      harness: 'codex',
+      cwd,
+      projectKey: 'project-one',
+      durableSessionId: 'session-a',
+      resumeSessionId: '019a0000-0000-7000-8000-00000000000a',
+    });
+    await owner.ensureAgentNames([
+      {
+        durableSessionId: 'session-b',
+        projectKey: 'project-one',
+        harness: 'claude',
+      },
+    ]);
+    const nameOf = owner.conversationAgentNames();
+    expect(
+      nameOf({
+        harness: 'codex',
+        durableSessionId: null,
+        providerSessionId: '019a0000-0000-7000-8000-00000000000a',
+      })
+    ).toBe('codex-1');
+    expect(
+      nameOf({
+        harness: 'claude',
+        durableSessionId: 'session-b',
+        providerSessionId: null,
+      })
+    ).toBe('claude-1');
+    expect(
+      nameOf({
+        harness: 'claude',
+        durableSessionId: null,
+        providerSessionId: '019a0000-0000-7000-8000-00000000000a',
+      })
+    ).toBeNull();
   });
 
   it('frees a name only when the Session is gone for good', async () => {

@@ -1,5 +1,4 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { execFile } from 'child_process';
@@ -36,7 +35,14 @@ import {
   antigravitySummariesFile,
   readAntigravityConversationSummaries,
 } from './antigravity-source';
-import { planLoginShell, shellQuote } from './login-shell';
+import { defaultShell, planLoginShell, shellQuote } from './login-shell';
+import {
+  claudeProjectsRoot,
+  codexHome,
+  codexStateDatabase,
+  grokSessionsRoot,
+  harnessEnvironment,
+} from './harness-homes';
 import { readSqliteSnapshot } from './sqlite-snapshot';
 import type {
   ClosedSessionEntry,
@@ -47,8 +53,14 @@ const execFileAsync = promisify(execFile);
 
 export type ConversationHarness = Exclude<PtyHarness, 'shell'>;
 
-export interface ConversationDraft extends RecentConversation {
+export interface ConversationDraft extends Omit<
+  RecentConversation,
+  'agentName'
+> {
   fingerprint: string;
+  /** The title stands in for one: nothing the operator said or named it.
+   *  Defaults to a fallback title with no summary input. */
+  standInTitle?: boolean;
   summaryInput: string[];
   /** Exact provider identity when this adapter has one. Project Session rows
    * can be temporarily identity-less even when a matching harness file exists. */
@@ -86,34 +98,6 @@ const MAX_TITLE_CHARS = 72;
 const MAX_DESCRIPTION_CHARS = 220;
 const MAX_GENERATED_TITLE_WORDS = 6;
 const MAX_GENERATED_DESCRIPTION_WORDS = 18;
-/** Claude Code's configuration directory, as Claude Code itself resolves
- *  it: `CLAUDE_CONFIG_DIR` when set, `~/.claude` otherwise. */
-export function claudeConfigDir(
-  env: NodeJS.ProcessEnv = process.env,
-  home = os.homedir()
-): string {
-  return env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
-}
-
-/** Codex's home, as Codex resolves it: `CODEX_HOME` when set, `~/.codex`
- *  otherwise. Its sessions and its state database both live here. */
-export function codexHome(
-  env: NodeJS.ProcessEnv = process.env,
-  home = os.homedir()
-): string {
-  return env.CODEX_HOME || path.join(home, '.codex');
-}
-
-/** The Codex state database the catalog and the project suggestions read. */
-export function codexStateDatabase(
-  env: NodeJS.ProcessEnv = process.env,
-  home = os.homedir()
-): string {
-  return path.join(codexHome(env, home), 'state_5.sqlite');
-}
-
-const DEFAULT_CODEX_SESSIONS_ROOT = path.join(codexHome(), 'sessions');
-const DEFAULT_CODEX_STATE_DATABASE = codexStateDatabase();
 
 async function canonicalDirectory(directory: string): Promise<string> {
   try {
@@ -436,35 +420,56 @@ function normalizeDraftPresentation(
 export class CodexConversationAdapter implements ConversationCatalogAdapter {
   readonly harnesses = ['codex'] as const;
 
+  /** A `sessionsRoot` reads only that root (and `stateDatabase`, when
+   *  given); without one, Codex's own home is resolved at every list. */
   constructor(
-    private readonly sessionsRoot = process.env.EXAWATT_CODEX_SESSIONS_ROOT ??
-      DEFAULT_CODEX_SESSIONS_ROOT,
-    private readonly stateDatabase = process.env.EXAWATT_CODEX_STATE_DB ??
-      (sessionsRoot === DEFAULT_CODEX_SESSIONS_ROOT
-        ? DEFAULT_CODEX_STATE_DATABASE
-        : null),
+    private readonly sessionsRoot?: string,
+    private readonly stateDatabase?: string | null,
     private readonly projectDirectories: (
       projectDir: string
-    ) => Promise<string[]> = listProjectWorktrees
+    ) => Promise<string[]> = listProjectWorktrees,
+    private readonly environment: () => Promise<NodeJS.ProcessEnv> = harnessEnvironment
   ) {}
 
   async list(cwd: string): Promise<ConversationDraft[]> {
-    const scope = await ProjectDirectoryScope.create(
-      cwd,
-      this.projectDirectories
-    );
-    const indexed = await this.readIndexed(scope);
+    const [scope, store] = await Promise.all([
+      ProjectDirectoryScope.create(cwd, this.projectDirectories),
+      this.store(),
+    ]);
+    const indexed = await this.readIndexed(scope, store.stateDatabase);
     if (indexed) return indexed;
-    return this.readLegacyTranscripts(scope);
+    return this.readLegacyTranscripts(scope, store.sessionsRoot);
+  }
+
+  /** Where Codex keeps this operator's conversations, as his login shell
+   *  sets `CODEX_HOME` (BUG-297). The eval sandbox names its own root. */
+  private async store(): Promise<{
+    sessionsRoot: string;
+    stateDatabase: string | null;
+  }> {
+    if (this.sessionsRoot !== undefined) {
+      return {
+        sessionsRoot: this.sessionsRoot,
+        stateDatabase: this.stateDatabase ?? null,
+      };
+    }
+    const env = await this.environment();
+    const sandbox = env.EXAWATT_CODEX_SESSIONS_ROOT;
+    return {
+      sessionsRoot: sandbox ?? path.join(codexHome(env), 'sessions'),
+      stateDatabase:
+        env.EXAWATT_CODEX_STATE_DB ??
+        (sandbox ? null : codexStateDatabase(env)),
+    };
   }
 
   /** Codex already maintains an indexed thread catalog. Querying that source
    * by Project is both faster and more accurate than rediscovering metadata by
    * walking every rollout file. */
   private async readIndexed(
-    scope: ProjectDirectoryScope
+    scope: ProjectDirectoryScope,
+    stateDatabase: string | null
   ): Promise<ConversationDraft[] | null> {
-    const stateDatabase = this.stateDatabase;
     if (!stateDatabase) return null;
     try {
       // A private copy: opening Codex's WAL database in place writes its
@@ -545,9 +550,10 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
    * Only the first metadata record is read globally; transcript excerpts are
    * opened after Project membership is established. */
   private async readLegacyTranscripts(
-    scope: ProjectDirectoryScope
+    scope: ProjectDirectoryScope,
+    sessionsRoot: string
   ): Promise<ConversationDraft[]> {
-    const files = await recentFiles(this.sessionsRoot);
+    const files = await recentFiles(sessionsRoot);
     const rows: ConversationDraft[] = [];
 
     for (const { file, stat } of files) {
@@ -669,16 +675,21 @@ interface ClaudeIndexEntry {
 export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
   readonly harnesses = ['claude'] as const;
 
+  /** Without a `projectsRoot`, Claude Code's own is resolved at every list,
+   *  as the login shell sets `CLAUDE_CONFIG_DIR` (BUG-297). */
   constructor(
-    private readonly projectsRoot = process.env.EXAWATT_CLAUDE_PROJECTS_ROOT ??
-      path.join(claudeConfigDir(), 'projects'),
+    private readonly root?: string,
     private readonly projectDirectories: (
       projectDir: string
-    ) => Promise<string[]> = listProjectWorktrees
+    ) => Promise<string[]> = listProjectWorktrees,
+    private readonly environment: () => Promise<NodeJS.ProcessEnv> = harnessEnvironment
   ) {}
 
   async list(cwd: string): Promise<ConversationDraft[]> {
-    const workingDirectories = await this.projectDirectories(cwd);
+    const [workingDirectories, projectsRoot] = await Promise.all([
+      this.projectDirectories(cwd),
+      this.root ?? this.environment().then(claudeProjectsRoot),
+    ]);
     const scope = await ProjectDirectoryScope.create(
       cwd,
       async () => workingDirectories
@@ -687,7 +698,7 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
       directory => ({
         launchDirectory: directory,
         historyDirectory: path.join(
-          this.projectsRoot,
+          projectsRoot,
           directory.replace(/[^a-zA-Z0-9_-]/g, '-')
         ),
       })
@@ -705,14 +716,14 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
       const prefixes = projectDirectories.map(
         item => `${path.basename(item.historyDirectory)}-`
       );
-      for (const entry of await fs.promises.readdir(this.projectsRoot, {
+      for (const entry of await fs.promises.readdir(projectsRoot, {
         withFileTypes: true,
       })) {
         if (
           entry.isDirectory() &&
           prefixes.some(prefix => entry.name.startsWith(prefix))
         ) {
-          const directory = path.join(this.projectsRoot, entry.name);
+          const directory = path.join(projectsRoot, entry.name);
           if (!knownDirectories.has(directory))
             knownDirectories.set(directory, null);
         }
@@ -966,6 +977,9 @@ export class ProjectSessionConversationAdapter implements ConversationCatalogAda
               ? truncate(goal, MAX_DESCRIPTION_CHARS)
               : null,
         titleSource: goal ? 'generated' : 'fallback',
+        // The tab's default label stands in; a title the operator gave
+        // it does not.
+        standInTitle: !goal && !initialTask && entry.titleKind !== 'operator',
         needsSummary: !goal && !!initialTask,
         providerSessionId: entry.harnessSessionId,
         continuation: {
@@ -1032,8 +1046,7 @@ export class OpenCodeConversationAdapter implements ConversationCatalogAdapter {
   readonly harnesses = ['opencode'] as const;
 
   constructor(
-    private readonly resolveShell: () => Promise<string> = async () =>
-      process.env.SHELL || '/bin/zsh'
+    private readonly resolveShell: () => Promise<string> = defaultShell
   ) {}
 
   async list(projectDir: string): Promise<ConversationDraft[]> {
@@ -1183,21 +1196,25 @@ export class GrokConversationAdapter implements ConversationCatalogAdapter {
   readonly harnesses = ['grok'] as const;
 
   constructor(
-    private readonly sessionsRoot = grokSessionsRoot(),
-    private readonly maxSessions = 200
+    private readonly root?: string,
+    private readonly maxSessions = 200,
+    private readonly environment: () => Promise<NodeJS.ProcessEnv> = harnessEnvironment
   ) {}
 
   async list(projectDir: string): Promise<ConversationDraft[]> {
-    const scope = await ProjectDirectoryScope.create(projectDir);
+    const [scope, sessionsRoot] = await Promise.all([
+      ProjectDirectoryScope.create(projectDir),
+      this.root ?? this.environment().then(grokSessionsRoot),
+    ]);
     const directories = new Set<string>();
     for (const root of [projectDir, ...scope.roots]) {
       const encoded = encodeGrokCwdDirname(root);
-      if (encoded) directories.add(path.join(this.sessionsRoot, encoded));
+      if (encoded) directories.add(path.join(sessionsRoot, encoded));
     }
     // Long-cwd (slug+hash) directories cannot be derived, only recognized, so
     // the corpus is enumerated once and matched through each directory's own
     // `.cwd` record. Bounded by the same list the derived path uses.
-    for (const entry of await this.longFormDirectories()) {
+    for (const entry of await this.longFormDirectories(sessionsRoot)) {
       if (await scope.launchDirectory(entry.cwd)) directories.add(entry.path);
     }
     // Newest first across every directory BEFORE the bound, so a long
@@ -1270,19 +1287,19 @@ export class GrokConversationAdapter implements ConversationCatalogAdapter {
     );
   }
 
-  private async longFormDirectories(): Promise<
-    Array<{ path: string; cwd: string }>
-  > {
+  private async longFormDirectories(
+    sessionsRoot: string
+  ): Promise<Array<{ path: string; cwd: string }>> {
     let entries: string[];
     try {
-      entries = await fs.promises.readdir(this.sessionsRoot);
+      entries = await fs.promises.readdir(sessionsRoot);
     } catch {
       return [];
     }
     const out: Array<{ path: string; cwd: string }> = [];
     for (const entry of entries.slice(0, 5_000)) {
       if (decodeGrokCwdDirname(entry)) continue;
-      const directory = path.join(this.sessionsRoot, entry);
+      const directory = path.join(sessionsRoot, entry);
       let contents: string;
       try {
         contents = await fs.promises.readFile(
@@ -1315,11 +1332,13 @@ export class QwenConversationAdapter implements ConversationCatalogAdapter {
    *  `runtimeOutputDir` the operator changes is followed. */
   constructor(
     private readonly runtimeRoot?: string,
-    private readonly maxSessions = 200
+    private readonly maxSessions = 200,
+    private readonly environment: () => Promise<NodeJS.ProcessEnv> = harnessEnvironment
   ) {}
 
   async list(projectDir: string): Promise<ConversationDraft[]> {
-    const runtimeRoot = this.runtimeRoot ?? qwenRuntimeRoot();
+    const runtimeRoot =
+      this.runtimeRoot ?? qwenRuntimeRoot(await this.environment());
     const scope = await ProjectDirectoryScope.create(projectDir);
     const directories = new Set(
       [projectDir, ...scope.roots].map(root =>
@@ -1496,16 +1515,8 @@ export async function readHead(file: string, bytes: number): Promise<string> {
   }
 }
 
-export function grokSessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.EXAWATT_GROK_SESSIONS_ROOT) return env.EXAWATT_GROK_SESSIONS_ROOT;
-  if (env.GROK_HOME) return path.join(env.GROK_HOME, 'sessions');
-  return path.join(os.homedir(), '.grok', 'sessions');
-}
-
 /** What a harness's own retained-history reader may need from its caller. */
 interface NativeHistoryOptions {
-  /** OpenCode lists its sessions through the operator's login shell. */
-  openCodeShell?: () => Promise<string>;
   /** Legacy Codex fixture seam; omitted means Codex's own default root. */
   codexSessionsRoot?: string;
 }
@@ -1522,8 +1533,7 @@ const NATIVE_HISTORY_ADAPTERS: Record<
   claude: () => new ClaudeConversationAdapter(),
   codex: ({ codexSessionsRoot }) =>
     new CodexConversationAdapter(codexSessionsRoot),
-  opencode: ({ openCodeShell }) =>
-    new OpenCodeConversationAdapter(openCodeShell),
+  opencode: () => new OpenCodeConversationAdapter(),
   grok: () => new GrokConversationAdapter(),
   qwen: () => new QwenConversationAdapter(),
   antigravity: () => new AntigravityConversationAdapter(),
@@ -1536,8 +1546,18 @@ export function nativeHistoryAdapter(
   return NATIVE_HISTORY_ADAPTERS[harness](options);
 }
 
+/** Who ran a conversation, as main's name owner knows it (BUG-117). */
+type ConversationAgentNames = () => (conversation: {
+  harness: ConversationHarness;
+  durableSessionId: string | null;
+  providerSessionId: string | null;
+}) => string | null;
+
 export interface ConversationCatalogOptions {
   distribution?: DistributionContractV2;
+  /** The Agent name of the Session behind each row, read at every list so
+   *  a rename shows at once. Omitted, rows carry no name. */
+  agentNames?: ConversationAgentNames;
   adapters?: ConversationCatalogAdapter[];
   projectSessions?: () => ClosedSessionEntry[];
   cacheFile?: string;
@@ -1546,11 +1566,11 @@ export interface ConversationCatalogOptions {
   fetch?: typeof fetch;
   hostedSummariesEnabled?: () => boolean;
   now?: () => number;
-  openCodeShell?: () => Promise<string>;
 }
 
 export class RecentConversationCatalog {
   private readonly adapters: ConversationCatalogAdapter[];
+  private readonly agentNames: ConversationAgentNames;
   private readonly cacheFile: string | null;
   private readonly summaryEndpoint: DistributionEndpointRefV1 | null;
   private readonly fetchFn: typeof fetch;
@@ -1570,13 +1590,12 @@ export class RecentConversationCatalog {
   constructor(options: ConversationCatalogOptions = {}) {
     const distribution = options.distribution ?? COMMUNITY_DISTRIBUTION;
     this.adapters = options.adapters ?? [
-      ...AGENT_HARNESSES.map(harness =>
-        nativeHistoryAdapter(harness, { openCodeShell: options.openCodeShell })
-      ),
+      ...AGENT_HARNESSES.map(harness => nativeHistoryAdapter(harness)),
       ...(options.projectSessions
         ? [new ProjectSessionConversationAdapter(options.projectSessions)]
         : []),
     ];
+    this.agentNames = options.agentNames ?? (() => () => null);
     this.cacheFile = options.cacheFile ?? null;
     this.summaryEndpoint =
       options.summaryEndpoint !== undefined
@@ -1591,7 +1610,7 @@ export class RecentConversationCatalog {
   }
 
   async list(cwd: string): Promise<RecentConversation[]> {
-    return (await this.listDrafts(cwd)).map(stripPrivateFields);
+    return (await this.listDrafts(cwd)).map(this.presenter());
   }
 
   async listForHarness(
@@ -1601,7 +1620,7 @@ export class RecentConversationCatalog {
     if (harness === 'shell') return [];
     return (await this.listDrafts(cwd, harness))
       .filter(candidate => candidate.harness === harness)
-      .map(stripPrivateFields);
+      .map(this.presenter());
   }
 
   /**
@@ -1658,7 +1677,7 @@ export class RecentConversationCatalog {
         candidate => candidate.needsSummary && candidate.summaryInput.length
       )
       .slice(0, MAX_SUMMARY_CONVERSATIONS);
-    if (pending.length === 0) return drafts.map(stripPrivateFields);
+    if (pending.length === 0) return drafts.map(this.presenter());
 
     // Failures below are genuine attempt-and-fail and are counted (ENG-030
     // OS1.5b): the disabled-in-Settings and missing-token cases already threw
@@ -1704,7 +1723,43 @@ export class RecentConversationCatalog {
       }
     });
     this.invalidate(cwd);
-    return (await this.listDrafts(cwd)).map(stripPrivateFields);
+    return (await this.listDrafts(cwd)).map(this.presenter());
+  }
+
+  /**
+   * A draft as the launcher reads it: private fields dropped, the Agent name
+   * of the Session that ran it attached, and a stand-in title replaced by
+   * that name, so a row with nothing the operator said reads as the Agent
+   * he knows rather than a generic label (BUG-117).
+   */
+  private presenter(): (draft: ConversationDraft) => RecentConversation {
+    const nameOf = this.agentNames();
+    return draft => {
+      const {
+        fingerprint: _fingerprint,
+        summaryInput,
+        providerIdentity: _providerIdentity,
+        correlationKey: _correlationKey,
+        standInTitle,
+        ...publicRow
+      } = draft;
+      const agentName = nameOf({
+        harness: draft.harness,
+        durableSessionId:
+          draft.continuation.kind === 'exawatt-session'
+            ? draft.continuation.durableSessionId
+            : null,
+        providerSessionId: draft.providerSessionId,
+      });
+      const standIn =
+        standInTitle ??
+        (draft.titleSource === 'fallback' && summaryInput.length === 0);
+      return {
+        ...publicRow,
+        title: agentName && standIn ? agentName : publicRow.title,
+        agentName,
+      };
+    };
   }
 
   private async listDrafts(
@@ -1947,15 +2002,4 @@ function mergeConversationDrafts(
     providerIdentity: left.providerIdentity ?? right.providerIdentity,
     correlationKey: presentation.correlationKey ?? other.correlationKey,
   };
-}
-
-function stripPrivateFields(candidate: ConversationDraft): RecentConversation {
-  const {
-    fingerprint: _fingerprint,
-    summaryInput: _summaryInput,
-    providerIdentity: _providerIdentity,
-    correlationKey: _correlationKey,
-    ...publicRow
-  } = candidate;
-  return publicRow;
 }

@@ -1,5 +1,3 @@
-import { spawn } from 'child_process';
-import * as os from 'os';
 import * as path from 'path';
 import { parse as parseToml } from 'smol-toml';
 import {
@@ -15,7 +13,12 @@ import {
   AgentModelCatalogCache,
   catalogCacheKey,
 } from './agent-model-catalog-cache';
-import { planLoginShell, shellQuote } from './login-shell';
+import { runLoginShell, shellQuote } from './login-shell';
+import {
+  claudeConfigDir,
+  codexHome,
+  loginModelEnvironment,
+} from './harness-homes';
 import {
   readQwenConfiguredModels,
   readQwenUserSettings,
@@ -32,95 +35,6 @@ import type {
   AgentModelCatalog,
   AgentModelOption,
 } from '@exawatt/core/desktop-bridge';
-
-/**
- * `execFile`'s own `timeout` is not a deadline (ENG-016 D49).
- *
- * It sends SIGTERM to the process it spawned — the LOGIN SHELL — and then
- * keeps waiting for stdio EOF. A grandchild like `claude` or `opencode`
- * inherits those pipes, survives its parent's SIGTERM, and holds stdout open,
- * so the promise never settles. Upstream, `pty:listAgentModels` never
- * answered, the composer's `modelCatalog` stayed null, and the effort control
- * span "Detecting…" for the rest of the session (operator, 2026-08-04).
- *
- * This wrapper spawns a detached process GROUP and, at the deadline, kills the
- * whole group and resolves with whatever was read. A probe that misses its
- * deadline is a probe that failed: callers already degrade to configured
- * values with honest provenance.
- */
-async function execWithDeadline(
-  shell: string,
-  command: string,
-  options: { cwd: string; timeout: number; maxBuffer: number }
-): Promise<{ stdout: string; timedOut: boolean }> {
-  const plan = planLoginShell(shell, {
-    command,
-    directory: options.cwd,
-  });
-  const child = spawn(shell, plan.args, {
-    cwd: plan.cwd,
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let stdout = '';
-  let overflowed = false;
-  child.stdout.setEncoding('utf8');
-  child.stdout.on('data', chunk => {
-    if (overflowed) return;
-    stdout += String(chunk);
-    if (stdout.length > options.maxBuffer) {
-      overflowed = true;
-      stdout = stdout.slice(0, options.maxBuffer);
-    }
-  });
-  // stderr is drained but discarded: an unread pipe fills and blocks the child.
-  child.stderr.resume();
-
-  const killGroup = () => {
-    if (child.pid === undefined) return;
-    try {
-      // Negative pid targets the whole detached group, so a grandchild that
-      // outlives its shell cannot keep the pipes — or this promise — open.
-      process.kill(-child.pid, 'SIGKILL');
-    } catch {
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        // Already gone.
-      }
-    }
-  };
-
-  return new Promise(resolve => {
-    let settled = false;
-    const finish = (timedOut: boolean) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (timedOut) killGroup();
-      resolve({ stdout, timedOut });
-    };
-    const timer = setTimeout(() => finish(true), options.timeout);
-    timer.unref?.();
-    child.on('close', () => finish(false));
-    child.on('error', () => finish(false));
-  });
-}
-
-const MODEL_ENV_KEYS = [
-  'HOME',
-  'CODEX_HOME',
-  'CLAUDE_CONFIG_DIR',
-  'ANTHROPIC_MODEL',
-  'ANTHROPIC_CUSTOM_MODEL_OPTION',
-  'ANTHROPIC_CUSTOM_MODEL_OPTION_NAME',
-  'ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION',
-  'CLAUDE_CODE_EFFORT_LEVEL',
-  'XDG_CONFIG_HOME',
-  'OPENCODE_CONFIG',
-  'OPENCODE_CONFIG_DIR',
-  'OPENCODE_CONFIG_CONTENT',
-] as const;
 
 interface CodexReasoningLevel {
   effort?: unknown;
@@ -828,7 +742,7 @@ async function readAntigravityModelCatalog(
     const catalogCommand = executable
       ? `${shellQuote(executable)} models`
       : 'agy models';
-    const result = await execWithDeadline(shell, catalogCommand, {
+    const result = await runLoginShell(shell, catalogCommand, {
       cwd,
       timeout: 20_000,
       maxBuffer: 2 * 1024 * 1024,
@@ -1149,44 +1063,6 @@ const CLAUDE_SETTINGS_GRAMMAR: ConfigFileGrammar<Record<string, unknown>> = {
   parse: parseClaudeSettingsText,
 };
 
-/**
- * The harness-relevant variables (`MODEL_ENV_KEYS`: `CODEX_HOME`,
- * `CLAUDE_CONFIG_DIR`, ...) as the user's login shell sets them, over this
- * process's environment. A Finder-launched app inherits no shell rc
- * variables, so anything that locates a harness's files resolves through
- * this rather than `process.env`.
- */
-export async function loginModelEnvironment(
-  shell: string,
-  cwd: string
-): Promise<NodeJS.ProcessEnv> {
-  const printCommand = MODEL_ENV_KEYS.map(
-    key => `printf '${key}=%s\\n' "\${${key}-}"`
-  ).join('; ');
-  try {
-    const result = await execWithDeadline(shell, printCommand, {
-      cwd,
-      timeout: 2_000,
-      maxBuffer: 64 * 1024,
-    });
-    const resolved: NodeJS.ProcessEnv = { ...process.env };
-    for (const line of result.stdout.split('\n')) {
-      const separator = line.indexOf('=');
-      if (separator < 1) continue;
-      const key = line.slice(0, separator);
-      if (!MODEL_ENV_KEYS.includes(key as (typeof MODEL_ENV_KEYS)[number])) {
-        continue;
-      }
-      const value = line.slice(separator + 1);
-      if (value) resolved[key] = value;
-      else delete resolved[key];
-    }
-    return resolved;
-  } catch {
-    return { ...process.env };
-  }
-}
-
 function testHarnessExecutable(harness: string): string | null {
   return process.env.EXAWATT_TEST === '1' &&
     process.env.EXAWATT_TEST_HARNESS_BIN &&
@@ -1217,7 +1093,7 @@ async function readClaudeModelOptions(
     `${invocation} --safe-mode --input-format stream-json ` +
     `--output-format stream-json --verbose -p`;
   try {
-    const result = await execWithDeadline(shell, catalogCommand, {
+    const result = await runLoginShell(shell, catalogCommand, {
       cwd,
       timeout: 20_000,
       maxBuffer: 5 * 1024 * 1024,
@@ -1280,9 +1156,7 @@ async function listClaudeModels(
   environment: NodeJS.ProcessEnv,
   refresh = false
 ): Promise<AgentModelCatalog> {
-  const configDir =
-    environment.CLAUDE_CONFIG_DIR ||
-    path.join(environment.HOME || os.homedir(), '.claude');
+  const configDir = claudeConfigDir(environment);
   // Lowest → highest personal/project precedence. Managed policy is still
   // enforced by Claude Code itself; this catalog never claims to replace it.
   const files = [
@@ -1316,9 +1190,7 @@ async function listCodexModels(
   shell: string,
   environment: NodeJS.ProcessEnv
 ): Promise<AgentModelCatalog> {
-  const configDir =
-    environment.CODEX_HOME ||
-    path.join(environment.HOME || os.homedir(), '.codex');
+  const configDir = codexHome(environment);
   const config = await readConfigFile(
     path.join(configDir, 'config.toml'),
     CODEX_CONFIG_GRAMMAR
@@ -1334,7 +1206,7 @@ async function listCodexModels(
     const catalogCommand = executable
       ? `${shellQuote(executable)} debug models`
       : 'codex debug models';
-    const result = await execWithDeadline(shell, catalogCommand, {
+    const result = await runLoginShell(shell, catalogCommand, {
       cwd,
       timeout: 5_000,
       maxBuffer: 5 * 1024 * 1024,
@@ -1445,7 +1317,7 @@ async function readOpencodeModelCatalog(
     const catalogCommand = executable
       ? `${shellQuote(executable)} models --verbose`
       : 'opencode models --verbose';
-    const result = await execWithDeadline(shell, catalogCommand, {
+    const result = await runLoginShell(shell, catalogCommand, {
       cwd,
       timeout: 20_000,
       maxBuffer: 8 * 1024 * 1024,
@@ -1489,7 +1361,7 @@ export async function readGrokModelCatalog(
     const catalogCommand = executable
       ? `${shellQuote(executable)} models`
       : 'grok models';
-    const result = await execWithDeadline(shell, catalogCommand, {
+    const result = await runLoginShell(shell, catalogCommand, {
       cwd,
       timeout: 20_000,
       maxBuffer: 2 * 1024 * 1024,
@@ -1527,7 +1399,8 @@ const MODEL_CATALOG_READERS: Record<
   opencode: ({ cwd, shell, environment, refresh }) =>
     listOpencodeModels(cwd, shell, environment, refresh),
   grok: ({ cwd, shell }) => readGrokModelCatalog(cwd, shell),
-  qwen: async () => qwenModelCatalog(readQwenUserSettings()),
+  qwen: async ({ environment }) =>
+    qwenModelCatalog(readQwenUserSettings(environment)),
   antigravity: ({ cwd, shell }) => readAntigravityModelCatalog(cwd, shell),
 };
 

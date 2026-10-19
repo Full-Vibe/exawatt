@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MessageRecord } from '@exawatt/core';
 import { JsonlBusStore } from './ledger';
 
@@ -62,6 +62,29 @@ describe('JsonlBusStore', () => {
       'queued',
       'delivered',
     ]);
+  });
+
+  it('fails a write over a ledger it cannot read, never counting it as empty', async () => {
+    const dir = root();
+    await new JsonlBusStore(dir).append(record('m1', 1));
+    const file = path.join(dir, fs.readdirSync(dir)[0]);
+    const before = fs.readFileSync(file, 'utf8');
+    // A fresh process: the tail check reads the file, the count read fails.
+    const read = fs.promises.readFile;
+    const spy = vi
+      .spyOn(fs.promises, 'readFile')
+      .mockImplementationOnce(read)
+      .mockRejectedValueOnce(
+        Object.assign(new Error('EIO: i/o error'), { code: 'EIO' })
+      );
+    try {
+      await expect(
+        new JsonlBusStore(dir).append(record('m2', 2))
+      ).rejects.toThrow(/EIO/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
   });
 
   it('keeps one ledger per Project', async () => {

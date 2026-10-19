@@ -1,6 +1,8 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execFile, spawn } from 'child_process';
+import { promisify } from 'util';
 
 /**
  * ONE owner for "run something through the operator's LOGIN shell".
@@ -41,6 +43,50 @@ import * as fs from 'fs';
  * his dotfiles. It stops Exawatt being the delivery vehicle, and it does so for
  * every startup side effect, not for this one file.
  */
+
+/**
+ * The USER'S default (login) shell — fish/zsh/bash/... — not a hardcoded one.
+ * Directory services is the source of truth (the SHELL env var lies whenever
+ * the app was launched from a different shell or a harness), but every
+ * candidate is VALIDATED for executability — a stale UserShell (uninstalled
+ * brew shell, Intel-path leftover) must degrade to the next candidate, not
+ * brick every launch. Async: no subprocess/fs waits on the main event loop.
+ */
+let cachedShell: string | null = null;
+async function isExecutable(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+export async function defaultShell(): Promise<string> {
+  if (cachedShell) return cachedShell;
+  const candidates: string[] = [];
+  if (process.platform === 'darwin') {
+    try {
+      const { stdout } = await promisify(execFile)('/usr/bin/dscl', [
+        '.',
+        '-read',
+        path.posix.join('/Users', os.userInfo().username),
+        'UserShell',
+      ]);
+      candidates.push(stdout.replace('UserShell:', '').trim());
+    } catch {
+      // directory services unavailable — fall through to env
+    }
+  }
+  candidates.push((process.env.SHELL || '').trim(), '/bin/zsh');
+  for (const c of candidates) {
+    if (c && (await isExecutable(c))) {
+      cachedShell = c;
+      return c;
+    }
+  }
+  cachedShell = '/bin/sh';
+  return cachedShell;
+}
 
 /** Families differ in how a login shell is asked to run one command. */
 export type LoginShellFamily = 'fish' | 'csh' | 'powershell' | 'posix';
@@ -242,4 +288,78 @@ export async function observedShellStartupArtifacts(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * `execFile`'s own `timeout` is not a deadline (ENG-016 D49).
+ *
+ * It sends SIGTERM to the process it spawned — the LOGIN SHELL — and then
+ * keeps waiting for stdio EOF. A grandchild like `claude` or `opencode`
+ * inherits those pipes, survives its parent's SIGTERM, and holds stdout open,
+ * so the promise never settles. Upstream, `pty:listAgentModels` never
+ * answered, the composer's `modelCatalog` stayed null, and the effort control
+ * span "Detecting…" for the rest of the session (operator, 2026-08-04).
+ *
+ * This wrapper spawns a detached process GROUP and, at the deadline, kills the
+ * whole group and resolves with whatever was read. A probe that misses its
+ * deadline is a probe that failed: callers already degrade to configured
+ * values with honest provenance.
+ */
+export async function runLoginShell(
+  shell: string,
+  command: string,
+  options: { cwd: string; timeout: number; maxBuffer: number }
+): Promise<{ stdout: string; timedOut: boolean }> {
+  const plan = planLoginShell(shell, {
+    command,
+    directory: options.cwd,
+  });
+  const child = spawn(shell, plan.args, {
+    cwd: plan.cwd,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let overflowed = false;
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', chunk => {
+    if (overflowed) return;
+    stdout += String(chunk);
+    if (stdout.length > options.maxBuffer) {
+      overflowed = true;
+      stdout = stdout.slice(0, options.maxBuffer);
+    }
+  });
+  // stderr is drained but discarded: an unread pipe fills and blocks the child.
+  child.stderr.resume();
+
+  const killGroup = () => {
+    if (child.pid === undefined) return;
+    try {
+      // Negative pid targets the whole detached group, so a grandchild that
+      // outlives its shell cannot keep the pipes — or this promise — open.
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // Already gone.
+      }
+    }
+  };
+
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (timedOut: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (timedOut) killGroup();
+      resolve({ stdout, timedOut });
+    };
+    const timer = setTimeout(() => finish(true), options.timeout);
+    timer.unref?.();
+    child.on('close', () => finish(false));
+    child.on('error', () => finish(false));
+  });
 }

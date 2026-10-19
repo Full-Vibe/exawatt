@@ -25,6 +25,7 @@ import {
   COMMUNITY_DISTRIBUTION,
   type DistributionContractV2,
 } from '@exawatt/core/distribution';
+import type { ClosedSessionEntry } from '@exawatt/core/desktop-bridge';
 
 const OFFICIAL_SUMMARY_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
@@ -748,6 +749,92 @@ describe('RecentConversationCatalog', () => {
     });
   });
 
+  it("titles a row nothing was said in with its Agent's name (BUG-117)", async () => {
+    const projectDir = await temporaryRoot('exawatt-named-recents-');
+    const closed = (
+      durableSessionId: string,
+      extra: Partial<ClosedSessionEntry> = {}
+    ): ClosedSessionEntry => ({
+      durableSessionId,
+      title: 'Claude Code',
+      goal: null,
+      harness: 'claude',
+      cwd: projectDir,
+      projectDir,
+      projectName: 'Project',
+      harnessSessionId: null,
+      initialTask: null,
+      closedAt: 10,
+      ...extra,
+    });
+    const provider: ConversationDraft = {
+      id: 'codex-thread-1',
+      harness: 'codex',
+      cwd: projectDir,
+      startedAt: 1,
+      updatedAt: 5,
+      title: 'Codex conversation',
+      description: null,
+      titleSource: 'fallback',
+      needsSummary: false,
+      providerSessionId: 'codex-thread-1',
+      continuation: { kind: 'provider' },
+      fingerprint: '5',
+      summaryInput: [],
+      providerIdentity: 'codex-thread-1',
+      correlationKey: null,
+    };
+    const names = new Map([
+      ['untitled', 'claude-1'],
+      ['tasked', 'claude-2'],
+      ['renamed', 'claude-3'],
+      ['ran-codex', 'reviewer'],
+    ]);
+    const rows = await new RecentConversationCatalog({
+      adapters: [
+        { harnesses: ['codex'], list: vi.fn(async () => [provider]) },
+        new ProjectSessionConversationAdapter(() => [
+          closed('untitled'),
+          closed('tasked', { initialTask: 'Fix the flaky test' }),
+          closed('renamed', { title: 'Release prep', titleKind: 'operator' }),
+          closed('never-named'),
+        ]),
+      ],
+      agentNames: () => conversation =>
+        names.get(
+          conversation.durableSessionId ??
+            (conversation.providerSessionId === 'codex-thread-1'
+              ? 'ran-codex'
+              : '')
+        ) ?? null,
+    }).list(projectDir);
+    const row = (id: string) =>
+      rows.find(candidate => candidate.id === id) ?? null;
+
+    expect(row('untitled')).toMatchObject({
+      title: 'claude-1',
+      agentName: 'claude-1',
+      harness: 'claude',
+    });
+    expect(row('tasked')).toMatchObject({
+      title: 'Fix the flaky test',
+      agentName: 'claude-2',
+    });
+    expect(row('renamed')).toMatchObject({
+      title: 'Release prep',
+      agentName: 'claude-3',
+    });
+    expect(row('never-named')).toMatchObject({
+      title: 'Claude Code',
+      agentName: null,
+    });
+    expect(row('codex-thread-1')).toMatchObject({
+      title: 'reviewer',
+      agentName: 'reviewer',
+      harness: 'codex',
+    });
+  });
+
   it('redacts common credentials before hosted summary transport', () => {
     const raw =
       'authorization: Bearer secret-token-value password=hunter2 sk-ant-api03-longsecrettoken';
@@ -1248,16 +1335,12 @@ describe('operator conversation discovery (BUG-117)', () => {
     const { cwd, write, root } = await claudeFixture();
     await write(cwd, 'configured-source');
     await fs.promises.symlink(root, path.join(config, 'projects'));
-    vi.stubEnv('CLAUDE_CONFIG_DIR', config);
-    vi.stubEnv('EXAWATT_CLAUDE_PROJECTS_ROOT', undefined);
-    try {
-      const rows = await new ClaudeConversationAdapter(undefined, async () => [
-        cwd,
-      ]).list(cwd);
-      expect(rows.map(row => row.id)).toEqual(['configured-source']);
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    const rows = await new ClaudeConversationAdapter(
+      undefined,
+      async () => [cwd],
+      async () => ({ CLAUDE_CONFIG_DIR: config })
+    ).list(cwd);
+    expect(rows.map(row => row.id)).toEqual(['configured-source']);
   });
 
   it('filters Codex children before spending the operator result limit', async () => {

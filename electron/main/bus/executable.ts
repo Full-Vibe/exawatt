@@ -15,6 +15,11 @@
  */
 import fs from 'fs';
 import path from 'path';
+import {
+  describeUnreadableConfig,
+  readConfigFile,
+  type ConfigFileGrammar,
+} from '@exawatt/core/server';
 
 export const BUS_EXECUTABLE_NAME = 'exawatt';
 
@@ -78,23 +83,37 @@ export async function installBusExecutable(
   const target = path.join(directory, BUS_EXECUTABLE_NAME);
   try {
     await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
-    const current = await fs.promises
-      .readFile(target, 'utf8')
-      .catch(() => null);
-    if (current !== BUS_EXECUTABLE_SCRIPT) {
-      const temporary = `${target}.${process.pid}.tmp`;
-      await fs.promises.writeFile(temporary, BUS_EXECUTABLE_SCRIPT, {
-        encoding: 'utf8',
-        mode: 0o700,
-      });
-      await fs.promises.rename(temporary, target);
-    }
-    await fs.promises.chmod(target, 0o700);
+    await writeUnlessCurrent(target, BUS_EXECUTABLE_SCRIPT, 0o700);
     return directory;
   } catch (error) {
     console.warn('[bus] the exawatt command could not be installed', error);
     return null;
   }
+}
+
+const TEXT: ConfigFileGrammar<string> = {
+  name: 'text',
+  parse: text => text,
+  maxBytes: 16 * 1024 * 1024,
+};
+
+/**
+ * Exawatt's own copy of a file it installs: rewritten unless it already
+ * holds `content`. A copy that is missing or cannot be read is not current,
+ * so it is rewritten; a write that then fails is the install's failure.
+ */
+async function writeUnlessCurrent(
+  target: string,
+  content: string,
+  mode: number
+): Promise<void> {
+  const current = await readConfigFile(target, TEXT);
+  if (current.status !== 'ok' || current.value !== content) {
+    const temporary = `${target}.${process.pid}.tmp`;
+    await fs.promises.writeFile(temporary, content, { encoding: 'utf8', mode });
+    await fs.promises.rename(temporary, target);
+  }
+  await fs.promises.chmod(target, mode);
 }
 
 /** The MCP server's file name in Exawatt's state: `.cjs`, so Node runs it as
@@ -113,21 +132,21 @@ export async function installBusMcpServer(
   compiledServer: string
 ): Promise<string | null> {
   const target = path.join(directory, BUS_MCP_SCRIPT_NAME);
+  // The app's own compiled server: missing or unreadable is a broken
+  // build, named as such, never an empty script.
+  const source = await readConfigFile(compiledServer, TEXT);
+  if (source.status !== 'ok') {
+    console.warn(
+      '[bus] the Exawatt MCP server could not be installed:',
+      source.status === 'missing'
+        ? `${compiledServer} is missing`
+        : `${compiledServer} ${describeUnreadableConfig(source.cause)}`
+    );
+    return null;
+  }
   try {
-    const source = await fs.promises.readFile(compiledServer, 'utf8');
     await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
-    const current = await fs.promises
-      .readFile(target, 'utf8')
-      .catch(() => null);
-    if (current !== source) {
-      const temporary = `${target}.${process.pid}.tmp`;
-      await fs.promises.writeFile(temporary, source, {
-        encoding: 'utf8',
-        mode: 0o600,
-      });
-      await fs.promises.rename(temporary, target);
-    }
-    await fs.promises.chmod(target, 0o600);
+    await writeUnlessCurrent(target, source.value, 0o600);
     return target;
   } catch (error) {
     console.warn('[bus] the Exawatt MCP server could not be installed', error);
