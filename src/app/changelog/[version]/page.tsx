@@ -2,27 +2,36 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChangelogEntryView } from '@/components/site/changelog/changelog-entry';
-import { changelogEntries } from '@/lib/changelog/entries';
+import { publishedChangelogEntries } from '@/lib/changelog/published';
 
-export const dynamicParams = false;
+// A version published after the deploy renders on its first request; an
+// unpublished one is a 404 (`entryFor`). Must equal
+// CHANGELOG_REVALIDATE_SECONDS; Next reads this export statically.
+export const revalidate = 300;
 
 interface EntryPageProps {
   params: Promise<{ version: string }>;
 }
 
-export function generateStaticParams() {
-  return changelogEntries().map(entry => ({ version: entry.version }));
+export async function generateStaticParams() {
+  return (await publishedChangelogEntries()).map(entry => ({
+    version: entry.version,
+  }));
 }
 
-function entryFor(version: string) {
-  return changelogEntries().find(entry => entry.version === version) ?? null;
+async function entryFor(version: string) {
+  return (
+    (await publishedChangelogEntries()).find(
+      entry => entry.version === version
+    ) ?? null
+  );
 }
 
 export async function generateMetadata({
   params,
 }: EntryPageProps): Promise<Metadata> {
   const { version } = await params;
-  const entry = entryFor(version);
+  const entry = await entryFor(version);
   if (!entry) return {};
   const title = `${entry.title} · Exawatt ${entry.version}`;
   const description = entry.summary[0];
@@ -41,7 +50,7 @@ export async function generateMetadata({
 /** One release on its own page: what `/download` and the app link to. */
 export default async function ChangelogEntryPage({ params }: EntryPageProps) {
   const { version } = await params;
-  const entry = entryFor(version);
+  const entry = await entryFor(version);
   if (!entry) notFound();
   return (
     <main

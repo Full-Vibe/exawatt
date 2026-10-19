@@ -74,22 +74,50 @@ export function parseLatestMacFeed(
   };
 }
 
+/**
+ * What the update feed says, keeping a feed that could not be read apart from
+ * a distribution that has none: the changelog shows only published versions,
+ * and "unreadable" must never read as "nothing published".
+ */
+export type DesktopBuildRead =
+  | { status: 'unconfigured' }
+  | { status: 'unreadable'; reason: string }
+  | { status: 'published'; build: DesktopBuild };
+
+export async function readDesktopBuild(
+  distribution: DistributionContractV2 = resolvedDistribution(),
+  fetchImpl: typeof fetch = fetch,
+  init: RequestInit = { cache: 'no-store' }
+): Promise<DesktopBuildRead> {
+  const feedUrl = distribution.updates?.feedUrl;
+  if (!feedUrl) return { status: 'unconfigured' };
+  try {
+    const response = await fetchImpl(feedObjectUrl(feedUrl, 'latest-mac.yml'), {
+      ...init,
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) {
+      return { status: 'unreadable', reason: `HTTP ${response.status}` };
+    }
+    const build = parseLatestMacFeed(await response.text(), feedUrl);
+    return build
+      ? { status: 'published', build }
+      : { status: 'unreadable', reason: 'latest-mac.yml names no DMG' };
+  } catch (error) {
+    return {
+      status: 'unreadable',
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** The build `/download` offers, or null when there is none to offer. */
 export async function fetchDesktopBuild(
   distribution: DistributionContractV2 = resolvedDistribution(),
   fetchImpl: typeof fetch = fetch
 ): Promise<DesktopBuild | null> {
-  const feedUrl = distribution.updates?.feedUrl;
-  if (!feedUrl) return null;
-  try {
-    const response = await fetchImpl(feedObjectUrl(feedUrl, 'latest-mac.yml'), {
-      signal: AbortSignal.timeout(8_000),
-      cache: 'no-store',
-    });
-    if (!response.ok) return null;
-    return parseLatestMacFeed(await response.text(), feedUrl);
-  } catch {
-    return null;
-  }
+  const read = await readDesktopBuild(distribution, fetchImpl);
+  return read.status === 'published' ? read.build : null;
 }
 
 export function formatReleaseDate(value: string | null): string | null {

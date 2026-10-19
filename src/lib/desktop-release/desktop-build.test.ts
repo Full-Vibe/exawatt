@@ -7,6 +7,7 @@ import {
   fetchDesktopBuild,
   formatReleaseDate,
   parseLatestMacFeed,
+  readDesktopBuild,
 } from './desktop-build';
 
 const FEED_URL = 'https://updates.example.test/macos/arm64';
@@ -86,6 +87,30 @@ describe('desktop build feed', () => {
       )
     ).resolves.toBeNull();
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unreadable feed apart from a distribution without one', async () => {
+    const offline = (async () => {
+      throw new Error('offline');
+    }) as unknown as typeof fetch;
+    const missing = (async () =>
+      new Response('', { status: 503 })) as unknown as typeof fetch;
+    const serving = (async () =>
+      new Response(FEED, { status: 200 })) as unknown as typeof fetch;
+
+    expect(await readDesktopBuild(COMMUNITY_DISTRIBUTION, offline)).toEqual({
+      status: 'unconfigured',
+    });
+    expect(await readDesktopBuild(UPDATE_DISTRIBUTION, offline)).toMatchObject({
+      status: 'unreadable',
+    });
+    expect(await readDesktopBuild(UPDATE_DISTRIBUTION, missing)).toMatchObject({
+      status: 'unreadable',
+    });
+    expect(await readDesktopBuild(UPDATE_DISTRIBUTION, serving)).toMatchObject({
+      status: 'published',
+      build: { version: '0.1.7' },
+    });
   });
 
   it('formats the release date for people', () => {

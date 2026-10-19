@@ -1,8 +1,10 @@
 import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
-import { changelogEntries } from '@/lib/changelog/entries';
+import { publishedChangelogEntries } from '@/lib/changelog/published';
 import { changelogEntryUrl, inlineRuns } from '@/lib/changelog/changelog.mjs';
 
 export const dynamic = 'force-static';
+// Must equal CHANGELOG_REVALIDATE_SECONDS; Next reads this export statically.
+export const revalidate = 300;
 
 function escape(text: string): string {
   return text
@@ -20,9 +22,10 @@ function inlineHtml(text: string): string {
     .join('');
 }
 
-/** The changelog as an Atom feed (ENG-031 W25), one entry per release. */
-export function GET() {
-  const entries = changelogEntries();
+/** The changelog as an Atom feed (ENG-031 W25), one entry per published
+ *  release. */
+export async function GET() {
+  const entries = await publishedChangelogEntries();
   const site = `${EXAWATT_HOSTED_ORIGIN}/changelog`;
   const updated = entries[0]
     ? `${entries[0].date}T00:00:00Z`

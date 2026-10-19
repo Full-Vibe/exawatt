@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import { ChangelogEntryView } from '@/components/site/changelog/changelog-entry';
-import { changelogEntries } from '@/lib/changelog/entries';
+import { publishedChangelogEntries } from '@/lib/changelog/published';
 
 export const dynamic = 'force-static';
+// Must equal CHANGELOG_REVALIDATE_SECONDS; Next reads this export statically.
+export const revalidate = 300;
 
 const DESCRIPTION = 'New in Exawatt, release by release.';
 
@@ -26,12 +28,13 @@ export const metadata: Metadata = {
 };
 
 /**
- * Every release, newest first (ENG-031 W25). Each entry is written once in
- * `docs/product/changelog/<version>.md`; the GitHub Release body renders from
- * the same file.
+ * Every published release, newest first (ENG-031 W25). Each entry is written
+ * once in `docs/product/changelog/<version>.md`; the GitHub Release body
+ * renders from the same file. An entry above the published version is a draft
+ * and is not shown.
  */
-export default function ChangelogPage() {
-  const entries = changelogEntries();
+export default async function ChangelogPage() {
+  const entries = await publishedChangelogEntries();
   return (
     <main
       className="min-h-screen bg-hud-void font-ui text-white"

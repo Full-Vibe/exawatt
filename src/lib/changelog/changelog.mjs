@@ -207,6 +207,24 @@ export function readChangelog(directory) {
 }
 
 /**
+ * The entries a reader may see: every version at or below the published one.
+ * An entry above it is a draft for a release that has not shipped; nothing
+ * lists, renders, links or feeds it, so the site never announces a version
+ * users cannot install.
+ */
+export function releasedEntries(entries, publishedVersion) {
+  if (!VERSION.test(publishedVersion)) {
+    throw new ChangelogError(
+      'published version',
+      `"${publishedVersion}" is not a version`
+    );
+  }
+  return entries.filter(
+    entry => compareVersions(entry.version, publishedVersion) <= 0
+  );
+}
+
+/**
  * The entry for `version`. A release without one is refused: this is the
  * check the release procedure and the version bump run.
  */
