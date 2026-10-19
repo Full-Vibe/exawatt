@@ -810,3 +810,39 @@ socket door reads its config directory through `harness-homes.ts`, and an
 unreadable registry entry is named in the undeliverable reason instead of
 "no message socket". A bus ledger whose count read fails now fails the
 write rather than counting as empty (the file-read ratchet).
+
+### 2026-10-19 — Live Gemini and Codex exchange
+
+**Gemini and Codex messaged each other through the bus in the app, both
+ways.** Until now Antigravity had been proven only in print mode against a
+stand-in bus. Measured on `ae863017` (worktree dev build, `withElectronApp`),
+Antigravity CLI 1.4.2 on Gemini 3.8 Flash (the operator's Starter Quota, no
+quota error) and Codex on gpt-6.1-sol, one scratch Project, both Agents in
+Auto-review (`--mode accept-edits` for Antigravity).
+
+| Direction | How the sender sent | Door to the recipient | Ledger result | Seen in the recipient's terminal |
+| --- | --- | --- | --- | --- |
+| codex-1 to gemini-1 | Codex's `exawatt.exawatt_send_message` MCP tool, approved by Auto-review's reviewer | terminal input, stamp line first | `terminal` (`terminal-input`) | the stamp "[Exawatt] Message from @codex-1 (Codex) in Project project. Reply with your exawatt_send_message tool (to: @codex-1) ...", then the body, as the user's turn |
+| gemini-1 to codex-1 | Antigravity's `exawatt/exawatt_send_message` MCP tool from the per-launch `--add-dir` directory | `codex-queue` | `delivered` | the stamp from @gemini-1 (Gemini) and the body; Codex answered "Received: PONG-FROM-GEMINI." |
+
+Found on the way:
+
+- **Antigravity asks before each MCP tool call in accept-edits mode**, with
+  six choices; the default "Yes, allow tool call" applies once and persists
+  nothing. Options 3 and 6 write to `settings.json`. The probe answered the
+  default once, as the operator would.
+- **A run against the operator's real `~/.gemini` writes more than the
+  conversation.** Per conversation: `conversations/<id>.db`, `brain/<id>/`,
+  `annotations/<id>.pbtxt`, `presence/<id>.lock`, a row in
+  `conversation_summaries.db` and the Project's key in
+  `cache/last_conversations.json`; per pasted message, a line in
+  `history.jsonl` (the bus stamp included); per `agy` process, one log under
+  `log/` (and `agy`'s own rotation pruned older logs); plus an `implicit/`
+  file, a rewrite of `jetbox_summaries_proto.pb`, and a self-update check
+  that failed ("please install from website") without changing the binary.
+  Trust was not asked and nothing was added to `trustedWorkspaces`, because
+  the operator's home directory is already trusted and the scratch Project
+  lived under it. No consent or terms screen appeared.
+- A laptop lid closed mid-run killed the eval's Electron app (clamshell
+  sleep); the harness classified it as an outside teardown. Not a product
+  defect.

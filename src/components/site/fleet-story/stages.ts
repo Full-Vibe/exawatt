@@ -171,13 +171,12 @@ export const STAGES: Stage[] = [
       // ENG-031 W23 (operator 2026-10-19: "yes if succinct - not too much
       // copy"): Gemini by name, and the messaging only as far as it is
       // proven. Claude Code and Codex were measured messaging each other in
-      // the app; Gemini joins that sentence after a live exchange with a
-      // peer is seen, not before.
+      // the app (2026-10-15), and Gemini and Codex both ways (2026-10-19).
       canon: {
         headline: ['Every species of agent,', 'side by side.'],
         body: [
           'Bring Claude Code, Codex, Gemini, OpenClaw, or your own.',
-          'Your Claude Code and Codex agents message each other.',
+          'Your Claude Code, Codex and Gemini agents message each other.',
         ],
       },
     },
