@@ -11,6 +11,8 @@ import {
   type ReleaseProvenanceCompositionV1,
 } from '../release-provenance';
 
+// @scans contracts/release-provenance-v1.schema.json
+
 const PUBLIC_SHA = '0123456789abcdef0123456789abcdef01234567';
 const OVERLAY_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
 const DISTRIBUTION_SHA256 = 'a'.repeat(64);

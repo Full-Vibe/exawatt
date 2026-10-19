@@ -35,6 +35,8 @@ import { SIGNED_IN_NEARLY_SPENT, SIGNED_IN_SPENT } from './agy-usage.fixtures';
 import { ProviderPlanCompositeSource } from './provider-plan-composite';
 import type { ConsumptionScannerLike } from '../consumption-ipc';
 
+// @scans none: reads only its own temporary directory
+
 /** 2026-10-05 12:30 in Los Angeles, when the fixtures were captured. */
 const NOW_MS = Date.parse('2026-10-05T19:30:00.000Z');
 const OBSERVED_AT = new Date(NOW_MS).toISOString();

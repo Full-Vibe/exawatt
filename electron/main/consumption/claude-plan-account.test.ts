@@ -43,6 +43,8 @@ import {
 import { ProviderPlanCompositeSource } from './provider-plan-composite';
 import type { ConsumptionScannerLike } from '../consumption-ipc';
 
+// @scans electron/** src/** packages/core/src/** scripts/** contracts/**
+
 /** 2026-10-04 14:25 in Los Angeles, the afternoon the fixtures were captured. */
 const NOW_MS = Date.parse('2026-10-04T21:25:00.000Z');
 const OBSERVED_AT = new Date(NOW_MS).toISOString();

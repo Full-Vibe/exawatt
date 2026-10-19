@@ -3,6 +3,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetResolvedDistributionForTest } from './resolved';
 
+// @scans src/** company/overlay/web/src/app/** scripts/distribution.official.example.json
+
 /**
  * The runtime half of incident `0015` (BUG-044).
  *

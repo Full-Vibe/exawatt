@@ -29,6 +29,8 @@ import {
   type ThemeDefinitionV1,
 } from './types';
 
+// @scans src/generated/themes.css src/app/globals.css
+
 const LIGHT_OS: AppearanceOsSignals = {
   dark: false,
   highContrast: false,

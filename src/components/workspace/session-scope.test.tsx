@@ -29,6 +29,8 @@ import type {
 } from '@exawatt/core/desktop-bridge';
 import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
+// @scans src/components/workspace/use-workspace-state.ts src/components/workspace/workspace-state/**
+
 vi.mock('@/lib/projects/registry', () => ({
   openRepositoryProject: vi.fn(() => Promise.reject(new Error('offline'))),
   listProjects: vi.fn(() => Promise.resolve([])),

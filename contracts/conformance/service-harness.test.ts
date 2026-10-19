@@ -41,6 +41,8 @@ import {
   type StrictLoopbackDistributor,
 } from './service-harness';
 
+// @scans contracts/**
+
 interface CaseExpectation {
   accepted?: boolean;
   attemptsPerOperation?: number;

@@ -57,6 +57,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMUNITY_DISTRIBUTION } from '@exawatt/core/distribution';
 import { resetResolvedDistributionForTest } from './resolved';
 
+// @scans src/** electron/** packages/core/src/**
+
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 
 /** The trees that ship inside a desktop package or its loopback server. */

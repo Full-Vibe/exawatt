@@ -5,6 +5,8 @@ import {
   HERO_DEFAULT_THEME,
 } from '@/components/site/hero-board/hero-board-theme';
 
+// @scans src/app/**
+
 describe('public-home first-paint stability', () => {
   it('keeps public exhibition typography independent from the app theme', () => {
     const home = readFileSync('src/app/_home-hero.tsx', 'utf8');

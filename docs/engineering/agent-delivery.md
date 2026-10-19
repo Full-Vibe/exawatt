@@ -248,15 +248,27 @@ candidate SHA enter both the ticket evidence and the JSONL metric stream.
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm lint`, `pnpm type-check`, and the delivery pins: the whole `pnpm test:agent-delivery` when a changed path can reach what it reads (`deliveryAffectingPath`), otherwise `pnpm test:delivery-pins` (`PRODUCT_TREE_PINS`, the five suite files that read the product tree) |
 | Changed JavaScript or TypeScript                                                        | the consumer-less export check (`pnpm exports:check`: a NEW export must have a consumer; existing ones are not counted), then the related Vitest selection, bounded to 25% workers, with one isolated rerun of any file it names failing |
-| Renderer source (`src/**`, `packages/ui-model/src/**`, the company overlay's `web/src/**`) | `pnpm copy:check` (no em dash in screen copy, BUG-207); for `src/**`, the stale-async ratchet (`src/hooks/use-latest-request.ratchet.test.ts`, BUG-206). Both read the whole tree and import nothing they check, so related-test selection cannot pick them |
+| Renderer source (`src/**`, `packages/ui-model/src/**`, the company overlay's `web/src/**`) | `pnpm copy:check` (no em dash in screen copy, BUG-207). It reads the whole tree and imports nothing it checks, so related-test selection cannot pick it |
+| A path a test declares it scans (`// @scans <globs>`) | that test, with every other declaring test the change matches, as `scanning-tests` (below) |
 | Anything that paints or decides paint (`src/**`, `themes/**`, `packages/ui-model/**`, the theme generator and ratchet) | `pnpm theme:check` (themes valid, generated artifacts current, no production source invents a colour, BUG-208) |
 | `contracts/agent-sources.json`, its generator or a generated declaration; the app icon masters or their generator | `pnpm agent-sources:check`; `pnpm icon:check` (committed outputs match their one editable source, BUG-211) |
 | `company/**` or the composition scripts                                                   | `pnpm company:proof` (composition is deterministic and no hosted-web target reaches the public or desktop tree, BUG-211) |
 | `electron/**`, `packages/core/**`, Electron builder config, or Electron/dogfood scripts | `pnpm electron:compile`                                                                                       |
 | Playwright or stable-browser boundary                                                   | `pnpm qa:browser:doctor`                                                                                      |
 | Fleet spatial or R3F evaluation code                                                    | `pnpm eval:r3f`                                                                                               |
-| `docs/engineering/**`                                                                   | canonical roadmap parser/link tests                                                                           |
 | Each caller `--verify <script>`                                                         | that package script, once, as additional candidate evidence                                                   |
+
+A test that reads repository files instead of importing them (a ratchet, a
+whole-tree guard, a schema or contract parity test, a test that spawns a
+script) is invisible to `vitest related`, which follows imports. The
+stale-async ratchet (BUG-206), the file-read-fallback ratchet and the
+update-feed test (BUG-276) each went red on master through landings whose
+changes they read. So each such test names what it reads in one line,
+`// @scans <repository-relative globs>` (or `// @scans none: <why>` for one
+that reads only its own temporary files), and the landing runs every declaring
+test whose globs match a changed path; a documentation landing runs the ones
+that read documents. `delivery-policy.test.mjs` refuses a test that reads the
+repository without a declaration, and a glob that matches no tracked file.
 
 Every verification command in `package.json` (`lint`, `type-check*`,
 `test*`, `eval:*`, `verify:*`, `qa:*`, `security:*`, and `*:check`, `*:audit`,

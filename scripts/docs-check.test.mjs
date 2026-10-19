@@ -51,7 +51,7 @@ test('docs:check runs the landing checks’ own check definitions', () => {
     'content:scan',
     'open-source:paths:check',
     'recipe-renderers',
-    'roadmap-contract',
+    'scanning-tests',
   ]);
   for (const check of docs) {
     if (check === RECIPE_RENDERERS_CHECK) continue;
@@ -78,12 +78,14 @@ test('docs:check runs the landing checks’ own check definitions', () => {
       .split(' ')
       .includes(RECIPE_RENDERERS_CHECK.args.at(-1))
   );
-  // Outside docs/engineering the roadmap contract is not owed, as in the landing checks.
+  // A document no scanning test reads owes none, as in the landing checks.
   assert.equal(
-    classifyDocsChecks(['README.md']).some(
-      check => check.id === 'roadmap-contract'
+    classifyDocsChecks(['docs/research/notes.md']).some(
+      check => check.id === 'scanning-tests'
     ),
-    false
+    classifyDeliveryPolicy(['docs/research/notes.md']).some(
+      check => check.id === 'scanning-tests'
+    )
   );
 });
 
@@ -207,7 +209,7 @@ describe('the versioned pre-push hook', () => {
     commit('docs: clean fixture paragraph');
     const result = docsCheck();
     assert.ok(result.ok, result.output);
-    for (const id of ['recipe-renderers', 'roadmap-contract', 'content:scan'])
+    for (const id of ['recipe-renderers', 'scanning-tests', 'content:scan'])
       assert.match(result.output, new RegExp(`passed ${id} `));
   });
 

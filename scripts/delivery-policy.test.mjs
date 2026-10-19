@@ -21,15 +21,18 @@ import {
   CORE_DELIVERY_ENTRIES,
   deliveryAffectingPath,
   failedVitestFiles,
+  globExpression,
   inconclusiveRerunReport,
   isVerificationScript,
   PRODUCT_TREE_PINS,
   missingSurfaceGates,
+  parseScanDeclaration,
   quarantinedSurfaceGates,
   reproducedFailureReport,
   rerunTooWideReport,
   rerunVerdict,
   runDeliveryChecks,
+  scanningTests,
   SURFACE_GATES,
   suspectedFlakeReport,
   surfaceGateMessage,
@@ -64,6 +67,8 @@ test('the cheap changed-file landing checks cannot be weakened by the caller', (
     'lint',
     'type-check',
     'delivery-pins',
+    // The outbound-disclosure test reads every public document.
+    'scanning-tests',
   ]);
   assert.deepEqual(ids(['src/lib/raw-tokens.ts'], ['test:fonts']), [
     'open-source:paths:check',
@@ -75,7 +80,7 @@ test('the cheap changed-file landing checks cannot be weakened by the caller', (
     'vitest-related',
     'copy:check',
     'theme:check',
-    'stale-async-ratchet',
+    'scanning-tests',
     'test:fonts',
   ]);
 
@@ -124,7 +129,7 @@ test('provider composition changes receive related consumer tests', () => {
       'vitest-related',
       'copy:check',
       'theme:check',
-      'stale-async-ratchet',
+      'scanning-tests',
     ]
   );
   assert.deepEqual(checks.find(check => check.id === 'vitest-related').args, [
@@ -134,39 +139,134 @@ test('provider composition changes receive related consumer tests', () => {
   ]);
 });
 
-// BUG-206/BUG-207: whole-tree renderer guards import nothing they check, so
-// the related-test selection can never pick them and they must be routed.
-test('renderer changes run the screen-copy guard and the stale-async ratchet', () => {
+// BUG-207: the screen-copy guard imports nothing it checks, so the related-test
+// selection can never pick it and it must be routed.
+test('renderer changes run the screen-copy guard', () => {
   for (const file of [
     'src/components/workspace/close-confirm.tsx',
     'src/lib/hosted-features/contract.ts',
-  ]) {
-    const routed = ids([file]);
-    assert.ok(routed.includes('copy:check'), `${file} owes copy:check`);
-    assert.ok(
-      routed.includes('stale-async-ratchet'),
-      `${file} owes the stale-async ratchet`
-    );
-  }
-  for (const file of [
     'packages/ui-model/src/roadmap-strip.ts',
     'company/overlay/web/src/app/admin/invites/issue-invite-form.tsx',
     'scripts/check-screen-copy.mjs',
   ]) {
-    const routed = ids([file]);
-    assert.ok(routed.includes('copy:check'), `${file} owes copy:check`);
-    assert.ok(
-      !routed.includes('stale-async-ratchet'),
-      `${file} is outside the ratchet's tree`
-    );
+    assert.ok(ids([file]).includes('copy:check'), `${file} owes copy:check`);
   }
   for (const file of [
     'docs/engineering/design-system.md',
     'electron/main/main.ts',
   ]) {
-    const routed = ids([file]);
-    assert.ok(!routed.includes('copy:check'), `${file} renders no screen copy`);
-    assert.ok(!routed.includes('stale-async-ratchet'));
+    assert.ok(
+      !ids([file]).includes('copy:check'),
+      `${file} renders no screen copy`
+    );
+  }
+});
+
+function scanningFor(file) {
+  return (
+    classifyDeliveryPolicy([file])
+      .find(check => check.id === 'scanning-tests')
+      ?.args.filter(arg => /\.test\.tsx?$/u.test(arg)) ?? []
+  );
+}
+
+// BUG-206 and the file-read-fallback ratchet: a test that reads the tree
+// instead of importing it is selected by what it declares it scans.
+test('a change runs every test that declares it scans the changed path', () => {
+  assert.ok(
+    scanningFor('electron/main/bus/executable.ts').includes(
+      'electron/main/file-read-fallback.ratchet.test.ts'
+    ),
+    'a bus change owes the file-read-fallback ratchet'
+  );
+  assert.ok(
+    scanningFor('src/components/workspace/close-confirm.tsx').includes(
+      'src/hooks/use-latest-request.ratchet.test.ts'
+    ),
+    'a renderer change owes the stale-async ratchet'
+  );
+  assert.ok(
+    scanningFor('docs/engineering/roadmap.md').includes(
+      'packages/core/src/__tests__/roadmap-parse.test.ts'
+    ),
+    'a roadmap change owes the roadmap parse contract'
+  );
+  assert.ok(
+    !scanningFor('packages/ui-model/src/roadmap-strip.ts').includes(
+      'src/hooks/use-latest-request.ratchet.test.ts'
+    ),
+    'the stale-async ratchet scans src/ only'
+  );
+  assert.deepEqual(scanningFor('.github/workflows/ci.yml'), []);
+});
+
+test('scan declarations parse and match as globs', () => {
+  assert.equal(parseScanDeclaration('import x;\n'), null);
+  assert.deepEqual(parseScanDeclaration('x\n// @scans src/** *.md\ny'), {
+    globs: ['src/**', '*.md'],
+  });
+  assert.deepEqual(parseScanDeclaration('// @scans none: a temp dir only'), {
+    none: 'a temp dir only',
+  });
+  assert.throws(() => parseScanDeclaration('// @scans none'), /must say why/u);
+  const tree = globExpression('electron/main/**/*.ts');
+  assert.ok(tree.test('electron/main/a.ts'));
+  assert.ok(tree.test('electron/main/bus/a.ts'));
+  assert.ok(!tree.test('electron/main/a.tsx'));
+  assert.ok(!tree.test('electron/mainx/a.ts'));
+  assert.ok(globExpression('*.md').test('README.md'));
+  assert.ok(!globExpression('*.md').test('docs/a.md'));
+  assert.ok(globExpression('src/**').test('src/a/b/c.tsx'));
+});
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const FS_READ =
+  /\b(?:readFileSync|readFile|readdirSync|readdir|existsSync|statSync|opendirSync|opendir)\s*\(/u;
+
+/**
+ * Every Vitest file that reads repository files it does not import declares
+ * what it reads. A test is taken to read the repository when it calls a file
+ * read and anchors a path at the repository (`__dirname`, `process.cwd()`,
+ * `import.meta`, or a literal path under a tracked top-level directory), or
+ * is a ratchet. A test that only reads its own temporary files says so with
+ * `@scans none: <why>`.
+ */
+test('every test that reads the repository declares what it scans, and every glob still matches', () => {
+  const tracked = git(REPO, ['ls-files']).split('\n').filter(Boolean);
+  const tops = [
+    ...new Set(
+      tracked.filter(file => file.includes('/')).map(file => file.split('/')[0])
+    ),
+  ].map(top => top.replace(/[.]/gu, '\\.'));
+  const anchor = new RegExp(
+    `__dirname|process\\.cwd\\(\\)|import\\.meta\\.(?:url|dirname)|['"\`](?:${tops.join('|')})/`,
+    'u'
+  );
+  const tests = tracked.filter(
+    file => /\.test\.tsx?$/u.test(file) && !file.startsWith('scripts/')
+  );
+  const undeclared = [];
+  for (const file of tests) {
+    const source = readFileSync(path.join(REPO, file), 'utf8');
+    const reads =
+      /\.ratchet\.test\./u.test(file) ||
+      (FS_READ.test(source) && anchor.test(source));
+    if (reads && parseScanDeclaration(source) === null) undeclared.push(file);
+  }
+  assert.deepEqual(
+    undeclared,
+    [],
+    'add `// @scans <globs>` (or `// @scans none: <why>`) to each'
+  );
+  const declared = scanningTests(REPO);
+  assert.ok(declared.length > 0);
+  for (const { file, globs, expressions } of declared) {
+    globs.forEach((glob, index) =>
+      assert.ok(
+        tracked.some(path => expressions[index].test(path)),
+        `${file}: @scans ${glob} matches no tracked file`
+      )
+    );
   }
 });
 
@@ -201,6 +301,7 @@ test('dogfood and Electron orchestration changes receive Electron compilation', 
     'test:agent-delivery',
     'exports:check',
     'vitest-related',
+    'scanning-tests',
     'electron:compile',
   ]);
 });
@@ -246,7 +347,7 @@ test('routable and distribution-seam changes receive the community build', () =>
     'vitest-related',
     'copy:check',
     'theme:check',
-    'stale-async-ratchet',
+    'scanning-tests',
     'verify:community-build',
     'verify:community-runtime',
   ]);
@@ -258,6 +359,7 @@ test('routable and distribution-seam changes receive the community build', () =>
     'test:agent-delivery',
     'exports:check',
     'vitest-related',
+    'scanning-tests',
     'verify:community-build',
   ]);
   for (const file of [
@@ -318,7 +420,7 @@ test('roadmap corpus changes receive the canonical parser contract', () => {
     'lint',
     'type-check',
     'delivery-pins',
-    'roadmap-contract',
+    'scanning-tests',
   ]);
 });
 
@@ -341,7 +443,7 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
       'vitest-related',
       'copy:check',
       'theme:check',
-      'stale-async-ratchet',
+      'scanning-tests',
       'electron:compile',
       'qa:browser:doctor',
       'eval:r3f',
@@ -741,7 +843,7 @@ test('the vitest checks declare the isolated rerun; the others do not', () => {
   );
   assert.deepEqual(related.rerun, { kind: 'vitest', script: 'test:alone' });
   const roadmap = classifyDeliveryPolicy(['docs/engineering/roadmap.md']).find(
-    check => check.id === 'roadmap-contract'
+    check => check.id === 'scanning-tests'
   );
   assert.deepEqual(roadmap.rerun, { kind: 'vitest', script: 'test:alone' });
   for (const id of [

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { loadavg, tmpdir } from 'node:os';
@@ -1173,6 +1173,115 @@ export const PRODUCT_TREE_PINS = Object.freeze([
   'scripts/suite-environment.test.mjs',
 ]);
 
+/*
+ * Tests that read the tree instead of importing it (ratchets, guards,
+ * contract and parity tests). `vitest related` follows imports, so it never
+ * selects a test that reads a file it does not import: the stale-async
+ * ratchet (BUG-206) and the file-read-fallback ratchet both went red on master
+ * through landings whose changes they scan, and the update-feed test (BUG-276)
+ * through every change to the script it spawned. Each such test declares what
+ * it reads, in one comment line per test file:
+ *
+ *   // @scans src/** packages/core/src/**   (globs, repository-relative)
+ *   // @scans none: reads only its own temporary directory
+ *
+ * and a landing runs every declaring test whose globs match a changed path.
+ * `delivery-policy.test.mjs` refuses a test that reads repository files
+ * without a declaration, and a glob that matches no tracked file.
+ */
+const SCAN_DECLARATION = /^[ \t]*\/\/[ \t]*@scans[ \t]+(.+?)[ \t]*$/mu;
+const SCANNING_TEST_PATHSPECS = Object.freeze([
+  '*.test.ts',
+  '*.test.tsx',
+  ':(exclude)scripts/**',
+]);
+let scanningTestCache;
+
+/** `null` without a declaration; `{ none }` or `{ globs }` with one. */
+export function parseScanDeclaration(source) {
+  const match = SCAN_DECLARATION.exec(source);
+  if (!match) return null;
+  const value = match[1];
+  if (/^none\b/u.test(value)) {
+    const reason = value.replace(/^none:?\s*/u, '');
+    if (!reason) throw new Error('`@scans none` must say why');
+    return { none: reason };
+  }
+  return { globs: value.split(/\s+/u) };
+}
+
+/** A repository-relative glob (`**`, `*`, `?`) as an anchored expression. */
+export function globExpression(glob) {
+  let pattern = '';
+  for (let index = 0; index < glob.length; index += 1) {
+    const char = glob[index];
+    if (glob.startsWith('**/', index)) {
+      pattern += '(?:.*/)?';
+      index += 2;
+    } else if (glob.startsWith('**', index)) {
+      pattern += '.*';
+      index += 1;
+    } else if (char === '*') pattern += '[^/]*';
+    else if (char === '?') pattern += '[^/]';
+    else pattern += char.replace(/[.+^${}()|[\]\\]/gu, '\\$&');
+  }
+  return new RegExp(`^${pattern}$`, 'u');
+}
+
+/**
+ * Every tracked Vitest file that declares what it scans, with its globs.
+ * An unreadable tree throws: a landing that cannot tell which scanning tests
+ * a change owes must not run as if it owed none.
+ */
+export function scanningTests(root = REPOSITORY_ROOT) {
+  if (root === REPOSITORY_ROOT && scanningTestCache) return scanningTestCache;
+  let listing;
+  try {
+    listing = execFileSync(
+      'git',
+      [
+        'grep',
+        '-I',
+        '-n',
+        '-E',
+        '^[[:space:]]*//[[:space:]]*@scans[[:space:]]',
+        '--',
+        ...SCANNING_TEST_PATHSPECS,
+      ],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+  } catch (error) {
+    if (error?.status !== 1) throw error;
+    listing = '';
+  }
+  const tests = [];
+  for (const line of listing.split('\n').filter(Boolean)) {
+    const [file, , ...rest] = line.split(':');
+    const declaration = parseScanDeclaration(rest.join(':'));
+    if (declaration?.globs) {
+      tests.push({
+        file,
+        globs: declaration.globs,
+        expressions: declaration.globs.map(globExpression),
+      });
+    }
+  }
+  if (root === REPOSITORY_ROOT) scanningTestCache = tests;
+  return tests;
+}
+
+/** The scanning tests a change to `paths` can break, sorted. */
+export function scanningTestsFor(paths, tests = scanningTests()) {
+  return tests
+    .filter(test =>
+      paths.some(file =>
+        test.expressions.some(expression => expression.test(file))
+      )
+    )
+    .map(test => test.file)
+    .sort();
+}
+
 export function classifyDeliveryPolicy(changedPaths, extras = []) {
   const paths = [...new Set(changedPaths)].sort();
   const checks = [
@@ -1228,12 +1337,11 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
     });
   }
 
-  // BUG-206/BUG-207: two renderer guards read the whole tree rather than
-  // importing what they check, so the related-test selection above can never
-  // pick them. The stale-async ratchet went red on master from exactly that
-  // gap: a landing renamed a counter the ratchet listed and nothing it ran
-  // noticed. Both are whole-tree and take seconds, so any renderer change
-  // runs both.
+  // BUG-207: the screen-copy guard reads the whole renderer tree rather than
+  // importing what it checks, so the related-test selection above can never
+  // pick it. It is whole-tree and takes seconds, so any renderer change runs
+  // it. (The Vitest tests of that shape declare what they scan; see
+  // `scanningTests`.)
   const renderer = paths.filter(
     file =>
       /^(?:src|packages\/ui-model\/src|company\/overlay\/web\/src)\/.+\.tsx?$/.test(
@@ -1304,16 +1412,18 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       args: ['run', 'icon:check'],
     });
   }
-  if (renderer.some(file => file.startsWith('src/'))) {
+  const scanning = scanningTestsFor(paths);
+  if (scanning.length > 0) {
     checks.push({
-      id: 'stale-async-ratchet',
+      id: 'scanning-tests',
       command: 'pnpm',
       args: [
         'exec',
         'vitest',
         'run',
-        'src/hooks/use-latest-request.ratchet.test.ts',
-        '--maxWorkers=1',
+        ...scanning,
+        '--maxWorkers=25%',
+        '--passWithNoTests',
       ],
       rerun: VITEST_RERUN,
     });
@@ -1496,23 +1606,6 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
     });
   }
 
-  if (paths.some(file => file.startsWith('docs/engineering/'))) {
-    checks.push({
-      id: 'roadmap-contract',
-      command: 'pnpm',
-      args: [
-        'exec',
-        'vitest',
-        'run',
-        'packages/core/src/__tests__/roadmap-parse.test.ts',
-        'packages/core/src/__tests__/roadmap-link.test.ts',
-        '--maxWorkers=25%',
-        '--passWithNoTests',
-      ],
-      rerun: VITEST_RERUN,
-    });
-  }
-
   for (const script of extras) {
     checks.push({ id: script, command: 'pnpm', args: ['run', script] });
   }
@@ -1532,7 +1625,7 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
 const DOCS_LANDING_CHECK_IDS = new Set([
   'open-source:paths:check',
   'content:scan',
-  'roadmap-contract',
+  'scanning-tests',
 ]);
 
 /**

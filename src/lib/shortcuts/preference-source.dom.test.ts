@@ -12,6 +12,8 @@ import {
   installBridgeDouble,
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
+
+// @scans scripts/distribution.official.example.json
 // Module compilation belongs to suite setup, outside each storage transaction.
 // A timed-out dynamic import can otherwise write into the following case.
 import * as store from './preference-source';

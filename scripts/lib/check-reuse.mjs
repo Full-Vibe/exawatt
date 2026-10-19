@@ -67,13 +67,12 @@ export const REUSABLE_CHECKS = new Set([
   'vitest-related',
   'copy:check',
   'theme:check',
-  'stale-async-ratchet',
+  'scanning-tests',
   'agent-sources:check',
   'icon:check',
   'company:proof',
   'verify:community-runtime',
   'test:service-conformance',
-  'roadmap-contract',
   'recipe-renderers',
 ]);
 

@@ -24,6 +24,8 @@ import type {
 import { terminalInputTransport } from './transports/terminal-input';
 import { recordingTerminal } from './transports/fixtures.test-support';
 
+// @scans electron/main/bus/*.ts
+
 /**
  * The bus core against fixture doors: addressing, refusal, stamping, the
  * ledger, holding a message across a turn, and the settle a queue declares.

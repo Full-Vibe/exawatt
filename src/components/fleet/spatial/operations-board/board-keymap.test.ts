@@ -5,6 +5,8 @@ import { isCameraKey } from '@/components/hud/webgl/agent-field-motion';
 import { BOARD_KEY_FAMILIES } from '@/lib/shortcuts/fixed-families';
 import { BOARD_KEYMAP } from './board-keymap';
 
+// @scans src/components/fleet/spatial/spatial-fleet-client.tsx src/components/fleet/spatial/operations-board/operations-board-surface.tsx
+
 /**
  * The keymap is the single description of the board's keyboard surface. These
  * tests hold it to that: the help modal's board entries must be a projection

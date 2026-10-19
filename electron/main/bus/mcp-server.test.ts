@@ -16,6 +16,8 @@ import {
   type BusMcpCall,
 } from './mcp-server';
 
+// @scans electron/main/bus/mcp-server.ts
+
 /**
  * The bus's MCP door (ENG-029 B2): the contract is that every tool is the
  * `exawatt` command's own request on the same loopback path with the same

@@ -13,6 +13,8 @@ import {
   OPERATOR_STATS_SCHEMA_VERSION,
 } from '../operator-stats';
 
+// @scans contracts/services/v1/schemas/operator-stats.schema.json
+
 /**
  * BUG-164 was two definitions of one limit disagreeing: the side that made a
  * value had none, the side that refused it had 31 days. The public contract

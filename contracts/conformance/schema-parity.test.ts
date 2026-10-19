@@ -9,6 +9,8 @@ import {
 import Ajv2020, { type AnySchema, type ErrorObject } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 
+// @scans contracts/**
+
 interface FixtureCase {
   id: string;
   schema: string;

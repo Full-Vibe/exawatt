@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// @scans src/app/settings/** src/components/feedback/** src/components/nav/** src/components/shortcuts/** src/components/ui/** src/app/globals.css
+
 const SOURCE_ROOTS = [
   'src/app/settings',
   'src/components/feedback',

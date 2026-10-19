@@ -10,6 +10,8 @@ import {
   isAgentSourceAdapterId,
 } from '../agent-sources';
 
+// @scans contracts/agent-sources.json
+
 interface ContractEntry {
   adapterId: string;
   harness?: string | null;

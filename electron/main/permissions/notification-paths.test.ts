@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// @scans electron/** src/** packages/** scripts/**
+
 /**
  * No notification path may post without asking the permission registry first
  * (ENG-045). Electron raises macOS's notification prompt as a side effect of

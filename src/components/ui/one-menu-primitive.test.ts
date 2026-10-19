@@ -13,6 +13,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// @scans src/**
+
 const ROOT = path.join(process.cwd(), 'src');
 const PRIMITIVE = path.join(ROOT, 'components', 'ui', 'option-menu.tsx');
 

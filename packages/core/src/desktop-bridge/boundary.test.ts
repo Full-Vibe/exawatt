@@ -3,6 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+// @scans packages/core/src/desktop-bridge/*.ts
+
 /**
  * The contract is imported by the renderer, so it must never reach Electron,
  * Node, or the renderer's own tree. A module specifier here is either

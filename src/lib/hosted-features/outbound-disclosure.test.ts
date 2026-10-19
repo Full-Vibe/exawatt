@@ -13,6 +13,8 @@ import {
   readPathManifest,
 } from '../../../scripts/lib/open-source-paths.mjs';
 
+// @scans docs/** *.md scripts/open-source-paths.manifest.json scripts/distribution.official.example.json src/lib/** contracts/**
+
 /**
  * ENG-030 OS2.2 — what the product SAYS it sends, held to what it sends.
  *

@@ -16,6 +16,8 @@ import {
   type RendererServerDependencies,
 } from './renderer-server';
 
+// @scans none: reads only its own temporary directory (the __dirname is the stand-in server's)
+
 /**
  * A child process double built from the surface `renderer-server` and
  * `stopChildProcess` actually touch: stdio streams, exit state, `kill`, and

@@ -7,6 +7,8 @@ import {
   smallestTilingCell,
 } from './window-shape';
 
+// @scans electron/main/window.ts
+
 /**
  * Divvy, Rectangle, Moom and Hammerspoon all tile through the macOS
  * Accessibility API. Each assertion below is one thing that API needs to see,

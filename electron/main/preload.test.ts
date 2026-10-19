@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// @scans electron/main/preload.ts
+
 /**
  * Preload runs sandboxed (`sandbox: true` in `window.ts`): it may `require`
  * `electron` and nothing else, so a value import of the bridge contract, or

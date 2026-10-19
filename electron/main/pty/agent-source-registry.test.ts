@@ -25,6 +25,8 @@ import type {
   AgentSourceState,
 } from '@exawatt/core';
 
+// @scans none: reads only its own temporary directories
+
 /** A launch-scope registry carrying one non-launchable Claude Code source. */
 function claudeSnapshot(source: {
   state: AgentSourceState;

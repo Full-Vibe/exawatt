@@ -8,6 +8,8 @@ import { buildHeroBoardCapture } from './capture-source';
 import { HERO_STATUS_ORDER } from './capture-types';
 import { resolveHeroLens } from './hero-board-lens';
 
+// @scans src/components/site/hero-board/capture.ts
+
 const CAPTURE_PATH = join(import.meta.dirname, 'capture.ts');
 
 function serialize(capture: ReturnType<typeof buildHeroBoardCapture>): string {

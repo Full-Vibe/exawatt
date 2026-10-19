@@ -13,6 +13,8 @@ import {
 } from './events';
 import { ANALYTICS_PROPERTY_DENYLIST } from './redact';
 
+// @scans docs/engineering/outbound-data.md
+
 /**
  * Decision `0031` requires the repository to carry the exact outbound-data
  * manifest. A manifest that drifts from the allowlist is worse than none, so

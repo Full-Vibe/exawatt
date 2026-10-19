@@ -10,6 +10,8 @@ import {
   resolveDistributionWebIcon,
 } from './web-brand';
 
+// @scans src/app/**
+
 const BRANDED_DISTRIBUTION: DistributionContractV2 = {
   ...COMMUNITY_DISTRIBUTION,
   brand: {

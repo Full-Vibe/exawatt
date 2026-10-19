@@ -40,6 +40,8 @@ import {
   defaultMenuAccelerators,
 } from '../../../electron/main/application-menu';
 
+// @scans scripts/distribution.official.example.json
+
 /**
  * The discoverability contract for rebindable verbs (ENG-016 D44, FIX-012).
  *

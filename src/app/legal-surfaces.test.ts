@@ -4,6 +4,8 @@ import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 import { ANALYTICS_PROPERTY_DENYLIST } from '@/lib/analytics/redact';
 import { ANALYTICS_EVENT_DISCLOSURES } from '@/lib/analytics/disclosure';
 
+// @scans src/** company/overlay/web/src/app/** electron/main/pty/context-summarizer.ts package.json
+
 /**
  * `/privacy` and `/terms` are factual claims about shipped behavior, and until
  * this file existed nothing held them to it. An audit on 2026-08-16 found both

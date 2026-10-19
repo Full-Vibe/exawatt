@@ -7,6 +7,8 @@ import { DOWNLOAD_HREF } from '@/components/site/bands/download';
 import { PUBLIC_DOWNLOAD_REWRITE } from '@/lib/distribution/next-policy';
 import CommunityDownloadPage from './page';
 
+// @scans package.json scripts/lib/packaged-app.mjs company/overlay-manifest.json LICENSING.md TRADEMARKS.md
+
 afterEach(cleanup);
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..');

@@ -33,6 +33,8 @@ import * as path from 'path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+// @scans electron/main/**/*.ts
+
 const MAIN = __dirname;
 
 /**

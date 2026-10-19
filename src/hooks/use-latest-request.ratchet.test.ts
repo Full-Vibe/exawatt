@@ -34,6 +34,8 @@ import * as path from 'path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+// @scans src/**
+
 const SRC = path.resolve(__dirname, '..');
 const PRIMITIVE = path.join('hooks', 'use-latest-request.ts');
 

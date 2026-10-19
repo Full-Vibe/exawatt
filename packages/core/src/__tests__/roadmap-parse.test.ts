@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseRoadmap } from '../roadmap/parse';
 
+// @scans docs/engineering/roadmap.md
+
 const OPTS = {
   projectDir: '/repo',
   file: 'ROADMAP.md',
