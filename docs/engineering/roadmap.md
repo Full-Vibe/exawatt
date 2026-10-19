@@ -161,7 +161,8 @@ Status (2026-10-15, one train landing `f506931d` and one dogfood build):
   (`0513fa91`); the dashboard itself waits on a PostHog key.
 - P7 MCP tools and the guide LANDED (`b1f40dae`, guide `844a3e62`).
 - Agent names on every surface (C4 display) LANDED (`2c0f2e1b`).
-- Open from the train: BUG-292, BUG-293, BUG-295 (host-power context loss, also on master); from its
+- Open from the train: BUG-292, BUG-293, BUG-295 (host-power context loss,
+  fixed 2026-10-18); from its
   review fixes BUG-296 (a freed name stays in other windows) and BUG-297
   (the catalog's Codex store ignores the shell's CODEX_HOME).
 
@@ -3242,6 +3243,18 @@ Next step: keep the profile of a FAILING run (the eval deletes it) and capture
 the packaged app's stdout at launch, then read `main.jsonl`, whose BUG-223
 records now name any helper or renderer that died.
 
+2026-10-18 (BUG-295 fix pass): `withElectronApp` now keeps that evidence
+itself. A launch that shows no window within `firstWindowMs` writes the app's
+last 64 KB of stdout and stderr (captured from launch), a copy of the
+profile's `logs/main.jsonl`, and the launch group's live members to
+`$TMPDIR/exawatt-eval-failures/<time>-<pid>-launch/` before teardown, and
+names the directory. A suspected overlap (the previous generation's tree
+still alive at relaunch) was measured and ruled out on the dev launch: 0
+surviving group members at `withElectronApp`'s return in 4 of 4 runs.
+Not reproduced: 11 of 11 consecutive packaged runs of this tree passed (5
+relaunches each, load 12 to 21). Status stays open until a failing run's
+evidence names the cause; the harness now keeps it automatically.
+
 ### BUG-225 Fleet status counts disagree with the board
 
 Status: done · ENG-004 · operator product-feedback `09054d9b-74bc-4c6e-a0aa-f3a890527651`, 2026-09-24; resolved 2026-09-29.
@@ -3638,7 +3651,8 @@ fails if any mark draws before its body or plate. [Finding](projects/spatial-ope
 
 ### BUG-251 The landing clears `.next/dev` while the stopped server still writes it
 
-Status: bug · ENG-022 · found 2026-09-29 landing BUG-225.
+Status: fixed · ENG-022 · found 2026-09-29 landing BUG-225; repaired
+2026-10-04, record closed 2026-10-18.
 
 `landing-dev-server.mjs` stops a stale dev server, waits only until its port
 is free, then removes `.next/dev`. A Next process that outlives the listener
@@ -3651,6 +3665,18 @@ listener. Same landing: `eval:r3f`, a required check rather than a declared
 gate, reads the `EXA_BASE` server but is not in `gateNeedsDevServer`, so after
 a failed refresh it ran against a stopped server (`ERR_CONNECTION_REFUSED`).
 It should get the same ensure-fresh step as the surface gates.
+
+Both halves landed without this record being closed. `4e59ddb2` made
+`stopServerTargets` wait until every signalled target (the owned process
+group, not just the listener) has exited and the port is free, escalating to
+SIGKILL at 10 s and naming what remains at 30 s, before `.next/dev` is
+removed; its fixture holds a writer in the group past the listener
+(`a closed listener does not finish shutdown while its owned group can still
+write`). `d0d0d3bd` put `eval:r3f` in `DEV_SERVER_FLOOR_CHECKS`, so it gets the
+same ensure-fresh step as the surface gates (`the mandatory R3F floor starts
+the same owned server before navigating`). BUG-281 later made a group of
+exited, unreaped members read as stopped. 12 of 12 `landing-dev-server`
+tests pass on `18c55e07`.
 
 ### BUG-252 The Fleet eval fails on a browser's `/favicon.ico` request
 
@@ -4543,8 +4569,8 @@ Agents or the tile reads the wrong field.
 
 ### BUG-295 `eval:electron:host-power` loses the main-process context about one run in seven
 
-Status: open · ENG-022 · found 2026-10-15 while landing the friend-cohort
-train.
+Status: fixed 2026-10-18 · ENG-022 · found 2026-10-15 while landing the
+friend-cohort train.
 
 On the Fleet v1 pass, the first `powerMonitor.emit('resume')` of the live
 Demo step (`liveDemoPower`) fails with Playwright's "electronApplication.evaluate:
@@ -4553,9 +4579,39 @@ Execution context was destroyed, most likely because of a navigation",
 low load: 1 of 6 runs on the train's tree and 1 of 8 on master `3a2ed0b9`,
 with the same stack, so the train did not introduce it; it is not the blank
 Demo canvas P5 saw under load. The train's landing waived the gate on that
-evidence. Not diagnosed: what in main resets the context Playwright's main
-evaluate holds (nothing in main navigates, and nothing on the `resume` path
-opens an inspector or a new context).
+evidence.
+
+Cause: BUG-175's repair was incomplete. Playwright's utility script awaits the
+callback's result inside an async function and hands the inspector THAT
+function's promise, which the inspector holds only weakly. Once it resolves,
+the inspector's read is one more queued job in a microtask queue Electron's
+main drains only at Node's checkpoints, shared with whatever main is doing
+(IPC from the busy Fleet renderer). A job ahead of the read that allocates
+enough to collect takes the promise; the inspector answers `Promise was
+collected`, and Playwright rewrites every non-script protocol error from an
+evaluate to the navigation message. BUG-175 made each callback async, which
+covers a callback that is still pending, not one like `powerMonitor.emit`
+that returns at once. Main was alive for the next call each time, and nothing
+in main navigates, so the remaining protocol errors that produce this message
+do not fit. A bare-Electron probe that queues a chain of jobs ending in a
+collection behind each call lost 20 of 120 results through the BUG-175
+wrapper (one depth of six, every time) and 0 of 120 through the repair.
+
+Fix: `anchorMainEvaluate` (`scripts/lib/electron-eval.mjs`) awaits the
+callback and then settles on a fresh `setImmediate` macrotask. Node drains
+microtasks after each immediate with nothing foreign queued, so Playwright's
+promise resolves and the inspector reads it in consecutive jobs. Every eval
+goes through this one wrapper (`eval-boundaries.test.mjs` refuses `_electron`
+anywhere else). `electron-eval.test.mjs` keeps the probe: it requires
+Playwright's own evaluate to lose results on this Electron (so the test still
+proves something) and the anchored one to lose none; it fails with the
+BUG-175 wrapper restored (4 of 24 lost). Proof: 20 consecutive
+`eval:electron:host-power` runs (each runs Fleet v1 and v2, so 40 passes)
+against this worktree's own dev server at load 5 to 26, after 14 earlier runs
+on the fix (4 full, 10 v1 under `--js-flags=--gc-interval=2000`), with no
+failure. The natural rate was low that evening (8 of 8 runs on the BUG-175
+harness passed too), so the causal proof is the probe; the runs show the
+repair costs the gate nothing.
 
 ### BUG-296 Deleting or purging a Session frees its Agent name without telling other windows
 
@@ -4581,3 +4637,57 @@ Finder-launched app inherits no shell rc variables, so a user who sets
 the wrong store. Project suggestions already resolve it through
 `loginModelEnvironment`; the catalog should do the same, per read rather
 than at load.
+
+### BUG-298 Registry and resume tests ran the operator's shell startup, so they timed out under load
+
+Status: fixed 2026-10-18 · ENG-022 · found 2026-10-16 when
+`electron/main/pty/resume-candidates.test.ts` and
+`agent-source-registry-cache.test.ts` hit their 5 s timeouts inside a loaded
+related-tests run (the run took 17 minutes, load 10 to 27) and passed alone
+in about 3 s.
+
+Cause: the tests drive the product's real login-shell path with fixture CLIs
+in a test-harness bin, but kept the operator's real `HOME`. Every `/bin/sh
+-l` therefore sourced his `~/.profile`, which loads RVM: about 950 traced
+lines with `ps` and `uname` forks per shell. One registry inspection runs a
+dozen such probes at once, so a test's cost was the operator's dotfiles
+times the host's load. Measured: 12 concurrent login shells took 290 to
+540 ms with his HOME and 41 to 45 ms with an empty one. A tripwire HOME whose
+startup files log each run showed the whole app-node suite ran 40 operator
+login shells, all from five files (the two above, plus the registry, Qwen
+and Antigravity registry tests); a CPU-bound load of 54 to 68 alone tripled
+the slowest test (0.8 s to 2.2 s). The same tests also read whatever the
+operator's real `~/.codex`, `~/.qwen` or `~/.gemini` held.
+
+Fix: `vitest.setup.app-node.ts`, the app-node project's setup file, gives
+every test file a private, empty HOME and clears the variables that point a
+shell or a harness at other startup files or state (`ZDOTDIR`, `ENV`,
+`BASH_ENV`, `XDG_CONFIG_HOME`/`DATA`/`STATE`, `CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`, `QWEN_HOME`). A login shell then runs only the system's
+startup. Tests that need a populated home already write their own. One
+owner for the whole suite rather than a line in each file, so a new
+login-shell test is hermetic without knowing it. With the tripwire HOME in
+place the same suite ran 0 operator startups; app-node results are otherwise
+unchanged (the three failures in it are BUG-276/277 and the file-read
+ratchet, owned elsewhere).
+
+### BUG-300 The live Demo board parked after a Project drill while AC and unlocked
+
+Status: open · ENG-004 · found 2026-10-18 reproducing BUG-295.
+
+One `eval:electron:host-power` v1 run (`--js-flags=--gc-interval=2000`, on
+the BUG-175 harness) failed `live Demo must render working Agents`: right
+after opening a Project on the live Demo Fleet and emitting `on-ac`, the
+board's ONE live renderer (the overview's renderer is not replaced on a
+drill: checked, same `__EVAL_GL__` and connected canvas after the drill in
+3 of 3 runs) painted 0 frames in 60 refreshes with 90 Working rotors on the
+scene, none turning (`renders 0, painted 0, rotors 90, moving 0, tickMs
+8.3`); every passing run paints 1,080 renders over the same 60 refreshes.
+Rendering is parked: `useHostRenderPolicy` reported not visible, or the
+ambient request chain broke across the battery-to-AC cadence switch during
+the drill (this Mac was on battery, which the eval's `resume` re-reads).
+Seen once in 18 v1 runs on the BUG-175 harness; 0 of 34 v1 runs since. The eval's failure message
+now carries `document.visibilityState` and main's host snapshot so the next
+failure names which input parked it. Owner: the Fleet board
+(`src/components/fleet/spatial/operations-board/`), not the eval.
+
