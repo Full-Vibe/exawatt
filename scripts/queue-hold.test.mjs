@@ -106,7 +106,8 @@ test('a clear publication never holds', async () => {
   const time = clock();
   const result = await holdWhilePublicLatched({
     check: async () => null,
-    signature: async () => assert.fail('no signature is read'),
+    // Read once, before the check, as the baseline a hold would compare to.
+    signature: async () => 'clear',
     policy: POLICY,
     ...time,
   });
@@ -150,6 +151,27 @@ test('a deterministic latch re-checks only when recovery moves a signal', async 
   assert.equal(result.outcome, 'released');
   assert.equal(checks, 2, 'the projector is not re-run while nothing moved');
   assert.equal(result.heldMs, 10_000);
+});
+
+// BUG-288: the operator acts on the held line. A recovery made while the head
+// was still reporting it was folded into the baseline signature, so nothing
+// ever "moved" and the head slept until the backstop: the four-minute silence
+// after `STATUS held` that the fixture landing's no-progress watchdog caught.
+test('a recovery made while the hold is being reported moves the signal', async () => {
+  const time = clock();
+  let checks = 0;
+  let signature = 'before';
+  const result = await holdWhilePublicLatched({
+    check: async () => (++checks === 1 ? deterministic : null),
+    signature: async () => signature,
+    report: async event => {
+      if (event === 'held') signature = 'hold enabled';
+    },
+    policy: POLICY,
+    ...time,
+  });
+  assert.equal(result.outcome, 'released');
+  assert.equal(result.heldMs, POLICY.signalPollMs);
 });
 
 test('a deterministic latch is still re-checked on the backstop', async () => {

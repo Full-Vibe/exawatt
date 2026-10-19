@@ -123,6 +123,11 @@ export async function holdWhilePublicLatched({
   sleep = defaultSleep,
   now = Date.now,
 }) {
+  // The baseline is the state the first check saw, read before it. Read
+  // after the `held` report instead, it absorbed a recovery the operator made
+  // on seeing that report, so the signal never moved and the head slept until
+  // the backstop (BUG-288).
+  let lastSignature = await signature();
   let latch = await check();
   if (!latch) return { outcome: 'clear', heldMs: 0 };
   const startedAt = now();
@@ -130,7 +135,6 @@ export async function holdWhilePublicLatched({
   let retryMs = policy.retryMs;
   let lastCheckAt = now();
   let lastStatusAt = now();
-  let lastSignature = await signature();
   while (true) {
     const heldMs = now() - startedAt;
     if (heldMs >= policy.holdMs) return { outcome: 'expired', latch, heldMs };
