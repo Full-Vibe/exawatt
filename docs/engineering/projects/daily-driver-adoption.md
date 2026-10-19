@@ -8092,7 +8092,7 @@ other lanes).
 ### 2026-10-19 — The lifecycle review: every step inside its wait (BUG-303)
 
 **Six review findings on the 0.1.22 lifecycle, fixed as three system
-changes.** Implemented and verified 2026-10-19 on `agent/fix-lifecycle-review`.
+changes.** Implemented and verified 2026-10-19; integrated with that day's review-fix train.
 Operator rule: fix by upgrading the system so the bugs fall out.
 
 The system changes.

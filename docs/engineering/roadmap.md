@@ -4695,7 +4695,7 @@ the wrong store. Project suggestions already resolve it through
 `loginModelEnvironment`; the catalog should do the same, per read rather
 than at load.
 
-**Review fix 2026-10-19** (`agent/fix-login-env`). The 0.1.22 fix probed
+**Review fix 2026-10-19** (`209f6369`). The 0.1.22 fix probed
 the login shell with POSIX `"${KEY-}"`, which fish (the operator's shell),
 csh and PowerShell reject at parse time: the probe printed nothing (fish exit
 127) and every reader silently used Exawatt's own environment, so the fix
@@ -4747,7 +4747,7 @@ place the same suite ran 0 operator startups; app-node results are otherwise
 unchanged (the three failures in it are BUG-276/277 and the file-read
 ratchet, owned elsewhere).
 
-**Review fix 2026-10-19** (`agent/fix-login-env`). The list missed
+**Review fix 2026-10-19** (`209f6369`). The list missed
 `GROK_HOME`, `QWEN_RUNTIME_DIR`, the `OPENCODE_CONFIG*` variables,
 `ANTHROPIC_MODEL*` and `CLAUDE_CODE_EFFORT_LEVEL`, all of which the product
 resolves. It is now derived: `HERMETIC_VARIABLES`
@@ -4879,7 +4879,7 @@ behavior, and integrated/installed evidence. No polling or Agent lifecycle actio
 
 ### BUG-303 The 0.1.22 lifecycle had steps outside its waits, a leaking staging listener, and an over-wide origin sweep
 
-Status: fixed in code 2026-10-19, not yet integrated · ENG-016, ENG-030 · review of the 0.1.22 lifecycle work (BUG-260, BUG-285, BUG-286, BUG-170).
+Status: fixed 2026-10-19 · ENG-016, ENG-030 · review of the 0.1.22 lifecycle work (BUG-260, BUG-285, BUG-286, BUG-170).
 
 Six confirmed findings, three shared causes. Every wait bounded: four
 shutdown steps were awaited beside `SHUTDOWN_WAITS`, and a wait that ended
