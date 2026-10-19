@@ -1,11 +1,15 @@
 import fs from 'fs';
+import type { UpdateReadyNotice } from '@exawatt/core/desktop-bridge';
 import { broadcastToWindows } from './window-broadcast';
 
 /**
  * Tells every window when a newer build has been installed underneath the
  * running one. The dogfood installer writes `update-state.json`; this watches
  * it and broadcasts `app:update-ready` whenever the installed sha differs
- * from the sha this process is running.
+ * from the sha this process is running. `current()` answers a window that
+ * opens or reloads after the broadcast. Whether the operator has already
+ * dismissed the notice is the notice record's question, not this one's
+ * (`notice-dismissals.ts`, BUG-285).
  */
 
 interface UpdateReadyWindow {
@@ -18,8 +22,13 @@ export function watchInstalledBuild(options: {
   currentSha: string;
   allWindows: () => UpdateReadyWindow[];
   intervalMs?: number;
-}): { stop(): void; check(): Promise<void> } {
+}): {
+  stop(): void;
+  check(): Promise<void>;
+  current(): UpdateReadyNotice | null;
+} {
   const { statePath, currentSha } = options;
+  let latest: UpdateReadyNotice | null = null;
   const report = async () => {
     try {
       const state = JSON.parse(
@@ -28,10 +37,8 @@ export function watchInstalledBuild(options: {
         installedSha?: string;
       };
       if (state.installedSha && state.installedSha !== currentSha) {
-        broadcastToWindows(options.allWindows(), 'app:update-ready', {
-          currentSha,
-          installedSha: state.installedSha,
-        });
+        latest = { currentSha, installedSha: state.installedSha };
+        broadcastToWindows(options.allWindows(), 'app:update-ready', latest);
       }
     } catch {
       // No installed update state yet.
@@ -45,6 +52,7 @@ export function watchInstalledBuild(options: {
   const first = report();
   return {
     stop: () => fs.unwatchFile(statePath),
+    current: () => latest,
     check: async () => {
       await first;
       await report();

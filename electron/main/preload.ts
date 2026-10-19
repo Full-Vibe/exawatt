@@ -361,8 +361,18 @@ const bridge = {
     completeCheckpoint: (requestId, ok) =>
       invoke('app:complete-checkpoint', requestId, ok),
     onCheckpointRequest: subscribe('app:checkpoint-request'),
+    shutdownStatus: () => invoke('app:shutdown-status'),
     onShutdownStatus: subscribe('app:shutdown-status'),
+    cancelShutdown: () => invoke('app:cancel-shutdown'),
+    onHeldStateRequest: subscribe('app:held-state-request'),
+    completeHeldState: (requestId, held) =>
+      invoke('app:complete-held-state', requestId, held),
+    takeHeldState: () => sendSync('app:take-held-state'),
+    installedBuild: () => invoke('app:installed-build'),
     onUpdateReady: subscribe('app:update-ready'),
+    noticeDismissals: () => invoke('app:notice-dismissals'),
+    dismissNotice: (id, version) => invoke('app:dismiss-notice', id, version),
+    onNoticeDismissalsChanged: subscribe('app:notice-dismissals-changed'),
   },
   auth: {
     startGoogle: config => invoke('auth:start-google', config),

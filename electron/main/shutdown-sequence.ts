@@ -1,23 +1,27 @@
-import type { MessageBoxOptions } from 'electron';
+import type { IpcMainEvent, MessageBoxOptions } from 'electron';
 import type { TrustedChannels } from './ipc-table';
 import type { PtySessionManager } from './pty/session-manager';
 import type {
+  ClosingStep,
   LiveProcessCounts,
   ShutdownDependencies,
   shutdownCopy as ShutdownCopy,
 } from './shutdown-coordinator';
 import { broadcastToWindows, pushToRenderer } from './window-broadcast';
 import type {
+  HeldOperatorState,
   ShutdownIntent,
-  ShutdownPhase,
+  ShutdownStatus,
 } from '@exawatt/core/desktop-bridge';
 
 /**
  * What quit, restart and update-restart DO, step by step. The order of
- * operations is `ShutdownCoordinator`'s (`shutdown-coordinator.ts`); this
- * module supplies each step: the confirmations, the checkpoint handshake with
- * the renderer that owns workspace state, the ordered cleanup, the failure
- * report, and the pre-bootstrap quit that has no coordinator yet.
+ * operations and every deadline are `ShutdownCoordinator`'s
+ * (`shutdown-coordinator.ts`); this module supplies each step: the
+ * confirmations, the checkpoint handshake with the renderer that owns
+ * workspace state, the held-state capture any window answers, the closing
+ * steps, the handoff, the failure report, the lifecycle's IPC, and the
+ * pre-bootstrap quit that has no coordinator yet.
  *
  * Every native dialog the sequence can open goes through one seam that names
  * it on the console first (`[shutdown] native dialog: <kind>`), so an
@@ -51,7 +55,24 @@ interface CheckpointBroker {
     intent: ShutdownIntent,
     stage: CheckpointStage
   ): Promise<boolean>;
+  /** Asks a window for what its holders captured (BUG-260); null on no
+   *  answer in time, or an answer too large to keep. */
+  requestHeld(win: CheckpointWindow): Promise<HeldOperatorState | null>;
   channels: TrustedChannels;
+}
+
+/** Held state is a position and a draft or two, never a document. */
+export const MAX_HELD_STATE_BYTES = 64 * 1024;
+
+function heldStateOf(value: unknown): HeldOperatorState | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  try {
+    return JSON.stringify(value).length <= MAX_HELD_STATE_BYTES
+      ? (value as HeldOperatorState)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function createCheckpointBroker(deps: {
@@ -60,6 +81,10 @@ export function createCheckpointBroker(deps: {
 }): CheckpointBroker {
   const timeoutMs = deps.timeoutMs ?? 3_000;
   const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
+  const pendingHeld = new Map<
+    string,
+    (held: HeldOperatorState | null) => void
+  >();
   const workspaceCheckpointOwners = new Set<number>();
 
   return {
@@ -87,7 +112,26 @@ export function createCheckpointBroker(deps: {
         });
       });
     },
+    requestHeld(win) {
+      const requestId = deps.randomUUID();
+      return new Promise(resolve => {
+        const timeout = setTimeout(() => finish(null), timeoutMs);
+        const finish = (held: HeldOperatorState | null) => {
+          clearTimeout(timeout);
+          pendingHeld.delete(requestId);
+          resolve(held);
+        };
+        pendingHeld.set(requestId, finish);
+        pushToRenderer(win.webContents, 'app:held-state-request', {
+          requestId,
+        });
+      });
+    },
     channels: {
+      'app:complete-held-state': (_event, requestId: string, held: unknown) => {
+        if (typeof requestId !== 'string') return;
+        pendingHeld.get(requestId)?.(heldStateOf(held));
+      },
       'app:set-workspace-checkpoint-owner': (
         event,
         ownsWorkspaceState: boolean
@@ -113,6 +157,7 @@ type ShutdownSessions = Pick<
   | 'settleProviderIdentities'
   | 'pauseCreates'
   | 'resumeCreates'
+  | 'settleStarts'
   | 'flushHistory'
   | 'stopAll'
 >;
@@ -140,15 +185,36 @@ export interface ShutdownSequenceDependencies {
     ): boolean;
     save(state: unknown): Promise<void>;
   };
-  /** Released in this order, each awaited, once every Session has stopped. */
-  cleanup: ReadonlyArray<() => Promise<void> | void>;
-  /** An update restart's first step after the confirmation (BUG-286). */
-  prepareUpdate: () => Promise<boolean>;
-  /** The last step, once cleanup has finished. */
-  finalize: { installUpdate(): void; relaunch(): void; quit(): void };
+  /** Released in this order once every Session has stopped; each one is
+   *  bounded by the lifecycle owner and skipped past its deadline. */
+  closing: ReadonlyArray<ClosingStep>;
+  /** An update restart's first step after the confirmation (BUG-286):
+   *  null once the installer accepts the update, else its reason. */
+  prepareUpdate: () => Promise<string | null>;
+  /** Shows why an update did not go ahead. */
+  updateRefused: (reason: string) => void;
+  /** The last step. `installUpdate` resolves only if the install fails. */
+  handOff: {
+    installUpdate(): Promise<string>;
+    relaunch(): void;
+    quit(): void;
+  };
+  /** The run record (`run-state.ts`): held state for the next launch, and a
+   *  failed install's reason. */
+  runRecord: {
+    saveHeldState(held: HeldOperatorState | null): Promise<void>;
+    /** What the previous run held, handed to the renderer once. */
+    previousHeldState(): HeldOperatorState | null;
+    saveInstallFailure(reason: string): Promise<void>;
+  };
+  record?: (event: string, fields: Record<string, unknown>) => void;
   /** For the window-management restart, which is a normal restart. */
+  /** Refuses a sender outside the trusted renderer origin. */
+  assertTrustedSender: (event: IpcMainEvent) => void;
   coordinator: () => {
     request(intent: ShutdownIntent): Promise<boolean>;
+    cancel(): boolean;
+    readonly status: ShutdownStatus;
   } | null;
   log?: (message: string) => void;
   logError?: (message: string, error: unknown) => void;
@@ -159,9 +225,18 @@ export interface ShutdownSequence {
   coordinatorDependencies(runtime: {
     sessions: ShutdownSessions;
     shutdownCopy: typeof ShutdownCopy;
-    markClean: () => Promise<void>;
+    markClean: (intent: ShutdownIntent) => Promise<void>;
   }): ShutdownDependencies;
   promptWindowManagementRestart(): Promise<void>;
+  /** The lifecycle's own channels: status and Cancel. */
+  channels: TrustedChannels;
+  /** The synchronous held-state hand-back (BUG-260). */
+  registerSync(
+    onSync: (
+      channel: 'app:take-held-state',
+      listener: (event: IpcMainEvent) => void
+    ) => void
+  ): void;
 }
 
 export function createShutdownSequence(
@@ -189,15 +264,9 @@ export function createShutdownSequence(
     return await deps.showMessageBox(options);
   }
 
-  function broadcastShutdown(
-    phase: ShutdownPhase,
-    counts: LiveProcessCounts
-  ): void {
-    broadcastToWindows(deps.allWindows(), 'app:shutdown-status', {
-      phase,
-      ...counts,
-    });
-    if (phase === 'idle') deps.shutdownCancelled?.();
+  function broadcastShutdown(status: ShutdownStatus): void {
+    broadcastToWindows(deps.allWindows(), 'app:shutdown-status', status);
+    if (status.phase === 'idle') deps.shutdownCancelled?.();
   }
 
   /**
@@ -247,17 +316,13 @@ export function createShutdownSequence(
     return result.response === 1;
   }
 
-  async function cleanupForExit(): Promise<void> {
-    for (const step of deps.cleanup) await step();
-  }
-
   async function reportShutdownFailure(error: unknown): Promise<void> {
     const detail = error instanceof Error ? error.message : String(error);
     await nativeDialog('stop-failed', {
       type: 'error',
-      title: `${productName} couldn't stop every Session`,
-      message: `${productName} couldn't stop every Session`,
-      detail: `${detail.slice(0, 400)}\n\n${productName} will remain open. Check the affected Session before quitting again.`,
+      title: `${productName} stayed open`,
+      message: `${productName} stayed open`,
+      detail: `${detail.slice(0, 400)}\n\n${productName} will remain open.`,
       buttons: ['OK'],
       noLink: true,
     });
@@ -266,7 +331,7 @@ export function createShutdownSequence(
   function coordinatorDependencies(runtime: {
     sessions: ShutdownSessions;
     shutdownCopy: typeof ShutdownCopy;
-    markClean: () => Promise<void>;
+    markClean: (intent: ShutdownIntent) => Promise<void>;
   }): ShutdownDependencies {
     const ptySessions = runtime.sessions;
 
@@ -345,6 +410,17 @@ export function createShutdownSequence(
       return await deps.checkpoints.request(win, intent, stage);
     }
 
+    /** Any window answers: held state is not workspace state, and the
+     *  operator is as likely to be standing in Fleet or Settings. */
+    async function captureHeldState(): Promise<void> {
+      const win = deps.window();
+      const held =
+        win && !win.isDestroyed()
+          ? await deps.checkpoints.requestHeld(win)
+          : null;
+      await deps.runRecord.saveHeldState(held);
+    }
+
     return {
       countLive: () => {
         const live = ptySessions.list().filter(session => !session.exited);
@@ -354,29 +430,84 @@ export function createShutdownSequence(
         };
       },
       confirm: confirmShutdown,
-      checkpoint: checkpointRenderer,
-      confirmWithoutCheckpoint,
       prepareUpdate: deps.prepareUpdate,
+      updateRefused: deps.updateRefused,
       pauseNewWork: () => ptySessions.pauseCreates(),
       resumeNewWork: () => ptySessions.resumeCreates(),
+      settleStarts: () => ptySessions.settleStarts(),
+      captureHeldState,
+      checkpoint: checkpointRenderer,
+      confirmWithoutCheckpoint,
       flushHistory: () => ptySessions.flushHistory(),
       stopProcesses: () => ptySessions.stopAll(),
       markClean: runtime.markClean,
-      cleanup: cleanupForExit,
-      failure: reportShutdownFailure,
-      finalize: intent => {
-        if (intent === 'update') deps.finalize.installUpdate();
-        else {
-          // A restart must come back on its own; a quit must not.
-          if (intent === 'restart') deps.finalize.relaunch();
-          deps.finalize.quit();
-        }
+      closing: deps.closing,
+      handOff: async intent => {
+        if (intent === 'update') return await deps.handOff.installUpdate();
+        // A restart must come back on its own; a quit must not.
+        if (intent === 'restart') deps.handOff.relaunch();
+        deps.handOff.quit();
+        return null;
       },
+      relaunchAfterFailedInstall: async reason => {
+        try {
+          await deps.runRecord.saveInstallFailure(reason);
+        } catch (error) {
+          logError('[shutdown] install failure was not saved', error);
+        }
+        deps.handOff.relaunch();
+        deps.handOff.quit();
+      },
+      failure: reportShutdownFailure,
       status: broadcastShutdown,
+      ...(deps.record ? { record: deps.record } : {}),
     };
   }
 
-  return { coordinatorDependencies, promptWindowManagementRestart };
+  const channels: TrustedChannels = {
+    'app:cancel-shutdown': () => deps.coordinator()?.cancel() ?? false,
+    'app:shutdown-status': () =>
+      deps.coordinator()?.status ?? {
+        phase: 'idle',
+        agents: 0,
+        shells: 0,
+        intent: null,
+        waitingOn: null,
+        cancellable: false,
+      },
+  };
+
+  let heldStateTaken = false;
+  function registerSync(
+    onSync: (
+      channel: 'app:take-held-state',
+      listener: (event: IpcMainEvent) => void
+    ) => void
+  ): void {
+    onSync('app:take-held-state', event => {
+      // A throw from a plain ipcMain.on listener is an uncaught main-process
+      // exception: refuse by answering null, as the appearance read does.
+      try {
+        deps.assertTrustedSender(event);
+      } catch {
+        event.returnValue = null;
+        return;
+      }
+      // Once per launch: a reload must not walk the operator back to where
+      // he stood before the restart.
+      event.returnValue = heldStateTaken
+        ? null
+        : deps.runRecord.previousHeldState();
+      heldStateTaken = true;
+    });
+  }
+
+  return {
+    coordinatorDependencies,
+    promptWindowManagementRestart,
+    channels,
+    registerSync,
+  };
 }
 
 /**

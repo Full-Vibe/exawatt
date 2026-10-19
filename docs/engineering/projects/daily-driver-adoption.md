@@ -8032,3 +8032,59 @@ Session and source failure/Stop evidence before a cause is claimed. Compare
 parent execution, child execution, and source-reported need for intervention
 independently. Do not repair this by parsing displayed terminal prose or
 turning live child work into parent success. No code repair is made here.
+
+### 2026-10-18 — One owner for the app going away (BUG-260, BUG-285, BUG-286)
+
+**The update and restart lifecycle has one owner; three bugs fell out of it.**
+Implemented and verified on `agent/fix-update-lifecycle`; not integrated,
+not released. Operator direction (2026-10-18): fix the overlapping bugs by
+upgrading the system, not by layering fixes, before 0.1.21.
+
+The system change. `ShutdownCoordinator` owns quit, restart, Restart to
+Update and the relaunch after a failed install. Its phases run in one
+order (confirm, stage the update, refuse new Sessions and settle starting
+ones, save layout and held state, stop, close, hand off) and every wait
+goes through one policy table, `SHUTDOWN_WAITS`: named on screen once it
+outlasts its threshold, ended at its deadline, and cancellable from the
+notice while nothing has stopped. The staging and install deadlines moved
+there from `updater-staging.ts`; the updater's own relaunch and its
+`update-install-failure.json` were deleted for the run record
+(`run-state.ts`), which now says how the run ended, what the operator held,
+and why an install failed. Dismissal moved out of React state into one
+persisted record in main.
+
+- **BUG-286 — "Closing Exawatt…" forever.** The 10-15 fix staged the update
+  first but left every other wait unowned. Reproduced on `18c55e07`: a
+  closing step that never settles held the shutdown in `finalizing` for ten
+  simulated minutes and the installer was never reached; an agent still
+  starting held `stopAll` unbounded; staging was three silent minutes with
+  no way out. Now a stalled closing step is recorded and skipped, a start
+  that never settles ends the shutdown before anything stops with the cause
+  named, staging shows "Waiting for macOS to accept the update." with
+  Cancel, and the installer's 30 seconds end in a relaunch on the current
+  version. Whether the external report was 0.1.10 (incident `0026`) is
+  still unconfirmed, so the native path remains unverified until 0.1.20
+  updates to 0.1.21.
+- **BUG-285 — dismissed notice returns.** Not activation: a second dogfood
+  build installed at 19:41:35 under the stale build he was still running
+  (incident `0039`). Reproduced headless on `18c55e07`. The local-build
+  notice is now identified by the running build; product-update notices by
+  kind and version, forgotten by Check for Updates. Every window reads the
+  facts and the dismissals on mount.
+- **BUG-260 — restart loses held state.** Reproduced on `18c55e07`: the
+  run's session storage (the Fleet camera) does not survive a relaunch, and
+  an unsent feedback report lived only in memory. The altitude already
+  survived through the command-altitude memory, so no navigation holder was
+  added. Holders now capture at the owner's checkpoint phase for a restart
+  or update, and the next launch hands the result back once, synchronously,
+  before any surface mounts. A quit carries nothing. Not held: input and
+  scroll inside a running provider's terminal.
+
+Proof: `pnpm eval:electron:app-lifecycle` (new; headless, scratch userData,
+product-update test double with `stall`, `refuse` and `accept` staging),
+two consecutive passes; unit suites `shutdown-coordinator`,
+`shutdown-sequence`, `run-state`, `notice-dismissals`, `updater-staging`,
+`updater.prepare`, `update-ready-notice`, `held-state`,
+`session-storage-holder`, `product-feedback-provider`; the file-read
+ratchet no longer lists `updater.ts` (its remaining unlisted sites belong to
+other lanes).

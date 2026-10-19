@@ -6,13 +6,16 @@
  * it: Squirrel fetches the zip from MacUpdater's local proxy only when
  * `quitAndInstall()` runs. Every Squirrel refusal (a bundle identifier or code
  * signature the running app cannot accept, incident `0026`) therefore arrived
- * after the shutdown had already stopped every agent, and the window sat on
- * "Closing Exawatt…" for good.
+ * after the shutdown had already stopped every agent.
  *
  * Staging asks Squirrel to take the update while nothing has stopped yet.
  * MacUpdater's own `update-downloaded` listener on the same native updater
  * marks it staged, so the later `quitAndInstall()` goes straight to the
  * native install. A refusal here costs the operator nothing but the notice.
+ *
+ * Neither function bounds its own wait. The lifecycle owner
+ * (`shutdown-coordinator.ts`) owns every deadline in the restart, names the
+ * wait on screen, and lets the operator cancel staging.
  */
 
 /** The surface of Electron's native `autoUpdater` this module uses. */
@@ -24,109 +27,58 @@ export interface NativeUpdater {
   removeListener(event: 'error', listener: (error: Error) => void): unknown;
 }
 
-type NativeUpdaterOutcome =
-  | { ok: true }
-  | { ok: false; reason: string; timedOut: boolean };
-
-interface Timers {
-  setTimeout: (callback: () => void, ms: number) => unknown;
-  clearTimeout: (handle: unknown) => void;
+function reasonOf(error: unknown): string {
+  return (
+    (error instanceof Error ? error.message : String(error)) ||
+    'No reason was reported.'
+  );
 }
 
-const realTimers: Timers = {
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: handle => clearTimeout(handle as NodeJS.Timeout),
-};
-
 /**
- * Squirrel downloads the zip from localhost, unzips it and verifies the
- * bundle. A 150 MB update takes seconds; three minutes is a hung helper.
+ * Asks Squirrel.Mac to fetch, unzip and verify the downloaded update.
+ * Resolves null once it has, or with Squirrel's reason for refusing.
  */
-const STAGE_DEADLINE_MS = 180_000;
-/** After a staged install starts, the app should be gone within seconds. */
-const INSTALL_DEADLINE_MS = 30_000;
-
-/**
- * Waits for the native updater's `error` or the deadline, and, when
- * `untilDownloaded`, its next `update-downloaded`, whichever comes first.
- * `start` kicks off the native work after the listeners are attached, so a
- * synchronous event is not missed.
- */
-function awaitNativeUpdater(
-  native: NativeUpdater,
-  options: {
-    start: () => void;
-    untilDownloaded: boolean;
-    deadlineMs: number;
-    describe: string;
-    timers?: Timers;
-  }
-): Promise<NativeUpdaterOutcome> {
-  const timers = options.timers ?? realTimers;
+export function stageNativeUpdate(
+  native: NativeUpdater
+): Promise<string | null> {
   return new Promise(resolve => {
-    let settled = false;
-    const finish = (outcome: NativeUpdaterOutcome) => {
-      if (settled) return;
-      settled = true;
-      timers.clearTimeout(timer);
+    const finish = (reason: string | null) => {
       native.removeListener('update-downloaded', onDownloaded);
       native.removeListener('error', onError);
-      resolve(outcome);
+      resolve(reason);
     };
-    const onDownloaded = () => finish({ ok: true });
-    const onError = (error: Error) =>
-      finish({
-        ok: false,
-        reason: error?.message || String(error),
-        timedOut: false,
-      });
-    const timer = timers.setTimeout(
-      () =>
-        finish({
-          ok: false,
-          reason: `${options.describe} did not finish within ${Math.round(options.deadlineMs / 1000)} seconds.`,
-          timedOut: true,
-        }),
-      options.deadlineMs
-    );
-    if (options.untilDownloaded) native.on('update-downloaded', onDownloaded);
+    const onDownloaded = () => finish(null);
+    const onError = (error: Error) => finish(reasonOf(error));
+    native.on('update-downloaded', onDownloaded);
     native.on('error', onError);
     try {
-      options.start();
+      native.checkForUpdates();
     } catch (error) {
-      onError(error instanceof Error ? error : new Error(String(error)));
+      finish(reasonOf(error));
     }
   });
 }
 
-/** Asks Squirrel.Mac to fetch, unzip and verify the downloaded update. */
-export function stageNativeUpdate(
-  native: NativeUpdater,
-  options: { deadlineMs?: number; timers?: Timers } = {}
-): Promise<NativeUpdaterOutcome> {
-  return awaitNativeUpdater(native, {
-    start: () => native.checkForUpdates(),
-    untilDownloaded: true,
-    deadlineMs: options.deadlineMs ?? STAGE_DEADLINE_MS,
-    describe: 'Preparing the update',
-    timers: options.timers,
-  });
-}
-
 /**
- * Starts the install and settles only if it fails: a native `error`, or the
- * app still running at the deadline. A successful install ends the process,
- * so the promise is simply never settled.
+ * Starts the install and resolves only if it fails, with the reason. A
+ * successful install ends the process, so the promise is simply never
+ * settled; the lifecycle owner's deadline covers an installer that neither
+ * fails nor ends the app.
  */
 export function watchNativeInstall(
   native: NativeUpdater,
-  options: { install: () => void; deadlineMs?: number; timers?: Timers }
-): Promise<NativeUpdaterOutcome> {
-  return awaitNativeUpdater(native, {
-    start: options.install,
-    untilDownloaded: false,
-    deadlineMs: options.deadlineMs ?? INSTALL_DEADLINE_MS,
-    describe: 'Installing the update',
-    timers: options.timers,
+  install: () => void
+): Promise<string> {
+  return new Promise(resolve => {
+    const onError = (error: Error) => {
+      native.removeListener('error', onError);
+      resolve(reasonOf(error));
+    };
+    native.on('error', onError);
+    try {
+      install();
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 }

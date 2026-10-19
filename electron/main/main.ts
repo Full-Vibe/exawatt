@@ -68,6 +68,8 @@ import {
 import { createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
 import { loadSettings } from './settings-store';
+import { createNoticeDismissalStore } from './notice-dismissals';
+import { testProductUpdate } from './updater-test-double';
 import {
   createBeforeQuitHandler,
   createCheckpointBroker,
@@ -123,6 +125,9 @@ const build = resolveBuildIdentity({
 });
 const { buildInfo, distribution, identity } = build;
 const productUpdateFeedUrl = distribution.contract.updates?.feedUrl ?? null;
+/** An automated launch may drive Restart to Update through a double. */
+const testUpdateDouble =
+  isTest && testProductUpdate(env.EXAWATT_TEST_PRODUCT_UPDATE) !== null;
 applyBuildIdentity(app, build, env);
 if (!isDev) assertPackagedRendererComposition(process.resourcesPath, buildInfo);
 
@@ -208,7 +213,7 @@ const mainWindow = createMainWindowController({
   createBrowserWindow: options => new BrowserWindow(options),
   preloadPath: path.join(__dirname, 'preload.js'),
   launchMode: windowLaunchMode,
-  productUpdatesEnabled: productUpdateFeedUrl !== null,
+  productUpdatesEnabled: productUpdateFeedUrl !== null || testUpdateDouble,
   openDevTools: isDev && env.EXAWATT_DEVTOOLS === '1',
   position: () => testWindowPosition(env, screen),
   isWorkspaceTarget: target => workspace.isTarget(target),
@@ -278,20 +283,43 @@ const shutdownSequence = createShutdownSequence({
     mergeHarnessIdentities,
     save: saveWorkspace,
   },
-  cleanup: [
-    () => runtime.disposeServices(),
-    () => runtime.disposeRoadmapWatchers(),
-    () => runtime.disposePty(),
-    () => rendererServer.stop(),
-    () => runtime.installedBuildWatch?.stop(),
+  closing: [
+    { name: 'services', run: () => runtime.disposeServices() },
+    { name: 'roadmap-watchers', run: () => runtime.disposeRoadmapWatchers() },
+    { name: 'sessions', run: () => runtime.disposePty() },
+    { name: 'renderer-server', run: () => rendererServer.stop() },
+    {
+      name: 'installed-build-watch',
+      run: () => runtime.installedBuildWatch?.stop(),
+    },
   ],
   prepareUpdate: () => runtime.prepareProductUpdate(),
-  finalize: {
+  updateRefused: reason => runtime.reportUpdateRefused(reason),
+  handOff: {
     installUpdate: () => runtime.installProductUpdate(),
     relaunch: () => app.relaunch(),
     quit: () => app.quit(),
   },
+  runRecord: {
+    saveHeldState: async held => {
+      await runtime.runStateStore?.recordHeldState(held);
+    },
+    previousHeldState: () => runtime.previousRun?.heldState ?? null,
+    saveInstallFailure: async reason => {
+      await runtime.runStateStore?.recordInstallFailure(
+        runtime.installFailure(reason)
+      );
+    },
+  },
+  record: (event, fields) => mainDiagnostics(event, fields),
+  assertTrustedSender: assertTrustedIpcSender,
   coordinator: () => runtime.shutdownCoordinator,
+});
+
+// BUG-285: one record of dismissed notices, for every window and launch.
+const notices = createNoticeDismissalStore({
+  file: path.join(userDataPath(), 'notice-dismissals.json'),
+  allWindows: () => BrowserWindow.getAllWindows(),
 });
 
 const menuCapabilities = commandVerbCapabilities(distribution.contract);
@@ -304,7 +332,11 @@ const menu = createMenuController({
     capabilities: menuCapabilities,
     onCheckForUpdates:
       productUpdateFeedUrl !== null
-        ? () => void runtime.checkForUpdatesFromMenu()
+        ? () => {
+            // Asking is the operator taking back a dismissal.
+            notices.forget('product-update:');
+            void runtime.checkForUpdatesFromMenu();
+          }
         : undefined,
     onWindowManagementHelp: () =>
       void shutdownSequence.promptWindowManagementRestart(),
@@ -368,7 +400,17 @@ function startCommandSurface(): Promise<void> {
         safeTheme: safeThemeLaunch,
         appearancePreference: () => loadSettings().appearance,
         record: mainDiagnostics,
-        tables: [checkpoints.channels, menu.channels],
+        syncRegistrations: [onSync => shutdownSequence.registerSync(onSync)],
+        tables: [
+          checkpoints.channels,
+          menu.channels,
+          shutdownSequence.channels,
+          notices.channels,
+          {
+            'app:installed-build': () =>
+              runtime.installedBuildWatch?.current() ?? null,
+          },
+        ],
       }),
     shutdownSequence,
     rebuildMenu: () => menu.rebuild(),
@@ -378,6 +420,7 @@ function startCommandSurface(): Promise<void> {
       const win = mainWindow.current();
       if (win && !win.isDestroyed()) await win.loadURL(workspace.url());
     },
+    quitApp: () => app.quit(),
   });
 }
 

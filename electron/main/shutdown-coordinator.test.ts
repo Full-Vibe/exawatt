@@ -1,103 +1,272 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ShutdownStatus } from '@exawatt/core/desktop-bridge';
 import {
+  SHUTDOWN_WAITS,
   ShutdownCoordinator,
   shutdownCopy,
   type ShutdownDependencies,
 } from './shutdown-coordinator';
 
+const never = <T>() => new Promise<T>(() => undefined);
+
 function dependencies(overrides: Partial<ShutdownDependencies> = {}) {
   const order: string[] = [];
+  const statuses: ShutdownStatus[] = [];
   const deps: ShutdownDependencies = {
     countLive: () => ({ agents: 2, shells: 1 }),
     confirm: async () => (order.push('confirm'), true),
+    prepareUpdate: async () => (order.push('prepare'), null),
+    updateRefused: reason => void order.push(`refused:${reason}`),
+    pauseNewWork: () => void order.push('pause'),
+    resumeNewWork: () => void order.push('resume'),
+    settleStarts: async () => void order.push('settle'),
+    captureHeldState: async intent => void order.push(`held:${intent}`),
     checkpoint: async (_intent, stage) => (
       order.push(`checkpoint:${stage}`),
       true
     ),
     confirmWithoutCheckpoint: async () => true,
-    prepareUpdate: async () => (order.push('prepare'), true),
-    pauseNewWork: () => undefined,
-    resumeNewWork: () => undefined,
     flushHistory: async () => void order.push('flush'),
     stopProcesses: async () => void order.push('stop'),
     markClean: async () => void order.push('clean'),
-    cleanup: async () => void order.push('cleanup'),
-    finalize: intent => void order.push(`final:${intent}`),
+    closing: [{ name: 'services', run: () => void order.push('close') }],
+    handOff: async intent => (order.push(`handoff:${intent}`), null),
+    relaunchAfterFailedInstall: async reason =>
+      void order.push(`relaunch:${reason}`),
+    status: status => void statuses.push(status),
     ...overrides,
   };
-  return { deps, order };
+  return { deps, order, statuses };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('ShutdownCoordinator', () => {
   it('cancels without checkpointing or stopping', async () => {
-    const { deps, order } = dependencies({ confirm: async () => false });
+    const { deps, order } = dependencies({
+      confirm: async () => false,
+    });
     const coordinator = new ShutdownCoordinator(deps);
     await expect(coordinator.request('quit')).resolves.toBe(false);
-    expect(order).toEqual([]);
+    expect(order).toEqual(['resume']);
     expect(coordinator.phase).toBe('idle');
   });
 
-  it('checkpoints, stops, marks clean, and finalizes in order', async () => {
+  it('runs the phases in one order and hands off last', async () => {
     const { deps, order } = dependencies();
     const coordinator = new ShutdownCoordinator(deps);
     await expect(coordinator.request('update')).resolves.toBe(true);
     expect(order).toEqual([
       'confirm',
       'prepare',
+      'pause',
+      'settle',
+      'held:update',
       'checkpoint:pre-stop',
       'flush',
       'stop',
       'flush',
       'checkpoint:stopped',
       'clean',
-      'cleanup',
-      'final:update',
+      'close',
+      'handoff:update',
     ]);
     expect(coordinator.allowsFinalExit).toBe(true);
+  });
+
+  it('saves held state for a restart but not for a quit', async () => {
+    for (const intent of ['quit', 'restart'] as const) {
+      const { deps, order } = dependencies();
+      await new ShutdownCoordinator(deps).request(intent);
+      expect(order.includes(`held:${intent}`)).toBe(intent === 'restart');
+      expect(order).not.toContain('prepare');
+    }
   });
 
   // BUG-286: the installer used to see the update only after every agent
   // had stopped, so its refusal stranded the app on "Closing…".
   it('stops nothing and returns to idle when the installer refuses the update', async () => {
-    const phases: string[] = [];
-    const resumed = vi.fn();
-    const { deps, order } = dependencies({
-      prepareUpdate: async () => (order.push('prepare'), false),
-      resumeNewWork: resumed,
-      status: phase => void phases.push(phase),
+    const { deps, order, statuses } = dependencies({
+      prepareUpdate: async () => (order.push('prepare'), 'bundle mismatch'),
     });
     const coordinator = new ShutdownCoordinator(deps);
     await expect(coordinator.request('update')).resolves.toBe(false);
-    expect(order).toEqual(['confirm', 'prepare']);
-    expect(phases).toEqual(['confirming', 'preparing', 'idle']);
-    expect(coordinator.allowsFinalExit).toBe(false);
-    expect(resumed).toHaveBeenCalledOnce();
-  });
-
-  it('prepares an update only for an update restart', async () => {
-    for (const intent of ['quit', 'restart'] as const) {
-      const { deps, order } = dependencies();
-      await new ShutdownCoordinator(deps).request(intent);
-      expect(order).not.toContain('prepare');
-    }
-  });
-
-  it('runs an operator restart through the same checkpoint-and-stop path', async () => {
-    const { deps, order } = dependencies();
-    const coordinator = new ShutdownCoordinator(deps);
-    await expect(coordinator.request('restart')).resolves.toBe(true);
     expect(order).toEqual([
       'confirm',
-      'checkpoint:pre-stop',
-      'flush',
-      'stop',
-      'flush',
-      'checkpoint:stopped',
-      'clean',
-      'cleanup',
-      'final:restart',
+      'prepare',
+      'refused:bundle mismatch',
+      'resume',
     ]);
-    expect(coordinator.allowsFinalExit).toBe(true);
+    expect(
+      statuses
+        .map(status => status.phase)
+        .filter((phase, index, all) => phase !== all[index - 1])
+    ).toEqual(['confirming', 'preparing', 'idle']);
+    expect(coordinator.allowsFinalExit).toBe(false);
+  });
+
+  // BUG-286: every wait is named, bounded, and cancellable while nothing has
+  // stopped. A hung installer used to be three silent minutes of "Preparing…".
+  it('names the installer wait at once and lets the operator cancel it', async () => {
+    const { deps, order, statuses } = dependencies({
+      prepareUpdate: () => never(),
+    });
+    const coordinator = new ShutdownCoordinator(deps);
+    const result = coordinator.request('update');
+    await vi.waitFor(() =>
+      expect(coordinator.status).toMatchObject({
+        phase: 'preparing',
+        waitingOn: 'update-staging',
+        cancellable: true,
+      })
+    );
+    expect(coordinator.cancel()).toBe(true);
+    await expect(result).resolves.toBe(false);
+    expect(order).not.toContain('stop');
+    expect(order).not.toContain('pause');
+    expect(statuses.at(-1)).toMatchObject({ phase: 'idle', waitingOn: null });
+  });
+
+  it('reports a hung installer at its deadline with every Session still running', async () => {
+    vi.useFakeTimers();
+    const { deps, order } = dependencies({ prepareUpdate: () => never() });
+    const result = new ShutdownCoordinator(deps).request('update');
+    await vi.advanceTimersByTimeAsync(
+      SHUTDOWN_WAITS['update-staging'].deadlineMs
+    );
+    await expect(result).resolves.toBe(false);
+    expect(order.find(step => step.startsWith('refused:'))).toMatch(
+      /did not finish within 180 seconds/
+    );
+    expect(order).not.toContain('stop');
+  });
+
+  it('cannot be cancelled once Sessions are stopping', async () => {
+    let release!: () => void;
+    const { deps } = dependencies({
+      stopProcesses: () =>
+        new Promise<void>(resolve => {
+          release = resolve;
+        }),
+    });
+    const coordinator = new ShutdownCoordinator(deps);
+    const result = coordinator.request('quit');
+    await vi.waitFor(() => expect(coordinator.phase).toBe('stopping'));
+    expect(coordinator.cancel()).toBe(false);
+    release();
+    await expect(result).resolves.toBe(true);
+  });
+
+  it('ends the shutdown, naming the cause, when an agent never finishes starting', async () => {
+    vi.useFakeTimers();
+    const failure = vi.fn();
+    const { deps, order, statuses } = dependencies({
+      settleStarts: () => never(),
+      failure,
+    });
+    const result = new ShutdownCoordinator(deps).request('quit');
+    await vi.advanceTimersByTimeAsync(
+      SHUTDOWN_WAITS['agents-starting'].visibleAfterMs
+    );
+    expect(statuses.at(-1)).toMatchObject({
+      waitingOn: 'agents-starting',
+      cancellable: true,
+    });
+    await vi.advanceTimersByTimeAsync(
+      SHUTDOWN_WAITS['agents-starting'].deadlineMs
+    );
+    await expect(result).resolves.toBe(false);
+    expect(order).not.toContain('stop');
+    expect(String(failure.mock.calls[0]?.[0])).toMatch(/still starting/);
+  });
+
+  // BUG-286 class, reproduced on the pre-owner coordinator: a closing step
+  // that never settled left the window on "Closing…" for good and the
+  // installer was never reached.
+  it('skips a closing step that never settles and still hands off', async () => {
+    vi.useFakeTimers();
+    const record = vi.fn();
+    const { deps, order } = dependencies({
+      closing: [
+        { name: 'stuck', run: () => never() },
+        { name: 'after', run: () => void order.push('after') },
+      ],
+      record,
+    });
+    const result = new ShutdownCoordinator(deps).request('update');
+    await vi.advanceTimersByTimeAsync(
+      SHUTDOWN_WAITS['services-closing'].deadlineMs
+    );
+    await expect(result).resolves.toBe(true);
+    expect(order.slice(-2)).toEqual(['after', 'handoff:update']);
+    expect(record).toHaveBeenCalledWith('shutdown.step-skipped', {
+      step: 'stuck',
+    });
+  });
+
+  it('records a closing step that fails and continues', async () => {
+    const record = vi.fn();
+    const { deps, order } = dependencies({
+      closing: [
+        {
+          name: 'renderer-server',
+          run: async () => {
+            throw new Error('did not stop');
+          },
+        },
+      ],
+      record,
+    });
+    await expect(new ShutdownCoordinator(deps).request('quit')).resolves.toBe(
+      true
+    );
+    expect(order.at(-1)).toBe('handoff:quit');
+    expect(record).toHaveBeenCalledWith('shutdown.step-failed', {
+      step: 'renderer-server',
+      message: 'did not stop',
+    });
+  });
+
+  it('relaunches the current version when the install fails after everything stopped', async () => {
+    const { deps, order } = dependencies({
+      handOff: async () => 'Code signature did not pass validation',
+    });
+    await expect(new ShutdownCoordinator(deps).request('update')).resolves.toBe(
+      true
+    );
+    expect(order.at(-1)).toBe(
+      'relaunch:Code signature did not pass validation'
+    );
+  });
+
+  it('relaunches the current version when the installer never ends the app', async () => {
+    vi.useFakeTimers();
+    const { deps, order } = dependencies({ handOff: () => never() });
+    const result = new ShutdownCoordinator(deps).request('update');
+    await vi.advanceTimersByTimeAsync(SHUTDOWN_WAITS.installer.deadlineMs);
+    await expect(result).resolves.toBe(true);
+    expect(order.at(-1)).toMatch(
+      /^relaunch:Installing the update did not finish/
+    );
+  });
+
+  it('keeps going without held state when capturing it fails', async () => {
+    const record = vi.fn();
+    const { deps, order } = dependencies({
+      captureHeldState: async () => {
+        throw new Error('no window');
+      },
+      record,
+    });
+    await expect(
+      new ShutdownCoordinator(deps).request('restart')
+    ).resolves.toBe(true);
+    expect(order).toContain('handoff:restart');
+    expect(record).toHaveBeenCalledWith('shutdown.held-state-failed', {
+      message: 'no window',
+    });
   });
 
   it('deduplicates concurrent quit requests', async () => {
@@ -134,38 +303,34 @@ describe('ShutdownCoordinator', () => {
     expect(stop).not.toHaveBeenCalled();
   });
 
-  it('broadcasts idle and reports dependency failures without finalizing', async () => {
-    const phases: string[] = [];
+  it('broadcasts idle and reports dependency failures without handing off', async () => {
     const failure = vi.fn(async () => undefined);
-    const finalize = vi.fn();
-    const { deps } = dependencies({
+    const handOff = vi.fn(async () => null);
+    const { deps, statuses } = dependencies({
       stopProcesses: async () => {
         throw new Error('survivor');
       },
       failure,
-      finalize,
-      status: phase => void phases.push(phase),
+      handOff,
     });
     const coordinator = new ShutdownCoordinator(deps);
     await expect(coordinator.request('quit')).resolves.toBe(false);
     expect(failure).toHaveBeenCalledOnce();
-    expect(finalize).not.toHaveBeenCalled();
-    expect(phases.at(-1)).toBe('idle');
+    expect(handOff).not.toHaveBeenCalled();
+    expect(statuses.at(-1)?.phase).toBe('idle');
   });
 
   it('never records a clean run when the post-stop checkpoint fails', async () => {
     const clean = vi.fn(async () => undefined);
-    const finalize = vi.fn();
-    const { deps } = dependencies({
+    const { deps, order } = dependencies({
       checkpoint: async (_intent, stage) => stage === 'pre-stop',
       markClean: clean,
-      finalize,
     });
     await expect(new ShutdownCoordinator(deps).request('quit')).resolves.toBe(
       true
     );
     expect(clean).not.toHaveBeenCalled();
-    expect(finalize).toHaveBeenCalledWith('quit');
+    expect(order.at(-1)).toBe('handoff:quit');
   });
 });
 

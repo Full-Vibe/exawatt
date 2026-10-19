@@ -56,6 +56,9 @@ import type {
   ProjectSuggestionsResult,
   RenderErrorReport,
   SavedDiagnosticsReport,
+  HeldOperatorState,
+  HeldStateRequest,
+  NoticeDismissals,
   ShutdownStatus,
   UpdateReadyNotice,
   WorkspaceRecoveryState,
@@ -202,6 +205,18 @@ interface RequestTable {
     void
   >;
   'app:complete-checkpoint': Call<[requestId: string, ok: boolean], void>;
+  /** Any window answers with what its holders captured, or null. */
+  'app:complete-held-state': Call<
+    [requestId: string, held: HeldOperatorState | null],
+    void
+  >;
+  /** Cancels a shutdown while nothing has stopped; false once too late. */
+  'app:cancel-shutdown': Call<[], boolean>;
+  'app:shutdown-status': Call<[], ShutdownStatus>;
+  /** The newer build installed under this one, if any (dogfood delivery). */
+  'app:installed-build': Call<[], UpdateReadyNotice | null>;
+  'app:notice-dismissals': Call<[], NoticeDismissals>;
+  'app:dismiss-notice': Call<[id: string, version: string], NoticeDismissals>;
 
   'auth:start-google': Call<[config: ElectronAuthStartConfig], void>;
   'auth:link-github': Call<[config: ElectronAuthLinkConfig], void>;
@@ -516,13 +531,17 @@ interface RequestTable {
 }
 
 /**
- * Synchronous renderer → main reads (`ipcRenderer.sendSync`). One exists,
- * because preload runs before the document's first-paint script and
- * Electron's durable appearance has to win before any pixel is chosen.
- * Undefined when main refuses the sender mid-navigation.
+ * Synchronous renderer → main reads (`ipcRenderer.sendSync`). Two exist:
+ * preload runs before the document's first-paint script and Electron's
+ * durable appearance has to win before any pixel is chosen (undefined when
+ * main refuses the sender mid-navigation); and held state has to be back in
+ * place before any surface reads it at mount (null when refused).
  */
 interface SyncRequestTable {
   'app:appearance-bootstrap': Call<[], AppearanceBootstrapSnapshot | undefined>;
+  /** The held state the previous run saved for this launch, once (BUG-260).
+   *  Synchronous so a holder restores before any surface reads it. */
+  'app:take-held-state': Call<[], HeldOperatorState | null>;
 }
 
 /** Main → renderer pushes (`webContents.send` → a preload subscription). */
@@ -535,6 +554,8 @@ interface PushTable {
   'analytics:main-process-events': null;
   'app:appearance-changed': OsAppearanceSnapshot;
   'app:checkpoint-request': CheckpointRequest;
+  'app:held-state-request': HeldStateRequest;
+  'app:notice-dismissals-changed': NoticeDismissals;
   'app:command-engine-changed': CommandEnginePhase;
   'app:device-power-changed': DevicePowerStatus;
   'app:host-power-changed': HostPowerSnapshot;

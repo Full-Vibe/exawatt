@@ -7,6 +7,7 @@ import { SiteHeader } from '@/components/nav/site-header';
 import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
+import { HeldStateBridge } from '@/components/nav/held-state-bridge';
 import { NoticeLaneProvider } from '@/components/ui/notice-lane';
 import { RendererErrorReporter } from '@/components/diagnostics/renderer-error-reporter';
 import { PermissionsProvider } from '@/components/permissions/permissions-provider';
@@ -121,6 +122,8 @@ export default function RootLayout({
                             <FleetProvider>
                               <SiteHeader />
                               <UpdateReadyNotice />
+                              {/* BUG-260: where the operator stood survives a restart */}
+                              <HeldStateBridge />
                               {/* one-time, dismissible, never a gate (ENG-030
                           OS0.1); it gates itself on signed-out app surfaces */}
                               <AccountFirstRunCard />

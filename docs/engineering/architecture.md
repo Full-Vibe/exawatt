@@ -1441,6 +1441,27 @@ Built:
   before any Session stops (BUG-286); a refusal is the update-failed notice
   with Squirrel's reason, and an install that still fails after shutdown
   relaunches the current version and reports the reason on that launch.
+- app lifecycle owner (BUG-260, BUG-285, BUG-286, 2026-10-18):
+  `ShutdownCoordinator` (`electron/main/shutdown-coordinator.ts`) is the one
+  owner of the app going away: quit, operator restart, Restart to Update and
+  the relaunch that recovers a failed install. Its phases run in one order:
+  confirm, stage the update (update only), refuse new Sessions and let
+  starting ones settle, save the layout and the operator's held state, stop
+  Sessions, close services, hand off. Every wait goes through one policy
+  table (`SHUTDOWN_WAITS`): named on screen once it outlasts its threshold,
+  ended at its deadline, cancellable while nothing has stopped; a closing
+  step past its deadline is recorded and skipped, never waited on. The run
+  record (`run-state.ts`) is the one record of how the app went away: the
+  clean exit's intent, the held state a restart or update saved, and a
+  failed install's reason. Held state is what the layout cannot carry: any
+  window answers the owner's request from registered holders
+  (`src/lib/app-lifecycle/held-state.ts`: the run's `exawatt:` session
+  storage such as the Fleet camera, and an unsent feedback report), and the
+  next launch hands it back once, synchronously, before any surface mounts.
+  Notices are dismissed in one persisted record
+  (`notice-dismissals.ts`) keyed by notice identity and version
+  (`src/lib/notices/notice-identity.ts`), so a reload, a new window or
+  returning to the app never re-shows a dismissed notice.
   Electron 43 includes the macOS 26 Squirrel.Mac helper-activation fix;
   signed `v0.1.2` to `v0.1.3` update and automatic relaunch are verified
 - roadmap lens (ENG-017): a Team-altitude rail rendering each Project's

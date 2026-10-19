@@ -21,7 +21,11 @@ import { registerIpcModules } from './ipc-table';
 import type { StartupStage } from './launch-screen';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import type { PtySessionManager } from './pty/session-manager';
-import type { RunStateStore } from './run-state';
+import type { PreviousRun, RunStateStore } from './run-state';
+import {
+  createTestUpdaterBoundary,
+  testProductUpdate,
+} from './updater-test-double';
 import {
   isClaudePlanWindowsEnabled,
   isCodexPlanWindowsEnabled,
@@ -59,6 +63,8 @@ export class CommandRuntime {
   googlePlanAccount: GooglePlanAccountService | null = null;
   usageAlerts: UsageAlertService | null = null;
   runStateStore: RunStateStore | null = null;
+  /** What the previous run left: interruption, held state, install failure. */
+  previousRun: PreviousRun | null = null;
   authCoordinator: ElectronAuthCoordinator | null = null;
   recordAuthDiagnostic: AuthDiagnosticRecorder = () => {};
   safeAuthError: (error: unknown) => ElectronAuthError = error => ({
@@ -73,19 +79,25 @@ export class CommandRuntime {
   isLinkOutcome: ((value: unknown) => boolean) | null = null;
   disposePty: () => Promise<void> = async () => {};
   disposeRoadmapWatchers: () => void = () => {};
-  prepareProductUpdate: () => Promise<boolean> = async () => {
+  prepareProductUpdate: () => Promise<string | null> = async () => {
     throw new Error('Product updates are not ready.');
   };
-  installProductUpdate: () => void = () => {
+  reportUpdateRefused: (reason: string) => void = () => {};
+  installProductUpdate: () => Promise<string> = async () => {
     throw new Error('Product updates are not ready.');
   };
+  installFailure: (reason: string) => {
+    fromVersion: string;
+    toVersion: string | null;
+    reason: string;
+  } = reason => ({ fromVersion: '', toVersion: null, reason });
   checkForUpdatesFromMenu: () => Promise<void> = async () => {};
   /** Null until the updater runtime loads; the report says so rather than
    *  inventing an idle status (ENG-025 F5). */
   currentUpdateStatus: () => Record<string, unknown> | null = () => null;
   /** The workspace has been loaded once, so a new window opens straight to it. */
   startupComplete = false;
-  installedBuildWatch: { stop(): void } | null = null;
+  installedBuildWatch: ReturnType<typeof watchInstalledBuild> | null = null;
 
   /**
    * Abort any in-flight background scan, settle its state writes, and close
@@ -203,6 +215,8 @@ interface CommandSurfaceDependencies {
   setEnginePhase: (phase: CommandEnginePhase) => void;
   /** Navigates the main window to the workspace, if it still exists. */
   enterWorkspace: () => Promise<void>;
+  /** `app.quit()`: the test updater's install ends the app with it. */
+  quitApp: () => void;
   loadRuntime?: () => Promise<CommandRuntimeModules>;
 }
 
@@ -219,8 +233,14 @@ export async function bootstrapCommandSurface(
   const userDataPath = () => app.getPath('userData');
   const buildInfo = deps.build.buildInfo;
   const distribution = deps.build.distribution.contract;
+  /** An automated launch may drive Restart to Update through a double. */
+  const testUpdate = deps.isTest
+    ? testProductUpdate(deps.env.EXAWATT_TEST_PRODUCT_UPDATE)
+    : null;
   /** Null when the distribution declares no update feed. */
-  const productUpdateFeedUrl = distribution.updates?.feedUrl ?? null;
+  const productUpdateFeedUrl =
+    distribution.updates?.feedUrl ??
+    (testUpdate ? 'https://updates.invalid/test' : null);
   const rendererReady = deps.rendererReady().then(url => {
     // The trusted origin is established by the step that establishes the
     // origin. It used to be set at the tail of bootstrap, which meant the
@@ -260,7 +280,9 @@ export async function bootstrapCommandSurface(
     modules.roadmapWatcher.disposeRoadmapWatchers;
   if (productUpdateFeedUrl !== null) {
     runtime.prepareProductUpdate = modules.updater.prepareProductUpdate;
+    runtime.reportUpdateRefused = modules.updater.reportUpdateRefused;
     runtime.installProductUpdate = modules.updater.installProductUpdate;
+    runtime.installFailure = modules.updater.installFailure;
     runtime.checkForUpdatesFromMenu = modules.updater.checkForUpdatesFromMenu;
     runtime.currentUpdateStatus = () => ({
       ...modules.updater.currentUpdateStatus(),
@@ -322,6 +344,7 @@ export async function bootstrapCommandSurface(
     ptySessions.configurePersistence(path.join(userDataPath(), 'sessions')),
     runStateStore.begin(),
   ]);
+  runtime.previousRun = recovery;
   startupScreen.update({
     progress: 0.78,
     label: 'Session index restored',
@@ -456,7 +479,8 @@ export async function bootstrapCommandSurface(
     deps.shutdownSequence.coordinatorDependencies({
       sessions: ptySessions,
       shutdownCopy: modules.shutdown.shutdownCopy,
-      markClean: () => runtime.runStateStore?.markClean() ?? Promise.resolve(),
+      markClean: intent =>
+        runtime.runStateStore?.markClean(intent) ?? Promise.resolve(),
     })
   );
   runtime.shutdownCoordinator = shutdownCoordinator;
@@ -464,7 +488,8 @@ export async function bootstrapCommandSurface(
     modules.updater.registerProductUpdater(
       productUpdateFeedUrl,
       () => runtime.liveSessionCount(),
-      () => shutdownCoordinator.request('update')
+      () => shutdownCoordinator.request('update'),
+      testUpdate ? createTestUpdaterBoundary(testUpdate, deps.quitApp) : null
     );
   }
   deps.rebuildMenu();
@@ -488,7 +513,10 @@ export async function bootstrapCommandSurface(
     allWindows: () => deps.electron.BrowserWindow.getAllWindows(),
   });
   if (productUpdateFeedUrl !== null) {
-    modules.updater.startProductUpdater(buildInfo.delivery === 'signed');
+    modules.updater.startProductUpdater(
+      buildInfo.delivery === 'signed',
+      recovery.installFailure
+    );
   }
   if (!deps.isDev) deps.pruneRendererLeftovers();
 }

@@ -3856,6 +3856,14 @@ request requiring a policy/design amendment; [decision 0032](decisions/0032-rest
 still forbids silent revival and admits exact-identity eligible Agents only.
 Superseded by the subsequent 2026-10-04 operator steering and [decision 0046](decisions/0046-reading-does-not-resolve-attention.md): restore context paused, then offer explicit resume of the previously running set; already-paused Sessions stay excluded. Automatic resume is future scope. Preserve the input/navigation/scroll acceptance above and record any remaining gaps; do not promise every harness can revive transparently.
 
+2026-10-18 on `agent/fix-update-lifecycle` (not integrated): the lifecycle
+owner saves held state for a restart or update and hands it back once: the
+run's session storage (the Fleet camera, which a relaunch used to reset)
+and an unsent feedback report. Altitude was already restored by the
+command-altitude memory. Remaining gap, by design: input and scroll inside a
+running provider's terminal.
+[Milestone](projects/daily-driver-adoption.md#2026-10-18--one-owner-for-the-app-going-away-bug-260-bug-285-bug-286).
+
 ### BUG-261 Toasts and the feedback form's sending state use three treatments
 
 Status: done · ENG-036 · product-feedback d8a44d94 2026-09-29, 513ebfde
@@ -4129,10 +4137,12 @@ Preserve draft focus, caret and selection across capture and cancellation.
 
 ### BUG-285 A dismissed local-build notice returns on app activation
 
-Status: bug · ENG-016 · operator feedback e179e337, 2026-10-05; triaged 2026-10-15.
+Status: fixed in code on `agent/fix-update-lifecycle`, not integrated · ENG-016 · operator feedback e179e337, 2026-10-05; triaged 2026-10-15.
 
-Keep dismissal stable for the same installation while announcing a new one.
-[Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-15--launcher-availability-and-repeated-update-notice-bug-283-bug-285).
+Cause: a second dogfood install under the same stale running build, not
+activation (incident `0039`). One persisted dismissal record keyed by notice
+identity and version; the local-build notice's version is the RUNNING build.
+[Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-18--one-owner-for-the-app-going-away-bug-260-bug-285-bug-286).
 
 ### BUG-286 Restart to Update hangs on "Closing Exawatt…"
 
@@ -4143,6 +4153,10 @@ refusal is the update-failed notice with its reason, and a late install
 failure relaunches the current version instead of hanging. Incident `0026`
 step 3 documented this masking without fixing it.
 [Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-15--restart-to-update-hangs-on-closing-exawatt-bug-286).
+2026-10-18 on `agent/fix-update-lifecycle` (not integrated): the lifecycle
+owner bounds, names and (until anything stops) cancels every wait; a closing
+step that never settled used to hold "Closing Exawatt…" indefinitely.
+[Milestone](projects/daily-driver-adoption.md#2026-10-18--one-owner-for-the-app-going-away-bug-260-bug-285-bug-286).
 
 ### BUG-287 Reading a harness's SQLite store wrote beside it
 
@@ -4161,6 +4175,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 | Amended                                                                                                                                                                                  | Amended by                                                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BUG-285 acceptance "a genuinely different installation still produces its notice" | BUG-285 diagnosis (incident `0039`), 2026-10-18 | The reported return WAS a different installation under the same stale running build. The local-build notice's identity is the running build: once dismissed it stays dismissed until the operator runs a build that is superseded in turn. |
 | ENG-004 V4.1 P2 development-only v2 offer | P4 parity verified and P5, 2026-10-15 | Every build offers v2 (Preview); explicit-only storage and the v1 default remain unchanged. |
 | ENG-004 V4.1 P3 pending look review, three-material scope and unresolved Material row | Operator acceptance and P4 instruction, 2026-10-15 | Gummy leads; all five bench materials selectable in navigable Settings; P4 proceeds in parallel; next review in actual app. The old delegation branch prerequisite is superseded by the integrated census rescue. |
 | ENG-004 V4.1 / decision `0050` planning names Dots and Tiles | Operator naming amendment, 2026-10-14; V4.1 P2 | Visible Fleet view choices are v1 and v2 (Preview). v1 remains the runtime default; the dev-only v2 offer until P5 and explicit-only storage contract are unchanged. |

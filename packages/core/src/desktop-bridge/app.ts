@@ -173,11 +173,52 @@ export type ShutdownPhase =
   | 'stopping'
   | 'finalizing';
 
+/**
+ * What a shutdown phase is waiting on, named so a stall reads as a cause
+ * rather than as "Closing…" (BUG-286). Every wait is bounded by the
+ * lifecycle owner (`electron/main/shutdown-coordinator.ts`).
+ */
+export type ShutdownWait =
+  /** The macOS installer fetching and verifying the update. */
+  | 'update-staging'
+  /** A Session that was starting when the shutdown began. */
+  | 'agents-starting'
+  /** The window saving its layout and the operator's place. */
+  | 'window-saving'
+  | 'processes-stopping'
+  | 'services-closing'
+  /** The installer replacing the app after everything closed. */
+  | 'installer';
+
 export interface ShutdownStatus {
   phase: ShutdownPhase;
   agents: number;
   shells: number;
+  /** Null while idle. */
+  intent: ShutdownIntent | null;
+  /** Set once a wait has taken long enough to be worth naming. */
+  waitingOn: ShutdownWait | null;
+  /** True while cancelling still leaves every Session running. */
+  cancellable: boolean;
 }
+
+/**
+ * What the operator was holding when the app restarted, outside the layout
+ * (BUG-260): where he was standing, and unsent text Exawatt owns. Keyed by
+ * holder id; each holder validates its own value when it is restored. Saved
+ * only for a restart or an update, and restored once by the next launch.
+ */
+export type HeldOperatorState = Record<string, unknown>;
+
+export interface HeldStateRequest {
+  requestId: string;
+}
+
+/**
+ * Dismissed notices, by notice identity: the version that was dismissed.
+ * A notice is shown again only when its version changes (BUG-285).
+ */
+export type NoticeDismissals = Record<string, string>;
 
 /** A newer build is installed on disk than the one running. */
 export interface UpdateReadyNotice {

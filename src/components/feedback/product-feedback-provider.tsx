@@ -41,6 +41,7 @@ import {
   validateFeedbackImageFiles,
 } from '@/lib/feedback/image';
 import { useLatestRequest } from '@/hooks/use-latest-request';
+import { registerHeldState } from '@/lib/app-lifecycle/held-state';
 import {
   Dialog,
   DialogContent,
@@ -115,6 +116,24 @@ function recordFailure(cause: unknown) {
   return problem;
 }
 
+interface HeldFeedbackDraft {
+  /** Drafts belong to an account: another sign-in never sees this one. */
+  account: string;
+  kind: 'general' | 'bug' | 'idea';
+  message: string;
+}
+
+const HELD_DRAFT_MAX = 20_000;
+
+function parseHeldFeedbackDraft(value: unknown): HeldFeedbackDraft | null {
+  if (!value || typeof value !== 'object') return null;
+  const { account, kind, message } = value as Record<string, unknown>;
+  if (typeof account !== 'string' || !account) return null;
+  if (kind !== 'general' && kind !== 'bug' && kind !== 'idea') return null;
+  if (typeof message !== 'string' || !message.trim()) return null;
+  return { account, kind, message: message.slice(0, HELD_DRAFT_MAX) };
+}
+
 export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   const distribution = useMemo(() => resolvedDistribution(), []);
   const feedbackEndpoint = distribution.services.productFeedback;
@@ -167,6 +186,36 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       .catch(() => undefined);
     return () => store.reset();
   }, [store]);
+  // BUG-260: an unsent report survives Restart to Update. Text and kind
+  // only: a screenshot or diagnostics belong to the moment they captured.
+  // It waits for its own account's session, because signing in resets the
+  // draft and a different account must never see it.
+  const heldDraftRef = useRef<HeldFeedbackDraft | null>(null);
+  const applyHeldDraft = useCallback(() => {
+    const held = heldDraftRef.current;
+    if (!held || !accountRef.current) return;
+    heldDraftRef.current = null;
+    if (held.account !== accountRef.current) return;
+    if (!store.getSnapshot().drafts.composer.message.trim()) {
+      store.updateDraft('composer', { kind: held.kind, message: held.message });
+    }
+  }, [store]);
+  useEffect(
+    () =>
+      registerHeldState<HeldFeedbackDraft>('feedback-draft', {
+        capture: () => {
+          const account = accountRef.current;
+          const { kind, message } = store.getSnapshot().drafts.composer;
+          return account && message.trim() ? { account, kind, message } : null;
+        },
+        parse: parseHeldFeedbackDraft,
+        restore: held => {
+          heldDraftRef.current = held;
+          applyHeldDraft();
+        },
+      }),
+    [store, applyHeldDraft]
+  );
   const syncSession = useCallback(
     (session: Session | null) => {
       if (
@@ -188,13 +237,14 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         temporaryCaptureRef.current = false;
         setTemporaryCapture(false);
       }
+      if (token) applyHeldDraft();
       tokenRef.current = token;
       const authenticated = !!account && !!token;
       setIsAuthenticated(authenticated);
       void window.electron?.pty?.setContextAuth?.(token);
       void window.electron?.feedback?.setAuthenticated(authenticated);
     },
-    [store, invalidateReads]
+    [store, invalidateReads, applyHeldDraft]
   );
   useEffect(() => {
     if (!feedbackEndpoint) {

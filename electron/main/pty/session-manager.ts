@@ -1841,11 +1841,20 @@ export class PtySessionManager extends EventEmitter {
     ]);
   }
 
-  async stopAll(): Promise<void> {
-    this.pauseCreates();
+  /**
+   * Resolves once no Session is part-way through starting. Unbounded on
+   * purpose: the lifecycle owner bounds it, names it on screen and lets the
+   * operator cancel it, before anything has stopped (BUG-286).
+   */
+  async settleStarts(): Promise<void> {
     while (this.creating > 0) {
       await new Promise(resolve => setTimeout(resolve, 25));
     }
+  }
+
+  async stopAll(): Promise<void> {
+    this.pauseCreates();
+    await this.settleStarts();
     const active = Array.from(this.sessions.entries()).filter(
       ([, session]) => !session.info.exited
     );

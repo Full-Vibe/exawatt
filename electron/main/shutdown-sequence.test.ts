@@ -60,6 +60,7 @@ function world(
     dialogResponses?: number[];
     renderer?: 'owner' | 'none';
     storedLayout?: unknown;
+    previousHeld?: Record<string, unknown>;
   } = {}
 ) {
   const log: string[] = [];
@@ -118,19 +119,45 @@ function world(
         stored = state;
       },
     },
-    cleanup: [
-      () => void log.push('cleanup:roadmap-watchers'),
-      async () => {
-        await new Promise(resolve => setImmediate(resolve));
-        log.push('cleanup:pty');
+    closing: [
+      {
+        name: 'roadmap-watchers',
+        run: () => void log.push('cleanup:roadmap-watchers'),
       },
-      () => void log.push('cleanup:renderer-server'),
+      {
+        name: 'sessions',
+        run: async () => {
+          await new Promise(resolve => setImmediate(resolve));
+          log.push('cleanup:pty');
+        },
+      },
+      {
+        name: 'renderer-server',
+        run: () => void log.push('cleanup:renderer-server'),
+      },
     ],
-    prepareUpdate: async () => (log.push('prepare-update'), true),
-    finalize: {
-      installUpdate: () => void log.push('finalize:install-update'),
+    prepareUpdate: async () => (log.push('prepare-update'), null),
+    updateRefused: reason => void log.push(`update-refused:${reason}`),
+    handOff: {
+      // A successful install ends the process: the promise never settles.
+      installUpdate: () => (
+        log.push('finalize:install-update'),
+        new Promise<string>(() => undefined)
+      ),
       relaunch: () => void log.push('finalize:relaunch'),
       quit: () => void log.push('finalize:quit'),
+    },
+    runRecord: {
+      saveHeldState: async held =>
+        void log.push(`held:${JSON.stringify(held)}`),
+      previousHeldState: () => options.previousHeld ?? null,
+      saveInstallFailure: async reason =>
+        void log.push(`install-failure:${reason}`),
+    },
+    assertTrustedSender: event => {
+      if ((event as unknown as { untrusted?: boolean }).untrusted) {
+        throw new Error('untrusted');
+      }
     },
     coordinator: () => coordinator,
     log: message => log.push(message),
@@ -143,6 +170,7 @@ function world(
       settleProviderIdentities: async () => void log.push('settle'),
       pauseCreates: () => void log.push('pause'),
       resumeCreates: () => void log.push('resume'),
+      settleStarts: async () => void log.push('settle-starts'),
       flushHistory: async () => void log.push('flush'),
       stopAll: async () => {
         log.push('stop-all');
@@ -150,7 +178,7 @@ function world(
       },
     },
     shutdownCopy,
-    markClean: async () => void log.push('mark-clean'),
+    markClean: async intent => void log.push(`mark-clean:${intent}`),
   });
   const coordinator = new ShutdownCoordinator(dependencies);
   return {
@@ -186,6 +214,7 @@ describe('the shutdown sequence', () => {
 
     expect(log).toEqual([
       'pause',
+      'settle-starts',
       'settle',
       'workspace:load',
       'workspace:save',
@@ -193,7 +222,7 @@ describe('the shutdown sequence', () => {
       'stop-all',
       'flush',
       'workspace:load',
-      'mark-clean',
+      'mark-clean:quit',
       'cleanup:roadmap-watchers',
       'cleanup:pty',
       'cleanup:renderer-server',
@@ -253,7 +282,7 @@ describe('the shutdown sequence', () => {
 
     expect(await quitting).toBe(true);
     expect(log).not.toContain('workspace:load');
-    expect(log).toContain('mark-clean');
+    expect(log).toContain('mark-clean:quit');
   });
 
   it('leaves the run unclean when the stopped checkpoint fails, and still finishes the quit', async () => {
@@ -266,7 +295,7 @@ describe('the shutdown sequence', () => {
     await vi.runAllTimersAsync();
 
     expect(await quitting).toBe(true);
-    expect(log).not.toContain('mark-clean');
+    expect(log).not.toContain('mark-clean:quit');
     expect(log[log.length - 1]).toBe('finalize:quit');
   });
 
@@ -361,12 +390,84 @@ describe('the shutdown sequence', () => {
   });
 
   it('hands an update restart to the installer instead of quitting', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { log, coordinator } = world();
 
-    expect(await coordinator.request('update')).toBe(true);
+    void coordinator.request('update');
+    // No window answers the held-state request; its own timeout ends it.
+    await vi.advanceTimersByTimeAsync(3_000);
 
-    expect(log[log.length - 1]).toBe('finalize:install-update');
+    await vi.waitFor(() =>
+      expect(log[log.length - 1]).toBe('finalize:install-update')
+    );
     expect(log).not.toContain('finalize:quit');
+  });
+
+  // BUG-286: a failed install used to strand the app on "Closing…".
+  it('keeps a failed install for the next launch and relaunches the current version', async () => {
+    const { log, dependencies } = world();
+    const failing = new ShutdownCoordinator({
+      ...dependencies,
+      handOff: async () => 'ShipIt refused the bundle',
+    });
+
+    expect(await failing.request('update')).toBe(true);
+
+    expect(log.slice(-3)).toEqual([
+      'install-failure:ShipIt refused the bundle',
+      'finalize:relaunch',
+      'finalize:quit',
+    ]);
+  });
+
+  // BUG-260: held state is captured from whichever window is open, owner or
+  // not, and only for a restart or an update.
+  it('saves what the window holds for a restart, and nothing for a quit', async () => {
+    const restart = world({ renderer: 'none' });
+    const restarting = restart.coordinator.request('restart');
+    await vi.waitFor(() =>
+      expect(
+        restart.sent.find(([channel]) => channel === 'app:held-state-request')
+      ).toBeDefined()
+    );
+    await call(
+      restart.broker.channels,
+      'app:complete-held-state',
+      ownerEvent(restart.window.webContents.id),
+      'req-1',
+      { navigation: '/fleet/spatial' }
+    );
+    expect(await restarting).toBe(true);
+    expect(restart.log).toContain('held:{"navigation":"/fleet/spatial"}');
+
+    const quit = world({ renderer: 'none' });
+    expect(await quit.coordinator.request('quit')).toBe(true);
+    expect(quit.log.some(line => line.startsWith('held:'))).toBe(false);
+  });
+
+  it('hands the previous held state to the trusted renderer once per launch', () => {
+    const { sequence } = world({
+      previousHeld: { 'session-storage': { 'exawatt:key': 'v' } },
+    });
+    let listener!: (event: { returnValue?: unknown }) => void;
+    sequence.registerSync((_channel, registered) => {
+      listener = registered as typeof listener;
+    });
+    const take = (event: Record<string, unknown> = {}) => {
+      listener(event);
+      return event.returnValue;
+    };
+    // The launch screen is not the renderer: it neither gets nor spends it.
+    expect(take({ untrusted: true })).toBeNull();
+    expect(take()).toEqual({ 'session-storage': { 'exawatt:key': 'v' } });
+    expect(take()).toBeNull();
+  });
+
+  it('cancels from the renderer only through the coordinator', async () => {
+    const { sequence } = world();
+    expect(
+      await call(sequence.channels, 'app:cancel-shutdown', ownerEvent(1))
+    ).toBe(false);
   });
 
   it('broadcasts each phase to open windows', async () => {
@@ -377,6 +478,7 @@ describe('the shutdown sequence', () => {
       sent
         .filter(([channel]) => channel === 'app:shutdown-status')
         .map(([, status]) => (status as { phase: string }).phase)
+        .filter((phase, index, all) => phase !== all[index - 1])
     ).toEqual(['confirming', 'checkpointing', 'stopping', 'finalizing']);
   });
 

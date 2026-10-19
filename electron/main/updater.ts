@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync } from 'fs';
 import path from 'path';
 import {
   app,
@@ -6,7 +6,11 @@ import {
   BrowserWindow,
   dialog,
 } from 'electron';
-import { autoUpdater, type UpdateInfo } from 'electron-updater';
+import {
+  autoUpdater as electronUpdater,
+  type Logger,
+  type UpdateInfo,
+} from 'electron-updater';
 import { handleTrusted } from './ipc-security';
 import {
   createDiagnosticsLog,
@@ -17,7 +21,46 @@ import type {
   UpdaterDisabledReason,
 } from '@exawatt/core/desktop-bridge';
 import { broadcastToWindows } from './window-broadcast';
-import { stageNativeUpdate, watchNativeInstall } from './updater-staging';
+import {
+  stageNativeUpdate,
+  watchNativeInstall,
+  type NativeUpdater,
+} from './updater-staging';
+import type { InstallFailure } from './run-state';
+
+/**
+ * The two updaters this module drives: electron-updater's (feed, download)
+ * and Electron's native one (Squirrel.Mac). A test launch may substitute a
+ * double with the same surface (`updater-test-double.ts`); nothing else does.
+ */
+export interface ProductUpdaterBoundary {
+  updater: {
+    setFeedURL(url: string): void;
+    logger: Logger | null;
+    autoDownload: boolean;
+    autoInstallOnAppQuit: boolean;
+    allowPrerelease: boolean;
+    on(event: 'checking-for-update', listener: () => void): unknown;
+    on(
+      event: 'update-available' | 'update-not-available' | 'update-downloaded',
+      listener: (info: UpdateInfo) => void
+    ): unknown;
+    on(
+      event: 'download-progress',
+      listener: (progress: { percent: number }) => void
+    ): unknown;
+    on(event: 'error', listener: (error: Error) => void): unknown;
+    checkForUpdates(): Promise<unknown>;
+    quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
+  };
+  native: NativeUpdater;
+}
+
+/** Null until a test launch substitutes a double; read through `updaters()`. */
+let substituted: ProductUpdaterBoundary | null = null;
+function updaters(): ProductUpdaterBoundary {
+  return substituted ?? { updater: electronUpdater, native: nativeUpdater };
+}
 
 let status: ProductUpdateStatus = {
   phase: 'idle',
@@ -81,11 +124,14 @@ function describeError(error: unknown): Record<string, unknown> {
 export function registerProductUpdater(
   feedUrl: string,
   countLiveSessions: () => number,
-  restartForUpdate: () => Promise<boolean>
+  restartForUpdate: () => Promise<boolean>,
+  double: ProductUpdaterBoundary | null = null
 ): void {
   liveSessionCount = countLiveSessions;
   if (registered) return;
   registered = true;
+  substituted = double;
+  const autoUpdater = double?.updater ?? electronUpdater;
 
   const logPath = path.join(app.getPath('userData'), 'logs', 'updater.jsonl');
   record = createDiagnosticsLog(logPath);
@@ -191,7 +237,7 @@ async function runCheck(
   record('updater.check-requested', { trigger, enabled: status.enabled });
   if (!status.enabled) return;
   try {
-    await autoUpdater.checkForUpdates();
+    await updaters().updater.checkForUpdates();
   } catch (error) {
     record('updater.check-failed', { trigger, ...describeError(error) });
     setStatus({
@@ -209,94 +255,61 @@ export function currentUpdateStatus(): ProductUpdateStatus {
 
 /**
  * The restart's first step, before anything stops: hand the download to
- * Squirrel.Mac and wait for it to accept or refuse it (BUG-286). A refusal
- * becomes the "Update failed" notice with the reason, and the shutdown
- * returns to idle with every agent still running.
+ * Squirrel.Mac and wait for it to accept or refuse it (BUG-286). Resolves
+ * null once it is accepted, or with the refusal. The lifecycle owner bounds
+ * the wait and lets the operator cancel it.
  */
-export async function prepareProductUpdate(): Promise<boolean> {
+export async function prepareProductUpdate(): Promise<string | null> {
   if (!downloaded) throw new Error('No downloaded update is ready');
-  if (process.platform !== 'darwin' || staged) return true;
+  if (process.platform !== 'darwin' || staged) return null;
   record('updater.staging', { availableVersion: status.availableVersion });
-  const outcome = await stageNativeUpdate(nativeUpdater);
-  if (outcome.ok) {
+  const refusal = await stageNativeUpdate(updaters().native);
+  if (refusal === null) {
     staged = true;
     record('updater.staged', { availableVersion: status.availableVersion });
-    return true;
+    return null;
   }
   record('updater.stage-failed', {
     availableVersion: status.availableVersion,
-    reason: outcome.reason,
-    timedOut: outcome.timedOut,
+    reason: refusal,
   });
-  setStatus({
-    phase: 'error',
-    error: outcome.reason.slice(0, 300),
-    percent: null,
-  });
-  return false;
+  return refusal;
 }
 
-function installFailurePath(): string {
-  return path.join(app.getPath('userData'), 'update-install-failure.json');
+/** The update did not go ahead: the notice says why, every agent still runs. */
+export function reportUpdateRefused(reason: string): void {
+  record('updater.refused', {
+    availableVersion: status.availableVersion,
+    reason,
+  });
+  setStatus({ phase: 'error', error: reason.slice(0, 300), percent: null });
 }
 
 /**
- * The shutdown's last step. Everything has already stopped, so if the
- * install fails anyway the app must not sit on "Closing…": it records why,
- * relaunches the current version, and the next launch shows the reason.
+ * The shutdown's handoff. Everything has already stopped; resolves only if
+ * the install fails, with the reason, so the lifecycle owner can relaunch
+ * the current version instead of sitting on "Closing…".
  */
-export function installProductUpdate(): void {
+export async function installProductUpdate(): Promise<string> {
   if (!downloaded) throw new Error('No downloaded update is ready');
   record('updater.installing', { availableVersion: status.availableVersion });
-  void watchNativeInstall(nativeUpdater, {
-    install: () => autoUpdater.quitAndInstall(false, true),
-  }).then(outcome => {
-    if (outcome.ok) return;
-    record('updater.install-failed', {
-      availableVersion: status.availableVersion,
-      reason: outcome.reason,
-      timedOut: outcome.timedOut,
-    });
-    try {
-      writeFileSync(
-        installFailurePath(),
-        JSON.stringify({
-          fromVersion: status.currentVersion,
-          toVersion: status.availableVersion,
-          reason: outcome.reason.slice(0, 300),
-        })
-      );
-    } catch (error) {
-      record('updater.install-failure-unsaved', describeError(error));
-    }
-    app.relaunch();
-    app.quit();
+  const reason = await watchNativeInstall(updaters().native, () =>
+    updaters().updater.quitAndInstall(false, true)
+  );
+  record('updater.install-failed', {
+    availableVersion: status.availableVersion,
+    reason,
   });
+  return reason;
 }
 
-/**
- * The previous launch's failed install, once, if this is still the version
- * it failed to leave. Showing it is the whole point, so the startup check
- * that would replace it with "ready to install" waits for this launch.
- */
-function takeInstallFailure(): string | null {
-  const file = installFailurePath();
-  let failure: { fromVersion?: unknown; toVersion?: unknown; reason?: unknown };
-  try {
-    failure = JSON.parse(readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
-  try {
-    rmSync(file, { force: true });
-  } catch (error) {
-    record('updater.install-failure-unsaved', describeError(error));
-  }
-  if (failure.fromVersion !== status.currentVersion) return null;
-  record('updater.install-failure-reported', failure);
-  return typeof failure.reason === 'string' && failure.reason
-    ? failure.reason.slice(0, 300)
-    : 'No reason was reported.';
+/** What the run record keeps when the install fails after everything stopped. */
+export function installFailure(reason: string): InstallFailure {
+  return {
+    fromVersion: status.currentVersion,
+    toVersion: status.availableVersion,
+    reason: reason.slice(0, 300),
+  };
 }
 
 /**
@@ -384,7 +397,16 @@ export function updaterDisabledReason(input: {
   return null;
 }
 
-export function startProductUpdater(enabled: boolean): void {
+/**
+ * `lastInstallFailure` is the previous run's failed install, from the run
+ * record. Shown once, and only while this is still the version it failed to
+ * leave; the startup check that would replace it with "ready to install"
+ * waits for this launch.
+ */
+export function startProductUpdater(
+  enabled: boolean,
+  lastInstallFailure: InstallFailure | null
+): void {
   const packaged = app.isPackaged;
   const reason = updaterDisabledReason({
     signedDelivery: enabled,
@@ -402,9 +424,13 @@ export function startProductUpdater(enabled: boolean): void {
     ...(reason ? { disabledReason: reason } : {}),
   });
   if (reason !== null) return;
-  const lastFailure = takeInstallFailure();
-  if (lastFailure !== null) {
-    setStatus({ phase: 'error', error: lastFailure, percent: null });
+  if (lastInstallFailure?.fromVersion === status.currentVersion) {
+    record('updater.install-failure-reported', { ...lastInstallFailure });
+    setStatus({
+      phase: 'error',
+      error: lastInstallFailure.reason || 'No reason was reported.',
+      percent: null,
+    });
     return;
   }
   setTimeout(() => {

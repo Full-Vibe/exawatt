@@ -438,6 +438,15 @@ export function registerMainChannels(deps: {
   appearancePreference: () => ElectronAppearancePreferencesV1 | undefined;
   record: DiagnosticRecorder;
   tables: readonly TrustedChannels[];
+  /** Other owners' synchronous reads, registered beside the appearance one. */
+  syncRegistrations?: ReadonlyArray<
+    (
+      onSync: (
+        channel: DesktopBridgeSyncChannel,
+        listener: (event: IpcMainEvent) => void
+      ) => void
+    ) => void
+  >;
 }): void {
   const { electron, runtime, build } = deps;
   const windowFor = (sender: WebContents) =>
@@ -510,7 +519,10 @@ export function registerMainChannels(deps: {
     ],
     deps.handle
   );
-  appearance.register((channel, listener) =>
-    electron.ipcMain.on(channel, listener)
-  );
+  const onSync = (
+    channel: DesktopBridgeSyncChannel,
+    listener: (event: IpcMainEvent) => void
+  ) => electron.ipcMain.on(channel, listener);
+  appearance.register(onSync);
+  for (const register of deps.syncRegistrations ?? []) register(onSync);
 }

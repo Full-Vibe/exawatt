@@ -106,6 +106,7 @@
     "eval:electron:bus-live": "node scripts/electron-bus-live-eval.mjs",
     "eval:electron:bus-mcp-live": "node scripts/electron-bus-mcp-live-eval.mjs",
     "eval:electron:update": "node scripts/electron-product-update-eval.mjs",
+    "eval:electron:app-lifecycle": "node scripts/electron-app-lifecycle-eval.mjs",
     "eval:electron:source-compatibility": "node scripts/electron-source-compatibility-eval.mjs",
     "eval:electron:resume": "node scripts/electron-exact-resume-eval.mjs",
     "eval:electron:idempotency": "node scripts/electron-rehydration-idempotency-eval.mjs",

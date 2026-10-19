@@ -37,7 +37,7 @@ vi.mock('./diagnostics-log', () => ({
       void records.push([event, fields]),
 }));
 
-const { prepareProductUpdate, registerProductUpdater } =
+const { prepareProductUpdate, registerProductUpdater, reportUpdateRefused } =
   await import('./updater');
 
 /** Electron's native updater: checkForUpdates() reports only by event. */
@@ -64,12 +64,17 @@ afterAll(() => {
 });
 
 describe('prepareProductUpdate', () => {
-  it('turns a Squirrel refusal into an update failure with its reason', async () => {
+  it('answers a Squirrel refusal with its reason', async () => {
     native(n => n.emit('error', new Error('Could not locate update bundle')));
 
-    await expect(prepareProductUpdate()).resolves.toBe(false);
-
+    await expect(prepareProductUpdate()).resolves.toBe(
+      'Could not locate update bundle'
+    );
     expect(records.map(([event]) => event)).toContain('updater.stage-failed');
+  });
+
+  it('shows a refused update as the failure notice with its reason', () => {
+    reportUpdateRefused('Could not locate update bundle');
     expect(sent.at(-1)).toMatchObject({
       phase: 'error',
       error: 'Could not locate update bundle',
@@ -79,8 +84,8 @@ describe('prepareProductUpdate', () => {
   it('stages once, then lets a repeated restart through without asking again', async () => {
     const staged = native(n => n.emit('update-downloaded'));
 
-    await expect(prepareProductUpdate()).resolves.toBe(true);
-    await expect(prepareProductUpdate()).resolves.toBe(true);
+    await expect(prepareProductUpdate()).resolves.toBeNull();
+    await expect(prepareProductUpdate()).resolves.toBeNull();
 
     expect(staged.checkForUpdates).toHaveBeenCalledOnce();
     expect(records.map(([event]) => event)).toContain('updater.staged');

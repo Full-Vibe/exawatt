@@ -142,7 +142,11 @@ function fakeModules() {
     },
     runState: {
       RunStateStore: class {
-        begin = async () => ({ previousRunInterrupted: true });
+        begin = async () => ({
+          previousRunInterrupted: true,
+          heldState: null,
+          installFailure: null,
+        });
         markClean = async () => {};
       },
     },
@@ -215,11 +219,13 @@ function dependencies(
     shutdownSequence: {
       coordinatorDependencies: () => ({}) as never,
       promptWindowManagementRestart: async () => {},
+      channels: {},
     },
     rebuildMenu: () => world.log.push('menu:rebuild'),
     mainDiagnostics: () => {},
     setEnginePhase: phase => world.log.push(`engine:${phase}`),
     enterWorkspace: async () => void world.log.push('window:workspace'),
+    quitApp: () => world.log.push('app:quit'),
     loadRuntime: async () => fakeModules() as never,
     ...rest,
   };
@@ -304,7 +310,7 @@ describe('bootstrapCommandSurface', () => {
     const community = dependencies();
     await bootstrapCommandSurface(community.deps);
     expect(world.log.some(entry => entry.startsWith('updater:'))).toBe(false);
-    expect(() => community.runtime.installProductUpdate()).toThrow(
+    await expect(community.runtime.installProductUpdate()).rejects.toThrow(
       'Product updates are not ready.'
     );
     expect(community.runtime.currentUpdateStatus()).toBeNull();

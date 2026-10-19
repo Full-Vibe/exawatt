@@ -20,27 +20,10 @@ function nativeDouble(onCheck: (native: EventEmitter) => void = () => {}) {
   return native as typeof native & NativeUpdater;
 }
 
-function manualTimers() {
-  const pending: Array<{ run: () => void; cleared: boolean }> = [];
-  return {
-    timers: {
-      setTimeout: (run: () => void) => {
-        const entry = { run, cleared: false };
-        pending.push(entry);
-        return entry;
-      },
-      clearTimeout: (handle: unknown) => {
-        (handle as { cleared: boolean }).cleared = true;
-      },
-    },
-    fire: () => pending.filter(e => !e.cleared).forEach(e => e.run()),
-  };
-}
-
 describe('stageNativeUpdate', () => {
   it('resolves when Squirrel has fetched and verified the update', async () => {
     const native = nativeDouble(n => n.emit('update-downloaded'));
-    await expect(stageNativeUpdate(native)).resolves.toEqual({ ok: true });
+    await expect(stageNativeUpdate(native)).resolves.toBeNull();
     expect(native.checkForUpdates).toHaveBeenCalledOnce();
     expect(native.listenerCount('update-downloaded')).toBe(0);
     expect(native.listenerCount('error')).toBe(0);
@@ -56,23 +39,9 @@ describe('stageNativeUpdate', () => {
         )
       )
     );
-    await expect(stageNativeUpdate(native)).resolves.toEqual({
-      ok: false,
-      reason: 'Could not locate update bundle for com.exawatt.app',
-      timedOut: false,
-    });
-  });
-
-  it('gives up at the deadline instead of waiting forever', async () => {
-    const native = nativeDouble();
-    const { timers, fire } = manualTimers();
-    const staging = stageNativeUpdate(native, { deadlineMs: 180_000, timers });
-    fire();
-    await expect(staging).resolves.toEqual({
-      ok: false,
-      reason: 'Preparing the update did not finish within 180 seconds.',
-      timedOut: true,
-    });
+    await expect(stageNativeUpdate(native)).resolves.toBe(
+      'Could not locate update bundle for com.exawatt.app'
+    );
     expect(native.listenerCount('error')).toBe(0);
   });
 });
@@ -80,39 +49,19 @@ describe('stageNativeUpdate', () => {
 describe('watchNativeInstall', () => {
   it('reports a native install error', async () => {
     const native = nativeDouble();
-    const watching = watchNativeInstall(native, {
-      install: () => native.emit('error', new Error('ShipIt refused')),
-    });
-    await expect(watching).resolves.toEqual({
-      ok: false,
-      reason: 'ShipIt refused',
-      timedOut: false,
-    });
-  });
-
-  it('reports an app that is still running at the deadline', async () => {
-    const native = nativeDouble();
-    const { timers, fire } = manualTimers();
-    const install = vi.fn();
-    const watching = watchNativeInstall(native, { install, timers });
-    expect(install).toHaveBeenCalledOnce();
-    fire();
-    await expect(watching).resolves.toMatchObject({
-      ok: false,
-      timedOut: true,
-    });
+    await expect(
+      watchNativeInstall(native, () =>
+        native.emit('error', new Error('ShipIt refused'))
+      )
+    ).resolves.toBe('ShipIt refused');
   });
 
   it('reports an install call that throws', async () => {
     const native = nativeDouble();
-    const watching = watchNativeInstall(native, {
-      install: () => {
+    await expect(
+      watchNativeInstall(native, () => {
         throw new Error("No update available, can't quit and install");
-      },
-    });
-    await expect(watching).resolves.toMatchObject({
-      ok: false,
-      reason: "No update available, can't quit and install",
-    });
+      })
+    ).resolves.toBe("No update available, can't quit and install");
   });
 });

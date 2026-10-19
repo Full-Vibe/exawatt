@@ -3,18 +3,43 @@
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type {
+  NoticeDismissals,
   ProductUpdateStatus,
   ShutdownStatus,
+  ShutdownWait,
+  UpdateReadyNotice as InstalledBuild,
 } from '@exawatt/core/desktop-bridge';
 import { Button } from '@/components/ui/button';
 import { OperationReceipt } from '@/components/ui/operation-receipt';
 import { NoticeLaneItem } from '@/components/ui/notice-lane';
+import {
+  isDismissed,
+  localBuildNotice,
+  productUpdateNotice,
+} from '@/lib/notices/notice-identity';
 
+/** What a stalled shutdown is waiting on, in the operator's words (BUG-286). */
+const WAITING_ON: Record<ShutdownWait, string> = {
+  'update-staging': 'Waiting for macOS to accept the update.',
+  'agents-starting': 'Waiting for an agent that is still starting.',
+  'window-saving': 'Waiting for the window to save your place.',
+  'processes-stopping': 'Waiting for agents and shells to stop.',
+  'services-closing': 'Waiting for background services to close.',
+  installer: 'Waiting for the installer.',
+};
+
+/**
+ * The update lane: a newer local build, the product updater's progress, and
+ * the lifecycle owner's shutdown progress. Every fact is read from main on
+ * mount as well as subscribed, and dismissal is main's one record, so a
+ * reload, a new window or returning to the app shows exactly what the last
+ * window showed (BUG-285).
+ */
 export function UpdateReadyNotice() {
   const [productName, setProductName] = useState('Exawatt');
-  const [installedSha, setInstalledSha] = useState<string | null>(null);
+  const [installed, setInstalled] = useState<InstalledBuild | null>(null);
   const [status, setStatus] = useState<ProductUpdateStatus | null>(null);
-  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [dismissals, setDismissals] = useState<NoticeDismissals>({});
   const [shutdown, setShutdown] = useState<ShutdownStatus | null>(null);
   // An update error that arrives while the restart is finalizing is the
   // installer refusing; one already showing when a quit began is not.
@@ -24,29 +49,35 @@ export function UpdateReadyNotice() {
   useEffect(() => {
     const api = window.electron?.app;
     if (!api) return;
+    const ignore = () => undefined;
     void api
       .getBuildInfo()
       .then(info => setProductName(info.distribution.identity.productName))
-      .catch(() => undefined);
+      .catch(ignore);
+    void api.installedBuild?.().then(setInstalled).catch(ignore);
+    void api.noticeDismissals?.().then(setDismissals).catch(ignore);
+    void api
+      .shutdownStatus?.()
+      .then(next => {
+        finalizing.current = next.phase === 'finalizing';
+        setShutdown(next);
+      })
+      .catch(ignore);
     const updates = api.updates;
     if (updates) {
-      void updates
-        .getStatus()
-        .then(setStatus)
-        .catch(() => undefined);
+      void updates.getStatus().then(setStatus).catch(ignore);
     }
-    const offLocal = api.onUpdateReady(update => {
-      setInstalledSha(update.installedSha);
-    });
+    const offLocal = api.onUpdateReady(setInstalled);
+    const offDismissals =
+      api.onNoticeDismissalsChanged?.(setDismissals) ?? ignore;
     const offProduct = updates
       ? updates.onStatus(next => {
           setStatus(next);
-          setDismissed(null);
           if (next.phase === 'error' && finalizing.current) {
             setInstallRefused(true);
           }
         })
-      : () => undefined;
+      : ignore;
     const offShutdown = api.onShutdownStatus(next => {
       finalizing.current = next.phase === 'finalizing';
       if (!finalizing.current) setInstallRefused(false);
@@ -54,16 +85,18 @@ export function UpdateReadyNotice() {
     });
     return () => {
       offLocal();
+      offDismissals();
       offProduct();
       offShutdown();
     };
   }, []);
 
-  const productKey = status
-    ? `${status.phase}:${status.availableVersion ?? ''}:${status.error ?? ''}`
-    : null;
+  const localNotice = localBuildNotice(installed);
+  const productNotice = productUpdateNotice(status);
+  const showLocal =
+    localNotice !== null && !isDismissed(localNotice, dismissals);
   const showProduct =
-    status && status.phase !== 'idle' && productKey !== dismissed;
+    productNotice !== null && !isDismissed(productNotice, dismissals);
   // The installer's refusal outranks "Closing…": hiding its reason is how a
   // failed install read as a hang (BUG-286, incident 0026).
   const shutdownActive =
@@ -73,7 +106,7 @@ export function UpdateReadyNotice() {
       shutdown.phase === 'checkpointing' ||
       shutdown.phase === 'stopping' ||
       shutdown.phase === 'finalizing');
-  if (!installedSha && !showProduct && !shutdownActive) return null;
+  if (!showLocal && !showProduct && !shutdownActive) return null;
 
   const message = shutdownActive
     ? shutdown.phase === 'preparing'
@@ -83,7 +116,7 @@ export function UpdateReadyNotice() {
         : shutdown.phase === 'stopping'
           ? `Stopping ${shutdown.agents} ${shutdown.agents === 1 ? 'agent' : 'agents'}${shutdown.shells > 0 ? ` and ${shutdown.shells} ${shutdown.shells === 1 ? 'shell' : 'shells'}` : ''}…`
           : `Closing ${productName}…`
-    : installedSha
+    : showLocal
       ? 'New local build installed. Restart when convenient.'
       : status?.phase === 'checking'
         ? 'Checking for updates…'
@@ -97,15 +130,18 @@ export function UpdateReadyNotice() {
                 // stuck user can only report "it failed" (ENG-030 OS1.6)
                 `Update failed, so ${productName} ${status?.currentVersion} stays installed. ${status?.error ?? 'No reason was reported.'}`;
 
+  const dismissed = showLocal ? localNotice : productNotice;
+  const waitingOn = shutdownActive ? shutdown.waitingOn : null;
+
   return (
     <NoticeLaneItem lane="update">
       <OperationReceipt
         state={
           shutdownActive ||
-          (!installedSha &&
+          (!showLocal &&
             (status?.phase === 'checking' || status?.phase === 'downloading'))
             ? 'pending'
-            : installedSha || status?.phase === 'downloaded'
+            : showLocal || status?.phase === 'downloaded'
               ? 'success'
               : status?.phase === 'error'
                 ? 'error'
@@ -113,12 +149,25 @@ export function UpdateReadyNotice() {
         }
         title={message}
         description={
-          !shutdownActive && (installedSha || status?.phase === 'downloaded')
-            ? 'Tabs, purpose, read status and unanswered requests are saved. Agents reopen paused; you choose when to resume.'
-            : undefined
+          waitingOn
+            ? WAITING_ON[waitingOn]
+            : !shutdownActive && (showLocal || status?.phase === 'downloaded')
+              ? 'Tabs, purpose, read status and unanswered requests are saved, and so is where you are. Agents reopen paused; you choose when to resume.'
+              : undefined
         }
         actions={
-          !shutdownActive && !installedSha && status?.phase === 'downloaded' ? (
+          shutdownActive && shutdown.cancellable ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void window.electron?.app?.cancelShutdown?.()}
+            >
+              Cancel
+            </Button>
+          ) : !shutdownActive &&
+            !showLocal &&
+            status?.phase === 'downloaded' ? (
             <Button
               type="button"
               size="sm"
@@ -132,11 +181,18 @@ export function UpdateReadyNotice() {
         }
         dismissLabel="Dismiss update notice"
         onDismiss={
-          shutdownActive
+          shutdownActive || !dismissed
             ? undefined
             : () => {
-                if (installedSha) setInstalledSha(null);
-                else setDismissed(productKey);
+                // Hidden at once; main's record makes it hold everywhere.
+                setDismissals(current => ({
+                  ...current,
+                  [dismissed.id]: dismissed.version,
+                }));
+                void window.electron?.app
+                  ?.dismissNotice?.(dismissed.id, dismissed.version)
+                  .then(setDismissals)
+                  .catch(() => undefined);
               }
         }
       />

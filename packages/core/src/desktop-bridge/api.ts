@@ -5,7 +5,11 @@ import type {
   DesktopBridgeResult,
   HoldsFunction,
 } from './channels';
-import type { AppearanceBootstrapSnapshot, RenderErrorReport } from './app';
+import type {
+  AppearanceBootstrapSnapshot,
+  HeldOperatorState,
+  RenderErrorReport,
+} from './app';
 import type { AgentHarness } from '../agent-sources';
 
 /**
@@ -324,8 +328,21 @@ interface DesktopAppApi {
   setWorkspaceCheckpointOwner: BridgeInvoke<'app:set-workspace-checkpoint-owner'>;
   completeCheckpoint: BridgeInvoke<'app:complete-checkpoint'>;
   onCheckpointRequest: BridgeSubscribe<'app:checkpoint-request'>;
+  /** The current shutdown status, for a window that mounts mid-shutdown. */
+  shutdownStatus: BridgeInvoke<'app:shutdown-status'>;
   onShutdownStatus: BridgeSubscribe<'app:shutdown-status'>;
+  cancelShutdown: BridgeInvoke<'app:cancel-shutdown'>;
+  /** BUG-260: the lifecycle owner asks every window for its held state. */
+  onHeldStateRequest: BridgeSubscribe<'app:held-state-request'>;
+  completeHeldState: BridgeInvoke<'app:complete-held-state'>;
+  /** Synchronous, once per launch; null on every later call. */
+  takeHeldState: () => HeldOperatorState | null;
+  installedBuild: BridgeInvoke<'app:installed-build'>;
   onUpdateReady: BridgeSubscribe<'app:update-ready'>;
+  /** BUG-285: one persisted record of dismissed notices, for every window. */
+  noticeDismissals: BridgeInvoke<'app:notice-dismissals'>;
+  dismissNotice: BridgeInvoke<'app:dismiss-notice'>;
+  onNoticeDismissalsChanged: BridgeSubscribe<'app:notice-dismissals-changed'>;
 }
 
 export interface DesktopAuthApi {

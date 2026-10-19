@@ -20,6 +20,11 @@ import {
 import type { DiagnosticsReport } from '@exawatt/core/desktop-bridge';
 import * as feedbackImageIO from '@/lib/feedback/image';
 import { setQuickFeedbackAttribution } from './quick-feedback-events';
+import {
+  captureHeldState,
+  resetHeldStateForTest,
+  restoreHeldState,
+} from '@/lib/app-lifecycle/held-state';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -263,6 +268,28 @@ afterEach(() => {
 });
 
 describe('unified feedback composer continuity', () => {
+  // BUG-260: Restart to Update keeps an unsent report's text and kind.
+  it('an unsent report survives a restart through held state', async () => {
+    resetHeldStateForTest();
+    await renderSignedIn();
+    await act(async () => feedback!.openFeedback());
+    fireEvent.change(composerField(), {
+      target: { value: 'Half-written before the update' },
+    });
+    const held = captureHeldState();
+    expect(held).toMatchObject({
+      'feedback-draft': { message: 'Half-written before the update' },
+    });
+    cleanup();
+    resetHeldStateForTest();
+
+    restoreHeldState(held!);
+    await renderSignedIn();
+    await act(async () => feedback!.openFeedback());
+    expect(composerField()).toHaveValue('Half-written before the update');
+    resetHeldStateForTest();
+  });
+
   it('reopening during a retained Radix exit preserves the original work invoker', async () => {
     retainDialogExit();
     await renderSignedIn();

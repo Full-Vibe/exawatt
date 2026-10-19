@@ -9,6 +9,7 @@ import { UpdateReadyNotice } from './update-ready-notice';
 import type {
   ProductUpdateStatus,
   ShutdownStatus,
+  UpdateReadyNotice as InstalledBuild,
 } from '@exawatt/core/desktop-bridge';
 import {
   installBridgeDouble,
@@ -17,6 +18,7 @@ import {
 
 let emitStatus: ((status: ProductUpdateStatus) => void) | undefined;
 let emitShutdown: ((status: ShutdownStatus) => void) | undefined;
+let emitInstalled: ((notice: InstalledBuild) => void) | undefined;
 const UPDATE_DISTRIBUTION = {
   ...COMMUNITY_DISTRIBUTION,
   brand: {
@@ -30,10 +32,35 @@ const UPDATE_DISTRIBUTION = {
 } as const;
 const UPDATE_IDENTITY = resolveDistributionIdentity(UPDATE_DISTRIBUTION);
 
+/** Main's side: the one dismissal record and the latest installed build. */
+const main: {
+  dismissals: Record<string, string>;
+  installed: InstalledBuild | null;
+  cancelled: number;
+} = { dismissals: {}, installed: null, cancelled: 0 };
+
+const idle: ShutdownStatus = {
+  phase: 'idle',
+  agents: 0,
+  shells: 0,
+  intent: null,
+  waitingOn: null,
+  cancellable: false,
+};
+const shutdownAt = (patch: Partial<ShutdownStatus>): ShutdownStatus => ({
+  ...idle,
+  intent: 'update',
+  ...patch,
+});
+
 afterEach(() => {
   removeBridgeDouble();
+  main.dismissals = {};
+  main.installed = null;
+  main.cancelled = 0;
   emitStatus = undefined;
   emitShutdown = undefined;
+  emitInstalled = undefined;
 });
 
 function installApi(productUpdates = true) {
@@ -105,7 +132,25 @@ function installApi(productUpdates = true) {
         emitShutdown = handler;
         return () => undefined;
       },
-      onUpdateReady: () => () => undefined,
+      onUpdateReady: handler => {
+        emitInstalled = notice => {
+          main.installed = notice;
+          handler(notice);
+        };
+        return () => undefined;
+      },
+      installedBuild: async () => main.installed,
+      noticeDismissals: async () => ({ ...main.dismissals }),
+      dismissNotice: async (id, version) => {
+        main.dismissals = { ...main.dismissals, [id]: version };
+        return { ...main.dismissals };
+      },
+      onNoticeDismissalsChanged: () => () => undefined,
+      shutdownStatus: async () => idle,
+      cancelShutdown: async () => {
+        main.cancelled += 1;
+        return true;
+      },
     },
   });
   return restartUpdate;
@@ -221,11 +266,15 @@ describe('UpdateReadyNotice', () => {
     const restart = installApi();
     render(<UpdateReadyNotice />);
     await act(async () => undefined);
-    act(() => emitShutdown?.({ phase: 'checkpointing', agents: 2, shells: 1 }));
+    act(() =>
+      emitShutdown?.(
+        shutdownAt({ phase: 'checkpointing', agents: 2, shells: 1 })
+      )
+    );
     expect(screen.getByRole('status')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(restart).not.toHaveBeenCalled();
-    act(() => emitShutdown?.({ phase: 'idle', agents: 0, shells: 0 }));
+    act(() => emitShutdown?.(idle));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
@@ -246,7 +295,7 @@ describe('UpdateReadyNotice', () => {
       disabledReason: null,
       logPath: null,
     };
-    act(() => emitShutdown?.({ phase: 'finalizing', agents: 0, shells: 0 }));
+    act(() => emitShutdown?.(shutdownAt({ phase: 'finalizing' })));
     act(() => emitStatus?.(failed));
     expect(
       screen.getByText(
@@ -272,7 +321,103 @@ describe('UpdateReadyNotice', () => {
         logPath: null,
       })
     );
-    act(() => emitShutdown?.({ phase: 'finalizing', agents: 0, shells: 0 }));
+    act(() => emitShutdown?.(shutdownAt({ phase: 'finalizing' })));
     expect(screen.queryByText(/network unavailable/)).not.toBeInTheDocument();
+  });
+
+  // BUG-285: the operator dismissed "New local build installed" and saw it
+  // again minutes later. The dogfood log shows a second build installed in
+  // between (19:32 and 19:41 on 2026-10-05, feedback at 19:43) while he was
+  // still running the first stale one: the notice is about the RUNNING
+  // build, so another install changes nothing he has to do.
+  it('keeps a dismissed local-build notice dismissed when another build installs under the same running one', async () => {
+    installApi(false);
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() =>
+      emitInstalled?.({ currentSha: 'running', installedSha: 'first' })
+    );
+    expect(screen.getByText(/New local build installed/)).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Dismiss update notice' })
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    act(() =>
+      emitInstalled?.({ currentSha: 'running', installedSha: 'second' })
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('stays dismissed when the window reloads or the app is returned to', async () => {
+    installApi(false);
+    const first = render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() =>
+      emitInstalled?.({ currentSha: 'running', installedSha: 'first' })
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Dismiss update notice' })
+    );
+    await act(async () => undefined);
+    first.unmount();
+
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('shows a build installed before this window opened', async () => {
+    installApi(false);
+    main.installed = { currentSha: 'running', installedSha: 'first' };
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    expect(screen.getByText(/New local build installed/)).toBeInTheDocument();
+  });
+
+  it('announces again once the operator runs a build that is superseded in turn', async () => {
+    installApi(false);
+    main.dismissals = { 'local-build-installed': 'running' };
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() => emitInstalled?.({ currentSha: 'next', installedSha: 'third' }));
+    expect(screen.getByText(/New local build installed/)).toBeInTheDocument();
+  });
+
+  // BUG-286: a stalled phase says what it is waiting on, and offers Cancel
+  // while cancelling still leaves every Session running.
+  it('names what a stalled shutdown waits on and lets the operator cancel it', async () => {
+    installApi();
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() =>
+      emitShutdown?.(
+        shutdownAt({
+          phase: 'preparing',
+          waitingOn: 'update-staging',
+          cancellable: true,
+        })
+      )
+    );
+    expect(
+      screen.getByText('Waiting for macOS to accept the update.')
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(main.cancelled).toBe(1);
+
+    act(() =>
+      emitShutdown?.(
+        shutdownAt({
+          phase: 'finalizing',
+          waitingOn: 'services-closing',
+          cancellable: false,
+        })
+      )
+    );
+    expect(
+      screen.getByText('Waiting for background services to close.')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Cancel' })
+    ).not.toBeInTheDocument();
   });
 });
