@@ -209,7 +209,7 @@ type, spacing, color, or status vocabulary.
 - `Local`, `Remote`, and later `Exawatt Cloud` are quiet placement metadata with
   a redundant desktop/cloud glyph. Placement never borrows D40 status color,
   Project identity color, or source brand color.
-- Source identity continues through `SourceIdentityMark`; **OpenClaw · Remote**
+- Source identity continues through `AgentSourceMark` on its plate; **OpenClaw · Remote**
   is inspectable secondary metadata, not the Agent's name.
 - D40 remains the work-state signal. Connection uses separate short labels:
   `Live`, `Reconnecting`, `Stale`, `Unavailable`.

@@ -140,7 +140,7 @@ work is filling it out, not extending it:
 - `electron/main/pty/agent-source-registry.ts` gains `inspectOpencode`, keeping
   installation / reachability / authentication / identity / compatibility /
   model-discovery as the six independent facts the existing sources maintain.
-- Renderer: `AGENT_SOURCE_META`, `HARNESS_META`, `HarnessGlyph`, and the ⌘K
+- Renderer: `AGENT_SOURCE_META`, `HARNESS_META`, `AgentSourceMark`, and the ⌘K
   launch rows are already registry-derived or single-file; the third source is
   the forcing function that proves it. Any surface found hardcoding two sources
   is a defect this milestone fixes.

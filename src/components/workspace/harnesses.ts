@@ -7,6 +7,10 @@
  */
 import { WORKSPACE_HUD } from './workspace-theme';
 import { AGENT_SOURCE_META, mapAgentSources } from './agent-sources';
+import {
+  agentSourceIdentity,
+  SHELL_SOURCE_COLOR,
+} from './agent-source-identity';
 import { isPtyHarness, type PtyHarness } from '@exawatt/core';
 
 export interface HarnessMeta {
@@ -27,7 +31,7 @@ export const HARNESS_META: Record<PtyHarness, HarnessMeta> = {
     return { ...meta, launch: `+ ${meta.label}` };
   }),
   // Source identity is a brand/data channel and stays stable across themes.
-  shell: { label: 'Shell', color: '#6A7585', launch: '+ Shell' },
+  shell: { label: 'Shell', color: SHELL_SOURCE_COLOR, launch: '+ Shell' },
 };
 
 /** derived from the registry — declaration order IS display order */
@@ -50,12 +54,19 @@ export function sessionSource(source: string): {
       unavailableReason: null,
     };
   }
+  // A declared Agent Source that is not a local harness (an OpenClaw
+  // coworker in the Demo Workspace) keeps its own name; only an id this
+  // build does not declare reads as unsupported.
+  const identity = agentSourceIdentity(source);
   return {
     id: source,
     harness: null,
-    label: source,
-    color: WORKSPACE_HUD.textDim,
-    unavailableReason: `This version of Exawatt does not support ${source}. Your Session is kept; source actions are unavailable.`,
+    label: identity.label,
+    color: identity.color ?? WORKSPACE_HUD.textDim,
+    unavailableReason:
+      identity.kind === 'unknown'
+        ? `This version of Exawatt does not support ${source}. Your Session is kept; source actions are unavailable.`
+        : `${identity.label} runs this Agent outside Exawatt's terminals, so source actions are unavailable here.`,
   };
 }
 

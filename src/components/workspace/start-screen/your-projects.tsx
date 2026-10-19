@@ -14,9 +14,8 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, LoaderCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SourceIdentityMark } from '../source-identity-mark';
-import { SourceMark } from '@/components/agent-sources/source-card';
-import { AGENT_SOURCE_META, type AgentSourceId } from '../agent-sources';
+import { AgentSourceMark } from '../agent-source-mark';
+import type { AgentSourceId } from '../agent-sources';
 import { useAgentSourceRegistry } from '../use-agent-source-registry';
 import { WORKSPACE_HUD as HUD } from '../workspace-theme';
 import type { AgentSourceRegistrySnapshot } from '@exawatt/core';
@@ -53,12 +52,7 @@ function HarnessBadges({
         const label = harnessStoreName(harness);
         return (
           <span key={harness} className="inline-flex" title={label}>
-            <SourceIdentityMark
-              className="size-5 rounded-sm"
-              color={AGENT_SOURCE_META[harness].color}
-            >
-              <SourceMark id={harness} size={11} />
-            </SourceIdentityMark>
+            <AgentSourceMark plate source={harness} size={11} />
             <span className="sr-only">{label}</span>
           </span>
         );

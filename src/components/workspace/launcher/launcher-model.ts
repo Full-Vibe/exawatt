@@ -40,8 +40,6 @@ export type LauncherReason = 'pinned' | 'frecent' | 'default';
 export interface LauncherEngine {
   harness: PtyHarness;
   label: string;
-  /** Brand identity, not readable text paint. Used on the glyph only. */
-  color: string;
 }
 
 /**

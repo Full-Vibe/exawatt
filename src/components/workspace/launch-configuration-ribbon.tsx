@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Pin, Settings2, TerminalSquare } from 'lucide-react';
+import { ChevronDown, Pin, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -10,9 +10,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { HarnessGlyph } from './harness-icons';
-import { HARNESS_META } from './harnesses';
-import { SourceIdentityMark } from './source-identity-mark';
+import { AgentSourceMark } from './agent-source-mark';
 import type { PtyHarness } from '@exawatt/core';
 
 export interface LaunchConfigurationRibbonItem {
@@ -63,21 +61,7 @@ function itemAccessibleLabel(item: LaunchConfigurationRibbonItem): string {
 }
 
 function ConfigurationMark({ source }: { source: PtyHarness }) {
-  const meta = HARNESS_META[source];
-
-  if (source === 'shell') {
-    return (
-      <SourceIdentityMark color={meta.color}>
-        <TerminalSquare className="size-3" strokeWidth={1.8} />
-      </SourceIdentityMark>
-    );
-  }
-
-  return (
-    <SourceIdentityMark color={meta.color}>
-      <HarnessGlyph harness={source} size={12} />
-    </SourceIdentityMark>
-  );
+  return <AgentSourceMark plate source={source} size={12} />;
 }
 
 /**

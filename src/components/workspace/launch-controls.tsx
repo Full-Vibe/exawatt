@@ -86,7 +86,7 @@ import { sourceCardStep } from '@/components/agent-sources/source-card';
 import { localAgentSourceDeclaration } from '@/generated/agent-source-declarations';
 import { launcherSourceLines } from './launcher/source-lines';
 import { useComposerClipboard } from './launcher/use-composer-clipboard';
-import { EngineGlyph } from './launcher/setup-chip';
+import { AgentSourceMark } from './agent-source-mark';
 import {
   displayEffortLabel,
   draftLauncherSetup,
@@ -1243,7 +1243,6 @@ export function AgentComposer({
       engine: {
         harness: snapshot.harness,
         label: snapshot.label,
-        color: snapshot.color,
       },
       model: presented.model,
       modelVariant: presented.variant,
@@ -1288,7 +1287,6 @@ export function AgentComposer({
         engine: {
           harness: fact.harness,
           label: fact.snapshot.label,
-          color: fact.snapshot.color,
         },
         catalog: catalogsBySource[fact.harness],
         adjusting,
@@ -1394,16 +1392,7 @@ export function AgentComposer({
               : snapshot.stateLabel,
       disabled: !fact.available,
       disabledReason: verdict.kind === 'blocked' ? verdict.reason : undefined,
-      mark: (
-        <EngineGlyph
-          engine={{
-            harness: fact.harness,
-            label: snapshot.label,
-            color: snapshot.color,
-          }}
-          size={12}
-        />
-      ),
+      mark: <AgentSourceMark source={fact.harness} size={12} />,
     };
   });
   const modelAxisOptions: DetailAxisOption[] = (

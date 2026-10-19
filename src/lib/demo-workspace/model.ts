@@ -48,7 +48,7 @@ import type {
   SessionRowStatus,
 } from '@/components/workspace/switcher-rows';
 import { computeAgentBurn, type AgentBurnEntry } from '@exawatt/ui-model';
-import type { PtyHarness } from '@exawatt/core';
+import type { AgentSourceAdapterId } from '@exawatt/core';
 import type {
   RoadmapDeliveryRead,
   RoadmapDeliveryTicket,
@@ -110,14 +110,15 @@ export function demoInitiativeFor(agent: DemoFleetAgent): DemoInitiative {
   return initiative;
 }
 
-const HARNESS_BY_SOURCE: Record<DemoFleetAgent['source'], PtyHarness> = {
-  'claude-code': 'claude',
-  codex: 'codex',
-  grok: 'grok',
-};
-
-export function demoHarness(agent: DemoFleetAgent): PtyHarness {
-  return HARNESS_BY_SOURCE[agent.source];
+/**
+ * The Agent Source that runs a Demo Agent: its `harness`, the field the Fleet
+ * board and the bus read. Never derived from `source`, which names the usage
+ * ledger the Agent reports into; deriving it there gave eleven of the 27 base
+ * Agents a different mark on their Team tile than in Chatter and on the
+ * board (BUG-293).
+ */
+export function demoHarness(agent: DemoFleetAgent): AgentSourceAdapterId {
+  return agent.harness;
 }
 
 /* ------------------------------------------------------------------ */

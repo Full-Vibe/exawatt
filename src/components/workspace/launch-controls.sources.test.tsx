@@ -35,19 +35,23 @@ describe('Agent composer · sources and policy', () => {
     await openSetupDrawer();
     const engine = launcherAxis('Engine');
     await expectSelectedSetup(/Claude Fable 5/);
-    expect(engine.querySelectorAll('[data-engine-glyph]')).toHaveLength(1);
+    expect(engine.querySelectorAll('[data-agent-source-mark]')).toHaveLength(1);
 
     fireEvent.click(engine);
     const claudeOption = screen.getByRole('option', { name: /^Claude Code/ });
     const codexOption = screen.getByRole('option', { name: /^Codex/ });
     const opencodeOption = screen.getByRole('option', { name: /^OpenCode/ });
     for (const option of [claudeOption, codexOption, opencodeOption]) {
-      expect(option.querySelectorAll('[data-engine-glyph]')).toHaveLength(1);
+      expect(option.querySelectorAll('[data-agent-source-mark]')).toHaveLength(
+        1
+      );
     }
+    // The option names its engine through the one mark component; the
+    // brand-or-ink decision is the mark's own (agent-source-mark.test.tsx).
+    expect(
+      codexOption.querySelector('[data-agent-source-mark="codex"]')
+    ).not.toBeNull();
     expect(codexOption).not.toHaveStyle({ color: '#ECECEC' });
-    expect(codexOption.querySelector('[data-engine-glyph]')).toHaveStyle({
-      color: '#ECECEC',
-    });
     fireEvent.click(codexOption);
 
     await settled(() =>
@@ -55,7 +59,7 @@ describe('Agent composer · sources and policy', () => {
     );
     await expectSelectedSetup(/GPT-5\.6-Sol/);
     expect(
-      launcherAxis('Engine').querySelectorAll('[data-engine-glyph]')
+      launcherAxis('Engine').querySelectorAll('[data-agent-source-mark]')
     ).toHaveLength(1);
     expect(launcherAxis('Engine')).not.toHaveStyle({ color: '#ECECEC' });
   });

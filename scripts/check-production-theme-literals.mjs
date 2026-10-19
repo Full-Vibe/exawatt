@@ -126,18 +126,14 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     max: 5,
     reason: 'third-party harness brand artwork',
   },
-  'src/components/workspace/harnesses.ts': {
-    max: 1,
-    reason: 'persisted harness identity data',
-  },
   'src/components/workspace/project-colors.ts': {
     max: 10,
     reason: 'persisted Project identity palette',
   },
-  'src/components/workspace/source-identity-mark.tsx': {
-    max: 2,
+  'src/components/workspace/agent-source-identity.ts': {
+    max: 4,
     reason:
-      'fixed accessible backing plate for stable third-party Agent Source brand colors',
+      'fixed accessible backing plate for stable third-party Agent Source brand colors, its neutral ink, and the shell identity color',
   },
   'src/lib/appearance/color.ts': {
     max: 2,

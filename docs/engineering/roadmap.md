@@ -161,8 +161,8 @@ Status (2026-10-15, one train landing `f506931d` and one dogfood build):
   (`0513fa91`); the dashboard itself waits on a PostHog key.
 - P7 MCP tools and the guide LANDED (`b1f40dae`, guide `844a3e62`).
 - Agent names on every surface (C4 display) LANDED (`2c0f2e1b`).
-- Open from the train: BUG-292, BUG-293, BUG-295 (host-power context loss,
-  fixed 2026-10-18); from its
+- Open from the train: BUG-295 (host-power context loss, fixed
+  2026-10-18); BUG-292 and BUG-293 fixed 2026-10-18 by the one mark path; from its
   review fixes BUG-296 (a freed name stays in other windows) and BUG-297
   (the catalog's Codex store ignores the shell's CODEX_HOME), both fixed
   2026-10-18.
@@ -4555,8 +4555,8 @@ landing. The id is not reused.
 
 ### BUG-292 Codex's mark is near-invisible in the launcher on light themes
 
-Status: open · ENG-003 · found 2026-10-15 while building the Gemini face
-(S5.3.1); pre-existing.
+Status: fixed on `agent/fix-ui-bugs`, awaiting integration · ENG-003 · found
+2026-10-15 while building the Gemini face (S5.3.1); pre-existing.
 
 The ⌘T launcher's engine glyph paints each harness's brand colour straight
 onto the row's ground. Codex's brand colour is near-white, so on a light
@@ -4566,16 +4566,35 @@ colour in the surrounding ink on a light ground (as the homepage draws
 Codex's mark); the launcher departs from it. Repair belongs to the identity
 rung's one glyph primitive, not a launcher-only colour override.
 
+Fix (2026-10-18): one mark path, `AgentSourceMark`, for every product surface
+(launcher, Team tiles, tab strip, Chatter, Direct, ⌘K, Settings, Start
+screen). It takes only the source id; bare on the ground it paints the brand
+colour only where it clears 3:1 against every ground of the active theme,
+otherwise the theme's quiet ink, and on the plate the brand colour as before.
+On Air no declared colour clears 3:1, so every bare mark takes the ink there;
+Classic and Night keep the brand colours. `EngineGlyph`, `SourceIdentityMark`,
+`SourceMark` and `HarnessGlyph` are deleted. `agent-source-identity.test.ts`
+holds every declared colour to the rule on every production theme.
+
 ### BUG-293 A Demo Team tile's harness mark disagrees with Chatter's
 
-Status: open · ENG-029 B3 · found 2026-10-15 while building Chatter.
+Status: fixed on `agent/fix-ui-bugs`, awaiting integration · ENG-029 B3 ·
+found 2026-10-15 while building Chatter.
 
 In the Demo Workspace, a Team tile takes its harness mark from the Session's
 usage source while Chatter's rows take it from the bus endpoint's harness,
 so the same Demo Agent can wear one harness's mark on its tile and another's
 beside its name in Chatter. One Agent must show one mark on every surface.
-Not diagnosed: whether the Demo fixture's usage source is wrong for those
-Agents or the tile reads the wrong field.
+
+Root cause: the tile read the wrong field. `demoHarness` mapped the Agent's
+`source` (its usage ledger) to a harness, while Chatter and the Fleet board
+read `harness`; 11 of the 27 base Agents disagreed (OpenCode, OpenClaw and
+Grok Agents drawn as Claude or Codex). The same ledger-for-harness read sat
+in `/agent-types` and `/cloud`. Fix (2026-10-18): every one reads `harness`,
+and the mark itself comes from `AgentSourceMark` (BUG-292), which resolves
+identity from the source id alone, so no surface can paint a mark in a
+Project or ledger colour again. Test: `model.test.ts` "one Demo Agent wears
+one harness on every surface (BUG-293)".
 
 ### BUG-295 `eval:electron:host-power` loses the main-process context about one run in seven
 
@@ -4733,3 +4752,24 @@ construction; Qwen's catalog and model catalog read `QWEN_HOME` and
 `harness-homes.test.ts` lists Codex conversations from a login-shell
 `CODEX_HOME` over Exawatt's own, follows a changed home without a
 relaunch, and asks the shell once a minute.
+
+### BUG-299 Extending a Fleet selection with Shift+arrows moved focus to another Project
+
+Status: fixed on `agent/fix-ui-bugs`, awaiting integration · ENG-004 V4.2 ·
+found 2026-10-15 by the train conductor (worked around in `eval:spatial`),
+filed 2026-10-18.
+
+At Project altitude, Shift+arrow added the walk's Agents to the working set,
+but each step also moved the focused Project to the Agent it reached, so a
+walk that crossed a Project edge silently refocused the board (zone, ghost
+slot, camera) on the neighbour, and releasing the set left the operator
+there. The eval waited for the ghost row to settle on the new Project instead
+of failing. Fix: extending is selection, not navigation, and selection never
+moves focus between Projects. Below Fleet altitude the extending walk stays
+inside the focused Project and holds at its edge (`boardArrowStep`, over
+`selectSpatialDirectionalTarget`'s new `withinProjectId`); a plain arrow
+still walks into the next Project, visibly. A set spanning Projects is built
+from Fleet altitude, with a band, or with a Project toggle. Decision `0024`
+carries the amendment. Tests: `board-arrow-walk.test.ts`; `eval:spatial` now
+asserts the focused Project holds through extend and release, and its settle
+workaround is deleted.

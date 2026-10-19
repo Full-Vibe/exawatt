@@ -3,7 +3,8 @@
 import { useState, type Ref } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { SourceGlyph } from '@/components/workspace/harness-icons';
+import { agentSourceIdentity } from '@/components/workspace/agent-source-identity';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import type { DirectAvailability, RecipientNote } from './direct-model';
 
 /**
@@ -112,8 +113,11 @@ export function DirectComposer({
 export function RecipientMark({ harness }: { harness: string | null }) {
   if (!harness) return null;
   return (
-    <span className="inline-flex shrink-0" title={harness} aria-hidden="true">
-      <SourceGlyph source={harness} size={12} />
+    <span
+      className="inline-flex shrink-0"
+      title={agentSourceIdentity(harness).label}
+    >
+      <AgentSourceMark source={harness} size={12} />
     </span>
   );
 }

@@ -39,7 +39,7 @@ import { lifecycleToneColor } from './session-lifecycle-tone';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import type { AgentSourceId } from './agent-sources';
-import { HarnessGlyph } from './harness-icons';
+import { AgentSourceMark } from './agent-source-mark';
 import {
   DEFAULT_RIBBON_POLICY,
   layoutRibbonRow,
@@ -2025,12 +2025,10 @@ export function TabStrip({
                     !isDraft &&
                     !tightTab &&
                     !condensed && (
-                      <span className="shrink-0" style={{ color }}>
-                        <HarnessGlyph
-                          harness={sessionTabSource(session).id}
-                          size={11}
-                        />
-                      </span>
+                      <AgentSourceMark
+                        source={sessionTabSource(session).id}
+                        size={11}
+                      />
                     )}
                   {editing?.kind === 'tab' && editing.id === tab.id ? (
                     <>

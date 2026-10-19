@@ -10,11 +10,10 @@ import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha as withAlpha,
 } from '@/components/workspace/workspace-theme';
-import { HarnessGlyph } from '../workspace/harness-icons';
+import { AgentSourceMark } from '../workspace/agent-source-mark';
 import type { RoadmapSessionChip as ChipModel } from '@exawatt/ui-model';
 import { StatusLight } from '@/components/status-light/status-light';
 import { useEffect, useState } from 'react';
-import type { PtyHarness } from '@exawatt/core';
 
 export function chipTooltip(chip: ChipModel): string {
   const method = chip.method === 'declared' ? 'declared at launch' : 'inferred';
@@ -72,9 +71,7 @@ export function RoadmapSessionChipButton({
     >
       <StatusLight decorative size="compact" state={lightState} />
       {chip.harness !== 'shell' && (
-        <span className="shrink-0" style={{ color }}>
-          <HarnessGlyph harness={chip.harness as PtyHarness} size={10} />
-        </span>
+        <AgentSourceMark source={chip.harness} size={10} />
       )}
       <span className="min-w-0 truncate">{chip.title}</span>
       <span className="shrink-0" style={{ color: HUD.textDim }}>

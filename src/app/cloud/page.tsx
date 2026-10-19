@@ -6,7 +6,7 @@ import {
   READINESS_NEUTRAL,
 } from '@/components/readiness';
 import { withAlpha } from '@/components/hud/tokens';
-import { HarnessGlyph } from '@/components/workspace/harness-icons';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import {
   CLOUD_DESTINATIONS,
   demoCloudHero,
@@ -35,7 +35,7 @@ function LocalCard() {
         <span className="truncate text-sm font-medium">{agent.name}</span>
       </div>
       <div className="flex items-center gap-2 font-mono text-chrome-micro text-muted-foreground">
-        <HarnessGlyph harness="claude" size={10} />
+        <AgentSourceMark source={agent.harness} size={10} />
         <span>
           {agent.model}
           {agent.effort ? ` · ${agent.effort} effort` : ''}

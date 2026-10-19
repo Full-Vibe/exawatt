@@ -1,5 +1,5 @@
 import type { SessionRow } from './switcher-rows';
-import { HARNESS_META } from './harnesses';
+import { agentSourceIdentity } from './agent-source-identity';
 
 /** One readable purpose line; source and scope remain secondary and searchable. */
 export function SessionSwitcherIdentity({
@@ -16,7 +16,7 @@ export function SessionSwitcherIdentity({
         {session.title}
       </span>
       <span className="truncate text-chrome-label text-muted-foreground">
-        {session.projectName} · {HARNESS_META[session.harness].label}
+        {session.projectName} · {agentSourceIdentity(session.harness).label}
         {session.roadmapItemId ? ` · ${session.roadmapItemId}` : ''}
         {session.subtitle ? ` · ${session.subtitle}` : ''}
       </span>

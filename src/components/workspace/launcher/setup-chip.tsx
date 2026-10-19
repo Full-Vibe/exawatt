@@ -22,47 +22,15 @@
  */
 
 import { forwardRef } from 'react';
-import {
-  Cloud,
-  HardDrive,
-  History,
-  Pin,
-  Sparkles,
-  TerminalSquare,
-} from 'lucide-react';
+import { Cloud, HardDrive, History, Pin, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { SourceMark } from '@/components/agent-sources/source-card';
+import { AgentSourceMark } from '../agent-source-mark';
 import {
   LAUNCHER_ROLE_LABEL,
   setupAccessibleLabel,
   type LauncherSetup,
   type LauncherVendor,
 } from './launcher-model';
-
-export function EngineGlyph({
-  engine,
-  size = 13,
-}: {
-  engine: LauncherSetup['engine'];
-  size?: number;
-}) {
-  return (
-    <span
-      aria-hidden="true"
-      data-engine-glyph
-      className="inline-flex shrink-0 items-center justify-center"
-      style={{ color: engine.color, width: size, height: size }}
-    >
-      {engine.harness === 'shell' ? (
-        <TerminalSquare size={size} strokeWidth={1.8} />
-      ) : (
-        // A source with no vendor mark wears the neutral sparkle Settings
-        // shows, never an empty box beside its name.
-        <SourceMark id={engine.harness} size={size} />
-      )}
-    </span>
-  );
-}
 
 /**
  * The vendor is identity — who actually serves this model — so it wears a mark
@@ -197,7 +165,7 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
             <Shimmer className="h-2.5 w-24 max-w-[75%]" />
           ) : (
             <>
-              <EngineGlyph engine={setup.engine} />
+              <AgentSourceMark source={setup.engine.harness} size={13} />
               <span className="min-w-0 flex-1 truncate font-mono text-chrome-meta text-hud-text-dim">
                 {setup.engine.label}
               </span>

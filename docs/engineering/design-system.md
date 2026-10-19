@@ -184,12 +184,22 @@ first.
 
 ### Agent Source identity
 
-Agent Source brand colors are stable data, not readable foreground roles. A
-source color may paint only its glyph inside `SourceIdentityMark`'s fixed dark
-instrument plate; adjacent names, metadata, menu rows, and controls use the
-active semantic text roles. Every first-party source glyph clears 4.5:1 on the
-plate, and the plate boundary clears 3:1. Never apply a source brand color to a
-text-bearing ancestor—the Air preset is the regression oracle for this rule.
+Agent Source brand colors are stable data, not readable foreground roles. Every
+product surface draws a source's mark through one component,
+`AgentSourceMark` (`src/components/workspace/agent-source-mark.tsx`), which
+takes only the source id and resolves identity, glyph and paint in
+`agent-source-identity.ts`; a caller cannot pass a colour. On the fixed dark
+instrument plate (`plate`) the glyph wears its brand colour: every first-party
+source glyph clears 4.5:1 on the plate, and the plate boundary clears 3:1. Bare
+on the ground, the glyph wears its brand colour only where that colour clears
+3:1 (WCAG 1.4.11, graphical objects) against every ground of the active theme,
+and otherwise the theme's quiet ink (`foundation.textMuted`); today that is
+every bare mark on Air and none on Classic or Night. A source without a vendor
+mark wears the neutral sparkle, the shell its terminal, an undeclared id a
+question mark. Adjacent names, metadata, menu rows, and controls use the
+active semantic text roles. Never apply a source brand color to a
+text-bearing ancestor, and never paint a mark in a Project or Consumption
+colour—the Air preset is the regression oracle for this rule.
 
 Session purpose leads recognition in Session selection and re-entry. Harness
 identity is supporting metadata, not the primary name of the work. The approved
@@ -197,7 +207,7 @@ identity is supporting metadata, not the primary name of the work. The approved
 readable, using the existing type and semantic-color roles. Explicit operator
 names retain authority. Keep source metadata searchable and accessible.
 
-Future source-icon emphasis should reuse `SourceIdentityMark` and the same
+Future source-icon emphasis should reuse `AgentSourceMark` and the same
 accessible naming across surfaces, with readable fallback for unknown/custom
 sources. The operator suggested this direction for later; it does not authorize
 an icon-only sweep now. Read/unread treatment remains separate from purpose,
@@ -633,6 +643,13 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-10-18 — BUG-292/BUG-293: one mark path. `AgentSourceMark` replaces
+  `SourceIdentityMark`, the launcher's `EngineGlyph`, Settings' `SourceMark`
+  and the bare `HarnessGlyph`; the Agent Source identity rung above now
+  states the bare-mark contrast rule (brand colour at 3:1 on every ground of
+  the active theme, else the theme's quiet ink). Team tiles, the tab strip
+  and roadmap chips stop painting harness marks in the Project colour.
 
 - 2026-10-15 — ENG-029 C4 Agent names: an Agent's tab chip prints its name
   (`text-chrome-title`, medium, full text colour) and then its context label

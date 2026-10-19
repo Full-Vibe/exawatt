@@ -9,8 +9,7 @@ import {
   pressureColorCss as pressureColor,
   tokens,
 } from '@/components/consumption/flux';
-import { HarnessGlyph } from './harness-icons';
-import { sessionSource } from './harnesses';
+import { AgentSourceMark } from './agent-source-mark';
 import { SessionGoalSummary } from './session-goal-summary';
 import {
   DelegationDots,
@@ -107,12 +106,8 @@ export function SessionOverviewCardHeader({
   return (
     <div className="relative z-10 flex min-w-0 items-center justify-between gap-2">
       <span className="inline-flex min-w-0 flex-1 items-center gap-2">
-        <span
-          aria-label={sessionSource(harness).label}
-          className="inline-flex h-5 w-5 shrink-0 items-center justify-center"
-          style={{ color }}
-        >
-          <HarnessGlyph harness={harness} size={13} />
+        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+          <AgentSourceMark source={harness} size={13} labelled />
         </span>
         {/* ENG-028 T1: the Type slot, what kind of worker rather than which
               engine, rendered only when a source declares one. A chip shows

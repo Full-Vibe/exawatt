@@ -19,8 +19,6 @@
  * OpenAI and xAI each forbid altering their mark, recolouring included; that
  * file records the deviation and the remedy.
  */
-import { CircleHelp } from 'lucide-react';
-import { sessionSource } from './harnesses';
 import type { ComponentType, ReactNode } from 'react';
 import type { AgentSourceAdapterId } from '@exawatt/core';
 
@@ -275,9 +273,11 @@ export function sourceMarkExists(source: string): source is MarkedSource {
 }
 
 /**
- * A source's brand mark, the one component every surface renders. Shell and
- * the coming-soon catalog entries have no mark; `fallback` is what the caller
- * shows then (nothing, by default).
+ * A source's vendor glyph and nothing else: no colour, no fallback policy.
+ * Product surfaces never render this directly; they render
+ * `AgentSourceMark` (`agent-source-mark.tsx`), which resolves identity,
+ * fallback glyph and paint in one place. The marketing site draws it in its
+ * own neutral ink (`src/components/site/harness-mark.tsx`).
  */
 export function SourceGlyph({
   source,
@@ -291,25 +291,4 @@ export function SourceGlyph({
   if (!sourceMarkExists(source)) return fallback;
   const Mark = SOURCE_MARKS[source];
   return <Mark size={size} />;
-}
-
-/** A PTY harness's mark; shell has none. */
-export function HarnessGlyph({
-  harness,
-  size = 12,
-}: {
-  harness: string;
-  size?: number;
-}) {
-  return (
-    <SourceGlyph
-      source={harness}
-      size={size}
-      fallback={
-        sessionSource(harness).harness ? null : (
-          <CircleHelp size={size} aria-hidden="true" />
-        )
-      }
-    />
-  );
 }

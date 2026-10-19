@@ -18,7 +18,7 @@
 import {
   DEMO_BASE_AGENTS,
   DEMO_PROJECTS,
-  type ConsumptionSourceId,
+  type AgentSourceAdapterId,
   type DemoFleetAgent,
   type DemoReadiness,
   type DemoWorkspaceProject,
@@ -37,8 +37,10 @@ export interface AgentTypeProfile {
   projects: DemoWorkspaceProject[];
   /** Base-tier Voltaic Agents currently running as this Type. */
   agents: DemoFleetAgent[];
-  /** Distinct engines those Agents actually run on, from fixture truth. */
-  sources: ConsumptionSourceId[];
+  /** Distinct engines those Agents actually run on, from fixture truth: the
+   *  Agent Source that launched each one, never the usage ledger it reports
+   *  into (BUG-293). */
+  engines: AgentSourceAdapterId[];
   /** Most common model+effort among this Type's Agents — the Type default. */
   defaults: { model: string; effort: string } | null;
   /**
@@ -133,7 +135,7 @@ export function demoAgentTypeRoster(): AgentTypeProfile[] {
         tools: profile?.tools ?? [],
         projects,
         agents,
-        sources: [...new Set(agents.map(agent => agent.source))],
+        engines: [...new Set(agents.map(agent => agent.harness))],
         defaults: typeDefaults(agents),
         capability: projects.every(project => project.readiness === 'live')
           ? ('live' as const)

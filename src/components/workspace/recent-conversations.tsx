@@ -16,8 +16,7 @@ import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { AGENT_SOURCE_META } from './agent-sources';
-import { HarnessGlyph } from './harness-icons';
-import { SourceIdentityMark } from './source-identity-mark';
+import { AgentSourceMark } from './agent-source-mark';
 import type { RecentConversation } from '@exawatt/core/desktop-bridge';
 
 const FILTER_THRESHOLD = 8;
@@ -375,16 +374,13 @@ export const RecentConversations = forwardRef<
                     ? 'Reopen'
                     : 'Resume'}
                 </span>
-                <SourceIdentityMark
+                <AgentSourceMark
+                  plate
+                  source={conversation.harness}
+                  size={14}
+                  busy={opening === exactKey}
                   className="mt-0.5 h-7 w-7"
-                  color={meta.color}
-                >
-                  {opening === exactKey ? (
-                    <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-                  ) : (
-                    <HarnessGlyph harness={conversation.harness} size={14} />
-                  )}
-                </SourceIdentityMark>
+                />
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-2 @max-[430px]:flex-col @max-[430px]:items-start @max-[430px]:gap-0">
                     <span

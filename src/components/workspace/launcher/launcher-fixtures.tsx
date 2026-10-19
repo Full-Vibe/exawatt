@@ -25,7 +25,7 @@ import {
   type LauncherVendor,
 } from './launcher-model';
 import { ExternalLink } from 'lucide-react';
-import { EngineGlyph } from './setup-chip';
+import { AgentSourceMark } from '../agent-source-mark';
 import type { DetailAxis, DetailAxisOption } from './setup-detail';
 import type { PtyHarness } from '@exawatt/core';
 import { localAgentSourceDeclaration } from '@/generated/agent-source-declarations';
@@ -148,7 +148,7 @@ function toLauncherSetup(
     id: target.id,
     role: 'coding',
     name: target.kind === 'agent' ? target.name : null,
-    engine: { harness, label: meta.label, color: meta.color },
+    engine: { harness, label: meta.label },
     model: engine?.modelLabel ?? null,
     modelVariant: engine?.modelVariant ?? null,
     vendor: engine?.vendor ?? null,
@@ -413,16 +413,7 @@ const ENGINE_OPTIONS: DetailAxisOption[] = AGENT_SOURCE_ORDER.map(harness => ({
   id: harness,
   label: HARNESS_META[harness].label,
   description: ENGINE_DESCRIPTION[harness],
-  mark: (
-    <EngineGlyph
-      engine={{
-        harness,
-        label: HARNESS_META[harness].label,
-        color: HARNESS_META[harness].color,
-      }}
-      size={12}
-    />
-  ),
+  mark: <AgentSourceMark source={harness} size={12} />,
 }));
 
 const MODEL_OPTIONS: DetailAxisOption[] = [

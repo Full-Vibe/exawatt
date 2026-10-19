@@ -6,7 +6,7 @@ describe('demoCloudHero (ENG-026 N3, previewing ENG-033)', () => {
     const { agent, project } = demoCloudHero();
     expect(agent.readiness).toBe('live');
     expect(agent.status).toBe('working');
-    expect(agent.source).toBe('claude-code');
+    expect(agent.harness).toBe('claude');
     expect(agent.delegated.length).toBeGreaterThan(0);
     expect(project.key).toBe(agent.projectKey);
   });

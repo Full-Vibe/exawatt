@@ -30,7 +30,7 @@ const PENDING_SETUP: LauncherSetup = {
   id: '__pending__',
   role: 'coding',
   name: null,
-  engine: { harness: 'claude', label: '', color: 'transparent' },
+  engine: { harness: 'claude', label: '' },
   model: null,
   modelVariant: null,
   vendor: null,

@@ -9,11 +9,11 @@
  *   placement   Local / Remote / Exawatt Cloud, an infrastructure fact
  *   connection  Live / Reconnecting / Stale / Unavailable, observation age
  *   work state  the D40 five-signal protocol, identical for every placement
- *   identity    SourceIdentityMark plus source metadata, never the name
+ *   identity    AgentSourceMark plus source metadata, never the name
  *
  * Placement is painted from the HUD dim-text role only: it may never borrow a
  * D40 status role, a Project identity color, or a source brand color. The
- * source brand color stays inside `SourceIdentityMark`'s instrument plate.
+ * source brand color stays inside `AgentSourceMark`'s instrument plate.
  *
  * Colour is switchable off because the acceptance criterion is that remote
  * state stays comprehensible without colour, hover, or animation.
@@ -44,8 +44,7 @@ import {
   statusLightWord,
   type StatusLightState,
 } from '@/components/status-light';
-import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
-import { OpenClawIcon } from '@/components/workspace/harness-icons';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha,
@@ -91,12 +90,12 @@ function PlacementTag({ placement }: { placement: AgentSourcePlacement }) {
 function SourceLine({ placement }: { placement: AgentSourcePlacement }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <SourceIdentityMark
+      <AgentSourceMark
+        plate
+        source="openclaw"
+        size={11}
         className="size-4 rounded-sm"
-        color={OPENCLAW_SOURCE.color}
-      >
-        <OpenClawIcon size={11} />
-      </SourceIdentityMark>
+      />
       <span className="text-chrome-meta" style={{ color: HUD.textDim }}>
         {OPENCLAW_SOURCE.label}
       </span>

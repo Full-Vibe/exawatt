@@ -18,7 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import { useRouter } from 'next/navigation';
 import { runAgentSourceAction } from '@/components/workspace/agent-sources';
 import { openSourceShell } from '@/components/workspace/session-jump';
@@ -26,7 +26,6 @@ import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
   SourceCard,
   SourceDisclosureText,
-  SourceMark,
   SourceObservationTime,
   SourceStateGlyph,
   sourceAttention,
@@ -188,12 +187,12 @@ function RegistryRail({
                   : 'transparent',
               }}
             >
-              <SourceIdentityMark
+              <AgentSourceMark
+                plate
+                source={source.adapterId}
+                size={19}
                 className="size-9 rounded-lg"
-                color={source.color}
-              >
-                <SourceMark id={source.adapterId} />
-              </SourceIdentityMark>
+              />
               <span className="min-w-0 flex-1">
                 <span
                   className="block truncate font-ui text-sm font-medium"
@@ -272,7 +271,6 @@ function SourceDetail({
         adapterId: source.adapterId,
         label: source.label,
         secondary: source.connectionName,
-        color: source.color,
       }}
       state={source.state}
       stateLabel={source.stateLabel}
@@ -438,7 +436,7 @@ function AddSourceView({
               className="flex min-h-[72px] w-full items-center gap-3 px-1 text-left outline-none transition-colors hover:bg-[var(--settings-hover)] focus-visible:bg-[var(--settings-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--settings-teal)]"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--settings-line)] bg-[var(--settings-shell)] text-[var(--settings-soft)]">
-                <SourceMark id={entry.adapterId} size={20} />
+                <AgentSourceMark source={entry.adapterId} size={20} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-ui text-sm font-medium text-[var(--settings-soft)]">
@@ -482,7 +480,7 @@ function AddSourceView({
               className="flex min-h-[68px] items-center gap-3 px-1 opacity-70"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--settings-line)] bg-[var(--settings-shell)] text-[var(--settings-faint)]">
-                <SourceMark id={entry.adapterId} size={20} />
+                <AgentSourceMark source={entry.adapterId} size={20} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-ui text-sm font-medium text-[var(--settings-soft)]">

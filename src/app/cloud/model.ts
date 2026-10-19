@@ -29,7 +29,7 @@ export function demoCloudHero(): CloudHero {
       candidate =>
         candidate.readiness === 'live' &&
         candidate.status === 'working' &&
-        candidate.source === 'claude-code' &&
+        candidate.harness === 'claude' &&
         candidate.delegated.length > 0
     ) ?? DEMO_BASE_AGENTS[0];
   const project = DEMO_PROJECTS_BY_KEY.get(agent.projectKey)!;

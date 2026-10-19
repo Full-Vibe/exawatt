@@ -1,13 +1,9 @@
 import type { Metadata } from 'next';
 import { Shapes } from 'lucide-react';
 import { PreviewSurfaceShell } from '@/components/readiness';
-import { HarnessGlyph } from '@/components/workspace/harness-icons';
+import { agentSourceIdentity } from '@/components/workspace/agent-source-identity';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import { demoAgentTypeRoster, type AgentTypeProfile } from './model';
-import { HARNESS_LABEL } from '@/components/consumption/model';
-import {
-  CONSUMPTION_SOURCE_HARNESS,
-  type ConsumptionSourceId,
-} from '@exawatt/core';
 
 // Preview surface (ENG-026 N5 / ENG-028 T1). noindex for the same stealth
 // reason as /usage: reachable by URL for demos, not discoverable.
@@ -16,11 +12,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-function EngineChip({ source }: { source: ConsumptionSourceId }) {
+function EngineChip({ source }: { source: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded border border-border px-1.5 py-0.5 font-mono text-chrome-micro text-muted-foreground">
-      <HarnessGlyph harness={CONSUMPTION_SOURCE_HARNESS[source]} size={10} />
-      {HARNESS_LABEL[source]}
+      <AgentSourceMark source={source} size={10} />
+      {agentSourceIdentity(source).label}
     </span>
   );
 }
@@ -65,7 +61,7 @@ function TypeCard({ profile }: { profile: AgentTypeProfile }) {
           {profile.agents.length === 1 ? 'Agent' : 'Agents'}
         </span>
         <span className="ml-auto inline-flex items-center gap-1">
-          {profile.sources.map(source => (
+          {profile.engines.map(source => (
             <EngineChip key={source} source={source} />
           ))}
         </span>
@@ -97,7 +93,7 @@ export default function AgentTypesPage() {
           </span>
           <span className="text-sm text-muted-foreground">running on</span>
           <span className="inline-flex items-center gap-1.5">
-            {engineer.sources.map(source => (
+            {engineer.engines.map(source => (
               <EngineChip key={source} source={source} />
             ))}
           </span>

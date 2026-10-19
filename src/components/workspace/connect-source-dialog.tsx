@@ -60,9 +60,7 @@ import {
   useLatestRequest,
   type RequestTicket,
 } from '@/hooks/use-latest-request';
-import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
-import { OpenClawIcon } from './harness-icons';
-import { SourceIdentityMark } from './source-identity-mark';
+import { AgentSourceMark } from './agent-source-mark';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import {
   archiveProject,
@@ -94,10 +92,6 @@ import {
   type ProjectTarget,
   type ServerRow,
 } from './connect-source-model';
-
-/** OpenClaw's brand color, read from its declaration in
- *  `contracts/agent-sources.json` rather than copied out of it (BUG-208). */
-const OPENCLAW_COLOR = agentSourceDeclaration('openclaw').color;
 
 export interface ConnectProjectOption {
   /** Opaque durable Project identity, never inferred from the display name. */
@@ -1576,9 +1570,7 @@ function AgentGroup({
                 >
                   {checked && <Check className="h-3 w-3" aria-hidden />}
                 </button>
-                <SourceIdentityMark color={OPENCLAW_COLOR}>
-                  <OpenClawIcon size={12} />
-                </SourceIdentityMark>
+                <AgentSourceMark plate source="openclaw" size={12} />
                 <span className="min-w-0 flex-1">
                   {renaming === agent.nativeAgentId ? (
                     <input

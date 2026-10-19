@@ -53,12 +53,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  SourceMark,
   SourceReadyGlyph,
   SourceTonePill,
   SourceWorkingGlyph,
 } from '@/components/agent-sources/source-card';
-import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import { agentSourceDeclaration } from '@/generated/agent-source-declarations';
 import {
   describeConnectionStatus,
@@ -622,12 +621,12 @@ export function ConnectedSourcesRail({
                     : 'transparent',
                 }}
               >
-                <SourceIdentityMark
+                <AgentSourceMark
+                  plate
+                  source={source.adapterId}
+                  size={19}
                   className="size-9 rounded-lg"
-                  color={declaration.color}
-                >
-                  <SourceMark id={source.adapterId} />
-                </SourceIdentityMark>
+                />
                 <span className="min-w-0 flex-1">
                   <span
                     className="block truncate font-ui text-sm font-medium"
@@ -747,12 +746,12 @@ export function ConnectedSourceDetail({
     >
       <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
-          <SourceIdentityMark
+          <AgentSourceMark
+            plate
+            source={source.adapterId}
+            size={22}
             className="size-11 rounded-lg"
-            color={declaration.color}
-          >
-            <SourceMark id={source.adapterId} size={22} />
-          </SourceIdentityMark>
+          />
           <div className="min-w-0">
             <p className="truncate font-ui text-chrome-title text-[var(--settings-dim)]">
               {declaration.label} · {PLACEMENT_LABELS[source.placement]}

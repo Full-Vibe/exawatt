@@ -36,7 +36,9 @@ export type SessionRowStatus =
 export interface SessionRow {
   id: string;
   title: string;
-  harness: PtySessionInfo['harness'];
+  /** The Agent Source id: a local harness, `shell`, or (in the Demo
+   *  Workspace) a declared source Exawatt does not run in a terminal. */
+  harness: string;
   projectName: string;
   subtitle: string | null;
   color: string;

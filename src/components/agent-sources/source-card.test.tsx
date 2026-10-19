@@ -50,7 +50,6 @@ function renderCard(source: AgentSourceSnapshot, layout: 'detail' | 'card') {
           adapterId: source.adapterId,
           label: source.label,
           secondary: source.connectionName,
-          color: source.color,
         }}
         state={source.state}
         stateLabel={source.stateLabel}

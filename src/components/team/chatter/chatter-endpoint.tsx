@@ -1,5 +1,5 @@
 import { UserRound } from 'lucide-react';
-import { HarnessGlyph } from '@/components/workspace/harness-icons';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { BUS_OPERATOR } from '@/lib/bus/operator';
 import type { BusEndpoint } from '@exawatt/core';
@@ -44,7 +44,7 @@ export function ChatterEndpoint({
         {operator ? (
           <UserRound size={11} style={{ color: HUD.cyan }} />
         ) : (
-          <HarnessGlyph harness={endpoint.harness} size={11} />
+          <AgentSourceMark source={endpoint.harness} size={11} />
         )}
       </span>
       <span

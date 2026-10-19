@@ -29,7 +29,6 @@ import {
   KeyRound,
   LoaderCircle,
   RefreshCw,
-  Sparkles,
   SquareTerminal,
   WifiOff,
 } from 'lucide-react';
@@ -39,8 +38,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { SourceGlyph } from '@/components/workspace/harness-icons';
-import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import { cn } from '@/lib/utils';
 import {
   agentSourceDeclaration,
@@ -94,25 +92,6 @@ export function sourceStateTone(state: AgentSourceState): SourceTone {
 /* ------------------------------------------------------------------ */
 /* Primitives                                                          */
 /* ------------------------------------------------------------------ */
-
-/** A source's mark in its instrument plate's glyph slot. A source with no
- *  vendor mark (Demo Mode, a coming-soon adapter, a mark Exawatt may not
- *  ship) shows the neutral sparkle. */
-export function SourceMark({
-  id,
-  size = 19,
-}: {
-  id: AgentSourceCatalogId;
-  size?: number;
-}) {
-  return (
-    <SourceGlyph
-      source={id}
-      size={size}
-      fallback={<Sparkles aria-hidden size={size} />}
-    />
-  );
-}
 
 /** The pill every source-truth state wears: tone ink, a 34% border and the
  *  tone's wash, with a dot so hue never carries the state alone (D30). */
@@ -341,8 +320,6 @@ interface SourceCardIdentity {
   label: string;
   /** The line that places the label: "Local CLI", "Antigravity CLI". */
   secondary: string;
-  /** Brand colour, painted only inside the instrument plate. */
-  color: string;
 }
 
 interface SourceCardAttention {
@@ -483,12 +460,12 @@ export function SourceCard({
         )}
       >
         <div className="flex min-w-0 items-center gap-3">
-          <SourceIdentityMark
+          <AgentSourceMark
+            plate
+            source={identity.adapterId}
+            size={19}
             className="size-9 rounded-lg"
-            color={identity.color}
-          >
-            <SourceMark id={identity.adapterId} />
-          </SourceIdentityMark>
+          />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-ui text-sm font-medium text-[var(--settings-text)]">
               {identity.label}
@@ -548,12 +525,12 @@ export function SourceCard({
     >
       <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
-          <SourceIdentityMark
+          <AgentSourceMark
+            plate
+            source={identity.adapterId}
+            size={22}
             className="size-11 rounded-lg"
-            color={identity.color}
-          >
-            <SourceMark id={identity.adapterId} size={22} />
-          </SourceIdentityMark>
+          />
           <div className="min-w-0">
             <p className="truncate font-ui text-chrome-title text-[var(--settings-dim)]">
               {identity.secondary}

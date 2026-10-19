@@ -30,6 +30,7 @@ import type {
   AppearancePreferencesV1,
   ResolvedAppearance,
 } from '@/lib/appearance/types';
+import { ActiveThemeContext } from './active-theme';
 
 const DEFAULT_OS_SIGNALS: AppearanceOsSignals = {
   dark: false,
@@ -305,7 +306,9 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppearanceContext.Provider value={value}>
-      {children}
+      <ActiveThemeContext.Provider value={resolved.theme}>
+        {children}
+      </ActiveThemeContext.Provider>
     </AppearanceContext.Provider>
   );
 }

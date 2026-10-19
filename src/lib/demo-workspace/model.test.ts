@@ -19,7 +19,11 @@ import {
   demoShellAgentTypes,
   demoShellInitiatives,
   demoShellFleetAgentById,
+  demoSessionRows,
+  demoProjectFor,
+  demoTab,
 } from './model';
+import { demoBusMessages } from '@/lib/bus/demo-client';
 
 describe('demoShellAgentTypes (ENG-028 T1)', () => {
   it('names an authored Type for every base-tier demo Session', () => {
@@ -369,5 +373,38 @@ describe("demoDeliveryRead: the tick's landings as the lens's queue (ENG-027 W14
     }
     // the fixture has unbranched landable Agents; their landings stay unbranched
     expect(unbranched).toBeGreaterThan(0);
+  });
+});
+
+describe('one Demo Agent wears one harness on every surface (BUG-293)', () => {
+  it('Team tiles and ⌘K rows carry the harness the bus and the board read', () => {
+    const rows = new Map(demoSessionRows().map(row => [row.id, row]));
+    for (const agent of demoShellAgents()) {
+      const project = demoProjectFor(agent)!;
+      // The board reads `sourceAdapterId: agent.harness`; so must the shell.
+      expect(demoTab(agent, project).harness, agent.id).toBe(agent.harness);
+      expect(rows.get(agent.id)?.harness, agent.id).toBe(agent.harness);
+    }
+  });
+
+  it("agrees with every Chatter endpoint's harness", () => {
+    const tabs = new Map(
+      demoShellAgents().map(agent => [
+        agent.id,
+        demoTab(agent, demoProjectFor(agent)!).harness,
+      ])
+    );
+    const endpoints = demoBusMessages(Date.now()).flatMap(message => [
+      message.from,
+      message.to,
+    ]);
+    let compared = 0;
+    for (const endpoint of endpoints) {
+      const tab = tabs.get(endpoint.sessionId);
+      if (tab === undefined) continue;
+      expect(tab, endpoint.sessionId).toBe(endpoint.harness);
+      compared += 1;
+    }
+    expect(compared).toBeGreaterThan(0);
   });
 });

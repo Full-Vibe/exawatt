@@ -47,12 +47,13 @@ describe('demoAgentTypeRoster (ENG-028 T1)', () => {
 
   it('engines are observed from fixture truth, never asserted', () => {
     for (const profile of roster) {
-      const observed = new Set(profile.agents.map(agent => agent.source));
-      expect(new Set(profile.sources)).toEqual(observed);
+      // The harness that launched each Agent, not its usage ledger (BUG-293).
+      const observed = new Set(profile.agents.map(agent => agent.harness));
+      expect(new Set(profile.engines)).toEqual(observed);
     }
-    // The portability claim needs the Engineer running on both engines.
+    // The portability claim needs the Engineer running on more than one.
     const engineer = roster.find(profile => profile.name === 'Engineer')!;
-    expect(engineer.sources.sort()).toEqual(['claude-code', 'codex']);
+    expect(engineer.engines.length).toBeGreaterThan(1);
   });
 
   it('every Type carries authored identity content and derived defaults', () => {

@@ -27,7 +27,9 @@ export function sessionCurrentStateCopy(input: {
   attention?: SessionAttentionSignal;
 }): string {
   const source = sessionSource(input.harness);
-  if (source.unavailableReason) return source.unavailableReason;
+  // A live Session reports its own state; the source's reason explains only
+  // why Exawatt cannot start or resume it.
+  if (source.unavailableReason && !input.live) return source.unavailableReason;
   const lifecycle = isSessionLifecyclePhase(input.lifecycle)
     ? sessionLifecyclePresentation({
         lifecycle: input.lifecycle,

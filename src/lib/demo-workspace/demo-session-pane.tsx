@@ -13,7 +13,9 @@
 import { CloudUpload } from 'lucide-react';
 import { HUD } from '@/components/hud';
 import { AnnouncedChip, ComingSoonMarker } from '@/components/readiness';
-import { HarnessGlyph } from '@/components/workspace/harness-icons';
+import { ActiveThemeContext } from '@/components/appearance/active-theme';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
+import { THEME_REGISTRY } from '@/generated/theme-registry';
 import {
   STATUS_LIGHT_META,
   StatusLight,
@@ -70,232 +72,236 @@ export function DemoSessionPane({
   const content = demoPaneContent(agent);
   const lightState = statusLightStateForAgentStatus(agent.status);
 
+  // The pane still paints Classic chrome on every theme (bounded debt in
+  // `check-production-theme-literals.mjs`), so it tells theme-resolved paint
+  // such as `AgentSourceMark` the truth about its ground. Delete the scope
+  // when the pane moves onto the theme roles.
   return (
-    <div
-      data-demo-session-pane={agent.id}
-      className="flex h-full min-h-0 flex-col overflow-hidden"
-      style={{ background: '#04060b' }}
-    >
-      {/* Session header — identity, status, readiness truth */}
-      <header
-        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-2.5"
-        style={{ borderColor: `${project?.color ?? '#50E6FF'}33` }}
+    <ActiveThemeContext.Provider value={THEME_REGISTRY['exawatt-classic-dark']}>
+      <div
+        data-demo-session-pane={agent.id}
+        className="flex h-full min-h-0 flex-col overflow-hidden"
+        style={{ background: '#04060b' }}
       >
-        <span style={{ color: project?.color }}>
-          <HarnessGlyph harness={demoHarness(agent)} size={14} />
-        </span>
-        <h2
-          className="min-w-0 truncate font-display text-sm font-semibold"
-          style={{ color: HUD.text }}
+        {/* Session header — identity, status, readiness truth */}
+        <header
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-2.5"
+          style={{ borderColor: `${project?.color ?? '#50E6FF'}33` }}
         >
-          {title ?? agent.name}
-        </h2>
-        <span
-          className="inline-flex items-center gap-1.5 font-mono text-chrome-meta"
-          style={{ color: STATUS_LIGHT_META[lightState].color }}
-        >
-          <StatusLight decorative size="compact" state={lightState} />
-          {STATUS_LIGHT_META[lightState].label}
-        </span>
-        {agent.roadmapItemId && (
-          <span
-            className="font-mono text-chrome-meta"
-            style={{ color: HUD.textDim }}
+          <AgentSourceMark source={demoHarness(agent)} size={14} labelled />
+          <h2
+            className="min-w-0 truncate font-display text-sm font-semibold"
+            style={{ color: HUD.text }}
           >
-            {agent.roadmapItemId}
-            {agent.link ? ` · ${agent.link}` : ''}
+            {title ?? agent.name}
+          </h2>
+          <span
+            className="inline-flex items-center gap-1.5 font-mono text-chrome-meta"
+            style={{ color: STATUS_LIGHT_META[lightState].color }}
+          >
+            <StatusLight decorative size="compact" state={lightState} />
+            {STATUS_LIGHT_META[lightState].label}
           </span>
-        )}
-        <span className="flex-1" />
-        {agent.readiness === 'preview' && (
-          // The shared ENG-026 grammar — a preview desk shows the Agent
-          // Types direction and must never read as shipped capability.
-          <ComingSoonMarker
-            owner={`${project?.agentType ?? 'Agent Types'} Agent Type`}
-          />
-        )}
-        {/* ENG-026 N4 / ENG-033: the per-Agent Push to cloud control,
+          {agent.roadmapItemId && (
+            <span
+              className="font-mono text-chrome-meta"
+              style={{ color: HUD.textDim }}
+            >
+              {agent.roadmapItemId}
+              {agent.link ? ` · ${agent.link}` : ''}
+            </span>
+          )}
+          <span className="flex-1" />
+          {agent.readiness === 'preview' && (
+            // The shared ENG-026 grammar — a preview desk shows the Agent
+            // Types direction and must never read as shipped capability.
+            <ComingSoonMarker
+              owner={`${project?.agentType ?? 'Agent Types'} Agent Type`}
+            />
+          )}
+          {/* ENG-026 N4 / ENG-033: the per-Agent Push to cloud control,
             announced in the demo shell too — the live tab-strip context menu
             carries the same inert row, and the Demo tenant must be able to
             show the direction without a live tab. */}
-        <AnnouncedChip
-          size="micro"
-          coming="run this Agent on an Exawatt-hosted machine or a Gemini managed environment (Cloud)"
-        >
-          <CloudUpload aria-hidden className="h-3 w-3" />
-          Push to cloud
-        </AnnouncedChip>
-        <span
-          className="font-mono text-chrome-micro"
-          style={{ color: HUD.textDim }}
-          title="Demo Sessions are read-only records. They accept no input and never spawn a process."
-        >
-          read-only demo Session
-        </span>
-      </header>
-
-      {/* Goal line — the launch sentence, then the six-word subtitle */}
-      <div className="shrink-0 border-b border-white/5 px-4 py-2.5">
-        <p
-          className="text-chrome-title leading-relaxed"
-          style={{ color: HUD.text }}
-        >
-          {agent.goal}
-        </p>
-        <p
-          className="mt-0.5 font-mono text-chrome-meta"
-          style={{ color: HUD.textDim }}
-        >
-          {project?.name ?? agent.projectKey} · started{' '}
-          {relativeTime(nowMs, agent.startedAtMs)} · last activity{' '}
-          {relativeTime(nowMs, agent.lastActivityAtMs)}
-        </p>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {/* Blocker — the needs-you story, verbatim from the record */}
-        {agent.blocker && (
-          <section
-            data-demo-blocker
-            className="mb-4 rounded-md border p-3"
-            style={{
-              borderColor: 'rgba(255,120,120,0.35)',
-              background: 'rgba(255,80,80,0.06)',
-            }}
+          <AnnouncedChip
+            size="micro"
+            coming="run this Agent on an Exawatt-hosted machine or a Gemini managed environment (Cloud)"
           >
-            <p className="font-mono text-chrome-meta text-red-300">
-              needs you · {agent.blocker.title}
-            </p>
-            <p className="mt-1 text-chrome-title leading-relaxed text-red-100/85">
-              {agent.blocker.description}
-            </p>
-            {agent.blocker.suggestedResponses &&
-              agent.blocker.suggestedResponses.length > 0 && (
-                <p className="mt-2 font-mono text-chrome-meta text-red-200/70">
-                  suggested: {agent.blocker.suggestedResponses.join(' · ')}
-                </p>
-              )}
-          </section>
-        )}
-
-        {/* Fault — what actually failed */}
-        {agent.faultNote && (
-          <section
-            data-demo-fault
-            className="mb-4 rounded-md border p-3"
-            style={{
-              borderColor: 'rgba(255,120,120,0.35)',
-              background: 'rgba(255,80,80,0.06)',
-            }}
+            <CloudUpload aria-hidden className="h-3 w-3" />
+            Push to cloud
+          </AnnouncedChip>
+          <span
+            className="font-mono text-chrome-micro"
+            style={{ color: HUD.textDim }}
+            title="Demo Sessions are read-only records. They accept no input and never spawn a process."
           >
-            <p className="font-mono text-chrome-meta text-red-300">fault</p>
-            <p className="mt-1 text-chrome-title leading-relaxed text-red-100/85">
-              {agent.faultNote}
-            </p>
-          </section>
-        )}
+            read-only demo Session
+          </span>
+        </header>
 
-        {/* Delegated team (ENG-023) */}
-        {agent.delegated.length > 0 && (
-          <section className="mb-4">
-            <p
-              className="mb-1.5 font-mono text-chrome-meta"
-              style={{ color: HUD.textDim }}
-            >
-              {agent.delegated.length} delegated{' '}
-              {agent.delegated.length === 1 ? 'agent' : 'agents'}
-            </p>
-            <ul className="flex flex-col gap-1">
-              {agent.delegated.map(run => (
-                <li
-                  key={run.agentId}
-                  className="flex items-baseline gap-2 font-mono text-chrome-label"
-                >
-                  <span style={{ color: '#B9A6FF' }}>{run.agentType}</span>
-                  <span style={{ color: HUD.text }}>{run.task}</span>
-                  <span style={{ color: HUD.textDim }}>
-                    {relativeTime(nowMs, run.startedAtMs)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+        {/* Goal line — the launch sentence, then the six-word subtitle */}
+        <div className="shrink-0 border-b border-white/5 px-4 py-2.5">
+          <p
+            className="text-chrome-title leading-relaxed"
+            style={{ color: HUD.text }}
+          >
+            {agent.goal}
+          </p>
+          <p
+            className="mt-0.5 font-mono text-chrome-meta"
+            style={{ color: HUD.textDim }}
+          >
+            {project?.name ?? agent.projectKey} · started{' '}
+            {relativeTime(nowMs, agent.startedAtMs)} · last activity{' '}
+            {relativeTime(nowMs, agent.lastActivityAtMs)}
+          </p>
+        </div>
 
-        {content.kind === 'transcript' ? (
-          <section data-demo-transcript className="flex flex-col gap-3 pb-4">
-            {content.lines.map((line, index) => (
-              <div key={index} className="flex flex-col gap-0.5">
-                <p
-                  className="font-mono text-chrome-micro"
-                  style={{ color: HUD.textDim }}
-                >
-                  {ROLE_LABEL[line.role]} · {relativeTime(nowMs, line.atMs)}
-                </p>
-                <p
-                  className={
-                    line.role === 'tool'
-                      ? 'font-mono text-chrome-label leading-relaxed'
-                      : 'text-chrome-title leading-relaxed'
-                  }
-                  style={{ color: ROLE_COLOR[line.role] }}
-                >
-                  {line.text}
-                </p>
-              </div>
-            ))}
-            <p
-              className="mt-2 font-mono text-chrome-micro"
-              style={{ color: HUD.textDim }}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          {/* Blocker — the needs-you story, verbatim from the record */}
+          {agent.blocker && (
+            <section
+              data-demo-blocker
+              className="mb-4 rounded-md border p-3"
+              style={{
+                borderColor: 'rgba(255,120,120,0.35)',
+                background: 'rgba(255,80,80,0.06)',
+              }}
             >
-              End of recorded transcript.
-            </p>
-          </section>
-        ) : (
-          // W7: the few-bullet work log — "worked on X, then Y" — so every
-          // Session opens readable without a dense transcript.
-          <section data-demo-work-log className="pb-4">
-            <p
-              className="mb-2 font-mono text-chrome-meta"
-              style={{ color: HUD.textDim }}
+              <p className="font-mono text-chrome-meta text-red-300">
+                needs you · {agent.blocker.title}
+              </p>
+              <p className="mt-1 text-chrome-title leading-relaxed text-red-100/85">
+                {agent.blocker.description}
+              </p>
+              {agent.blocker.suggestedResponses &&
+                agent.blocker.suggestedResponses.length > 0 && (
+                  <p className="mt-2 font-mono text-chrome-meta text-red-200/70">
+                    suggested: {agent.blocker.suggestedResponses.join(' · ')}
+                  </p>
+                )}
+            </section>
+          )}
+
+          {/* Fault — what actually failed */}
+          {agent.faultNote && (
+            <section
+              data-demo-fault
+              className="mb-4 rounded-md border p-3"
+              style={{
+                borderColor: 'rgba(255,120,120,0.35)',
+                background: 'rgba(255,80,80,0.06)',
+              }}
             >
-              Work so far
-            </p>
-            <ul className="flex flex-col gap-1.5">
+              <p className="font-mono text-chrome-meta text-red-300">fault</p>
+              <p className="mt-1 text-chrome-title leading-relaxed text-red-100/85">
+                {agent.faultNote}
+              </p>
+            </section>
+          )}
+
+          {/* Delegated team (ENG-023) */}
+          {agent.delegated.length > 0 && (
+            <section className="mb-4">
+              <p
+                className="mb-1.5 font-mono text-chrome-meta"
+                style={{ color: HUD.textDim }}
+              >
+                {agent.delegated.length} delegated{' '}
+                {agent.delegated.length === 1 ? 'agent' : 'agents'}
+              </p>
+              <ul className="flex flex-col gap-1">
+                {agent.delegated.map(run => (
+                  <li
+                    key={run.agentId}
+                    className="flex items-baseline gap-2 font-mono text-chrome-label"
+                  >
+                    <span style={{ color: '#B9A6FF' }}>{run.agentType}</span>
+                    <span style={{ color: HUD.text }}>{run.task}</span>
+                    <span style={{ color: HUD.textDim }}>
+                      {relativeTime(nowMs, run.startedAtMs)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {content.kind === 'transcript' ? (
+            <section data-demo-transcript className="flex flex-col gap-3 pb-4">
               {content.lines.map((line, index) => (
-                <li
-                  key={index}
-                  className="flex gap-2.5 text-chrome-title leading-relaxed"
-                  style={{ color: HUD.text }}
-                >
-                  <span
-                    aria-hidden
-                    className="mt-[9px] h-1 w-1 shrink-0 rounded-full"
-                    style={{ background: project?.color ?? HUD.textDim }}
-                  />
-                  {line}
-                </li>
+                <div key={index} className="flex flex-col gap-0.5">
+                  <p
+                    className="font-mono text-chrome-micro"
+                    style={{ color: HUD.textDim }}
+                  >
+                    {ROLE_LABEL[line.role]} · {relativeTime(nowMs, line.atMs)}
+                  </p>
+                  <p
+                    className={
+                      line.role === 'tool'
+                        ? 'font-mono text-chrome-label leading-relaxed'
+                        : 'text-chrome-title leading-relaxed'
+                    }
+                    style={{ color: ROLE_COLOR[line.role] }}
+                  >
+                    {line.text}
+                  </p>
+                </div>
               ))}
-            </ul>
-          </section>
-        )}
-      </div>
+              <p
+                className="mt-2 font-mono text-chrome-micro"
+                style={{ color: HUD.textDim }}
+              >
+                End of recorded transcript.
+              </p>
+            </section>
+          ) : (
+            // W7: the few-bullet work log — "worked on X, then Y" — so every
+            // Session opens readable without a dense transcript.
+            <section data-demo-work-log className="pb-4">
+              <p
+                className="mb-2 font-mono text-chrome-meta"
+                style={{ color: HUD.textDim }}
+              >
+                Work so far
+              </p>
+              <ul className="flex flex-col gap-1.5">
+                {content.lines.map((line, index) => (
+                  <li
+                    key={index}
+                    className="flex gap-2.5 text-chrome-title leading-relaxed"
+                    style={{ color: HUD.text }}
+                  >
+                    <span
+                      aria-hidden
+                      className="mt-[9px] h-1 w-1 shrink-0 rounded-full"
+                      style={{ background: project?.color ?? HUD.textDim }}
+                    />
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
 
-      {/* Usage footer — fixture truth, no invented dollars */}
-      <footer
-        className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/5 px-4 py-2 font-mono text-chrome-meta"
-        style={{ color: HUD.textDim }}
-      >
-        <span>{agent.turns} turns</span>
-        <span>{fmtTokens(agent.usage.input)} in</span>
-        <span>{fmtTokens(agent.usage.output)} out</span>
-        <span>{fmtTokens(agent.usage.cacheRead)} cache read</span>
-        <span>
-          {agent.model}
-          {agent.effort ? ` · ${agent.effort}` : ''}
-        </span>
-        {agent.gitBranch && <span>{agent.gitBranch}</span>}
-      </footer>
-    </div>
+        {/* Usage footer — fixture truth, no invented dollars */}
+        <footer
+          className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/5 px-4 py-2 font-mono text-chrome-meta"
+          style={{ color: HUD.textDim }}
+        >
+          <span>{agent.turns} turns</span>
+          <span>{fmtTokens(agent.usage.input)} in</span>
+          <span>{fmtTokens(agent.usage.output)} out</span>
+          <span>{fmtTokens(agent.usage.cacheRead)} cache read</span>
+          <span>
+            {agent.model}
+            {agent.effort ? ` · ${agent.effort}` : ''}
+          </span>
+          {agent.gitBranch && <span>{agent.gitBranch}</span>}
+        </footer>
+      </div>
+    </ActiveThemeContext.Provider>
   );
 }

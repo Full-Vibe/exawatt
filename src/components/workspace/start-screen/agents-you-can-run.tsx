@@ -198,7 +198,6 @@ export function AgentsYouCanRun({
                       adapterId: source.adapterId,
                       label: source.label,
                       secondary: source.connectionName,
-                      color: source.color,
                     }}
                     state={source.state}
                     stateLabel={source.stateLabel}

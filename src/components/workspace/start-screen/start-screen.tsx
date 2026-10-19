@@ -19,7 +19,7 @@
  * blocks, `space-y-6` sections; `rounded-lg` cards, `rounded-md` rows; the
  * workspace HUD roles for paint; the one button recipe (`outline` neutral,
  * `ghost` quiet; no `default`, because every row is its own action, the
- * chooser's rule); source colour only inside `SourceIdentityMark`; every
+ * chooser's rule); source colour only through `AgentSourceMark`; every
  * transition under `motion-reduce`.
  */
 import { MonitorPlay } from 'lucide-react';

@@ -38,14 +38,12 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { StatusLight } from '@/components/status-light';
-import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
-import { OpenClawIcon } from '@/components/workspace/harness-icons';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha,
 } from '@/components/workspace/workspace-theme';
 
-const OPENCLAW_COLOR = '#8BB9ED';
 const REMOTE_PROJECT = 'Remote';
 
 /* -------------------------------------------------------------------------- */
@@ -156,11 +154,7 @@ function PrimaryButton({ children }: { children: ReactNode }) {
 }
 
 function OpenClawMark() {
-  return (
-    <SourceIdentityMark color={OPENCLAW_COLOR}>
-      <OpenClawIcon size={12} />
-    </SourceIdentityMark>
-  );
+  return <AgentSourceMark plate source="openclaw" size={12} />;
 }
 
 function Chip({

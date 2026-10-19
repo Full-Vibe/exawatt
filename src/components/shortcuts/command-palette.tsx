@@ -113,8 +113,8 @@ import {
   resolveSurfaceHref,
   type NavigationSurface,
 } from '@/components/nav/surfaces';
-import { HarnessGlyph } from '@/components/workspace/harness-icons';
-import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
+import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
+import { agentSourceIdentity } from '@/components/workspace/agent-source-identity';
 import { SessionSwitcherIdentity } from '@/components/workspace/session-switcher-identity';
 import {
   AttentionMarker,
@@ -122,8 +122,6 @@ import {
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
 import { STATUS_LIGHT_META, StatusLight } from '@/components/status-light';
-import { HARNESS_META } from '@/components/workspace/harnesses';
-import { AGENT_SOURCE_META } from '@/components/workspace/agent-sources';
 import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
 import {
   requestQuickFeedback,
@@ -1327,19 +1325,12 @@ export function CommandPalette({
               {row.icon ? (
                 <row.icon className="mr-2 h-4 w-4" />
               ) : row.launchConfiguration?.configuration.kind === 'agent' ? (
-                <SourceIdentityMark
+                <AgentSourceMark
+                  plate
+                  source={row.launchConfiguration.configuration.source}
+                  size={13}
                   className="mr-2"
-                  color={
-                    AGENT_SOURCE_META[
-                      row.launchConfiguration.configuration.source
-                    ].color
-                  }
-                >
-                  <HarnessGlyph
-                    harness={row.launchConfiguration.configuration.source}
-                    size={13}
-                  />
-                </SourceIdentityMark>
+                />
               ) : row.launchConfiguration?.configuration.kind === 'shell' ? (
                 <SquareTerminal className="mr-2 h-4 w-4" />
               ) : row.color ? (
@@ -1367,7 +1358,7 @@ export function CommandPalette({
                 keywords={[
                   s.searchValue,
                   s.harness,
-                  HARNESS_META[s.harness].label,
+                  agentSourceIdentity(s.harness).label,
                   s.projectName,
                   ...(s.roadmapItemId ? [s.roadmapItemId] : []),
                   ...(s.subtitle ? [s.subtitle] : []),
@@ -1383,12 +1374,12 @@ export function CommandPalette({
                   }}
                 />
                 {s.harness !== 'shell' && (
-                  <SourceIdentityMark
+                  <AgentSourceMark
+                    plate
+                    source={s.harness}
+                    size={12}
                     className="mr-1.5"
-                    color={HARNESS_META[s.harness].color}
-                  >
-                    <HarnessGlyph harness={s.harness} size={12} />
-                  </SourceIdentityMark>
+                  />
                 )}
                 <SessionSwitcherIdentity session={s} />
                 <span
@@ -1447,12 +1438,12 @@ export function CommandPalette({
               data-launch-configuration={key}
             >
               {snapshot.kind === 'agent' ? (
-                <SourceIdentityMark
+                <AgentSourceMark
+                  plate
+                  source={snapshot.source}
+                  size={13}
                   className="mr-2"
-                  color={AGENT_SOURCE_META[snapshot.source].color}
-                >
-                  <HarnessGlyph harness={snapshot.source} size={13} />
-                </SourceIdentityMark>
+                />
               ) : (
                 <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
               )}
