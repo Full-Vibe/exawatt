@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
+import { normalizeDeliveryRecord } from '@exawatt/core/delivery-vocabulary';
 import type {
   RoadmapDeliveryCandidate,
   RoadmapDeliveryRead,
@@ -122,7 +123,7 @@ function parseTicket(raw: unknown): RawTicket | null {
   }
   const result =
     record.result && typeof record.result === 'object'
-      ? (record.result as Record<string, unknown>)
+      ? normalizeDeliveryRecord(record.result as Record<string, unknown>)
       : {};
   return {
     id,
@@ -143,13 +144,6 @@ function parseTicket(raw: unknown): RawTicket | null {
   };
 }
 
-/** Event types `metrics.jsonl` carried before 2026-10-18, when the required
- *  checks were renamed the landing checks. Old lines keep the old name; this
- *  is the one place this reader maps it. */
-const LEGACY_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
-  ['floor_check', 'landing_check'],
-]);
-
 function parseEvent(line: string): MetricsEvent | null {
   let parsed: unknown;
   try {
@@ -158,12 +152,14 @@ function parseEvent(line: string): MetricsEvent | null {
     return null;
   }
   if (!parsed || typeof parsed !== 'object') return null;
-  const record = parsed as Record<string, unknown>;
+  // Old lines keep the vocabulary they were written in; the delivery scripts'
+  // own table maps it, here at the read boundary.
+  const record = normalizeDeliveryRecord(parsed as Record<string, unknown>);
   const type = text(record.type);
   const at = millis(record.at);
   if (!type || at === null) return null;
   return {
-    type: LEGACY_EVENT_TYPES.get(type) ?? type,
+    type,
     at,
     ticketId: text(record.ticketId) ?? undefined,
     candidateSha: text(record.candidateSha) ?? undefined,

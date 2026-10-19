@@ -7,6 +7,7 @@ import {
   readFile,
   readdir,
   rm,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,6 +18,7 @@ import {
   acquireDeliveryLock,
   acquireDirectoryLock,
   deliveryLockPath,
+  tryAcquireLock,
 } from './lib/delivery-lock.mjs';
 import {
   commitStagedApp,
@@ -212,6 +214,57 @@ test('two waiters that both judge a dead holder stale never both take its lock',
     resume.resolve();
     await lateAttempt.catch(() => {});
     await late?.release();
+    await early?.release();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// 2026-10-19 review: tombstones were aged by the lock directory's mtime,
+// which is its ACQUISITION time, so breaking a lock stale for more than a day
+// swept the tombstone in the same call. The late waiter's rename then found
+// no tombstone to be refused by and moved the new holder's lock aside.
+test('a lock stale for more than a day keeps its tombstone against the late waiter', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-lock-old-break-'));
+  const lockPath = path.join(root, 'counter.lock');
+  const deadPid = spawnSync(process.execPath, ['-e', '']).pid;
+  await mkdir(lockPath);
+  await writeFile(
+    path.join(lockPath, 'owner.json'),
+    JSON.stringify({ token: 'crashed', pid: deadPid })
+  );
+  const acquiredTwoDaysAgo = new Date(Date.now() - 48 * 60 * 60_000);
+  await utimes(lockPath, acquiredTwoDaysAgo, acquiredTwoDaysAgo);
+  const judged = deferred();
+  const resume = deferred();
+  let early;
+  const late = tryAcquireLock(
+    lockPath,
+    { token: 'late', pid: process.pid },
+    {
+      hooks: {
+        async breaking(owner) {
+          if (owner?.token !== 'crashed') return;
+          judged.resolve();
+          await resume.promise;
+        },
+      },
+    }
+  );
+  try {
+    await judged.promise;
+    early = await acquireDirectoryLock(lockPath, { log() {} });
+    const tombstones = (await readdir(root)).filter(name =>
+      name.startsWith('counter.lock.broken-')
+    );
+    assert.equal(tombstones.length, 1, 'the break keeps its own tombstone');
+    resume.resolve();
+    const outcome = await late;
+    assert.equal(outcome.acquired, false);
+    assert.equal(outcome.holder?.token, early.token);
+    assert.equal((await lockOwner(lockPath)).token, early.token);
+  } finally {
+    resume.resolve();
+    await late.catch(() => {});
     await early?.release();
     await rm(root, { recursive: true, force: true });
   }

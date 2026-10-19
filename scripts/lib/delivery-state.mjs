@@ -11,6 +11,8 @@ import {
 import path from 'node:path';
 import { promisify } from 'node:util';
 
+import { normalizeDeliveryRecord } from '@exawatt/core/delivery-vocabulary';
+
 const execFileAsync = promisify(execFile);
 
 export const DELIVERY_SCHEMA_VERSION = 1;
@@ -88,30 +90,12 @@ export function percentile(values, percentage) {
   return sorted[Math.ceil((percentage / 100) * sorted.length) - 1];
 }
 
-/**
- * Names `metrics.jsonl` used before 2026-10-18, when the required checks were
- * renamed the landing checks. Records already written keep the old names, so
- * every read maps them here, at the one boundary, and nothing downstream
- * knows the old vocabulary. Writers only ever write the new names.
+/*
+ * Records written before 2026-10-18 carry the old vocabulary. The one table
+ * that maps it lives in `@exawatt/core/delivery-vocabulary`, which the
+ * Roadmap lens reader imports too, and every read here goes through it.
  */
-const LEGACY_METRIC_TYPES = new Map([['floor_check', 'landing_check']]);
-const LEGACY_RECORD_FIELDS = new Map([
-  ['exactFloorSha', 'exactLandingCheckSha'],
-]);
-
-/** A persisted delivery record (a metric or a ticket result) in today's names. */
-export function normalizeDeliveryRecord(record) {
-  if (!record || typeof record !== 'object') return record;
-  let normalized = record;
-  const type = LEGACY_METRIC_TYPES.get(record.type);
-  if (type) normalized = { ...normalized, type };
-  for (const [legacy, current] of LEGACY_RECORD_FIELDS) {
-    if (!(legacy in normalized)) continue;
-    const { [legacy]: value, ...rest } = normalized;
-    normalized = { ...rest, [current]: rest[current] ?? value };
-  }
-  return normalized;
-}
+export { normalizeDeliveryRecord };
 
 export async function readDeliveryMetrics(root) {
   const metricsPath = path.join(await deliveryStateRoot(root), 'metrics.jsonl');

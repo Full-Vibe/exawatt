@@ -7,6 +7,7 @@ import {
   rename,
   rm,
   stat,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -53,15 +54,6 @@ async function writeOwner(lockPath, owner) {
   }
 }
 
-async function lockAge(lockPath) {
-  try {
-    const metadata = await stat(lockPath);
-    return Date.now() - metadata.mtimeMs;
-  } catch {
-    return null;
-  }
-}
-
 /*
  * The lock directory protocol (BUG-289). Every delivery lock and machine slot
  * is a directory holding `owner.json`, and every transition of it is one
@@ -80,8 +72,11 @@ async function lockAge(lockPath) {
  *   the directory's inode, and keeps the tombstone. A second waiter that
  *   judged the same lock stale, and acted after the first had broken it and a
  *   new holder had taken the path, now renames onto that tombstone and is
- *   refused, instead of deleting the new holder's lock. Tombstones are swept
- *   after a day.
+ *   refused, instead of deleting the new holder's lock. A tombstone is aged
+ *   from the break, never from the acquisition its directory records (a lock
+ *   stale for a day would otherwise be swept by the call that broke it,
+ *   reopening the race), and the breaking call never sweeps its own; others
+ *   are swept a day after their break.
  *
  * Under mkdir-then-write, a holder starved between creating the directory
  * and writing its owner looked like a crashed acquisition, and a waiter
@@ -130,16 +125,48 @@ async function inspectLock(lockPath) {
   return { ino: after.ino, owner, ageMs: Date.now() - after.mtimeMs };
 }
 
-async function sweepTombstones(lockPath) {
+/**
+ * How long ago a tombstone was made. The break sets its times explicitly, and
+ * the rename itself moves its ctime on the filesystems this runs on, so the
+ * later of the two is the break, whatever the lock directory recorded.
+ */
+async function tombstoneAge(tombstone) {
+  try {
+    const metadata = await stat(tombstone);
+    return Date.now() - Math.max(metadata.mtimeMs, metadata.ctimeMs);
+  } catch {
+    return null;
+  }
+}
+
+async function sweepTombstones(lockPath, keep) {
   const prefix = `${path.basename(lockPath)}.broken-`;
   const directory = path.dirname(lockPath);
   const names = await readdir(directory).catch(() => []);
   for (const name of names.filter(entry => entry.startsWith(prefix))) {
     const tombstone = path.join(directory, name);
-    const age = await lockAge(tombstone);
+    if (tombstone === keep) continue;
+    const age = await tombstoneAge(tombstone);
     if (age !== null && age > TOMBSTONE_LIFETIME_MS) {
       await rm(tombstone, { recursive: true, force: true });
     }
+  }
+}
+
+/**
+ * Moves a lock directory that was taken aside by mistake back to `lockPath`.
+ * A failure is thrown, never swallowed: the lock it holds belongs to a live
+ * holder, and leaving it aside while another process takes the path is the
+ * double holder the protocol exists to prevent.
+ */
+async function restoreLock(aside, lockPath, why) {
+  try {
+    await rename(aside, lockPath);
+  } catch (error) {
+    throw new Error(
+      `[delivery-lock] ${why}, and putting it back failed (${error?.code ?? error?.message}): the live holder's lock is at ${aside}, not ${lockPath}. Stop the waiters on ${lockPath} and move it back by hand.`,
+      { cause: error }
+    );
   }
 }
 
@@ -156,10 +183,16 @@ async function breakLock(lockPath, ino) {
   if (moved && moved.ino !== ino) {
     // Not the lock judged stale: an ownerless one was released by a live
     // mkdir-then-write holder and the path retaken. Put it back.
-    await rename(tombstone, lockPath).catch(() => {});
+    await restoreLock(
+      tombstone,
+      lockPath,
+      `a waiter moved a lock it had not judged stale (${moved.ino}, not ${ino}) aside`
+    );
     return;
   }
-  await sweepTombstones(lockPath);
+  const now = new Date();
+  await utimes(tombstone, now, now);
+  await sweepTombstones(lockPath, tombstone);
 }
 
 /** Releases the lock at `lockPath` if `token` still owns it. */
@@ -174,7 +207,11 @@ export async function releaseLock(lockPath, token) {
     throw error;
   }
   if ((await readOwner(released))?.token !== token) {
-    await rename(released, lockPath).catch(() => {});
+    await restoreLock(
+      released,
+      lockPath,
+      'a release moved a lock it no longer owned aside'
+    );
     return;
   }
   await rm(released, { recursive: true, force: true });

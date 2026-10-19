@@ -219,7 +219,11 @@ own tree's hook. Any push to origin's `master` is refused, docs or code, and
 the refusal names both lanes. Two variables excuse exactly one SHA each:
 `agent:land` sets `EXAWATT_AGENT_LAND_CHECKED_SHA` on its final push to the SHA
 its landing checks just verified, and the operator-gated `--direct` path sets
-`EXAWATT_AGENT_LAND_DIRECT_SHA` to the SHA it pushes. Deleting `master` is
+`EXAWATT_AGENT_LAND_DIRECT_SHA` to the SHA it pushes. A landing that started
+before 2026-10-18 sets the landing-check variable under its old name, and its
+final push runs the rebased tree's hook, so the hook still reads that name in
+one legacy-compatibility helper in `scripts/lib/docs-check.mjs` (the current
+name wins) until no such landing can be in flight. Deleting `master` is
 refused too. Every push that does not target a master ref returns from the
 shell before node starts. `git push --no-verify` is for the recovery path
 only, such as a repair while the queue itself is broken; the ordinary answer
@@ -269,6 +273,12 @@ that reads only its own temporary files), and the landing runs every declaring
 test whose globs match a changed path; a documentation landing runs the ones
 that read documents. `delivery-policy.test.mjs` refuses a test that reads the
 repository without a declaration, and a glob that matches no tracked file.
+The declarations are read from the git tree being checked (`deliveryTree`),
+memoised by its hash: the candidate's commit, the queue head's rebased commit,
+and the docs lane's temporary checkout each answer for themselves, so a rebase
+that adds or widens a declaration is owed on the rebased tree. The selection
+runs without `--passWithNoTests`, and a selected file the checkout does not
+hold fails the check before it starts.
 
 Every verification command in `package.json` (`lint`, `type-check*`,
 `test*`, `eval:*`, `verify:*`, `qa:*`, `security:*`, and `*:check`, `*:audit`,
@@ -613,8 +623,12 @@ sees a half-made or half-removed lock. A holder writes its owner record into a
 private staging directory and renames it onto the lock path; it releases by
 renaming the lock aside before deleting it; a waiter breaks a lock whose owner
 process is gone by renaming it to a tombstone named by the directory's inode,
-kept for a day, so a second waiter that judged the same lock stale is refused
-instead of deleting the next holder's lock. The mkdir-then-write protocol it
+so a second waiter that judged the same lock stale is refused instead of
+deleting the next holder's lock. A tombstone is aged from the break (its
+times are set after the rename), never from the acquisition its directory
+records, the breaking call never sweeps its own, and others are swept a day
+after their break. A lock moved aside by mistake is put back, and a failure
+to put it back is thrown, naming where the live holder's lock now is. The mkdir-then-write protocol it
 replaced let a waiter delete the lock of a holder starved between creating the
 directory and writing its owner, which is how two `id:next` callers received
 the same BUG id under load.
@@ -780,10 +794,11 @@ contributor's own commit is what the projector publishes.
 
 `metrics.jsonl` is append-only schema version 1. Lines written before
 2026-10-18 name the check event `floor_check` and an integrated ticket's
-verified SHA `exactFloorSha`; `readDeliveryMetrics`, the ticket reads in
-`delivery-queue.mjs` and the Roadmap lens reader map them to `landing_check`
-and `exactLandingCheckSha` where they read, and only the new names are
-written. Current event types are:
+verified SHA `exactFloorSha`. The one table that maps them to `landing_check`
+and `exactLandingCheckSha` is `normalizeDeliveryRecord` in
+`@exawatt/core/delivery-vocabulary`; `readDeliveryMetrics`, the ticket reads
+in `delivery-queue.mjs` and the Roadmap lens reader all read through it, and
+only the new names are written. Current event types are:
 
 | Event                                                                                                         | Important fields                                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

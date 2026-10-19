@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { loadavg, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -1085,7 +1085,7 @@ export function surfaceGateMessage(missing) {
  * minutes under fleet load, and 48% of all landing-check compute on
  * 2026-10-15, when it ran on every landing whatever changed. Almost all of it
  * is fixture-driven: it reads `scripts/`, the package manifests and lockfile,
- * the root configuration, CI and hooks, and two `@exawatt/core` entry points,
+ * the root configuration, CI and hooks, and three `@exawatt/core` entry points,
  * and nothing else in the product tree. A traced run on 2026-10-15 (every file read
  * and every git call the suite and its children made) found the exceptions,
  * which are either listed here or are a product-tree pin below.
@@ -1122,16 +1122,18 @@ const DELIVERY_SYSTEM_FILES = new Set([
 ]);
 
 /**
- * The release, custody and packaging pins load `@exawatt/core`'s built
- * runtime through exactly these entry points (`@exawatt/core/distribution`
- * and `@exawatt/core/release-provenance`; delivery scripts never load the
- * package root, and `delivery-policy.test.mjs` holds them to it). A core
- * source file reaches the delivery suite only through their import closure,
- * read from the tree being landed; everything else in the package (its
- * manifest, build configuration and scripts) always does. Unreadable sources
- * count as reaching it.
+ * The delivery scripts reach `@exawatt/core` through exactly these entry
+ * points: the release, custody and packaging pins load the built runtime of
+ * `@exawatt/core/distribution` and `@exawatt/core/release-provenance`, and the
+ * delivery-state readers load `@exawatt/core/delivery-vocabulary` as source.
+ * Delivery scripts never load the package root, and `delivery-policy.test.mjs`
+ * holds them to it. A core source file reaches the delivery suite only
+ * through their import closure, read from the tree being landed; everything
+ * else in the package (its manifest, build configuration and scripts) always
+ * does. Unreadable sources count as reaching it.
  */
 export const CORE_DELIVERY_ENTRIES = Object.freeze([
+  'packages/core/src/delivery-vocabulary.ts',
   'packages/core/src/distribution/index.ts',
   'packages/core/src/release-provenance.ts',
 ]);
@@ -1139,48 +1141,112 @@ const REPOSITORY_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../..'
 );
-let coreClosure;
 
-function resolveCoreImport(from, specifier) {
-  const base = path.posix
-    .join(path.posix.dirname(from), specifier)
-    .replace(/\.js$/u, '');
-  for (const candidate of [base, `${base}.ts`, `${base}/index.ts`]) {
-    const absolute = path.join(REPOSITORY_ROOT, candidate);
-    if (existsSync(absolute) && statSync(absolute).isFile()) return candidate;
-  }
-  return null;
+/*
+ * The tree the landing checks are owed by (2026-10-19 review). Everything the
+ * classification READS from the repository (which tests declare what they
+ * scan, which core sources the delivery suite loads) is a function of one
+ * git tree, read from that tree's objects and memoised by its hash. It was
+ * read from this script's own working tree and cached per process, so the
+ * queue head's re-check after a rebase classified with the pre-rebase list,
+ * and the docs lane, which runs its checks in a temporary checkout of the
+ * commit, classified against whatever the invoking checkout held. A tree hash
+ * cannot go stale: a rebase is a new tree, and the same tree is the same
+ * answer.
+ */
+
+/** The committed tree checked out at `root`: its HEAD's tree. */
+export function deliveryTree(root = REPOSITORY_ROOT) {
+  const hash = execFileSync('git', ['rev-parse', '--verify', 'HEAD^{tree}'], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+  return Object.freeze({ root, hash });
 }
 
-/** The core sources the delivery suite loads, or null when unreadable. */
-function coreDeliveryClosure() {
-  if (coreClosure !== undefined) return coreClosure;
+/**
+ * The tree a commit made from `root`'s index now would have (`pnpm
+ * docs:check`, which checks a change before it is committed). `write-tree`
+ * stores tree objects and never changes the index.
+ */
+export function indexTree(root) {
+  const hash = execFileSync('git', ['write-tree'], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+  return Object.freeze({ root, hash });
+}
+
+function treeGit(tree, args) {
+  return execFileSync('git', args, {
+    cwd: tree.root,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+/** Memoises `compute(tree)` per tree hash. */
+function perTree(compute) {
+  const answers = new Map();
+  return tree => {
+    if (!answers.has(tree.hash)) answers.set(tree.hash, compute(tree));
+    return answers.get(tree.hash);
+  };
+}
+
+/** The core sources the delivery suite loads in `tree`, or null when unreadable. */
+const coreDeliveryClosure = perTree(tree => {
   try {
+    const files = new Set(
+      treeGit(tree, [
+        'ls-tree',
+        '-r',
+        '--name-only',
+        tree.hash,
+        '--',
+        'packages/core/src/',
+      ])
+        .split('\n')
+        .filter(Boolean)
+    );
+    const resolve = (from, specifier) => {
+      const base = path.posix
+        .join(path.posix.dirname(from), specifier)
+        .replace(/\.js$/u, '');
+      return (
+        [base, `${base}.ts`, `${base}/index.ts`].find(candidate =>
+          files.has(candidate)
+        ) ?? null
+      );
+    };
     const seen = new Set();
     const pending = [...CORE_DELIVERY_ENTRIES];
     while (pending.length > 0) {
       const file = pending.pop();
       if (seen.has(file)) continue;
+      if (!files.has(file)) throw new Error(`${file}: not in the tree`);
       seen.add(file);
-      const source = readFileSync(path.join(REPOSITORY_ROOT, file), 'utf8');
+      const source = treeGit(tree, ['show', `${tree.hash}:${file}`]);
       for (const match of source.matchAll(
         /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"](\.{1,2}\/[^'"]+)['"]/gu
       )) {
-        const target = resolveCoreImport(file, match[1]);
+        const target = resolve(file, match[1]);
         if (!target) throw new Error(`${file}: cannot resolve ${match[1]}`);
         pending.push(target);
       }
     }
-    coreClosure = seen;
+    return seen;
   } catch {
-    coreClosure = null;
+    return null;
   }
-  return coreClosure;
-}
+});
 
-export function deliveryAffectingPath(file) {
+export function deliveryAffectingPath(file, tree = deliveryTree()) {
   if (file.startsWith('packages/core/src/')) {
-    const closure = coreDeliveryClosure();
+    const closure = coreDeliveryClosure(tree);
     return closure === null || closure.has(file);
   }
   return (
@@ -1227,6 +1293,12 @@ export const PRODUCT_TREE_PINS = Object.freeze([
  * and a landing runs every declaring test whose globs match a changed path.
  * `delivery-policy.test.mjs` refuses a test that reads repository files
  * without a declaration, and a glob that matches no tracked file.
+ *
+ * The declarations are read from the tree being checked (`deliveryTree`), so
+ * a rebase that adds or widens one is owed on the rebased tree, and the
+ * selection names only files that tree holds. The check states those files,
+ * and the run refuses one its checkout does not hold (`missingCheckFiles`)
+ * instead of passing a selection that matched nothing.
  */
 const SCAN_DECLARATION = /^[ \t]*\/\/[ \t]*@scans[ \t]+(.+?)[ \t]*$/mu;
 const SCANNING_TEST_PATHSPECS = Object.freeze([
@@ -1234,7 +1306,6 @@ const SCANNING_TEST_PATHSPECS = Object.freeze([
   '*.test.tsx',
   ':(exclude)scripts/**',
 ]);
-let scanningTestCache;
 
 /** `null` without a declaration; `{ none }` or `{ globs }` with one. */
 export function parseScanDeclaration(source) {
@@ -1268,49 +1339,53 @@ export function globExpression(glob) {
 }
 
 /**
- * Every tracked Vitest file that declares what it scans, with its globs.
+ * Every Vitest file in `tree` that declares what it scans, with its globs.
  * An unreadable tree throws: a landing that cannot tell which scanning tests
  * a change owes must not run as if it owed none.
  */
-export function scanningTests(root = REPOSITORY_ROOT) {
-  if (root === REPOSITORY_ROOT && scanningTestCache) return scanningTestCache;
+const scanningTestsIn = perTree(tree => {
   let listing;
   try {
-    listing = execFileSync(
-      'git',
-      [
-        'grep',
-        '-I',
-        '-n',
-        '-E',
-        '^[[:space:]]*//[[:space:]]*@scans[[:space:]]',
-        '--',
-        ...SCANNING_TEST_PATHSPECS,
-      ],
-      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-    );
+    listing = treeGit(tree, [
+      'grep',
+      '-I',
+      '-n',
+      '-z',
+      '-E',
+      '^[[:space:]]*//[[:space:]]*@scans[[:space:]]',
+      tree.hash,
+      '--',
+      ...SCANNING_TEST_PATHSPECS,
+    ]);
   } catch (error) {
     if (error?.status !== 1) throw error;
     listing = '';
   }
   const tests = [];
+  // `<tree>:<file>\0<line>\0<text>` per match.
   for (const line of listing.split('\n').filter(Boolean)) {
-    const [file, , ...rest] = line.split(':');
-    const declaration = parseScanDeclaration(rest.join(':'));
+    const [location, , text] = line.split('\0');
+    const file = location.slice(tree.hash.length + 1);
+    const declaration = parseScanDeclaration(text);
     if (declaration?.globs) {
-      tests.push({
-        file,
-        globs: declaration.globs,
-        expressions: declaration.globs.map(globExpression),
-      });
+      tests.push(
+        Object.freeze({
+          file,
+          globs: declaration.globs,
+          expressions: declaration.globs.map(globExpression),
+        })
+      );
     }
   }
-  if (root === REPOSITORY_ROOT) scanningTestCache = tests;
-  return tests;
+  return Object.freeze(tests);
+});
+
+export function scanningTests(tree = deliveryTree()) {
+  return scanningTestsIn(tree);
 }
 
 /** The scanning tests a change to `paths` can break, sorted. */
-function scanningTestsFor(paths, tests = scanningTests()) {
+function scanningTestsFor(paths, tests) {
   return tests
     .filter(test =>
       paths.some(file =>
@@ -1321,7 +1396,16 @@ function scanningTestsFor(paths, tests = scanningTests()) {
     .sort();
 }
 
-export function classifyDeliveryPolicy(changedPaths, extras = []) {
+/**
+ * The landing checks a change to `changedPaths` owes, classified against
+ * `tree`: the committed tree the checks will run on. Every lane and phase
+ * passes the tree it is about to check.
+ */
+export function classifyDeliveryPolicy(
+  changedPaths,
+  extras = [],
+  { tree = deliveryTree() } = {}
+) {
   const paths = [...new Set(changedPaths)].sort();
   const checks = [
     {
@@ -1342,7 +1426,7 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
     // way the delivery-script pins are unconditional in CI.
     { id: 'lint', command: 'pnpm', args: ['run', 'lint'] },
     { id: 'type-check', command: 'pnpm', args: ['run', 'type-check'] },
-    paths.some(deliveryAffectingPath)
+    paths.some(file => deliveryAffectingPath(file, tree))
       ? {
           id: 'test:agent-delivery',
           command: 'pnpm',
@@ -1451,19 +1535,15 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       args: ['run', 'icon:check'],
     });
   }
-  const scanning = scanningTestsFor(paths);
+  const scanning = scanningTestsFor(paths, scanningTests(tree));
   if (scanning.length > 0) {
     checks.push({
       id: 'scanning-tests',
       command: 'pnpm',
-      args: [
-        'exec',
-        'vitest',
-        'run',
-        ...scanning,
-        '--maxWorkers=25%',
-        '--passWithNoTests',
-      ],
+      args: ['exec', 'vitest', 'run', ...scanning, '--maxWorkers=25%'],
+      // Named by the tree's own declarations, so each one must be in the
+      // checkout the check runs in; see `missingCheckFiles`.
+      files: scanning,
       rerun: VITEST_RERUN,
     });
   }
@@ -1678,10 +1758,13 @@ export const RECIPE_RENDERERS_CHECK = Object.freeze({
   args: ['--test', 'scripts/recipe-renderers.test.mjs'],
 });
 
-export function classifyDocsChecks(changedPaths) {
+export function classifyDocsChecks(
+  changedPaths,
+  { tree = deliveryTree() } = {}
+) {
   return [
     RECIPE_RENDERERS_CHECK,
-    ...classifyDeliveryPolicy(changedPaths).filter(check =>
+    ...classifyDeliveryPolicy(changedPaths, [], { tree }).filter(check =>
       DOCS_LANDING_CHECK_IDS.has(check.id)
     ),
   ];
@@ -2172,7 +2255,30 @@ async function runVitestCheck(root, check) {
   }
 }
 
+/**
+ * The files a check names (`check.files`) that its checkout at `root` does
+ * not hold. A test runner given a missing file passes a selection that ran
+ * nothing, so every runner refuses such a check before it starts.
+ */
+export function missingCheckFiles(root, check) {
+  return (check.files ?? []).filter(file => !existsSync(path.join(root, file)));
+}
+
+export function missingCheckFilesMessage(check, missing) {
+  return [
+    `${check.id} names ${missing.length} file(s) the checkout it runs in does not hold:`,
+    ...missing.map(file => `      ${file}`),
+    'A selected test that is not in the tree is an error, not a pass: the classification and the checkout disagree about which tree is being checked.',
+  ].join('\n');
+}
+
 async function runOneCheck(root, check) {
+  const missing = missingCheckFiles(root, check);
+  if (missing.length > 0)
+    return {
+      status: 'failed',
+      message: missingCheckFilesMessage(check, missing),
+    };
   if (check.rerun?.kind === 'vitest') return runVitestCheck(root, check);
   const code = await spawnCheck(root, check.command, check.args);
   return code === 0

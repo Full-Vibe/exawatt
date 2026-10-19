@@ -220,3 +220,74 @@ test('the docs lane refuses code and a failing docs check before taking a ticket
     fixture.cleanup();
   }
 });
+
+// 2026-10-19 review: the docs lane runs its checks in a temporary checkout of
+// the commit but classified them against the invoking checkout's working
+// tree (here, the tree the landing script lives in). The scanning tests it
+// owes are the ones the landed commit declares, its own edit included.
+test('the docs lane runs the scanning tests the landed commit declares', async () => {
+  const fixture = createQueueFixture('exawatt-docs-lane-scan-', {
+    files: { 'src/guide.test.ts': '// @scans docs/guide.md\n' },
+  });
+  try {
+    const log = fixture.at('pnpm.log');
+    write(fixture.main, 'docs/guide.md', '# Guide\n\nAnswered.\n');
+    commit(fixture.main, 'docs: answer', ['docs/guide.md']);
+    // Another session's uncommitted edit: the checkout no longer declares it.
+    write(fixture.main, 'src/guide.test.ts', '// @scans docs/other.md\n');
+
+    const output = await fixture.land(fixture.main, ['--docs'], {
+      FIXTURE_PNPM_LOG: log,
+    }).completion;
+    assert.match(output, /\[docs:check\] passed scanning-tests/u);
+    assert.deepEqual(
+      readFileSync(log, 'utf8')
+        .split('\n')
+        .filter(line => line.startsWith('exec vitest run ')),
+      ['exec vitest run src/guide.test.ts --maxWorkers=25%']
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// The pre-push excuse was renamed on 2026-10-18. A landing that started on
+// the old code is still waiting, and its final push runs the rebased tree's
+// hook: it must not be refused at the last step.
+test('the hook still excuses a landing that started before the variable was renamed', async () => {
+  const fixture = createQueueFixture('exawatt-guard-legacy-');
+  try {
+    const sha = git(fixture.main, ['rev-parse', 'HEAD']);
+    const guard = env =>
+      guardMasterPush({
+        root: fixture.main,
+        remoteName: 'origin',
+        remoteUrl: fixture.origin,
+        updates: [
+          {
+            localRef: 'refs/heads/master',
+            localSha: sha,
+            remoteRef: 'refs/heads/master',
+            remoteSha: '1'.repeat(40),
+          },
+        ],
+        env,
+      });
+    assert.equal(
+      (await guard({ EXAWATT_AGENT_LAND_FLOOR_SHA: sha })).verdict,
+      'skip'
+    );
+    assert.equal(
+      (
+        await guard({
+          [LANDING_CHECKS_VERIFIED_ENV]: '2'.repeat(40),
+          EXAWATT_AGENT_LAND_FLOOR_SHA: sha,
+        })
+      ).verdict,
+      'refuse',
+      'the current name wins when both are set'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});

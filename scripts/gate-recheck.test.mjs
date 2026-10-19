@@ -217,3 +217,53 @@ test('a re-run gate that fails on the rebased tree fails the ticket naming the g
     fixture.cleanup();
   }
 });
+
+/** The test files each `vitest run` the landing ran named, in order. */
+function vitestSelections(log) {
+  return readFileSync(log, 'utf8')
+    .split('\n')
+    .filter(line => line.startsWith('exec vitest run '))
+    .map(line =>
+      line
+        .split(' ')
+        .filter(argument => /\.test\.tsx?$/u.test(argument))
+        .join(' ')
+    );
+}
+
+// 2026-10-19 review: the head's re-check classified the rebased tree with
+// the scanning-test declarations it read before the rebase, from the tree the
+// landing script lives in. The rebase here adds a scanning test and widens
+// another; the re-check owes both, and the candidate owed neither.
+test('the head re-check runs the scanning tests the rebased tree declares', async () => {
+  const fixture = createQueueFixture('exawatt-scan-recheck-', {
+    files: {
+      'src/kept.test.ts': '// @scans src/app.ts\n',
+      'src/widened.test.ts': '// @scans src/other.ts\n',
+    },
+  });
+  try {
+    const log = fixture.at('pnpm.log');
+    const worktree = fixture.agentWorktree('agent/scanned', {
+      'src/app.ts': 'export const app = 2;\n',
+    });
+    fixture.advanceMaster({
+      'src/added.test.ts': '// @scans src/**\n',
+      'src/widened.test.ts': '// @scans src/app.ts src/other.ts\n',
+    });
+    const landed = await finished(
+      fixture.land(worktree, [], {
+        FIXTURE_PNPM_LOG: log,
+        EXAWATT_AGENT_LAND_PROBE_SECONDS: '0',
+      })
+    );
+    assert.equal(landed.code, 0, landed.output);
+    assert.match(landed.output, /rebase onto/u);
+    assert.deepEqual(vitestSelections(log), [
+      'src/kept.test.ts',
+      'src/added.test.ts src/kept.test.ts src/widened.test.ts',
+    ]);
+  } finally {
+    fixture.cleanup();
+  }
+});

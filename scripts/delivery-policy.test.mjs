@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import {
   chmod,
+  mkdir,
   mkdtemp,
   readFile,
   realpath,
@@ -20,6 +21,7 @@ import {
   classifyDeliveryPolicy,
   CORE_DELIVERY_ENTRIES,
   deliveryAffectingPath,
+  deliveryTree,
   failedVitestFiles,
   globExpression,
   inconclusiveRerunReport,
@@ -200,6 +202,72 @@ test('a change runs every test that declares it scans the changed path', () => {
   assert.deepEqual(scanningFor('.github/workflows/ci.yml'), []);
 });
 
+/*
+ * 2026-10-19 review: the declarations were read once per process from this
+ * script's own working tree, so the queue head's re-check after a rebase used
+ * the pre-rebase list, and a cached test the rebase deleted or renamed
+ * "passed" through --passWithNoTests. Each tree answers for itself, and a
+ * selected file its checkout does not hold fails the check.
+ */
+test('scanning tests are read from the tree being checked, and a selected file it does not hold fails', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'exawatt-scan-tree-'));
+  const declare = async (file, globs) => {
+    await mkdir(path.dirname(path.join(directory, file)), { recursive: true });
+    await writeFile(
+      path.join(directory, file),
+      `// @scans ${globs}\ntest('reads', () => {});\n`
+    );
+  };
+  const selected = tree =>
+    classifyDeliveryPolicy(['src/app.ts'], [], { tree }).find(
+      check => check.id === 'scanning-tests'
+    )?.files ?? [];
+  try {
+    git(directory, ['init', '--quiet', '--initial-branch=master']);
+    await writeFile(path.join(directory, 'src.txt'), 'x\n');
+    await declare('src/narrow.test.ts', 'src/other.ts');
+    await declare('src/kept.test.ts', 'src/**');
+    git(directory, ['add', '.']);
+    git(directory, ['commit', '--quiet', '-m', 'before']);
+    const before = deliveryTree(directory);
+    assert.deepEqual(selected(before), ['src/kept.test.ts']);
+
+    // What a rebase brings: a declaration widened, one added, one renamed.
+    await declare('src/narrow.test.ts', 'src/**');
+    await declare('src/added.test.ts', 'src/app.ts');
+    git(directory, ['mv', 'src/kept.test.ts', 'src/renamed.test.ts']);
+    git(directory, ['add', '.']);
+    git(directory, ['commit', '--quiet', '-m', 'after']);
+    const after = deliveryTree(directory);
+    assert.notEqual(after.hash, before.hash);
+    assert.deepEqual(selected(after), [
+      'src/added.test.ts',
+      'src/narrow.test.ts',
+      'src/renamed.test.ts',
+    ]);
+    // The same tree is the same answer, whichever was asked first.
+    assert.deepEqual(selected(before), ['src/kept.test.ts']);
+
+    // The pre-rebase selection run in the rebased checkout is refused before
+    // anything spawns, rather than passing a selection that matched nothing.
+    const stale = classifyDeliveryPolicy(['src/app.ts'], [], {
+      tree: before,
+    }).find(check => check.id === 'scanning-tests');
+    await assert.rejects(
+      runDeliveryChecks(directory, [
+        { ...stale, command: process.execPath, args: ['-e', ''] },
+      ]),
+      /scanning-tests names 1 file\(s\) the checkout it runs in does not hold:\s+src\/kept\.test\.ts/u
+    );
+    assert.ok(
+      !stale.args.includes('--passWithNoTests'),
+      'an empty selection is a failure, never a pass'
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('scan declarations parse and match as globs', () => {
   assert.equal(parseScanDeclaration('import x;\n'), null);
   assert.deepEqual(parseScanDeclaration('x\n// @scans src/** *.md\ny'), {
@@ -258,7 +326,7 @@ test('every test that reads the repository declares what it scans, and every glo
     [],
     'add `// @scans <globs>` (or `// @scans none: <why>`) to each'
   );
-  const declared = scanningTests(REPO);
+  const declared = scanningTests(deliveryTree(REPO));
   assert.ok(declared.length > 0);
   for (const { file, globs, expressions } of declared) {
     globs.forEach((glob, index) =>
@@ -1903,6 +1971,10 @@ test('the delivery suite reaches @exawatt/core only through its declared entry p
   }
   assert.ok(seen.size > 100, 'the walk reaches the delivery scripts');
   const declared = new Map([
+    [
+      '@exawatt/core/delivery-vocabulary',
+      'packages/core/src/delivery-vocabulary.ts',
+    ],
     ['@exawatt/core/distribution', 'packages/core/src/distribution/index.ts'],
     [
       '@exawatt/core/release-provenance',
@@ -1916,7 +1988,7 @@ test('the delivery suite reaches @exawatt/core only through its declared entry p
   for (const [where, specifier] of coreSpecifiers) {
     assert.ok(
       declared.has(specifier),
-      `${where} loads ${specifier}; the delivery suite may load only ${[...declared.keys()].join(' or ')} (or declare a new entry in CORE_DELIVERY_ENTRIES)`
+      `${where} loads ${specifier}; the delivery suite may load only ${[...declared.keys()].join(', ')} (or declare a new entry in CORE_DELIVERY_ENTRIES)`
     );
   }
   assert.ok(coreSpecifiers.size > 0, 'the walk sees the core entry points');
@@ -1935,7 +2007,35 @@ test('the delivery suite reaches @exawatt/core only through its declared entry p
     true
   );
   assert.equal(
+    deliveryAffectingPath('packages/core/src/delivery-vocabulary.ts'),
+    true
+  );
+  assert.equal(
     deliveryAffectingPath('packages/core/tsconfig.runtime.json'),
     true
   );
+});
+
+// 2026-10-19 review: the Roadmap lens reader carried its own copy of the old
+// delivery vocabulary, and it had already drifted (no `exactFloorSha`). The
+// old names live in one table, which every reader imports, and in the one
+// legacy-compatibility helper for the renamed pre-push variable; a second
+// copy anywhere else is refused here, where every landing runs.
+test('the old delivery vocabulary has one home', () => {
+  const homes = git(REPO, [
+    'grep',
+    '-l',
+    '-E',
+    'floor_check|exactFloorSha|AGENT_LAND_FLOOR_SHA',
+    '--',
+    ':(exclude)*.test.*',
+    ':(exclude)*.md',
+    ':(exclude)docs/**',
+  ])
+    .split('\n')
+    .filter(Boolean);
+  assert.deepEqual(homes.sort(), [
+    'packages/core/src/delivery-vocabulary.ts',
+    'scripts/lib/docs-check.mjs',
+  ]);
 });

@@ -1,7 +1,12 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { classifyDocsChecks } from './delivery-policy.mjs';
+import {
+  classifyDocsChecks,
+  indexTree,
+  missingCheckFiles,
+  missingCheckFilesMessage,
+} from './delivery-policy.mjs';
 
 /**
  * `pnpm docs:check`, the docs lane's checks, and the pre-push hook (BUG-195,
@@ -39,6 +44,21 @@ const PUSH_GUARD_REF = 'refs/heads/master';
  * SHA, or no variable, is refused.
  */
 export const LANDING_CHECKS_VERIFIED_ENV = 'EXAWATT_AGENT_LAND_CHECKED_SHA';
+
+/**
+ * Legacy compatibility, the one place the variable's old name is read. Until
+ * 2026-10-18 `agent:land` set `EXAWATT_AGENT_LAND_FLOOR_SHA`; a landing that
+ * started on that code is still waiting in the queue, and its final push runs
+ * the REBASED tree's hook, which is this file. Refusing it would fail a
+ * verified landing at the last step. The current name wins when both are set.
+ *
+ * Remove this helper (and read `env[LANDING_CHECKS_VERIFIED_ENV]` directly)
+ * once no landing that started before 2026-10-18 can still be in flight: a
+ * ticket waits at most a few hours, so any time after 2026-11-01 is safe.
+ */
+function landingChecksVerifiedSha(env) {
+  return env[LANDING_CHECKS_VERIFIED_ENV] || env.EXAWATT_AGENT_LAND_FLOOR_SHA;
+}
 
 /**
  * Set by the operator-only `agent:land -- --direct` recovery path, which is
@@ -105,6 +125,16 @@ function childEnv(env) {
 
 function runCheck(root, check, env) {
   const startedAt = Date.now();
+  const missing = missingCheckFiles(root, check);
+  if (missing.length > 0) {
+    return Promise.resolve({
+      id: check.id,
+      command: [check.command, ...check.args].join(' '),
+      status: 'failed',
+      durationMs: 0,
+      output: `${missingCheckFilesMessage(check, missing)}\n`,
+    });
+  }
   return new Promise(resolve => {
     const chunks = [];
     const child = spawn(check.command, check.args, {
@@ -127,11 +157,15 @@ function runCheck(root, check, env) {
   });
 }
 
-/** Runs the docs subset of the landing checks for these changed paths, in parallel. */
+/**
+ * Runs the docs subset of the landing checks for these changed paths, in
+ * parallel. Without `checks`, they are classified against the tree `root`'s
+ * index would commit, the tree they run on.
+ */
 export async function runDocsChecks({
   root,
   paths,
-  checks = classifyDocsChecks(paths),
+  checks = classifyDocsChecks(paths, { tree: indexTree(root) }),
   env = process.env,
 }) {
   return Promise.all(checks.map(check => runCheck(root, check, env)));
@@ -197,7 +231,7 @@ export async function guardMasterPush({
     return { verdict: 'skip', reason: 'not-origin' };
   const excused = update =>
     !ZERO_SHA.test(update.localSha) &&
-    (update.localSha === env[LANDING_CHECKS_VERIFIED_ENV] ||
+    (update.localSha === landingChecksVerifiedSha(env) ||
       update.localSha === env[DIRECT_RECOVERY_ENV]);
   if (master.every(excused)) return { verdict: 'skip', reason: 'agent-land' };
   return {

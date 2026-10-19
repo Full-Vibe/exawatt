@@ -24,6 +24,7 @@ import {
 import {
   classifyDeliveryPolicy,
   classifyDocsChecks,
+  deliveryTree,
   gateNeedsDevServer,
   missingSurfaceGates,
   quarantinedSurfaceGates,
@@ -543,7 +544,8 @@ async function main() {
       root: checkout.root,
       branch: `docs/${invokingBranch || 'detached'}`,
       close: checkout.close,
-      checksFor: changed => classifyDocsChecks(changed),
+      checksFor: (changed, _extras, tree) =>
+        classifyDocsChecks(changed, { tree }),
       runChecks: runDocsLaneChecks,
       // The docs checkout borrows the invoking checkout's node_modules through
       // links, which may be the shared master's; it never installs into them.
@@ -589,7 +591,8 @@ async function main() {
       root: invokingRoot,
       branch: invokingBranch,
       close: async () => {},
-      checksFor: (changed, extras) => classifyDeliveryPolicy(changed, extras),
+      checksFor: (changed, extras, tree) =>
+        classifyDeliveryPolicy(changed, extras, { tree }),
       runChecks: runDeliveryChecks,
       refreshInstall: () => reinstallWhenStale(invokingRoot, { run }),
       devServer: createLandingDevServer({
@@ -741,7 +744,9 @@ async function landThroughQueue({
   // repaired here, or refused with its remedy, rather than failing a check
   // minutes into the landing checks.
   await refreshInstall('candidate', { candidateSha });
-  const checks = lane.checksFor(files, options.verify);
+  // Every classification is of the tree it is about to check, read from that
+  // tree: the candidate here, the rebased tree at the head.
+  const checks = lane.checksFor(files, options.verify, deliveryTree(root));
   const evidence = await lane.runChecks(root, checks, {
     phase: 'candidate',
     onResult: recordLandingCheck({ candidateSha }),
@@ -1017,7 +1022,11 @@ async function landThroughQueue({
         ref = attemptRef(branch, attemptNumber);
         await pushAttempt(root, ref);
         const rebasedFiles = await changedPaths(root, remoteBase);
-        const rebaseChecks = lane.checksFor(rebasedFiles);
+        const rebaseChecks = lane.checksFor(
+          rebasedFiles,
+          [],
+          deliveryTree(root)
+        );
         // BUG-205: a declared surface gate re-runs on the rebased tree when
         // the commits rebased over touched its surface, on the head's
         // reserved slot with the rest of this re-check; otherwise its
