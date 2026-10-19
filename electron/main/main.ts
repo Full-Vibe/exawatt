@@ -147,7 +147,18 @@ const rendererServer = createRendererServer({
   isTest,
   childEnvironment: () => distributionChildEnvironment(distribution, env),
   forwardStdout: env.EXAWATT_RENDERER_LOGS === '1',
-  ports: createRendererPortPolicy({ userDataPath, record: mainDiagnostics }),
+  ports: createRendererPortPolicy({
+    userDataPath,
+    record: mainDiagnostics,
+    // BUG-170: Chromium's own deletion, for every origin but the kept one.
+    // The dev server's origin is spared too: a development run of the same
+    // build shares this userData, and its storage is not a dead launch's.
+    clearOtherOrigins: keptOrigin =>
+      electronSession.defaultSession.clearData({
+        dataTypes: ['localStorage', 'indexedDB'],
+        excludeOrigins: [keptOrigin, new URL(DEV_URL).origin],
+      }),
+  }),
   onUnexpectedExit: details => rendererServerSupervisor.exited(details),
 });
 // A cached renderer uses only Node APIs and can boot before Electron's ready
@@ -328,7 +339,7 @@ function startCommandSurface(): Promise<void> {
       isDev
         ? Promise.resolve(DEV_URL)
         : (rendererReadyPromise ??= rendererServer.start()),
-    pruneRendererCache: () => rendererServer.pruneCache(),
+    pruneRendererLeftovers: () => rendererServer.pruneLeftovers(),
     setTrustedRendererOrigin,
     startupScreen,
     electron: {

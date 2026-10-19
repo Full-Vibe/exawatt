@@ -86,8 +86,12 @@ interface RendererServer {
   readonly origin: string | null;
   /** Whether this version is already unpacked, so start can run pre-ready. */
   hasWarmCache(): boolean;
-  /** Removes every cached version except the one this launch runs. */
-  pruneCache(): void;
+  /**
+   * Removes what earlier launches left behind once startup is done: every
+   * cached version except the one this launch runs, and (through the port
+   * policy, BUG-170) every renderer origin's storage but the kept one.
+   */
+  pruneLeftovers(): void;
 }
 
 /** One readiness probe: any non-5xx answer means the server is serving. */
@@ -327,7 +331,8 @@ export function createRendererServer(
     return await serve(served.standaloneRoot, served.port);
   }
 
-  function pruneRendererCache(): void {
+  function pruneLeftovers(): void {
+    void deps.ports.sweepDeadOrigins();
     const root = cacheRoot();
     const keep = activeRendererCacheKey;
     if (!keep) return;
@@ -401,6 +406,6 @@ export function createRendererServer(
       return rendererOrigin;
     },
     hasWarmCache: hasWarmRendererCache,
-    pruneCache: pruneRendererCache,
+    pruneLeftovers,
   };
 }

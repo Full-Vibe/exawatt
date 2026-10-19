@@ -187,7 +187,7 @@ function dependencies(
       identity: { productName: 'Exawatt' },
     },
     rendererReady: async () => 'http://127.0.0.1:23456',
-    pruneRendererCache: () => world.log.push('renderer:prune'),
+    pruneRendererLeftovers: () => world.log.push('renderer:prune'),
     setTrustedRendererOrigin: url => world.log.push(`trust:${url}`),
     startupScreen: {
       update: stage => world.log.push(`stage:${stage.progress}`),

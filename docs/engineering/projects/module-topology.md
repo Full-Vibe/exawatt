@@ -290,7 +290,7 @@ one of its five responsibilities meant reading all of them.
 | Module | Owns | Suite |
 | --- | --- | --- |
 | `renderer-server.ts` | unpacking, spawning, readiness, stop, cache pruning, the child's lifeline | fake child process, plus real processes for the lifeline (10) |
-| `renderer-port.ts` | the port the renderer origin carries (BUG-022) | temp `userData`, fake port availability (11) |
+| `renderer-port.ts` | the port the renderer origin carries (BUG-022), and the sweep of every other origin (BUG-170) | temp `userData`, fake port availability (20) |
 | `deep-link.ts` | protocol registration, vetting, held links | fake window (12) |
 | `window.ts` | construction over `window-shape.ts`, navigation boundary, startup stage, trusted origin | fake BrowserWindow (15) |
 | `menu-controller.ts` | the menu's runtime state and its three channels | real template, fake install (6) |
@@ -323,7 +323,9 @@ The three fixes that fell out:
   launches or an unreadable record. Chosen over moving each `localStorage`
   store because it repairs the class, covers IndexedDB and sessionStorage, and
   stops a dead origin accumulating per launch. What it cannot do on a fallback
-  launch is BUG-171.
+  launch is BUG-171. The same policy sweeps the origins earlier launches left
+  (BUG-170): every origin but the kept one, once per dead origin appearing,
+  through `session.clearData({ excludeOrigins })`.
 - **BUG-050.** The eval inferred "a native modal is up" from "did not close in
   2.5 s". Every shutdown dialog now names itself on main's console first, the
   eval fails on that line, and the product half (no dialog on a non-workspace

@@ -322,3 +322,134 @@ describe('createRendererPortPolicy', () => {
     }
   });
 });
+
+/**
+ * BUG-170: every launch before BUG-022 served a new origin and left its
+ * storage on disk, unreadable by any later launch. The policy that knows
+ * which origin is live sweeps every other one, once, after a launch has
+ * served from the kept port, and again only after a launch made another.
+ */
+describe('sweepDeadOrigins', () => {
+  function sweeping(overrides: Partial<RendererPortPolicyDependencies> = {}) {
+    const busy = new Set<number>();
+    const events: Array<{ event: string; fields?: Record<string, unknown> }> =
+      [];
+    const sweeps: string[][] = [];
+    let osPort = 50_000;
+    return {
+      busy,
+      events,
+      sweeps,
+      /** One launch, served, then its post-start housekeeping. */
+      launchAndSweep: async (
+        deps: Partial<RendererPortPolicyDependencies> = {}
+      ) => {
+        const policy = createRendererPortPolicy({
+          userDataPath: () => userData,
+          probe: async port => (busy.has(port) ? 'taken' : 'free'),
+          anyFreePort: async () => ++osPort,
+          random: () => 0.25,
+          record: (event, fields) => events.push({ event, fields }),
+          clearOtherOrigins: async keep => {
+            sweeps.push([keep]);
+          },
+          ...overrides,
+          ...deps,
+        });
+        const port = await policy.allocate();
+        await policy.serving(port);
+        await policy.sweepDeadOrigins();
+        return port;
+      },
+    };
+  }
+
+  it('sweeps every origin but the kept one once, on the first launch to serve from it', async () => {
+    const { launchAndSweep, sweeps } = sweeping();
+
+    const home = await launchAndSweep();
+
+    expect(sweeps).toEqual([[`http://127.0.0.1:${home}`]]);
+    expect(kept()).toEqual({
+      port: home,
+      consecutiveFallbacks: 0,
+      deadOriginsSwept: true,
+    });
+    await launchAndSweep();
+    await launchAndSweep();
+    expect(sweeps).toHaveLength(1);
+  });
+
+  it('sweeps an install that kept its port before the sweep existed', async () => {
+    fs.writeFileSync(
+      file(),
+      JSON.stringify({ port: 21_000, consecutiveFallbacks: 0 })
+    );
+    const { launchAndSweep, sweeps } = sweeping();
+
+    expect(await launchAndSweep()).toBe(21_000);
+
+    expect(sweeps).toEqual([['http://127.0.0.1:21000']]);
+  });
+
+  it('never sweeps from a fallback launch, and sweeps its origin once the kept port is back', async () => {
+    const { launchAndSweep, sweeps, busy } = sweeping();
+    const home = await launchAndSweep();
+    busy.add(home);
+
+    const fallback = await launchAndSweep();
+
+    expect(fallback).not.toBe(home);
+    expect(sweeps).toHaveLength(1);
+    expect(kept()).toEqual({ port: home, consecutiveFallbacks: 1 });
+
+    busy.delete(home);
+    expect(await launchAndSweep()).toBe(home);
+    expect(sweeps).toEqual([
+      [`http://127.0.0.1:${home}`],
+      [`http://127.0.0.1:${home}`],
+    ]);
+    expect(kept()).toEqual({
+      port: home,
+      consecutiveFallbacks: 0,
+      deadOriginsSwept: true,
+    });
+  });
+
+  it('never sweeps when the record cannot be read', async () => {
+    const { launchAndSweep, sweeps } = sweeping();
+    const home = await launchAndSweep();
+    fs.writeFileSync(
+      file(),
+      JSON.stringify({ port: home, consecutiveFallbacks: 0 })
+    );
+    fs.chmodSync(file(), 0o000);
+    try {
+      expect(await launchAndSweep()).not.toBe(home);
+    } finally {
+      fs.chmodSync(file(), 0o600);
+    }
+
+    expect(sweeps).toHaveLength(1);
+    expect(kept()).toEqual({ port: home, consecutiveFallbacks: 0 });
+  });
+
+  it('marks nothing swept when the sweep fails, and tries again next launch', async () => {
+    const { launchAndSweep, sweeps, events } = sweeping();
+    const home = await launchAndSweep({
+      clearOtherOrigins: async () => {
+        throw new Error('storage busy');
+      },
+    });
+
+    expect(kept()).toEqual({ port: home, consecutiveFallbacks: 0 });
+    expect(events).toContainEqual({
+      event: 'renderer.origins.sweep-failed',
+      fields: { keptPort: home, error: 'storage busy' },
+    });
+
+    await launchAndSweep();
+    expect(sweeps).toEqual([[`http://127.0.0.1:${home}`]]);
+    expect(kept().deadOriginsSwept).toBe(true);
+  });
+});

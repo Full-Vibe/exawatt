@@ -43,7 +43,21 @@ import type { DiagnosticRecorder } from './diagnostics-log';
  *
  * The record is written only once the server is answering on the port, so a
  * launch that fails to start never records a port nobody served. Size class
- * (decision `0039`): one record of two integers, bounded by construction.
+ * (decision `0039`): one record of two integers and a flag, bounded by
+ * construction.
+ *
+ * **Dead origins (BUG-170).** Every launch before BUG-022, every fallback
+ * launch and every re-home leaves an origin whose storage no later launch can
+ * read. This policy is the one that knows which origin is live, so it owns
+ * sweeping the rest: once a launch has served from the kept port,
+ * `sweepDeadOrigins` clears every other origin's storage through Electron's
+ * `session.clearData({ excludeOrigins })` (Chromium's own storage deletion;
+ * there is no API that lists origins, and deleting LevelDB files under a live
+ * session is not ours to do), then records `deadOriginsSwept`. Any later write
+ * of the record (a re-home, a fallback, a kept launch after fallbacks) is made
+ * exactly when a new dead origin appeared, and it drops the flag, so the next
+ * kept launch sweeps again. A temporary launch writes nothing, so the origin it
+ * leaves waits for the next sweep.
  */
 
 const RENDERER_PORT_FILE = 'renderer-port.json';
@@ -58,6 +72,9 @@ const REHOME_AFTER_CONSECUTIVE_FALLBACKS = 3;
 interface KeptPort {
   port: number;
   consecutiveFallbacks: number;
+  /** Every origin but this port's was cleared since a dead one last
+   *  appeared. Absent means a sweep is due. */
+  deadOriginsSwept?: true;
 }
 
 type KeptPortRead =
@@ -90,6 +107,11 @@ export interface RendererPortPolicyDependencies {
   /** An OS-assigned free loopback port, for a fallback launch. */
   anyFreePort?: () => Promise<number>;
   random?: () => number;
+  /**
+   * Clears the storage of every origin except `keptOrigin` (BUG-170). Without
+   * it, `sweepDeadOrigins` sweeps nothing.
+   */
+  clearOtherOrigins?: (keptOrigin: string) => Promise<void>;
 }
 
 export interface RendererPortPolicy {
@@ -101,7 +123,15 @@ export interface RendererPortPolicy {
    * logged, not a reason to refuse this launch.
    */
   serving(port: number): Promise<void>;
+  /**
+   * Clears every origin but the kept one, once, after a launch has served
+   * from the kept port and while the record durably names it. Never throws:
+   * a sweep that fails is logged and runs again next launch.
+   */
+  sweepDeadOrigins(): Promise<void>;
 }
+
+const rendererOrigin = (port: number) => `http://127.0.0.1:${port}`;
 
 async function osAssignedLoopbackPort(): Promise<number> {
   return await new Promise((resolve, reject) => {
@@ -191,6 +221,11 @@ async function readKeptPort(file: string): Promise<KeptPortRead> {
         value: {
           port: value.port,
           consecutiveFallbacks: value.consecutiveFallbacks as number,
+          // Anything but `true` is a sweep still due: sweeping again is
+          // harmless, skipping one leaves dead storage forever.
+          ...(value.deadOriginsSwept === true
+            ? { deadOriginsSwept: true as const }
+            : {}),
         },
       };
     }
@@ -219,6 +254,8 @@ export function createRendererPortPolicy(
   const anyFreePort = deps.anyFreePort ?? osAssignedLoopbackPort;
   const file = () => path.join(deps.userDataPath(), RENDERER_PORT_FILE);
   let decision: PortDecision | null = null;
+  /** The kept port this launch served from, until its sweep has run. */
+  let servedKept: number | null = null;
 
   async function newStablePort(): Promise<number> {
     const span = STABLE_PORT_MAX - STABLE_PORT_MIN + 1;
@@ -283,6 +320,8 @@ export function createRendererPortPolicy(
       const settled = decision;
       decision = null;
       if (!settled || settled.port !== port) return;
+      servedKept =
+        settled.kind === 'kept' || settled.kind === 'new' ? port : null;
       // A temporary launch writes nothing: the record it could not read may
       // still name the origin whose storage is being preserved.
       if (settled.kind === 'temporary') return;
@@ -297,6 +336,33 @@ export function createRendererPortPolicy(
       if (!next) return;
       try {
         await writeKeptPort(file(), next);
+      } catch (error) {
+        record('renderer.port.persist-failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    async sweepDeadOrigins() {
+      const port = servedKept;
+      servedKept = null;
+      if (port === null || !deps.clearOtherOrigins) return;
+      // Only what the record durably says is kept is spared: a launch whose
+      // record failed to write, or cannot be read, sweeps nothing.
+      const kept = await readKeptPort(file());
+      if (kept.status !== 'ok' || kept.value.port !== port) return;
+      if (kept.value.deadOriginsSwept) return;
+      try {
+        await deps.clearOtherOrigins(rendererOrigin(port));
+      } catch (error) {
+        record('renderer.origins.sweep-failed', {
+          keptPort: port,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      try {
+        await writeKeptPort(file(), { ...kept.value, deadOriginsSwept: true });
+        record('renderer.origins.swept', { keptPort: port });
       } catch (error) {
         record('renderer.port.persist-failed', {
           error: error instanceof Error ? error.message : String(error),

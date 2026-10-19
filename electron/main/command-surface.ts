@@ -179,7 +179,7 @@ interface CommandSurfaceDependencies {
   };
   /** The renderer origin: the dev server, or the packaged server once serving. */
   rendererReady: () => Promise<string>;
-  pruneRendererCache: () => void;
+  pruneRendererLeftovers: () => void;
   setTrustedRendererOrigin: (url: string) => void;
   startupScreen: { update(stage: StartupStage): void };
   electron: {
@@ -490,7 +490,7 @@ export async function bootstrapCommandSurface(
   if (productUpdateFeedUrl !== null) {
     modules.updater.startProductUpdater(buildInfo.delivery === 'signed');
   }
-  if (!deps.isDev) deps.pruneRendererCache();
+  if (!deps.isDev) deps.pruneRendererLeftovers();
 }
 
 /**

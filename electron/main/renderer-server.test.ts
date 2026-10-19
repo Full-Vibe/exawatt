@@ -80,6 +80,7 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
   const spawned: Spawned[] = [];
   const extracted: string[] = [];
   const served: number[] = [];
+  const sweeps: string[] = [];
   let probes = 0;
   let answerAfter = 2;
   const deps: RendererServerDependencies = {
@@ -111,6 +112,9 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
       serving: async port => {
         served.push(port);
       },
+      sweepDeadOrigins: async () => {
+        sweeps.push('sweep');
+      },
     },
     // Like the real port: only a live child of ours answers on it.
     probe: async () => {
@@ -134,6 +138,7 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
     spawned,
     extracted,
     served,
+    sweeps,
     answerAfter: (n: number) => {
       answerAfter = n;
     },
@@ -208,9 +213,7 @@ describe('createRendererServer', () => {
       probe: async () => true,
     });
 
-    await expect(server.start()).rejects.toThrow(
-      'answered by another program'
-    );
+    await expect(server.start()).rejects.toThrow('answered by another program');
     expect(spawned).toEqual([]);
     expect(served).toEqual([]);
     expect(server.origin).toBeNull();
@@ -282,7 +285,7 @@ describe('createRendererServer', () => {
     const { server } = harness();
     await server.start();
 
-    server.pruneCache();
+    server.pruneLeftovers();
     await vi.waitFor(() =>
       expect(
         fs.readdirSync(path.join(userData, 'renderer-cache', 'community'))
@@ -290,12 +293,21 @@ describe('createRendererServer', () => {
     );
   });
 
+  it('asks the port policy to sweep dead origins with the leftovers (BUG-170)', async () => {
+    const { server, sweeps } = harness();
+    await server.start();
+    expect(sweeps).toEqual([]);
+
+    server.pruneLeftovers();
+    expect(sweeps).toEqual(['sweep']);
+  });
+
   it('prunes nothing before a version has started', () => {
     const stale = path.join(userData, 'renderer-cache', 'community', 'old');
     fs.mkdirSync(stale, { recursive: true });
     const { server } = harness();
 
-    server.pruneCache();
+    server.pruneLeftovers();
     expect(fs.existsSync(stale)).toBe(true);
   });
 
@@ -351,6 +363,7 @@ describe('createRendererServer', () => {
           serving: async port => {
             served.push(port);
           },
+          sweepDeadOrigins: async () => {},
         },
         onUnexpectedExit: details => exits.push(details),
       });
