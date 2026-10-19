@@ -154,6 +154,7 @@
     "electron:build:dir": "EXAWATT_COMPOSITION_PROFILE=official-desktop pnpm build && pnpm electron:prepare-renderer && pnpm electron:compile && electron-builder install-app-deps && pnpm electron:prepare-main:package && pnpm electron:prepare-licenses && pnpm electron:prepare-builder && electron-builder --mac dir --arm64 --config .exawatt-build/electron-builder.base.json --config.npmRebuild=false --config.mac.identity=null --config.mac.notarize=false",
     "electron:build:dogfood": "node scripts/build-dogfood.mjs",
     "dogfood:request": "node scripts/dogfood-request.mjs",
+    "changelog:check": "node scripts/changelog-check.mjs",
     "electron:install-dogfood": "EXAWATT_DISTRIBUTION_PROFILE=official EXAWATT_REQUIRE_OFFICIAL_DOGFOOD=1 EXAWATT_DOGFOOD_ALLOWED_PREVIOUS_IDENTIFIER=com.exawatt.app node --env-file-if-exists=.env.local scripts/install-dogfood.mjs",
     "electron:rebuild": "electron-rebuild -f -w node-pty",
     "env:pull": "vercel env pull .env.local --environment=development --yes",

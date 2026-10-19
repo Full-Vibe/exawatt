@@ -160,6 +160,7 @@
         "scripts/agent-stop-check.mjs",
         "scripts/app-update-config.cjs",
         "scripts/build-electron-native.mjs",
+        "scripts/changelog-check.mjs",
         "scripts/check-asset-provenance.mjs",
         "scripts/check-dependency-licenses.mjs",
         "scripts/check-production-theme-literals.mjs",

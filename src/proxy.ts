@@ -84,6 +84,9 @@ const PUBLIC_PREFIXES = [
   // bouncing them to /sign-in would both break the flow and contradict the
   // marketing canon that public surfaces never promote sign-in.
   '/download',
+  // ENG-031 W25: the changelog, its entries and its feed. Public by
+  // definition, and listed in the sitemap.
+  '/changelog',
 ];
 
 function isPublicPath(pathname: string): boolean {

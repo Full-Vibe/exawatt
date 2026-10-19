@@ -1863,6 +1863,9 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'security:github:check': manual(
     'reads live GitHub repository and org security settings with gh credentials'
   ),
+  'changelog:check': manual(
+    'the release workflow preflight runs it on the dispatched tag; landings meet the same rule in src/lib/changelog/changelog.test.ts'
+  ),
   'eval:consumption-scan': manual(
     "measures the scanner against the operator's real ~/.claude and ~/.codex corpus"
   ),

@@ -167,11 +167,17 @@ export const STAGES: Stage[] = [
       // them all together, and see them all executing in the same place";
       // and on its title, "Every kind of agent -> 'Every species of
       // agent'")
+      //
+      // ENG-031 W23 (operator 2026-10-19: "yes if succinct - not too much
+      // copy"): Gemini by name, and the messaging only as far as it is
+      // proven. Claude Code and Codex were measured messaging each other in
+      // the app; Gemini joins that sentence after a live exchange with a
+      // peer is seen, not before.
       canon: {
         headline: ['Every species of agent,', 'side by side.'],
         body: [
-          'Bring Claude Code, Codex, OpenClaw, or your own.',
-          'Run them together and watch them all work in one place.',
+          'Bring Claude Code, Codex, Gemini, OpenClaw, or your own.',
+          'Your Claude Code and Codex agents message each other.',
         ],
       },
     },

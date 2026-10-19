@@ -357,6 +357,8 @@ const MARKETING_ROUTES = [
   // fleet story took `/`. A real marketing route with the real chrome, not
   // an internal preview.
   '/old',
+  // ENG-031 W25: the changelog, one entry per release.
+  '/changelog',
   ...NAVIGATION_SURFACES.filter(
     surface => surface.routeClass === 'marketing'
   ).map(surface => surface.href.split('?')[0]),
@@ -376,6 +378,7 @@ export function usesDarkPublicChrome(pathname: string): boolean {
   return (
     pathname === '/' ||
     pathname === '/old' ||
+    isChangelogRoute(pathname) ||
     pathname.startsWith('/architecture') ||
     // The ENG-031 W3 fold study renders the real fold band, which bleeds up
     // under this header. Judging the copy against a light frame it will never
@@ -399,7 +402,14 @@ export function usesDarkPublicChrome(pathname: string): boolean {
  * story took `/` (W15m).
  */
 export function usesProposedSiteChrome(pathname: string): boolean {
-  return pathname === '/' || pathname === '/old';
+  return pathname === '/' || pathname === '/old' || isChangelogRoute(pathname);
+}
+
+/** `/changelog` and each entry under it (ENG-031 W25): the nav's Changelog
+ *  lands here from the homepage, so it keeps the homepage's dark ground, nav
+ *  and download button. */
+function isChangelogRoute(pathname: string): boolean {
+  return pathname === '/changelog' || pathname.startsWith('/changelog/');
 }
 
 /**

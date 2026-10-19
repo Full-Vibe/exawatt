@@ -15,7 +15,7 @@ import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
  */
 // `/privacy` and `/terms` come from the company overlay, so a build without a
 // brand does not serve them and must not advertise them.
-const PAGES = ['/', '/download', '/leaderboard'] as const;
+const PAGES = ['/', '/download', '/changelog', '/leaderboard'] as const;
 const BRANDED_PAGES = ['/privacy', '/terms'] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

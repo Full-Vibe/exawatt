@@ -43,16 +43,15 @@ export interface SiteNavLink {
 /**
  * The nav, beside the one download button.
  *
- * `Changelog` LEAVES THE PAGE (ENG-031 W10, operator: "Remove the What shipped
- * ... section"). It used to be an in-page anchor, because the dated list was
- * on the page. The list is gone, so the item points at the releases page,
- * which is where `The full changelog` already sent anyone who wanted more than
- * five rows, and where every milestone carries its artifacts. An anchor to a
- * band that no longer renders is the stale front door this file exists to
- * prevent.
+ * `Changelog` is the site's own `/changelog` (ENG-031 W25, BUG-130). It was an
+ * in-page anchor until W10 removed the dated list, then GitHub's Releases
+ * page, which opened empty before the first public Release and then showed
+ * one-line notes. The entries are written once per release in
+ * `docs/product/changelog/` and the Release body is rendered from the same
+ * file.
  */
 export const SITE_NAV_LINKS: SiteNavLink[] = [
-  { label: 'Changelog', href: `${GITHUB_URL}/releases`, external: true },
+  { label: 'Changelog', href: '/changelog' },
   // LEADERBOARD IS BACK IN THE NAV (operator, 2026-08-19: "Also keep
   // leaderboard"). It is a live public surface, it is in `proxy.ts`'s
   // signed-out allowlist, and it was in the shipped homepage's nav, so losing

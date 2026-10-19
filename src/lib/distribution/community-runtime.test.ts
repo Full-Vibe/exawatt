@@ -65,6 +65,8 @@ const ENTRYPOINTS: Record<string, Disposition> = {
   'exawatt-distribution/icon.png/route.ts': 'account-free',
   // The same prepared icon, answered at the browser's conventional path.
   'favicon.ico/route.ts': 'account-free',
+  // The changelog's Atom feed: checked-in entries, rendered at build time.
+  'changelog/feed.xml/route.ts': 'account-free',
 };
 
 /**
