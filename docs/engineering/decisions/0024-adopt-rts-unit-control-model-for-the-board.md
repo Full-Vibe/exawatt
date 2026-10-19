@@ -111,3 +111,21 @@ off screen, while zoom clamped without any response.
 
 As with the 2026-08-04 amendment, this is pure tested policy plus a damped R3F
 adapter; constants can be retuned without touching the scene graph.
+
+## 2026-10-18 extend-selection amendment (BUG-299)
+
+The keyboard band-select path ("walk + extend-selection modifier") is
+selection, not navigation, and selection never moves focus between Projects.
+
+- A plain arrow walks to the nearest unit in that direction and may cross
+  into a neighbouring Project; the focused Project follows, visibly, with the
+  camera.
+- Shift+arrow adds where the walk stood and where it lands to the working
+  set. Below Fleet altitude it walks only the focused Project's units and
+  holds at the Project's edge, so building and releasing a working set leaves
+  the operator in the Project they started in.
+- A working set that spans Projects comes from Fleet altitude (no Project
+  holds focus there), from a band, or from a Project toggle.
+
+Policy: `boardArrowStep` (`operations-board/board-arrow-walk.ts`) over
+`selectSpatialDirectionalTarget`'s `withinProjectId`.

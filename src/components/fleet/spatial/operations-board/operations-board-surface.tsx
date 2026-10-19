@@ -16,7 +16,6 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
   selectSpatialDelegationUnits,
-  selectSpatialDirectionalTarget,
   type SpatialBoardDelegationUnit,
   type SpatialBoardGhostSlot,
   type SpatialBoardTarget,
@@ -30,6 +29,7 @@ import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide
 import type { OperationsBoardHandle } from './operations-board-canvas';
 import type { FleetView, FleetMaterial } from '@exawatt/core/desktop-bridge';
 import { boardViewFor } from './operations-board-views';
+import { boardArrowStep } from './board-arrow-walk';
 import type {
   BoardClampEdges,
   OperationsBoardViewport,
@@ -666,28 +666,17 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
         const direction = event.key
           .slice('Arrow'.length)
           .toLowerCase() as SpatialSelectionDirection;
-        const target = selectSpatialDirectionalTarget(
+        // Shift extends the working set and never moves focus between
+        // Projects (`boardArrowStep`).
+        const extend = event.shiftKey && Boolean(onExtendAgentSelection);
+        const { target, extend: joined } = boardArrowStep({
           layout,
           units,
           selectedTarget,
-          direction
-        );
-        // Shift extends: where the walk stood and where it lands both join
-        // the working set. A child stands for its parent, the unit Direct
-        // addresses (ENG-023 D2).
-        const reached =
-          target?.kind === 'agent'
-            ? target.agentId
-            : target?.kind === 'child'
-              ? target.parentAgentId
-              : null;
-        if (event.shiftKey && onExtendAgentSelection && reached) {
-          onExtendAgentSelection(
-            layout.selectedAgentId
-              ? [layout.selectedAgentId, reached]
-              : [reached]
-          );
-        }
+          direction,
+          extend,
+        });
+        if (joined) onExtendAgentSelection?.(joined);
         if (target?.kind === 'agent') {
           controller.current?.focusAgent(target.agentId);
           onMoveAgentSelection?.(target.agentId);

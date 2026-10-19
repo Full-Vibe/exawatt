@@ -824,19 +824,43 @@ async function checkDisplayResolution(browser, lowPower = false) {
 
 /**
  * ENG-004 V4.2 at Project altitude, after `openProject` selected an Agent.
- * Shift+arrows extend the working set along the arrow walk, Escape releases
- * it before anything else, and the focused Project offers exactly one ghost
- * slot whose activation answers honestly (the browser board is Demo, which
- * cannot start Agents; the composer half is proven in Electron).
+ * Shift+arrows extend the working set along the arrow walk inside the focused
+ * Project (selection never moves focus between Projects), Escape releases it
+ * before anything else, and the focused Project offers exactly one ghost slot
+ * whose activation answers honestly (the browser board is Demo, which cannot
+ * start Agents; the composer half is proven in Electron).
  */
 async function checkExtendAndGhost(page) {
+  const focusedProject = () => new URL(page.url()).searchParams.get('project');
+  const multiCount = () =>
+    page.evaluate(() =>
+      Number(
+        document
+          .querySelector('[data-spatial-board]')
+          ?.getAttribute('data-board-multi-count') ?? 0
+      )
+    );
   // The walk may stand nowhere after the minimap checks: the first press
-  // then reaches one Agent, the second adds where it stood and the next.
+  // then reaches one Agent. Later presses add where it stood and the next
+  // Agent inside this Project; a press that meets the Project's edge holds,
+  // so try each direction until the set holds two.
   await page.keyboard.press('Shift+ArrowRight');
   await page.waitForFunction(() =>
     new URL(location.href).searchParams.has('agent')
   );
-  await page.keyboard.press('Shift+ArrowRight');
+  const project = focusedProject();
+  for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp']) {
+    if ((await multiCount()) >= 2) break;
+    await page.keyboard.press(`Shift+${key}`);
+    // A press that holds changes nothing to wait for; two frames is the
+    // board rendering whatever the press did.
+    await page.evaluate(
+      () =>
+        new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        )
+    );
+  }
   await page.waitForFunction(
     () =>
       Number(
@@ -846,6 +870,10 @@ async function checkExtendAndGhost(page) {
       ) >= 2,
     null,
     { timeout: 10_000 }
+  );
+  check(
+    focusedProject() === project,
+    `Extending the selection moved focus from ${project} to ${focusedProject()}`
   );
   await page.locator('[data-spatial-selection-panel="multi"]').waitFor();
   // Direct: the chord focuses the one field, every recipient answers (the
@@ -888,24 +916,10 @@ async function checkExtendAndGhost(page) {
   if (fleetView !== 'v1') return { multi, results, ghosts: null };
   const ghosts = page.locator('button[data-board-ghost]');
   await ghosts.first().waitFor({ state: 'visible' });
-  // Releasing a working set the walk carried across Projects hands focus to
-  // the selected Agent's Project: the previous Project's ghost can show for a
-  // frame, then none while the new one mounts. Count once the focused
-  // Project and its ghost row have held still for 400 ms.
-  await page.waitForFunction(() => {
-    const project = new URL(location.href).searchParams.get('project');
-    const zones = [...document.querySelectorAll('button[data-board-ghost]')]
-      .map(ghost => ghost.getAttribute('data-board-ghost'))
-      .join('|');
-    const key = `${project} ${zones}`;
-    const now = performance.now();
-    const seen = window.__EVAL_GHOST_SETTLE__;
-    if (!seen || seen.key !== key) {
-      window.__EVAL_GHOST_SETTLE__ = { key, since: now };
-      return false;
-    }
-    return zones.length > 0 && now - seen.since >= 400;
-  });
+  check(
+    focusedProject() === project,
+    `Releasing the selection moved focus from ${project} to ${focusedProject()}`
+  );
   const ghostCount = await ghosts.count();
   check(ghostCount === 1, `Focused Project offered ${ghostCount} ghost slots`);
   await ghosts.first().focus();

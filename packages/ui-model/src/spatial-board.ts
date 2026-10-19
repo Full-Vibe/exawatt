@@ -1855,6 +1855,7 @@ export type SpatialBoardTarget =
 
 interface DirectionalCandidate {
   key: string;
+  projectId: string;
   x: number;
   y: number;
   target: SpatialBoardTarget;
@@ -1869,6 +1870,7 @@ function directionalCandidates(
     if (piece.kind !== 'agent' || !piece.visible || !piece.agentId) continue;
     candidates.push({
       key: `agent:${piece.agentId}`,
+      projectId: piece.projectId,
       x: piece.x,
       y: piece.y,
       target: { kind: 'agent', agentId: piece.agentId },
@@ -1880,6 +1882,7 @@ function directionalCandidates(
     if (unit.kind !== 'child' || !unit.childId) continue;
     candidates.push({
       key: `child:${unit.id}`,
+      projectId: unit.projectId,
       x: unit.x,
       y: unit.y,
       target: {
@@ -1904,14 +1907,21 @@ function targetKey(target: SpatialBoardTarget | null): string | null {
  * The nearest unit in the pressed direction, over board coordinates. Agents and
  * delegated children are one field: at peer scale, arrow navigation that skips
  * half of what is on screen reads as broken.
+ *
+ * `withinProjectId` confines the walk to one Project's units, so a step that
+ * would cross a Project edge holds where it stands instead.
  */
 export function selectSpatialDirectionalTarget(
   layout: SpatialBoardLayout,
   units: readonly SpatialBoardDelegationUnit[],
   current: SpatialBoardTarget | null,
-  direction: SpatialSelectionDirection
+  direction: SpatialSelectionDirection,
+  options: { withinProjectId?: string | null } = {}
 ): SpatialBoardTarget | null {
-  const candidates = directionalCandidates(layout, units);
+  const within = options.withinProjectId ?? null;
+  const candidates = directionalCandidates(layout, units).filter(
+    candidate => within === null || candidate.projectId === within
+  );
   if (candidates.length === 0) return null;
   const currentKey = targetKey(current);
   const from = currentKey
