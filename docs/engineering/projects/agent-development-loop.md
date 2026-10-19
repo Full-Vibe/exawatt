@@ -159,6 +159,59 @@ under it. The same evening the coordinator ran the front as a manual train
 one `pnpm dogfood:request`); the entry records what it saves, what it costs,
 and the `agent:land --train` mode it needs.
 
+## 2026-10-18 — the delivery-system fixes from the train
+
+The operator, 2026-10-18: fix the overlapping delivery bugs by upgrading the
+systems they share, so the fixes fall out. Four system changes, each with a
+failing test or forced interleaving first:
+
+- **One lock protocol (BUG-289).** Every delivery lock, the queue and id
+  counter locks, the CI-batch and dogfood locks and the machine slots (which
+  had a second copy of the same code) share `scripts/lib/delivery-lock.mjs`,
+  where every transition is one rename: acquire publishes a staged directory
+  that already holds the owner record, release renames the lock aside before
+  deleting it, and breaking a dead holder's lock renames it to an inode-named
+  tombstone, kept a day, so two waiters that judged the same lock stale cannot
+  both take it. Under mkdir-then-write a holder starved between the two steps
+  looked like a crashed acquisition and was deleted; with that window forced,
+  twelve concurrent `id:next` callers all received `BUG-8`. Only the
+  transition is exposed: a checkout still running the old protocol that is
+  between its mkdir and its owner write can be replaced by a new-protocol
+  rename, until every worktree has rebased.
+- **One release context (BUG-276, BUG-277).** The update-feed test was a
+  Vitest under `electron/main` that spawned the script with an environment
+  from before the script required the dispatched tag and rollout and read a
+  closed publication, so it was red on every machine, and nothing selected it
+  because nothing imports a spawned script. `feedReleaseContext`,
+  `materializeOfficialRelease` and `runFeedDryRun` come out of the release
+  rehearsal; `official-release-fixture.mjs` gives tests the release inputs and
+  a child environment with nothing from the ambient shell. The test is now
+  `scripts/publish-supabase-updates.test.mjs` in the delivery suite.
+- **Scanning tests declare what they read.** A test that reads files it does
+  not import carries `// @scans <globs>` (37 inventoried), and the landing runs
+  every declaring test a change matches as `scanning-tests`, docs landings
+  included. The hand-wired `stale-async-ratchet` and `roadmap-contract`
+  checks are gone. This is what let the file-read-fallback ratchet go red
+  through two landings without either running it.
+- **The held head's baseline (BUG-288).** Every recorded failure of the
+  deterministic-latch test ends at `STATUS held` and then 60 s of silence. The
+  head read the signature an operator's recovery moves after printing that
+  line; the test enables the maintenance hold on seeing it, and when it won
+  that race (likelier under load) the baseline already held the recovery and
+  the head slept until the backstop. The baseline is read before the check
+  now. The other silences in the 2026-10-15 logs (conflict-probe, gate-recheck,
+  queue-head-slot) were runs whose tests took 15 minutes each at load 300:
+  load, which H22 and the shaped concurrency cap address.
+
+BUG-139 needed no mechanism: the group SIGTERM reaches the descendant. Its
+fixture parent had exited before the descendant installed its handler
+(`5d6b2164` fixed that and left the skip), and the one test still raced the
+handler against a 200 ms grace. It is two race-free tests, and the Linux skip
+is gone. A shared child-lifecycle helper was considered and not built: no
+failure traced to the spawn and kill sites. The Electron eval machine lock
+(`scripts/lib/electron-eval.mjs`) is a file lock with the same create-then-
+write window; it is QoS (it proceeds when unsure) and was left as it is.
+
 ## Delivery contention audit — 2026-08-03
 
 The operator noticed repeated agent reports that a full verification pass had

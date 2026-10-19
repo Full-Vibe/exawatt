@@ -161,8 +161,7 @@ Status (2026-10-15, one train landing `f506931d` and one dogfood build):
   (`0513fa91`); the dashboard itself waits on a PostHog key.
 - P7 MCP tools and the guide LANDED (`b1f40dae`, guide `844a3e62`).
 - Agent names on every surface (C4 display) LANDED (`2c0f2e1b`).
-- Open from the train: BUG-289 (id:next duplicate under load), BUG-292,
-  BUG-293, BUG-295 (host-power context loss, also on master); from its
+- Open from the train: BUG-292, BUG-293, BUG-295 (host-power context loss, also on master); from its
   review fixes BUG-296 (a freed name stays in other windows) and BUG-297
   (the catalog's Codex store ignores the shell's CODEX_HOME).
 
@@ -4394,9 +4393,7 @@ or replace the Terminal hand-off with an Exawatt-owned terminal tab.
 
 ### BUG-276 The release feed publisher test fails on a clean `master`
 
-Status: bug · ENG-030 · found 2026-10-04 running the full suite for ENG-038
-slice 3; the failure reproduces on `master` at `19c43383`, so it is not from
-that work.
+Status: done · ENG-030 · found 2026-10-04 running the full suite for ENG-038 slice 3; closed 2026-10-18. The test moved into the delivery suite, over a real closed publication, with the release context from one place (`feedReleaseContext`) ([log](projects/agent-development-loop.md#2026-10-18--the-delivery-system-fixes-from-the-train)).
 
 Both cases in the release publisher's test spawn the feed publication script,
 which since BUG-256 (`4855b70a`) requires `EXAWATT_RELEASE_TAG` and
@@ -4409,9 +4406,7 @@ weaken the script's requirement.
 
 ### BUG-277 `pnpm test:run` is red on master: the release publisher test does not supply `EXAWATT_RELEASE_TAG`
 
-Status: bug · ENG-030 · found 2026-10-04 while landing ENG-045 S1; reproduced on
-an unmodified `origin/master` (`19c43383`). Not caused by and not owned by the
-change that found it.
+Status: done · ENG-030 · found 2026-10-04 while landing ENG-045 S1; closed 2026-10-18 with BUG-276, the same test.
 
 The update-feed publish script now requires `EXAWATT_RELEASE_TAG` and
 `EXAWATT_RELEASE_STAGING_PERCENTAGE` before its dry run (the 2026-09-29 public
@@ -4466,7 +4461,7 @@ that exists, and add no redirect for the old path.
 
 ### BUG-288 `test:agent-delivery` fails under load: the deterministic-latch hold test goes silent for a minute
 
-Status: open · agent delivery · found 2026-10-15 while landing ENG-031 W15q.
+Status: done · agent delivery · found 2026-10-15 while landing ENG-031 W15q; closed 2026-10-18. The held head read its recovery baseline after printing `STATUS held`, so a maintenance hold enabled on seeing that line (as the test does) was folded into the baseline and the head slept until the backstop. It reads the baseline before the check now ([log](projects/agent-development-loop.md#2026-10-18--the-delivery-system-fixes-from-the-train)).
 
 `scripts/queue-hold.test.mjs` "a deterministic latch fails only past its
 bound, with the latch in its terminal record, and a maintenance hold
@@ -4503,9 +4498,7 @@ neither is a longer bound, and neither closes this.
 
 ### BUG-289 `id:next` handed one BUG id to two concurrent callers under load
 
-Status: open · agent delivery · found 2026-10-15 while landing ENG-029 B3,
-seen again the same day while landing ENG-004 V4.2 (filed there as BUG-290,
-now a pointer here).
+Status: done · agent delivery · found 2026-10-15 while landing ENG-029 B3 (BUG-290 is its duplicate); closed 2026-10-18. The counter lock was mkdir-then-write-owner, and a waiter deleted the lock of a holder starved between the two. Every delivery lock now changes state in one rename ([log](projects/agent-development-loop.md#2026-10-18--the-delivery-system-fixes-from-the-train)).
 
 `scripts/append-merge.test.mjs` "id:next allocates past origin/master and
 the queue, once each, under concurrency" failed the landing checks of both
