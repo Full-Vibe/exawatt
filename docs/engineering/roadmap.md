@@ -164,7 +164,8 @@ Status (2026-10-15, one train landing `f506931d` and one dogfood build):
 - Open from the train: BUG-292, BUG-293, BUG-295 (host-power context loss,
   fixed 2026-10-18); from its
   review fixes BUG-296 (a freed name stays in other windows) and BUG-297
-  (the catalog's Codex store ignores the shell's CODEX_HOME).
+  (the catalog's Codex store ignores the shell's CODEX_HOME), both fixed
+  2026-10-18.
 
 Rules for the front: the daily-driver arc's correctness wins any surface
 conflict (unchanged); visual evidence before landing; the 2026-10-04 polish
@@ -4615,8 +4616,8 @@ repair costs the gate nothing.
 
 ### BUG-296 Deleting or purging a Session frees its Agent name without telling other windows
 
-Status: open · ENG-029 · found 2026-10-16 by the names review fix
-(`agent/fix-names-review`); pre-existing.
+Status: done · ENG-029 · found 2026-10-16 by the names review fix
+(`agent/fix-names-review`); pre-existing; fixed 2026-10-18.
 
 `kill`, `deleteSession` and `purgeHistory` in the session manager delete the
 Session's record from the Agent name store but never publish `agent-names`,
@@ -4625,10 +4626,19 @@ else changes a name. `applyAgentNames` is the one owner that publishes; a
 freed name should pass through it (or its delete twin) rather than a second
 publish at each call site.
 
+**Fixed 2026-10-18.** `applyAgentNames(changed, released)` is the one owner
+of every name change, release included: a released Session's rows wear no
+name and every window is told. `kill`, `deleteSession` and `purgeHistory`
+free a name through `releaseAgentName`, which publishes only when a record
+was actually freed, and publishes even when the write fails (the record is
+already gone from every read). `session-agent-name.test.ts` deletes a live
+Session, a processless one and purges an exited one, with a second window's
+mirror dropping each name.
+
 ### BUG-297 The conversation catalog reads `CODEX_HOME` from Exawatt's own environment at module load
 
-Status: open · ENG-046 · found 2026-10-16 by the analytics review fix
-(`agent/fix-analytics-review`); pre-existing.
+Status: done · ENG-046 · found 2026-10-16 by the analytics review fix
+(`agent/fix-analytics-review`); pre-existing; fixed 2026-10-18.
 
 `conversation-catalog.ts` fixes `DEFAULT_CODEX_SESSIONS_ROOT` and
 `DEFAULT_CODEX_STATE_DATABASE` from `process.env` when the module loads. A
@@ -4691,3 +4701,26 @@ now carries `document.visibilityState` and main's host snapshot so the next
 failure names which input parked it. Owner: the Fleet board
 (`src/components/fleet/spatial/operations-board/`), not the eval.
 
+
+**Fixed 2026-10-18 with one owner for "where a harness keeps its state".**
+`electron/main/pty/harness-homes.ts` holds `loginModelEnvironment`, the
+shared `harnessEnvironment()` (the login shell's answer in the operator's
+home, re-asked once a minute, over this process's environment read at each
+call) and each harness's path rule (`claudeConfigDir`,
+`claudeProjectsRoot`, `codexHome`, `codexStateDatabase`,
+`grokSessionsRoot`). `defaultShell` moved to `login-shell.ts`, the login
+shell's one owner, so a store reader can reach it without a cycle through
+the session manager. The catalog's Claude, Codex, Grok and Qwen adapters
+resolve their roots per list; the project suggestions, Clone's Claude
+context, the Qwen model catalog and the Claude socket door read the same
+rules. Other readers of the same shape, fixed: resume candidates and Codex
+identity capture hard-coded `~/.codex/sessions` (any `CODEX_HOME`, even
+Exawatt's own, was ignored); Grok's catalog fixed `GROK_HOME` at
+construction; Qwen's catalog and model catalog read `QWEN_HOME` and
+`QWEN_RUNTIME_DIR` from `process.env`; Clone read `CLAUDE_CONFIG_DIR` from
+`process.env`. Duplicates deleted: two inline home rules in
+`agent-models.ts`, the Claude socket's `configDirOf`, the catalog's
+`openCodeShell` option and two `process.env.SHELL || '/bin/zsh'` defaults.
+`harness-homes.test.ts` lists Codex conversations from a login-shell
+`CODEX_HOME` over Exawatt's own, follows a changed home without a
+relaunch, and asks the shell once a minute.

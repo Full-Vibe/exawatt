@@ -597,3 +597,12 @@ rows.
 shared helper), because a Finder-launched app has no rc variables. The
 conversation catalog's Codex roots still read `process.env` at module load.
 That is a follow-up.
+
+### 2026-10-18 — One resolver for harness homes (BUG-297)
+
+**Every reader of a harness's own store resolves its home from the login
+shell, per read.** The follow-up above is closed: `pty/harness-homes.ts`
+now owns `loginModelEnvironment`, a shared `harnessEnvironment()` (re-asked
+once a minute) and each harness's path rule. The suggestions, the
+conversation catalog, resume candidates and Clone use it. The full list of
+readers fixed is in the BUG-297 record.

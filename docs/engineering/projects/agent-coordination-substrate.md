@@ -797,3 +797,16 @@ cause with a test written to fail first:
   reads `CLAUDE_CONFIG_DIR` (else `~/.claude` under `HOME`) from the
   Session's login-shell environment, not from Exawatt's own, which a
   Finder launch lacks.
+
+### 2026-10-18 — Every name change has one owner, release included
+
+**A deleted or purged Session's name leaves every window.** BUG-296:
+`kill`, `deleteSession` and `purgeHistory` deleted the name record without
+publishing `agent-names`. They now free it through `releaseAgentName`,
+which hands the release to `applyAgentNames`, so a deal, re-key, rename and
+release all update live rows and publish from one place. The launcher's
+recent conversations read names from the same owner (BUG-117). The Claude
+socket door reads its config directory through `harness-homes.ts`, and an
+unreadable registry entry is named in the undeliverable reason instead of
+"no message socket". A bus ledger whose count read fails now fails the
+write rather than counting as empty (the file-read ratchet).
