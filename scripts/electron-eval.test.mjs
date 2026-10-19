@@ -23,7 +23,10 @@ import {
   assertNodePtyBuilt,
   nodePtyBindingPath,
 } from './lib/native-preflight.mjs';
+import { createRequire } from 'node:module';
+import { _electron as electron } from 'playwright-core';
 import {
+  anchorMainEvaluate,
   assertDevServerServesTree,
   waitForPageCondition,
   withElectronApp,
@@ -507,3 +510,57 @@ test('an async page condition that never holds names what it waited for', async 
     /window\.electron is undefined/
   );
 });
+
+/** A main process whose callback leaves a chain of `depth` jobs ending in a
+ *  collection: the shape of an eval call landing while main is busy. Every
+ *  depth is tried, so the one that lands between Playwright's promise and the
+ *  inspector's read is always among them. */
+const COLLECTING_CALLBACK = (_electron, depth) => {
+  let step = Promise.resolve();
+  for (let i = 0; i < depth; i += 1) step = step.then(() => undefined);
+  step.then(() => globalThis.__collect());
+  return true;
+};
+
+test(
+  'a main evaluate keeps its result through a collection that lands before the inspector reads it (BUG-295)',
+  {
+    // Electron needs a display on Linux; CI's batch has none.
+    skip: process.platform !== 'darwin' && 'Electron needs a display here',
+  },
+  async t => {
+    const dir = mkdtempSync(join(tmpdir(), 'exawatt-evaluate-anchor-'));
+    writeFileSync(join(dir, 'package.json'), '{"main":"main.js"}');
+    writeFileSync(
+      join(dir, 'main.js'),
+      `require('v8').setFlagsFromString('--expose-gc');
+globalThis.__collect = require('vm').runInNewContext('gc');
+require('electron').app.whenReady();`
+    );
+    const app = await electron.launch({
+      executablePath: createRequire(import.meta.url)('electron'),
+      args: [dir],
+    });
+    t.after(async () => {
+      await app.close().catch(() => {});
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const lost = async evaluate => {
+      let count = 0;
+      for (let call = 0; call < 24; call += 1) {
+        await evaluate(COLLECTING_CALLBACK, call % 6).catch(() => {
+          count += 1;
+        });
+      }
+      return count;
+    };
+    // The hazard is real on this Electron, so the anchored result means
+    // something: Playwright's own evaluate loses results here.
+    assert.ok(
+      (await lost((fn, arg) => app.evaluate(fn, arg))) > 0,
+      'the fixture no longer reproduces the collected promise'
+    );
+    const anchored = anchorMainEvaluate(app);
+    assert.equal(await lost((fn, arg) => anchored.evaluate(fn, arg)), 0);
+  }
+);

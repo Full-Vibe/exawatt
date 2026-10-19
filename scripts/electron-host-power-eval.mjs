@@ -76,6 +76,15 @@ async function ambientSample(page, count) {
   }, count);
 }
 
+/** What the board's render policy reads, for a failure message: a parked
+ * board is either hidden or told the host is locked or asleep. */
+async function renderPolicyInputs(page) {
+  return page.evaluate(async () => ({
+    visibility: document.visibilityState,
+    host: await window.electron.app.hostPower(),
+  }));
+}
+
 async function event(app, name) {
   await app.evaluate(
     ({ powerMonitor }, eventName) => powerMonitor.emit(eventName),
@@ -106,7 +115,7 @@ async function liveDemoPower(app, page) {
   const ac = await ambientSample(page, 60);
   assert(
     ac.rotors > 0 && ac.painted > 0,
-    'live Demo must render working Agents'
+    `live Demo must render working Agents: ${JSON.stringify({ ac, ...(await renderPolicyInputs(page)) })}`
   );
   await event(app, 'on-battery');
   await renderPasses(page, 90);

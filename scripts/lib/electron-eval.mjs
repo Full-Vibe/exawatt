@@ -27,6 +27,8 @@ import {
 import { execFileSync } from 'node:child_process';
 import {
   closeSync,
+  copyFileSync,
+  existsSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -99,7 +101,10 @@ export function sweepOrphanedRendererServers(prefixes = ORPHAN_CWD_PREFIXES) {
     })
       .split('\n')
       .map(line => line.trim().split(/\s+/))
-      .filter(([, ppid, ...rest]) => ppid === '1' && rest.join(' ').includes('next-server'))
+      .filter(
+        ([, ppid, ...rest]) =>
+          ppid === '1' && rest.join(' ').includes('next-server')
+      )
       .map(([pid]) => Number(pid))
       .filter(Number.isInteger);
   } catch {
@@ -109,12 +114,13 @@ export function sweepOrphanedRendererServers(prefixes = ORPHAN_CWD_PREFIXES) {
   for (const pid of pids) {
     let cwd = '';
     try {
-      cwd = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      })
-        .split('\n')
-        .find(line => line.startsWith('n')) ?? '';
+      cwd =
+        execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        })
+          .split('\n')
+          .find(line => line.startsWith('n')) ?? '';
     } catch {
       continue;
     }
@@ -206,7 +212,6 @@ export async function assertDevServerServesTree(devUrl, evalRoot) {
     );
   }
 }
-
 
 /** ONE Electron eval at a time, ACROSS worktrees.
  *
@@ -380,33 +385,51 @@ export async function withElectronApp(requested, body, opts = {}) {
 
 /**
  * The app every eval body receives: Playwright's own, except that
- * `app.evaluate` cannot lose its result to a garbage collection (BUG-175).
+ * `app.evaluate` cannot lose its result to a garbage collection (BUG-175,
+ * BUG-295).
  *
  * V8's inspector awaits every main-process evaluate through a promise it holds
- * only WEAKLY. A callback that returns a plain value gets a synthesised
- * `Promise.resolve(value)` that nothing else references, and Electron's main
- * process drains microtasks only at Node's explicit checkpoints. A collection
- * that lands between the call and the next checkpoint takes that promise, V8
- * answers `Promise was collected`, and Playwright rewrites every such protocol
- * error to "Execution context was destroyed, most likely because of a
- * navigation" — with no navigation anywhere. The spine gate failed that way
- * two runs in ten, both times on the menu read right after main rebuilt the
- * menu, which is the allocation most likely to bring the collection on.
+ * only WEAKLY, and Playwright rewrites the inspector's `Promise was collected`
+ * to "Execution context was destroyed, most likely because of a navigation",
+ * with no navigation anywhere. The promise the inspector holds is Playwright's
+ * own: its utility script awaits whatever the callback returned inside an
+ * async function and hands the inspector that function's promise. Once that
+ * promise resolves, the inspector's reaction to it is one more queued job and
+ * nothing strong points at the promise. Electron's main drains microtasks only
+ * at Node's explicit checkpoints, so that job waits in a queue it shares with
+ * whatever main is doing at the time: IPC from a busy renderer, a listener's
+ * async tail. A job ahead of it that allocates enough to collect takes the
+ * promise, and the result is lost.
  *
- * An async callback's promise is retained by the microtask that resumes it,
- * so the fix is to make every callback async: the caller's function is sent
- * as source and evaluated in main's global scope, exactly as Playwright's own
- * utility script does, inside an async wrapper. A probe that forced a
- * collection into that window lost 31 of 100 plain-value results and none of
- * 100 async ones. Wrapping here, once, covers every eval without asking each
- * call site to remember a rule nothing else would enforce.
+ * BUG-175 made every callback async, which closed the window in front of the
+ * callback's own result and left this one open: a callback that returns at
+ * once resolves inside the same shared drain. `eval:electron:host-power`'s
+ * synchronous `powerMonitor.emit` failed with exactly that message about one
+ * run in seven while the Fleet board kept main busy, and main was alive for
+ * the next call (BUG-295). A probe that queued a chain of jobs ending in a
+ * collection behind each call lost 20 of 120 results under the BUG-175
+ * wrapper and none under this one; `electron-eval.test.mjs` keeps it.
+ *
+ * So the caller's function, sent as source and evaluated in main's global
+ * scope as Playwright's utility script does, is awaited and then SETTLES ON A
+ * FRESH MACROTASK. Node drains microtasks after each `setImmediate` callback,
+ * and nothing else is queued in that drain, so Playwright's promise resolves
+ * and the inspector reads it in consecutive jobs with no foreign work between
+ * them. Wrapping here, once, covers every eval without asking each call site
+ * to remember a rule nothing else would enforce.
  */
-function anchorMainEvaluate(app) {
+export function anchorMainEvaluate(app) {
   const evaluate = (fn, arg) =>
     typeof fn === 'function'
       ? app.evaluate(
-          async (electron, call) =>
-            (0, eval)(`(${call.source})`)(electron, call.arg),
+          async (electron, call) => {
+            const value = await (0, eval)(`(${call.source})`)(
+              electron,
+              call.arg
+            );
+            await new Promise(resolve => setImmediate(resolve));
+            return value;
+          },
           { source: fn.toString(), arg }
         )
       : app.evaluate(fn, arg);
@@ -449,6 +472,55 @@ async function recordFailure(page, error) {
   }
 }
 
+/** The last bytes the app wrote to stdout and stderr, kept from launch so a
+ *  launch that never shows a window still says what main was doing. */
+const OUTPUT_TAIL_BYTES = 64 * 1024;
+
+function keepOutputTail(child) {
+  let tail = '';
+  const keep = chunk => {
+    tail = (tail + chunk.toString('utf8')).slice(-OUTPUT_TAIL_BYTES);
+  };
+  child.stdout?.on('data', keep);
+  child.stderr?.on('data', keep);
+  return () => tail;
+}
+
+/** A launch that showed no window is the case BUG-224 could not diagnose:
+ *  the eval deletes its profile and the app's output went nowhere. Keep both
+ *  before teardown, next to the failure screenshots. Best effort. */
+function recordLaunchFailure({ error, output, userData, processGroup }) {
+  const directory = join(
+    tmpdir(),
+    'exawatt-eval-failures',
+    `${Date.now()}-${process.pid}-launch`
+  );
+  try {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'app-output.txt'), output());
+    const mainLog = userData ? join(userData, 'logs', 'main.jsonl') : null;
+    if (mainLog && existsSync(mainLog)) {
+      copyFileSync(mainLog, join(directory, 'main.jsonl'));
+    }
+    let members = 'unknown';
+    try {
+      members = JSON.stringify(processGroup?.members?.() ?? null);
+    } catch {
+      /* evidence is best effort */
+    }
+    writeFileSync(
+      join(directory, 'launch.json'),
+      `${JSON.stringify({ error: String(error?.message ?? error), members }, null, 2)}\n`
+    );
+    console.error(
+      `[harness] no window: ${String(error?.message ?? error).split('\n')[0]}\n` +
+        `[harness] launch evidence: ${directory}`
+    );
+  } catch {
+    /* evidence is best effort */
+  }
+}
+
 async function runElectronAttempt({
   launchOpts,
   body,
@@ -484,12 +556,15 @@ async function runElectronAttempt({
   // Retain the public ChildProcess while live; teardown must not resolve it
   // through that dispatcher after graceful close has started.
   const mainProcess = app.process();
+  const output = keepOutputTail(mainProcess);
   const pid = mainProcess.pid;
   let processGroup;
   try {
     processGroup = captureElectronProcessGroup(pid);
   } catch (error) {
-    console.warn(`[harness] cannot verify launch process group: ${error.message}`);
+    console.warn(
+      `[harness] cannot verify launch process group: ${error.message}`
+    );
   }
   let done = false;
 
@@ -544,7 +619,18 @@ async function runElectronAttempt({
   process.on('SIGTERM', onSignal);
 
   try {
-    const page = await app.firstWindow({ timeout: firstWindowMs });
+    let page;
+    try {
+      page = await app.firstWindow({ timeout: firstWindowMs });
+    } catch (error) {
+      recordLaunchFailure({
+        error,
+        output,
+        userData: launchOpts.env?.EXAWATT_USER_DATA,
+        processGroup,
+      });
+      throw error;
+    }
     launch.firstWindowAt = performance.now();
     try {
       return await body(anchorMainEvaluate(app), page, launch);

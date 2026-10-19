@@ -48,6 +48,10 @@ export function captureElectronProcessGroup(pid) {
   }
 
   return {
+    /** What is running in the group now, start time and command line. */
+    members() {
+      return currentOwnedGroup().map(entry => `${entry.pid} ${entry.identity}`);
+    },
     captureMembers() {
       for (const entry of currentOwnedGroup())
         owned.set(entry.pid, entry.identity);
