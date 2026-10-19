@@ -186,7 +186,8 @@ rendering and interaction but not continuous ambience. A known lock or suspend
 parks the whole canvas. Hosted browsers retain their visibility policy.
 
 Both views passed actual locked-start parking and unlocked startup motion.
-The complete host-power matrices pass with the revised adapter. Final delivery
-remains pending because the Mac relocked before the required foreground gate. [Incident 0038](../incidents/0038-locked-startup-reports-unlocked.md)
+The complete host-power matrices and native foreground gates passed after
+reconciliation with 0.1.22. Ticket 688 integrated the repair as `35d0db93f922`;
+the signed dogfood worker installed that SHA on 2026-10-19. [Incident 0038](../incidents/0038-locked-startup-reports-unlocked.md)
 records the independent evidence and the compatibility boundary; this does not
 change Session lifecycle or establish historical battery attribution.

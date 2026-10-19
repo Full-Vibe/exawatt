@@ -3842,3 +3842,38 @@ recomputed surface gates. BUG-300's intermittent live-Demo parking remains an
 open diagnostic, with its enriched failure evidence preserved; this reconciliation
 does not claim an unobserved cause or repair. Final combined verification and
 installation are still required through the delivery queue.
+
+
+### Review repairs delivered (2026-10-19)
+
+**All five review repairs and BUG-294 are integrated and installed.** Ticket 688
+landed `35d0db93f922` after rebasing over the latest download-page change; the
+public projection is `c32038d00dab`. The signed dogfood worker installed the same
+private SHA at `/Applications/Exawatt.app` at 19:37:33 UTC, without restarting the
+operator's running app. This receipt supersedes the pending-delivery statements
+in the dated review/compatibility entries above.
+
+The combined tree passed lint, application/Electron types, 741 delivery tests,
+1,169 affected behavior tests, scanning contracts, production build, native build,
+and R3F 100/100. All 18 declared checks passed: native attention/power/device power,
+Settings, 22 status visibility cases, every material/theme/scale bench, packaged
+startup, app lifecycle, viewport, connected Fleet, full Spatial behavior,
+emergence, pointer/touch, native navigation, Session parity, motion, scale, and
+themes. Both views preserve the recent Project-bounded Shift+arrow behavior.
+
+At 1k and 10k Agents, v2 used eight draw calls, measured 0.60 ms render CPU p95,
+and parked at zero idle frames. Both views passed the motion budgets; locked and
+suspended live Demo produced zero render passes, while battery kept working
+rotors moving at reduced cadence. These are rendering measurements, not a
+battery-life duration or a universal promise of zero CPU spikes.
+
+An initial v2 host-power attempt ended in a watchdog shutdown without enough
+retained evidence to attribute its first disappearance; it passed in isolation
+and in the final complete run without changing assertions or timeouts. The first
+dogfood build encountered Apple's unavailable timestamp service; a normal queued
+retry signed and smoke-tested successfully. No signing or delivery gate was waived.
+
+Evidence: `/tmp/exawatt-fleet-oct19-land-retry.log`, ticket 688 in the shared
+delivery ledger, `/tmp/exawatt-fleet-review-final-evidence/`,
+`/tmp/exawatt-status-visibility/`, and `/tmp/exawatt-fleet-v2-review/`.
+BUG-300 remains a separate open diagnostic; this receipt does not invent its cause.
