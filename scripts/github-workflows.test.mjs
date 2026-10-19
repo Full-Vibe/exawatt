@@ -136,7 +136,7 @@ test('CI compiles both applications and builds without hosted-service configurat
   // desktop main process unproven.
   assert.match(commands, /pnpm electron:compile/u);
   assert.match(commands, /pnpm publication:check/u);
-  // BUG-136: both guard classes run on both sides. The landing floor's half is
+  // BUG-136: both guard classes run on both sides. The landing checks' half is
   // pinned in delivery-policy.test.mjs; this is CI's half.
   assert.match(commands, /^pnpm lint$/mu);
   assert.match(commands, /^pnpm test:agent-delivery$/mu);

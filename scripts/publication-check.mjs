@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// ENG-030 WP5a. The landing floor runs Gate B over CHANGED paths so an agent
+// ENG-030 WP5a. The landing checks run Gate B over CHANGED paths so an agent
 // hears about a leak in seconds. That is the right latency and the wrong
 // coverage: a file nobody touched is never re-read, and the classifier itself
 // can change under files that were clean when they landed. This composite is

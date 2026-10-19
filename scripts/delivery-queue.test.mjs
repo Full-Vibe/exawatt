@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -11,8 +11,13 @@ import {
   listTickets,
   mutateTicket,
   queueHead,
+  readTicket,
 } from './lib/delivery-queue.mjs';
-import { summarizeDeliveryMetrics } from './lib/delivery-state.mjs';
+import {
+  deliveryStateRoot,
+  readDeliveryMetrics,
+  summarizeDeliveryMetrics,
+} from './lib/delivery-state.mjs';
 import { gitAsync } from './lib/hermetic-git.mjs';
 
 async function repository() {
@@ -97,7 +102,7 @@ test('a dead owner is fenced by a new ownership epoch and reaches one terminal r
   }
 });
 
-test('the H7 metrics schema reports queue, lock, floor, Actions, and dogfood evidence', () => {
+test('the H7 metrics schema reports queue, lock, landing check, Actions, and dogfood evidence', () => {
   const summary = summarizeDeliveryMetrics([
     { type: 'queue_terminal', status: 'integrated', queueWaitMs: 100 },
     { type: 'queue_terminal', status: 'integrated', queueWaitMs: 500 },
@@ -105,11 +110,11 @@ test('the H7 metrics schema reports queue, lock, floor, Actions, and dogfood evi
     { type: 'integration_lock', durationMs: 40 },
     { type: 'integration_lock', durationMs: 80 },
     { type: 'stale_stop' },
-    { type: 'floor_check', status: 'failed' },
+    { type: 'landing_check', status: 'failed' },
     // BUG-090: a check that failed and then passed with the machine to itself.
     // It is neither a landing failure nor invisible.
     {
-      type: 'floor_check',
+      type: 'landing_check',
       status: 'flaked',
       flakedFiles: [
         { file: 'src/a.test.tsx', tests: ['a > times out'] },
@@ -117,7 +122,7 @@ test('the H7 metrics schema reports queue, lock, floor, Actions, and dogfood evi
       ],
     },
     {
-      type: 'floor_check',
+      type: 'landing_check',
       status: 'flaked',
       flakedFiles: [{ file: 'src/b.test.tsx', tests: ['b > times out'] }],
     },
@@ -132,7 +137,7 @@ test('the H7 metrics schema reports queue, lock, floor, Actions, and dogfood evi
     queueWaitP95Ms: 500,
     lockHoldP95Ms: 80,
     staleStopCount: 1,
-    floorFailures: 1,
+    landingCheckFailures: 1,
     // A file that flakes repeatedly is the shape of a real regression hiding
     // behind flakiness; contention moves around instead.
     flakedChecks: 2,
@@ -143,4 +148,63 @@ test('the H7 metrics schema reports queue, lock, floor, Actions, and dogfood evi
     actionsMinutes: 6,
     dogfoodFreshnessP95Ms: 900,
   });
+});
+
+test("records written before the landing-check rename are read in today's names", async () => {
+  const root = await repository();
+  try {
+    // A metrics line and a ticket result exactly as agent:land wrote them
+    // before 2026-10-18.
+    const sha = 'f'.repeat(40);
+    await appendFile(
+      path.join(await deliveryStateRoot(root), 'metrics.jsonl'),
+      [
+        { type: 'floor_check', status: 'failed', phase: 'candidate' },
+        { type: 'queue_terminal', status: 'integrated', exactFloorSha: sha },
+      ]
+        .map(event => `${JSON.stringify(event)}\n`)
+        .join('')
+    );
+    const metrics = await readDeliveryMetrics(root);
+    assert.deepEqual(metrics, [
+      { type: 'landing_check', status: 'failed', phase: 'candidate' },
+      {
+        type: 'queue_terminal',
+        status: 'integrated',
+        exactLandingCheckSha: sha,
+      },
+    ]);
+    assert.equal(summarizeDeliveryMetrics(metrics).landingCheckFailures, 1);
+
+    const ticket = await allocateTicket(root, candidate(1));
+    const ticketFile = path.join(
+      await deliveryStateRoot(root),
+      'queue',
+      `${ticket.id}.json`
+    );
+    await writeFile(
+      ticketFile,
+      JSON.stringify({
+        ...ticket,
+        status: 'integrated',
+        result: { integratedSha: sha, exactFloorSha: sha },
+      })
+    );
+    const expected = { integratedSha: sha, exactLandingCheckSha: sha };
+    assert.deepEqual((await readTicket(root, ticket.id)).result, expected);
+    assert.deepEqual((await listTickets(root))[0].result, expected);
+    // A transition rewrites the ticket in the new names only.
+    await mutateTicket(
+      root,
+      ticket.id,
+      { allowTerminal: true },
+      current => current
+    );
+    assert.deepEqual(
+      JSON.parse(await readFile(ticketFile, 'utf8')).result,
+      expected
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

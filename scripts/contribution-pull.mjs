@@ -24,8 +24,8 @@ import {
  * This command fetches the pull request's commits, refuses unless its CLA
  * check is green, applies them onto a fresh `agent/contrib-<n>` worktree of the
  * private tree with `git am --3way`, and hands off to the normal landing
- * floor. The contribution then meets exactly the floor the operator's own work
- * meets — Gate A, Gate B, type-check, tests, surface gates — and reaches the
+ * checks. The contribution then meets exactly the landing checks the
+ * operator's own work meets — Gate A, Gate B, type-check, tests, surface gates — and reaches the
  * public repository through the ordinary outbound projection, under the
  * contributor's own authorship, which `git am` preserves.
  */
@@ -267,7 +267,7 @@ export async function pullContribution({
       log(`[contribution-pull]   ${commit.author}: ${commit.subject}`);
     }
     if (land) {
-      log('[contribution-pull] handing off to the normal landing floor');
+      log('[contribution-pull] handing off to the normal landing checks');
       await new Promise((resolve, reject) => {
         const child = spawn('pnpm', ['agent:land'], {
           cwd: worktree,

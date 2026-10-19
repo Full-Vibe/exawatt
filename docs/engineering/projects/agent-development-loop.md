@@ -885,7 +885,7 @@ tests remain the recovery baseline during the rollout.
   tries a reserved `-head` slot first and then the pool; no other caller can
   take the reserve, and with one head it adds at most one concurrent check.
   `runDeliveryChecks` passes it only for the head's rebase phase and now
-  records `slotMode` and `slotWaitMs` on every `floor_check`, so the next
+  records `slotMode` and `slotWaitMs` on every `landing_check`, so the next
   measurement reads slot queues directly. `scripts/machine-slots.test.mjs`
   pins the reserve (a candidate waits, the head does not, a second head-priority
   request waits, a freed reserve stays closed to non-head work), and

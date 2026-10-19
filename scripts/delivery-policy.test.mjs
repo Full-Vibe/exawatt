@@ -57,7 +57,7 @@ function ids(paths, extras = []) {
   return classifyDeliveryPolicy(paths, extras).map(check => check.id);
 }
 
-test('the cheap changed-file floor cannot be weakened by the caller', () => {
+test('the cheap changed-file landing checks cannot be weakened by the caller', () => {
   assert.deepEqual(ids(['docs/product/concepts.md']), [
     'open-source:paths:check',
     'content:scan',
@@ -394,7 +394,7 @@ test('post-merge CI follows this repository’s delivery topology and cancels ob
   );
 });
 
-// ── Surface gates (D51). The repository owns 31 eval gates and the floor
+// ── Surface gates (D51). The repository owns 31 eval gates and the landing checks
 // routed to one; the rest were opt-in, so a change to the most
 // motion-sensitive surface in the app could land with nothing run.
 test('a gated surface owes its gate', () => {
@@ -730,8 +730,8 @@ test('the refusal names the gate, the files, and how to run it', () => {
 
 // ── Flake-aware reruns (BUG-090). A change to a module the whole app imports
 // selected a large `app-dom` set whose tests failed by TIMEOUT under machine
-// load, with different identities on every run, and the floor reported them as
-// named test failures — which reads as "your change broke these". The floor now
+// load, with different identities on every run, and the landing checks reported them as
+// named test failures — which reads as "your change broke these". The landing checks now
 // automates the diagnostic the runbook already prescribed: re-run the named
 // files alone, once.
 
@@ -759,7 +759,7 @@ test('the vitest checks declare the isolated rerun; the others do not', () => {
       `${id} is not a vitest selection`
     );
   }
-  // The rerun script must exist, or the floor's own repair is a broken command.
+  // The rerun script must exist, or the landing checks' own repair is a broken command.
   assert.equal(
     typeof JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
       .scripts['test:alone'],
@@ -882,7 +882,7 @@ test('the reports name the files, the load average, and which half is real', () 
   assert.match(suspected, /src\/b\.test\.tsx/);
   assert.match(suspected, /b > times out/);
   assert.match(suspected, /load average 152\.30 at the failure/);
-  assert.match(suspected, /the floor continues/);
+  assert.match(suspected, /the landing checks continue/);
 
   const reproduced = reproducedFailureReport({
     checkId: 'vitest-related',
@@ -914,7 +914,7 @@ test('the reports name the files, the load average, and which half is real', () 
 /**
  * A stand-in for `pnpm` that reports whatever the scenario says, through the
  * same JSON reporter contract the real one writes. It records every
- * invocation, so a test can prove what the floor re-ran — and prove that it
+ * invocation, so a test can prove what the landing checks re-ran — and prove that it
  * did not re-run anything when it must not.
  */
 async function writeVitestStub(directory, runs) {
@@ -985,7 +985,7 @@ async function scenario(runs, body) {
   }
 }
 
-test('named failures that pass alone become a reported flake, and the floor continues', async () => {
+test('named failures that pass alone become a reported flake, and the landing checks continue', async () => {
   await scenario(
     [
       {
@@ -1032,7 +1032,7 @@ test('named failures that pass alone become a reported flake, and the floor cont
   );
 });
 
-test('a failure that survives isolation still fails the floor, and says which half is real', async () => {
+test('a failure that survives isolation still fails the landing checks, and says which half is real', async () => {
   await scenario(
     [
       {
@@ -1208,7 +1208,7 @@ test('changed source files owe the consumer-less export check', () => {
 // and red again the next day, and three gates were found red on master in
 // one session, each for the same reason: a check existed and nothing ran it.
 // `VERIFICATION_ROUTES` names what runs every verification command, and these
-// tests hold it to the truth by deriving, from the landing floor, the gate
+// tests hold it to the truth by deriving, from the landing checks, the gate
 // map, the pre-push hook and `ci.yml`, what actually runs each one.
 
 function packageScripts() {
@@ -1373,7 +1373,7 @@ async function actualRoutes() {
   const inSuite = defaultVitestSuite();
   const tracked = git(root, ['ls-files']).split('\n').filter(Boolean);
 
-  // (a) The landing floor over every tracked path, which is the union of its
+  // (a) The landing checks over every tracked path, which is the union of its
   // unconditional and changed-path checks, plus the pre-push hook every
   // landing's final push passes through.
   const landingSeeds = classifyDeliveryPolicy(tracked)
@@ -1463,7 +1463,7 @@ test('every route is what actually runs the command', async t => {
   const actual = await actualRoutes();
   const wrong = [];
   for (const [name, claimed] of Object.entries(VERIFICATION_ROUTES)) {
-    // The first route that runs it is its route: a check the landing floor
+    // The first route that runs it is its route: a check the landing checks
     // runs is a landing check even when CI also runs it.
     const truth =
       ['landing', 'gate', 'ci'].find(route => actual[route].has(name)) ??
@@ -1499,15 +1499,15 @@ test('a Vitest subset names files the default suite runs', async t => {
   }
 });
 
-test('the route derivation sees what the floor, the hook and CI run', async () => {
+test('the route derivation sees what the landing checks, the hook and CI run', async () => {
   const actual = await actualRoutes();
   // One witness per mechanism, so a derivation that silently stopped seeing
   // one cannot make every route read `manual`.
-  assert.ok(actual.landing.has('lint'), 'unconditional floor check');
-  assert.ok(actual.landing.has('theme:check'), 'changed-path floor check');
+  assert.ok(actual.landing.has('lint'), 'unconditional landing check');
+  assert.ok(actual.landing.has('theme:check'), 'changed-path landing check');
   assert.ok(
     actual.landing.has('type-check:electron-tests'),
-    'a call inside a floor check'
+    'a call inside a landing check'
   );
   assert.ok(actual.landing.has('docs:check'), 'the pre-push hook');
   assert.ok(

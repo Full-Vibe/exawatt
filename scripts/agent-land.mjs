@@ -38,7 +38,7 @@ import {
 } from './lib/delivery-state.mjs';
 import {
   DIRECT_RECOVERY_ENV,
-  FLOOR_VERIFIED_ENV,
+  LANDING_CHECKS_VERIFIED_ENV,
   formatDocsCheckReport,
   runDocsChecks,
 } from './lib/docs-check.mjs';
@@ -141,11 +141,11 @@ function usage() {
   return `Usage: pnpm agent:land -- [--verify <package-script> ...] [--dogfood] [--keep-branch]
        pnpm agent:land -- --docs
 
-Runs the repository-owned verification floor, admits the committed agent branch
+Runs the repository-owned landing checks, admits the committed agent branch
 to the local FIFO queue, and lands it without a pull request. This is the only
 path that moves origin's master; the pre-push hook refuses any other push.
 
-  --verify <script>  Add a package.json check to the repository-owned floor.
+  --verify <script>  Add a package.json check to the repository-owned landing checks.
   --waive-gate <id>  Declare on purpose that a surface gate does not apply.
   --dogfood          Queue a coalescing Electron dogfood install after integration.
   --keep-branch      Keep the immutable remote attempt ref after integration.
@@ -439,8 +439,8 @@ async function directLand(root, branch, options) {
 }
 
 /**
- * The docs lane's checks (BUG-200): the floor's docs subset, in parallel and
- * without a machine slot, reported and recorded like any floor check.
+ * The docs lane's checks (BUG-200): the landing checks' docs subset, in parallel and
+ * without a machine slot, reported and recorded like any landing check.
  */
 async function runDocsLaneChecks(root, checks, { phase, onResult }) {
   const results = await runDocsChecks({ root, checks });
@@ -555,7 +555,7 @@ async function main() {
     };
   } else {
     // Surface gates are declared, not run here: they need a dev server the
-    // floor does not own. Refuse before any expensive work so the omission is
+    // landing checks do not own. Refuse before any expensive work so the omission is
     // loud and early rather than invisible (D51).
     const missingGates = missingSurfaceGates(files, [
       ...options.verify,
@@ -626,19 +626,19 @@ async function landThroughQueue({
 
   // A check that failed and then passed with the machine to itself is
   // reported, never swallowed (BUG-090). The status line carries the count so
-  // a landing cannot look unconditionally clean when the floor had to re-run.
+  // a landing cannot look unconditionally clean when a landing check had to re-run.
   const flakes = [];
   const reusedChecks = [];
-  const recordFloorCheck = extra => async result => {
+  const recordLandingCheck = extra => async result => {
     if (result.status === 'flaked') flakes.push(result);
     if (result.reused)
       reusedChecks.push(
         result.phase === 'rebase' ? `${result.id}(rebase)` : result.id
       );
-    await appendDeliveryMetric(root, 'floor_check', { ...extra, ...result });
+    await appendDeliveryMetric(root, 'landing_check', { ...extra, ...result });
   };
 
-  // BUG-219: every floor run first makes node_modules the installed form of
+  // BUG-219: every landing-check run first makes node_modules the installed form of
   // the tree it is about to check. A rebase that brings a lockfile change, or
   // a worktree submitted with a stale install, otherwise fails a check on
   // dependencies nobody committed. Each reinstall is recorded and named on
@@ -659,7 +659,7 @@ async function landThroughQueue({
     if (!refreshed) return;
     reinstalls.push(phase);
     console.log(
-      `[agent-land] ${phase}: node_modules was stale (${refreshed.reason}); reinstalled from the lockfile before the floor${refreshed.nodePtyRebuilt ? ', and rebuilt node-pty for Electron' : ''}`
+      `[agent-land] ${phase}: node_modules was stale (${refreshed.reason}); reinstalled from the lockfile before the landing checks${refreshed.nodePtyRebuilt ? ', and rebuilt node-pty for Electron' : ''}`
     );
     await appendDeliveryMetric(root, 'install_refreshed', {
       ...extra,
@@ -670,7 +670,7 @@ async function landThroughQueue({
 
   // BUG-246: a gate that reads the dev server runs only once that server
   // serves the exact tree being checked. Before the first such gate of each
-  // floor run, the landing restarts a server that started before a rebase
+  // landing-check run, the landing restarts a server that started before a rebase
   // (or is gone), or refuses a server it does not own and cannot prove
   // fresh. Each restart is recorded and named on the STATUS line.
   const serverRefreshes = [];
@@ -701,9 +701,9 @@ async function landThroughQueue({
     });
   };
 
-  // BUG-202: the head's rebase verdict, asked before the floor. In September
+  // BUG-202: the head's rebase verdict, asked before the landing checks. In September
   // 10 of the 20 tickets that died on a rebase conflict already conflicted
-  // with origin/master when their candidate floor started.
+  // with origin/master when their candidate landing checks started.
   const masterNow = await git(root, 'rev-parse', 'origin/master');
   if (
     probeIntervalMs() > 0 &&
@@ -739,12 +739,12 @@ async function landThroughQueue({
 
   // Before admission: a stale install of the submitter's own lockfile is
   // repaired here, or refused with its remedy, rather than failing a check
-  // minutes into the floor.
+  // minutes into the landing checks.
   await refreshInstall('candidate', { candidateSha });
   const checks = lane.checksFor(files, options.verify);
   const evidence = await lane.runChecks(root, checks, {
     phase: 'candidate',
-    onResult: recordFloorCheck({ candidateSha }),
+    onResult: recordLandingCheck({ candidateSha }),
     beforeCheck: freshServerBefore('candidate', files, { candidateSha }),
     reuse: await lane.openReuse(),
     candidateSha,
@@ -910,7 +910,7 @@ async function landThroughQueue({
       await run('git', ['fetch', 'origin', 'master'], root);
       // BUG-201: publication is checked BEFORE the rebase and re-check, and a
       // latch holds the head instead of failing it. September's latch deaths
-      // were found after the head had rebased and re-run its floor, and
+      // were found after the head had rebased and re-run its landing checks, and
       // nothing the owner could do would have cleared them.
       const hold = await holdWhilePublicLatched({
         check: () => checkPublicLatch(root),
@@ -1070,7 +1070,7 @@ async function landThroughQueue({
         const rebaseEvidence = await lane.runChecks(root, rebaseChecks, {
           phase: 'rebase',
           queueHead: true,
-          onResult: recordFloorCheck({
+          onResult: recordLandingCheck({
             ticketId: ticket.id,
             candidateSha: rebasedSha,
           }),
@@ -1083,7 +1083,7 @@ async function landThroughQueue({
         });
         await requireClean(
           root,
-          'Rebased agent worktree after exact-tree floor'
+          'Rebased agent worktree after exact-tree landing checks'
         );
         ticket = await updateAttempt(root, ticket, {
           baseSha: remoteBase,
@@ -1146,11 +1146,11 @@ async function landThroughQueue({
         console.log('[agent-land] integrate: fast-forward origin/master');
         let integrated = false;
         try {
-          // The floor just verified this exact SHA, so the docs pre-push hook
-          // (BUG-195) excuses it rather than re-running a subset of the floor.
-          // `--direct` never sets it: that path skips the floor.
+          // The landing checks just verified this exact SHA, so the docs pre-push hook
+          // (BUG-195) excuses it rather than re-running a subset of the landing checks.
+          // `--direct` never sets it: that path skips the landing checks.
           await run('git', ['push', 'origin', 'HEAD:refs/heads/master'], root, {
-            [FLOOR_VERIFIED_ENV]: integrationSha,
+            [LANDING_CHECKS_VERIFIED_ENV]: integrationSha,
           });
           integrated = true;
         } catch (error) {
@@ -1186,7 +1186,7 @@ async function landThroughQueue({
           {
             integratedSha: integrationSha,
             lockHoldMs: Date.now() - lockStartedAt,
-            exactFloorSha: integrationSha,
+            exactLandingCheckSha: integrationSha,
             queueWaitMs:
               new Date(ticket.headAt).getTime() -
               new Date(ticket.admittedAt).getTime(),
@@ -1328,12 +1328,12 @@ async function landThroughQueue({
           ...[...gatesRerun].map(gate => `rerun:${gate}`),
           ...stoodOnly.map(gate => `stood:${gate}`),
         ].join(',')}`;
-  // Absent when node_modules already matched every tree the floor checked;
-  // otherwise each floor phase that had to reinstall first (BUG-219).
+  // Absent when node_modules already matched every tree the landing checked;
+  // otherwise each landing-check phase that had to reinstall first (BUG-219).
   const reinstalledState =
     reinstalls.length === 0 ? '' : ` reinstalled=${reinstalls.join(',')}`;
   // Absent when every gate found its dev server already serving the tree;
-  // otherwise each floor phase that had to restart it first (BUG-246).
+  // otherwise each landing-check phase that had to restart it first (BUG-246).
   const serverState =
     serverRefreshes.length === 0
       ? ''

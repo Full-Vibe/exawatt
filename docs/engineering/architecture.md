@@ -376,7 +376,7 @@ Performance work starts from an operator-visible gesture and an attributed
 trace, changes the narrowest proven owner, and reruns the same behavior and
 timing evidence on the exact tree. The cross-surface Electron evaluator planned
 by ENG-016 D55 is optional: it serves baseline, diagnosis, before/after proof,
-and targeted regression investigation rather than the default landing floor.
+and targeted regression investigation rather than the default landing checks.
 React-provider rewrites, generic memoization, persistent `will-change`, hidden
 route mounts, or prewarming are not architectural defaults.
 

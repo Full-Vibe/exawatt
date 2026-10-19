@@ -447,7 +447,7 @@ export function demoLandedMilestones(
  * reader reads one: a landing appears only on the lens of the Project whose
  * roadmap it names, and positions count that Project's queue (the frame's
  * `queuePosition` is the fleet-wide place). States map one to one: `queued`
- * is an admitted ticket waiting; `checking` is the head re-running its floor
+ * is an admitted ticket waiting; `checking` is the head re-running its landing checks
  * (an `integrating` ticket with `checking`), since a Demo landing has already
  * been queued by then; `integrating` is the head pushing; `landed` is an
  * `integrated` ticket carrying the seed-derived sha. Nothing fails in Demo.
@@ -523,7 +523,7 @@ function demoDeliveryTicket(
       landing.milestoneId ? ` ${landing.milestoneId}` : ''
     }): ${landing.milestoneTitle}`,
     admittedAt: landing.queuedAt,
-    // The head is reached when the floor starts running on it.
+    // The head is reached when its landing checks start running on it.
     headAt:
       landing.state === 'queued'
         ? null

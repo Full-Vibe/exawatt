@@ -103,7 +103,7 @@ export function fixtureWorkflow(timeout = 25) {
   ].join('\n');
 }
 
-const FLOOR_SCRIPTS = {
+const LANDING_CHECK_SCRIPTS = {
   'open-source:paths:check': 'node -e "process.exit(0)"',
   'content:scan': 'node -e "process.exit(0)"',
   'type-check': 'node -e "process.exit(0)"',
@@ -158,7 +158,11 @@ export function createPrivateFixture(prefix = 'exawatt-two-repo-') {
     root,
     'package.json',
     `${JSON.stringify(
-      { name: 'two-repository-fixture', private: true, scripts: FLOOR_SCRIPTS },
+      {
+        name: 'two-repository-fixture',
+        private: true,
+        scripts: LANDING_CHECK_SCRIPTS,
+      },
       null,
       2
     )}\n`

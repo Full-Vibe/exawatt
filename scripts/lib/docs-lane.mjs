@@ -20,7 +20,7 @@ import { isDocsPath } from './docs-check.mjs';
  *
  * So a docs change takes a queue ticket like any other, from the checkout it
  * was written in, with no agent worktree and no `worktree:setup`. It runs the
- * docs checks (`classifyDocsChecks`, seconds, not the full floor) on the exact
+ * docs checks (`classifyDocsChecks`, seconds, not the full landing checks) on the exact
  * committed tree, and every git mutation happens in a temporary detached
  * checkout of that commit. The invoking checkout, often the shared `master`
  * that other sessions write in, is never rebased or required to be clean; it
@@ -40,7 +40,7 @@ async function git(cwd, args) {
 
 /**
  * Why these changed paths cannot take the docs lane, or null when they can.
- * Anything that is not documentation owes the full floor.
+ * Anything that is not documentation owes the full landing checks.
  */
 export function docsLaneRefusal(paths) {
   if (paths.length === 0) {
@@ -51,7 +51,7 @@ export function docsLaneRefusal(paths) {
   return [
     '--docs lands documentation only (*.md and docs/**). This change also touches:',
     ...others.map(file => `  ${file}`),
-    'Land it from an agent/* worktree with `pnpm agent:land`, which runs the full floor.',
+    'Land it from an agent/* worktree with `pnpm agent:land`, which runs the full landing checks.',
   ].join('\n');
 }
 

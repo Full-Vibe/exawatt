@@ -30,14 +30,14 @@ one sequencer if exact composition is to be proven once.
 Adopt three independently recoverable delivery stages behind the existing
 `pnpm agent:land` entrypoint.
 
-1. **Candidate:** an agent verifies the repository-defined fast floor, pushes
+1. **Candidate:** an agent verifies the repository-defined fast landing checks, pushes
    an immutable `agent/*` candidate, and submits it. Submission records queue
    position and may use a pull request as its durable status envelope; the
    submitting process does not own integration.
 2. **Gate:** integration is FIFO and exact where it matters (amended
    2026-08-03). Tickets are served strictly in order; the `agent:land`
    process at the head of the queue integrates its own candidate on the
-   latest accepted base, rerunning the repository floor on the exact tree
+   latest accepted base, rerunning the repository landing checks on the exact tree
    only when the base moved since candidate verification. Only the head of
    the queue mutates `master`, and it holds the delivery lock for seconds.
 3. **Post:** dogfood consumes integrated commits outside the delivery lock.
@@ -45,7 +45,7 @@ Adopt three independently recoverable delivery stages behind the existing
    queue drains, with a ten-minute maximum wait so a continuous queue cannot
    starve installation.
 
-The repository owns the verification floor. A caller may request additional
+The repository owns the verification checks. A caller may request additional
 checks but may not choose a weaker set. Verification evidence is attached to a
 candidate identity and exact tree, rather than reported as an unstructured list
 of scripts an agent happened to run.
@@ -63,7 +63,7 @@ directory, with compare-and-swap state transitions so every ticket reaches
 exactly one terminal result. There is no coordinator: the head lander
 integrates in its own bootstrapped worktree. When the base moved, it rebases
 there, pushes a new creation-only immutable attempt ref for its ticket,
-runs the floor on that exact tree, and advances `master` with a non-force
+runs the landing checks on that exact tree, and advances `master` with a non-force
 push; the integrated SHA must equal the ticket's current pushed attempt.
 Takeover of a head ticket requires a dead owner pid — a live pid with a
 stale heartbeat is surfaced to the operator, never auto-taken, because this
@@ -163,7 +163,7 @@ implementation behaves.
 A same-day review checked the selected backend against the audit's own
 arithmetic and reordered the mechanism. The decision's contracts are
 unchanged: three stages, one serialized `master` mutation, a repository-owned
-verification floor that callers cannot weaken, supersedent dogfood, and no
+verification checks that callers cannot weaken, supersedent dogfood, and no
 purchased or hosted dependency.
 
 Two observations drove the amendment:
@@ -200,7 +200,7 @@ The amended first mile therefore:
    refusal remains the guard that makes a botched takeover a retry, never a
    wrong `master`, and an ambiguous push is reconciled against
    `origin/master` reachability before a terminal result is recorded
-3. keeps exact-tree evidence but scopes it to the cheap repository floor,
+3. keeps exact-tree evidence but scopes it to the cheap repository landing checks,
    rerun at the head of the queue only when the base moved since the
    candidate's verification (generated route types, type-check, fast tests
    selected by changed-path policy); the author's expensive matrix is never

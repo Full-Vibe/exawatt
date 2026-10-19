@@ -732,7 +732,7 @@ unknown versions/records, malformed or partial history, processing/output
 bounds, and optional timestamps. Production admission remains the source-IO,
 renderer and same-Session gates in the adoption brief. Because no runtime caller
 uses this pure module and no Electron-facing behavior changes, this groundwork
-requires the repository floor and relevant core tests, not a dogfood package.
+requires the repository landing checks and relevant core tests, not a dogfood package.
 
 ### 2026-09-17 — Operator evidence: browser capability awareness
 

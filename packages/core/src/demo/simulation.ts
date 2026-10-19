@@ -83,7 +83,7 @@ const FIRST_TRANSITION_FLOOR_MS = 1_000;
 export const INITIAL_ATTENTION_HOLD_MS = 45_000;
 
 /** Delivery queue cadence of one landing, in ms after it is queued. Shorter
- *  than a real floor (minutes) so a landing is visible inside one demo beat,
+ *  than real landing checks (minutes) so a landing is visible inside one demo beat,
  *  long enough that each state is seen. */
 export const DEMO_LANDING_CADENCE_MS = {
   checking: 8_000,

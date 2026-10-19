@@ -61,7 +61,7 @@ the head waits on its rebase re-check, and in September the head waited for a
 slot in 9 of 36 rebases, 30 minutes in total, behind candidates' first
 checks. The head's re-check may take the reserved slot or any pool slot;
 nothing else may take the reserved one, and there is only one head, so the
-reserve adds at most one concurrent check. Each `floor_check` records the
+reserve adds at most one concurrent check. Each `landing_check` records the
 run's `slotMode` and `slotWaitMs`, so slot queues are measured, not
 inferred.
 
@@ -123,7 +123,7 @@ BELIEVES about a failure, never how long a test may take.
 
 A flake is reported, never swallowed: it appears in the check stream, in the
 ticket's evidence, on the landing's `STATUS` line as `flaked=<check>:<n>`, and
-in `metrics.jsonl` as a `floor_check` event with `status: "flaked"` carrying
+in `metrics.jsonl` as a `landing_check` event with `status: "flaked"` carrying
 the file identities, the failing test names, and the load average at the
 failure and at the rerun. `summarizeDeliveryMetrics` tallies flakes per file,
 because a real regression hiding behind flakiness returns to the SAME file
@@ -198,7 +198,7 @@ from the checkout where the docs were committed, including the shared
   roadmap contract when `docs/engineering/**` changed, path classification,
   and the public content scan of the changed paths), in parallel and without
   a machine slot, in about five to twenty seconds. They are recorded as
-  `floor_check` events with `lane: "docs"`.
+  `landing_check` events with `lane: "docs"`.
 - It takes a queue ticket (`lane: "docs"`) and from then on is an ordinary
   ticket: it waits its turn, rebases at the head, re-runs the docs checks on
   the rebased tree, and pushes with the SHA its checks verified.
@@ -217,7 +217,7 @@ which covers the main checkout and every worktree; `worktree:setup` runs it,
 so the setting re-asserts itself. A relative path means each checkout runs its
 own tree's hook. Any push to origin's `master` is refused, docs or code, and
 the refusal names both lanes. Two variables excuse exactly one SHA each:
-`agent:land` sets `EXAWATT_AGENT_LAND_FLOOR_SHA` on its final push to the SHA
+`agent:land` sets `EXAWATT_AGENT_LAND_CHECKED_SHA` on its final push to the SHA
 its landing checks just verified, and the operator-gated `--direct` path sets
 `EXAWATT_AGENT_LAND_DIRECT_SHA` to the SHA it pushes. Deleting `master` is
 refused too. Every push that does not target a master ref returns from the
@@ -766,11 +766,16 @@ contributor's own commit is what the projector publishes.
 
 ## Metrics and rollout verdict
 
-`metrics.jsonl` is append-only schema version 1. Current event types are:
+`metrics.jsonl` is append-only schema version 1. Lines written before
+2026-10-18 name the check event `floor_check` and an integrated ticket's
+verified SHA `exactFloorSha`; `readDeliveryMetrics`, the ticket reads in
+`delivery-queue.mjs` and the Roadmap lens reader map them to `landing_check`
+and `exactLandingCheckSha` where they read, and only the new names are
+written. Current event types are:
 
 | Event                                                                                                         | Important fields                                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `floor_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, the run's `slotMode` and `slotWaitMs`, `reused` (the candidate SHA and time of the pass it stood on) when no run happened, and for a flake the file identities, failing test names, and load average at the failure and the rerun |
+| `landing_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, the run's `slotMode` and `slotWaitMs`, `reused` (the candidate SHA and time of the pass it stood on) when no run happened, and for a flake the file identities, failing test names, and load average at the failure and the rerun |
 | `queue_admitted`                                                                                              | ticket ID/number and candidate SHA                                                                                                                                                                            |
 | `stale_owner`                                                                                                 | ticket, live PID, heartbeat age; no takeover occurred                                                                                                                                                         |
 | `stale_stop`                                                                                                  | prior and current bases before an automatic rebase                                                                                                                                                            |

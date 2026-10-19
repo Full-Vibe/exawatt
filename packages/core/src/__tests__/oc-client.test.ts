@@ -66,7 +66,7 @@ const flush = async (): Promise<void> => {
  * mocked auth module answers in a microtask, but the test that puts the real
  * device-id derivation back must wait for the digest to actually finish. That
  * is an effect, not a number of turns: one `setTimeout(0)` was enough on an
- * idle machine and not on a loaded landing floor or a two-worker CI runner,
+ * idle machine and not during loaded landing checks or on a two-worker CI runner,
  * where this test failed with the frame simply not sent yet (BUG-057's rule:
  * wait for the effect, never for a duration).
  */

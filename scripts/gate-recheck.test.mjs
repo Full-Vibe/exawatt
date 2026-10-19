@@ -82,7 +82,7 @@ async function landGated(upstream) {
     [RAIL_FILE]: 'export const rail = 1;\n',
     [THEME_FILE]: '{"name":"dark"}\n',
   });
-  // Another landing reaches master after this ticket's floor base.
+  // Another landing reaches master after this ticket's landing-check base.
   fixture.advanceMaster(upstream);
   const landed = await finished(
     fixture.land(worktree, DECLARE, {
@@ -118,7 +118,7 @@ test('a gate whose surface changed under the ticket re-runs on the rebased tree;
     const metrics = await readDeliveryMetrics(fixture.main);
     const rebased = metrics.filter(
       event =>
-        event.type === 'floor_check' &&
+        event.type === 'landing_check' &&
         event.phase === 'rebase' &&
         event.id === 'eval:roadmap:rail'
     );

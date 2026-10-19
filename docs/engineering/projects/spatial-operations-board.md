@@ -3157,7 +3157,7 @@ Do not relabel this as a source-specific fix. `BUG-263`'s display-density branch
 is verified; the reported frozen branch remains distinct from intentional
 battery/reduced-motion behavior and requires contemporaneous host/source facts
 if it recurs. Integrated `6cbf83e1d5af` (2026-10-04), public projection published.
-The full floor and declared chrome, split, spatial/emergence/pointer, navigation,
+The full landing checks and declared chrome, split, spatial/emergence/pointer, navigation,
 packaged Session-parity and terminal-fundamentals gates passed. Dogfood was
 queued at handoff, not yet installation evidence. Own server, worktree and
 branch were removed; retained evidence includes the landing log.
@@ -3391,7 +3391,7 @@ Verification: settings round trips, no-default-write, future-version recovery,
 invalid-write protection, same/cross-document propagation, hydration ordering,
 preview offer gating, and the existing Appearance/Settings suites. Signed-browser Settings captures and click/reload checks passed in Classic, Air
 and Night (`/tmp/exawatt-fleet-tiles-p2/settings-{classic,air,night}.png`).
-The normal landing floor verifies the bridge and Electron compile; dogfood is requested by
+The normal landing checks verify the bridge and Electron compile; dogfood is requested by
 the slice's landing.
 
 ### 2026-10-14 — V4.1 P3: v2 reaches look review on the board bench
@@ -3531,7 +3531,7 @@ sample measured 15.5% of one core on AC and 10.9% in economy, with 178 versus
 also retained exact homepage parity: zero differing pixels in all ten
 captures (five scenes at desktop and mobile widths).
 
-The delivery floor runs each declared gate on its exact committed candidate.
+The landing checks run each declared gate on its exact committed candidate.
 Browser and Electron Session/source journeys now select and assert both actual
 renderers, rather than allowing a v2 preference write to masquerade as coverage.
 The combined candidate passed the application suite, all material/theme/scale
@@ -3543,7 +3543,7 @@ confirmed two such updates with all 164 body inputs otherwise unchanged. The
 selection dependency now uses semantic Agent-to-Project ownership;
 the existing 50ms motion budget remains unchanged. Both views then passed every
 live and 1k motion flight. P4 integrated as `abcb46e37182` through ticket 658,
-with all 17 declared gates and the repository floor passing. The final v2 10k
+with all 17 declared gates and the repository landing checks passing. The final v2 10k
 Fleet flat/angled probes measured 16.8ms painted-frame p95 and zero parked
 frames. Live power checks retained full resolution and working indicators
 while lock and suspend produced zero rendering passes.

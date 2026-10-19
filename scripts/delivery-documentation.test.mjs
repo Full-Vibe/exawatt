@@ -18,7 +18,7 @@ test('agent instructions describe the queued delivery contract, not the retired 
   assert.match(agents, /rebases in the author's own bootstrapped worktree/);
   assert.match(agents, /`installed=queued` is not installed/);
   assert.match(agents, /every tracked path has an open-source disposition/);
-  // BUG-090: the floor re-runs a named failure alone before believing it, and
+  // BUG-090: the landing checks re-run a named failure alone before believing it, and
   // an agent that does not know that will still go hunting in the files the
   // machine's load named.
   assert.match(agents, /pnpm test:alone <paths\.\.\.>/);

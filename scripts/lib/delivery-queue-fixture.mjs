@@ -30,7 +30,7 @@ const LAND_SCRIPT = fileURLToPath(
 );
 const HOOKS_PATH = fileURLToPath(new URL('../../.githooks', import.meta.url));
 
-const FLOOR_SCRIPTS = {
+const LANDING_CHECK_SCRIPTS = {
   'open-source:paths:check': 'node -e "process.exit(0)"',
   'content:scan': 'node -e "process.exit(0)"',
   'type-check': 'node -e "process.exit(0)"',
@@ -84,7 +84,7 @@ export function createQueueFixture(
       {
         name: 'queue-fixture',
         private: true,
-        scripts: { ...FLOOR_SCRIPTS, ...scripts },
+        scripts: { ...LANDING_CHECK_SCRIPTS, ...scripts },
       },
       null,
       2

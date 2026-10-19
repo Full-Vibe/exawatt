@@ -613,6 +613,6 @@ test('every gate but a packaged one waits for the server, and a packaged one nev
   );
 });
 
-test('the mandatory R3F floor starts the same owned server before navigating', () => {
+test('the mandatory R3F landing check starts the same owned server before navigating', () => {
   assert.equal(gateNeedsDevServer('eval:r3f'), true);
 });

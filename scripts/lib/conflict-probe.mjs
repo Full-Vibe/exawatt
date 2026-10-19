@@ -107,7 +107,7 @@ export async function peekOriginMaster(root) {
 }
 
 /**
- * What the author reads when the probe refuses the change: before its floor
+ * What the author reads when the probe refuses the change: before its landing checks
  * (no ticket yet) or while its ticket waited.
  */
 export function probeConflictMessage({ ticketNumber, onto, commit, paths }) {
@@ -118,7 +118,7 @@ export function probeConflictMessage({ ticketNumber, onto, commit, paths }) {
     ...paths.map(file => `  ${file}`),
     `(first conflicting commit: ${commit.slice(0, 12)})`,
     ticketNumber === undefined
-      ? 'The head would refuse it after the whole floor, so nothing ran and no ticket was taken.'
+      ? 'The head would refuse it after all the landing checks, so nothing ran and no ticket was taken.'
       : 'The head would reach the same verdict when this ticket got there, so it leaves the queue now and stops holding a place; its attempt ref is preserved.',
     'Rebase onto origin/master, resolve, re-verify, and land again.',
   ].join('\n');

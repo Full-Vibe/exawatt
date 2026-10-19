@@ -676,7 +676,7 @@ async function runExactPublicCertification(options) {
 
 /**
  * Clone an already-materialized public candidate into disposable custody and
- * run the exact publication, build, runtime, package, and network floor. The
+ * run the exact publication, build, runtime, package, and network checks. The
  * caller supplies projector metadata so the returned evidence remains bound
  * to the immutable private/public SHA pair and projection-plan digest.
  */

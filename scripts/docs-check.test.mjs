@@ -21,7 +21,7 @@ import {
   classifyDeliveryPolicy,
   classifyDocsChecks,
 } from './lib/delivery-policy.mjs';
-import { FLOOR_VERIFIED_ENV } from './lib/docs-check.mjs';
+import { LANDING_CHECKS_VERIFIED_ENV } from './lib/docs-check.mjs';
 import { git, gitOutcome, hermeticGitEnv } from './lib/hermetic-git.mjs';
 
 /**
@@ -41,9 +41,9 @@ import { git, gitOutcome, hermeticGitEnv } from './lib/hermetic-git.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-test('docs:check runs the floor’s own check definitions', () => {
+test('docs:check runs the landing checks’ own check definitions', () => {
   const paths = ['docs/engineering/roadmap.md', 'AGENTS.md'];
-  const floor = new Map(
+  const landing = new Map(
     classifyDeliveryPolicy(paths).map(check => [check.id, check])
   );
   const docs = classifyDocsChecks(paths);
@@ -55,13 +55,13 @@ test('docs:check runs the floor’s own check definitions', () => {
   ]);
   for (const check of docs) {
     if (check === RECIPE_RENDERERS_CHECK) continue;
-    assert.deepEqual(check, floor.get(check.id), check.id);
+    assert.deepEqual(check, landing.get(check.id), check.id);
   }
-  // The floor runs the renderer contract inside `test:agent-delivery`.
+  // The landing checks run the renderer contract inside `test:agent-delivery`.
   const scripts = JSON.parse(
     readFileSync(path.join(ROOT, 'package.json'), 'utf8')
   ).scripts;
-  assert.ok(floor.has('test:agent-delivery'));
+  assert.ok(landing.has('test:agent-delivery'));
   assert.ok(
     scripts['test:agent-delivery']
       .split(' ')
@@ -78,7 +78,7 @@ test('docs:check runs the floor’s own check definitions', () => {
       .split(' ')
       .includes(RECIPE_RENDERERS_CHECK.args.at(-1))
   );
-  // Outside docs/engineering the roadmap contract is not owed, as on the floor.
+  // Outside docs/engineering the roadmap contract is not owed, as in the landing checks.
   assert.equal(
     classifyDocsChecks(['README.md']).some(
       check => check.id === 'roadmap-contract'
@@ -243,15 +243,15 @@ describe('the versioned pre-push hook', () => {
     assert.match(result.output, /outside the delivery queue/);
     assert.match(result.output, /pnpm agent:land -- --docs/);
     assert.match(result.output, /--no-verify` is for the recovery path/);
-    // A floor signal for any other commit is not a pass for this one.
-    const other = push({ [FLOOR_VERIFIED_ENV]: before });
+    // A landing-check signal for any other commit is not a pass for this one.
+    const other = push({ [LANDING_CHECKS_VERIFIED_ENV]: before });
     assert.equal(other.ok, false, other.output);
     assert.equal(remoteMaster(), before);
   });
 
-  it('trusts agent:land for exactly the SHA its floor verified', () => {
+  it('trusts agent:land for exactly the SHA its landing checks verified', () => {
     const sha = git(work, ['rev-parse', 'HEAD']);
-    const result = push({ [FLOOR_VERIFIED_ENV]: sha });
+    const result = push({ [LANDING_CHECKS_VERIFIED_ENV]: sha });
     assert.ok(result.ok, result.output);
     assert.doesNotMatch(result.output, /push refused/);
     assert.equal(remoteMaster(), sha);

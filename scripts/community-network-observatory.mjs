@@ -548,7 +548,7 @@ try {
   rmSync(userData, { recursive: true, force: true, maxRetries: 5 });
 }
 
-// End deliberately. A gate that does not EXIT hangs a landing floor forever,
+// End deliberately. A gate that does not EXIT hangs a landing forever,
 // and Playwright's transport sockets can outlive `app.close()` — one run held
 // the process open for minutes after printing its verdict. The write callback
 // is what makes this safe: `process.exit` truncates a pipe that has not

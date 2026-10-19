@@ -688,7 +688,7 @@ snapshot, never an intermediate layout storm.
   only form.
 - 2026-09-24 — BUG-207: the **no em dashes in operator copy** rung gains
   its check. `scripts/check-screen-copy.mjs` (`pnpm copy:check`, on the
-  landing floor for any `src/`, `packages/ui-model/src/` or overlay change)
+  landing checks for any `src/`, `packages/ui-model/src/` or overlay change)
   scans the string content production can reach, decided by the import
   graph from the routes rather than a list of studies, and fails on an em
   dash. 65 strings were rewritten first, among them every live tab's

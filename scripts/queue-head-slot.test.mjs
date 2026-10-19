@@ -58,7 +58,7 @@ test('the head re-checks its rebased tree while candidates hold every pool slot'
       })
     );
     await waitForOutput(candidate, output =>
-      /agent-land floor \(candidate\) is waiting/u.test(output)
+      /agent-land landing checks \(candidate\) is waiting/u.test(output)
     );
 
     await lock.release();
@@ -67,9 +67,9 @@ test('the head re-checks its rebased tree while candidates hold every pool slot'
       head,
       output =>
         /STATUS implemented=/u.test(output) ||
-        /agent-land floor \(rebase\) is waiting/u.test(output)
+        /agent-land landing checks \(rebase\) is waiting/u.test(output)
     );
-    assert.doesNotMatch(head.output(), /floor \(rebase\) is waiting/u);
+    assert.doesNotMatch(head.output(), /landing checks \(rebase\) is waiting/u);
     const landed = await finished(head);
     assert.equal(landed.code, 0, landed.output);
     assert.match(landed.output, /rebase onto/u);
@@ -79,7 +79,7 @@ test('the head re-checks its rebased tree while candidates hold every pool slot'
       'the candidate is still waiting for a pool slot'
     );
     const rebaseChecks = (await readDeliveryMetrics(fixture.main)).filter(
-      event => event.type === 'floor_check' && event.phase === 'rebase'
+      event => event.type === 'landing_check' && event.phase === 'rebase'
     );
     assert.ok(rebaseChecks.length > 0);
     for (const check of rebaseChecks) assert.equal(check.slotMode, 'acquired');

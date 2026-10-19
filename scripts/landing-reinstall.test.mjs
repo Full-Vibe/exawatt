@@ -26,7 +26,7 @@ import {
 
 /**
  * BUG-219: the landing reinstalls whenever node_modules is not the installed
- * form of the tree its floor is about to check. Ticket 476's queue-head rebase
+ * form of the tree its landing checks are about to check. Ticket 476's queue-head rebase
  * brought `e3115004`'s lockfile change in, nothing reinstalled, and its
  * re-check failed `test:agent-delivery` on a tree nobody committed.
  */
@@ -106,7 +106,7 @@ test('a queue rebase that changes the lockfile reinstalls exactly once, before t
       'src/change.ts': 'export const change = 1;\n',
     });
     installed(worktree, LOCK_V1);
-    // Another landing bumps a dependency after this ticket's floor base.
+    // Another landing bumps a dependency after this ticket's landing-check base.
     fixture.advanceMaster({ 'pnpm-lock.yaml': LOCK_V2 }, 'bump jsdom');
 
     const landed = await finished(
@@ -121,7 +121,7 @@ test('a queue rebase that changes the lockfile reinstalls exactly once, before t
     const rebaseChecks = lines.slice(install + 1);
     assert.ok(
       rebaseChecks.some(line => line === 'run type-check'),
-      'the rebased floor ran after the reinstall'
+      'the rebased landing checks ran after the reinstall'
     );
     assert.match(
       landed.output,
@@ -178,7 +178,7 @@ test('a queue rebase that leaves the lockfile alone reinstalls nothing', async (
   }
 });
 
-test('a worktree submitted with a stale install of its own lockfile is reinstalled before its floor', async () => {
+test('a worktree submitted with a stale install of its own lockfile is reinstalled before its landing checks', async () => {
   const fixture = lockedFixture('exawatt-reinstall-admission-');
   try {
     const log = fixture.at('pnpm.log');

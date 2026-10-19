@@ -88,6 +88,31 @@ export function percentile(values, percentage) {
   return sorted[Math.ceil((percentage / 100) * sorted.length) - 1];
 }
 
+/**
+ * Names `metrics.jsonl` used before 2026-10-18, when the required checks were
+ * renamed the landing checks. Records already written keep the old names, so
+ * every read maps them here, at the one boundary, and nothing downstream
+ * knows the old vocabulary. Writers only ever write the new names.
+ */
+const LEGACY_METRIC_TYPES = new Map([['floor_check', 'landing_check']]);
+const LEGACY_RECORD_FIELDS = new Map([
+  ['exactFloorSha', 'exactLandingCheckSha'],
+]);
+
+/** A persisted delivery record (a metric or a ticket result) in today's names. */
+export function normalizeDeliveryRecord(record) {
+  if (!record || typeof record !== 'object') return record;
+  let normalized = record;
+  const type = LEGACY_METRIC_TYPES.get(record.type);
+  if (type) normalized = { ...normalized, type };
+  for (const [legacy, current] of LEGACY_RECORD_FIELDS) {
+    if (!(legacy in normalized)) continue;
+    const { [legacy]: value, ...rest } = normalized;
+    normalized = { ...rest, [current]: rest[current] ?? value };
+  }
+  return normalized;
+}
+
 export async function readDeliveryMetrics(root) {
   const metricsPath = path.join(await deliveryStateRoot(root), 'metrics.jsonl');
   try {
@@ -95,7 +120,7 @@ export async function readDeliveryMetrics(root) {
     return content
       .split('\n')
       .filter(Boolean)
-      .map(line => JSON.parse(line));
+      .map(line => normalizeDeliveryRecord(JSON.parse(line)));
   } catch (error) {
     if (error?.code === 'ENOENT') return [];
     throw error;
@@ -107,7 +132,7 @@ export async function readDeliveryMetrics(root) {
 export function tallyFlakedFiles(events) {
   const counts = new Map();
   for (const event of events) {
-    if (event.type !== 'floor_check' || event.status !== 'flaked') continue;
+    if (event.type !== 'landing_check' || event.status !== 'flaked') continue;
     for (const entry of event.flakedFiles ?? []) {
       if (!entry?.file) continue;
       counts.set(entry.file, (counts.get(entry.file) ?? 0) + 1);
@@ -143,16 +168,16 @@ export function summarizeDeliveryMetrics(events) {
       95
     ),
     staleStopCount: events.filter(event => event.type === 'stale_stop').length,
-    floorFailures: events.filter(
-      event => event.type === 'floor_check' && event.status === 'failed'
+    landingCheckFailures: events.filter(
+      event => event.type === 'landing_check' && event.status === 'failed'
     ).length,
     // BUG-090: a check that failed and then passed with the machine to itself
-    // is kept, not hidden. The count says how often the floor had to re-run to
+    // is kept, not hidden. The count says how often a landing check had to re-run to
     // be believed; the per-file tally is what makes a real regression hiding
     // behind flakiness findable, because a genuine defect flakes repeatedly on
     // the same file while contention moves around.
     flakedChecks: events.filter(
-      event => event.type === 'floor_check' && event.status === 'flaked'
+      event => event.type === 'landing_check' && event.status === 'flaked'
     ).length,
     flakedFiles: tallyFlakedFiles(events),
     actionsMinutes: events

@@ -57,7 +57,7 @@ export interface RoadmapDeliveryTicket {
   terminalAt: number | null;
   integratedSha: string | null;
   failureReason: string | null;
-  /** The head is re-running its floor on a rebased tree: rebase-phase check
+  /** The head is re-running its landing checks on a rebased tree: rebase-phase check
    *  events exist in the metrics tail that the ticket has not recorded yet. */
   checking: boolean;
   /** The head is held on the public-projection latch. */
@@ -65,7 +65,7 @@ export interface RoadmapDeliveryTicket {
 }
 
 /**
- * A landing whose floor is running before admission: check events in the
+ * A landing whose landing checks are running before admission: check events in the
  * metrics tail name a candidate commit that has no ticket yet.
  */
 export interface RoadmapDeliveryCandidate {
@@ -91,9 +91,12 @@ export type RoadmapDeliveryRead =
       candidates: RoadmapDeliveryCandidate[];
       /** Ticket files that did not parse; counted, never hidden. */
       unreadableTickets: number;
-      /** Newest metrics event, or null when `metrics.jsonl` was unreadable
-       *  (then no `checking` state can be derived). */
+      /** Newest metrics event, or null when `metrics.jsonl` has none or
+       *  could not be read (then no `checking` state can be derived). */
       metricsAt: number | null;
+      /** Why `metrics.jsonl` exists but could not be read; absent when it
+       *  was read or does not exist yet. */
+      metricsUnreadable?: string;
     };
 
 /** What `roadmap:activity` resolves to: the repository's recent commits and

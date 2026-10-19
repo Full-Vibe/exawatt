@@ -88,7 +88,7 @@ jobs:
 
       # Committed artifacts that must match their one editable source, and the
       # ratchet that stops a surface inventing a colour. Each takes seconds.
-      # The landing floor runs them by changed path; this run reads a tree no
+      # The landing checks run them by changed path; this run reads a tree no
       # single landing touched all of, which is how `theme:check` sat red for
       # five weeks with nothing running it (BUG-208).
       - name: Check generated sources and theme paint
@@ -108,11 +108,11 @@ jobs:
 
       # The delivery-script pins — release packaging, the app icon, packaged-app
       # and renderer-archive assertions, the suite environment, the delivery
-      # policy itself — ran only on the landing floor. A change that reaches
+      # policy itself — ran only on the landing checks. A change that reaches
       # this ref without a landing (a Dependabot bump, a direct push) could
       # break a release guard and CI stayed green (BUG-136). They are
       # `node --test` with no build behind them, so they run here unconditionally,
-      # the same way lint is unconditional on the landing floor.
+      # the same way lint is unconditional on the landing checks.
       # The projection pins (public-projection, public-delivery,
       # contribution-pull) drive git-filter-repo, which the runner image does
       # not carry; developer machines install it with Homebrew. Without it 46
@@ -125,7 +125,7 @@ jobs:
         run: pnpm test:agent-delivery
 
       # Gate B and the rest of the publication gates over the WHOLE tracked
-      # tree. The landing floor scans only changed paths, so this is the only
+      # tree. The landing checks scan only changed paths, so this is the only
       # run that reads a file nobody touched.
       - name: Run publication gates
         run: pnpm publication:check

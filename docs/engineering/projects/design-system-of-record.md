@@ -65,9 +65,9 @@ Board project's V3.3 milestone log.
 - 2026-08-03, Consumption study retirement (landed, with ENG-008): the workbench rule ("retire a gallery study once its subject ships") applied to the shipped consumption loop — `/hud-gallery/consumption-lab` (2,523 lines, incl. its frozen `weights.ts`), `/hud-gallery/consumption-redesign` (2,769 lines), the `#ambient-consumption-meter` four-form study, and the importer-verified-dead components (`unit-ladder`, `assurance-legend`, `capacity`, `coverage`, `delegation`, `tightestWindow`/`reportingCoverage`) deleted; gallery index and its test updated; no eval referenced the retired routes. The gallery inventory table, off-scale register (17/19/25/26/28px row cleared; fractional scale down to one roadmap-lab use), and E6 amendment entry updated in `design-system.md` — its amendment-log entry is the canonical record; the full inventory is in the consumption-spine log.
 - 2026-09-24, screen-copy guard (landed; BUG-207; G3 partial): the Voice rung "no em dashes in operator copy" gains its check, and 65 strings were rewritten first. The worst were structural rather than cosmetic: every live tab's tooltip ("working — turn in progress"), the ⌘W close confirmation, and the Privacy table's destinations, whose twin had been fixed alone. Each was restructured, not comma-swapped: tooltips name the state as one phrase ("working on a turn", "new, ready for a first task"), the close confirmation states the cost in its own sentence, lists moved into parentheses, and "agents here will starve" became "nothing next for agents here".
   - **The check.** `scripts/check-screen-copy.mjs` (`pnpm copy:check`) parses JSX text, strings and template text and fails on U+2014. Scope is what production can render: the import graph from every route outside `/hud-gallery` and `/eval`, the top-level Next conventions, `@exawatt/ui-model`, and the company overlay composed into `src/` where an official build puts it. Studies, fixtures and tests fall out because only studies and tests import them, so there is no list of studies to rot. Comments and `console.*` never render; a string that is only an em dash is the empty-value glyph in a cell and is allowed.
-  - **Routing.** The landing floor runs it for any `src/`, `packages/ui-model/src/` or overlay change; its unit test rides `test:agent-delivery`. One capped exception: the one-click roadmap launch prompt in `workspace-client.tsx`, which is addressed to the Agent.
+  - **Routing.** The landing checks run it for any `src/`, `packages/ui-model/src/` or overlay change; its unit test rides `test:agent-delivery`. One capped exception: the one-click roadmap launch prompt in `workspace-client.tsx`, which is addressed to the Agent.
   - **Found alongside.** `theme:check` is red on master and nothing runs it (BUG-208), which is the failure this routing exists to prevent.
-- 2026-09-24, colour ratchet routed (landed; BUG-208): the Colour rung's check, `theme:check`, was red on master for five weeks with 18 raw colours over their caps, and none needed a bigger cap. The status light's `unreported` reading carried a second copy of `off`'s paint and now shares one `UNLIT_PAINT`; the hero capture stopped carrying harness brand colours, which its `source` lens now reads from the Agent Source declarations by id, so the capture's exception is deleted; and the Connect dialog's hand copy of OpenClaw's colour reads its declaration. The floor runs `theme:check` for any change that paints or decides paint, and CI runs it. [Narrative](theming-and-visual-identity.md#roadmap-milestone-log).
+- 2026-09-24, colour ratchet routed (landed; BUG-208): the Colour rung's check, `theme:check`, was red on master for five weeks with 18 raw colours over their caps, and none needed a bigger cap. The status light's `unreported` reading carried a second copy of `off`'s paint and now shares one `UNLIT_PAINT`; the hero capture stopped carrying harness brand colours, which its `source` lens now reads from the Agent Source declarations by id, so the capture's exception is deleted; and the Connect dialog's hand copy of OpenClaw's colour reads its declaration. The landing checks run `theme:check` for any change that paints or decides paint, and CI runs it. [Narrative](theming-and-visual-identity.md#roadmap-milestone-log).
 
 ### 2026-10-01 — Queued: one transient-state component (BUG-261)
 
@@ -248,7 +248,7 @@ supersession and evidence rather than creating another roadmap.
 **The paired increment is delivered.** `9d6b0d46` integrates
 comfortable Cmd+K/shared Dialog presentation, local keyboard cues, one feedback
 composer, immediate truthful receipts and shared notice placement after the
-normal floor and declared surface gates passed. The gallery study is retired.
+normal landing checks and declared surface gates passed. The gallery study is retired.
 This closes only the paired overlay/reporting increment; ENG-036's full G2
 component contracts, IA principles and recurring audit work remain open.
 
@@ -446,7 +446,7 @@ The normal queued dogfood worker installed that exact source SHA at
 confirm installation; the running app was not restarted and no second installer
 was invoked. This documentation receipt uses the lightweight docs lane.
 
-The full exact-tree floor passed: 713 delivery tests, 3,485 related tests
+The full exact-tree landing checks passed: 713 delivery tests, 3,485 related tests
 (10 existing skips), lint, both type checks, publication/export checks,
 community build plus 37 runtime checks, Electron compilation, roadmap contracts,
 and all ten R3F scenes at 100/100. All 31 required surface gates passed with
@@ -491,9 +491,9 @@ and pending-integration statements below are historical and superseded here.
 
 Delivery evidence: `.git/exawatt-delivery/metrics.jsonl`, ticket
 `00000577-3007f290`, and `/tmp/exawatt-final-rebased-land.log`.
-Earlier candidate `d94cf97b` also passed the full floor and 31 gates, but ticket
+Earlier candidate `d94cf97b` also passed the full landing checks and 31 gates, but ticket
 576 conflicted with upstream Fleet changes before integration. The narrow join
-was independently reviewed at `9a477167` and the entire floor reran on the
+was independently reviewed at `9a477167` and every landing check reran on the
 installed tree. Earlier locked-host retries and the renderer-ready fixture
 correction are diagnosis evidence, not substitutes for that final proof.
 
@@ -518,7 +518,7 @@ accepted purpose, attention and pause-first restart rules are not re-interviewed
 | Unknown-harness recovery / restart-owned delegated lane | Closed ledger and unavailable exact-resume behavior, BUG-209 | Preserve unknown records and explain unavailable capability; never coerce into a different harness. Coordinate workspace-model edits with restart. |
 
 Every lane bootstraps its own worktree and server, commits recoverable progress,
-uses the FIFO landing floor with its declared surface gates and dogfood where
+uses the FIFO landing checks with its declared surface gates and dogfood where
 applicable, then removes only its own landed branch/worktree. Cross-lane
 interfaces are coordinated before duplicate edits. The relevant owning project
 log records source findings, tests, current blockers and next steps. This table
@@ -556,7 +556,7 @@ heading while retaining accessible names, and provide optional purpose help on
 hover/focus/activation. Accepted height transitions preserve the same writing
 field and report context. Ticket 567 integrated
 `7254223b1028027e0443bc989331ab4943623c16`, with public projection published,
-normal floor and all declared gates passed, including R3F 100/100.
+normal landing checks and all declared gates passed, including R3F 100/100.
 
 Production deployment is READY at the exact source SHA and production aliases.
 Exact-SHA physical installation is confirmed at `2026-10-04T21:59:53.915Z`;
@@ -669,11 +669,11 @@ board geometry must not become the queue's data source.
 
 | Lane | Integrated evidence | Verification and remaining scope |
 | --- | --- | --- |
-| Gallery hygiene — BUG-061/138 | `bfce28fa9d16` (2026-10-04); public projection `a7f312d5ae1f` | Full delivery floor, production/community build and signed-browser smoke passed; desktop/mobile start at foundations without autofocus jumps or page overflow. T7/T9 render without errors and T9 activates once. Dead wrapper retired, active study machinery preserved. CSP text repair remains separate. Own server stopped and temporary worktree/branch removed; no dogfood install needed for this dev-only lane. |
-| Unknown Recently-closed source — BUG-209 | `f2cc99ea9800` (2026-10-04); public `246c1167af66` | Full floor: 2,933 tests/198 files; navigation-spine, Project-Agent and recents gates passed. Unknown source row stays retained/searchable with unavailable exact-resume action; no source substitution. Own server/worktree/branch removed. Dogfood requested, installation still queued at handoff. Open-layout compatibility remains a separate assessment. |
-| Delegation census foundation — D6 / BUG-134 partial | `2b1bccdbe9f6` (2026-10-04); public projection published | Full rebase floor, 688 related tests and R3F 100/100 passed. Membership and exact aggregate filter counts precede drawing budgets. Full query/inspection remains deferred with the operator-rejected-for-now popover. Foundation server/worktree/branch removed; deferred gallery branch intentionally retained. Dogfood queued at handoff. |
-| Gallery labels / incident 0033 | `2351022470c1` (2026-10-04); public projection published | DOM-projected labels preserve pointer pass-through, hover and reduced motion under unchanged CSP. Full floor and real desktop/narrow gallery gate passed after rebase. Unused 144 KB font retired. Own server/worktree/branch/attempt refs removed; dev-gallery-only, no dogfood request. |
-| Spatial performance / BUG-262/268; BUG-263 partial | `6cbf83e1d5af` (2026-10-04); public `c7a95aacf834` | Full floor, R3F and declared browser/Electron gates passed, including packaged parity and terminal replay. First-visible attachment removes the measured 30-Session stall; DPR change updates without remount; stopped outline shares lifecycle meaning. Frozen-source recurrence and BUG-113 remain open. Own server/worktree/branch/attempt refs removed; dogfood queued at handoff. |
+| Gallery hygiene — BUG-061/138 | `bfce28fa9d16` (2026-10-04); public projection `a7f312d5ae1f` | Full landing checks, production/community build and signed-browser smoke passed; desktop/mobile start at foundations without autofocus jumps or page overflow. T7/T9 render without errors and T9 activates once. Dead wrapper retired, active study machinery preserved. CSP text repair remains separate. Own server stopped and temporary worktree/branch removed; no dogfood install needed for this dev-only lane. |
+| Unknown Recently-closed source — BUG-209 | `f2cc99ea9800` (2026-10-04); public `246c1167af66` | Full landing checks: 2,933 tests/198 files; navigation-spine, Project-Agent and recents gates passed. Unknown source row stays retained/searchable with unavailable exact-resume action; no source substitution. Own server/worktree/branch removed. Dogfood requested, installation still queued at handoff. Open-layout compatibility remains a separate assessment. |
+| Delegation census foundation — D6 / BUG-134 partial | `2b1bccdbe9f6` (2026-10-04); public projection published | Full rebase landing checks, 688 related tests and R3F 100/100 passed. Membership and exact aggregate filter counts precede drawing budgets. Full query/inspection remains deferred with the operator-rejected-for-now popover. Foundation server/worktree/branch removed; deferred gallery branch intentionally retained. Dogfood queued at handoff. |
+| Gallery labels / incident 0033 | `2351022470c1` (2026-10-04); public projection published | DOM-projected labels preserve pointer pass-through, hover and reduced motion under unchanged CSP. Full landing checks and real desktop/narrow gallery gate passed after rebase. Unused 144 KB font retired. Own server/worktree/branch/attempt refs removed; dev-gallery-only, no dogfood request. |
+| Spatial performance / BUG-262/268; BUG-263 partial | `6cbf83e1d5af` (2026-10-04); public `c7a95aacf834` | Full landing checks, R3F and declared browser/Electron gates passed, including packaged parity and terminal replay. First-visible attachment removes the measured 30-Session stall; DPR change updates without remount; stopped outline shares lifecycle meaning. Frozen-source recurrence and BUG-113 remain open. Own server/worktree/branch/attempt refs removed; dogfood queued at handoff. |
 
 Evidence screenshots remain in `/tmp/exawatt-gallery-hygiene/`; durable facts
 and contract checks live in the integrated code/tests and this ledger, so a
@@ -705,7 +705,7 @@ source-specific async resolution, independent completion retention, silent
 completed-truth recovery, global source outage, same-question restore dedupe,
 working-question Fleet projection, paused focus and terminal-bell liveness.
 Final existing update/native restart copy is being verified separately; the
-normal floor and declared surface gates still precede integration. The approved
+normal landing checks and declared surface gates still precede integration. The approved
 corner dot follows purpose's shared header repair, without adding optional scope
 to the frozen source/restart gate run.
 
@@ -780,7 +780,7 @@ Follow-through delivery is consolidated under `agent/polish-attention` after the
 initial restart stack integrates: authoritative roadmap notifications/operator
 reminders, Fleet Cmd+J/retained read ownership, and BUG-273 raw source recovery
 will share one reviewed combined tree and the union of all required surface
-gates, with dogfood requested. No floor or gate is waived. This avoids three
+gates, with dogfood requested. No landing check or gate is waived. This avoids three
 successive deliveries changing the same contracts and repeating their heavy
 checks; the implementation/review lanes remain independent.
 
@@ -812,7 +812,7 @@ with no remaining P1/P2 findings. Focused checks cover model/pause admission,
 source recovery, Demo inspection, monitor records and switcher projection;
 TypeScript and Electron compilation pass. Reminder intent is nonblocking in
 model changes and Project pause as well as navigation. Attention owns the
-normal floor plus all 28 required surface gates after the initial stack lands;
+normal landing checks plus all 28 required surface gates after the initial stack lands;
 review approval is not integration or installation evidence.
 
 
@@ -839,7 +839,7 @@ SIGTERM handler before parent exit triggered process-group cleanup. The test
 now waits for a child-ready IPC message sent after handler registration.
 Independent review and all 30 tests in the file pass; the TERM sentinel,
 no-survivor assertion and original grace remain unchanged. This is a test
-ordering correction, not a weakened delivery floor. A separate queue-hold
+ordering correction, not a weakened set of landing checks. A separate queue-hold
 watchdog failure passed isolation and did not justify a product or timeout edit.
 
 
@@ -901,4 +901,4 @@ record reported `CGSSessionScreenIsLocked: Yes`. This falsifies a lost read
 receipt in that run. The gate now waits for native window focus and names the
 locked/foreground precondition explicitly; the product guard is unchanged.
 The operator unlock request remains pending. Continue independent checks, then
-rerun the unchanged full delivery floor after real foreground proof is possible.
+rerun the unchanged full landing checks after real foreground proof is possible.

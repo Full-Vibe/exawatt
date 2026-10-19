@@ -6,7 +6,7 @@ import test from 'node:test';
 import { parseArgs } from './agent-land.mjs';
 import {
   DIRECT_RECOVERY_ENV,
-  FLOOR_VERIFIED_ENV,
+  LANDING_CHECKS_VERIFIED_ENV,
   guardMasterPush,
 } from './lib/docs-check.mjs';
 import { docsLaneRefusal } from './lib/docs-lane.mjs';
@@ -74,16 +74,23 @@ test('the hook excuses exactly the SHA agent:land states, never a deletion', asy
         env,
       });
     assert.equal((await guard({})).verdict, 'refuse');
-    assert.equal((await guard({ [FLOOR_VERIFIED_ENV]: sha })).verdict, 'skip');
+    assert.equal(
+      (await guard({ [LANDING_CHECKS_VERIFIED_ENV]: sha })).verdict,
+      'skip'
+    );
     assert.equal((await guard({ [DIRECT_RECOVERY_ENV]: sha })).verdict, 'skip');
     assert.equal(
-      (await guard({ [FLOOR_VERIFIED_ENV]: '1'.repeat(40) })).verdict,
+      (await guard({ [LANDING_CHECKS_VERIFIED_ENV]: '1'.repeat(40) })).verdict,
       'refuse',
-      'a floor signal for another commit is not a pass for this one'
+      'a landing-check signal for another commit is not a pass for this one'
     );
     assert.equal(
-      (await guard({ [FLOOR_VERIFIED_ENV]: '0'.repeat(40) }, '0'.repeat(40)))
-        .verdict,
+      (
+        await guard(
+          { [LANDING_CHECKS_VERIFIED_ENV]: '0'.repeat(40) },
+          '0'.repeat(40)
+        )
+      ).verdict,
       'refuse',
       'deleting master is a push to master'
     );
@@ -175,7 +182,7 @@ test('the docs lane rebases onto a moved master and moves the checkout with it',
     assert.equal(
       output.match(/passed recipe-renderers/gu).length,
       2,
-      'the rebased tree is re-checked with the docs checks, not the full floor'
+      'the rebased tree is re-checked with the docs checks, not the full landing checks'
     );
     const integrated = fixture.originMaster();
     assert.notEqual(integrated, candidate);

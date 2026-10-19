@@ -23,7 +23,7 @@ import { classifyDocsChecks } from './delivery-policy.mjs';
  * in seconds, and the hook refuses every other push to origin's `master`.
  *
  * The checks are the landing checks a documentation change can fail, taken
- * from `classifyDocsChecks` so they are the floor's own definitions, run in
+ * from `classifyDocsChecks` so they are the landing checks' own definitions, run in
  * parallel without a machine slot: they have to stay fast enough to sit in
  * front of an operator's answer.
  */
@@ -34,16 +34,16 @@ const PUSH_GUARD_REMOTE = 'origin';
 const PUSH_GUARD_REF = 'refs/heads/master';
 
 /**
- * Set by `agent:land` on its final push to the SHA its floor just verified.
+ * Set by `agent:land` on its final push to the SHA its landing checks just verified.
  * It excuses exactly that commit, so it is not a general bypass: any other
  * SHA, or no variable, is refused.
  */
-export const FLOOR_VERIFIED_ENV = 'EXAWATT_AGENT_LAND_FLOOR_SHA';
+export const LANDING_CHECKS_VERIFIED_ENV = 'EXAWATT_AGENT_LAND_CHECKED_SHA';
 
 /**
  * Set by the operator-only `agent:land -- --direct` recovery path, which is
  * already gated on `EXAWATT_AGENT_LAND_ALLOW_DIRECT=1`, to the one SHA it
- * pushes. Like the floor variable it excuses exactly that commit.
+ * pushes. Like the landing-check variable it excuses exactly that commit.
  */
 export const DIRECT_RECOVERY_ENV = 'EXAWATT_AGENT_LAND_DIRECT_SHA';
 
@@ -127,7 +127,7 @@ function runCheck(root, check, env) {
   });
 }
 
-/** Runs the docs subset of the floor for these changed paths, in parallel. */
+/** Runs the docs subset of the landing checks for these changed paths, in parallel. */
 export async function runDocsChecks({
   root,
   paths,
@@ -181,7 +181,7 @@ async function isGuardedRemote(root, remoteName, remoteUrl) {
  * The pre-push decision (BUG-200). `skip` covers every push this hook does
  * not own; `refuse` covers every other push to origin's `master`, because the
  * only writer of `master` is the delivery queue. A push is excused only when
- * `agent:land` stated the exact SHA it is pushing, from its floor-verified
+ * `agent:land` stated the exact SHA it is pushing, from its landing-check-verified
  * final push or from the operator-gated `--direct` recovery path.
  */
 export async function guardMasterPush({
@@ -197,7 +197,7 @@ export async function guardMasterPush({
     return { verdict: 'skip', reason: 'not-origin' };
   const excused = update =>
     !ZERO_SHA.test(update.localSha) &&
-    (update.localSha === env[FLOOR_VERIFIED_ENV] ||
+    (update.localSha === env[LANDING_CHECKS_VERIFIED_ENV] ||
       update.localSha === env[DIRECT_RECOVERY_ENV]);
   if (master.every(excused)) return { verdict: 'skip', reason: 'agent-land' };
   return {

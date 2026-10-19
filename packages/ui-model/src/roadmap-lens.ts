@@ -66,7 +66,7 @@ export interface RoadmapRecentChange {
 /**
  * Landing state on an item (S16): where the ticket that names this item is in
  * the Project repository's delivery queue. `checking` before admission is a
- * floor running on a candidate commit; `checking` at the head is the floor
+ * landing checks running on a candidate commit; `checking` at the head is the landing checks
  * running again on a rebased tree.
  */
 export type RoadmapLandingState =
@@ -98,7 +98,7 @@ export interface RoadmapItemLanding {
 export interface RoadmapLensLandings {
   /** Tickets queued or integrating. */
   inQueue: number;
-  /** Pre-admission floors running. */
+  /** Pre-admission landing checks running. */
   checking: number;
   head: {
     ticketNumber: number;

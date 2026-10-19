@@ -76,7 +76,7 @@ export const TICKET_INTEGRATED_DOCS = {
   "result": {
     "integratedSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
     "lockHoldMs": 12220,
-    "exactFloorSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
+    "exactLandingCheckSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
     "queueWaitMs": 78,
     "publicState": "published",
     "publicSha": "9511b7f459577ca480cf9cc61f30031fd269c7a6"
@@ -702,7 +702,7 @@ export const TICKET_INTEGRATED_WORKTREE = {
   "result": {
     "integratedSha": "19712d6ff5b032586aee5a8fe9f45e3cc3be9c44",
     "lockHoldMs": 25361,
-    "exactFloorSha": "19712d6ff5b032586aee5a8fe9f45e3cc3be9c44",
+    "exactLandingCheckSha": "19712d6ff5b032586aee5a8fe9f45e3cc3be9c44",
     "queueWaitMs": 76,
     "publicState": "published",
     "publicSha": "3e4e9392ff108ba96f31a17de73d571689ac15bb"
@@ -954,11 +954,11 @@ export const TICKET_FAILED_REBASE = {
   "headAt": "2026-10-05T03:18:10.840Z"
 } as const;
 
-/** Rebase-phase floor checks the head recorded for TICKET_FAILED_REBASE. */
+/** Rebase-phase landing checks the head recorded for TICKET_FAILED_REBASE. */
 export const METRICS_REBASE_CHECKS = [
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T03:21:10.452Z",
     "ticketId": "00000574-fed099b0",
     "candidateSha": "08465d517211a44c6965d65f88134e8a1e56e3a3",
@@ -972,7 +972,7 @@ export const METRICS_REBASE_CHECKS = [
   },
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T03:21:11.807Z",
     "ticketId": "00000574-fed099b0",
     "candidateSha": "08465d517211a44c6965d65f88134e8a1e56e3a3",
@@ -986,11 +986,11 @@ export const METRICS_REBASE_CHECKS = [
   }
 ] as const;
 
-/** Candidate-phase floor checks for a landing whose first check failed (no ticket ever followed). */
+/** Candidate-phase landing checks for a landing whose first check failed (no ticket ever followed). */
 export const METRICS_CANDIDATE_FAILED = [
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T04:04:20.522Z",
     "candidateSha": "1e420426932747cdad9a051f741b76d2fc45d67a",
     "id": "recipe-renderers",
@@ -1002,7 +1002,7 @@ export const METRICS_CANDIDATE_FAILED = [
   },
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T04:04:20.534Z",
     "candidateSha": "1e420426932747cdad9a051f741b76d2fc45d67a",
     "id": "open-source:paths:check",
@@ -1014,7 +1014,7 @@ export const METRICS_CANDIDATE_FAILED = [
   },
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T04:04:20.546Z",
     "candidateSha": "1e420426932747cdad9a051f741b76d2fc45d67a",
     "id": "content:scan",
@@ -1026,7 +1026,7 @@ export const METRICS_CANDIDATE_FAILED = [
   },
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T04:04:20.557Z",
     "candidateSha": "1e420426932747cdad9a051f741b76d2fc45d67a",
     "id": "roadmap-contract",
@@ -1038,11 +1038,11 @@ export const METRICS_CANDIDATE_FAILED = [
   }
 ] as const;
 
-/** Candidate-phase floor checks that all passed; TICKET_INTEGRATED_DOCS was admitted right after. */
+/** Candidate-phase landing checks that all passed; TICKET_INTEGRATED_DOCS was admitted right after. */
 export const METRICS_CANDIDATE_PASSED = [
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T04:04:45.507Z",
     "candidateSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
     "id": "recipe-renderers",
@@ -1054,7 +1054,7 @@ export const METRICS_CANDIDATE_PASSED = [
   },
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T04:04:45.519Z",
     "candidateSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
     "id": "open-source:paths:check",
@@ -1066,7 +1066,7 @@ export const METRICS_CANDIDATE_PASSED = [
   },
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T04:04:45.531Z",
     "candidateSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
     "id": "content:scan",
@@ -1078,7 +1078,7 @@ export const METRICS_CANDIDATE_PASSED = [
   },
   {
     "schemaVersion": 1,
-    "type": "floor_check",
+    "type": "landing_check",
     "at": "2026-10-05T04:04:45.542Z",
     "candidateSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
     "id": "roadmap-contract",
@@ -1111,7 +1111,7 @@ export const METRICS_TERMINAL = [
     "queueWaitMs": 78,
     "integratedSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
     "lockHoldMs": 12220,
-    "exactFloorSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
+    "exactLandingCheckSha": "fe255b13b1d97fccd37aef311555d003b9d96b8f",
     "publicState": "published",
     "publicSha": "9511b7f459577ca480cf9cc61f30031fd269c7a6"
   }

@@ -322,7 +322,7 @@ test('a successful run binds both SHAs, strips secrets, and removes all temp sta
   assert.equal(existsSync(fixture.temporaryRoot), false);
 });
 
-test('an already-materialized candidate runs the same clean-room floor', async t => {
+test('an already-materialized candidate runs the same clean-room checks', async t => {
   const fixture = await createFixture();
   t.after(fixture.cleanup);
   const candidateRepo = path.join(fixture.parent, 'candidate');
@@ -342,7 +342,7 @@ test('an already-materialized candidate runs the same clean-room floor', async t
     clone: fixture.clone,
     createTemporaryRoot: fixture.createTemporaryRoot,
     run: runner.run,
-    gates: [fixtureGate('candidate-floor')],
+    gates: [fixtureGate('candidate-checks')],
     log: line => logs.push(line),
   });
 
@@ -350,7 +350,7 @@ test('an already-materialized candidate runs the same clean-room floor', async t
   assert.equal(evidence.sourceSha, projection.sourceSha);
   assert.equal(evidence.publicSha, projection.publicSha);
   assert.equal(evidence.planDigest, projection.planDigest);
-  assert.deepEqual(runner.gateCalls, ['candidate-floor']);
+  assert.deepEqual(runner.gateCalls, ['candidate-checks']);
   assert.ok(logs[0].includes('certifying materialized candidate'));
   assert.equal(existsSync(fixture.temporaryRoot), false);
 });

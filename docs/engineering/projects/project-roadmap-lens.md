@@ -614,9 +614,9 @@ directory; this slice reads it and draws it on the rows it is about.
   resolves `{ changes, landings }`; no new channel, and the hook polls that
   read every ten seconds while the lens is mounted because a head crosses the
   queue in about that long. `checking` is derived honestly: before admission
-  from candidate-phase `floor_check` events for a commit no ticket names
+  from candidate-phase `landing_check` events for a commit no ticket names
   (dropped on a failed check, a conflict probe, admission, or ten quiet
-  minutes); at the head from rebase-phase `floor_check` events the ticket has
+  minutes); at the head from rebase-phase `landing_check` events the ticket has
   not recorded on itself yet. Its tests run over real tickets and metrics
   lines captured from this machine's queue on 2026-10-05
   (`delivery-queue.fixtures.ts`).

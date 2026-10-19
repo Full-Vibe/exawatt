@@ -219,7 +219,7 @@ describe('readDeliveryState over real queue shapes', () => {
     expect(read.tickets[0].checking).toBe(false);
   });
 
-  it('reports a pre-admission floor as a candidate until it fails, conflicts, is admitted, or goes quiet', async () => {
+  it('reports a commit whose landing checks run before admission as a candidate until it fails, conflicts, is admitted, or goes quiet', async () => {
     const root = await stateRoot();
     const now = Date.parse(METRICS_CANDIDATE_PASSED.at(-1)!.at) + 30_000;
     const passedSha = METRICS_CANDIDATE_PASSED[0].candidateSha;
@@ -410,6 +410,51 @@ describe('readDeliveryState honesty', () => {
     if (read.status !== 'ok') return;
     expect(read.unreadableTickets).toBe(2);
     expect(read.tickets.map(t => t.id)).toEqual([TICKET_INTEGRATED_DOCS.id]);
+  });
+
+  it('says why a metrics file that exists cannot be read, instead of reading it as empty', async () => {
+    const root = await stateRoot();
+    // A directory where the file belongs: it opens, and every read fails.
+    await fs.promises.mkdir(path.join(root, 'metrics.jsonl'));
+    const read = await readDeliveryState({
+      stateRoot: root,
+      subjectFor: async () => null,
+      now: () => NOW,
+    });
+    expect(read.status).toBe('ok');
+    if (read.status !== 'ok') return;
+    expect(read.metricsAt).toBeNull();
+    expect(read.metricsUnreadable).toMatch(
+      /^delivery metrics not readable \(EISDIR\) at /
+    );
+  });
+
+  it('reads check events written before the landing-check rename', async () => {
+    // Lines agent:land wrote before 2026-10-18 name the type `floor_check`.
+    const legacy = (events: readonly { type: string }[]) =>
+      events.map(event =>
+        event.type === 'landing_check'
+          ? { ...event, type: 'floor_check' }
+          : event
+      );
+    const now = Date.parse(METRICS_CANDIDATE_PASSED.at(-1)!.at) + 30_000;
+    const reads = [];
+    for (const events of [
+      METRICS_CANDIDATE_PASSED,
+      legacy(METRICS_CANDIDATE_PASSED),
+    ]) {
+      const root = await stateRoot();
+      await writeMetrics(root, events);
+      reads.push(
+        await readDeliveryState({
+          stateRoot: root,
+          subjectFor: async () => null,
+          now: () => now,
+        })
+      );
+    }
+    expect(reads[1]).toEqual(reads[0]);
+    expect(reads[0].status === 'ok' && reads[0].candidates).toHaveLength(1);
   });
 
   it('reports a readable queue with no metrics file as ok with no metrics time', async () => {

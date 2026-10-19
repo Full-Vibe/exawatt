@@ -217,7 +217,7 @@ test('the probe is off when its interval is zero', async () => {
   }
 });
 
-test('a change that already conflicts is refused before its floor runs', async () => {
+test('a change that already conflicts is refused before its landing checks run', async () => {
   const fixture = createQueueFixture('exawatt-probe-upfront-');
   try {
     const worktree = fixture.agentWorktree('agent/late', {
@@ -236,10 +236,10 @@ test('a change that already conflicts is refused before its floor runs', async (
       )
     );
     assert.match(output, /nothing ran and no ticket was taken/u);
-    assert.doesNotMatch(output, /candidate floor/u);
+    assert.doesNotMatch(output, /candidate landing checks/u);
     const metrics = await readDeliveryMetrics(fixture.main);
     assert.equal(
-      metrics.filter(event => event.type === 'floor_check').length,
+      metrics.filter(event => event.type === 'landing_check').length,
       0
     );
     assert.equal(

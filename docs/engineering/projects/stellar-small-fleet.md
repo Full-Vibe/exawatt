@@ -12,7 +12,7 @@ The normal queued dogfood worker installed that exact source SHA at
 confirm installation; the running app was not restarted and no second installer
 was invoked. This documentation receipt uses the lightweight docs lane.
 
-The full exact-tree floor passed: 713 delivery tests, 3,485 related tests
+The full exact-tree landing checks passed: 713 delivery tests, 3,485 related tests
 (10 existing skips), lint, both type checks, publication/export checks,
 community build plus 37 runtime checks, Electron compilation, roadmap contracts,
 and all ten R3F scenes at 100/100. All 31 required surface gates passed with
@@ -57,9 +57,9 @@ and pending-integration statements below are historical and superseded here.
 
 Delivery evidence: `.git/exawatt-delivery/metrics.jsonl`, ticket
 `00000577-3007f290`, and `/tmp/exawatt-final-rebased-land.log`.
-Earlier candidate `d94cf97b` also passed the full floor and 31 gates, but ticket
+Earlier candidate `d94cf97b` also passed the full landing checks and 31 gates, but ticket
 576 conflicted with upstream Fleet changes before integration. The narrow join
-was independently reviewed at `9a477167` and the entire floor reran on the
+was independently reviewed at `9a477167` and every landing check reran on the
 installed tree. Earlier locked-host retries and the renderer-ready fixture
 correction are diagnosis evidence, not substitutes for that final proof.
 
@@ -991,7 +991,7 @@ paused`, `1 Agent needs reconnection`, `Resuming 1 of 2 Agents…`) come
 
   - **The same trap, an hour later, in this session.** This is not a rare
     shape and it is not a comment on that agent. Landing THIS finding failed
-    the floor on `check-dependency-licenses` — "THIRD_PARTY_NOTICES.md is
+    the landing checks on `check-dependency-licenses` — "THIRD_PARTY_NOTICES.md is
     stale" — which had nothing to do with the change: the worktree was cut
     from `f234e06`, and `96a4660` regenerated those notices afterwards. The
     branch was carrying a baseline that had aged out from under it, exactly
@@ -2164,7 +2164,7 @@ operator-gate predicate; 100 monitor/switcher tests passed. Operator reminders
 remain orthogonal to execution, interruption confirmation and source requests.
 
 Delivery is blocked only on sequencing the original stack first, then running
-this exact combined candidate through the normal floor, the union of 28 surface
+this exact combined candidate through the normal landing checks, the union of 28 surface
 gates and a queued dogfood installation. No gate is waived. Final independent
 combined review is requested before queue admission. Purpose and approved
 unread-marker production adoption remain separate from this scope.
@@ -2183,7 +2183,7 @@ and status tests pass. The worktree is `exawatt-polish-attention`, branch
 
 This supersedes the preceding checkpoint's pending review and older dependency
 SHA. Implementation remains unintegrated: wait for the original recovery stack
-to reach `origin/master`, then run the normal floor and all 28 declared surface
+to reach `origin/master`, then run the normal landing checks and all 28 declared surface
 gates with `--dogfood`. No gate waiver or visual adoption is included. Original
 Fleet and source-compatibility contributor branches remain recoverable until
 this combined delivery integrates.
@@ -2198,7 +2198,7 @@ canon `9886c07d`. All are composed in this worktree. This supersedes every
 earlier instruction here to wait for a separate recovery landing or deliver
 purpose/unread independently. Contributor branches remain recovery checkpoints.
 
-The union currently requires 30 surface gates, the full repository-owned floor
+The union currently requires 30 surface gates, the full repository-owned landing checks
 and dogfood. Final composition review and focused checks precede that run;
 no integration or installation is claimed yet. The root checkpoint in ENG-036
 owns the exact post-integration receipt and contributor cleanup checklist.

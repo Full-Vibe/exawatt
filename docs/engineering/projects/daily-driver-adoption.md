@@ -2026,14 +2026,14 @@ round-trip on macOS with Little Snitch.
     rather than a second one bolted on.
 
   - **Surface gates (infrastructure).** Found while reviewing D50: the
-    landing floor ran ZERO browser gates for a change to `tab-strip.tsx`,
+    landing checks ran ZERO browser gates for a change to `tab-strip.tsx`,
     the most motion-sensitive surface in the app, which owns two eval
-    scripts and five acceptance gates. The floor routes changed paths to
+    scripts and five acceptance gates. The landing checks route changed paths to
     exactly one of the repository's 31 eval gates (`eval:r3f`), and
     `qa:browser:doctor` only fires when the harness itself changes, not the
     surfaces it guards. The reason is structural — every browser/Electron
-    eval needs an `EXA_BASE` dev server the floor does not own — which is
-    why nobody wired them: they cannot be run unattended. So the floor now
+    eval needs an `EXA_BASE` dev server the landing checks do not own — which is
+    why nobody wired them: they cannot be run unattended. So the landing checks now
     requires them to be DECLARED rather than running them, refusing before
     any expensive work and printing the exact commands, with
     `--waive-gate` for a gate that genuinely does not apply. Both refusals
@@ -5420,10 +5420,10 @@ session's entry (`agent/oss-wp5a-ci`) into this tree with conflicts. Nothing
 was lost (the entry survives; the foreign files were reverted by name and
 `drop`/`clear` were never run), but resolving those conflicts and committing
 would have landed another agent's half-finished work under this commit. The
-second: run `pnpm install` after any rebase before believing a floor failure,
+second: run `pnpm install` after any rebase before believing a landing-check failure,
 because a landing that adds a dependency makes every older worktree's
 `node_modules` incomplete and the `ERR_MODULE_NOT_FOUND` surfaces inside an
-unrelated floor check.
+unrelated landing check.
 
 ### Evidence
 
@@ -6216,7 +6216,7 @@ once a tab is active, this step follows a full reload, and a press that lands
 before rehydration hits an unavailable verb and is dropped — after which no
 amount of waiting can recover it. Making the preceding `recentProjects` step
 finish as soon as its condition held moved the press EARLIER and made the
-failure reproducible in the landing floor, which is the useful thing a fixed
+failure reproducible in the landing checks, which is the useful thing a fixed
 sleep had been hiding. The step now waits for `[data-tab-id="spine-tab"]
 [data-active]`, presses once, and then waits for the editor. That readiness
 wait reports as this step's own FAIL rather than throwing, because an aborted
@@ -6885,7 +6885,7 @@ boundary; downstream vendor credential custody remains a separate decision.
 | `agent/adoption-setup` | D54 / BUG-116 and setup races | Hydration regression repaired; real source gate passed | Further setup-race checks and integration |
 | `agent/adoption-native-spike` | ENG-003 / D71 | Read-only retained history proved for both sources without starting work | Persist matrix; choose bounded adapter path |
 | `agent/adoption-reading-gallery` | D71 | Reading prototype and five behavior tests pass; signed-browser review complete | Operator visual review; no live Session wiring yet |
-| `agent/adoption-coordination` | D72 / BUG-118, cross-lane progress | Two startup-auth regressions red before repair, 12 tests green after | Navigation gate, delivery floor and integrated evidence |
+| `agent/adoption-coordination` | D72 / BUG-118, cross-lane progress | Two startup-auth regressions red before repair, 12 tests green after | Navigation gate, landing checks and integrated evidence |
 
 This table records a dated checkpoint, not another roadmap. Later entries
 supersede these candidate states. Each owner pushes atomic checkpoints, uses
@@ -6947,7 +6947,7 @@ labels and local-only summary policy remain covered.
 Verification checkpoint: 29 catalog tests pass, including six new scenario tests;
 Electron TypeScript compilation and focused ESLint pass. The real Electron
 recents gate passes all 17 checks, including exact resume and draft consumption;
-the repository floor passes. Integration and installation are pending at this
+the repository landing checks pass. Integration and installation are pending at this
 checkpoint. This repairs
 reproduced causes and does not claim every historical missing-Claude report is
 explained. BUG-062 and the rest of D70 retain their separate owners and exits.
@@ -7056,7 +7056,7 @@ statements for these slices. The source-refresh ordering investigation
 | Slice | Integrated commit | Evidence and remaining boundary |
 | --- | --- | --- |
 | D67 Codex reconciliation | `0ec10751` | 50 focused scenarios, bounded observer reads, independent review, real Electron delegation and Project/Agent gates. Broader source faults and explicit unknown styling remain open. |
-| D54 / BUG-116 and BUG-119 source setup | `885df078` | SSR/client initial state agrees, source-switch cancellation rejects old action results, setup aliases improve discovery. The restored source gate, navigation gate, related tests and repository floor pass. |
+| D54 / BUG-116 and BUG-119 source setup | `885df078` | SSR/client initial state agrees, source-switch cancellation rejects old action results, setup aliases improve discovery. The restored source gate, navigation gate, related tests and repository landing checks pass. |
 | BUG-122 compact workspace chrome | `daf89a58` | Controls fit at 560–1600px, including larger text and Demo; both navigation and chrome gates pass. |
 
 The dogfood worker recorded `c7557564` installed at 2026-09-08 00:58 UTC,
@@ -7077,7 +7077,7 @@ Resume from canonical state rather than old temporary branches:
 | Cold launch and missing Claude | D70: retain BUG-062 and the original BUG-117 observation until matching conditions reproduce or the operator confirms. Probe timings are diagnostic samples, not a launch-speed claim. |
 | Packaged adoption | D72: verify final installed SHA, then fresh-install/upgrade and first-use cohort coverage beyond the automated packaged smoke. |
 
-All source and UI packets used isolated worktrees, normal delivery floors and
+All source and UI packets used isolated worktrees, normal landing checks and
 relevant surface gates. Review-driven changes addressed clipboard batching,
 observer fan-out and diagnostic retry ownership. Remote `agent-checkpoints/*`
 refs preserve atomic recovery points; integrated commits above are the source
@@ -7095,7 +7095,7 @@ and BUG-121 candidate-state statements in this log.
 
 BUG-121 integrated at `00af8d3a`: three overlapping-read regressions, all 23
 Settings tests, independent review, community build/runtime, restored source
-gate and the normal repository floor passed. The final signed artifact passed
+gate and the normal repository landing checks passed. The final signed artifact passed
 background launch, local renderer, capability-shaped preload/menu/diagnostics,
 PTY round trip and contract-declared updater smoke checks before installation.
 
@@ -7213,9 +7213,9 @@ live process after renderer reload. The ribbon gate verifies reversing collapse
 mid-transition without selection loss or terminal resize. The shared menu's
 portal/active-descendant contract replaced three obsolete local-menu assertions;
 all 37 ribbon tests and 150 related state tests pass. Integration/release follows
-through the repository-owned floor; no gate is waived.
+through the repository-owned landing checks; no gate is waived.
 
-All declared gates and the full delivery floor passed before queue admission.
+All declared gates and the full landing checks passed before queue admission.
 The queue-head rebase encountered concurrent D6/D8 planning updates; both sets
 of canon are retained. D7 supplies the integrated lifecycle owner for that future
 work. BUG-052, FIX-015 and FIX-016 close with this delivery batch; signed release
@@ -7395,7 +7395,7 @@ BUG-227/BUG-228 in the singular roadmap own execution.
 - Slice 1 (in progress): fix final Fleet retirement cleanup and stale mark refs,
   then prove actual demand frames park after removal in normal/reduced motion
   and later arrivals still render. Preserve design-system status shapes, palette,
-  and motion duration. Run the relevant spatial eval and normal delivery floor,
+  and motion duration. Run the relevant spatial eval and normal landing checks,
   land with `--dogfood`; update this checkpoint with evidence and integrated SHA.
 - Slice 2 (in progress, read-only): audit supported harness sleep controls and
   identify the main-process host/power seams. Claude 2.1.282 currently owns an
@@ -7422,7 +7422,7 @@ decision `0044`. No application code from this task is integrated yet.
 - `agent/battery-fleet-power`, sibling `exawatt-battery-fleet-power`, currently
   `4c2cf172`: Fleet retirement/ref cleanup plus read-only native host observations
   and battery/lock rendering suppression. Real board and isolated Electron
-  checks pass; the normal landing floor is running with spatial, emergence,
+  checks pass; the normal landing checks are running with spatial, emergence,
   host-power, and connected-fleet gates plus `--dogfood`. Progress log:
   `/tmp/exawatt-battery-land.log`. Do not start another landing for this branch
   while its existing process is alive.
@@ -7493,7 +7493,7 @@ ID, suspend/resume, lifecycle exclusions, persisted Settings and real UI writes
 all passed. The Settings screenshot was reviewed. Physical sleep/unplug and
 energy acceptance remain open, with Claude explicitly uncontrolled.
 
-The first slice's floor passed 635 delivery tests and the community build but
+The first slice's landing checks passed 635 delivery tests and the community build but
 then exposed an environment mismatch: the shell resolves Node 26, CI/release
 use Node 22. Use `PATH="$HOME/.hermes/node/bin:$PATH" for delivery. The
 unrelated shortcut-storage fixture also put cold compilation inside a behavior
@@ -7519,7 +7519,7 @@ This supersedes the initial execution checkpoint above. Implementation commits
 `0ad9fa78` (retirement cleanup) and `cf5a8f72` (host facts) are on
 `agent/battery-fleet-power`, sibling `exawatt-battery-fleet-power`; the latter
 incorporates the reviewed `agent/power-host-facts` work. Integration proceeds
-through the normal floor with spatial, emergence, and Electron host-power evals
+through the normal landing checks with spatial, emergence, and Electron host-power evals
 and `--dogfood`. Read delivery state before treating a staged app as installed.
 
 - Slice 1 implemented and directly verified: final retirements unmount outside
@@ -7597,7 +7597,7 @@ Never preserving another native ID, suspend/resume, and idle/blocked/completed/
 exited/shell exclusions. Disk, renderer reload and fresh-app persistence plus
 the real Preferences control passed; screenshot was visually reviewed. macOS
 labels this Electron assertion `NoIdleSleepAssertion` on the tested build.
-Declared gates and the repository delivery floor remain before integration. Full physical AC/unplug/display-off/lock/sleep-wake
+Declared gates and the repository landing checks remain before integration. Full physical AC/unplug/display-off/lock/sleep-wake
 acceptance and energy attribution remain open; BUG-227 stays open. Claude's
 uncontrolled inhibitor remains a limitation, not a promise this setting fixes.
 
@@ -7614,8 +7614,8 @@ build before that unrelated runtime failure. No gate has been waived.
 ### 2026-09-28 — Power controls integrated; physical acceptance remains open
 
 **The combined implementation is integrated at `5140cd9c396a`.** Delivery
-ticket 508 passed the repository floor and all ten declared spatial/Electron
-gates, then rebased cleanly over current master and passed the repeated floor
+ticket 508 passed the repository landing checks and all ten declared spatial/Electron
+gates, then rebased cleanly over current master and passed the repeated landing checks
 (641 delivery tests and 472 related behavior tests). The affected Grok gate
 ran again; unchanged surfaces retained their recorded evidence. Public
 projection completed. No gate was waived. This supersedes the earlier
@@ -7740,7 +7740,7 @@ removal before advancing animation time, and proves zero render calls over
 and matching final scales. No additional Fleet product defect was found.
 Physical AC/unplug/display-off/sleep-wake acceptance remains open under BUG-227.
 Delivered on 2026-09-29: `57d9fd2c1825` is integrated into master and publicly
-projected. The repository floor passed (693 delivery tests, 155 related
+projected. The repository landing checks passed (693 delivery tests, 155 related
 behavior tests), followed by all six declared gates: emergence, source power,
 device power, lifecycle, three-generation idempotency and exact resume. No
 gate was waived. The signed app at `/Applications/Exawatt.app` is installed
@@ -7828,7 +7828,7 @@ interrupted/null → compaction → positive completion, independent question re
 read failure/recovery, repeated snapshots, and source identity changes in flight.
 The real Electron turn-truth gate now checks reading versus resolution and manual
 unread intent through the production bridge. Combined owner must run that gate,
-required floor/gates and dogfood delivery before advancing this checkpoint.
+required landing checks/gates and dogfood delivery before advancing this checkpoint.
 
 Review followup (same execution lane, 2026-10-04): the newest-item window now
 has bounded continuation rather than abandoning older evidence. Each root reads
@@ -7862,7 +7862,7 @@ completion follows it. A fresh live child therefore cannot arrive just after a
 false result alert. Individual question IDs replace the preliminary aggregate
 revision so partial rediscovery after resume cannot alert an already-read
 request; replies resolve exact restored IDs even when the new process never
-observed their earlier question. Full floor and native gate evidence remain
+observed their earlier question. Full landing checks and native gate evidence remain
 with the combined integration owner.
 
 Independent review hardened three failure boundaries before integration. The

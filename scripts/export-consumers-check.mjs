@@ -16,7 +16,7 @@
 // check cannot fail a change for what the tree already carried.
 //
 // Consumers are counted in code (`.ts .tsx .mts .cts .js .jsx .mjs .cjs`)
-// through `git grep`, which sees tracked files only; the landing floor runs on
+// through `git grep`, which sees tracked files only; the landing checks run on
 // a committed tree, so a consumer that exists is a consumer that is counted.
 // A test file is a consumer: a `scripts/*.mjs` helper exported for its test is
 // exactly the shape this repository uses.

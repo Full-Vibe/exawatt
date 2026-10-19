@@ -147,7 +147,7 @@ test('an inbound pull request reaches the private tree with its author and messa
       'export const a = 11;'
     );
     // The contribution lands on the PRIVATE tree, overlay and all, so it meets
-    // the same floor the operator's own work meets.
+    // the same landing checks the operator's own work meets.
     assert.equal(
       git(result.worktree, ['show', 'HEAD:company/secret.md']),
       'private overlay'

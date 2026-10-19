@@ -32,7 +32,7 @@ export const TICKET_READ_BOUND = 64;
 export const TERMINAL_HISTORY_MS = 3 * 60 * 60_000;
 /** Bytes of `metrics.jsonl` read from the end: about a thousand events. */
 export const METRICS_TAIL_BYTES = 256 * 1024;
-/** A pre-admission floor that has recorded no check for this long is not
+/** A pre-admission landing-check run that has recorded no check for this long is not
  *  running any more; the landing crashed or was abandoned. */
 export const CANDIDATE_FRESH_MS = 10 * 60_000;
 
@@ -143,6 +143,13 @@ function parseTicket(raw: unknown): RawTicket | null {
   };
 }
 
+/** Event types `metrics.jsonl` carried before 2026-10-18, when the required
+ *  checks were renamed the landing checks. Old lines keep the old name; this
+ *  is the one place this reader maps it. */
+const LEGACY_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
+  ['floor_check', 'landing_check'],
+]);
+
 function parseEvent(line: string): MetricsEvent | null {
   let parsed: unknown;
   try {
@@ -156,7 +163,7 @@ function parseEvent(line: string): MetricsEvent | null {
   const at = millis(record.at);
   if (!type || at === null) return null;
   return {
-    type,
+    type: LEGACY_EVENT_TYPES.get(type) ?? type,
     at,
     ticketId: text(record.ticketId) ?? undefined,
     candidateSha: text(record.candidateSha) ?? undefined,
@@ -167,17 +174,33 @@ function parseEvent(line: string): MetricsEvent | null {
   };
 }
 
-/** The tail of `metrics.jsonl` as events, oldest first. `at` is null when the
- *  file could not be read; an empty file reads as an empty tail with a time. */
-async function readMetricsTail(
-  stateRoot: string
-): Promise<{ events: MetricsEvent[]; at: number | null }> {
+function errorCode(error: unknown): string {
+  return error && typeof error === 'object' && 'code' in error
+    ? String((error as { code: unknown }).code)
+    : 'unreadable';
+}
+
+/** The tail of `metrics.jsonl` as events, oldest first, and the newest event's
+ *  time (null when there is none). No file yet is no events; a file that
+ *  exists and cannot be read says why in `unreadable`, so a failed read never
+ *  looks like a quiet queue. */
+async function readMetricsTail(stateRoot: string): Promise<{
+  events: MetricsEvent[];
+  at: number | null;
+  unreadable?: string;
+}> {
   const metricsPath = path.join(stateRoot, 'metrics.jsonl');
+  const unreadable = (error: unknown) => ({
+    events: [],
+    at: null,
+    unreadable: `delivery metrics not readable (${errorCode(error)}) at ${metricsPath}`,
+  });
   let handle: fs.promises.FileHandle;
   try {
     handle = await fs.promises.open(metricsPath, 'r');
-  } catch {
-    return { events: [], at: null };
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return { events: [], at: null };
+    return unreadable(error);
   }
   try {
     const { size } = await handle.stat();
@@ -193,15 +216,15 @@ async function readMetricsTail(
       .filter((event): event is MetricsEvent => event !== null);
     const newest = events.reduce((max, event) => Math.max(max, event.at), 0);
     return { events, at: newest > 0 ? newest : null };
-  } catch {
-    return { events: [], at: null };
+  } catch (error) {
+    return unreadable(error);
   } finally {
     await handle.close().catch(() => undefined);
   }
 }
 
 /** A rebase-phase check the metrics tail reports for this ticket and the
- *  ticket itself has not recorded is a floor still running at the head. */
+ *  ticket itself has not recorded is a landing check still running at the head. */
 function ticketIsChecking(ticket: RawTicket, events: MetricsEvent[]): boolean {
   if (ticket.status !== 'integrating') return false;
   const recorded = new Set(
@@ -211,16 +234,16 @@ function ticketIsChecking(ticket: RawTicket, events: MetricsEvent[]): boolean {
   );
   return events.some(
     event =>
-      event.type === 'floor_check' &&
+      event.type === 'landing_check' &&
       event.ticketId === ticket.id &&
       event.phase === 'rebase' &&
       !recorded.has(`${event.id}@${event.completedAt}`)
   );
 }
 
-/** Pre-admission floors: candidate-phase checks for a commit no ticket names.
+/** Pre-admission landing checks: candidate-phase checks for a commit no ticket names.
  *  A failed check ends that landing; a conflict probe does too; silence for
- *  `CANDIDATE_FRESH_MS` means the floor is no longer running. */
+ *  `CANDIDATE_FRESH_MS` means its landing checks are no longer running. */
 function liveCandidates(
   events: MetricsEvent[],
   tickets: RawTicket[],
@@ -238,7 +261,7 @@ function liveCandidates(
   for (const event of events) {
     if (!event.candidateSha || event.ticketId) continue;
     if (event.phase !== 'candidate') continue;
-    if (event.type !== 'floor_check' && event.type !== 'probe_conflict')
+    if (event.type !== 'landing_check' && event.type !== 'probe_conflict')
       continue;
     const entry = bySha.get(event.candidateSha) ?? {
       at: 0,
@@ -280,13 +303,9 @@ export async function readDeliveryState(
   try {
     names = await fs.promises.readdir(queueDir);
   } catch (error) {
-    const code =
-      error && typeof error === 'object' && 'code' in error
-        ? String((error as { code: unknown }).code)
-        : 'unreadable';
     return {
       status: 'unavailable',
-      reason: `delivery queue not readable (${code}) at ${queueDir}`,
+      reason: `delivery queue not readable (${errorCode(error)}) at ${queueDir}`,
     };
   }
   const newest = names
@@ -302,8 +321,10 @@ export async function readDeliveryState(
       parsed = JSON.parse(
         await fs.promises.readFile(path.join(queueDir, name), 'utf8')
       );
-    } catch {
-      unreadableTickets += 1;
+    } catch (error) {
+      // ENOENT: the ticket was removed between the listing and this read, so
+      // it is not in the queue; any other failure is counted, never hidden.
+      if (errorCode(error) !== 'ENOENT') unreadableTickets += 1;
       continue;
     }
     const ticket = parseTicket(parsed);
@@ -372,6 +393,7 @@ export async function readDeliveryState(
     candidates: reportedCandidates,
     unreadableTickets,
     metricsAt: metrics.at,
+    ...(metrics.unreadable ? { metricsUnreadable: metrics.unreadable } : {}),
   };
 }
 

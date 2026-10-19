@@ -159,7 +159,7 @@ immediate receipts, shared Dialog presence/overlay presentation and a notice
 placement owner. Server fingerprint reconciliation is integrated in `902ed1b5`
 and its production deployment is READY; the migration has been applied/read
 back. The simplified UI is verified and integrated in
-`9d6b0d46da562d59de52f5cdff685d6ecaec3ae3`; the normal landing floor and declared
+`9d6b0d46da562d59de52f5cdff685d6ecaec3ae3`; the normal landing checks and declared
 surface gates passed. The gallery study is retired. Combined UI deployment is READY;
 actual dogfood installation is confirmed by update-state read-back of the exact
 client SHA, not inferred from a queued worker. Shared review evidence lives in
@@ -172,7 +172,7 @@ authenticated delivery; incident 0032 and F7 record its correction.
 
 **The accepted compact workflow is integrated.** Ticket 567 integrated
 `7254223b1028027e0443bc989331ab4943623c16` and published its public projection.
-The normal floor and declared navigation-spine, Electron context-labels,
+The normal landing checks and declared navigation-spine, Electron context-labels,
 workspace-chrome and launcher gates passed; 3,058 affected tests in 233 files
 passed (nine existing skips), and R3F scored 100/100. Source verification is distinct from artifact read-back. Production deployment `dpl_7B9oo2mwBceXvc7mQvGhYDcGdtsJ` is READY
 at `https://exawatt-8i738sbsb-fullvibe.vercel.app`, with `exawatt.ai` and

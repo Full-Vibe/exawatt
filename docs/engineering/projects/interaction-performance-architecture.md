@@ -354,7 +354,7 @@ right to propose it.
 | Timing stays green while the interface becomes visually wrong | Keep geometry, screenshot, accessibility, and semantic outcome gates beside timing; V3.5's green-perf/85%-overlap failure is the standing counterexample |
 | Optimization breaks focus/history/PTY identity | Exact gesture outcome matrix and existing Electron behavioral round trips remain release evidence |
 | Optional testing decays into no testing | One documented script, versioned report, deterministic fixtures, and required before/after evidence for any D55 optimization |
-| Performance gates slow normal development | The application-wide rig never joins the default landing floor; only stable surface-specific regressions may be ratcheted |
+| Performance gates slow normal development | The application-wide rig never joins the default landing checks; only stable surface-specific regressions may be ratcheted |
 | A synthetic win becomes an overclaim | Installed-build reproduction and evidence-scoped marketing language are Stage 6 gates |
 
 ## Definition of done

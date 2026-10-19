@@ -6,6 +6,7 @@ import { acquireDirectoryLock } from './delivery-lock.mjs';
 import {
   appendDeliveryMetric,
   deliveryStateRoot,
+  normalizeDeliveryRecord,
   processExists,
   readJson,
   writeJsonAtomic,
@@ -38,8 +39,19 @@ async function ticketPath(root, id) {
   return path.join((await paths(root)).queue, `${id}.json`);
 }
 
+/** A ticket as written by any version, in today's field names. */
+function normalizeTicket(ticket) {
+  if (!ticket?.result) return ticket;
+  const result = normalizeDeliveryRecord(ticket.result);
+  return result === ticket.result ? ticket : { ...ticket, result };
+}
+
+async function readTicketFile(filePath) {
+  return normalizeTicket(await readJson(filePath));
+}
+
 export async function readTicket(root, id) {
-  return readJson(await ticketPath(root, id));
+  return readTicketFile(await ticketPath(root, id));
 }
 
 export async function listTickets(root) {
@@ -48,7 +60,7 @@ export async function listTickets(root) {
   const tickets = await Promise.all(
     files
       .filter(file => file.endsWith('.json'))
-      .map(file => readJson(path.join(queue, file)))
+      .map(file => readTicketFile(path.join(queue, file)))
   );
   return tickets
     .filter(Boolean)
@@ -142,7 +154,7 @@ export async function mutateTicket(
   );
   try {
     const filePath = path.join(queuePaths.queue, `${id}.json`);
-    const current = await readJson(filePath);
+    const current = await readTicketFile(filePath);
     if (!current) throw new Error(`Delivery ticket ${id} does not exist.`);
     if (TERMINAL_TICKET_STATUSES.has(current.status) && !allowTerminal) {
       throw new Error(

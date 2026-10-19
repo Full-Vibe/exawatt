@@ -16,7 +16,7 @@ import { PARTNER_CONVERSATIONS_DIRECTORY } from './recipe-renderers.mjs';
  * TIMEOUT rather than by assertion. The failing identities changed between
  * runs on identical code — six one run, eight the next, two different ones on
  * a clean `origin/master` control — which is the proof that none of them was a
- * defect. The floor still reported them as named test failures, which reads to
+ * defect. The landing checks still reported them as named test failures, which reads to
  * the author as "your change broke these", and that misreport is the damage:
  * six landing attempts on a change that only set an icon path.
  *
@@ -25,11 +25,11 @@ import { PARTNER_CONVERSATIONS_DIRECTORY } from './recipe-renderers.mjs';
  * and reproduces in isolation; contention does not. So a failed vitest check
  * re-runs exactly the files it named, once, in a single worker:
  *
- * - every named file passes alone → `flaked`. The floor CONTINUES and the
+ * - every named file passes alone → `flaked`. The landing checks CONTINUE and the
  *   result is reported and recorded as a suspected flake with the file
  *   identities, the failing test names, and the load average at both runs, so
  *   a real regression hiding behind flakiness stays findable across landings.
- * - any file fails again → the floor FAILS, naming what reproduced separately
+ * - any file fails again → the landing checks FAIL, naming what reproduced separately
  *   from what did not, so the author reads the deterministic half.
  * - the rerun did not actually run what it was asked to → `inconclusive`, and
  *   the original failure stands. A rerun that silently matched nothing must
@@ -42,7 +42,7 @@ const VITEST_RERUN = { kind: 'vitest', script: 'test:alone' };
 
 /**
  * A rerun wider than this is a second full run, not a targeted one, and the
- * floor's job is to bound the load rather than double it. Above the cap the
+ * landing checks' job is to bound the load rather than double it. Above the cap the
  * original failure stands, which is also the right reading: dozens of files
  * failing at once is a break, not machine contention.
  */
@@ -51,17 +51,17 @@ const MAX_RERUN_FILES = 25;
 /**
  * Surface gates (ENG-016 D51).
  *
- * This repository owns 31 eval gates and the changed-path floor routed to
+ * This repository owns 31 eval gates and the changed-path landing checks routed to
  * exactly one of them. The reason is structural, not neglect: every browser
- * and Electron eval needs a dev server the floor does not own (`EXA_BASE`),
+ * and Electron eval needs a dev server the landing checks do not own (`EXA_BASE`),
  * so it cannot simply run them. The consequence was that the most
  * motion-sensitive surfaces in the app — the ribbon, workspace chrome, the
  * navigation spine — could change and land with zero gates run, as long as
  * the author forgot. Forgetting was silent, which is the whole defect.
  *
- * So the floor does not run these; it REQUIRES them to be declared. Touch a
+ * So the landing checks do not run these; it REQUIRES them to be declared. Touch a
  * gated surface and the gate must appear in `--verify`, or be waived on
- * purpose with `--waive-gate <id>` (recorded, not hidden). The floor stays
+ * purpose with `--waive-gate <id>` (recorded, not hidden). The landing checks stay
  * cheap and unattended; the omission stops being invisible.
  *
  * Adding a gate is a data edit here, never a code edit at the call site.
@@ -451,7 +451,7 @@ export const SURFACE_GATES = [
     //
     // A LOCKFILE is therefore a first-class trigger here. So is anything that
     // decides what the renderer payload contains or how it is sealed. This is
-    // the one Electron gate the floor can genuinely run unattended — it needs
+    // the one Electron gate the landing checks can genuinely run unattended — it needs
     // no dev server, and the eval builds its own package when the worktree has
     // none — which is why it is enforced rather than quarantined.
     match: file =>
@@ -856,7 +856,7 @@ export const SURFACE_GATES = [
     // The observation behind ENG-030 OS4: the build, runtime and closure
     // checks are statements about source; this launches the package and
     // watches it. Like `eval:electron:packaged`, it builds its own package and
-    // needs no dev server, so the floor can run it unattended.
+    // needs no dev server, so the landing checks can run it unattended.
     match: file =>
       file.startsWith('packages/core/src/distribution/') ||
       file === 'scripts/lib/packaged-app.mjs' ||
@@ -960,7 +960,7 @@ export function missingSurfaceGates(changedPaths, declared = []) {
 /**
  * Which declared surface gates a queue-head rebase must re-run (BUG-205).
  *
- * The head re-runs the repository floor on its rebased tree, and before this
+ * The head re-runs the repository landing checks on its rebased tree, and before this
  * it never re-ran a declared gate: ticket 466's gate evidence came from its
  * pre-rebase tree although `698c1e79`, the landing it rebased over, changed
  * `workspace-client.tsx` on the surface of five of the gates it declared. A
@@ -988,14 +988,14 @@ export function surfaceGateRecheck(declared, upstreamPaths) {
   return { rerun, stood: stood.sort() };
 }
 
-// The R3F check is part of the mandatory floor rather than a declared surface
+// The R3F check is part of the mandatory landing checks rather than a declared surface
 // gate, but still navigates EXA_BASE. It needs the same owned-server lifecycle.
-const DEV_SERVER_FLOOR_CHECKS = new Set(['eval:r3f']);
+const DEV_SERVER_LANDING_CHECKS = new Set(['eval:r3f']);
 
-/** Does this check read EXA_BASE? Floor checks and declared surface gates
+/** Does this check read EXA_BASE? landing checks and declared surface gates
  * share one server boundary; packaged gates launch their own artifact. */
 export function gateNeedsDevServer(id) {
-  if (DEV_SERVER_FLOOR_CHECKS.has(id)) return true;
+  if (DEV_SERVER_LANDING_CHECKS.has(id)) return true;
   const entry = SURFACE_GATES.find(candidate => candidate.gate === id);
   return Boolean(entry) && entry.server !== 'packaged';
 }
@@ -1027,7 +1027,7 @@ export function surfaceGateMessage(missing) {
       ...entry.paths.map(file => `      ${file}`),
     ]),
     '',
-    'Declaring a gate makes the floor RUN it on the exact tree being landed,',
+    'Declaring a gate makes the landing checks RUN it on the exact tree being landed,',
     'against the dev server EXA_BASE names. The landing owns that server: it',
     'restarts it for the tree it gates, or starts it on a free local port.',
     `  EXA_BASE=http://localhost:<port> pnpm agent:land -- ${missing
@@ -1525,11 +1525,11 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
 }
 
 /**
- * The floor checks a documentation change can fail, taken from the floor's
+ * The landing checks a documentation change can fail, taken from the landing checks'
  * own definitions so `pnpm docs:check` cannot drift from what a landing runs
  * (BUG-195).
  */
-const DOCS_FLOOR_CHECK_IDS = new Set([
+const DOCS_LANDING_CHECK_IDS = new Set([
   'open-source:paths:check',
   'content:scan',
   'roadmap-contract',
@@ -1550,7 +1550,7 @@ export function classifyDocsChecks(changedPaths) {
   return [
     RECIPE_RENDERERS_CHECK,
     ...classifyDeliveryPolicy(changedPaths).filter(check =>
-      DOCS_FLOOR_CHECK_IDS.has(check.id)
+      DOCS_LANDING_CHECK_IDS.has(check.id)
     ),
   ];
 }
@@ -1587,7 +1587,7 @@ const manual = reason => Object.freeze({ route: 'manual', reason });
  *
  * So every verification command is exactly one of:
  *
- * - `landing` — the landing floor runs it, unconditionally or by changed path
+ * - `landing` — the landing checks run it, unconditionally or by changed path
  *   (`classifyDeliveryPolicy`), or it runs inside something that does, or the
  *   pre-push hook every landing passes runs it;
  * - `gate` — a declared surface gate in `SURFACE_GATES`;
@@ -1595,9 +1595,9 @@ const manual = reason => Object.freeze({ route: 'manual', reason });
  *   `publication:check`, or as a subset of a suite CI runs whole;
  * - `manual` — nothing runs it, on purpose, and the entry says why.
  *
- * A command the floor runs is `landing` even when CI runs it too: the first
+ * A command the landing checks run is `landing` even when CI runs it too: the first
  * of those that applies is its route. `delivery-policy.test.mjs` derives the
- * truth from the floor, the gate map, the hook and `ci.yml`, and fails when a
+ * truth from the landing checks, the gate map, the hook and `ci.yml`, and fails when a
  * verification command is unclassified, when an entry names a command that no
  * longer exists, or when an entry claims a route that does not run it. Moving
  * a check between routes is therefore an edit here, reviewed in the same
@@ -1882,7 +1882,7 @@ export function suspectedFlakeReport({ checkId, flaked, load }) {
     '      A break is deterministic. Failing in a large selection and passing in',
     '      isolation is the machine-contention signature in',
     '      docs/engineering/agent-delivery.md, not a defect in this change.',
-    '      Recorded as a floor_check flake; the floor continues.',
+    '      Recorded as a landing_check flake; the landing checks continue.',
   ].join('\n');
 }
 
@@ -1924,13 +1924,13 @@ export function unnamedFailureReport(checkId) {
   ].join('\n');
 }
 
-/** Above the cap the rerun would be a second full run. The floor bounds load;
+/** Above the cap the rerun would be a second full run. The landing checks bound load;
  *  it does not double it. */
 export function rerunTooWideReport(checkId, failures) {
   return [
     `${checkId} named ${failures.length} failing file(s), more than the ${MAX_RERUN_FILES} a targeted rerun covers.`,
-    'Re-running them would be a second full run, which is the load this floor',
-    'exists to bound. Dozens of files failing at once is a break, not contention.',
+    'Re-running them would be a second full run, which is the load the landing checks',
+    'exist to bound. Dozens of files failing at once is a break, not contention.',
   ].join('\n');
 }
 
@@ -1961,7 +1961,9 @@ function exitMessage(check, code) {
 }
 
 async function runVitestCheck(root, check) {
-  const workspace = await mkdtemp(path.join(tmpdir(), 'exawatt-floor-'));
+  const workspace = await mkdtemp(
+    path.join(tmpdir(), 'exawatt-landing-checks-')
+  );
   try {
     const firstReport = path.join(workspace, 'selection.json');
     const code = await spawnCheck(root, check.command, [
@@ -2048,7 +2050,7 @@ export async function runDeliveryChecks(
     phase = 'candidate',
     onResult = async () => {},
     queueHead = false,
-    // Runs before each check, inside the slot; a throw stops the floor with
+    // Runs before each check, inside the slot; a throw stops the landing checks with
     // its own message. The landing refreshes its dev server here, right
     // before the first gate that reads it (BUG-246).
     beforeCheck = async () => {},
@@ -2060,11 +2062,11 @@ export async function runDeliveryChecks(
   } = {}
 ) {
   const evidence = [];
-  // One machine slot bounds this floor run's compute: a dozen concurrent
-  // worktree floors each capped at 25% of cores still oversubscribe the
+  // One machine slot bounds this landing-check run's compute: a dozen concurrent
+  // worktree landing-check runs each capped at 25% of cores still oversubscribe the
   // machine threefold, and the delivery metrics show the same check going
   // from 9 seconds alone to 46 minutes under that load (ENG-022 H15). The
-  // failed-check throw below leaves through the finally, so a red floor can
+  // failed-check throw below leaves through the finally, so a red landing-check run can
   // never leak its slot.
   //
   // The queue head's re-check may also take the one slot reserved for it
@@ -2072,7 +2074,7 @@ export async function runDeliveryChecks(
   // queues behind a candidate's first check.
   const slot = await acquireMachineSlot({
     root,
-    label: `agent-land floor (${phase})`,
+    label: `agent-land landing checks (${phase})`,
     queueHead,
   });
   try {
@@ -2099,7 +2101,7 @@ export async function runDeliveryChecks(
       await beforeCheck(check);
       const startedAt = Date.now();
       console.log(
-        `[agent-land] ${phase} floor: ${check.command} ${check.args.join(' ')}`
+        `[agent-land] ${phase} landing checks: ${check.command} ${check.args.join(' ')}`
       );
       let outcome;
       try {
@@ -2113,7 +2115,7 @@ export async function runDeliveryChecks(
         status: outcome.status,
         durationMs: Date.now() - startedAt,
         completedAt: new Date().toISOString(),
-        // How long this floor run waited for its machine slot, and what it
+        // How long this landing-check run waited for its machine slot, and what it
         // got, so a slot queue is measurable rather than inferred.
         slotMode: slot.mode,
         slotWaitMs: slot.waitedMs,

@@ -1025,7 +1025,7 @@ file was diagnosed rather than capped.
   OpenClaw's declared colour, now read from its declaration. The filing's
   count of 17 missed this file.
 
-`theme:check` now runs on the landing floor for any change under `src/`,
+`theme:check` now runs on the landing checks for any change under `src/`,
 `themes/` or `packages/ui-model/`, or to the generator or the ratchet (about
 two seconds), and in CI; `check-production-theme-literals.test.mjs` joins
 `test:agent-delivery`. This project's two continuity gates had rotted the same

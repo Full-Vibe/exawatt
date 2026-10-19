@@ -93,7 +93,7 @@ const NO_PROGRESS_MS = 60_000;
  *
  * Two things genuinely mean "this will never happen", and both are watched: the
  * child exiting without having printed it, and the child going completely
- * silent. A lander that is merely slow keeps emitting floor progress, so it is
+ * silent. A lander that is merely slow keeps emitting landing-check progress, so it is
  * never mistaken for a stuck one however long the host takes.
  */
 async function waitFor(predicate, run) {
@@ -222,12 +222,12 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
     const initial = await git(main, 'rev-parse', 'HEAD');
 
     deliveryLock = await acquireDeliveryLock(main, { log() {} });
-    const fastFloorEnv = await writeFastPnpm(directory);
+    const fastLandingChecksEnv = await writeFastPnpm(directory);
     landing = runStreaming(
       process.execPath,
       [script, '--verify', 'verify-ok'],
       agent,
-      fastFloorEnv
+      fastLandingChecksEnv
     );
     await waitFor(
       () =>
@@ -322,11 +322,21 @@ test('serves concurrent landers in FIFO order, rebases the later tree, and ignor
     await writeFile(path.join(main, 'operator-note.txt'), 'leave me alone\n');
     const initialMain = await git(main, 'rev-parse', 'HEAD');
     deliveryLock = await acquireDeliveryLock(main, { log() {} });
-    const fastFloorEnv = await writeFastPnpm(directory);
+    const fastLandingChecksEnv = await writeFastPnpm(directory);
 
-    first = runStreaming(process.execPath, [script], firstPath, fastFloorEnv);
+    first = runStreaming(
+      process.execPath,
+      [script],
+      firstPath,
+      fastLandingChecksEnv
+    );
     await waitFor(() => first.output().includes('admitted ticket 1'), first);
-    second = runStreaming(process.execPath, [script], secondPath, fastFloorEnv);
+    second = runStreaming(
+      process.execPath,
+      [script],
+      secondPath,
+      fastLandingChecksEnv
+    );
     await waitFor(() => second.output().includes('admitted ticket 2'), second);
     await deliveryLock.release();
     deliveryLock = null;

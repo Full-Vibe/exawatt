@@ -31,7 +31,7 @@ operating contract:
 An evaluator is not automatically a landing gate. Surface-to-gate ownership is
 declared in `SURFACE_GATES` in `lib/delivery-policy.mjs`, and every
 verification command is classified in `VERIFICATION_ROUTES` beside it: run by
-the landing floor, a declared gate, run in CI, or manual with its reason. A new
+the landing checks, a declared gate, run in CI, or manual with its reason. A new
 `eval:*`, `test:*` or `*:check` command fails `pnpm test:agent-delivery` until
 it has a route (BUG-208, BUG-211).
 
