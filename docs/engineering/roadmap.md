@@ -3673,9 +3673,10 @@ group, not just the listener) has exited and the port is free, escalating to
 SIGKILL at 10 s and naming what remains at 30 s, before `.next/dev` is
 removed; its fixture holds a writer in the group past the listener
 (`a closed listener does not finish shutdown while its owned group can still
-write`). `d0d0d3bd` put `eval:r3f` in `DEV_SERVER_FLOOR_CHECKS`, so it gets the
-same ensure-fresh step as the surface gates (`the mandatory R3F floor starts
-the same owned server before navigating`). BUG-281 later made a group of
+write`). `d0d0d3bd` put `eval:r3f` in the dev-server landing checks
+(`DEV_SERVER_LANDING_CHECKS`), so it gets the same ensure-fresh step as the
+surface gates (`the mandatory R3F landing check starts the same owned server
+before navigating`). BUG-281 later made a group of
 exited, unreaped members read as stopped. 12 of 12 `landing-dev-server`
 tests pass on `18c55e07`.
 
@@ -3856,7 +3857,7 @@ request requiring a policy/design amendment; [decision 0032](decisions/0032-rest
 still forbids silent revival and admits exact-identity eligible Agents only.
 Superseded by the subsequent 2026-10-04 operator steering and [decision 0046](decisions/0046-reading-does-not-resolve-attention.md): restore context paused, then offer explicit resume of the previously running set; already-paused Sessions stay excluded. Automatic resume is future scope. Preserve the input/navigation/scroll acceptance above and record any remaining gaps; do not promise every harness can revive transparently.
 
-2026-10-18 on `agent/fix-update-lifecycle` (not integrated): the lifecycle
+2026-10-18: the lifecycle
 owner saves held state for a restart or update and hands it back once: the
 run's session storage (the Fleet camera, which a relaunch used to reset)
 and an unsent feedback report. Altitude was already restored by the
@@ -4118,7 +4119,7 @@ Resolved 2026-10-04: integrated and installed in `19712d6ff5b0`; the full landin
 
 ### BUG-283 New-Project Claude configurations appear unavailable
 
-Status: fixed in code 2026-10-18, branch `agent/fix-source-setup` · ENG-016 · operator feedback 4acb9b2d, 2026-10-05.
+Status: fixed 2026-10-18 · ENG-016 · operator feedback 4acb9b2d, 2026-10-05.
 
 Cause: availability required the exact id among Claude Code's `/model` rows,
 but `--model` accepts `[1m]` on any listed model (the operator's
@@ -4137,7 +4138,7 @@ Preserve draft focus, caret and selection across capture and cancellation.
 
 ### BUG-285 A dismissed local-build notice returns on app activation
 
-Status: fixed in code on `agent/fix-update-lifecycle`, not integrated · ENG-016 · operator feedback e179e337, 2026-10-05; triaged 2026-10-15.
+Status: fixed 2026-10-18 · ENG-016 · operator feedback e179e337, 2026-10-05; triaged 2026-10-15.
 
 Cause: a second dogfood install under the same stale running build, not
 activation (incident `0039`). One persisted dismissal record keyed by notice
@@ -4153,7 +4154,7 @@ refusal is the update-failed notice with its reason, and a late install
 failure relaunches the current version instead of hanging. Incident `0026`
 step 3 documented this masking without fixing it.
 [Evidence and acceptance](projects/daily-driver-adoption.md#2026-10-15--restart-to-update-hangs-on-closing-exawatt-bug-286).
-2026-10-18 on `agent/fix-update-lifecycle` (not integrated): the lifecycle
+2026-10-18: the lifecycle
 owner bounds, names and (until anything stops) cancels every wait; a closing
 step that never settled used to hold "Closing Exawatt…" indefinitely.
 [Milestone](projects/daily-driver-adoption.md#2026-10-18--one-owner-for-the-app-going-away-bug-260-bug-285-bug-286).
@@ -4427,7 +4428,7 @@ the primer belongs to ENG-045.
 
 ### BUG-275 "Sign in with {source}" drives Terminal without the Automation entitlement
 
-Status: fixed in code 2026-10-18 by deletion, branch `agent/fix-source-setup`
+Status: fixed 2026-10-18 by deletion
 · ENG-003 · found 2026-10-04 by the permissions research; failure inferred,
 not reproduced. Every local source now declares its sign-in command and it
 runs in an Exawatt Shell tab; the `osascript` Terminal path and the
@@ -4570,7 +4571,7 @@ landing. The id is not reused.
 
 ### BUG-292 Codex's mark is near-invisible in the launcher on light themes
 
-Status: fixed on `agent/fix-ui-bugs`, awaiting integration · ENG-003 · found
+Status: fixed 2026-10-18 · ENG-003 · found
 2026-10-15 while building the Gemini face (S5.3.1); pre-existing.
 
 The ⌘T launcher's engine glyph paints each harness's brand colour straight
@@ -4593,7 +4594,7 @@ holds every declared colour to the rule on every production theme.
 
 ### BUG-293 A Demo Team tile's harness mark disagrees with Chatter's
 
-Status: fixed on `agent/fix-ui-bugs`, awaiting integration · ENG-029 B3 ·
+Status: fixed 2026-10-18 · ENG-029 B3 ·
 found 2026-10-15 while building Chatter.
 
 In the Demo Workspace, a Team tile takes its harness mark from the Session's
@@ -4770,7 +4771,7 @@ relaunch, and asks the shell once a minute.
 
 ### BUG-299 Extending a Fleet selection with Shift+arrows moved focus to another Project
 
-Status: fixed on `agent/fix-ui-bugs`, awaiting integration · ENG-004 V4.2 ·
+Status: fixed 2026-10-18 · ENG-004 V4.2 ·
 found 2026-10-15 by the train conductor (worked around in `eval:spatial`),
 filed 2026-10-18.
 

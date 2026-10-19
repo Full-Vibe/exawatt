@@ -67,7 +67,7 @@ maintainer agents may land directly through the repository delivery queue.
 5. Run the checks proportional to the change and record the exact evidence.
 6. Complete the Contributor License Agreement check.
 
-The ordinary verification floor is:
+The ordinary required checks are:
 
 ```sh
 pnpm type-check

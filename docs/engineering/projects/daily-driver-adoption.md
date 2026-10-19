@@ -8036,8 +8036,8 @@ turning live child work into parent success. No code repair is made here.
 ### 2026-10-18 — One owner for the app going away (BUG-260, BUG-285, BUG-286)
 
 **The update and restart lifecycle has one owner; three bugs fell out of it.**
-Implemented and verified on `agent/fix-update-lifecycle`; not integrated,
-not released. Operator direction (2026-10-18): fix the overlapping bugs by
+Implemented and verified 2026-10-18; integrated with that day's bug-fix
+train. Operator direction (2026-10-18): fix the overlapping bugs by
 upgrading the system, not by layering fixes, before 0.1.21.
 
 The system change. `ShutdownCoordinator` owns quit, restart, Restart to
