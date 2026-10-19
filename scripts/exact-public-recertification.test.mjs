@@ -810,17 +810,15 @@ test('aborting a gate terminates its descendant process group before returning',
   assert.equal(await readFile(observedExit, 'utf8'), 'terminated\n');
 });
 
-// BUG-139: on Linux the grandchild never records the group SIGTERM (the first
-// Linux run of these pins, CI run 34815753375), so the assertion cannot be
-// made there until the recertifier's descendant kill is diagnosed on Linux.
-test(
-  'a successful parent with a SIGTERM-resistant descendant is killed and rejected',
-  {
-    skip:
-      process.platform !== 'darwin' &&
-      'BUG-139: the group SIGTERM does not reach the grandchild on Linux',
-  },
-  async t => {
+// BUG-139. The descendant's parent once exited on `spawn`, before the
+// descendant's Node had installed its SIGTERM handler, so on a slower Linux
+// runner the group SIGTERM's default action killed it unrecorded. The parent
+// now exits only once the handler is installed. Each property is then its own
+// test, so neither depends on how fast the descendant runs after the signal:
+// a descendant that exits on SIGTERM proves the group SIGTERM reaches it (the
+// grace is only an upper bound; termination ends when the group is empty),
+// and one that ignores SIGTERM proves the escalation to SIGKILL.
+async function leakedDescendant(t, onTerm) {
   const root = await mkdtemp(path.join(tmpdir(), 'exawatt-recertify-leak-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const grandchild = path.join(root, 'grandchild.mjs');
@@ -833,6 +831,7 @@ test(
       "import { writeFileSync } from 'node:fs';",
       "process.on('SIGTERM', () => {",
       "  writeFileSync(process.argv[2], 'term-seen\\n');",
+      `  ${onTerm}`,
       '});',
       "process.send('ready');",
       'setInterval(() => {}, 1_000);',
@@ -847,8 +846,7 @@ test(
       'const child = spawn(process.execPath, [process.argv[2], process.argv[4]], {',
       "  stdio: ['ignore', 'ignore', 'ignore', 'ipc'],",
       '});',
-      // OS spawn does not prove the descendant has installed its handler.
-      // Exit only after that handler is ready, so this tests escalation.
+      // Exit only once the descendant's handler is installed.
       "child.on('message', message => {",
       "  if (message !== 'ready') return;",
       '  writeFileSync(',
@@ -860,27 +858,47 @@ test(
       '',
     ].join('\n')
   );
+  return {
+    root,
+    args: [parent, grandchild, processRecord, observedTerm],
+    observedTerm,
+    async group() {
+      return JSON.parse(await readFile(processRecord, 'utf8')).group;
+    },
+  };
+}
 
-  await assert.rejects(
-    runRecertificationProcess(
-      process.execPath,
-      [parent, grandchild, processRecord, observedTerm],
-      {
-        cwd: root,
-        env: { PATH: process.env.PATH },
-        terminationGraceMs: 200,
-      }
-    ),
-    /left descendant processes in group/u
-  );
-
-  const record = JSON.parse(await readFile(processRecord, 'utf8'));
-  assert.equal(await readFile(observedTerm, 'utf8'), 'term-seen\n');
+async function groupSurvives(group) {
   const { stdout } = await execFileAsync('/bin/ps', ['-axo', 'pid=,pgid=']);
-  const survivingGroup = stdout
+  return stdout
     .split('\n')
     .map(line => line.trim().split(/\s+/u).map(Number))
-    .some(([, pgid]) => pgid === record.group);
-  assert.equal(survivingGroup, false);
-  }
-);
+    .some(([, pgid]) => pgid === group);
+}
+
+test('a successful parent whose descendant outlives it is rejected, and the group SIGTERM reaches the descendant', async t => {
+  const leak = await leakedDescendant(t, 'process.exit(0);');
+  await assert.rejects(
+    runRecertificationProcess(process.execPath, leak.args, {
+      cwd: leak.root,
+      env: { PATH: process.env.PATH },
+      terminationGraceMs: 60_000,
+    }),
+    /left descendant processes in group/u
+  );
+  assert.equal(await readFile(leak.observedTerm, 'utf8'), 'term-seen\n');
+  assert.equal(await groupSurvives(await leak.group()), false);
+});
+
+test('a SIGTERM-resistant descendant is killed after the grace and the run rejected', async t => {
+  const leak = await leakedDescendant(t, '// resists');
+  await assert.rejects(
+    runRecertificationProcess(process.execPath, leak.args, {
+      cwd: leak.root,
+      env: { PATH: process.env.PATH },
+      terminationGraceMs: 200,
+    }),
+    /left descendant processes in group/u
+  );
+  assert.equal(await groupSurvives(await leak.group()), false);
+});
