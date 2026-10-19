@@ -4835,7 +4835,8 @@ Team or the eval's premise moved.
 ### BUG-301 v0.1.21's release run refused its DMG and the release log could not say why
 
 Status: open · ENG-030 · found 2026-10-19 on the first v0.1.21 dispatch
-(run 39233626801); intermittent, not blocking (0.1.22 passed).
+(run 39233626801); intermittent, release-blocking when it fires (0.1.22
+passed, 0.1.23 failed); cause read 2026-10-19.
 
 The run notarized and stapled the app (Apple accepted it in 62 s), the
 release path's `spctl` and `xcrun stapler validate` both passed, and the ZIP
@@ -4864,6 +4865,23 @@ with this fix in the tag.
 2026-10-19: 0.1.22 (run 39236641396) passed every container check, DMG
 included, and published; the check stays intermittent with its cause
 unread. The next refusal prints stapler's own line.
+
+2026-10-19, cause read: v0.1.23's run (39324231554) failed the workflow's own
+`Verify notarized release app` step, on the app that had just been stapled.
+Stapler's line: `NSURLErrorDomain Code=-1005 "The network connection was
+lost."` for `https://api.apple-cloudkit.com/database/1/com.apple.gk.ticket-delivery/production/public/records/lookup`,
+then `The validate action failed! Error 68.` So `stapler validate` is a
+network lookup of the ticket on Apple's CloudKit, not a local check, and the
+runner's connection to it drops intermittently; the same check runs three
+times per release (the app, the ZIP's app, the DMG's app), which is why it
+fails some runs and not others. The DMG hypothesis is ruled out. Nothing
+public was created: no public tag, no Release, feed still 0.1.22.
+Proposed fix: one `validateStapledTicket` helper used by the workflow step
+and `assertNotarizedReleaseApp`, retrying only Error 68 with an
+`NSURLErrorDomain` line (a bounded number of attempts with backoff, each
+named in the log) and failing at once on any other answer, including "does
+not have a ticket stapled to it". It needs a new version, since a run uses
+its tag's scripts.
 
 ### BUG-294 A fresh Electron process reports an already locked Mac as unlocked
 
