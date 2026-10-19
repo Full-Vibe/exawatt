@@ -4788,3 +4788,28 @@ from Fleet altitude, with a band, or with a Project toggle. Decision `0024`
 carries the amendment. Tests: `board-arrow-walk.test.ts`; `eval:spatial` now
 asserts the focused Project holds through extend and release, and its settle
 workaround is deleted.
+
+### BUG-301 v0.1.21's release run refused its DMG and the release log could not say why
+
+Status: open · ENG-030 · found 2026-10-19 on the first v0.1.21 dispatch
+(run 39233626801); release-blocking for 0.1.21.
+
+The run notarized and stapled the app (Apple accepted it in 62 s), the
+release path's `spctl` and `xcrun stapler validate` both passed, and the ZIP
+built from the same staged app passed the full container check. The DMG
+built from that same staged app then failed `stapler validate` inside
+`release:publication:materialize`, after its `codesign --verify --deep
+--strict` and Gatekeeper assessment passed. Nothing public was created: no
+public tag, no Release, and the feed still serves 0.1.20, so the version is
+not spent. v0.1.19 failed the same check on its ZIP with no recorded cause;
+0.1.20 passed it. Same macOS image (20260907.0337.1) and electron-builder
+26.15.3 as 0.1.20; the one runner difference is that 0.1.21 was the first
+release on warm electron, electron-builder and macOS pnpm caches.
+
+Why the cause is unknown: `stapler` reports its verdict on stdout, and the
+release steps' error chain printed only stderr. Fixed here: the chain prints
+both, so the next refusal names itself. Open hypotheses, to be told apart by
+that line: a transient Apple ticket lookup during `validate` (it would read
+as a CloudKit or network error), or a DMG copy of the bundle missing its
+stapled ticket (`does not have a ticket stapled to it`). Next step: re-dispatch
+or cut 0.1.22 with this fix in the tag, read the line, then fix the cause.

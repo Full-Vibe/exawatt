@@ -4,7 +4,9 @@
  * sentence threw the actual reason away: v0.1.19's run said the zip "does not
  * contain a valid signed Exawatt.app" and nothing about which of codesign,
  * Gatekeeper or the stapled ticket refused it. Print every link of the cause
- * chain, with the stderr a failed `execFile` carries.
+ * chain, with the stdout and stderr a failed `execFile` carries: some tools
+ * give their verdict on stdout (`xcrun stapler validate` says "does not have a
+ * ticket stapled to it" there), and v0.1.21's run lost exactly that line.
  */
 export function describeErrorChain(error, { maxDepth = 8 } = {}) {
   const lines = [];
@@ -16,22 +18,25 @@ export function describeErrorChain(error, { maxDepth = 8 } = {}) {
       break;
     }
     lines.push(`${prefix}${current.message}`);
-    const stderr =
-      typeof current.stderr === 'string'
-        ? current.stderr
-        : Buffer.isBuffer(current.stderr)
-          ? current.stderr.toString('utf8')
-          : '';
-    if (stderr.trim()) {
-      lines.push(
-        ...stderr
-          .trim()
-          .split('\n')
-          .slice(-20)
-          .map(line => `  stderr: ${line}`)
-      );
+    for (const stream of ['stdout', 'stderr']) {
+      lines.push(...streamLines(current[stream], stream));
     }
     current = current.cause;
   }
   return lines.join('\n');
+}
+
+function streamLines(value, label) {
+  const text =
+    typeof value === 'string'
+      ? value
+      : Buffer.isBuffer(value)
+        ? value.toString('utf8')
+        : '';
+  if (!text.trim()) return [];
+  return text
+    .trim()
+    .split('\n')
+    .slice(-20)
+    .map(line => `  ${label}: ${line}`);
 }

@@ -37,6 +37,31 @@ test('prints every cause with the failed command stderr', async () => {
   );
 });
 
+test('prints the failed command stdout, where some tools give their verdict', async () => {
+  let commandError;
+  try {
+    await execFileAsync(process.execPath, [
+      '-e',
+      'process.stdout.write("Exawatt.app does not have a ticket stapled to it.\\n"); process.exit(65)',
+    ]);
+  } catch (error) {
+    commandError = error;
+  }
+  const wrapped = new Error(
+    '[artifacts] Exawatt.app failed stapled notarization ticket validation',
+    {
+      cause: commandError,
+    }
+  );
+
+  assert.ok(
+    describeErrorChain(wrapped)
+      .split('\n')
+      .includes('  stdout: Exawatt.app does not have a ticket stapled to it.'),
+    describeErrorChain(wrapped)
+  );
+});
+
 test('a plain error is its own message', () => {
   assert.equal(describeErrorChain(new Error('no feed')), 'no feed');
   assert.equal(describeErrorChain('thrown string'), 'thrown string');
