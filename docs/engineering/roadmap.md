@@ -4745,7 +4745,6 @@ now carries `document.visibilityState` and main's host snapshot so the next
 failure names which input parked it. Owner: the Fleet board
 (`src/components/fleet/spatial/operations-board/`), not the eval.
 
-
 **Fixed 2026-10-18 with one owner for "where a harness keeps its state".**
 `electron/main/pty/harness-homes.ts` holds `loginModelEnvironment`, the
 shared `harnessEnvironment()` (the login shell's answer in the operator's
