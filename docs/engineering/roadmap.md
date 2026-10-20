@@ -4921,3 +4921,19 @@ Also: held state is restored entry by entry in a layout effect, never at
 module evaluation; the dead-origin sweep clears exactly the packaged
 server's `127.0.0.1` origins, never a dev server's or a site's.
 [Evidence](projects/daily-driver-adoption.md#2026-10-19--the-lifecycle-review-every-step-inside-its-wait-bug-303).
+
+### BUG-304 The sitemap does not pick up a newly published release
+
+Status: open · ENG-031 W25 · found 2026-10-19 verifying 0.1.24.
+
+After 0.1.24 published (run 39338298087), `/changelog`, `/changelog/0.1.24`
+and the Atom feed showed it within two revalidation cycles (page cache and
+the feed fetch's data cache are each stale-while-revalidate at 300 s), but
+`/sitemap.xml` kept serving its 0.1.22 list: `x-vercel-cache: HIT` with
+`age` past 1,800 s and never `STALE`, although the build reports it at 5 m.
+Safe direction (a draft is never listed), but a release is missing from the
+sitemap until the next deploy. Next documents `sitemap.js` as a cached
+Route Handler; why its `revalidate` export is not honoured on Vercel is not
+yet known. Next step: read the deployment's route config for
+`/sitemap.xml`, then either make the export take effect or list releases
+from a route that does revalidate.
