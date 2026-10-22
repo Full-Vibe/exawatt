@@ -28,6 +28,7 @@ import {
 import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import { SetupRow } from './setup-row';
 import {
   SetupDetailPanel,
@@ -104,6 +105,19 @@ export function AgentLauncher({
   const [notchPosition, setNotchPosition] = useState<number | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  // The open details are the launcher's rung of the back-out ladder: Escape
+  // folds them and returns to the task. Folded, Escape falls through.
+  useBackOut({
+    rung: 'panel',
+    element: formRef,
+    enabled: open,
+    back: () => {
+      setOpen(false);
+      requestAnimationFrame(() => taskRef.current?.focus());
+      return true;
+    },
+  });
 
   const selected = setups.find(setup => setup.id === selectedId) ?? null;
   const ready = state === 'ready' && selected !== null && axes.length > 0;
@@ -149,18 +163,12 @@ export function AgentLauncher({
 
   return (
     <form
+      ref={formRef}
       data-agent-launcher
       className={cn('flex w-full min-w-0 flex-col gap-2', className)}
       onSubmit={event => {
         event.preventDefault();
         if (!startBlocked) onStart();
-      }}
-      onKeyDown={event => {
-        if (event.key === 'Escape' && open) {
-          event.stopPropagation();
-          setOpen(false);
-          requestAnimationFrame(() => taskRef.current?.focus());
-        }
       }}
     >
       <textarea

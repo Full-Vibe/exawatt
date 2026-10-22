@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { ArrowRight, LoaderCircle, Search, Sparkles } from 'lucide-react';
 import { WORKSPACE_HUD as HUD } from './workspace-theme';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { AGENT_SOURCE_META } from './agent-sources';
@@ -73,6 +74,27 @@ export const RecentConversations = forwardRef<
   const primaryRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const enrichmentAttemptRef = useRef<string | null>(null);
   const sectionId = useId();
+  const sectionRef = useRef<HTMLElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
+  // Rungs of the back-out ladder: a filter clears first, then Escape anywhere
+  // in the list goes back to the composer.
+  useBackOut({
+    rung: 'field',
+    element: filterRef,
+    back: () => {
+      if (!query) return false;
+      setQuery('');
+      return true;
+    },
+  });
+  useBackOut({
+    rung: 'panel',
+    element: sectionRef,
+    back: () => {
+      onReturnToComposer();
+      return true;
+    },
+  });
 
   useEffect(() => {
     if (!active || hidden) return;
@@ -198,9 +220,6 @@ export const RecentConversations = forwardRef<
       } else if (event.key === 'PageDown' || event.key === 'PageUp') {
         event.preventDefault();
         focusAt(index + (event.key === 'PageDown' ? 5 : -5));
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        onReturnToComposer();
       }
     },
     [focusAt, onReturnToComposer, visible.length]
@@ -224,6 +243,7 @@ export const RecentConversations = forwardRef<
 
   return (
     <section
+      ref={sectionRef}
       data-recent-conversations
       aria-labelledby={`${sectionId}-heading`}
       className="@container mt-5 w-full border-t pt-3"
@@ -258,15 +278,12 @@ export const RecentConversations = forwardRef<
           />
           <span className="sr-only">Filter recent conversations</span>
           <input
+            ref={filterRef}
             value={query}
             onChange={event => setQuery(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'ArrowDown') {
                 if (focusAt(0)) event.preventDefault();
-              } else if (event.key === 'Escape') {
-                event.preventDefault();
-                if (query) setQuery('');
-                else onReturnToComposer();
               }
             }}
             placeholder="Filter title, ID, or source"

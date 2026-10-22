@@ -44,6 +44,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Button } from '@/components/ui/button';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import {
   Dialog,
   DialogContent,
@@ -716,6 +717,20 @@ export function ConnectedSourceDetail({
   const [draftName, setDraftName] = useState(source.displayName);
   const [confirmingDetach, setConfirmingDetach] = useState(false);
   const nameInput = useRef<HTMLInputElement>(null);
+  const renameForm = useRef<HTMLFormElement>(null);
+  // The rename's rung of the back-out ladder: Escape anywhere in it cancels,
+  // and focus goes back to what opened it.
+  useBackOut({
+    rung: 'field',
+    element: renameForm,
+    enabled: renaming,
+    returnFocus: true,
+    back: () => {
+      setDraftName(source.displayName);
+      setRenaming(false);
+      return true;
+    },
+  });
 
   useEffect(() => {
     setRenaming(false);
@@ -758,6 +773,7 @@ export function ConnectedSourceDetail({
             </p>
             {renaming ? (
               <form
+                ref={renameForm}
                 className="mt-1 flex items-center gap-2"
                 onSubmit={event => {
                   event.preventDefault();
@@ -769,13 +785,6 @@ export function ConnectedSourceDetail({
                   aria-label="Connection name"
                   value={draftName}
                   onChange={event => setDraftName(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === 'Escape') {
-                      event.preventDefault();
-                      setDraftName(source.displayName);
-                      setRenaming(false);
-                    }
-                  }}
                   className="min-w-0 flex-1 rounded-md border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-2 py-1 font-display text-display font-semibold tracking-[-0.02em] text-[var(--settings-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
                 />
                 <Button type="submit" size="sm">

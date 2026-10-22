@@ -868,6 +868,31 @@ describe('Connected sources in Agent Source Settings', () => {
     ).toBeInTheDocument();
   });
 
+  it('Escape cancels a rename and returns focus to Rename', async () => {
+    const bridge = mountBridge({
+      sources: [connection({ id: 'a', displayName: 'Work gateway' })],
+      statuses: [observation({ id: 'a' })],
+    });
+    render(<AgentSourcesSettings />);
+    await openConnection('Work gateway');
+
+    const rename = screen.getByRole('button', { name: 'Rename' });
+    rename.focus();
+    fireEvent.click(rename);
+    const input = screen.getByLabelText('Connection name');
+    fireEvent.change(input, { target: { value: 'Ops gateway' } });
+    await reactAct(async () => {
+      expect(fireEvent.keyDown(input, { key: 'Escape' })).toBe(false);
+    });
+
+    expect(screen.queryByLabelText('Connection name')).toBeNull();
+    expect(bridge.rename).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('Work gateway', { selector: 'h2' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rename' })).toHaveFocus();
+  });
+
   it('offers one route to Connect a server and no invented roster', async () => {
     const onConnect = vi.fn();
     mountBridge({ sources: [], statuses: [] });

@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import type { SessionGlyphState } from './session-status';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 
@@ -38,24 +39,33 @@ export function CloseConfirm({
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Escape cancels; focus returns to what opened the confirm.
+  useBackOut({
+    rung: 'overlay',
+    element: dialogRef,
+    returnFocus: true,
+    back: () => {
+      onCancel();
+      return true;
+    },
+  });
   useEffect(() => closeRef.current?.focus(), []);
   return (
     <div
+      ref={dialogRef}
       data-close-confirm
       role="dialog"
       aria-modal="true"
       aria-label={`Close ${title}?`}
       onKeyDown={e => {
-        e.stopPropagation();
+        // Every key stays in the dialog except Escape, which the back-out
+        // ladder resolves: this dialog is its topmost overlay.
+        if (e.key !== 'Escape') e.stopPropagation();
         if (e.key === 'Enter') {
           // ⏎ always presses the DEFAULT, wherever focus sits (macOS)
           e.preventDefault();
           onClose();
-          return;
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          onCancel();
           return;
         }
         if (e.key === 'Tab') {
@@ -159,23 +169,32 @@ export function CloseProjectConfirm({
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Escape cancels; focus returns to what opened the confirm.
+  useBackOut({
+    rung: 'overlay',
+    element: dialogRef,
+    returnFocus: true,
+    back: () => {
+      onCancel();
+      return true;
+    },
+  });
   useEffect(() => closeRef.current?.focus(), []);
   return (
     <div
+      ref={dialogRef}
       data-project-close-confirm
       role="dialog"
       aria-modal="true"
       aria-label={`Close ${title}?`}
       onKeyDown={e => {
-        e.stopPropagation();
+        // Every key stays in the dialog except Escape, which the back-out
+        // ladder resolves: this dialog is its topmost overlay.
+        if (e.key !== 'Escape') e.stopPropagation();
         if (e.key === 'Enter') {
           e.preventDefault();
           onClose();
-          return;
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          onCancel();
           return;
         }
         if (e.key === 'Tab') {
@@ -272,31 +291,31 @@ export function PauseProjectConfirm({
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const previous =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    cancelRef.current?.focus();
-    return () => {
-      if (previous?.isConnected) previous.focus();
-    };
-  }, []);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Escape cancels; focus returns to what opened the confirm.
+  useBackOut({
+    rung: 'overlay',
+    element: dialogRef,
+    returnFocus: true,
+    back: () => {
+      onCancel();
+      return true;
+    },
+  });
+  useEffect(() => cancelRef.current?.focus(), []);
   return (
     <div
+      ref={dialogRef}
       data-project-pause-confirm
       role="dialog"
       aria-modal="true"
       aria-label={`Pause ${title}?`}
       onKeyDown={e => {
-        e.stopPropagation();
+        // Every key stays in the dialog except Escape, which the back-out
+        // ladder resolves: this dialog is its topmost overlay.
+        if (e.key !== 'Escape') e.stopPropagation();
         // Enter and Space keep native focused-button activation. Cancel is
         // initially focused; deliberately focusing Pause makes it actionable.
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          onCancel();
-          return;
-        }
         if (e.key === 'Tab') {
           e.preventDefault();
           const other =

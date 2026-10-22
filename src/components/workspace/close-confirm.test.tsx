@@ -1,6 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { CloseConfirm, CloseProjectConfirm } from './close-confirm';
+import {
+  CloseConfirm,
+  CloseProjectConfirm,
+  PauseProjectConfirm,
+} from './close-confirm';
 
 describe('CloseProjectConfirm', () => {
   it('names the batch consequence and keeps Enter as the default action', () => {
@@ -99,5 +104,33 @@ describe('CloseConfirm', () => {
     expect(dialog).not.toHaveTextContent('still working');
     expect(dialog).not.toHaveTextContent('waiting on your answer');
     expect(dialog).toHaveTextContent('Recently closed');
+  });
+});
+
+describe('PauseProjectConfirm', () => {
+  it('Escape cancels from anywhere and focus goes back to what opened it', async () => {
+    const invoker = document.createElement('button');
+    document.body.append(invoker);
+    invoker.focus();
+    function Host() {
+      const [open, setOpen] = useState(true);
+      return open ? (
+        <PauseProjectConfirm
+          title="Exawatt"
+          color="#19E6FF"
+          activeCount={2}
+          onPause={vi.fn()}
+          onCancel={() => setOpen(false)}
+        />
+      ) : null;
+    }
+    render(<Host />);
+    expect(screen.getByRole('button', { name: /Cancel/ })).toHaveFocus();
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(invoker).toHaveFocus();
+    invoker.remove();
   });
 });

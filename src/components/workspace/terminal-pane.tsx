@@ -44,6 +44,7 @@ import {
   xtermThemeForAppearance,
 } from './terminal-theme';
 import { WORKSPACE_HUD } from './workspace-theme';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import { LAYOUT_CLASS, type PaneLayout } from './pane-layout';
 
 export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
@@ -521,6 +522,18 @@ export function TerminalPane({
     searchRef.current?.clearDecorations();
     termRef.current?.focus();
   };
+  // Open search is a field rung of the back-out ladder: Escape anywhere in
+  // the bar closes it and hands the keyboard back to the terminal.
+  const searchBar = useRef<HTMLDivElement>(null);
+  useBackOut({
+    rung: 'field',
+    element: searchBar,
+    enabled: searchOpen,
+    back: () => {
+      closeSearch();
+      return true;
+    },
+  });
 
   useEffect(() => {
     if (font) termRef.current?.applyFont(font);
@@ -585,6 +598,7 @@ export function TerminalPane({
       <div ref={container} className="absolute inset-0" />
       {searchOpen && (
         <div
+          ref={searchBar}
           data-terminal-search
           className="absolute right-3 top-3 z-20 flex h-9 items-center border px-2 shadow-lg"
           style={{
@@ -598,8 +612,8 @@ export function TerminalPane({
             value={searchQuery}
             onChange={event => setSearchQuery(event.target.value)}
             onKeyDown={event => {
-              event.stopPropagation();
-              if (event.key === 'Escape') closeSearch();
+              // typing stays in the field; Escape goes to the ladder
+              if (event.key !== 'Escape') event.stopPropagation();
               if (event.key === 'Enter') {
                 stepSearch(event.shiftKey ? 'previous' : 'next');
               }
