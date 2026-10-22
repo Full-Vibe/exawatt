@@ -11,7 +11,7 @@ import {
 import { MoveToApplicationsDialog } from './move-to-applications-dialog';
 
 const OFFER: MoveToApplicationsOffer = {
-  location: '/Users/someone/Downloads/Exawatt.app',
+  location: '/Users/user/Downloads/Exawatt.app',
 };
 
 afterEach(removeBridgeDouble);

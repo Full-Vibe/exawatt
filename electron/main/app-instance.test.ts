@@ -28,7 +28,7 @@ function fakeApp(holdsLock: boolean) {
 
 const options = {
   productName: 'Exawatt',
-  userData: '/Users/someone/Library/Application Support/Exawatt',
+  userData: '/Users/user/Library/Application Support/Exawatt',
 };
 
 describe('claimAppInstance', () => {

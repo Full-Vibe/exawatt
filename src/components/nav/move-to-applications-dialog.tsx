@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useLatestRequest } from '@/hooks/use-latest-request';
 import {
   isDismissed,
   moveToApplicationsNotice,
@@ -40,31 +41,46 @@ export function MoveToApplicationsDialog() {
   const [pending, setPending] = useState(false);
   const [stayed, setStayed] = useState<MoveToApplicationsOutcome | null>(null);
 
+  const offerReads = useLatestRequest();
+  const dismissalReads = useLatestRequest();
+
   useEffect(() => {
     const api = window.electron?.app;
     if (!api?.moveToApplicationsOffer) return;
-    let live = true;
+    const offerRead = offerReads.begin();
     void api
       .getBuildInfo()
       .then(info => {
-        if (live) setProductName(info.distribution.identity.productName);
+        if (offerRead.current) {
+          setProductName(info.distribution.identity.productName);
+        }
       })
       .catch(() => undefined);
-    void Promise.all([api.moveToApplicationsOffer(), api.noticeDismissals()])
-      .then(([nextOffer, nextDismissals]) => {
-        if (!live) return;
-        setOffer(nextOffer);
-        setDismissals(nextDismissals);
+    void api
+      .moveToApplicationsOffer()
+      .then(next => {
+        if (offerRead.current) setOffer(next);
+      })
+      .catch(() => undefined);
+    // A push supersedes a read still in flight, so an older answer never
+    // puts a declined offer back.
+    const dismissalRead = dismissalReads.begin();
+    void api
+      .noticeDismissals()
+      .then(next => {
+        if (dismissalRead.current) setDismissals(next);
       })
       .catch(() => undefined);
     const off = api.onNoticeDismissalsChanged(next => {
-      if (live) setDismissals(next);
+      dismissalReads.begin();
+      setDismissals(next);
     });
     return () => {
-      live = false;
+      offerReads.invalidate();
+      dismissalReads.invalidate();
       off();
     };
-  }, []);
+  }, [offerReads, dismissalReads]);
 
   const notice = moveToApplicationsNotice(offer);
   const open =
@@ -73,6 +89,8 @@ export function MoveToApplicationsDialog() {
 
   const decline = () => {
     if (pending) return;
+    // Hidden at once; main's record makes it hold everywhere.
+    dismissalReads.begin();
     setDismissals(current => ({ ...current, [notice.id]: notice.version }));
     void window.electron?.app
       ?.dismissNotice(notice.id, notice.version)

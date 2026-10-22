@@ -194,7 +194,7 @@ const DUMP = [
     ['container', '/ (0x4)'],
     [
       'path',
-      '/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app (0x204c)',
+      '/Users/dev/src/exawatt-gone/release/mac-arm64/Exawatt.app (0x204c)',
     ],
     ['identifier', 'ai.exawatt.desktop'],
   ]),
@@ -205,7 +205,7 @@ const DUMP = [
   record('bundle id:                  Electron (0x1086)', [
     [
       'path',
-      '/Users/me/src/exawatt/node_modules/electron/dist/Electron.app (0x2054)',
+      '/Users/dev/src/exawatt/node_modules/electron/dist/Electron.app (0x2054)',
     ],
     ['identifier', 'com.github.Electron'],
   ]),
@@ -217,19 +217,19 @@ const DUMP = [
     ['identifier', 'ai.exawatt.desktop'],
   ]),
   record('bundle id:                  Other (0x1088)', [
-    ['path', '/Users/me/src/other/Other.app (0x205c)'],
+    ['path', '/Users/dev/src/other/Other.app (0x205c)'],
     ['identifier', 'com.example.other'],
   ]),
   record('claim id:                   Exawatt (0x2000)', [
     [
       'path',
-      '/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app (0x204c)',
+      '/Users/dev/src/exawatt-gone/release/mac-arm64/Exawatt.app (0x204c)',
     ],
   ]),
 ].join('');
 
 const belongs = repositoryBundlePredicate({
-  mainCheckout: '/Users/me/src/exawatt',
+  mainCheckout: '/Users/dev/src/exawatt',
   temporaryDirectories: ['/private/var/T'],
 });
 
@@ -237,11 +237,11 @@ test('Launch Services bundle records are read from the dump, and nothing else is
   assert.deepEqual(
     launchServicesBundles(DUMP).map(bundle => bundle.path),
     [
-      '/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app',
+      '/Users/dev/src/exawatt-gone/release/mac-arm64/Exawatt.app',
       '/Applications/Exawatt.app',
-      '/Users/me/src/exawatt/node_modules/electron/dist/Electron.app',
+      '/Users/dev/src/exawatt/node_modules/electron/dist/Electron.app',
       '/private/var/T/exawatt-dogfood-source-AbC123/source/release/mac-arm64/Exawatt.app',
-      '/Users/me/src/other/Other.app',
+      '/Users/dev/src/other/Other.app',
     ]
   );
   assert.equal(launchServicesBundles(DUMP)[0].identifier, 'ai.exawatt.desktop');
@@ -249,16 +249,16 @@ test('Launch Services bundle records are read from the dump, and nothing else is
 
 test('only this repository’s worktrees are ours, and /Applications never is', () => {
   assert.equal(
-    belongs('/Users/me/src/exawatt/release/mac-arm64/Exawatt.app'),
+    belongs('/Users/dev/src/exawatt/release/mac-arm64/Exawatt.app'),
     true
   );
-  assert.equal(belongs('/Users/me/src/exawatt-slug/release/X.app'), true);
+  assert.equal(belongs('/Users/dev/src/exawatt-slug/release/X.app'), true);
   assert.equal(
     belongs('/private/var/T/exawatt-dogfood-source-AbC/source/release/X.app'),
     true
   );
-  assert.equal(belongs('/Users/me/src/exawattish/X.app'), false);
-  assert.equal(belongs('/Users/me/src/other/X.app'), false);
+  assert.equal(belongs('/Users/dev/src/exawattish/X.app'), false);
+  assert.equal(belongs('/Users/dev/src/other/X.app'), false);
   assert.equal(
     belongs('/private/var/T/exawatt-exact-public-1/checkout/X.app'),
     false
@@ -276,7 +276,7 @@ test('only this repository’s worktrees are ours, and /Applications never is', 
 test('the sweep lists gone registrations under our worktrees, and unregisters only with execute', () => {
   const present = new Set([
     '/Applications/Exawatt.app',
-    '/Users/me/src/exawatt/node_modules/electron/dist/Electron.app',
+    '/Users/dev/src/exawatt/node_modules/electron/dist/Electron.app',
   ]);
   const calls = [];
   const run = (command, args) => {
@@ -293,7 +293,7 @@ test('the sweep lists gone registrations under our worktrees, and unregisters on
     listed.stale.map(bundle => bundle.path),
     [
       '/private/var/T/exawatt-dogfood-source-AbC123/source/release/mac-arm64/Exawatt.app',
-      '/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app',
+      '/Users/dev/src/exawatt-gone/release/mac-arm64/Exawatt.app',
     ]
   );
   assert.deepEqual(calls, [[LSREGISTER, '-dump', 'Bundle']]);
@@ -301,7 +301,7 @@ test('the sweep lists gone registrations under our worktrees, and unregisters on
   const swept = sweepLaunchServices({ run, exists, belongs, execute: true });
   assert.deepEqual(
     swept.unregistered.map(bundle => bundle.path),
-    ['/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app']
+    ['/Users/dev/src/exawatt-gone/release/mac-arm64/Exawatt.app']
   );
   // A refusal is reported as one, never folded into "nothing to do".
   assert.equal(swept.refused.length, 1);
@@ -337,14 +337,14 @@ test('a launched package is forgotten only when it is ours, never in /Applicatio
   );
   assert.equal(
     forgetLaunchedPackage(
-      { appPath: '/Users/me/src/other/Other.app' },
+      { appPath: '/Users/dev/src/other/Other.app' },
       { run, belongs }
     ),
     'not-ours'
   );
   assert.equal(
     forgetLaunchedPackage(
-      { appPath: '/Users/me/src/exawatt-slug/release/mac-arm64/Exawatt.app' },
+      { appPath: '/Users/dev/src/exawatt-slug/release/mac-arm64/Exawatt.app' },
       { run, belongs }
     ),
     'forgotten'
@@ -353,12 +353,12 @@ test('a launched package is forgotten only when it is ours, never in /Applicatio
     [
       LSREGISTER,
       '-u',
-      '/Users/me/src/exawatt-slug/release/mac-arm64/Exawatt.app',
+      '/Users/dev/src/exawatt-slug/release/mac-arm64/Exawatt.app',
     ],
   ]);
   assert.equal(
     forgetLaunchedPackage(
-      { appPath: '/Users/me/src/exawatt-slug/X.app' },
+      { appPath: '/Users/dev/src/exawatt-slug/X.app' },
       {
         run: () => {
           throw new Error('denied');

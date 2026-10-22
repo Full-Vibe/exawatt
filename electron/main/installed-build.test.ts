@@ -126,7 +126,7 @@ describe('the offer to move into Applications (BUG-305)', () => {
       records,
       placement: createApplicationsPlacement({
         offered: true,
-        bundlePath: '/Users/someone/Downloads/Exawatt.app',
+        bundlePath: '/Users/user/Downloads/Exawatt.app',
         running,
         mover: mover(),
         installedCopy: () => 'absent',
@@ -138,7 +138,7 @@ describe('the offer to move into Applications (BUG-305)', () => {
 
   it('offers only an official build outside Applications', () => {
     expect(placement().placement.offer()).toEqual({
-      location: '/Users/someone/Downloads/Exawatt.app',
+      location: '/Users/user/Downloads/Exawatt.app',
     });
     expect(placement({ offered: false }).placement.offer()).toBeNull();
     expect(
