@@ -133,13 +133,16 @@ const BOARD_CANVAS_MODULES = [
   'operations-board-field.tsx',
   'operations-board-transition.ts',
 ];
-/** The frame scheduler decides when every board canvas paints. */
+/** The frame scheduler decides when every board canvas and the hero paint,
+ * the Fleet v2 lattice included. */
 const FRAME_DEMAND_DIR = 'src/lib/frame-demand/';
+const isFrameDemand = file =>
+  file.startsWith(FRAME_DEMAND_DIR) && !/\.test\.tsx?$/.test(file);
 const isBoardCanvas = file =>
   BOARD_CANVAS_MODULES.some(
     module => file === `${BOARD_CANVAS_DIR}${module}`
   ) ||
-  (file.startsWith(FRAME_DEMAND_DIR) && !/\.test\.tsx?$/.test(file)) ||
+  isFrameDemand(file) ||
   (file.startsWith(`${BOARD_CANVAS_DIR}tiles/`) &&
     !/\.test\.tsx?$/.test(file)) ||
   (file.startsWith('src/components/tiles/') && !/\.test\.tsx?$/.test(file));
@@ -151,6 +154,7 @@ export const SURFACE_GATES = [
     match: file =>
       (file.startsWith(`${BOARD_CANVAS_DIR}tiles/`) &&
         !/\.test\.tsx?$/.test(file)) ||
+      isFrameDemand(file) ||
       file === 'scripts/fleet-v2-interaction-eval.mjs',
   },
   {
@@ -188,6 +192,7 @@ export const SURFACE_GATES = [
         !/\.test\.tsx?$/.test(file)) ||
       file === 'src/components/hud/board-study-fixtures.ts' ||
       file === 'src/app/hud-gallery/board-study/page.tsx' ||
+      isFrameDemand(file) ||
       file === 'scripts/board-status-visibility-eval.mjs',
   },
   {
@@ -202,6 +207,7 @@ export const SURFACE_GATES = [
         !/\.test\.tsx?$/.test(file)) ||
       (file.startsWith('src/components/tiles/') &&
         !/\.test\.tsx?$/.test(file)) ||
+      isFrameDemand(file) ||
       file === 'scripts/board-tiles-bench-eval.mjs',
   },
   {
@@ -752,6 +758,9 @@ export const SURFACE_GATES = [
         'src/components/nav/held-state-bridge.tsx',
         'src/lib/notices/notice-identity.ts',
         'scripts/electron-app-lifecycle-eval.mjs',
+        // How a new window enters the workspace: section 4 hung on two
+        // navigations in flight at once (BUG-308).
+        'electron/main/window.ts',
       ].includes(file) ||
       (file.startsWith('src/lib/app-lifecycle/') &&
         !/\.test\.tsx?$/u.test(file)),
@@ -788,7 +797,7 @@ export const SURFACE_GATES = [
       file.startsWith('src/app/eval/t12-hero-board/') ||
       file === 'scripts/hero-board-idle-eval.mjs' ||
       // What decides when the hero paints: its frame scheduler and policy.
-      (file.startsWith(FRAME_DEMAND_DIR) && !/\.test\.tsx?$/.test(file)) ||
+      isFrameDemand(file) ||
       file === 'src/lib/host-power/use-host-render-policy.ts',
   },
   {
