@@ -164,6 +164,7 @@
         "scripts/changelog-check.mjs",
         "scripts/check-asset-provenance.mjs",
         "scripts/check-dependency-licenses.mjs",
+        "scripts/check-eval-handles.mjs",
         "scripts/check-production-theme-literals.mjs",
         "scripts/check-screen-copy.mjs",
         "scripts/ci-batch-worker.mjs",
