@@ -88,43 +88,100 @@ function waitForPersistedIdentities(page, ids) {
 }
 
 /**
- * Hold the next `pty:create` in main where its readiness probe runs, so a
- * start is provably in flight (BUG-305). Wraps the registered handler in
- * Electron's own invoke table; a table this build does not have fails the
- * eval rather than holding nothing.
+ * Hold Session starts inside main's start itself, in the slot where its
+ * readiness probe runs (BUG-305). `ensureRunning` has already registered the
+ * start when it reaches that slot, so any ask for the same Session during the
+ * hold must join it rather than start or refuse. Reached through main's own
+ * Session owner module; a build that does not expose it fails the eval
+ * rather than holding nothing.
  */
-async function holdNextStart(app) {
-  const installed = await app.evaluate(({ ipcMain }) => {
-    const handlers = ipcMain._invokeHandlers;
-    const original = handlers?.get?.('pty:create');
-    if (typeof original !== 'function') return false;
-    let release;
-    const gate = new Promise(resolve => (release = resolve));
-    globalThis.__exawattStartHold = { asked: 0, release };
-    handlers.set('pty:create', async (event, ...args) => {
-      globalThis.__exawattStartHold.asked += 1;
-      await gate;
-      handlers.set('pty:create', original);
-      return original(event, ...args);
-    });
+async function installStartHold(app) {
+  const installed = await app.evaluate(() => {
+    const { ptySessions } = process.mainModule.require('./pty/session-manager');
+    if (typeof ptySessions?.ensureRunning !== 'function') return false;
+    const ensureRunning = ptySessions.ensureRunning;
+    const hold = { armed: null };
+    globalThis.__exawattStartHold = hold;
+    ptySessions.ensureRunning = function (options, prepare) {
+      const asked = hold.armed;
+      if (
+        asked?.durableSessionId &&
+        asked.durableSessionId === options.durableSessionId
+      )
+        asked.asks += 1;
+      return ensureRunning.call(this, options, async () => {
+        const armed = hold.armed;
+        if (armed && !armed.durableSessionId) {
+          armed.durableSessionId = options.durableSessionId;
+          armed.asks = 1;
+          await armed.gate;
+        }
+        if (armed?.durableSessionId === options.durableSessionId)
+          armed.prepared += 1;
+        await prepare?.();
+      });
+    };
     return true;
   });
   if (!installed)
-    throw new Error('Could not hold pty:create: no invoke handler table');
+    throw new Error('Could not hold a start: main exposes no Session owner');
+  const read = () =>
+    app.evaluate(() => {
+      const { armed } = globalThis.__exawattStartHold;
+      return {
+        durableSessionId: armed?.durableSessionId ?? null,
+        asks: armed?.asks ?? 0,
+        prepared: armed?.prepared ?? 0,
+      };
+    });
+  async function until(condition, label) {
+    const deadline = Date.now() + 20_000;
+    for (;;) {
+      const state = await read();
+      if (condition(state)) return state;
+      if (Date.now() >= deadline)
+        throw new Error(`TIMED OUT after 20s waiting for ${label}`);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
   return {
-    async asked() {
-      const deadline = Date.now() + 20_000;
-      while (Date.now() < deadline) {
-        const asked = await app.evaluate(
-          () => globalThis.__exawattStartHold?.asked ?? 0
-        );
-        if (asked > 0) return;
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-      throw new Error('TIMED OUT after 20s waiting for the held start');
-    },
-    release: () => app.evaluate(() => globalThis.__exawattStartHold.release()),
+    /** Hold the next start until `release`. */
+    arm: () =>
+      app.evaluate(() => {
+        let release;
+        const gate = new Promise(resolve => (release = resolve));
+        globalThis.__exawattStartHold.armed = {
+          gate,
+          release,
+          durableSessionId: null,
+          asks: 0,
+          prepared: 0,
+        };
+      }),
+    /** Resolves with the held Session once a start is inside the hold. */
+    held: () =>
+      until(state => state.durableSessionId, 'a start inside the hold'),
+    /** Resolves once the held Session has been asked for `count` times. */
+    asked: count =>
+      until(state => state.asks >= count, 'another ask for the held Session'),
+    read,
+    release: () =>
+      app.evaluate(() => globalThis.__exawattStartHold.armed.release()),
   };
+}
+
+/** Lines of this run's harness-event log (BUG-102). */
+function harnessEventLines() {
+  try {
+    return readFileSync(join(userData, 'logs', 'harness-events.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(line => JSON.parse(line));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
 }
 
 let originalIds = [];
@@ -264,46 +321,58 @@ try {
         );
       }
 
-      // BUG-305: the window reloads while main is still starting a Session.
-      // The reloaded window reads the list before that start exists, so it
-      // must learn of it from main's push and show the tab attached; the
-      // Resume that follows must not be refused for a process already
-      // running.
-      const before305 = new Set(
-        (
-          await page.evaluate(
-            async () => (await window.electron?.pty?.list()) ?? []
-          )
-        ).map(session => session.durableSessionId)
-      );
-      const hold = await holdNextStart(app);
+      // BUG-305, push: the window reloads while main is inside a start. The
+      // reloaded window reads a list that start is not in yet, so it must
+      // learn of it from main's push and show its tab attached, untouched.
+      const hold = await installStartHold(app);
+      await hold.arm();
       await resumeBanner.getByRole('button').first().click();
-      await hold.asked();
+      const pushed = await hold.held();
       await page.reload();
       await waitForWorkspaceReady(page);
       await hold.release();
-      const [stranded] = (await waitForSessionCount(page, 3)).filter(
-        session => !before305.has(session.durableSessionId)
-      );
+      await waitForSessionCount(page, 3);
       await waitForPageCondition(
         page,
-        async ({ durableSessionId, id }) => {
+        async id => {
           const layout = await window.electron?.workspace?.load();
           const tab = layout?.projects
             ?.flatMap(project => project.tabs)
-            .find(candidate => candidate.durableSessionId === durableSessionId);
-          return tab?.sessionId === id && tab.lifecycle === 'running';
+            .find(candidate => candidate.durableSessionId === id);
+          const live = (await window.electron?.pty?.list())?.find(
+            session => session.durableSessionId === id
+          );
+          return (
+            !!live && tab?.sessionId === live.id && tab.lifecycle === 'running'
+          );
         },
-        stranded,
+        pushed.durableSessionId,
         { label: 'the reloaded window attaching the Session main started' }
       );
       console.log(
-        `[exact-resume] BUG-305: ${stranded.id} started behind a reload and its tab is attached`
+        `[exact-resume] BUG-305: ${pushed.durableSessionId} started behind a reload and its tab attached`
       );
 
-      // After explicit Project recovery, the primary action resumes only the
-      // remaining restart set; exact identities below prove that boundary.
+      // BUG-305, join: the window reloads inside the next start, and its
+      // Resume asks for that very Session while main is still starting it.
+      // Main must answer with that start: one readiness probe, one process,
+      // no refusal.
+      const logBefore = harnessEventLines().length;
+      await hold.arm();
       await resumeBanner.getByRole('button').first().click();
+      const joined = await hold.held();
+      await page.reload();
+      await waitForWorkspaceReady(page);
+      const listed = await page.evaluate(
+        async () => (await window.electron?.pty?.list()) ?? []
+      );
+      if (
+        listed.some(item => item.durableSessionId === joined.durableSessionId)
+      )
+        throw new Error('The held Session was running before its start ended');
+      await resumeBanner.getByRole('button').first().click();
+      await hold.asked(2);
+      await hold.release();
       await waitForSessionCount(page, 6);
       await waitForPageCondition(
         page,
@@ -316,13 +385,37 @@ try {
           );
         },
         undefined,
-        { label: 'all six tabs attached, none refused' }
+        { label: 'all six tabs attached' }
       );
-      const refused = await page
-        .getByText('already has a running process')
-        .count();
-      if (refused > 0)
-        throw new Error('A Resume was refused for a process already running');
+      if ((await page.locator('[data-tab-lifecycle="failed"]').count()) > 0)
+        throw new Error('A tab reads failed after the joined Resume');
+      const { prepared } = await hold.read();
+      if (prepared !== 1)
+        throw new Error(`The held start prepared ${prepared} times, not once`);
+      const deadline = Date.now() + 20_000;
+      let answers = [];
+      let starts = [];
+      for (;;) {
+        const lines = harnessEventLines()
+          .slice(logBefore)
+          .filter(line => line.durableSessionId === joined.durableSessionId);
+        answers = lines
+          .filter(line => line.event === 'session.ensure')
+          .map(line => line.answer);
+        starts = lines.filter(line => line.event === 'session.start');
+        if (answers.length > 0 || Date.now() >= deadline) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      if (
+        JSON.stringify(answers) !== JSON.stringify(['joined']) ||
+        starts.length !== 1
+      )
+        throw new Error(
+          `The Resume asked during the start was not joined to it: answers ${JSON.stringify(answers)}, starts ${starts.length}`
+        );
+      console.log(
+        `[exact-resume] BUG-305: a Resume during ${joined.durableSessionId}'s start joined it`
+      );
 
       const resumed = await page.evaluate(async () => {
         const pty = window.electron?.pty;
