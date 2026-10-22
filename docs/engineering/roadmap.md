@@ -5234,6 +5234,10 @@ Section 3 ("Restart to Update keeps your place") waits for "the panned Fleet cam
 The 2026-10-19 lifecycle review repaired this step once (it pans with a scroll gesture and waits for the board's own save);
 find what changed since. Exit: the eval passes three runs in a row on master and the train waiver is no longer needed.
 
+Sleep half (2026-10-22): from about 02:00 this Mac drops into maintenance sleep and Electron launches then fail with "no
+window". Every `agent:land` run now holds the Mac awake until it exits (`caffeinate -i -s -w <pid>`), so an overnight train
+cannot meet it; agent/train-bisect, `<sha pending>`.
+
 ### BUG-310 The packaged renderer server registers with macOS as a second Exawatt
 
 Status: bug · ENG-016 · found 2026-10-22 by the instance packet.

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import {
   chmod,
   mkdir,
@@ -13,7 +14,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { parseArgs, parseWorktrees } from './agent-land.mjs';
+import { holdAwake, parseArgs, parseWorktrees } from './agent-land.mjs';
 import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 import { gitAsync, hermeticGitEnv } from './lib/hermetic-git.mjs';
 
@@ -130,6 +131,44 @@ async function waitFor(predicate, run) {
     await new Promise(resolve => setTimeout(resolve, 25));
   }
 }
+
+// BUG-308: from about 02:00 an idle Mac drops into maintenance sleep and an
+// Electron gate's launch fails with "no window"; trains run overnight.
+test('a landing holds the Mac awake until its own process ends, and never fails for it', async () => {
+  const bin = await mkdtemp(path.join(tmpdir(), 'exawatt-caffeinate-'));
+  try {
+    const recorded = path.join(bin, 'args');
+    await writeFile(
+      path.join(bin, 'caffeinate'),
+      `#!/bin/sh\nprintf '%s ' "$@" > ${JSON.stringify(recorded)}\n`
+    );
+    await chmod(path.join(bin, 'caffeinate'), 0o755);
+    const held = holdAwake({
+      platform: 'darwin',
+      env: { ...process.env, PATH: bin },
+    });
+    await once(held, 'exit');
+    // `-w` with this process's pid: the assertion ends when the landing
+    // does, crash included, and nothing has to stop it.
+    assert.equal(
+      (await readFile(recorded, 'utf8')).trim(),
+      `-i -s -w ${process.pid}`
+    );
+
+    // No caffeinate to start: the landing runs on.
+    const missing = holdAwake({
+      platform: 'darwin',
+      env: { ...process.env, PATH: path.join(bin, 'empty') },
+    });
+    // An unhandled child 'error' would crash the landing; it handles its own.
+    assert.ok(missing.listenerCount('error') > 0);
+    const [error] = await once(missing, 'error');
+    assert.equal(error.code, 'ENOENT');
+    assert.equal(holdAwake({ platform: 'linux' }), null);
+  } finally {
+    await rm(bin, { recursive: true, force: true });
+  }
+});
 
 test('parses repeated verification and delivery options', () => {
   assert.deepEqual(

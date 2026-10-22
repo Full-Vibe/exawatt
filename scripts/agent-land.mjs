@@ -94,6 +94,34 @@ function probeIntervalMs(env = process.env) {
   return (Number.isFinite(seconds) && seconds >= 0 ? seconds : 30) * 1_000;
 }
 
+/**
+ * A landing holds the Mac awake for exactly as long as it runs (BUG-308).
+ * From about 02:00 an idle Mac drops into maintenance sleep, and an Electron
+ * gate's launch then fails with "no window"; trains run overnight. `-w` ties
+ * the assertion to this process, so it ends when the landing does, crash
+ * included, and nothing has to stop it. Off macOS, or when caffeinate cannot
+ * start, the landing runs exactly as before.
+ */
+export function holdAwake({
+  platform = process.platform,
+  pid = process.pid,
+  env = process.env,
+} = {}) {
+  if (platform !== 'darwin') return null;
+  try {
+    const child = spawn('caffeinate', ['-i', '-s', '-w', String(pid)], {
+      stdio: 'ignore',
+      env,
+    });
+    child.once('error', () => {});
+    // The landing's own exit is what ends caffeinate, so it must not wait on it.
+    child.unref();
+    return child;
+  } catch {
+    return null;
+  }
+}
+
 export function parseArgs(argv) {
   const options = {
     direct: false,
@@ -544,6 +572,7 @@ async function main() {
     process.stdout.write(usage());
     return;
   }
+  holdAwake();
   const trainRefusal = trainOptionsRefusal(options);
   if (trainRefusal) throw new Error(trainRefusal);
   const train = options.train.length > 0;

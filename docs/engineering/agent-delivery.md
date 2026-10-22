@@ -46,6 +46,8 @@ checks. The repository always owns them. `--keep-branch` retains immutable
 attempt refs for diagnosis. `--direct` is an operator-only incident path, not a
 second normal workflow.
 
+On macOS every `agent:land` run holds the Mac awake until it exits (`caffeinate -i -s -w <pid>`, BUG-308), so maintenance sleep cannot fail an overnight train's Electron gates.
+
 Every landing-check run holds one machine slot while its checks execute (ENG-022
 H15, `scripts/lib/machine-slots.mjs`): a small machine-wide pool bounds how
 many landing-check runs, full test runs, and builds compute at once, so concurrent
