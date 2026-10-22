@@ -183,7 +183,7 @@ function run(command, args, { cwd }) {
  * `logOpts` selects. `--redact` keeps a finding's value out of the terminal
  * and out of any log an agent pastes into a session.
  */
-export function gitleaksArgs(root, logOpts) {
+function gitleaksArgs(root, logOpts) {
   return [
     'git',
     '--config',
