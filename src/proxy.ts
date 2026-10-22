@@ -89,6 +89,9 @@ const PUBLIC_PREFIXES = [
   // ENG-031 W25: the changelog, its entries and its feed. Public by
   // definition, and listed in the sitemap.
   '/changelog',
+  // ENG-031 W26: the guides, rendered from `docs/product/guides/`. Public and
+  // in the sitemap, like the changelog.
+  '/guides',
 ];
 
 function isPublicPath(pathname: string): boolean {

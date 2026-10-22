@@ -24,10 +24,20 @@
  *   - One plain sentence or two. **Bold** is the only markup.
  *
  * Anything else is refused with the file and the reason, so a malformed entry
- * fails the landing that adds it instead of rendering half a page.
+ * fails the landing that adds it instead of rendering half a page. The front
+ * matter, blocks and inline runs are the site's one document pipeline
+ * (`src/lib/site-docs/site-docs.mjs`, which the guides share); this file is
+ * the changelog's grammar over it.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import {
+  inlineRuns as siteDocInlineRuns,
+  parseBlocks,
+  readFrontMatter,
+  refuseEmDash,
+  SiteDocError,
+} from '../site-docs/site-docs.mjs';
 
 export const CHANGELOG_SECTIONS = Object.freeze([
   'New',
@@ -35,25 +45,18 @@ export const CHANGELOG_SECTIONS = Object.freeze([
   'Fixes',
 ]);
 
+/** **Bold** is the only markup an entry renders. */
+const CHANGELOG_MARKS = Object.freeze(['strong']);
+const LABEL = 'changelog';
 const VERSION = /^(\d+)\.(\d+)\.(\d+)$/u;
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
-const FRONT_KEYS = new Set(['version', 'date', 'title', 'media']);
-const EM_DASH = '—';
+const FRONT_KEYS = Object.freeze(['version', 'date', 'title', 'media']);
 
-class ChangelogError extends Error {
+class ChangelogError extends SiteDocError {
   constructor(source, message) {
-    super(`[changelog] ${source}: ${message}`);
+    super(LABEL, source, message);
     this.name = 'ChangelogError';
   }
-}
-
-/** Joins wrapped Markdown lines into one sentence-level string. */
-function joinLines(lines) {
-  return lines
-    .map(line => line.trim())
-    .join(' ')
-    .replace(/\s+/gu, ' ')
-    .trim();
 }
 
 function compareVersions(left, right) {
@@ -70,30 +73,9 @@ function compareVersions(left, right) {
  * `<version>.md` name, the front matter's version must equal it.
  */
 export function parseChangelogEntry(text, source = 'entry') {
-  if (typeof text !== 'string') throw new ChangelogError(source, 'not text');
-  if (text.includes(EM_DASH)) {
-    throw new ChangelogError(
-      source,
-      'contains an em dash; public copy uses periods, commas or colons'
-    );
-  }
-  const lines = text.replace(/\r\n?/gu, '\n').split('\n');
-  if (lines[0] !== '---')
-    throw new ChangelogError(source, 'must open with a front matter block');
-  const close = lines.indexOf('---', 1);
-  if (close < 0)
-    throw new ChangelogError(source, 'front matter block is not closed');
-
-  const front = {};
-  for (const line of lines.slice(1, close)) {
-    if (!line.trim()) continue;
-    const match = /^([a-z]+):\s*(.*)$/u.exec(line);
-    if (!match || !FRONT_KEYS.has(match[1]))
-      throw new ChangelogError(source, `unknown front matter line "${line}"`);
-    if (match[1] in front)
-      throw new ChangelogError(source, `repeats "${match[1]}"`);
-    front[match[1]] = match[2].trim();
-  }
+  const where = { label: LABEL, source };
+  const { front, body } = readFrontMatter(text, { ...where, keys: FRONT_KEYS });
+  refuseEmDash(text, where);
   const { version, date, title } = front;
   if (!version || !VERSION.test(version))
     throw new ChangelogError(source, 'version must be X.Y.Z');
@@ -111,78 +93,51 @@ export function parseChangelogEntry(text, source = 'entry') {
   if (media !== null && !/^\/[\w./-]+$/u.test(media))
     throw new ChangelogError(source, 'media must be a site path');
 
+  // The entry's own grammar over the shared blocks: paragraphs on the named
+  // feature, then `## New | Improvements | Fixes`, each holding one list.
   const summary = [];
   const sections = [];
-  let paragraph = [];
-  let section = null;
-  let item = null;
-  const flushParagraph = () => {
-    if (paragraph.length) summary.push(joinLines(paragraph));
-    paragraph = [];
-  };
-  const flushItem = () => {
-    if (item) section.items.push(joinLines(item));
-    item = null;
-  };
-
-  for (const line of lines.slice(close + 1)) {
-    const heading = /^##\s+(.+)$/u.exec(line);
-    if (heading) {
-      flushParagraph();
-      flushItem();
-      const name = heading[1].trim();
-      const order = CHANGELOG_SECTIONS.indexOf(name);
+  for (const block of parseBlocks(body, { ...where, marks: CHANGELOG_MARKS })) {
+    const section = sections.at(-1);
+    if (block.kind === 'heading') {
+      const order = CHANGELOG_SECTIONS.indexOf(block.text);
+      if (block.level !== 2)
+        throw new ChangelogError(
+          source,
+          `only "## " section headings: "${block.text}"`
+        );
       if (order < 0)
         throw new ChangelogError(
           source,
-          `section "${name}" is not one of ${CHANGELOG_SECTIONS.join(', ')}`
+          `section "${block.text}" is not one of ${CHANGELOG_SECTIONS.join(', ')}`
         );
-      const previous = sections.at(-1);
-      if (previous && CHANGELOG_SECTIONS.indexOf(previous.heading) >= order)
-        throw new ChangelogError(source, `section "${name}" is out of order`);
-      section = { heading: name, items: [] };
-      sections.push(section);
-      continue;
-    }
-    if (/^#/u.test(line))
-      throw new ChangelogError(
-        source,
-        `only "## " section headings: "${line}"`
-      );
-    if (section === null) {
-      if (/^\s*[-*]\s/u.test(line))
-        throw new ChangelogError(source, 'a list must sit under a section');
-      if (line.trim()) paragraph.push(line);
-      else flushParagraph();
-      continue;
-    }
-    const bullet = /^- (.+)$/u.exec(line);
-    if (bullet) {
-      flushItem();
-      item = [bullet[1]];
-    } else if (/^\s+\S/u.test(line) && item) {
-      item.push(line);
-    } else if (line.trim()) {
-      throw new ChangelogError(
-        source,
-        `a section holds only "- " items: "${line.trim()}"`
-      );
+      if (section && CHANGELOG_SECTIONS.indexOf(section.heading) >= order)
+        throw new ChangelogError(
+          source,
+          `section "${block.text}" is out of order`
+        );
+      sections.push({ heading: block.text, items: [] });
+    } else if (block.kind === 'paragraph' && !section) {
+      summary.push(block.text);
+    } else if (block.kind === 'list' && !block.ordered && section) {
+      section.items.push(...block.items);
+    } else if (block.kind === 'list' && !section) {
+      throw new ChangelogError(source, 'a list must sit under a section');
     } else {
-      flushItem();
+      throw new ChangelogError(
+        source,
+        section
+          ? `a section holds only "- " items, not a ${block.kind}`
+          : `the lead holds only paragraphs, not a ${block.kind}`
+      );
     }
   }
-  flushParagraph();
-  flushItem();
 
   if (!summary.length)
     throw new ChangelogError(source, 'needs a sentence on the named feature');
   for (const each of sections)
     if (!each.items.length)
       throw new ChangelogError(source, `section "${each.heading}" is empty`);
-  for (const textBlock of [...summary, ...sections.flatMap(s => s.items)]) {
-    if ((textBlock.match(/\*\*/gu) ?? []).length % 2)
-      throw new ChangelogError(source, `unbalanced ** in "${textBlock}"`);
-  }
 
   return Object.freeze({ version, date, title, media, summary, sections });
 }
@@ -245,12 +200,9 @@ export function requireChangelogEntry(directory, version) {
   return entry;
 }
 
-/** Splits `**bold**` runs so a renderer never has to parse Markdown. */
+/** An entry's text as inline runs: only `**bold**` is markup. */
 export function inlineRuns(text) {
-  return text
-    .split('**')
-    .map((run, index) => ({ text: run, strong: index % 2 === 1 }))
-    .filter(run => run.text !== '');
+  return siteDocInlineRuns(text, { marks: CHANGELOG_MARKS, label: LABEL });
 }
 
 /** The entry's page on a site origin, e.g. https://www.exawatt.ai. */

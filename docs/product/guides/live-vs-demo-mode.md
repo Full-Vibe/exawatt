@@ -1,4 +1,7 @@
-# Live Mode And Demo Mode
+---
+title: Live Mode and Demo Mode
+published: false
+---
 
 Exawatt supports Live Mode and Demo Mode as first-class product modes.
 

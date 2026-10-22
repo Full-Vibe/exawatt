@@ -6,15 +6,13 @@
  * nav and into the footer. No site in the 16-site reference corpus carries a
  * project artifact like `/architecture` in its primary navigation.
  *
- * TWO DESTINATIONS ARE DELIBERATELY ABSENT AND SAY SO.
+ * W6's `Docs` slot is `Guides` (ENG-031 W26): `/guides` renders the published
+ * files in `docs/product/guides/`. The reference under `docs/product/` is not
+ * routed, and a nav item that 404s in front of a stranger is a broken page, so
+ * nothing links there until it is.
  *
- * - **Docs.** There is no public documentation surface in this repository. The
- *   guides and the reference live under `docs/product/` and are not routed. A
- *   nav item that 404s in front of a stranger is not aspiration, it is a
- *   broken page, and the copy rule that permits the future tense is explicitly
- *   about SENTENCES, not about links. It lands the day the surface does.
- * - **Brew.** Same rule, already recorded in `download.ts`: no tap, no cask,
- *   no line.
+ * ONE DESTINATION IS DELIBERATELY ABSENT AND SAYS SO: **Brew**, already
+ * recorded in `download.ts`: no tap, no cask, no line.
  *
  * **GitHub is present and its repository is private until ENG-030 flips it.**
  * The footer's Repository and Licensing links and the homepage's "View on
@@ -51,6 +49,7 @@ export interface SiteNavLink {
  * file.
  */
 export const SITE_NAV_LINKS: SiteNavLink[] = [
+  { label: 'Guides', href: '/guides' },
   { label: 'Changelog', href: '/changelog' },
   // LEADERBOARD IS BACK IN THE NAV (operator, 2026-08-19: "Also keep
   // leaderboard"). It is a live public surface, it is in `proxy.ts`'s

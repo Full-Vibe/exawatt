@@ -1,3 +1,5 @@
+import type { InlineRun } from '../site-docs/site-docs.mjs';
+
 type ChangelogSection = 'New' | 'Improvements' | 'Fixes';
 
 export interface ChangelogEntry {
@@ -30,9 +32,7 @@ export declare function requireChangelogEntry(
   directory: string,
   version: string
 ): ChangelogEntry;
-export declare function inlineRuns(
-  text: string
-): { text: string; strong: boolean }[];
+export declare function inlineRuns(text: string): InlineRun[];
 export declare function changelogEntryUrl(
   origin: string,
   version: string

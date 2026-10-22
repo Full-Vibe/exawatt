@@ -8,6 +8,7 @@ import {
   surfaceById,
   surfacesByTier,
   usesDarkPublicChrome,
+  usesProposedSiteChrome,
 } from './surfaces';
 
 describe('navigation destination contract', () => {
@@ -84,6 +85,15 @@ describe('usesDarkPublicChrome', () => {
     'keeps authored dark public chrome on %s',
     pathname => {
       expect(usesDarkPublicChrome(pathname)).toBe(true);
+    }
+  );
+
+  it.each(['/changelog', '/changelog/0.1.24', '/guides', '/guides/gemini'])(
+    "gives the site's written page %s the homepage's chrome and footer",
+    pathname => {
+      expect(usesDarkPublicChrome(pathname)).toBe(true);
+      expect(usesProposedSiteChrome(pathname)).toBe(true);
+      expect(isMarketingRoute(pathname)).toBe(true);
     }
   );
 

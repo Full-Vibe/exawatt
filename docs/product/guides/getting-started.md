@@ -1,11 +1,12 @@
-# Getting Started With Exawatt
+---
+title: Getting started with Exawatt
+published: false
+---
 
-Exawatt is a command center for agents.
+Exawatt is a Mac app for running and watching your agents.
 
-The desktop app controls local agents and connects customer-hosted OpenClaw
-coworkers through the same fleet surfaces, including source-granted
-primary-conversation send. Exawatt-managed placement remains future design
-work; no paid-cloud implementation is active.
+It runs the agents on your Mac and connects the OpenClaw agents you host
+yourself, in the same views.
 
 ## Projects and Agents
 

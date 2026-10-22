@@ -109,6 +109,9 @@ describe('proxy offline authority', () => {
     '/agentmaxxing',
     '/operator/jakesc',
     '/run/run_0ba96afb076e97c3f76b5384',
+    // ENG-031 W26: the guides were a 307 to /sign-in before they had a route.
+    '/guides',
+    '/guides/agents-review-each-other',
     '/',
   ])('never performs network I/O for public path %s', async path => {
     const fetchSpy = vi.fn(() => {

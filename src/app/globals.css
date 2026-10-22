@@ -325,6 +325,15 @@ html:has([data-architecture-loading]) body {
   background: var(--exa-public-exhibition-canvas) !important;
 }
 
+/* The site's written pages (the changelog and the guides, ENG-031 W25/W26)
+   are the same all-dark kind. Their ground and text are fixed, not the app's
+   `--exa-hud-void`, which resolves light under a light appearance and left
+   white text on a pale page for every visitor whose Mac is in light mode. */
+html:has(main[data-site-document]),
+html:has(main[data-site-document]) body {
+  background: var(--exa-public-exhibition-canvas) !important;
+}
+
 @media (max-height: 520px) {
   .home-hero-content {
     gap: 1rem;

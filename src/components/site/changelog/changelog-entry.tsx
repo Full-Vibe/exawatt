@@ -4,21 +4,10 @@ import {
   formatChangelogDate,
   type ChangelogEntry,
 } from '@/lib/changelog/entries';
+import { InlineText } from '@/components/site/docs/inline-text';
 
 function Inline({ text }: { text: string }) {
-  return (
-    <>
-      {inlineRuns(text).map((run, index) =>
-        run.strong ? (
-          <strong key={index} className="font-semibold text-white">
-            {run.text}
-          </strong>
-        ) : (
-          <span key={index}>{run.text}</span>
-        )
-      )}
-    </>
-  );
+  return <InlineText runs={inlineRuns(text)} />;
 }
 
 /**
