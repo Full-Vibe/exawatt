@@ -288,7 +288,10 @@ async function withElectronEvalLock(root, run, waitMs = 8 * 60_000) {
  *  it will keep happening until every checkout picks up the scoped sweep, and
  *  the same shape occurs whenever anything else kills the tree. Distinguish it
  *  so the harness retries once instead of reporting a product regression. */
-function isExternalTeardown(error) {
+export function isExternalTeardown(error) {
+  // A teardown the harness started itself (its watchdog, a signal) closes the
+  // app under the body exactly as an outside kill does; it is never retried.
+  if (error?.harnessTeardown) return false;
   const message = String(error?.message ?? error);
   return (
     message.includes('Target page, context or browser has been closed') ||
@@ -383,7 +386,8 @@ export async function withElectronApp(requested, body, opts = {}) {
         );
         // A relaunch must start from the same state the first attempt did, or
         // the retry silently exercises a different app (a Project already open,
-        // a tab already selected). Only ever reset a throwaway temp profile.
+        // a tab already selected). Only ever reset a throwaway temp profile,
+        // and only now: the attempt returns after its process tree has exited.
         resetThrowawayUserData(launchOpts.env?.EXAWATT_USER_DATA);
         await new Promise(resolve =>
           setTimeout(resolve, Math.min(2_000 * 2 ** (attempt - 1), 20_000))
@@ -521,11 +525,25 @@ export async function declareUnlockedHost(app) {
   await app.evaluate(({ powerMonitor }) => powerMonitor.emit('unlock-screen'));
 }
 
-function resetThrowawayUserData(userData) {
+export function resetThrowawayUserData(userData) {
   if (!userData) return;
   const temp = realpathOrSelf(tmpdir());
   if (!realpathOrSelf(userData).startsWith(`${temp}/`)) return;
-  rmSync(userData, { recursive: true, force: true });
+  try {
+    // A helper that outlived its group's kill can still be flushing a write;
+    // retry through ENOTEMPTY and EBUSY rather than failing on the first.
+    rmSync(userData, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  } catch (error) {
+    throw new Error(
+      `[harness] could not reset the throwaway profile ${userData} for a relaunch: ${error.message}`,
+      { cause: error }
+    );
+  }
   // A seeded layout is part of the state the first attempt started from.
   const seeded = seededLayouts.get(realpathOrSelf(userData));
   if (seeded) writeWorkspaceLayout(userData, seeded);
@@ -536,7 +554,7 @@ function resetThrowawayUserData(userData) {
  *  otherwise says only what it waited for, never what was on screen. Best
  *  effort and bounded; it never replaces the step's own error. */
 async function recordFailure(page, error) {
-  if (page.isClosed?.()) return;
+  if (page.isClosed?.()) return null;
   const directory = join(tmpdir(), 'exawatt-eval-failures');
   const file = join(directory, `${Date.now()}-${process.pid}.png`);
   try {
@@ -546,8 +564,10 @@ async function recordFailure(page, error) {
       `[harness] failed at ${page.url()}: ${String(error?.message ?? error).split('\n')[0]}\n` +
         `[harness] screenshot: ${file}`
     );
+    return file;
   } catch {
     /* evidence is best effort */
+    return null;
   }
 }
 
@@ -600,7 +620,15 @@ function recordLaunchFailure({ error, output, userData, processGroup }) {
   }
 }
 
-async function runElectronAttempt({
+/**
+ * One launch: start Electron, run `body`, and always tear the tree down.
+ * The watchdog (`maxMs`) fails the attempt as a timeout that names the
+ * budget, the eval's last progress line and the page it was on, with the
+ * failure screenshot taken before the app closes; it is never mistaken for
+ * an external kill. The attempt settles only after its process tree exits,
+ * so nothing touches the profile while the tree can still write to it.
+ */
+export async function runElectronAttempt({
   launchOpts,
   body,
   evalRoot,
@@ -647,6 +675,8 @@ async function runElectronAttempt({
     );
   }
   let done = false;
+  /** Set when the harness itself started the teardown. */
+  let initiatedBy = null;
 
   const hardKill = () => {
     try {
@@ -681,52 +711,117 @@ async function runElectronAttempt({
       new Promise(r => setTimeout(r, gracefulMs)),
     ]);
     hardKill();
+    await waitForGroupExit(processGroup, gracefulMs);
   };
 
-  // watchdog REPLACES the external `timeout`: on a hang it tears down from
-  // inside the process (graceful-then-kill) so nothing is orphaned.
+  // watchdog REPLACES the external `timeout`: on a hang it fails the attempt
+  // as a timeout, and the teardown below is graceful-then-kill so nothing is
+  // orphaned.
+  let expire;
+  const expired = new Promise(resolve => (expire = resolve));
   watchdog = setTimeout(() => {
     if (done) return;
-    console.error(`[harness] watchdog fired after ${maxMs}ms — force-closing`);
-    void shutdown().finally(() => process.exit(2));
+    initiatedBy = 'watchdog';
+    expire();
   }, maxMs);
   // Stay registered through teardown so a Ctrl-C mid-close still routes through
   // the graceful path instead of the default handler orphaning the tree.
   const onSignal = () => {
+    initiatedBy = 'signal';
     void shutdown().finally(() => process.exit(130));
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
+  const progress = trackProgressLines();
 
+  let page;
   try {
-    let page;
-    try {
-      page = await app.firstWindow({ timeout: firstWindowMs });
-    } catch (error) {
-      recordLaunchFailure({
-        error,
-        output,
-        userData: launchOpts.env?.EXAWATT_USER_DATA,
-        processGroup,
-      });
-      throw error;
-    }
-    launch.firstWindowAt = performance.now();
-    try {
+    const running = (async () => {
+      try {
+        page = await app.firstWindow({ timeout: firstWindowMs });
+      } catch (error) {
+        recordLaunchFailure({
+          error,
+          output,
+          userData: launchOpts.env?.EXAWATT_USER_DATA,
+          processGroup,
+        });
+        throw error;
+      }
+      launch.firstWindowAt = performance.now();
       const anchored = anchorMainEvaluate(app);
       // Main observes host power before it opens a window, so the
       // declaration reaches the same observer the renderer reads.
       if (!drivesHostPower) await declareUnlockedHost(anchored);
       return await body(anchored, page, launch);
-    } catch (error) {
-      await recordFailure(page, error);
-      throw error;
+    })();
+    // A body still waiting when the watchdog fires fails into the closed app
+    // after the attempt has already reported the timeout.
+    running.catch(() => {});
+    const outcome = await Promise.race([
+      running.then(value => ({ value })),
+      expired.then(() => null),
+    ]);
+    if (outcome) return outcome.value;
+    const error = new Error(
+      `TIMED OUT after ${maxMs}ms (the eval's maxMs)` +
+        (progress.last()
+          ? `; last progress: ${progress.last()}`
+          : '; no progress reported in this launch') +
+        (page && !page.isClosed() ? `; at ${page.url()}` : '')
+    );
+    error.name = 'ElectronEvalTimeout';
+    error.harnessTeardown = true;
+    console.error(`[harness] ${error.message} — force-closing`);
+    if (page) error.screenshot = await recordFailure(page, error);
+    throw error;
+  } catch (error) {
+    if (error?.harnessTeardown) throw error;
+    if (initiatedBy) {
+      throw Object.assign(
+        new Error(`[harness] the run was ended by ${initiatedBy}`, {
+          cause: error,
+        }),
+        { harnessTeardown: true }
+      );
     }
+    if (page) await recordFailure(page, error);
+    throw error;
   } finally {
+    progress.restore();
     await shutdown();
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
   }
+}
+
+/** Until every member of the launch's verified process group has exited, or
+ *  `timeoutMs` passes. Nothing may touch the profile while one still runs. */
+async function waitForGroupExit(group, timeoutMs) {
+  if (!group) return;
+  const deadline = Date.now() + timeoutMs;
+  while (group.members().length > 0 && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
+/** The last line the eval printed during this launch: its own progress
+ *  report, so a timeout can say how far it got. */
+function trackProgressLines() {
+  const original = console.log;
+  let last = null;
+  const tracking = (...args) => {
+    const line = args.map(String).join(' ').split('\n')[0].trim();
+    if (line) last = line.slice(0, 200);
+    original(...args);
+  };
+  console.log = tracking;
+  return {
+    last: () => last,
+    restore: () => {
+      if (console.log === tracking) console.log = original;
+    },
+  };
 }
 
 /**

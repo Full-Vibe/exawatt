@@ -13,7 +13,9 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
   realpathSync,
 } from 'node:fs';
@@ -29,6 +31,9 @@ import {
   anchorMainEvaluate,
   assertDevServerServesTree,
   declareUnlockedHost,
+  isExternalTeardown,
+  resetThrowawayUserData,
+  runElectronAttempt,
   waitForPageCondition,
   withElectronApp,
 } from './lib/electron-eval.mjs';
@@ -623,3 +628,129 @@ globalThis.__host = app.whenReady().then(() =>
     assert.equal(await screenLock(), 'locked');
   }
 );
+
+/** A real Electron app with one hidden window: the boundary the attempt
+ *  runner launches, closes and kills. */
+function windowFixture() {
+  const dir = mkdtempSync(join(tmpdir(), 'exawatt-attempt-'));
+  writeFileSync(join(dir, 'package.json'), '{"main":"main.js"}');
+  writeFileSync(
+    join(dir, 'main.js'),
+    `const { app, BrowserWindow } = require('electron');
+app.whenReady().then(() => {
+  const win = new BrowserWindow({ show: false });
+  win.loadURL('data:text/html,<p>fixture</p>');
+});`
+  );
+  return dir;
+}
+
+const attemptOf = (dir, body, maxMs) =>
+  runElectronAttempt({
+    launchOpts: {
+      executablePath: createRequire(import.meta.url)('electron'),
+      args: [dir],
+    },
+    body,
+    // A fresh directory: the orphan sweep matches nothing outside this test.
+    evalRoot: dir,
+    maxMs,
+    firstWindowMs: 30_000,
+    gracefulMs: 5_000,
+    drivesHostPower: true,
+  }).then(
+    () => null,
+    error => error
+  );
+
+test(
+  'a watchdog timeout fails as a timeout naming its budget and the last progress, screenshots before closing, and is never an external kill (BUG-314)',
+  { skip: process.platform !== 'darwin' && 'Electron needs a display here' },
+  async t => {
+    const dir = windowFixture();
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    let runs = 0;
+    let pid = 0;
+    const error = await attemptOf(
+      dir,
+      async (app, page) => {
+        runs += 1;
+        pid = app.process().pid;
+        console.log('[fixture] the window is open');
+        // A step that never completes, as the hung roadmap step did.
+        await page.waitForFunction(() => false, null, { timeout: 0 });
+      },
+      8_000
+    );
+    assert.equal(error?.name, 'ElectronEvalTimeout', String(error));
+    assert.match(error.message, /8000ms/);
+    assert.match(error.message, /\[fixture\] the window is open/);
+    // A screenshot exists only if it was taken while the page was open.
+    assert.ok(error.screenshot && statSync(error.screenshot).size > 0);
+    assert.equal(isExternalTeardown(error), false);
+    assert.equal(runs, 1);
+    // The attempt settled only after its tree exited: the profile is free.
+    assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  }
+);
+
+test(
+  'a kill from outside the harness is still an external teardown, so the relaunch remains (BUG-314)',
+  { skip: process.platform !== 'darwin' && 'Electron needs a display here' },
+  async t => {
+    const dir = windowFixture();
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const error = await attemptOf(
+      dir,
+      async (app, page) => {
+        const pending = page.waitForFunction(() => false, null, {
+          timeout: 0,
+        });
+        // Something outside this run kills the app mid-step.
+        process.kill(app.process().pid, 'SIGKILL');
+        await pending;
+      },
+      60_000
+    );
+    assert.ok(error, 'the killed run must fail');
+    assert.equal(isExternalTeardown(error), true, String(error));
+  }
+);
+
+test('a relaunch reset outlasts a dying writer still flushing into the profile (BUG-314)', async t => {
+  const profile = mkdtempSync(join(tmpdir(), 'exawatt-reset-'));
+  t.after(() => rmSync(profile, { recursive: true, force: true }));
+  // A helper flushing its last writes for a moment after its group's kill:
+  // it writes into the profile's subdirectories, never recreating the
+  // profile itself, then exits on its own.
+  const writer = spawn(
+    process.execPath,
+    [
+      '-e',
+      `const fs = require('fs');
+const root = process.argv[1];
+const end = Date.now() + 500;
+for (let i = 0; Date.now() < end; i += 1) {
+  try {
+    fs.mkdirSync(root + '/d' + (i % 10));
+  } catch {}
+  try {
+    fs.writeFileSync(root + '/d' + (i % 10) + '/f' + i, 'x');
+  } catch {}
+}`,
+      profile,
+    ],
+    { stdio: 'ignore' }
+  );
+  const exited = once(writer, 'exit');
+  t.after(() => writer.kill('SIGKILL'));
+  await waitUntil(() => readdirSync(profile).length > 0);
+  assert.doesNotThrow(() => resetThrowawayUserData(profile));
+  await exited;
+  assert.equal(existsSync(profile), false);
+});
+
+/** Until `condition()` holds; it waits for the effect, not a duration. */
+async function waitUntil(condition) {
+  while (!condition()) await new Promise(resolve => setImmediate(resolve));
+}
