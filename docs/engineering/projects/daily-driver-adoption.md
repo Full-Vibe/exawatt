@@ -8448,7 +8448,12 @@ Session-custody packet of the Execution front (2026-10-21), `<sha pending>`.
   either transport with the turn truth it left, keyed by durable Session and
   provider conversation because PTY ids restart every launch. Content-free
   (no prompt, reply, spawn label or path), 1 MB with one rotated generation,
-  120 lines a minute per family and no run cap. The `harness.turn-truth`
+  and its own budget a minute for lifecycle (120), turn boundaries and gates
+  (240) and child and census traffic (120), so a team fan-out cannot crowd
+  out the lines a wedge is read from; no run cap. A quit records every
+  Session it stops: `stopAll` dropped each record before node-pty's later
+  exit report arrived, so quit's exits were never recorded at all, and one
+  `recordExit` now serves both paths. The `harness.turn-truth`
   lines `main.jsonl` carried are deleted: the log supersedes them, and they
   were crowding stall traces out of a 256 KB file. The manager's `exit`
   event carries `stopRequested` for it. Not attached to diagnostics reports:
@@ -8461,9 +8466,15 @@ against the real `PtySessionManager` behind an IPC double that answers and
 pushes only structured clones, in order, on later tasks, and drops what is
 owed a reloaded page. With the start subscription removed, its reload,
 second-window and other-window cases fail; with the launch guard removed,
-its one-tab case fails. `eval:electron:resume` gains the BUG-305 step on
-the packaged app: it holds the next `pty:create` where the readiness probe
-runs, reloads the window, releases it, and requires the reloaded window to
-show that Session attached and the next Resume to attach all six tabs with
-none refused. The harness-event log test relaunches a real owner over the
-same profile and reads both runs back by durable Session.
+its one-tab case fails. `eval:electron:resume` gains two BUG-305 steps on
+the packaged app, both holding a start inside `ensureRunning`'s readiness
+slot, after the start is registered. Push: the window reloads during the
+held start, and once released the reloaded window shows that Session
+attached with no Resume. Join: the window reloads during the next held
+start and Resumes that Session while it is still starting; main prepares it
+once, the log records the ask as `joined` with one `session.start`, and all
+six tabs attach with no `data-tab-lifecycle="failed"`. Before the fix, on
+master, a reload during a start left the Resume `failed` for one tab. The
+harness-event log tests relaunch a real owner over the same profile and
+read both runs back by durable Session, keep all 160 boundaries under 800
+child lines, and read a quit's exits for Sessions node-pty never reported.
