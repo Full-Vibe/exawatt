@@ -52,19 +52,24 @@ import {
 } from './lib/delivery-policy.mjs';
 import { git } from './lib/hermetic-git.mjs';
 import { moduleOwner, treeTopology } from './lib/module-graph.mjs';
+import {
+  isProjectedPublicManifest,
+  OPEN_SOURCE_PATH_MANIFEST,
+  publishesPath,
+} from './lib/open-source-paths.mjs';
 import { PARTNER_CONVERSATIONS_DIRECTORY } from './lib/recipe-renderers.mjs';
 import { PUBLICATION_GATES } from './publication-check.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-async function isProjectedPublicTree() {
-  const disposition = JSON.parse(
-    await readFile(
-      path.join(root, 'scripts/open-source-paths.manifest.json'),
-      'utf8'
-    )
+async function pathManifest() {
+  return JSON.parse(
+    await readFile(path.join(root, OPEN_SOURCE_PATH_MANIFEST), 'utf8')
   );
-  return Object.keys(disposition.recipes ?? {}).length === 0;
+}
+
+async function isProjectedPublicTree() {
+  return isProjectedPublicManifest(await pathManifest());
 }
 
 function ids(paths, extras = []) {
@@ -309,7 +314,7 @@ const FS_READ =
  * is a ratchet. A test that only reads its own temporary files says so with
  * `@scans none: <why>`.
  */
-test('every test that reads the repository declares what it scans, and every glob still matches', () => {
+test('every test that reads the repository declares what it scans, and every glob still matches', async () => {
   const tracked = git(REPO, ['ls-files']).split('\n').filter(Boolean);
   const tops = [
     ...new Set(
@@ -338,14 +343,22 @@ test('every test that reads the repository declares what it scans, and every glo
   );
   const declared = scanningTests(deliveryTree(REPO));
   assert.ok(declared.length > 0);
+  // The public tree carries no PRIVATE path, so there a glob over one matches
+  // nothing by construction. What that tree promises instead is that such a
+  // glob names only paths its own manifest does not publish; this tree, which
+  // holds every path, proves the glob still matches one.
+  const manifest = await pathManifest();
+  const projected = isProjectedPublicManifest(manifest);
+  const stale = [];
   for (const { file, globs, expressions } of declared) {
-    globs.forEach((glob, index) =>
-      assert.ok(
-        tracked.some(path => expressions[index].test(path)),
-        `${file}: @scans ${glob} matches no tracked file`
-      )
-    );
+    globs.forEach((glob, index) => {
+      if (tracked.some(path => expressions[index].test(path))) return;
+      const sample = glob.replace(/\*\*\//gu, '').replace(/\*\*|\*|\?/gu, 'x');
+      if (projected && !publishesPath(manifest, sample)) return;
+      stale.push(`${file}: @scans ${glob} matches no tracked file`);
+    });
   }
+  assert.deepEqual(stale, []);
 });
 
 // BUG-208: the theme gate was repaired on 2026-08-17 and red again the next

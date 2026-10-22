@@ -8,10 +8,16 @@ import { format } from 'prettier';
 import {
   ALLOWED_LICENSE_EXPRESSIONS,
   flattenLicenseReport,
+  normalizePlatformRows,
   renderNotice,
   runLicenseCheck,
   validateNotice,
 } from './check-dependency-licenses.mjs';
+import {
+  isProjectedPublicManifest,
+  OPEN_SOURCE_PATH_MANIFEST,
+  readPathManifest,
+} from './lib/open-source-paths.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -131,6 +137,48 @@ test('Linux inventory comparison rejects missing packages, version drift and lic
   }
 });
 
+// BUG-316. rollup 4.64.6 declares `@napi-rs/lzma-linux-x64-gnu` as an
+// optional dependency, so a Linux install has a package no macOS install can
+// resolve, and the macOS notice can never list it. Installed manifests carry
+// npm's `os` field; that is what tells it apart from a platform family member.
+test('Linux inventory comparison leaves out only what no macOS install resolves', async () => {
+  const fixture = await noticeFixture();
+  const installed = [
+    {
+      name: '@napi-rs/lzma-linux-x64-gnu',
+      version: '1.5.1',
+      license: 'MIT',
+      os: ['linux'],
+    },
+    { name: 'not-on-macos', version: '1.0.0', license: 'MIT', os: ['!darwin'] },
+    {
+      name: '@rollup/rollup-linux-x64-gnu',
+      version: '4.64.6',
+      license: 'MIT',
+      os: ['linux'],
+    },
+    {
+      name: 'linux-and-macos',
+      version: '1.0.0',
+      license: 'MIT',
+      os: ['darwin', 'linux'],
+    },
+    { name: 'portable', version: '1.0.0', license: 'MIT' },
+  ];
+  const failures = validateNotice({
+    ...fixture,
+    noticeRows: normalizePlatformRows(installed),
+  }).join('\n');
+  for (const required of [
+    '@rollup/rollup-<platform>@4.64.6',
+    'linux-and-macos@1.0.0',
+    'portable@1.0.0',
+  ]) {
+    assert.ok(failures.includes(required), `${required} must be listed`);
+  }
+  assert.doesNotMatch(failures, /lzma|not-on-macos/u);
+});
+
 test('Linux inventory comparison still requires the lockfile hash', async () => {
   const fixture = await noticeFixture();
   const failures = validateNotice({
@@ -208,10 +256,25 @@ test('first-party package metadata declares AGPL and the public repository', asy
       for (const [script, command] of packageScripts) {
         assert.match(command, /pnpm electron:prepare-licenses/u, script);
       }
-      assert.match(
-        manifest.scripts['electron:release:app'],
-        /pnpm electron:release:app:prepared/u
+      // Release custody is private (AGENTS.md): the source routes its release
+      // app through the prepared build, and the public tree has no release
+      // lane at all.
+      const projected = isProjectedPublicManifest(
+        await readPathManifest(path.join(ROOT, OPEN_SOURCE_PATH_MANIFEST))
       );
+      if (projected) {
+        assert.deepEqual(
+          Object.keys(manifest.scripts).filter(name =>
+            name.startsWith('electron:release')
+          ),
+          []
+        );
+      } else {
+        assert.match(
+          manifest.scripts['electron:release:app'],
+          /pnpm electron:release:app:prepared/u
+        );
+      }
     }
   }
 });

@@ -194,6 +194,7 @@ async function collectInstalledRows(packages) {
       name: manifest.name,
       version: manifest.version,
       license: declared,
+      ...(Array.isArray(manifest.os) ? { os: manifest.os } : {}),
     });
   }
   return {
@@ -270,17 +271,18 @@ const PLATFORM_PACKAGE_NAMES = [
   [/^lightningcss-(?!default$)/u, 'lightningcss-<platform>'],
 ];
 
-function normalizePlatformRows(rows) {
+/**
+ * The inventory rows: one per platform binary family, named with the
+ * `<platform>` placeholder. Every family has a macOS member, so a family row
+ * carries no `os` restriction even when this install's member does.
+ */
+export function normalizePlatformRows(rows) {
   const normalized = new Map();
   for (const row of rows) {
-    let name = row.name;
-    for (const [pattern, replacement] of PLATFORM_PACKAGE_NAMES) {
-      if (pattern.test(name)) {
-        name = replacement;
-        break;
-      }
-    }
-    const next = { ...row, name };
+    const family = PLATFORM_PACKAGE_NAMES.find(([pattern]) =>
+      pattern.test(row.name)
+    );
+    const next = family ? { ...row, name: family[1], os: undefined } : row;
     normalized.set(packageId(next.name, next.version), next);
   }
   return [...normalized.values()].sort(
@@ -288,6 +290,14 @@ function normalizePlatformRows(rows) {
       left.name.localeCompare(right.name) ||
       left.version.localeCompare(right.version)
   );
+}
+
+/** npm's `os` field: an allow-list, or `!`-prefixed entries that deny. */
+function installsOn(os, platform) {
+  if (!Array.isArray(os) || os.length === 0) return true;
+  if (os.includes(`!${platform}`)) return false;
+  const allowed = os.filter(entry => !entry.startsWith('!'));
+  return allowed.length === 0 || allowed.includes(platform);
 }
 
 function inventoryRow(row) {
@@ -381,7 +391,8 @@ export function validateNotice({
       `THIRD_PARTY_NOTICES.md is missing lockfile SHA-256 ${lockfileHash}`
     );
   }
-  // Linux installs a subset of the macOS optional-dependency graph. Compare
+  // Linux installs a subset of the macOS optional-dependency graph, plus the
+  // few packages no macOS install resolves, which are left out below. Compare
   // complete tuples within the inventory table, ignoring Markdown cell padding
   // and punctuation escapes (for example babel\_\_core). Keep escaped pipes
   // inside their cells; package/version/license text must still match exactly.
@@ -400,6 +411,10 @@ export function validateNotice({
   };
   const actualRows = new Set(inventory.split('\n').map(tuple).filter(Boolean));
   for (const row of noticeRows) {
+    // The notice is the macOS graph. A package no macOS install can resolve
+    // (rollup's linux-x64-gnu-only `@napi-rs/lzma-linux-x64-gnu`) is outside
+    // it by that scope; `validateRows` still holds its license to the policy.
+    if (!installsOn(row.os, 'darwin')) continue;
     if (!actualRows.has(tuple(inventoryRow(row)))) {
       failures.push(
         `THIRD_PARTY_NOTICES.md is missing inventory tuple ${packageId(row.name, row.version)} / ${row.license}`

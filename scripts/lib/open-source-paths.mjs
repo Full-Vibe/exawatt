@@ -243,6 +243,29 @@ export async function readPathManifest(filePath) {
   return validatePathManifest(manifest);
 }
 
+/**
+ * Whether `manifest` is the public repository's copy. The projection keeps only
+ * its PUBLIC entries and no recipes (`projectPublicPathManifest`), so a check
+ * that reads the tree can assert what that tree promises rather than what the
+ * private source holds.
+ */
+export function isProjectedPublicManifest(manifest) {
+  return Object.keys(manifest.recipes ?? {}).length === 0;
+}
+
+/** Whether `manifest` publishes `file`: it classifies it PUBLIC or GENERATED. */
+export function publishesPath(manifest, file) {
+  const published = new Set(['PUBLIC', 'GENERATED']);
+  const exception = manifest.exceptions.find(entry => entry.path === file);
+  if (exception) return published.has(exception.classification);
+  return manifest.rules.some(
+    rule =>
+      published.has(rule.classification) &&
+      rule.include.some(pattern => matches(file, pattern)) &&
+      !(rule.exclude ?? []).some(pattern => matches(file, pattern))
+  );
+}
+
 export function createPathClassifier(manifest) {
   validatePathManifest(manifest);
   const exceptions = new Map(
