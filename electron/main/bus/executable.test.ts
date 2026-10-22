@@ -61,6 +61,12 @@ function run(
     child.stdout.on('data', chunk => (stdout += chunk));
     child.stderr.on('data', chunk => (stderr += chunk));
     child.on('close', code => resolve({ code, stdout, stderr }));
+    // Outside a Session the command exits before it reads its input, so the
+    // write can meet a closed pipe; any other write error is the test's.
+    child.stdin.on('error', error => {
+      if ((error as NodeJS.ErrnoException).code !== 'EPIPE')
+        stderr += String(error);
+    });
     child.stdin.end(stdin ?? '');
   });
 }
