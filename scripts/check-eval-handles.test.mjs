@@ -221,6 +221,19 @@ check('pattern', /resume \\d+ agents/i.test(await row.innerText()));
   );
 });
 
+test('rendered text read through a helper the script defines fails too', () => {
+  assert.deepEqual(
+    copy(`
+const panelText = async page => {
+  await page.locator('[data-launcher]').waitFor();
+  return page.locator('[data-launcher]').innerText();
+};
+check('offers start', (await panelText(page)).includes('Start'));
+`),
+    [{ line: 6, kind: 'rendered text includes' }]
+  );
+});
+
 test('handles, roles and text the eval wrote itself pass', () => {
   assert.deepEqual(
     copy(`

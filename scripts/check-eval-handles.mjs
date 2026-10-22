@@ -493,11 +493,15 @@ function isRenderedText(node, checker, seen = new Set()) {
         COPY_ATTRIBUTES.has(attribute.text)
       );
     }
-    return (
+    if (
       TEXT_PRESERVING.has(name) &&
-      ts.isPropertyAccessExpression(at.expression) &&
-      isRenderedText(at.expression.expression, checker, seen)
-    );
+      ts.isPropertyAccessExpression(at.expression)
+    ) {
+      return isRenderedText(at.expression.expression, checker, seen);
+    }
+    // A helper the script defines (`const railText = page => rail.innerText()`)
+    // returns rendered text when any of its own returns does.
+    return returnsRenderedText(at.expression, checker, seen);
   }
   if (ts.isPropertyAccessExpression(at)) {
     return TEXT_READS.has(at.name.text) || at.name.text === 'ariaLabel';
@@ -517,6 +521,49 @@ function isRenderedText(node, checker, seen = new Set()) {
   }
   seen.add(declaration);
   return isRenderedText(declaration.initializer, checker, seen);
+}
+
+function returnsRenderedText(callee, checker, seen) {
+  if (!ts.isIdentifier(callee) || !checker) return false;
+  let declaration = checker.getSymbolAtLocation(callee)?.valueDeclaration;
+  if (
+    declaration &&
+    ts.isVariableDeclaration(declaration) &&
+    declaration.initializer
+  ) {
+    declaration = unwrap(declaration.initializer);
+  }
+  if (
+    !declaration ||
+    seen.has(declaration) ||
+    !(
+      ts.isFunctionDeclaration(declaration) ||
+      ts.isFunctionExpression(declaration) ||
+      ts.isArrowFunction(declaration)
+    ) ||
+    !declaration.body
+  ) {
+    return false;
+  }
+  seen.add(declaration);
+  if (!ts.isBlock(declaration.body)) {
+    return isRenderedText(declaration.body, checker, seen);
+  }
+  let found = false;
+  const visit = node => {
+    if (found || ts.isFunctionLike(node)) return;
+    if (
+      ts.isReturnStatement(node) &&
+      node.expression &&
+      isRenderedText(node.expression, checker, seen)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(declaration.body, visit);
+  return found;
 }
 
 function optionsNamed(objectLiteral, names) {
