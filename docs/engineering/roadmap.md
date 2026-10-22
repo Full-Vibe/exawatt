@@ -5548,3 +5548,17 @@ tree gone), for an outside kill (still external), for a `ps` that fails
 through teardown (the value and the failure both survive, the signal
 handlers go) and for both relaunch branches, and a real dying writer for the
 reset (it fails 4 of 4 without the retries).
+
+2026-10-22, train follow-up, measured: the watchdog test's "tree gone" check
+failed in the train twice. When `app.close()` outlasted its grace and the
+harness killed main, `ps` listed main as `<defunct>`: it was this process's
+own child, dead but not yet reaped, and a zombie matches none of the group's
+verified identities, so the group read empty and the attempt settled while
+`kill(pid, 0)` still answered. A probe of the attempt caught it in 1 of 3 runs
+idle and 2 of 6 beside a 12-process CPU hog, each time with exit reported
+verified and the pid in state Z; the exit wait never ran out. The tree now
+counts as exited only once main's ChildProcess has its exit status (Node has
+reaped it) and no group member runs. Under the same hog the old test failed
+4 of 4 and the new one passed 4 of 4, with the probe at 6 of 6 reaped; a test
+puts a real child in the zombie state before the wait and fails without the
+fix.
