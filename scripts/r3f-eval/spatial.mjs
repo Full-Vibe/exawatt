@@ -204,18 +204,40 @@ async function measureGlide(page) {
   return { ...sample, ...cadence };
 }
 
+/**
+ * Until the board's canvas exists and has painted a frame. The canvas exists
+ * before its first frame, and some of what the checks read is written only
+ * inside one (v2's tile bodies come from the renderer's frame); on a slow
+ * client that frame lands after the scene is read, which failed the
+ * 2026-10-22 train with "Board drew no Agent bodies" on a board that drew
+ * them a moment later. A canvas that never paints fails here, by name.
+ */
 async function waitForSpatialCanvas(page) {
   await assertFleetView(page);
-  await page.waitForFunction(
-    () => {
-      const canvas = document.querySelector('canvas');
-      return Boolean(
-        canvas && canvas.width > 0 && canvas.height > 0 && window.__EVAL_GL__
-      );
-    },
-    null,
-    { timeout: 20_000 }
-  );
+  try {
+    await page.waitForFunction(
+      () => {
+        const canvas = document.querySelector('canvas');
+        return Boolean(
+          canvas &&
+          canvas.width > 0 &&
+          canvas.height > 0 &&
+          window.__EVAL_GL__ &&
+          (window.__EVAL_FRAME_DEMAND__?.().frames ?? 0) > 0
+        );
+      },
+      null,
+      { timeout: 20_000 }
+    );
+  } catch (error) {
+    const demand = await page
+      .evaluate(() => window.__EVAL_FRAME_DEMAND__?.() ?? null)
+      .catch(() => null);
+    throw new Error(
+      `The board's canvas painted no frame within 20 s; its frame demand: ${JSON.stringify(demand)}`,
+      { cause: error }
+    );
+  }
 }
 
 async function openProject(page) {
