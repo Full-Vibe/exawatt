@@ -341,6 +341,28 @@ link-under-pointer rows, since ⌘K has no pointer). `command-parity.test.tsx`
 renders both surfaces for every target kind and fails on any difference;
 BUG-307 (Mark unread, menu only) was the first case.
 
+## Escape backs out one level
+
+Escape is one step back from wherever focus is (BUG-302). One owner,
+`src/lib/shortcuts/back-out.ts`, resolves it top rung first: a dialog, menu
+or ⌘K; a field with something to cancel or clear; a panel's own levels (an
+open roadmap item, a Chatter thread); the dock (back to Team's tiles); a
+board's selection (Fleet's working set); then the altitude itself (Team to
+Agent, Fleet one level up, Settings back, and at the Agent altitude back to
+the Session). A rung with nothing left lets the key fall to the next, so
+Escape is never dead and never skips a level.
+
+- Join the ladder, never catch Escape on an element. A surface registers its
+  rung with `useBackOut`; a key handler that swallows or ignores Escape is
+  how the Team dock tab went dead while it said "esc · back to tiles".
+- A dialog asks the rungs inside it first: a field in a dialog cancels its
+  edit, and the next Escape closes the dialog. A bespoke modal is an overlay
+  rung and keeps every Escape while it is open.
+- Closing or stepping aside returns the invoker's focus, caret and selection
+  (`rememberFocus`), onto the remounted field when the original is gone.
+- A Session's terminal keeps Escape for its program, and an IME candidate
+  keeps it to cancel the composition.
+
 ## Dialogs
 
 A dialog's primary action states the chord that presses it, on the button's own
@@ -687,6 +709,11 @@ snapshot, never an intermediate layout storm.
 - 2026-10-22 — Menus: a right-click menu and ⌘K never diverge (operator
   standing rule, feedback `2264aa5f`). Both surfaces read one command
   registry; BUG-307 records the first divergence, Mark unread.
+
+- 2026-10-21 — Escape backs out one level (BUG-302, BUG-284): one owner
+  resolves dialog, field, panel, dock, grid, then altitude, with
+  fall-through, and returns focus, caret and selection when a layer closes
+  or steps aside. About forty per-surface Escape handlers became rungs.
 
 - 2026-10-18 — BUG-292/BUG-293: one mark path. `AgentSourceMark` replaces
   `SourceIdentityMark`, the launcher's `EngineGlyph`, Settings' `SourceMark`

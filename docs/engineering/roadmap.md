@@ -131,6 +131,9 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    handling in `expose-overlay.tsx` and `team-dock.tsx`, the composer's
    capture path and the eval's Escape step; must not touch the command
    registry, menus or palette (command-parity).
+   Built 2026-10-21 on `agent/back-out` (`<sha pending>`): BUG-302 and
+   BUG-284 fixed in code, `eval:navigation` green;
+   [milestone](projects/daily-driver-adoption.md#2026-10-21--one-escape-owner-the-back-out-ladder-bug-302-bug-284).
 3. **settings-frame: the shell owns every Settings page's frame** (ENG-036;
    M, about 3 h). The page header has two owners, so five destinations repeat
    their title and four draw their own; the topic strip repeats the rows
@@ -4286,10 +4289,13 @@ and Clone; only a live catalog can refuse, and no model is substituted.
 
 ### BUG-284 Feedback screenshot capture loses the draft editing position
 
-Status: bug · ENG-025 · operator feedback 9d6a875a, 2026-10-05; triaged 2026-10-15.
+Status: fixed in code, unverified in an installed build · ENG-025 · operator feedback 9d6a875a, 2026-10-05; triaged 2026-10-15; fixed 2026-10-21 by the back-out packet (`<sha pending>`).
 
 Preserve draft focus, caret and selection across capture and cancellation.
 [Evidence and acceptance](projects/feedback-reinflation.md#2026-10-15--screenshot-capture-loses-the-editing-position-bug-284).
+2026-10-21: the field remounted while the composer stepped aside; the
+capture now restores the remembered caret and selection onto the new field.
+[Milestone](projects/feedback-reinflation.md#2026-10-21--capture-returns-the-draft-where-it-was-bug-284).
 
 ### BUG-285 A dismissed local-build notice returns on app activation
 
@@ -4988,7 +4994,7 @@ workaround is deleted.
 
 ### BUG-302 The navigation gate times out leaving Team with Escape
 
-Status: open · ENG-016 · found 2026-10-19 by the W25 landing.
+Status: fixed in code · ENG-016 · found 2026-10-19 by the W25 landing; fixed 2026-10-21 by the back-out packet (`<sha pending>`): one Escape owner, `eval:navigation` green.
 
 `pnpm eval:navigation` (`scripts/command-altitude-eval.mjs:239`) presses
 Escape in Team and waits for the URL to drop `?view`; the wait times out at
@@ -5006,6 +5012,12 @@ yields keys born in Team), so the key is dead while the dock shows "esc ·
 back to tiles". The eval's premise moved too: the dock's ladder is panel,
 then tiles, then leave Team. Owner: the back-out packet of the Execution
 front (2026-10-21).
+
+2026-10-21, fixed: `src/lib/shortcuts/back-out.ts` resolves Escape for
+every surface (dialog, field, panel, dock, grid, then altitude) with
+fall-through; the eval now asserts the dock's ladder. Handlers migrated and
+left, with reasons:
+[milestone](projects/daily-driver-adoption.md#2026-10-21--one-escape-owner-the-back-out-ladder-bug-302-bug-284).
 
 ### BUG-301 v0.1.21's release run refused its DMG and the release log could not say why
 

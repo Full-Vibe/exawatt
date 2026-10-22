@@ -8293,3 +8293,59 @@ this worktree's dev server.
 Boy Scout: `session-launch-environment.test.ts` asserted the spawned
 environment had no bus port, which fails inside any Exawatt agent session
 (the host carries one); it now asserts nothing beyond what was inherited.
+
+### 2026-10-21 — One Escape owner: the back-out ladder (BUG-302, BUG-284)
+
+**Escape backs out one level from every focus position; nothing catches it
+on its own element any more.** Back-out packet of the Execution front
+(2026-10-21), branch `agent/back-out`, `<sha pending>`.
+
+- **Cause.** About forty surfaces each caught Escape and decided alone
+  whether to swallow it or let it bubble. Since Chatter became the Team
+  dock's second tab (ENG-029 B3, `7ee5711d`) the dock's tab strip is a Tab
+  stop, and Escape there was handled by nobody: the tab ignored it, Team's
+  grid yielded keys born in the dock, and the window fallback yielded keys
+  born in Team. The coverage test written first found ten dead positions in
+  the roadmap queue alone (both dock tabs and every button in the roadmap
+  panel) and more in Chatter (the recipient and Send controls).
+- **Change.** `src/lib/shortcuts/back-out.ts` is the one owner. Surfaces
+  register a rung (overlay, field, panel, dock, grid, altitude) with
+  `useBackOut`; one window listener resolves the key from the focus
+  position, top rung first, and a rung with nothing left falls through.
+  Radix dialogs and menus answer first; `DialogContent` asks the rungs inside
+  it before it closes; a Session's terminal and an IME candidate keep the
+  key. `rememberFocus`/`restore` returns focus, caret and selection when a
+  layer closes or steps aside. The fixed family is now `fixed-back-out`
+  ("Go back one level").
+- **Migrated** (their own handlers deleted): Team's grid and shell-chrome
+  listener, the dock, the roadmap panel, Chatter's list, thread and
+  composer; the Agent altitude's return to the Session; Fleet's window
+  listener, search and Direct (V4.2's order kept: Direct's text, the
+  selection, then zoom out); Settings' exit and connection rename; the
+  close, close-Project and pause confirms; the launcher's details, recent
+  conversations and its filter; terminal search; Connect source's rename;
+  the feedback composer's IME guard (now every dialog's).
+- **Dead keys this closes beyond the record.** An empty Fleet search, the
+  board's Agent picker, the roadmap panel's buttons and Chatter's composer
+  controls now fall through instead of swallowing Escape. Connect source's
+  rename never held: Escape there closed the whole dialog, because Radix
+  answers at document capture before the field's handler.
+- **BUG-284.** The feedback composer steps aside for a screenshot and its
+  field remounts, so the caret came back at the start. The capture now
+  remembers the draft's position and restores it onto the new field, after
+  a capture or a refusal.
+- **Left on their own handlers, with reasons.** Menus (`option-menu.tsx`,
+  `option-menu-keyboard.ts`) and the Project ribbon's rename
+  (`project-ribbon-menu.tsx`) belong to the command-parity packet and Radix
+  already owns their Escape; the tab strip's drag cancel (`tab-strip.tsx`)
+  is command-parity's file and cancels a gesture, not a layer; the usage
+  meter's hover preview closes on Escape and lets the key through, so
+  joining would change what the key does; the standalone quick-capture face
+  renders only in its gallery study; the homepage boards
+  (`hero-board-overlay.tsx`, `scroll-experience.tsx`) and two gallery
+  studies are outside the app's ladder.
+- **Proof.** `pnpm eval:navigation` passes against this worktree: Tab from
+  the grid lands on a dock tab, Escape returns to the tile with `?view`
+  set, the next Escape leaves Team. `expose-overlay.back-out.test.tsx` walks
+  every Team focus position in four dock states and fails naming any
+  position where Escape goes unanswered.

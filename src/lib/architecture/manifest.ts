@@ -540,7 +540,7 @@ export const architectureManifest = {
           id: 'command-navigation',
           label: 'Command Navigation',
           summary:
-            'Typed destination registry with independent route-presentation and command-discovery contracts, plus context restore and finite reduced-motion-safe Agent, Team, and Fleet handoffs.',
+            'Typed destination registry with independent route-presentation and command-discovery contracts, plus context restore, finite reduced-motion-safe Agent, Team, and Fleet handoffs, and one Escape owner that backs out a rung at a time and returns focus, caret and selection.',
           layer: 'ui',
           status: 'implemented',
           x: 705,

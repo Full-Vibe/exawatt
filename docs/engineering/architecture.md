@@ -350,6 +350,14 @@ subset drives app chrome and go-chords; public destinations such as Leaderboard
 can therefore remain public website routes while joining the Electron palette.
 The shortcut registry owns effective keys, the Fleet board owns URL filters
 plus session-local camera return, and the workspace owns terminal/Team focus.
+Escape has one owner, the back-out ladder (`src/lib/shortcuts/back-out.ts`,
+BUG-302): surfaces register a rung (overlay, field, panel, dock, grid,
+altitude) and one window listener resolves the key from wherever focus is,
+falling through a rung with nothing left, so no focus position leaves Escape
+dead. Radix dialogs and menus answer first; a dialog asks the rungs inside it
+before it closes; a Session's terminal keeps Escape for its program. The same
+module remembers and restores focus, caret and selection when a layer closes
+or steps aside.
 
 ### Render-path performance contract
 
