@@ -1135,6 +1135,13 @@ describe('selectShortGoalLabel', () => {
     expect(selectShortGoalLabel('   ')).toBe('');
   });
 
+  // BUG-128 alert #13: the trailing-punctuation trim walks the label once.
+  it('alert #13: trims a long trailing dash run and keeps a long leading one', () => {
+    const run = '—-'.repeat(100_000);
+    expect(selectShortGoalLabel(`Ship ${run}`)).toBe('Ship');
+    expect(selectShortGoalLabel(`${run} \t x`)).toBe(`${run} x`);
+  });
+
   it('labels agent tiles by goal summary, not the (possibly codename) name', () => {
     const a = agent({
       id: 'x',

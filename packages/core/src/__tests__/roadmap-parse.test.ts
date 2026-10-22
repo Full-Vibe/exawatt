@@ -363,3 +363,91 @@ describe('parseRoadmap', () => {
     expect(a.contentHash).not.toBe(c.contentHash);
   });
 });
+
+/*
+ * BUG-128: one long-line regression per code-scanning alert, named by the
+ * public repository's alert number. Each line is the shape CodeQL reported
+ * (a long run that stops short of the end) at a length the replaced regexes
+ * needed seconds for, so a quadratic reader fails these on the suite's own
+ * timeout. Each asserts what the line parses to.
+ */
+describe('parseRoadmap on adversarial long lines (BUG-128)', () => {
+  const N = 200_000;
+  const spaces = ' '.repeat(N);
+  const ITEM = '## Now\n\n### A-1 Item\n\n';
+  const parse = (text: string) => parseRoadmap(text, OPTS);
+
+  it('alert #2 (slugify): a title fenced by long dash runs slugs to its words', () => {
+    const doc = parse(
+      `## Now\n\n### ${'-'.repeat(N)}Dark mode${'-'.repeat(N)}\n`
+    );
+    expect(doc.items[0].id).toBe('~dark-mode');
+  });
+
+  it('alert #3 (done marker): an unclosed "(landed" run is not a landed marker', () => {
+    const doc = parse(
+      `${ITEM}Milestones:\n\n- D1 ${'(landed'.repeat(N / 2)}\n`
+    );
+    expect(doc.items[0].milestones[0]).toMatchObject({ id: 'D1', done: false });
+  });
+
+  it('alert #4 (retired marker): an unclosed "(cut" run is not a retired marker', () => {
+    const doc = parse(`${ITEM}Milestones:\n\n- D1 ${'(cut'.repeat(N / 2)}\n`);
+    expect(doc.items[0].milestones[0]).toMatchObject({
+      id: 'D1',
+      retired: false,
+    });
+  });
+
+  it('alert #5 (section heading): a long run broken by a line terminator is prose', () => {
+    const line = `## a${spaces}\rb`;
+    const doc = parse(`${ITEM}${line}\n`);
+    expect(doc.items[0].description).toEqual([line]);
+  });
+
+  it('alert #5 (section heading): marker plus only whitespace still closes the section', () => {
+    const doc = parse(`${ITEM}##${spaces}\u2028\n### A-2 After\n`);
+    expect(doc.items.map(item => item.id)).toEqual(['A-1']);
+    expect(doc.diagnostics).toContainEqual(
+      expect.objectContaining({
+        message:
+          'item-like heading "A-2 After" outside a queue section — ignored',
+      })
+    );
+  });
+
+  it('alert #6 (item heading): a long run broken by a line terminator is prose', () => {
+    const line = `### a${spaces}\rb`;
+    const doc = parse(`${ITEM}${line}\n`);
+    expect(doc.items.map(item => item.id)).toEqual(['A-1']);
+    expect(doc.items[0].description).toEqual([line]);
+  });
+
+  it('alert #7 (item id): a long gap between id and title keeps both', () => {
+    const doc = parse(`## Now\n\n### A-0${spaces}Title\n`);
+    expect(doc.items[0]).toMatchObject({ id: 'A-0', title: 'Title' });
+  });
+
+  it('alert #8 (status line): a long gap before a broken note is not a Status line', () => {
+    const line = `Status:${spaces}a\rb`;
+    const doc = parse(`${ITEM}${line}\n`);
+    expect(doc.items[0].statusNote).toBeNull();
+    expect(doc.items[0].description).toEqual([line]);
+  });
+
+  it('alert #9 (status word): a long punctuation run is trimmed from the status word', () => {
+    const doc = parse(`${ITEM}Status: done${','.repeat(N)}\n`);
+    expect(doc.items[0].status).toBe('shipped');
+    const unknown = parse(`${ITEM}Status: ${','.repeat(N)}x\n`);
+    expect(unknown.items[0].status).toBe('now');
+  });
+
+  it('alert #10 (bullet): a long gap before a broken bullet is prose, a clean one a bullet', () => {
+    const broken = `*${spaces}a\rb`;
+    const doc = parse(`${ITEM}Scope:\n\n${broken}\n-${spaces}wide\n`);
+    expect(doc.items[0].scope).toEqual([]);
+    expect(doc.items[0].description).toEqual([broken, 'wide']);
+    const clean = parse(`${ITEM}Scope:\n\n-${spaces}wide\n`);
+    expect(clean.items[0].scope).toEqual(['wide']);
+  });
+});

@@ -16,6 +16,8 @@
  * renderer reads them; Demo Mode runs the same allocation over its fixtures.
  */
 
+import { trimEdgeRuns } from '../text/runs';
+
 export const AGENT_NAME_MAX_LENGTH = 32;
 
 /** Who chose the name: allocation at launch, or the operator. */
@@ -101,10 +103,10 @@ export function harnessCarriesAgentName(harness: string): boolean {
 export function agentNamePrefix(harness: string): string {
   const mapped = HARNESS_NAME_PREFIX[harness];
   if (mapped) return mapped;
-  const cleaned = harness
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '');
+  const cleaned = trimEdgeRuns(
+    harness.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-'),
+    '-'
+  );
   return cleaned || 'agent';
 }
 

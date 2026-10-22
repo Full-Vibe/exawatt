@@ -1,3 +1,4 @@
+import { trimTrailingRun } from '../text/runs';
 import { inferSessionLinks, type SessionLinkCandidate } from './link';
 import type { RoadmapDoc, SessionLink } from './types';
 
@@ -84,8 +85,8 @@ export interface FleetRoadmapAttention {
 /** Source-neutral worktree evidence: the basename of a Session cwd that has
  *  left the Project root. Free, and the strongest non-git link signal. */
 function worktreeDirname(cwd: string, projectDir: string): string | null {
-  const normalized = cwd.replace(/\/+$/, '');
-  if (normalized === projectDir.replace(/\/+$/, '')) return null;
+  const normalized = trimTrailingRun(cwd, '/');
+  if (normalized === trimTrailingRun(projectDir, '/')) return null;
   const base = normalized.split('/').pop();
   return base || null;
 }

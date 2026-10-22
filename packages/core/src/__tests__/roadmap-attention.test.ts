@@ -108,6 +108,18 @@ describe('deriveFleetRoadmapBlocked', () => {
     ]);
   });
 
+  // BUG-128 alerts #19 and #20: both trailing-slash trims walk the path once.
+  it('alerts #19 and #20: reads cwd and Project paths with long slash runs', () => {
+    const root = `${'/'.repeat(200_000)}b`;
+    const fleet = deriveFleetRoadmapBlocked([
+      project(root, BLOCKED_NOW, [
+        session('w', { cwd: `${root}/b-1-fix`, title: 'unrelated' }),
+        session('r', { cwd: `${root}${'/'.repeat(200_000)}`, title: 'none' }),
+      ]),
+    ]);
+    expect(fleet.blocked.map(entry => entry.sessionId)).toEqual(['w']);
+  });
+
   it('ignores blocked items with nothing attached, and unblocked ones', () => {
     const fleet = deriveFleetRoadmapBlocked([
       project(B, BLOCKED_NOW, [

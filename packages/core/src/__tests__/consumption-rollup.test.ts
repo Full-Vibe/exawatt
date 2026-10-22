@@ -246,8 +246,16 @@ describe('rollups', () => {
 
   it('weights a frontier model above a workhorse model for the same tokens', () => {
     const { rollups } = rollupByModel([
-      sample({ idempotencyKey: 'p', model: 'claude-sonnet-5', usage: { inputTokens: 1_000 } }),
-      sample({ idempotencyKey: 'q', model: 'claude-opus-5', usage: { inputTokens: 1_000 } }),
+      sample({
+        idempotencyKey: 'p',
+        model: 'claude-sonnet-5',
+        usage: { inputTokens: 1_000 },
+      }),
+      sample({
+        idempotencyKey: 'q',
+        model: 'claude-opus-5',
+        usage: { inputTokens: 1_000 },
+      }),
     ]);
     const sonnet = rollups.find(r => r.scope.id === 'claude-sonnet-5');
     const opus = rollups.find(r => r.scope.id === 'claude-opus-5');
@@ -272,7 +280,9 @@ describe('rollups', () => {
   });
 
   it('honours the window filter', () => {
-    const { rollups } = rollupByDay(samples, { from: '2026-07-02T00:00:00.000Z' });
+    const { rollups } = rollupByDay(samples, {
+      from: '2026-07-02T00:00:00.000Z',
+    });
     expect(rollups).toHaveLength(1);
     expect(rollups[0].scope.id).toBe('2026-07-02');
   });
@@ -339,7 +349,11 @@ describe('delegated split in rollups', () => {
 
   it('flags a source that cannot report delegation at all', () => {
     const [codexOnly] = rollupBySession([
-      sample({ idempotencyKey: 'cx', source: 'codex', providerSessionId: 'c1' }),
+      sample({
+        idempotencyKey: 'cx',
+        source: 'codex',
+        providerSessionId: 'c1',
+      }),
     ]).rollups;
     expect(codexOnly.delegationBlindSources).toEqual(['codex']);
     expect(codexOnly.delegated.samples).toBe(0);
@@ -363,13 +377,30 @@ describe('project resolver', () => {
     });
     expect(directoryProjectResolver('')).toBeNull();
   });
+
+  // BUG-128 alert #1: the trailing-separator trim walks the path once.
+  it('alert #1: reads a path with a long separator run before its end', () => {
+    const run = '/\\'.repeat(100_000);
+    expect(directoryProjectResolver(`${run}acme`)).toEqual({
+      id: `${run}acme`,
+      label: 'acme',
+    });
+    expect(directoryProjectResolver(`/w/acme${run}`)).toEqual({
+      id: '/w/acme',
+      label: 'acme',
+    });
+  });
 });
 
 describe('session id recovery from paths', () => {
   it('reads a Claude session id from a top-level or subagent path', () => {
-    expect(sessionIdFromClaudePath('/root/claude/-w-acme/abc.jsonl')).toBe('abc');
+    expect(sessionIdFromClaudePath('/root/claude/-w-acme/abc.jsonl')).toBe(
+      'abc'
+    );
     expect(
-      sessionIdFromClaudePath('/root/claude/-w-acme/abc/subagents/agent-x.jsonl')
+      sessionIdFromClaudePath(
+        '/root/claude/-w-acme/abc/subagents/agent-x.jsonl'
+      )
     ).toBe('abc');
     expect(
       sessionIdFromClaudePath(
@@ -380,7 +411,9 @@ describe('session id recovery from paths', () => {
 
   it('reads a Codex session id from a rollout filename', () => {
     expect(
-      sessionIdFromCodexPath('/root/codex/2026/07/24/rollout-2026-07-24T12-04-51-uuid-1.jsonl')
+      sessionIdFromCodexPath(
+        '/root/codex/2026/07/24/rollout-2026-07-24T12-04-51-uuid-1.jsonl'
+      )
     ).toBe('uuid-1');
     expect(sessionIdFromCodexPath('/root/codex/nonsense.jsonl')).toBeNull();
   });
@@ -505,9 +538,8 @@ describe('scanConsumption', () => {
   });
 
   it('produces the same totals cold and incrementally', async () => {
-    const truncated = CLAUDE_FIXTURE_FILES[
-      '/root/claude/-w-acme/sess-claude-1.jsonl'
-    ];
+    const truncated =
+      CLAUDE_FIXTURE_FILES['/root/claude/-w-acme/sess-claude-1.jsonl'];
     const half = truncated.slice(0, truncated.indexOf('\n', 200) + 1);
     const memory = new MemoryFileSystem({
       '/root/claude/-w-acme/sess-claude-1.jsonl': half,

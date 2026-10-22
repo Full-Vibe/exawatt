@@ -7,6 +7,7 @@
  * still counted in `unattributedSamples` so a surface can say how much of the
  * total it is failing to place.
  */
+import { trimTrailingRun } from '../text/runs';
 import { addUsage, subtractUsage } from './merge';
 import { resolveModelWeight, weightUsage } from './model-weights';
 import { intersectAssurance } from './assurance';
@@ -33,7 +34,7 @@ export type ProjectResolver = (
  * layer. Callers that have it should inject a better resolver.
  */
 export const directoryProjectResolver: ProjectResolver = cwd => {
-  const trimmed = cwd.replace(/[/\\]+$/, '');
+  const trimmed = trimTrailingRun(cwd, '/\\');
   if (!trimmed) return null;
   const segments = trimmed.split(/[/\\]/);
   return { id: trimmed, label: segments[segments.length - 1] || trimmed };
@@ -196,9 +197,10 @@ export function rollupBy(
 
   const rollups = [...buckets.values()]
     .map(finish)
-    .sort((left, right) =>
-      right.weightedTokens - left.weightedTokens ||
-      (left.scope.id < right.scope.id ? -1 : 1)
+    .sort(
+      (left, right) =>
+        right.weightedTokens - left.weightedTokens ||
+        (left.scope.id < right.scope.id ? -1 : 1)
     );
   return { rollups, unattributedSamples, unattributedTotals };
 }
@@ -244,9 +246,7 @@ export function rollupByDay(
     samples,
     sample => {
       const day = sample.at.slice(0, 10);
-      return day.length === 10
-        ? { kind: 'day', id: day, label: day }
-        : null;
+      return day.length === 10 ? { kind: 'day', id: day, label: day } : null;
     },
     options
   );
@@ -299,9 +299,7 @@ export function rollupWorkspace(
  */
 export function rollupByRoadmapItem(
   samples: Iterable<ConsumptionSample>,
-  link: (
-    sample: ConsumptionSample
-  ) => { id: string; label: string } | null,
+  link: (sample: ConsumptionSample) => { id: string; label: string } | null,
   options: RollupOptions = {}
 ): RollupResult {
   return rollupBy(

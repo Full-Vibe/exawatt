@@ -170,6 +170,9 @@ describe('allocation', () => {
 
   it('derives a prefix for a harness it has never seen', () => {
     expect(agentNamePrefix('Open Claw')).toBe('open-claw');
+    // BUG-128 alert #21: the edge-dash trim walks the id once.
+    const dashes = '-'.repeat(200_000);
+    expect(agentNamePrefix(`${dashes}Open Claw${dashes}`)).toBe('open-claw');
     expect(allocateAgentName('openclaw', new Set(['openclaw-1']))).toBe(
       'openclaw-2'
     );

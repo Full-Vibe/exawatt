@@ -8,6 +8,19 @@ import type {
   RoadmapItemStatus,
   RoadmapMilestone,
 } from './types';
+import { trimEdgeRuns } from '../text/runs';
+import {
+  hasDoneMarker,
+  hasRetiredMarker,
+  isItemId,
+  milestoneCheckbox,
+  milestoneId,
+  splitItemHeading,
+  startsWithItemId,
+  statusWord,
+  tokenizeRoadmapLine,
+  type RoadmapLabel,
+} from './tokenize';
 
 export interface ParseRoadmapOptions {
   projectDir: string;
@@ -74,34 +87,8 @@ const STATUS_ALIASES: Record<string, RoadmapItemStatus> = {
 /** Tokens that carry lifecycle info but keep the section's queue position. */
 const POSITION_NEUTRAL_TOKENS = new Set(['planned', 'blocked']);
 
-const ITEM_HEADING = /^###\s+(.+?)\s*$/;
-const SECTION_HEADING = /^##\s+(.+?)\s*$/;
-const ITEM_ID = /^([A-Z][A-Z0-9]*-\d+)\s+(.+)$/;
-const ITEM_ID_ONLY = /^[A-Z][A-Z0-9]*-\d+\b/;
-const STATUS_LINE = /^Status:\s*(.+)$/i;
-const LABEL_LINE = /^(Scope|Exit criteria|Milestones|Project doc):\s*$/i;
-const BULLET_LINE = /^[-*]\s+(.+)$/;
-const MILESTONE_CHECKBOX = /^\[( |x|X)\]\s+/;
-const MILESTONE_ID = /^([A-Z]{1,4}\d+(?:\.\d+)*)\b[\s:]*/;
-const MILESTONE_DONE_MARKER = /\((landed|shipped)[^)]*\)/i;
-const MILESTONE_RETIRED_MARKER =
-  /\((rescoped|retired|dropped|superseded|cut)[^)]*\)/i;
-const BACKLOG_OWNER_ID = /^[A-Z][A-Z0-9]*-\d+$/;
-
-type LabeledBlock = 'scope' | 'exitCriteria' | 'milestones' | 'docPaths';
-
-const LABEL_TO_BLOCK: Record<string, LabeledBlock> = {
-  scope: 'scope',
-  'exit criteria': 'exitCriteria',
-  milestones: 'milestones',
-  'project doc': 'docPaths',
-};
-
 function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  return trimEdgeRuns(text.toLowerCase().replace(/[^a-z0-9]+/g, '-'), '-');
 }
 
 function fnv1a(text: string): string {
@@ -120,18 +107,18 @@ function parseMilestone(
 ): RoadmapMilestone {
   let rest = text;
   let done = false;
-  const checkbox = MILESTONE_CHECKBOX.exec(rest);
+  const checkbox = milestoneCheckbox(rest);
   if (checkbox) {
-    done = checkbox[1] !== ' ';
-    rest = rest.slice(checkbox[0].length);
+    done = checkbox.done;
+    rest = rest.slice(checkbox.length);
   }
-  if (MILESTONE_DONE_MARKER.test(rest) || rest.includes('✅')) done = true;
-  const retired = !done && MILESTONE_RETIRED_MARKER.test(rest);
+  if (hasDoneMarker(rest) || rest.includes('✅')) done = true;
+  const retired = !done && hasRetiredMarker(rest);
   let id: string | null = null;
-  const idMatch = MILESTONE_ID.exec(rest);
+  const idMatch = milestoneId(rest);
   if (idMatch) {
-    id = idMatch[1];
-    rest = rest.slice(idMatch[0].length);
+    id = idMatch.id;
+    rest = rest.slice(idMatch.length);
   }
   const title = rest.trim() || id || text.trim();
   return { id, title, done, retired, source: { file, line } };
@@ -142,12 +129,7 @@ function parseBacklogMetadata(note: string): RoadmapBacklogMetadata | null {
     .split('\u00b7')
     .map(part => part.trim())
     .filter(Boolean);
-  if (
-    parts.length !== 3 ||
-    !parts[0] ||
-    !BACKLOG_OWNER_ID.test(parts[1]) ||
-    !parts[2]
-  ) {
+  if (parts.length !== 3 || !parts[0] || !isItemId(parts[1]) || !parts[2]) {
     return null;
   }
   return {
@@ -196,30 +178,29 @@ export function parseRoadmap(
   let section: RoadmapItemStatus | null = null;
   let sectionOrphanWarned = false;
   let item: RoadmapItem | null = null;
-  let block: LabeledBlock | null = null;
+  let block: RoadmapLabel | null = null;
   let sawStatusLine = false;
 
   for (let i = bodyStart; i < lines.length; i++) {
     const line = lines[i];
     const lineNo = i + 1;
-    const trimmed = line.trim();
 
-    const sectionMatch = !line.startsWith('###') && SECTION_HEADING.exec(line);
-    if (sectionMatch) {
-      section = resolveRoadmapSectionStatus(sectionMatch[1], convention);
+    const token = tokenizeRoadmapLine(line);
+
+    if (token.kind === 'section') {
+      section = resolveRoadmapSectionStatus(token.heading, convention);
       sectionOrphanWarned = false;
       item = null;
       block = null;
       continue;
     }
 
-    const itemMatch = !line.startsWith('####') && ITEM_HEADING.exec(line);
-    if (itemMatch) {
+    if (token.kind === 'item') {
       if (section === null) {
-        if (ITEM_ID_ONLY.test(itemMatch[1])) {
+        if (startsWithItemId(token.heading)) {
           diagnostics.push({
             level: 'info',
-            message: `item-like heading "${itemMatch[1]}" outside a queue section — ignored`,
+            message: `item-like heading "${token.heading}" outside a queue section — ignored`,
             source: { file, line: lineNo },
           });
         }
@@ -227,9 +208,9 @@ export function parseRoadmap(
         block = null;
         continue;
       }
-      const idMatch = ITEM_ID.exec(itemMatch[1]);
-      const declaredId = idMatch ? idMatch[1] : null;
-      const title = idMatch ? idMatch[2] : itemMatch[1];
+      const split = splitItemHeading(token.heading);
+      const declaredId = split ? split.id : null;
+      const title = split ? split.title : token.heading;
       const id = declaredId ?? `~${slugify(title)}`;
       if (seenIds.has(id)) {
         diagnostics.push({
@@ -264,7 +245,7 @@ export function parseRoadmap(
     }
 
     if (item === null) {
-      if (section !== null && trimmed !== '') {
+      if (section !== null && token.kind !== 'blank') {
         unparsedLineCount++;
         if (!sectionOrphanWarned) {
           diagnostics.push({
@@ -278,17 +259,13 @@ export function parseRoadmap(
       continue;
     }
 
-    if (trimmed === '') continue;
+    if (token.kind === 'blank') continue;
 
-    const statusMatch = !sawStatusLine && STATUS_LINE.exec(trimmed);
-    if (statusMatch) {
+    if (token.kind === 'status' && !sawStatusLine) {
       sawStatusLine = true;
-      const note = statusMatch[1].trim();
+      const note = token.note.trim();
       item.statusNote = note;
-      const token = note
-        .split(/\s+/)[0]
-        .replace(/[.,;:]+$/, '')
-        .toLowerCase();
+      const word = statusWord(note);
       if (item.status === 'backlog') {
         item.backlog = parseBacklogMetadata(note);
         // A compact backlog Status line describes the record, not its queue
@@ -301,18 +278,18 @@ export function parseRoadmap(
             source: { file, line: lineNo },
           });
         }
-      } else if (token === 'blocked') {
+      } else if (word === 'blocked') {
         item.blocked = true;
-      } else if (!POSITION_NEUTRAL_TOKENS.has(token)) {
+      } else if (!POSITION_NEUTRAL_TOKENS.has(word)) {
         const mapped =
-          token === 'backlog' && convention === 'exawatt-v1'
+          word === 'backlog' && convention === 'exawatt-v1'
             ? 'later'
-            : STATUS_ALIASES[token];
+            : STATUS_ALIASES[word];
         if (mapped) {
-          if (token !== mapped) {
+          if (word !== mapped) {
             diagnostics.push({
               level: 'info',
-              message: `status "${token}" read as "${mapped}"`,
+              message: `status "${word}" read as "${mapped}"`,
               source: { file, line: lineNo },
             });
           }
@@ -320,7 +297,7 @@ export function parseRoadmap(
         } else {
           diagnostics.push({
             level: 'warn',
-            message: `unknown status "${token}" — kept section default "${item.status}"`,
+            message: `unknown status "${word}" — kept section default "${item.status}"`,
             source: { file, line: lineNo },
           });
         }
@@ -329,15 +306,13 @@ export function parseRoadmap(
       continue;
     }
 
-    const labelMatch = LABEL_LINE.exec(trimmed);
-    if (labelMatch) {
-      block = LABEL_TO_BLOCK[labelMatch[1].toLowerCase()];
+    if (token.kind === 'label') {
+      block = token.label;
       continue;
     }
 
-    const bulletMatch = BULLET_LINE.exec(trimmed);
-    if (bulletMatch) {
-      const bullet = bulletMatch[1].trim();
+    if (token.kind === 'bullet') {
+      const bullet = token.bullet.trim();
       if (block === 'milestones') {
         item.milestones.push(parseMilestone(bullet, file, lineNo));
       } else if (block === 'docPaths') {
@@ -351,7 +326,7 @@ export function parseRoadmap(
     }
 
     block = null;
-    item.description.push(trimmed);
+    item.description.push(token.text);
   }
 
   const conformance: RoadmapConformance = declaredVersion

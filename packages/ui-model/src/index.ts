@@ -1,6 +1,8 @@
 export { attentionReadLabel } from './session-attention-copy';
 import {
+  isWhitespaceChar,
   resolveContextGroups,
+  trimTrailingRun,
   type AgentActivity,
   type AgentStatus,
   type AgentPresence,
@@ -460,7 +462,10 @@ export function selectShortGoalLabel(goal: string, maxWords = 4): string {
     kept.push(word);
   }
   if (kept.length === 0) kept.push(...words.slice(0, maxWords));
-  const label = kept.join(' ').replace(/[\s,.;:—-]+$/, '');
+  const label = trimTrailingRun(
+    kept.join(' '),
+    char => isWhitespaceChar(char) || ',.;:—-'.includes(char)
+  );
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
