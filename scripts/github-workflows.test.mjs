@@ -148,6 +148,15 @@ test('CI compiles both applications and builds without hosted-service configurat
     'git-filter-repo must be installed before the delivery-script pins run'
   );
   assert.match(commands, /pnpm verify:community-build/u);
+  // BUG-127: a pull request's audit is judged against its base, and only a
+  // pull request carries one, so `master` keeps the zero baseline.
+  const publication = workflow.jobs.test.steps.find(
+    step => step.run === 'pnpm publication:check'
+  );
+  assert.equal(
+    publication.env?.EXAWATT_AUDIT_BASE,
+    '${{ github.event.pull_request.base.sha }}'
+  );
   assert.doesNotMatch(source, /NEXT_PUBLIC_SUPABASE_/u);
   assert.doesNotMatch(source, /\$\{\{\s*secrets\./u);
 

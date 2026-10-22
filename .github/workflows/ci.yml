@@ -127,7 +127,15 @@ jobs:
       # Gate B and the rest of the publication gates over the WHOLE tracked
       # tree. The landing checks scan only changed paths, so this is the only
       # run that reads a file nobody touched.
+      #
+      # A pull request's dependency audit is judged against the tree it merges
+      # into (BUG-127): it fails only for an advisory its base does not already
+      # carry, so a bump that clears some advisories passes while others
+      # remain. A push carries no pull request, so the expression is empty and
+      # `master` keeps the zero baseline.
       - name: Run publication gates
+        env:
+          EXAWATT_AUDIT_BASE: ${{ github.event.pull_request.base.sha }}
         run: pnpm publication:check
 
       # The same pinned gitleaks and ruleset `gitleaks.yml` runs on the public
