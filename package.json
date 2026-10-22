@@ -206,7 +206,7 @@
     "cmdk": "^1.1.1",
     "electron-updater": "^6.8.9",
     "lucide-react": "^0.555.0",
-    "next": "16.3.3",
+    "next": "16.3.8",
     "node-pty": "^1.1.0",
     "posthog-js": "^1.413.2",
     "react": "19.2.0",
@@ -228,11 +228,11 @@
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^5.1.1",
     "ajv": "^8.20.0",
-    "electron": "^43.1.0",
+    "electron": "^43.7.11",
     "electron-builder": "^26.15.3",
     "electron-builder-squirrel-windows": "^26.15.3",
     "eslint": "^9.39.1",
-    "eslint-config-next": "16.3.3",
+    "eslint-config-next": "16.3.8",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^27.2.0",
     "minimatch": "10.2.5",
@@ -242,19 +242,14 @@
     "prettier": "^3.7.3",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.12",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"
   },
   "pnpm": {
     "overrides": {
       "@babel/core": "7.29.6",
-      "@supabase/realtime-js>ws": "8.21.0",
-      "browserslist@<4.28.7": "4.28.7",
-      "fflate@>=0.6.0 <0.6.11": "0.6.11",
-      "electron-updater>js-yaml": "4.3.2",
-      "sharp@<0.35.4": "0.35.4",
-      "baseline-browser-mapping@<2.11.0": "2.11.0"
+      "browserslist@<4.28.7": "4.28.7"
     }
   }
 }

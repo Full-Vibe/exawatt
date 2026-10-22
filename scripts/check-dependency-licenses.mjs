@@ -39,7 +39,7 @@ export const ALLOWED_LICENSE_EXPRESSIONS = new Set([
 
 const REVIEWED_EXCEPTIONS = new Map([
   ['caniuse-lite@1.0.30001810', 'CC-BY-4.0'],
-  ['dompurify@3.4.13', '(MPL-2.0 OR Apache-2.0)'],
+  ['dompurify@3.4.17', '(MPL-2.0 OR Apache-2.0)'],
   ['posthog-js@1.413.2', '(Apache-2.0 AND MIT)'],
   ['postprocessing@6.39.1', 'Zlib'],
   ['sanitize-filename@1.6.3', 'WTFPL OR ISC'],

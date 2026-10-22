@@ -14,7 +14,7 @@
  *   and the update feed is `.../desktop-updates/macos/arm64`. There is no
  *   Intel artifact to hand anyone, so "Apple silicon" is a fact, not a
  *   preference.
- * - Electron 43.1.0 ships `LSMinimumSystemVersion 12.0`
+ * - Electron 43.7.11 ships `LSMinimumSystemVersion 12.0`
  *   (`node_modules/electron/dist/Electron.app/Contents/Info.plist`), so the
  *   real floor is macOS 12 Monterey.
  *
