@@ -79,13 +79,13 @@ export function watchInstalledBuild(options: {
  */
 
 /** The two facts a build is compared by. */
-export interface BuildStamp {
+interface BuildStamp {
   version: string;
   builtAt: string;
 }
 
 /** Electron's mover (`app.isInApplicationsFolder`, `moveToApplicationsFolder`). */
-export interface ApplicationsMover {
+interface ApplicationsMover {
   isInApplicationsFolder(): boolean;
   moveToApplicationsFolder(options: {
     conflictHandler: (conflict: 'exists' | 'existsAndRunning') => boolean;

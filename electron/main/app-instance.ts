@@ -19,7 +19,7 @@
  * one: Electron 43 never makes a process that lost the lock `ready`.
  */
 
-export interface InstanceApp {
+interface InstanceApp {
   requestSingleInstanceLock(): boolean;
   exit(exitCode?: number): void;
 }

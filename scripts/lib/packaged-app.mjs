@@ -453,7 +453,7 @@ function realpathOrSelf(candidate) {
 
 /** This repository's worktree predicate, read from git and the user's temp
  *  directories (both spellings: the shell's TMPDIR and macOS's own). */
-export function repositoryBundles({
+function repositoryBundles({
   root = process.cwd(),
   run = execFileSync,
 } = {}) {
