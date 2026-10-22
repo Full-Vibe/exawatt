@@ -191,6 +191,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** Identity can arrive before React has committed a newly launched/restored
    * tab. Retain that event by durable Session id instead of dropping it. */
   const observedIdentitiesRef = useSessionScopedMap<string>(sessionScope);
+  /** Durable Sessions this window is launching: main pushes their start
+   *  ahead of the answer, and the answer places the tab (BUG-305). */
+  const startsInFlightRef = useSessionScopedIdSet(sessionScope);
   const { closedSessionCount, beginPendingClose } =
     useClosedSessionCount(ready);
   // Agent names (ENG-029 C4): main names every launch; this asks it to name
@@ -370,6 +373,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const { workspaceLoadFailure, retryWorkspaceLoad } = useWorkspaceHydration({
     stateRef,
     observedIdentitiesRef,
+    startsInFlightRef,
     operations,
     recents,
     setProjects,
@@ -415,6 +419,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       summariesRef,
       engagedRef,
       observedIdentitiesRef,
+      startsInFlightRef,
       addSession,
       moveOperator,
       syncProjectIdentity,

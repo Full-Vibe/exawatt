@@ -9,6 +9,12 @@
  *
  * Pure. The hydration hook does every read (the stored layout, `pty:list`,
  * the recovery marker, main's context store) and hands the answers in.
+ *
+ * `pty:list` is one read, and main keeps starting and ending processes while
+ * the restore waits on its other reads (BUG-305). Every start and exit main
+ * pushes meanwhile is folded into that snapshot (`withRuntimeEvents`) before
+ * the restore reads it, so a Session that started mid-read restores
+ * attached, and one that ended restores ended.
  */
 import { isPtyHarness } from '@exawatt/core';
 import { pickDistinctColor, projectColor } from '../project-colors';
@@ -16,7 +22,9 @@ import type {
   GoalVisual,
   GoalVisualRef,
   PtyAttention,
+  PtyExitEvent,
   PtySessionInfo,
+  PtySessionRecord,
   ReconciledResumeIdentity,
   ResumeIdentityHint,
   SessionDelegation,
@@ -207,6 +215,42 @@ export function seedSessionStores(
   return seeds;
 }
 
+/** A start or an exit main pushed to every window, in arrival order. */
+export type RuntimeEvent =
+  | { kind: 'start'; session: PtySessionRecord }
+  | { kind: 'exit'; exit: PtyExitEvent };
+
+/**
+ * The `pty:list` snapshot with every start and exit that arrived while the
+ * restore was reading, applied in order. A start replaces its durable
+ * Session's record (a new process, or the same one again); an exit ends the
+ * record of the process it names, and no other.
+ */
+export function withRuntimeEvents(
+  live: readonly PtySessionRecord[],
+  events: readonly RuntimeEvent[]
+): PtySessionRecord[] {
+  const byDurableId = new Map(
+    live.map(session => [session.durableSessionId, session])
+  );
+  for (const event of events) {
+    if (event.kind === 'start') {
+      byDurableId.set(event.session.durableSessionId, event.session);
+      continue;
+    }
+    const { id, durableSessionId, exitCode, exitSignal } = event.exit;
+    const session = byDurableId.get(durableSessionId);
+    if (session?.id === id)
+      byDurableId.set(durableSessionId, {
+        ...session,
+        exited: true,
+        exitCode,
+        exitSignal,
+      });
+  }
+  return [...byDurableId.values()];
+}
+
 interface RestoreContext {
   /** Provider identities main announced before React committed their tabs. */
   observedIdentities: ReadonlyMap<string, string>;
@@ -292,9 +336,9 @@ function restoreDraftTab(
  */
 export function restoreLayout(
   persisted: PersistedV7 | null,
-  live: readonly PtySessionInfo[],
+  live: readonly PtySessionRecord[],
   { observedIdentities, previousRunInterrupted }: RestoreContext
-): { restored: RestoredLayout | null; unclaimed: PtySessionInfo[] } {
+): { restored: RestoredLayout | null; unclaimed: PtySessionRecord[] } {
   const liveByDurableId = new Map(live.map(s => [s.durableSessionId, s]));
   if (!persisted) {
     return { restored: null, unclaimed: [...liveByDurableId.values()] };

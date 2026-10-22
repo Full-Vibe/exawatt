@@ -97,6 +97,7 @@ export function useSessionLaunch({
   summariesRef,
   engagedRef,
   observedIdentitiesRef,
+  startsInFlightRef,
   addSession,
   moveOperator,
   syncProjectIdentity,
@@ -111,6 +112,10 @@ export function useSessionLaunch({
   summariesRef: Latest<Record<string, string>>;
   engagedRef: Latest<Record<string, boolean>>;
   observedIdentitiesRef: Latest<ReadonlyMap<string, string>>;
+  /** Durable Sessions this window is starting. Main pushes every start to
+   *  every window ahead of the answer; while a launch is here, that answer
+   *  places its tab and the push places none (BUG-305). */
+  startsInFlightRef: { readonly current: Set<string> };
   addSession: (
     session: PtySessionRecord,
     tabId?: string,
@@ -160,6 +165,7 @@ export function useSessionLaunch({
               opts.reuseTabId
             )
           : operatorPosition.claimHere());
+      let starting: string | null = null;
       try {
         let cwd = dir;
         if (opts.worktreeBranch) {
@@ -190,6 +196,8 @@ export function useSessionLaunch({
         }
         const durableSessionId =
           restoredEntry?.durableSessionId ?? newDurableSessionId();
+        startsInFlightRef.current.add(durableSessionId);
+        starting = durableSessionId;
         const statedTask =
           restoredEntry?.initialTask ?? opts.statedTask?.trim() ?? null;
         const restoredSubtitle =
@@ -339,6 +347,8 @@ export function useSessionLaunch({
           cause instanceof Error && cause.message ? `: ${cause.message}` : '.';
         setError(`Could not start the ${launchLabel}${detail}`);
         return false;
+      } finally {
+        if (starting) startsInFlightRef.current.delete(starting);
       }
     },
     [
@@ -349,6 +359,7 @@ export function useSessionLaunch({
       setLastUsedDir,
       setProjects,
       sizeRef,
+      startsInFlightRef,
       stateRef,
       syncProjectIdentity,
     ]

@@ -10,12 +10,18 @@
 import { pickDistinctColor } from '../project-colors';
 import { nextActiveTabAfterClose } from '../tab-ring';
 import type { Project as RegistryProject } from '@/lib/projects/registry';
-import type { PtyExitEvent } from '@exawatt/core/desktop-bridge';
+import type {
+  PtyExitEvent,
+  PtySessionRecord,
+} from '@exawatt/core/desktop-bridge';
 import {
   applyWorkspaceDraftPatch,
   isRemoteAgentTab,
   isSessionTab,
+  newTabId,
   projectRootPath,
+  runtimeAdoptionPatch,
+  tabFromPtySession,
   type Project,
   type RemoteAgentOpenRef,
   type SessionTab,
@@ -161,6 +167,45 @@ export function markPtyExited(
         : t
     ),
   }));
+}
+
+/**
+ * Main started a Session's process (BUG-305), whoever asked for it. The tab
+ * holding that durable Session follows it to the new process; a start no tab
+ * holds becomes a tab of its own, appended where it belongs and moving
+ * nobody, unless this window asked for it (`placeUnclaimed` false), in which
+ * case the answer to that ask places it.
+ */
+export function adoptStartedSession(
+  projects: Project[],
+  session: PtySessionRecord,
+  placeUnclaimed: boolean
+): Project[] {
+  let claimed = false;
+  let moved = false;
+  const adopted = projects.map(g => {
+    let changed = false;
+    const tabs = g.tabs.map(t => {
+      if (
+        !isSessionTab(t) ||
+        t.lifecycle === 'draft' ||
+        t.durableSessionId !== session.durableSessionId
+      )
+        return t;
+      claimed = true;
+      if (t.sessionId === session.id) return t;
+      changed = moved = true;
+      return { ...t, ...runtimeAdoptionPatch(t, session, undefined) };
+    });
+    return changed ? { ...g, tabs } : g;
+  });
+  if (claimed) return moved ? adopted : projects;
+  if (!placeUnclaimed) return projects;
+  return placeTab(
+    projects,
+    { dir: session.projectDir, name: session.projectName },
+    tabFromPtySession(session, newTabId(), null, null)
+  );
 }
 
 /** Main learned a Session's provider conversation. A stopped tab that had no

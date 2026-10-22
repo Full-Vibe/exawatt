@@ -9,6 +9,7 @@ import {
   seedSessionStores,
   unresolvedGoalVisual,
   withReconciledIdentities,
+  withRuntimeEvents,
 } from './layout-restore';
 import type {
   PersistedRemoteAgentTab,
@@ -275,6 +276,64 @@ describe('restoreLayout', () => {
     expect(restored!.recentProjects.map(recent => recent.dir)).toEqual([
       '/kept',
     ]);
+  });
+});
+
+describe('starts and exits during the read (BUG-305)', () => {
+  const exit = (id: string, durableSessionId: string) => ({
+    kind: 'exit' as const,
+    exit: { id, durableSessionId, exitCode: 0, exitSignal: null },
+  });
+
+  it('restores attached a Session that started while the layout was read', () => {
+    const started = ptySessionInfo({
+      id: 'pty-1',
+      durableSessionId: 'durable-1',
+    });
+    const { restored, unclaimed } = restoreLayout(
+      layout([savedTab('1', { sessionId: null, lifecycle: 'resuming' })]),
+      withRuntimeEvents([], [{ kind: 'start', session: started }]),
+      quietRestart
+    );
+    expect(sessionTabs(restored!.projects[0].tabs)[0]).toMatchObject({
+      sessionId: 'pty-1',
+      lifecycle: 'running',
+    });
+    expect(unclaimed).toEqual([]);
+  });
+
+  it('restores ended a Session the snapshot read as live', () => {
+    const live = ptySessionInfo({ id: 'pty-1', durableSessionId: 'durable-1' });
+    const { restored } = restoreLayout(
+      layout([savedTab('1')]),
+      withRuntimeEvents([live], [exit('pty-1', 'durable-1')]),
+      quietRestart
+    );
+    expect(sessionTabs(restored!.projects[0].tabs)[0]).toMatchObject({
+      sessionId: null,
+      lifecycle: 'exited',
+    });
+  });
+
+  it('ends only the process an exit names, in arrival order', () => {
+    const older = ptySessionInfo({
+      id: 'pty-1',
+      durableSessionId: 'durable-1',
+    });
+    const newer = ptySessionInfo({
+      id: 'pty-2',
+      durableSessionId: 'durable-1',
+    });
+    expect(
+      withRuntimeEvents(
+        [older],
+        [
+          exit('pty-1', 'durable-1'),
+          { kind: 'start', session: newer },
+          exit('pty-1', 'durable-1'),
+        ]
+      )
+    ).toEqual([newer]);
   });
 });
 

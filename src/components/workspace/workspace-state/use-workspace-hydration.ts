@@ -8,8 +8,12 @@
  * One effect owns both on purpose. Events that arrive between the `pty:list`
  * snapshot resolving and the seed merge must win over that snapshot, and the
  * only way to know which ones did is to be the subscriber while the read is
- * in flight. A load that fails is not a first launch: it surfaces as a load
- * failure and keeps every save gated behind readiness until a retry lands.
+ * in flight. Starts and exits are the strongest case (BUG-305): main pushes
+ * every one to every window, the ones that arrive during the read are folded
+ * into the snapshot the restore reads, and every later one moves the layout
+ * directly, so no tab depends on the one read taken at mount. A load that
+ * fails is not a first launch: it surfaces as a load failure and keeps every
+ * save gated behind readiness until a retry lands.
  */
 import {
   useCallback,
@@ -46,8 +50,14 @@ import {
   seedSessionStores,
   unresolvedGoalVisual,
   withReconciledIdentities,
+  withRuntimeEvents,
+  type RuntimeEvent,
 } from './layout-restore';
-import { adoptObservedIdentity, markPtyExited } from './project-list';
+import {
+  adoptObservedIdentity,
+  adoptStartedSession,
+  markPtyExited,
+} from './project-list';
 import type { RecentProjects } from './recent-projects';
 import type { SessionOperations } from './session-operations';
 
@@ -74,6 +84,7 @@ async function readConfiguredSourceIds(): Promise<ReadonlySet<string> | null> {
 export function useWorkspaceHydration({
   stateRef,
   observedIdentitiesRef,
+  startsInFlightRef,
   operations,
   recents,
   setProjects,
@@ -95,6 +106,9 @@ export function useWorkspaceHydration({
   /** identities main announced before React committed their tab; this hook
    *  is the one writer */
   observedIdentitiesRef: Latest<Map<string, string>>;
+  /** durable Sessions this window is starting: the answer to its own ask
+   *  places the tab, so their start push must not place a second one */
+  startsInFlightRef: Latest<ReadonlySet<string>>;
   operations: SessionOperations;
   recents: RecentProjects;
   setProjects: Setter<Project[]>;
@@ -143,6 +157,9 @@ export function useWorkspaceHydration({
     // an empty map — without this guard the stale snapshot then resurrects a
     // rail no future event will clear until the next spawn.
     const settledBeforeSeed = new Set<string>();
+    // Starts and exits main pushed before the restore landed, in arrival
+    // order; null once it has, after which each one moves the layout itself.
+    let runtimeBeforeRestore: RuntimeEvent[] | null = [];
 
     void (async () => {
       // the font settles here too: the revive loop below reads the spawn
@@ -258,7 +275,11 @@ export function useWorkspaceHydration({
       if (Object.keys(seeds.delegation).length > 0) {
         setDelegation(prev => ({ ...seeds.delegation, ...prev }));
       }
-      const { restored, unclaimed } = restoreLayout(persisted, live, {
+      // Synchronous from here to the last `setProjects`: no push can land
+      // between the fold and the restore it feeds.
+      const runtime = withRuntimeEvents(live, runtimeBeforeRestore ?? []);
+      runtimeBeforeRestore = null;
+      const { restored, unclaimed } = restoreLayout(persisted, runtime, {
         observedIdentities: observedIdentitiesRef.current,
         previousRunInterrupted: recovery.previousRunInterrupted,
       });
@@ -299,17 +320,24 @@ export function useWorkspaceHydration({
       setWorkspaceLoadFailure(recovery ?? { required: false });
     });
 
-    const offExit = api.onExit(
-      ({ id, durableSessionId, exitCode, exitSignal }) => {
-        operations.recordExit(stateRef.current.projects, {
-          id,
-          durableSessionId,
-          exitCode,
-          exitSignal,
-        });
-        setProjects(prev => markPtyExited(prev, { id, exitCode, exitSignal }));
+    const offStart = api.onStart?.(session => {
+      if (runtimeBeforeRestore) {
+        runtimeBeforeRestore.push({ kind: 'start', session });
+        return;
       }
-    );
+      const placeUnclaimed = !startsInFlightRef.current.has(
+        session.durableSessionId
+      );
+      setProjects(prev => adoptStartedSession(prev, session, placeUnclaimed));
+    });
+    const offExit = api.onExit(exit => {
+      operations.recordExit(stateRef.current.projects, exit);
+      if (runtimeBeforeRestore) {
+        runtimeBeforeRestore.push({ kind: 'exit', exit });
+        return;
+      }
+      setProjects(prev => markPtyExited(prev, exit));
+    });
     const offIdentity = api.onIdentity?.(
       ({ id, durableSessionId, harnessSessionId }) => {
         observedIdentitiesRef.current.set(durableSessionId, harnessSessionId);
@@ -395,6 +423,7 @@ export function useWorkspaceHydration({
     );
     return () => {
       hydrationRequests.invalidate();
+      offStart?.();
       offExit();
       offIdentity?.();
       offContext?.();
