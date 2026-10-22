@@ -576,7 +576,7 @@ const isStudy = file =>
  * wrote itself (a fixture's name, a line typed into a terminal) is not in it,
  * so it is data, not copy.
  */
-export function productCopy(sources) {
+function productCopy(sources) {
   const strings = new Map();
   const templates = [];
   const attributes = new Set();
@@ -904,7 +904,7 @@ async function readAll(root, files) {
 }
 
 /** The eval scripts, the bridge declaration, and the product they drive. */
-export async function readEvalTree(root = ROOT) {
+async function readEvalTree(root = ROOT) {
   const scripts = await readAll(
     root,
     await filesUnder(
