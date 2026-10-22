@@ -24,8 +24,9 @@
 // and an unmarked fake harness), so a script that slips past a pattern here
 // still cannot run.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +34,10 @@ import { fileURLToPath } from 'node:url';
 import { FAKE_HARNESSES } from './lib/harness-probe-fixture.mjs';
 import { git } from './lib/hermetic-git.mjs';
 import { installFeedbackTransport } from './lib/feedback-reporting-eval.mjs';
+import {
+  HARNESS_HISTORY_ROOTS,
+  withEvalHistory,
+} from './lib/eval-harness-history.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const LAUNCHER = 'scripts/lib/electron-eval.mjs';
@@ -375,4 +380,29 @@ test('an async page condition is polled, never handed to waitForFunction', () =>
       'Promise is truthy, so an async predicate never waits; use ' +
       'waitForPageCondition from scripts/lib/electron-eval.mjs'
   );
+});
+
+// BUG-315: an eval reads this Mac's harness history only when it says so.
+test('an eval reads empty harness history unless it opts in to this Mac', () => {
+  const hostEnv = { HOME: homedir(), PATH: '/usr/bin' };
+  const sandboxed = withEvalHistory({ args: ['.'], env: hostEnv });
+  for (const name of Object.keys(HARNESS_HISTORY_ROOTS)) {
+    const dir = sandboxed.env[name];
+    assert.ok(dir?.startsWith(tmpdir()), `${name} is a throwaway root`);
+    assert.deepEqual(readdirSync(dir), [], `${name} starts empty`);
+  }
+  assert.equal(sandboxed.env.PATH, hostEnv.PATH);
+  assert.deepEqual(sandboxed.args, ['.']);
+
+  const host = { args: ['.'], env: hostEnv };
+  assert.equal(withEvalHistory(host, { readsHarnessHistory: true }), host);
+
+  // A fixture HOME is already the eval's own history; so is a named root.
+  const fixtureHome = { env: { ...hostEnv, HOME: '/Users/fixture' } };
+  assert.equal(withEvalHistory(fixtureHome), fixtureHome);
+  const fixtureRoot = withEvalHistory({
+    env: { ...hostEnv, EXAWATT_CODEX_SESSIONS_ROOT: '/fixture/codex' },
+  });
+  assert.equal(fixtureRoot.env.EXAWATT_CODEX_SESSIONS_ROOT, '/fixture/codex');
+  assert.ok(fixtureRoot.env.EXAWATT_CLAUDE_PROJECTS_ROOT);
 });

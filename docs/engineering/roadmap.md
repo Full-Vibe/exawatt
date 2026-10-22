@@ -1146,6 +1146,7 @@ Milestones:
 - E15 Usage as account bars (landed 2026-09-29; operator design pass in session, RESOLVES E12 — see the Amendment chain). Operator brief: "dramatically simplified … like the familiar usage bars the frontier model companies" ship, so he can "quickly pop open the usage page and multiplex across different vendors or accounts and see where my usage is and my burn", pacing a fleet against two different weekly resets without "10 unfinished tasks" when a limit hits. Operator answers: (1) ONE CARD PER ACCOUNT, claude.ai/ChatGPT-style bars, with a single sentence above the cards only when something runs out before its reset or a banked reset would expire unused; (2) the attribution drill moves to an Analytics tab, cut to spend by Project and by Agent, and the heat, sessions grid, diagnostics and burn chart are deleted; (3) agent-count translation ("room for 3 more agents") is parked; (4) he pays by the dollar on every lane but paces to his weekly plan limits and increasingly spends banked resets. Architecture: the vendor ACCOUNT is the unit (a harness draws on an account; claude.ai chat and Claude Code draw on one), each account's meters are the vendor's own windows plus its pay-as-you-go lane and banked resets, and one pure projection (`src/components/consumption/accounts.ts`) feeds the page, the chrome meter and the scenario workbench. Pace moves with the operator's velocity: the observed rate prefers the trailing six hours of the current cycle and falls back to the cycle average, and the headline window is the one that runs out first, not the fullest. Scope: the projection and page; the E12 study retired and replaced by `/hud-gallery/usage-scenarios`, named scenarios driven through the production builder with a burn-forward simulator; meter labels without em dashes; data-side slice in ENG-038 slice 2. Exit criteria: on the operator's own machine the page answers "what runs out first, when, and before which reset" in the first line; a failed or unconfigured read renders a card that says so with its true as-of, never a reassuring absence; every scenario renders through the production components with its geometry asserted; the chrome meter and the page name the same headline window. Narrative in `projects/consumption-spine.md` §E15.
 - E17 Usage facts, alerts and resets (active-build 2026-10-05; operator answers to the E15 review questions). (1) The one-sentence headline above the cards RETIRES: "We don't need copy like that. Should just be systematic cards / sections that show the facts." Each meter keeps its own forecast line; nothing summarizes across accounts in prose. (2) Usage alerts: a macOS notification when a live plan window first goes on course to run out before its reset, and a second one a configurable lead time before the projected run-out, never repeated for the same window cycle. "Configurable both to us as developers and architects and also to the user": the thresholds live in one core policy (`USAGE_ALERT_POLICY`), and Settings, Notifications carries the switch and the lead time. The decision runs in Electron main, so the forecast math moves into `@exawatt/core` (`plan-forecast.ts`), one derivation for main, the page and the meter. (3) "Use reset" on an account card that reports banked resets and can spend them (Codex: `account/rateLimitResetCredit/consume` through its own app-server, the soonest-expiring credit, an idempotency key per attempt), behind an in-app confirm that states the effect. Exit criteria: no prose summary renders on `/usage`; an alert fires once per stage per window cycle across restarts and never for a stale or expired window; spending a reset refreshes the card from a fresh account read and reports each vendor outcome (reset, nothing to reset, no credit) in place.
 - E16 Live burn and the Google account (LANDED 2026-10-05; planned 2026-10-02 as demo arc G4; ENG-038 slice 4, renumbered 2026-10-04 when the Claude `/usage` read took slice 3): a burn line above the account cards reads raw tokens per minute and modelled dollars per hour over the trailing ten minutes (stated on screen), per account with a local ledger, as a projection of the same samples the cards count; dollars are the existing one-rate list model and say so; a live view whose pull is pending or whose engine stopped prints "not read" rather than a zero. The Google account card reads `agy -p "/usage" --output-format json` through the shared account service (ENG-038 slice 4): weekly limits per model group, remaining fraction inverted to percent used, ISO resets, no plan tier (the payload states none, so none is shown; the "five-hour buckets per model, plan tier" this line expected do not exist in the report). E12/E15 honesty rules stand (absent never zero, losing information never makes a card calmer; E17 retired the prose headline the same day, so a spent Google group says "Out until reset" on its own row). The Claude-window prerequisite (custody upgrade and a release, BUG-060) was retired 2026-10-04 by ENG-038 slice 3. Narrative in `projects/consumption-spine.md` §E16.
+- First-launch scan cost (open, measured 2026-10-22 under BUG-315): a fresh profile's first pass over a 10.2 GB history takes 73% of Electron main for about 35 s, in stretches of at most 0.31 s, so every IPC reply shares main with JSON parsing. Candidate fix on `agent/cold-scan` (each pass on a worker thread of its own; main's share 0.6 s), pending its own review.
 
 Project doc:
 
@@ -5374,3 +5375,30 @@ policy. The first landing classified by its own tree is the next one run from
 a checkout that carries this change; a landing run from an older checkout
 still uses that checkout's code. Fixed in agent/candidate-policy,
 `<sha pending>`.
+
+### BUG-315 Electron evals read the operator's whole harness history
+
+Status: fixed 2026-10-22 (`<sha pending>`) · ENG-022 · found 2026-10-22 diagnosing a landing train.
+
+Every Electron eval launches a throwaway profile, and a fresh profile's first
+usage scan reads all the history under its HOME. Evals that keep this Mac's
+HOME cold-scanned the operator's real Claude Code, Codex and Grok history in
+every launch: 10.2 GB in 2,711 files, about 35 s of the app's main-process
+CPU (73% of main while it ran), so an eval's timing depended on how much
+history the machine held. The 412,331 ms `main.stall` that led here was not
+the scan: `pmset -g log` shows "Entering Sleep state due to 'Maintenance
+Sleep'" at 03:59:40 -0700 for 414 s and a DarkWake at 04:06:34, the instant
+the stall record ended (11:06:34Z). The landing's sleep assertion holds that
+off (BUG-308, `5b6c1d48`), not this change.
+
+Fix: `withElectronApp` gives an eval's app empty history roots unless the
+eval passes `readsHarnessHistory: true` (`scripts/lib/eval-harness-history.mjs`,
+the same shape as `drivesHostPower`). An eval with a HOME of its own, or one
+that names its history roots, already reads only its fixtures and is left
+alone. Opted in, because they are about harness launches on this Mac: app
+lifecycle, connected fleet, exact resume, real harness and context labels.
+The operator stats eval now reads a two-Session fixture history and asserts
+the exact Runs, day and token counts it implies, instead of waiting 75 s on
+this Mac's corpus. Held by `eval-boundaries.test.mjs` ("an eval
+reads empty harness history unless it opts in to this Mac"). The scan's own
+first-launch cost is tracked under ENG-008.

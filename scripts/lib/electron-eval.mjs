@@ -48,6 +48,7 @@ import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
 import { assertFixtureHarnesses } from './harness-probe-fixture.mjs';
 import { ensuredExecutable, forgetLaunchedPackage } from './packaged-app.mjs';
 import { captureElectronProcessGroup } from './electron-process-group.mjs';
+import { withEvalHistory } from './eval-harness-history.mjs';
 
 /** Kill any orphaned playwright Electron left by a prior SIGKILLed run of THIS
  *  worktree, so a stale orphan can't poison this launch.
@@ -332,7 +333,7 @@ export async function withElectronApp(requested, body, opts = {}) {
   const maxMs = opts.maxMs ?? 90_000;
   const firstWindowMs = opts.firstWindowMs ?? 25_000;
   const gracefulMs = opts.gracefulMs ?? 8_000;
-  const launchOpts = packagedLaunchOptions(requested);
+  const launchOpts = withEvalHistory(packagedLaunchOptions(requested), opts);
   const evalRoot = launchOpts.cwd ?? process.cwd();
   // fail BEFORE launch with the real cause, not a per-spawn
   // "posix_spawnp failed." banner deep inside the app

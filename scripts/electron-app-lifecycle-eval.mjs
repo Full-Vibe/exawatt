@@ -67,7 +67,11 @@ function launch(extra = {}, data = userData) {
   };
 }
 
-const limits = { maxMs: 150_000, firstWindowMs: 45_000 };
+const limits = {
+  maxMs: 150_000,
+  firstWindowMs: 45_000,
+  readsHarnessHistory: true,
+};
 
 /** The installer's state file, as `scripts/install-dogfood.mjs` writes it. */
 function install(sha) {

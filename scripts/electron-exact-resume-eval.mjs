@@ -53,6 +53,7 @@ const launchLimits = {
   maxMs: 180_000,
   firstWindowMs: 45_000,
   gracefulMs: 30_000,
+  readsHarnessHistory: true,
 };
 
 async function waitForSessionCount(page, expected) {

@@ -581,7 +581,7 @@ try {
         }
       });
     },
-    { maxMs: 120_000 }
+    { maxMs: 120_000, readsHarnessHistory: true }
   );
 
   await withElectronApp(
@@ -642,7 +642,7 @@ try {
         !(await page.locator('body').innerText()).includes('exawatt-clipboard')
       );
     },
-    { maxMs: 60_000 }
+    { maxMs: 60_000, readsHarnessHistory: true }
   );
 } finally {
   await new Promise(resolve => server.close(resolve));

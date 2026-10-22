@@ -184,7 +184,12 @@ try {
     },
     // Two paid provider turns with a 180 s reply window. One attempt: a
     // relaunch after an external teardown would pay for both turns again.
-    { maxMs: 600_000, firstWindowMs: 45_000, attempts: 1 }
+    {
+      maxMs: 600_000,
+      firstWindowMs: 45_000,
+      attempts: 1,
+      readsHarnessHistory: true,
+    }
   );
 } finally {
   if (!process.env.EXAWATT_KEEP_EVAL) {

@@ -596,7 +596,12 @@ async function firstLaunch({ packaged, env, sources, gateways }) {
         commandAgentId: commandAgent.id,
       };
     },
-    { maxMs: 240_000, firstWindowMs: 60_000, attempts: 1 }
+    {
+      maxMs: 240_000,
+      firstWindowMs: 60_000,
+      attempts: 1,
+      readsHarnessHistory: true,
+    }
   );
 }
 
@@ -626,7 +631,12 @@ async function secondLaunch({ packaged, env, expected }) {
       await openFromFleet(page, restoredAgent);
       check('relaunch restores Agent, Team, and Fleet UI parity', true);
     },
-    { maxMs: 180_000, firstWindowMs: 60_000, attempts: 1 }
+    {
+      maxMs: 180_000,
+      firstWindowMs: 60_000,
+      attempts: 1,
+      readsHarnessHistory: true,
+    }
   );
 }
 
