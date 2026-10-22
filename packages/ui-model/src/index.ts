@@ -437,6 +437,9 @@ const GOAL_BREAK_WORDS = new Set([
   'that',
 ]);
 
+/** One character a goal label never ends on; a class with no quantifier, so it cannot backtrack. */
+const TRAILING_LABEL_PUNCTUATION = /[,.;:\u2014-]/u;
+
 /**
  * Derive a 2-4 word micro-summary label from an agent goal. Pure + deterministic
  * (no time, no randomness) so it is safe in selectors and unit-testable. Takes
@@ -445,6 +448,7 @@ const GOAL_BREAK_WORDS = new Set([
  * trailing punctuation, and title-cases the first word. Falls back to the trimmed
  * goal. Labels agents by what they are DOING, not by a codename.
  */
+
 export function selectShortGoalLabel(goal: string, maxWords = 4): string {
   const cleaned = (goal ?? '').replace(/\s+/g, ' ').trim();
   if (!cleaned) return '';
@@ -464,7 +468,7 @@ export function selectShortGoalLabel(goal: string, maxWords = 4): string {
   if (kept.length === 0) kept.push(...words.slice(0, maxWords));
   const label = trimTrailingRun(
     kept.join(' '),
-    char => isWhitespaceChar(char) || ',.;:—-'.includes(char)
+    char => isWhitespaceChar(char) || TRAILING_LABEL_PUNCTUATION.test(char)
   );
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
