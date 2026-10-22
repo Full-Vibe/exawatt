@@ -2032,6 +2032,7 @@ Milestones (each line states the current contract):
 - W28 In-product moments that lead to the site — LANDED 2026-10-21, `<sha pending>` (operator approved "Marketing, next three" 2026-10-21): after the app starts on a newer version than the installation last ran (the run record now keeps each run's version), one quiet "What's new in <version>" notice in the update lane opens `/changelog/<version>` in the browser, dismissed once per version through the notice-dismissal record; it shows only when the update feed publishes that version or a later one, the site's own publication rule (`src/lib/changelog/versions.mjs`), so a dogfood, community or dev build, a first install and an unpublished version show nothing. Chatter's empty Project reads "Ask an agent to message another by name." with "Try a review loop" opening `/guides/agents-review-each-other`. Proved by `pnpm eval:electron:app-lifecycle` section 4. Measured by day-2 return and Direct per installation. [Milestone](projects/website-overhaul.md#w28-whats-new-after-an-update-and-chatters-first-line-landed-2026-10-21).
 - W29 Fair comparison pages (planned, proposed 2026-10-18; waits for the operator's go): three pages against the closest tools under `/compare`, each opening "We make Exawatt.", facts dated, one table, a section on where the other tool is stronger, and "use both" where Exawatt runs the other tool. Rechecked monthly. Measured by visits that start at `/compare`, then download.
 - W30 Agents talking, shown in the homepage's world (planned, proposed 2026-10-18): a visible exchange between two tiles of different harnesses in the hundred-agent scene, never a fabricated transcript; coordinates with the shared tile renderer (ENG-004 V4.1); starts only after W23's line has run two weeks and the homepage numbers say the scene is read.
+- W31 Delete `/old` (DECIDED 2026-10-21, operator: "Delete /old"): the band homepage kept at `/old` since decision `0047` is removed outright, with no redirect, closing BUG-054, BUG-055 and BUG-056; queued for the next train.
 
 ### ENG-032 Theming and visual identity
 
@@ -5112,6 +5113,23 @@ yet known. Next step: read the deployment's route config for
 `/sitemap.xml`, then either make the export take effect or list releases
 from a route that does revalidate.
 
+Cause (2026-10-21): the export is read, and then overruled. The build's
+prerender manifest gives `/sitemap.xml` the same `revalidate: 300` as
+`/changelog/feed.xml`, but Next's build adapter emits any prerendered route
+whose path ends in `/sitemap.xml` as a static file
+(`isStaticMetadataFile` in `next/dist/build/adapter/build-complete.js`), so
+Vercel serves it with `last-modified` and a filename like any asset until
+the next deploy, while the feed stays an ISR prerender. A first fix that
+moved the sitemap to a plain route handler kept the path and was still a
+static file on a preview deploy, which is what proved the path is the
+cause. Fix: `src/app/sitemap.ts` renders per request
+(`dynamic = 'force-dynamic'`, the adapter's own exception for dynamic
+metadata routes); its update feed read stays cached for 300 seconds, so a
+crawler's visit costs no feed round trip. Seen on the branch's preview
+deploy: `/sitemap.xml` is a function response, not a file. Exit: after the
+next release, production's `/sitemap.xml` lists it within ten minutes of
+the feed advancing.
+
 ### BUG-305 A resume refused with "This Session already has a running process"
 
 Status: bug · ENG-016 · operator feedback 7900248b, 2026-10-22.
@@ -5163,19 +5181,11 @@ unread for the active tab with the menu's label and availability, and a parity
 check fails whenever a context menu and ⌘K disagree.
 [Queued note](projects/daily-driver-adoption.md#2026-10-22--a-resume-refused-by-a-stale-copy-and-mark-unread-missing-from-the-palette-bug-305-bug-307).
 
-Cause (2026-10-21): the export is read, and then overruled. The build's
-prerender manifest gives `/sitemap.xml` the same `revalidate: 300` as
-`/changelog/feed.xml`, but Next's build adapter emits any prerendered route
-whose path ends in `/sitemap.xml` as a static file
-(`isStaticMetadataFile` in `next/dist/build/adapter/build-complete.js`), so
-Vercel serves it with `last-modified` and a filename like any asset until
-the next deploy, while the feed stays an ISR prerender. A first fix that
-moved the sitemap to a plain route handler kept the path and was still a
-static file on a preview deploy, which is what proved the path is the
-cause. Fix: `src/app/sitemap.ts` renders per request
-(`dynamic = 'force-dynamic'`, the adapter's own exception for dynamic
-metadata routes); its update feed read stays cached for 300 seconds, so a
-crawler's visit costs no feed round trip. Seen on the branch's preview
-deploy: `/sitemap.xml` is a function response, not a file. Exit: after the
-next release, production's `/sitemap.xml` lists it within ten minutes of
-the feed advancing.
+### BUG-308 `eval:electron:app-lifecycle` times out at its Fleet-camera step on master
+
+Status: bug · ENG-022 · found 2026-10-21 by the in-app moments packet; waived at the 2026-10-22 train landing (`00f1fcb1`).
+
+Section 3 ("Restart to Update keeps your place") waits for "the panned Fleet camera, settled" and times out on a clean
+`origin/master` checkout as well as on the branch, so it predates the What's new notice (section 4, which passed run alone).
+The 2026-10-19 lifecycle review repaired this step once (it pans with a scroll gesture and waits for the board's own save);
+find what changed since. Exit: the eval passes three runs in a row on master and the train waiver is no longer needed.
