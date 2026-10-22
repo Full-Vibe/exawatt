@@ -331,6 +331,38 @@ await page.getByText('Start').click();
   );
 });
 
+test('text page code reads and hands back is rendered text', () => {
+  assert.deepEqual(
+    copy(`
+const highlighted = await page.evaluate(() =>
+  Array.from(document.querySelectorAll('li')).map(item => item.textContent)
+);
+check('highlight', highlighted[0] === 'Start');
+`),
+    [{ line: 5, kind: 'rendered text equality' }]
+  );
+});
+
+// ---- Page code closures ---------------------------------------------------
+
+const closures = script =>
+  check(script).closures.map(({ line, name }) => ({ line, name }));
+
+test('page code that reads a script variable it was not handed fails', () => {
+  assert.deepEqual(
+    closures(`
+import { performance } from 'node:perf_hooks';
+const LABEL = 'Tighten agent recap wording';
+const started = performance.now();
+await page.evaluate(({ id }) => window.electron.pty.write(id, \`\${LABEL}\\r\`), { id: 1 });
+await page.evaluate(({ id, text }) => window.electron.pty.write(id, text), { id: 1, text: LABEL });
+await page.evaluate(() => performance.now() - document.timeline.currentTime);
+await app.evaluate(({ clipboard }) => clipboard.readText());
+`),
+    [{ line: 5, name: 'LABEL' }]
+  );
+});
+
 // ---- Rendered handles -----------------------------------------------------
 
 test('an attribute selector the product never renders fails', () => {

@@ -145,6 +145,17 @@ function calledName(call) {
   return undefined;
 }
 
+/**
+ * The function a page-code call serializes into the page (or Electron main):
+ * the first argument, or the second after `$eval`'s selector.
+ */
+function pageFunction(call) {
+  const name = calledName(call);
+  if (PAGE_CODE_CALLS.has(name)) return call.arguments[0];
+  if (name === '$eval' || name === '$$eval') return call.arguments[1];
+  return undefined;
+}
+
 /* ---- Program ------------------------------------------------------------- */
 
 /**
@@ -612,6 +623,18 @@ function isRenderedText(node, checker, seen = new Set()) {
         COPY_ATTRIBUTES.has(attribute.text)
       );
     }
+    // Text page code reads and hands back (`page.evaluate(() =>
+    // el.textContent)`), or each item a callback maps to its text.
+    const callback =
+      pageFunction(at) ??
+      (['map', 'flatMap'].includes(name) ? at.arguments[0] : undefined);
+    if (
+      callback &&
+      (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
+      functionReturnsRenderedText(callback, checker, seen)
+    ) {
+      return true;
+    }
     if (
       TEXT_PRESERVING.has(name) &&
       ts.isPropertyAccessExpression(at.expression)
@@ -652,8 +675,13 @@ function returnsRenderedText(callee, checker, seen) {
   ) {
     declaration = unwrap(declaration.initializer);
   }
+  return declaration
+    ? functionReturnsRenderedText(declaration, checker, seen)
+    : false;
+}
+
+function functionReturnsRenderedText(declaration, checker, seen) {
   if (
-    !declaration ||
     seen.has(declaration) ||
     !(
       ts.isFunctionDeclaration(declaration) ||
@@ -969,6 +997,73 @@ function copyBindings(sourceFile, checker, file, product) {
   return findings;
 }
 
+/* ---- Rule 4: page code is handed what it uses -------------------------- */
+
+/**
+ * Page code runs in another process: Playwright serializes the function and
+ * nothing it closes over, so a script variable it reads is a ReferenceError
+ * at run time. Every identifier it reads must be its own, the page's, or a
+ * standard global.
+ */
+function pageClosures(sourceFile, checker, file, globals) {
+  const out = [];
+  const scriptFile = path.resolve(sourceFile.fileName);
+  const check = fn => {
+    const visit = node => {
+      if (
+        ts.isIdentifier(node) &&
+        !(
+          ts.isPropertyAccessExpression(node.parent) &&
+          node.parent.name === node
+        ) &&
+        !(ts.isPropertyAssignment(node.parent) && node.parent.name === node) &&
+        !(ts.isBindingElement(node.parent) && node.parent.propertyName === node)
+      ) {
+        const symbol = ts.isShorthandPropertyAssignment(node.parent)
+          ? checker.getShorthandAssignmentValueSymbol(node.parent)
+          : checker.getSymbolAtLocation(node);
+        const declaration =
+          symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+        if (
+          declaration &&
+          // A name the page also has (`performance`) resolves there.
+          !globals.has(node.text) &&
+          path.resolve(declaration.getSourceFile().fileName) === scriptFile &&
+          !(declaration.pos >= fn.pos && declaration.end <= fn.end) &&
+          !(node.pos >= declaration.pos && node.end <= declaration.end)
+        ) {
+          out.push({ file, line: lineOf(sourceFile, node), name: node.text });
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    ts.forEachChild(fn, visit);
+  };
+  const visit = node => {
+    if (ts.isCallExpression(node)) {
+      let fn = pageFunction(node);
+      if (fn && ts.isIdentifier(fn)) {
+        const declaration = checker.getSymbolAtLocation(fn)?.valueDeclaration;
+        fn =
+          declaration && ts.isVariableDeclaration(declaration)
+            ? declaration.initializer
+            : declaration;
+      }
+      if (
+        fn &&
+        (ts.isArrowFunction(fn) ||
+          ts.isFunctionExpression(fn) ||
+          ts.isFunctionDeclaration(fn))
+      ) {
+        check(fn);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return out;
+}
+
 /* ---- Rule 3: rendered handles ------------------------------------------- */
 
 /** Every `data-*` attribute name an eval selects on, with where. */
@@ -1024,17 +1119,34 @@ export function checkEvalHandles({
   const written = productCopy(product);
   const copy = [];
   const handles = [];
+  const closures = [];
+  const library = program
+    .getSourceFiles()
+    .find(file => program.isSourceFileDefaultLibrary(file));
+  const globals = new Set(
+    library
+      ? checker
+          .getSymbolsInScope(library, ts.SymbolFlags.Value)
+          .filter(symbol =>
+            symbol.declarations?.every(declaration =>
+              program.isSourceFileDefaultLibrary(declaration.getSourceFile())
+            )
+          )
+          .map(symbol => symbol.name)
+      : []
+  );
   for (const file of scripts.keys()) {
     const sourceFile = program.getSourceFile(path.resolve(root, file));
     if (!sourceFile) continue;
     copy.push(...copyBindings(sourceFile, checker, file, written));
+    closures.push(...pageClosures(sourceFile, checker, file, globals));
     handles.push(
       ...selectedAttributes(sourceFile, file).filter(
         found => !written.attributes.has(found.attribute)
       )
     );
   }
-  return { bridge, copy, handles };
+  return { bridge, copy, handles, closures };
 }
 
 async function filesUnder(root, directory, accept) {
@@ -1114,6 +1226,7 @@ if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
   };
   const copy = result.copy.filter(mine);
   const handles = result.handles.filter(mine);
+  const closures = result.closures.filter(mine);
   const sections = [];
   if (bridge.missing.length > 0) {
     sections.push(
@@ -1142,6 +1255,13 @@ if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
         .join('\n')}`
     );
   }
+  if (closures.length > 0) {
+    sections.push(
+      `${closures.length} script variable(s) page code reads but is not handed. Page code runs in the page or in Electron main and closes over nothing; pass each one as the evaluate argument:\n${closures
+        .map(found => `  ${found.file}:${found.line}  ${found.name}`)
+        .join('\n')}`
+    );
+  }
   if (sections.length > 0) {
     process.stderr.write(
       `[eval-handles] ${sections.join('\n[eval-handles] ')}\n`
@@ -1149,7 +1269,7 @@ if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
     process.exitCode = 1;
   } else {
     process.stdout.write(
-      `[eval-handles] ${only.size || tree.scripts.size} scripts; ${bridge.reached.length} desktop-bridge member(s) checked; no copy-bound locators; every selected data-* attribute is rendered\n`
+      `[eval-handles] ${only.size || tree.scripts.size} scripts; ${bridge.reached.length} desktop-bridge member(s) checked; no copy-bound locators; every selected data-* attribute is rendered; page code is handed what it reads\n`
     );
   }
 }
