@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -43,6 +51,7 @@ import {
   vitestReportArgs,
 } from './lib/delivery-policy.mjs';
 import { git } from './lib/hermetic-git.mjs';
+import { moduleOwner, treeTopology } from './lib/module-graph.mjs';
 import { PARTNER_CONVERSATIONS_DIRECTORY } from './lib/recipe-renderers.mjs';
 import { PUBLICATION_GATES } from './publication-check.mjs';
 
@@ -63,11 +72,10 @@ function ids(paths, extras = []) {
 }
 
 test('the cheap changed-file landing checks cannot be weakened by the caller', () => {
+  // A document owes no lint or type-check (ENG-039; the docs lane's premise).
   assert.deepEqual(ids(['docs/product/concepts.md']), [
     'open-source:paths:check',
     'content:scan',
-    'lint',
-    'type-check',
     'delivery-pins',
     // The outbound-disclosure test reads every public document.
     'scanning-tests',
@@ -78,6 +86,7 @@ test('the cheap changed-file landing checks cannot be weakened by the caller', (
     'lint',
     'type-check',
     'delivery-pins',
+    'modules:check',
     'exports:check',
     'vitest-related',
     'copy:check',
@@ -127,6 +136,7 @@ test('provider composition changes receive related consumer tests', () => {
       'lint',
       'type-check',
       'delivery-pins',
+      'modules:check',
       'exports:check',
       'vitest-related',
       'copy:check',
@@ -361,14 +371,16 @@ test('theme, generator, ratchet and renderer changes run theme:check', () => {
 });
 
 test('dogfood and Electron orchestration changes receive Electron compilation', () => {
+  // An internal file of the delivery module: its own lint and type-check
+  // (which builds the core runtime its suite loads), and its whole suite.
   assert.deepEqual(ids(['scripts/install-dogfood.mjs']), [
     'open-source:paths:check',
     'content:scan',
-    'lint',
-    'type-check',
+    'lint:modules',
+    'type-check:modules',
     'test:agent-delivery',
+    'modules:check',
     'exports:check',
-    'vitest-related',
     'scanning-tests',
     'electron:compile',
   ]);
@@ -411,6 +423,7 @@ test('routable and distribution-seam changes receive the community build', () =>
     'lint',
     'type-check',
     'delivery-pins',
+    'modules:check',
     'exports:check',
     'vitest-related',
     'copy:check',
@@ -419,12 +432,14 @@ test('routable and distribution-seam changes receive the community build', () =>
     'verify:community-build',
     'verify:community-runtime',
   ]);
+  // A public file of the delivery module: Vitest tests import it.
   assert.deepEqual(ids(['scripts/lib/distribution-build.mjs']), [
     'open-source:paths:check',
     'content:scan',
     'lint',
     'type-check',
     'test:agent-delivery',
+    'modules:check',
     'exports:check',
     'vitest-related',
     'scanning-tests',
@@ -485,8 +500,6 @@ test('roadmap corpus changes receive the canonical parser contract', () => {
   assert.deepEqual(ids(['docs/engineering/roadmap.md']), [
     'open-source:paths:check',
     'content:scan',
-    'lint',
-    'type-check',
     'delivery-pins',
     'scanning-tests',
   ]);
@@ -507,6 +520,7 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
       'lint',
       'type-check',
       'test:agent-delivery',
+      'modules:check',
       'exports:check',
       'vitest-related',
       'copy:check',
@@ -1321,34 +1335,45 @@ test('a passing check and a non-vitest failure behave exactly as before', async 
 // whole suite runs when the change can reach the delivery system, and the
 // pins that read the product tree run on every other one (ENG-022,
 // 2026-10-15).
-test('lint and the delivery-script pins run on every landing and in every CI batch', async () => {
+test('lint runs whole wherever the topology cannot scope a change, a module landing lints its modules, and every CI batch lints the repository', async () => {
   for (const paths of [
-    [],
-    ['docs/product/concepts.md'],
-    ['README.md'],
     ['pnpm-lock.yaml'],
+    ['eslint.config.mjs'],
+    ['modules.json'],
     ['src/lib/x.ts', 'electron/main/y.ts'],
   ]) {
+    assert.ok(ids(paths).includes('lint'), `lint owed by ${JSON.stringify(paths)}`);
+  }
+  const lint = classifyDeliveryPolicy(['src/lib/x.ts']).find(
+    check => check.id === 'lint'
+  );
+  assert.deepEqual(lint, { id: 'lint', command: 'pnpm', args: ['run', 'lint'] });
+  // Inside one module, off its public surface: that module's files.
+  const scoped = classifyDeliveryPolicy(['electron/main/bus/ledger.ts']);
+  assert.ok(!scoped.some(check => check.id === 'lint'));
+  assert.deepEqual(scoped.find(check => check.id === 'lint:modules').args, [
+    'exec',
+    'eslint',
+    '--no-error-on-unmatched-pattern',
+    'electron/main/bus/',
+  ]);
+  // A document is not linted; the delivery pins still run on every landing.
+  for (const paths of [[], ['docs/product/concepts.md'], ['README.md']]) {
     const checks = ids(paths);
-    assert.ok(checks.includes('lint'), `lint owed by ${JSON.stringify(paths)}`);
+    assert.ok(!checks.some(id => /^lint/u.test(id)), JSON.stringify(paths));
     assert.ok(
       checks.includes('test:agent-delivery') ||
         checks.includes('delivery-pins'),
       `delivery pins owed by ${JSON.stringify(paths)}`
     );
   }
-  const lint = classifyDeliveryPolicy([]).find(check => check.id === 'lint');
-  assert.deepEqual(lint, {
-    id: 'lint',
-    command: 'pnpm',
-    args: ['run', 'lint'],
-  });
 
   const workflow = await readFile(
     path.join(root, '.github/workflows/ci.yml'),
     'utf8'
   );
   assert.match(workflow, /name: Run linter\s+run: pnpm lint/);
+  assert.match(workflow, /run: pnpm type-check/);
   assert.match(
     workflow,
     /name: Run delivery-script tests\s+run: pnpm test:agent-delivery/
@@ -1549,7 +1574,22 @@ async function actualRoutes() {
   // (a) The landing checks over every tracked path, which is the union of its
   // unconditional and changed-path checks, plus the pre-push hook every
   // landing's final push passes through.
-  const landingSeeds = classifyDeliveryPolicy(tracked)
+  // The module topology (ENG-039) routes a change inside one module to that
+  // module's own checks, which the union over every path never shows, so one
+  // internal file of each module and one undeclared source file join it.
+  const topology = treeTopology(deliveryTree(root));
+  const owner = moduleOwner(topology.manifest);
+  const samples = topology.manifest.modules.flatMap(declared => {
+    const internal = tracked.find(
+      file =>
+        owner(file)?.id === declared.id &&
+        /\.[cm]?[jt]sx?$/u.test(file) &&
+        !topology.surface.get(declared.id).has(file)
+    );
+    return internal ? [[internal]] : [];
+  });
+  const landingSeeds = [tracked, ['src/lib/utils.ts'], ...samples]
+    .flatMap(paths => classifyDeliveryPolicy(paths))
     .filter(check => check.command === 'pnpm' && check.args[0] === 'run')
     .map(check => check.args[1]);
   const hook = readFileSync(path.join(root, '.githooks/pre-push'), 'utf8');
@@ -2038,4 +2078,143 @@ test('the old delivery vocabulary has one home', () => {
     'packages/core/src/delivery-vocabulary.ts',
     'scripts/lib/docs-check.mjs',
   ]);
+});
+
+// ── ENG-039: module-owned verification. A change inside a declared module
+// that leaves its public surface alone is checked by that module's own checks
+// and its dependents' contract tests; everything else keeps the whole checks.
+// Expectations are derived from the tree's own manifest and graph, so a
+// module whose surface legitimately changes moves product and test together.
+
+function topologySample() {
+  const topology = treeTopology(deliveryTree(root));
+  const owner = moduleOwner(topology.manifest);
+  const tracked = [...topology.files].sort();
+  const internalWithTest = tracked.find(file => {
+    const declared = owner(file);
+    return (
+      declared &&
+      /^(?:src|electron)\//u.test(file) &&
+      /\.tsx?$/u.test(file) &&
+      !/\.test\.tsx?$/u.test(file) &&
+      !topology.surface.get(declared.id).has(file) &&
+      topology.files.has(file.replace(/\.tsx?$/u, '.test.ts'))
+    );
+  });
+  const entrypoint = topology.manifest.modules.find(
+    declared => declared.id !== 'delivery' && declared.entrypoints.length > 0
+  ).entrypoints[0];
+  return { topology, owner, internalWithTest, entrypoint };
+}
+
+test('a change inside one module, off its public surface, owes that module and its contracts', () => {
+  const { topology, owner, internalWithTest: file } = topologySample();
+  assert.ok(file, 'the tree has an internal module file with its own test');
+  const checks = classifyDeliveryPolicy([file]);
+  const names = checks.map(check => check.id);
+  for (const id of ['lint', 'type-check', 'vitest-related', 'full-suite']) {
+    assert.ok(!names.includes(id), `${file} does not owe ${id}`);
+  }
+  for (const id of ['lint:modules', 'type-check:modules', 'modules:check']) {
+    assert.ok(names.includes(id), `${file} owes ${id}`);
+  }
+  const declared = owner(file);
+  assert.deepEqual(checks.find(check => check.id === 'lint:modules').args, [
+    'exec',
+    'eslint',
+    '--no-error-on-unmatched-pattern',
+    ...[...declared.paths].sort(),
+  ]);
+  assert.deepEqual(checks.find(check => check.id === 'type-check:modules').args, [
+    'run',
+    'type-check:modules',
+    '--',
+    file,
+  ]);
+  const tests = checks.find(check => check.id === 'module-tests');
+  assert.ok(tests.files.includes(file.replace(/\.tsx?$/u, '.test.ts')));
+  assert.deepEqual(tests.files, tests.args.slice(3, -1));
+  assert.ok(tests.rerun, 'named failures are re-run alone (BUG-090)');
+  assert.ok(
+    tests.files.every(test => topology.files.has(test)),
+    'the selection names files the tree holds'
+  );
+});
+
+test('a public surface change keeps the whole checks and the repository-wide related tests', () => {
+  const { entrypoint } = topologySample();
+  const checks = classifyDeliveryPolicy([entrypoint]);
+  const names = checks.map(check => check.id);
+  for (const id of ['lint', 'type-check', 'modules:check', 'vitest-related']) {
+    assert.ok(names.includes(id), `${entrypoint} owes ${id}`);
+  }
+  assert.ok(!names.includes('lint:modules') && !names.includes('type-check:modules'));
+  assert.deepEqual(checks.find(check => check.id === 'vitest-related').args, [
+    'run',
+    'test:related',
+    entrypoint,
+  ]);
+});
+
+test('a train and shared test infrastructure run the whole checks and the whole suite once', () => {
+  const { internalWithTest } = topologySample();
+  for (const [paths, options] of [
+    [[internalWithTest], { wholeRepo: true }],
+    [['pnpm-lock.yaml'], {}],
+    [['vitest.config.app-dom.ts'], {}],
+    [['src/test-support/desktop-bridge-double.ts'], {}],
+  ]) {
+    const checks = classifyDeliveryPolicy(paths, [], options);
+    const names = checks.map(check => check.id);
+    for (const id of ['lint', 'type-check', 'full-suite']) {
+      assert.ok(names.includes(id), `${JSON.stringify(paths)} owes ${id}`);
+    }
+    for (const id of ['vitest-related', 'module-tests', 'lint:modules']) {
+      assert.ok(!names.includes(id), `${JSON.stringify(paths)} skips ${id}`);
+    }
+    const suite = checks.find(check => check.id === 'full-suite');
+    assert.deepEqual(suite.args, ['exec', 'vitest', 'run', '--maxWorkers=25%']);
+    assert.ok(suite.rerun);
+  }
+});
+
+test('a tree that declares no modules is classified as it was before modules existed', () => {
+  const fixture = mkdtempSync(path.join(tmpdir(), 'exawatt-no-modules-'));
+  try {
+    git(fixture, ['init', '--quiet', '--initial-branch=master']);
+    mkdirSync(path.join(fixture, 'src/components/workspace'), {
+      recursive: true,
+    });
+    writeFileSync(
+      path.join(fixture, 'src/components/workspace/a.ts'),
+      'export const a = 1;\n'
+    );
+    git(fixture, ['add', '--all']);
+    git(fixture, ['commit', '--quiet', '--no-verify', '-m', 'fixture']);
+    const names = classifyDeliveryPolicy(
+      ['src/components/workspace/a.ts'],
+      [],
+      { tree: deliveryTree(fixture) }
+    ).map(check => check.id);
+    for (const id of ['lint', 'type-check', 'vitest-related']) {
+      assert.ok(names.includes(id), id);
+    }
+    assert.ok(!names.includes('modules:check'));
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test('the delivery module is what the delivery suite covers', () => {
+  const { topology } = topologySample();
+  const delivery = topology.manifest.modules.find(
+    declared => declared.id === 'delivery'
+  );
+  assert.deepEqual(delivery.scripts, ['test:agent-delivery']);
+  for (const entry of delivery.paths) {
+    const file = [...topology.files].find(candidate =>
+      candidate.startsWith(entry)
+    );
+    assert.ok(deliveryAffectingPath(file), `${entry} runs the delivery suite`);
+  }
 });

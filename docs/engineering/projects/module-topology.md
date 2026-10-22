@@ -5,6 +5,123 @@ this doc holds the narrative of each seam as it is adopted.
 
 ## Roadmap milestone log
 
+### 2026-10-21 — module declarations and the module closure (M0, M1, M3 first mile)
+
+**`modules.json` declares 13 modules owning 689 of 1,207 production source
+files, `pnpm modules:check` holds every import to them, and a change inside a
+module is checked by that module's own checks. On five representative
+single-module edits the selected tests' median wall time is 1.8 s, against
+5.3 s for today's related selection and 106 s for the full suite: 98% below
+the full suite, where the exit criterion asks for 60%.** The operator,
+2026-10-15: work within a module gets checked by that module's own checks,
+and only under rare cases does the full suite or lint run.
+
+The modules (environment; dependencies):
+
+| Module | Owns | Env | Depends on | Source files / public |
+| --- | --- | --- | --- | --- |
+| `core` | `packages/core/` | node | | 114 / 108 |
+| `ui-model` | `packages/ui-model/` | node | core | 12 / 11 |
+| `shell` | `login-shell`, `harness-homes`, `harness-state-variables`, `harness-types` in `electron/main/pty/` | node | core | 4 / 4 |
+| `harness-events` | `electron/main/harness-events/` | electron | core, shell | 10 / 9 |
+| `bus-transports` | `electron/main/bus/transports/` | node | core, shell | 6 / 6 |
+| `pty` | `electron/main/pty/`, `harness-events/turn-truth.ts` | electron | core, shell, harness-events, bus-transports | 38 / 24 |
+| `bus` | `electron/main/bus/` | electron | core, shell, harness-events, bus-transports, pty | 11 / 1 |
+| `roadmap` | `electron/main/roadmap/` | electron | core, pty | 9 / 2 |
+| `consumption` | `electron/main/consumption/` | electron | core, shell, harness-events | 13 / 8 |
+| `workspace` | `src/components/workspace/` | dom | core, ui-model | 114 / 40 |
+| `fleet` | `src/components/fleet/` | dom | core, ui-model, workspace | 52 / 15 |
+| `website` | `src/components/site/` | dom | core, ui-model, workspace, fleet | 69 / 36 |
+| `delivery` | `scripts/`, `.githooks/` | node | core | 237 / 3 |
+
+What the inventory found (M0):
+
+- **The main-process directories were not a DAG.** `pty` and `bus` imported
+  each other (the harness registry names each harness's bus transport; the
+  bus IPC drives Sessions), and so did `pty` and `harness-events` (turn-truth
+  wires the attention monitor; the Codex adapter starts its server through
+  the login shell). The declarations follow the real seams without moving a
+  file: `shell` is the kernel every main-process module that starts a
+  harness shares, `bus-transports` is its own module under both `pty` and
+  `bus`, and turn-truth, which composes `pty`'s monitor with
+  `harness-events`' delegation, belongs to `pty`. A file may be owned outside
+  its directory; the longest path entry wins. Moving those files to match is
+  follow-up work, not a precondition.
+- **Public surfaces are wide.** A module's surface is its entrypoints, what
+  they re-export, and whatever an undeclared path imports. `core` re-exports
+  nearly everything through its index (108 of 114 files), and `website` is
+  half public because `/hud-gallery` studies import its internals. A change
+  to a surface file keeps the whole checks, so narrowing a surface is what
+  moves more changes onto the module path.
+- **Six tests cross modules on purpose** (turn-truth through the renderer's
+  status words, the launch verdict against the registry, two Codex adapter
+  suites, a Session's Agent name against the bus directory, the scanner
+  against core's fixtures) and are declared `integrationTests`.
+
+Enforcement (M1): refused between declared modules (an import past an
+entrypoint, a dependency not declared, a cycle, a `dom` or `electron` module
+importing the other's environment, a manifest entry naming nothing); warned,
+never refused, for undeclared paths, whose deep imports join the target's
+public surface. Nine deep imports of five files from `/hud-gallery`, the
+changelog and the guides landed while this was built; those files were
+declared as entrypoints, so the check starts at zero warnings.
+
+Selection (M3 first mile), in `classifyDeliveryPolicy` over
+`scripts/lib/module-graph.mjs`:
+
+- A change inside declared modules, off their surface: `lint:modules` (ESLint
+  over the modules' paths), `type-check:modules` (the modules' files, their
+  integration tests and the importers of every public file the change
+  reaches), and `module-tests`: the module's tests the change reaches through
+  its runtime imports, plus the contract and integration tests of dependent
+  modules that reach the touched surface.
+- Undeclared paths, surface files, a file that left the tree, the manifest and
+  shared configuration keep `lint`, `type-check` and `vitest related`, plus the
+  module closure. Dependencies, the Vitest configuration and setup and
+  `src/test-support/**`, and every train, run the whole suite.
+
+Measured 2026-10-21 on this machine at a one-minute load average of 37 to 57
+(25% Vitest workers, the landing's own setting), the third of three passes:
+
+| Edit (module) | Related today: wall, CPU, files | Module closure: wall, CPU, files |
+| --- | --- | --- |
+| `workspace-state/project-list.ts` (workspace) | 17.0 s, 43.5 s, 22 | 10.3 s, 27.4 s, 20 |
+| `bands/fold-crossfade.ts` (website) | 5.1 s, 13.2 s, 4 | 1.3 s, 3.4 s, 3 |
+| `spatial/direct/use-direct.ts` (fleet) | 5.7 s, 11.6 s, 1 | 1.8 s, 2.6 s, 1 |
+| `bus/ledger.ts` (bus) | 4.7 s, 10.8 s, 3 | 1.3 s, 1.5 s, 2 |
+| `pty/process-groups.ts` (pty) | 5.3 s, 13.3 s, 9 | 2.3 s, 5.0 s, 8 |
+| median | 5.3 s, 13.2 s | 1.8 s, 3.4 s |
+
+The full suite was 106 s wall and 282 CPU-seconds over 586 files. Against
+`vitest related`'s own selection for the same edits, the module closure
+missed no test inside the module; what it does not run is four tests of
+undeclared paths past the module's edge (`/hud-gallery`'s page,
+`/old`'s page, the Demo workspace client, the main command surface), which
+the train and the CI batch still run. Most of the wall-time gain is
+`vitest related` building its whole-repository graph on every run; the
+closure names its files.
+
+Lint and type-check for the same edits, at a load average of 14 to 38:
+`lint:modules` took a median 3.0 s against 43.6 s for whole lint, and
+`type-check:modules` 12.9 s against 19.5 s for a warm, incremental whole
+program; the module type-check pays 6.5 s of distribution prepare and route
+typegen before a compile that is not incremental, so incremental module
+programs are the next lever there. Lint, type-check and tests together went
+from a median 68 s to 18 s per single-module edit (74% less).
+
+Found on the way: `session-launch-environment.test.ts` failed for any agent
+running inside an Exawatt Session, because it read that Session's own bus
+port. The app-node hermetic environment (BUG-298) now clears the bus and
+Session variables too, as CI never has them.
+
+What remains: shrink the widest surfaces (`core`'s index, `website`'s gallery
+imports) so more changes take the module path; move `shell`, `bus-transports`
+and turn-truth's files to match their modules; declare the rest of `src/`
+(app routes, `src/lib`, the shared UI) and the rest of Electron main, so the
+undeclared remainder (518 production files) stops defaulting to whole checks;
+incremental type-check per module (`tsc --build`); and M4, the 30-landing
+observation window with no escaped full-suite failure.
+
 ### 2026-10-21 — the merge train is first-class
 
 **`pnpm agent:land -- --train <agent/branch...>` lands a front's packets as
@@ -28,7 +145,7 @@ dogfood build.** It replaces the coordinator's manual train of 2026-10-15.
 
 Code: `scripts/lib/merge-train.mjs`, `scripts/agent-land.mjs`; contract:
 `scripts/merge-train.test.mjs` (real local queue). Operations: "Merge trains"
-in `docs/engineering/agent-delivery.md`. Landed <sha pending>.
+in `docs/engineering/agent-delivery.md`. Landed `9032af94` and `18b94a36`.
 
 ### 2026-10-15 — M3 shaped: module-owned verification is the delivery architecture
 

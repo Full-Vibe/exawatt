@@ -6,6 +6,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { acquireMachineSlot } from './machine-slots.mjs';
+import {
+  globExpression,
+  isInert as isInertPath,
+  MODULE_MANIFEST,
+  moduleSelection,
+  treeTopology,
+} from './module-graph.mjs';
 import { PARTNER_CONVERSATIONS_DIRECTORY } from './recipe-renderers.mjs';
 
 /**
@@ -1333,23 +1340,8 @@ export function parseScanDeclaration(source) {
   return { globs: value.split(/\s+/u) };
 }
 
-/** A repository-relative glob (`**`, `*`, `?`) as an anchored expression. */
-export function globExpression(glob) {
-  let pattern = '';
-  for (let index = 0; index < glob.length; index += 1) {
-    const char = glob[index];
-    if (glob.startsWith('**/', index)) {
-      pattern += '(?:.*/)?';
-      index += 2;
-    } else if (glob.startsWith('**', index)) {
-      pattern += '.*';
-      index += 1;
-    } else if (char === '*') pattern += '[^/]*';
-    else if (char === '?') pattern += '[^/]';
-    else pattern += char.replace(/[.+^${}()|[\]\\]/gu, '\\$&');
-  }
-  return new RegExp(`^${pattern}$`, 'u');
-}
+// One glob grammar for scan declarations and the module manifest.
+export { globExpression };
 
 /**
  * Every Vitest file in `tree` that declares what it scans, with its globs.
@@ -1409,6 +1401,30 @@ function scanningTestsFor(paths, tests) {
     .sort();
 }
 
+const SOURCE_PATH = /\.(?:[cm]?[jt]sx?)$/u;
+
+/**
+ * The module topology of `tree` (ENG-039): its manifest, import graph and
+ * each module's public surface, or null when the tree declares no modules.
+ * A manifest that does not parse is `{ error }`: the landing then runs the
+ * whole checks and `modules:check` reports why.
+ */
+const moduleTopology = perTree(tree => {
+  try {
+    return treeTopology(tree);
+  } catch (error) {
+    return { error };
+  }
+});
+
+/** The path entries of `ids`: what `lint:modules` lints. */
+function modulePaths(manifest, ids) {
+  return manifest.modules
+    .filter(module => ids.includes(module.id))
+    .flatMap(module => module.paths)
+    .sort();
+}
+
 /**
  * The landing checks a change to `changedPaths` owes, classified against
  * `tree`: the committed tree the checks will run on. Every lane and phase
@@ -1417,9 +1433,21 @@ function scanningTestsFor(paths, tests) {
 export function classifyDeliveryPolicy(
   changedPaths,
   extras = [],
-  { tree = deliveryTree() } = {}
+  { tree = deliveryTree(), wholeRepo = false } = {}
 ) {
   const paths = [...new Set(changedPaths)].sort();
+  const code = paths.filter(file => SOURCE_PATH.test(file));
+  // ENG-039: what the module topology says this change owes. Null when the
+  // tree declares no modules, and then every landing is whole-repository,
+  // as it was before modules existed. A manifest that does not parse is the
+  // same, and `modules:check` below fails the landing with its reason.
+  const topology = moduleTopology(tree);
+  const scope =
+    topology && !topology.error ? moduleSelection(paths, topology) : null;
+  // A train (and anything the topology cannot vouch for) keeps the whole
+  // checks: lint, the whole program and, for a train or shared test
+  // infrastructure, the whole Vitest suite.
+  const whole = wholeRepo || !scope || scope.wholeRepo;
   const checks = [
     {
       id: 'open-source:paths:check',
@@ -1431,15 +1459,55 @@ export function classifyDeliveryPolicy(
       command: 'pnpm',
       args: ['run', 'content:scan', '--', ...paths],
     },
-    // BUG-136: the BUG-057 rule (assert the invariant, not the duration) is an
-    // ESLint rule, and lint ran only in CI's batched run. A landing could
-    // reintroduce a wall-clock assertion and hear about it hours later, from
-    // a run that names a batch of landings rather than the one that did it.
-    // Lint is cheap and whole-repo, so it is unconditional here, the same
-    // way the delivery-script pins are unconditional in CI.
-    { id: 'lint', command: 'pnpm', args: ['run', 'lint'] },
-    { id: 'type-check', command: 'pnpm', args: ['run', 'type-check'] },
-    paths.some(file => deliveryAffectingPath(file, tree))
+  ];
+  if (whole) {
+    // BUG-136: the BUG-057 rule (assert the invariant, not the duration) is
+    // an ESLint rule, and lint ran only in CI's batched run, so a landing
+    // could reintroduce a wall-clock assertion and hear about it hours
+    // later. Whenever the topology cannot scope a change, lint and the whole
+    // program run here.
+    checks.push(
+      { id: 'lint', command: 'pnpm', args: ['run', 'lint'] },
+      { id: 'type-check', command: 'pnpm', args: ['run', 'type-check'] }
+    );
+  } else if (scope.modules.length > 0) {
+    // A change inside declared modules that leaves their public surface
+    // alone is linted and type-checked as those modules: their own files,
+    // and the program `type-check:modules` derives from the change.
+    if (code.length > 0)
+      checks.push({
+        id: 'lint:modules',
+        command: 'pnpm',
+        args: [
+          'exec',
+          'eslint',
+          '--no-error-on-unmatched-pattern',
+          ...modulePaths(topology.manifest, scope.modules),
+        ],
+      });
+    checks.push({
+      id: 'type-check:modules',
+      command: 'pnpm',
+      args: [
+        'run',
+        'type-check:modules',
+        '--',
+        ...paths.filter(file => !isInertPath(file)),
+      ],
+    });
+  }
+  const deliverySuite = paths.some(file => deliveryAffectingPath(file, tree));
+  if (deliverySuite && !checks.some(check => /^type-check/u.test(check.id))) {
+    // The release and custody pins load core's built runtime; the
+    // type-checks build it, so a landing that runs neither builds it here.
+    checks.push({
+      id: 'core-runtime',
+      command: 'pnpm',
+      args: ['run', 'distribution:prepare'],
+    });
+  }
+  checks.push(
+    deliverySuite
       ? {
           id: 'test:agent-delivery',
           command: 'pnpm',
@@ -1449,11 +1517,17 @@ export function classifyDeliveryPolicy(
           id: 'delivery-pins',
           command: 'pnpm',
           args: ['run', 'test:delivery-pins'],
-        },
-  ];
+        }
+  );
+  if (topology && (code.length > 0 || paths.includes(MODULE_MANIFEST))) {
+    checks.push({
+      id: 'modules:check',
+      command: 'pnpm',
+      args: ['run', 'modules:check'],
+    });
+  }
 
-  const related = paths.filter(file => /\.(?:[cm]?[jt]sx?)$/.test(file));
-  if (related.length > 0) {
+  if (code.length > 0) {
     // BUG-137: the 2026-08-17 sweep left 465 exports with no consumer outside
     // their module; a recount on 2026-09-13 found 524. A repo-wide
     // privatisation pass is a semantic edit git cannot see across a dozen
@@ -1463,14 +1537,40 @@ export function classifyDeliveryPolicy(
     checks.push({
       id: 'exports:check',
       command: 'pnpm',
-      args: ['run', 'exports:check', '--', ...related],
+      args: ['run', 'exports:check', '--', ...code],
     });
+  }
+  if (wholeRepo || scope?.fullSuite) {
+    // A train, or a change to what every test runs on (dependencies, the
+    // Vitest configuration, shared test support), runs the whole suite once.
     checks.push({
-      id: 'vitest-related',
+      id: 'full-suite',
       command: 'pnpm',
-      args: ['run', 'test:related', ...related],
+      args: ['exec', 'vitest', 'run', '--maxWorkers=25%'],
       rerun: VITEST_RERUN,
     });
+  } else {
+    // The repository-wide import heuristic for what the topology cannot
+    // scope (undeclared code, a module's public surface), and the module
+    // closure for the rest: the tests that reach the change inside its
+    // module, the module's contract and integration tests, and the
+    // contract tests of every module that depends on it.
+    const related = scope ? scope.related : code;
+    if (related.length > 0)
+      checks.push({
+        id: 'vitest-related',
+        command: 'pnpm',
+        args: ['run', 'test:related', ...related],
+        rerun: VITEST_RERUN,
+      });
+    if (scope?.tests.length > 0)
+      checks.push({
+        id: 'module-tests',
+        command: 'pnpm',
+        args: ['exec', 'vitest', 'run', ...scope.tests, '--maxWorkers=25%'],
+        files: scope.tests,
+        rerun: VITEST_RERUN,
+      });
   }
 
   // BUG-207: the screen-copy guard reads the whole renderer tree rather than
@@ -1836,6 +1936,8 @@ export const VERIFICATION_ROUTES = Object.freeze({
   lint: LANDING,
   'type-check': LANDING,
   'type-check:electron-tests': LANDING,
+  'type-check:modules': LANDING,
+  'modules:check': LANDING,
   'test:agent-delivery': LANDING,
   'test:delivery-pins': LANDING,
   'test:related': LANDING,

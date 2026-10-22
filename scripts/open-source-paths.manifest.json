@@ -18,6 +18,7 @@
         "components.json",
         "eslint.config.mjs",
         "instrumentation-client.ts",
+        "modules.json",
         "next.config.ts",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
@@ -189,6 +190,7 @@
         "scripts/id-next.mjs",
         "scripts/macos-atomic-swap.c",
         "scripts/merge-append-docs.mjs",
+        "scripts/modules-check.mjs",
         "scripts/open-source-paths.mjs",
         "scripts/open-source-reseed.mjs",
         "scripts/prepare-distribution.mjs",
@@ -213,6 +215,7 @@
         "scripts/sign-renderer-archive.cjs",
         "scripts/terminal-cost-probe.mjs",
         "scripts/transcript-replay-probe.mjs",
+        "scripts/type-check-modules.mjs",
         "scripts/with-machine-slot.mjs",
         "scripts/worktree-roster.mjs",
         "scripts/worktree-setup.mjs"

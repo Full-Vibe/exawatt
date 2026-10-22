@@ -65,6 +65,11 @@ export const REUSABLE_CHECKS = new Set([
   'delivery-pins',
   'exports:check',
   'vitest-related',
+  // ENG-039's module checks: each reads only the committed tree it names.
+  'lint:modules',
+  'modules:check',
+  'module-tests',
+  'full-suite',
   'copy:check',
   'theme:check',
   'scanning-tests',

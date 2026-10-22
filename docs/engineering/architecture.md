@@ -81,6 +81,18 @@ bootstrap are separate modules. IPC registration is data: module registrars
 are rows in one ordered table and main's own channels are records keyed by
 channel name, all registered through `handleTrusted`.
 
+The source tree's module boundaries are declared in `modules.json`
+(ENG-039): 13 modules today (`core`, `ui-model`, the main-process `shell`,
+`pty`, `harness-events`, `bus-transports`, `bus`, `roadmap` and
+`consumption`, the renderer's `workspace`, `fleet` and `website`, and the
+`delivery` system), each with its paths, entrypoints, the modules it may
+import, its environment and its contract tests. The declared dependencies are
+a DAG: `core` at the bottom; `shell` (the login shell and harness homes) under
+every main-process module that starts a harness; `pty` over `harness-events`
+and `bus-transports`; `bus` over `pty`; `fleet` and `website` over
+`workspace`. `pnpm modules:check` holds every import to it, and the landing
+checks a change inside a module with that module's own checks.
+
 The main/renderer boundary is one typed contract, the **desktop bridge
 contract** in `@exawatt/core/desktop-bridge` (ENG-039). It declares every
 request, synchronous and push channel with the values that cross it, and the

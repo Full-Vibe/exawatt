@@ -261,7 +261,9 @@ serves a worktree the train just created.
 - **Checks, once.** The landing checks run once on the stacked tree, with
   every gate the stack's paths owe declared automatically (`--waive-gate`
   still waives one on purpose) plus any `--verify`. The train asks for the
-  whole-repository checks (`wholeRepo`), because a train is where they run.
+  whole-repository checks (`wholeRepo`): lint, the whole program and the
+  whole Vitest suite run once for the front, because a train is where they
+  run (see "Module-owned verification").
 - **A red train names its car.** The train bisects by prefix: `origin/master`
   is green and the whole stack is red, so it rebuilds the stack from the first
   half of the cars, then the half that decides, in the same integration
@@ -316,8 +318,10 @@ candidate SHA enter both the ticket evidence and the JSONL metric stream.
 
 | Condition                                                                               | Required check                                                                                                |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm lint`, `pnpm type-check`, and the delivery pins: the whole `pnpm test:agent-delivery` when a changed path can reach what it reads (`deliveryAffectingPath`), otherwise `pnpm test:delivery-pins` (`PRODUCT_TREE_PINS`, the five suite files that read the product tree) |
-| Changed JavaScript or TypeScript                                                        | the consumer-less export check (`pnpm exports:check`: a NEW export must have a consumer; existing ones are not counted), then the related Vitest selection, bounded to 25% workers, with one isolated rerun of any file it names failing |
+| Every candidate                                                                         | fail-closed path classification, public-bound content scan, and the delivery pins: the whole `pnpm test:agent-delivery` when a changed path can reach what it reads (`deliveryAffectingPath`), otherwise `pnpm test:delivery-pins` (`PRODUCT_TREE_PINS`, the five suite files that read the product tree) |
+| Any change the module topology cannot scope (below): an undeclared path, a module's public surface, `modules.json`, shared configuration, a train | `pnpm lint` and `pnpm type-check` |
+| A change inside declared modules, off their public surface                               | `lint:modules` (ESLint over those modules' paths) and `pnpm type-check:modules` (the program the change can reach) |
+| Changed JavaScript or TypeScript                                                        | the consumer-less export check (`pnpm exports:check`: a NEW export must have a consumer; existing ones are not counted) and `pnpm modules:check` (every import keeps `modules.json`), then the tests: the module closure as `module-tests`, the repository-wide related Vitest selection for what the topology cannot scope, or the whole suite as `full-suite` for shared test infrastructure and a train; each bounded to 25% workers, with one isolated rerun of any file it names failing |
 | Renderer source (`src/**`, `packages/ui-model/src/**`, the company overlay's `web/src/**`) | `pnpm copy:check` (no em dash in screen copy, BUG-207). It reads the whole tree and imports nothing it checks, so related-test selection cannot pick it |
 | A path a test declares it scans (`// @scans <globs>`) | that test, with every other declaring test the change matches, as `scanning-tests` (below) |
 | Anything that paints or decides paint (`src/**`, `themes/**`, `packages/ui-model/**`, the theme generator and ratchet) | `pnpm theme:check` (themes valid, generated artifacts current, no production source invents a colour, BUG-208) |
@@ -379,12 +383,62 @@ tree, the command and arguments, pnpm's installed lockfile, the Node version
 and platform, the worktree's real path, and the distribution environment, so
 a reuse can only stand in for an identical run: a resubmitted commit after a
 later check failed, or a rebased tree resubmitted as a candidate. Surface
-gates and evals, `type-check` (it builds the core runtime the delivery suite
-loads), `electron:compile`, the community build and caller extras always run.
+gates and evals, `type-check` and `type-check:modules` (they build the core
+runtime the delivery suite loads), `electron:compile`, the community build and
+caller extras always run.
 A dirty worktree neither reuses nor records, a pass is recorded only if the
 check left the tree clean, and a failed, flaked or unreadable record is a
 miss. The evidence and the metric carry `reused`, `STATUS` carries
 `reused=<checks>`, and `EXAWATT_CHECK_REUSE=0` turns reuse off.
+
+## Module-owned verification
+
+**A change inside a module is checked by that module's own checks.**
+`modules.json` declares the modules (ENG-039): the paths each owns (a
+directory ends in `/`; a single file may be owned by a module outside its
+directory, and the longest match wins), its entrypoints, the modules it may
+import, its environment (`node`, `dom`, `electron`), its contract tests, and
+the integration tests that cross modules on purpose. `scripts/lib/module-graph.mjs`
+reads the manifest and the import graph from the tree being checked
+(`deliveryTree`), so the candidate, the rebased queue head and a train each
+answer for their own tree.
+
+- **Boundaries.** `pnpm modules:check` refuses an import from one declared
+  module into another that its module does not depend on, or that reaches
+  past the target's entrypoints; a dependency cycle; a dependency across
+  environments (`dom` and `electron` build on `node`, never on each other);
+  and a manifest entry that names nothing. An undeclared path that reaches
+  into a module is warned about, never refused, and the file it reaches joins
+  that module's public surface. A test that must cross modules is an
+  `integrationTests` entry with its reason.
+- **Public surface.** A module's entrypoints, every file they re-export, and
+  every file an undeclared path imports. A change there can move what another
+  module sees, so it keeps the whole checks and the repository-wide related
+  tests, plus the module closure below.
+- **What an internal change owes.** Lint over the module's paths
+  (`lint:modules`); `type-check:modules`, which builds the core runtime and
+  compiles the module's files, its integration tests and the importers of
+  every public file the change reaches (Electron main modules are compiled by
+  `electron:compile` and their tests by `type-check:electron-tests`); and
+  `module-tests`: the module's tests the change reaches through the module's
+  own imports, the tests beside a changed file, and the contract and
+  integration tests of every dependent module that import the surface the
+  change reaches. A test of an undeclared path is not followed past the
+  module's edge; the module's own tests of that surface stand for it.
+- **What stays whole.** An undeclared path, a public-surface file, a source
+  file that left the tree (deleted or renamed; anything may have imported
+  it), the manifest itself and shared configuration run `pnpm lint` and
+  `pnpm type-check` as before. The manifest's `fullSuite` paths (the
+  dependencies, the Vitest configuration and setup, `src/test-support/**`)
+  run the whole Vitest suite (`full-suite`), and so does every train. A
+  document alone owes no lint, type-check or test, as in the docs lane.
+- **The backstop.** Every CI batch runs whole lint, the whole program, the
+  whole suite and the whole delivery suite; so does every train, once per
+  front. A tree with no `modules.json` is classified exactly as before.
+
+The delivery system is a module too: `scripts/` and `.githooks/`, whose own
+suite is `test:agent-delivery` (`deliveryAffectingPath` above);
+`delivery-policy.test.mjs` holds the manifest to that.
 
 After candidate checks, the lander creates a new immutable remote attempt ref.
 It never force-updates published candidate history. A rebase creates a new SHA
@@ -989,6 +1043,10 @@ verification, or a live owner's ticket.
   atomic install.
 - `scripts/lib/check-reuse.mjs`: the content-hash key and records behind
   reused landing-check passes.
+- `modules.json`, `scripts/lib/module-graph.mjs`, `scripts/modules-check.mjs`
+  and `scripts/type-check-modules.mjs`: the module declarations, the import
+  graph and boundary check, each module's public surface and the module
+  closure a change owes, and the module type-check.
 - `scripts/lib/merge-train.mjs`: a train's cars, its stack and conflict
   refusal, prefix bisection, and the car-to-integrated-commit map;
   `agent-land.mjs` runs its checks and queue.
@@ -1010,8 +1068,8 @@ verification, or a live owner's ticket.
   `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`,
   `scripts/queue-hold.test.mjs`, `scripts/conflict-probe.test.mjs`, and
   `scripts/append-merge.test.mjs`, `scripts/queue-head-slot.test.mjs`,
-  `scripts/gate-recheck.test.mjs`, `scripts/landing-reinstall.test.mjs`, and
-  `scripts/merge-train.test.mjs` (with
+  `scripts/gate-recheck.test.mjs`, `scripts/landing-reinstall.test.mjs`,
+  `scripts/module-graph.test.mjs`, and `scripts/merge-train.test.mjs` (with
   `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.

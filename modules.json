@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "about": "ENG-039 module topology. A change inside a declared module that leaves its public surface alone is checked by that module's own checks plus its dependents' contract tests; pnpm modules:check holds every import to these declarations. docs/engineering/agent-delivery.md, \"Module-owned verification\".",
+  "fullSuite": [
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "patches/**",
+    "packages/*/package.json",
+    "vitest.config.ts",
+    "vitest.config.*.ts",
+    "vitest.setup.ts",
+    "vitest.setup.*.ts",
+    "packages/*/vitest.config.ts",
+    "contracts/conformance/vitest.config.ts",
+    "src/test-support/**"
+  ],
+  "modules": [
+    {
+      "id": "core",
+      "summary": "Source-agnostic product model, transports, distribution contract and desktop bridge; the package every surface builds on.",
+      "environment": "node",
+      "paths": ["packages/core/"],
+      "entrypoints": [
+        "packages/core/src/delivery-vocabulary.ts",
+        "packages/core/src/desktop-bridge/index.ts",
+        "packages/core/src/distribution/index.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/release-provenance.ts",
+        "packages/core/src/server.ts"
+      ],
+      "dependsOn": [],
+      "contractTests": [
+        "packages/core/src/desktop-bridge/boundary.test.ts",
+        "packages/core/src/distribution/contract.test.ts",
+        "packages/core/src/__tests__/smoke.test.ts",
+        "packages/core/src/__tests__/types.test.ts",
+        "packages/core/src/__tests__/release-provenance.test.ts",
+        "packages/core/src/__tests__/operator-stats-contract-parity.test.ts"
+      ]
+    },
+    {
+      "id": "ui-model",
+      "summary": "Pure presentation models (Session lifecycle words, roadmap lens, spatial board) the renderer surfaces share.",
+      "environment": "node",
+      "paths": ["packages/ui-model/"],
+      "entrypoints": ["packages/ui-model/src/index.ts"],
+      "dependsOn": ["core"]
+    },
+    {
+      "id": "shell",
+      "summary": "The login shell and harness home directories: how a harness process gets the operator's environment. Shared by every main-process subsystem that starts one.",
+      "environment": "node",
+      "paths": [
+        "electron/main/pty/login-shell.ts",
+        "electron/main/pty/harness-homes.ts",
+        "electron/main/pty/harness-state-variables.ts",
+        "electron/main/pty/harness-types.ts",
+        "electron/main/pty/login-shell.test.ts"
+      ],
+      "entrypoints": [
+        "electron/main/pty/harness-homes.ts",
+        "electron/main/pty/harness-state-variables.ts",
+        "electron/main/pty/harness-types.ts",
+        "electron/main/pty/login-shell.ts"
+      ],
+      "dependsOn": ["core"]
+    },
+    {
+      "id": "pty",
+      "summary": "PTY Sessions, the harness registry, attention inference and the Agent Source registry in Electron main. Owns turn-truth, which wires reported harness turns into attention.",
+      "environment": "electron",
+      "paths": [
+        "electron/main/pty/",
+        "electron/main/harness-events/turn-truth.ts",
+        "electron/main/harness-events/turn-truth.test.ts"
+      ],
+      "entrypoints": [
+        "electron/main/harness-events/turn-truth.ts",
+        "electron/main/pty/agent-model-catalog-cache.ts",
+        "electron/main/pty/agent-models.ts",
+        "electron/main/pty/agent-name-store.ts",
+        "electron/main/pty/agent-source-observation-store.ts",
+        "electron/main/pty/agent-source-registry.ts",
+        "electron/main/pty/antigravity-source.ts",
+        "electron/main/pty/attention-monitor.ts",
+        "electron/main/pty/attention-session-id.ts",
+        "electron/main/pty/closed-session-ledger.ts",
+        "electron/main/pty/context-summarizer.ts",
+        "electron/main/pty/conversation-catalog.ts",
+        "electron/main/pty/generated-agent-source-declarations.ts",
+        "electron/main/pty/harness-command.ts",
+        "electron/main/pty/harness-registry.ts",
+        "electron/main/pty/hermetic-environment.test-support.ts",
+        "electron/main/pty/initial-attention.ts",
+        "electron/main/pty/project-resolve.ts",
+        "electron/main/pty/resume-candidates.ts",
+        "electron/main/pty/session-clone-context.ts",
+        "electron/main/pty/session-manager.ts",
+        "electron/main/pty/session-model-change.ts",
+        "electron/main/pty/session-pause.ts",
+        "electron/main/pty/sqlite-snapshot.ts"
+      ],
+      "dependsOn": ["bus-transports", "core", "harness-events", "shell"]
+    },
+    {
+      "id": "harness-events",
+      "summary": "Harness hook and app-server adapters and the delegation monitor: what each harness reports about its own turns.",
+      "environment": "electron",
+      "paths": ["electron/main/harness-events/"],
+      "entrypoints": [
+        "electron/main/harness-events/antigravity-hooks.ts",
+        "electron/main/harness-events/channel.ts",
+        "electron/main/harness-events/claude-hooks.ts",
+        "electron/main/harness-events/codex-app-server.ts",
+        "electron/main/harness-events/delegation-monitor.ts",
+        "electron/main/harness-events/delegation-observation.ts",
+        "electron/main/harness-events/delegation-state.ts",
+        "electron/main/harness-events/hook-settings-store.ts",
+        "electron/main/harness-events/qwen-hooks.ts"
+      ],
+      "dependsOn": ["core", "shell"]
+    },
+    {
+      "id": "bus-transports",
+      "summary": "Per-harness delivery adapters the harness registry names: Claude socket, Codex queue, terminal input.",
+      "environment": "node",
+      "paths": ["electron/main/bus/transports/"],
+      "entrypoints": [
+        "electron/main/bus/transports/claude-socket.ts",
+        "electron/main/bus/transports/codex-queue.ts",
+        "electron/main/bus/transports/fixtures.test-support.ts",
+        "electron/main/bus/transports/terminal-input.ts",
+        "electron/main/bus/transports/types.ts",
+        "electron/main/bus/transports/undeliverable.ts"
+      ],
+      "dependsOn": ["core", "shell"],
+      "contractTests": ["electron/main/bus/transports/transports.test.ts"]
+    },
+    {
+      "id": "bus",
+      "summary": "The cross-harness message bus: directory, ledger, dispatch, its MCP and HTTP doors, and its IPC.",
+      "environment": "electron",
+      "paths": ["electron/main/bus/"],
+      "entrypoints": ["electron/main/bus/bus-ipc.ts"],
+      "dependsOn": ["bus-transports", "core", "harness-events", "pty", "shell"],
+      "contractTests": [
+        "electron/main/bus/dispatch.test.ts",
+        "electron/main/bus/http.test.ts",
+        "electron/main/bus/mcp-server.test.ts"
+      ]
+    },
+    {
+      "id": "roadmap",
+      "summary": "The roadmap lens in Electron main: watcher, writer, attention observations and the delivery landings reader.",
+      "environment": "electron",
+      "paths": ["electron/main/roadmap/"],
+      "entrypoints": [
+        "electron/main/roadmap/roadmap-ipc.ts",
+        "electron/main/roadmap/roadmap-watcher.ts"
+      ],
+      "dependsOn": ["core", "pty"],
+      "contractTests": ["electron/main/roadmap/roadmap-landings.test.ts"]
+    },
+    {
+      "id": "consumption",
+      "summary": "Usage scanning, provider plan accounts, retention and usage alerts in Electron main.",
+      "environment": "electron",
+      "paths": ["electron/main/consumption/"],
+      "entrypoints": [
+        "electron/main/consumption/claude-plan-account.ts",
+        "electron/main/consumption/codex-plan-account.ts",
+        "electron/main/consumption/google-plan-account.ts",
+        "electron/main/consumption/provider-plan-composite.ts",
+        "electron/main/consumption/retention-policy.ts",
+        "electron/main/consumption/scanner-service.ts",
+        "electron/main/consumption/usage-alert-notifier.ts",
+        "electron/main/consumption/usage-alert-service.ts"
+      ],
+      "dependsOn": ["core", "harness-events", "shell"]
+    },
+    {
+      "id": "workspace",
+      "summary": "The Agent and Team altitudes: workspace state, tabs and the Project ribbon, the launcher, Sessions and their controls.",
+      "environment": "dom",
+      "paths": ["src/components/workspace/"],
+      "entrypoints": [
+        "src/components/workspace/agent-source-identity.ts",
+        "src/components/workspace/agent-source-mark.tsx",
+        "src/components/workspace/agent-sources.ts",
+        "src/components/workspace/close-confirm.tsx",
+        "src/components/workspace/connect-source-dialog.tsx",
+        "src/components/workspace/expose-overlay.tsx",
+        "src/components/workspace/goal-visual-backdrop.tsx",
+        "src/components/workspace/harness-icons.tsx",
+        "src/components/workspace/harness-mark-tones.ts",
+        "src/components/workspace/harnesses.ts",
+        "src/components/workspace/launcher/launcher-bench.tsx",
+        "src/components/workspace/path-label.ts",
+        "src/components/workspace/paused-agent-record.tsx",
+        "src/components/workspace/project-colors.ts",
+        "src/components/workspace/project-ribbon-layout.ts",
+        "src/components/workspace/session-clone.ts",
+        "src/components/workspace/session-display-copy.ts",
+        "src/components/workspace/session-jump.ts",
+        "src/components/workspace/session-model-control.tsx",
+        "src/components/workspace/session-overview-card.tsx",
+        "src/components/workspace/session-restore-panel.tsx",
+        "src/components/workspace/session-status.ts",
+        "src/components/workspace/session-switcher-identity.tsx",
+        "src/components/workspace/status-glyphs.tsx",
+        "src/components/workspace/switcher-rows.ts",
+        "src/components/workspace/tab-ring.ts",
+        "src/components/workspace/tab-strip.tsx",
+        "src/components/workspace/team-order-preference.ts",
+        "src/components/workspace/team-order.ts",
+        "src/components/workspace/test-auth-bridge.tsx",
+        "src/components/workspace/use-agent-source-registry.ts",
+        "src/components/workspace/use-project-pause-interaction.ts",
+        "src/components/workspace/use-workspace-shortcuts.ts",
+        "src/components/workspace/use-workspace-state.ts",
+        "src/components/workspace/workspace-client.tsx",
+        "src/components/workspace/workspace-command-availability.ts",
+        "src/components/workspace/workspace-theme.ts"
+      ],
+      "dependsOn": ["core", "ui-model"]
+    },
+    {
+      "id": "fleet",
+      "summary": "The Fleet altitude: the spatial board, its tiles and canvas, Direct and ghost slots.",
+      "environment": "dom",
+      "paths": ["src/components/fleet/"],
+      "entrypoints": [
+        "src/components/fleet/spatial/direct/direct-model.ts",
+        "src/components/fleet/spatial/operations-board/board-keymap.ts",
+        "src/components/fleet/spatial/operations-board/operations-board-ambient.ts",
+        "src/components/fleet/spatial/operations-board/operations-board-camera-rig.tsx",
+        "src/components/fleet/spatial/operations-board/operations-board-canvas.tsx",
+        "src/components/fleet/spatial/operations-board/operations-board-env.ts",
+        "src/components/fleet/spatial/operations-board/operations-board-status-marks.tsx",
+        "src/components/fleet/spatial/operations-board/operations-board-surface.tsx",
+        "src/components/fleet/spatial/operations-board/population-dots.ts",
+        "src/components/fleet/spatial/operations-board/tiles/board-tiles-model.ts",
+        "src/components/fleet/spatial/operations-board/tiles/operations-board-tiles-canvas.tsx",
+        "src/components/fleet/spatial/spatial-fleet-client.tsx",
+        "src/components/fleet/spatial/spatial-selection-panel.tsx",
+        "src/components/fleet/spatial/spatial-theme.ts"
+      ],
+      "dependsOn": ["core", "ui-model", "workspace"]
+    },
+    {
+      "id": "website",
+      "summary": "The public website: the homepage fleet story, hero board, bands, changelog and download surfaces.",
+      "environment": "dom",
+      "paths": ["src/components/site/"],
+      "entrypoints": [
+        "src/components/site/bands/band-section.tsx",
+        "src/components/site/bands/band-stack.tsx",
+        "src/components/site/bands/close-band.tsx",
+        "src/components/site/bands/download.ts",
+        "src/components/site/bands/fold-band.tsx",
+        "src/components/site/bands/fold-copy.ts",
+        "src/components/site/bands/fold-hero.tsx",
+        "src/components/site/bands/manifest.ts",
+        "src/components/site/bands/pinned-board-sequence.tsx",
+        "src/components/site/bands/site-ground.ts",
+        "src/components/site/changelog/changelog-entry.tsx",
+        "src/components/site/docs/doc-blocks.tsx",
+        "src/components/site/docs/site-doc-page.tsx",
+        "src/components/site/fleet-story/fleet-model.ts",
+        "src/components/site/fleet-story/footer-gesture.tsx",
+        "src/components/site/fleet-story/homepage-settings.ts",
+        "src/components/site/fleet-story/names.ts",
+        "src/components/site/fleet-story/pinned-agent-panel.tsx",
+        "src/components/site/fleet-story/scroll-experience.tsx",
+        "src/components/site/fleet-story/sphere.ts",
+        "src/components/site/fleet-story/stages.ts",
+        "src/components/site/fleet-story/visual-canvas.tsx",
+        "src/components/site/fleet-story/visual-contract.ts",
+        "src/components/site/fleet-story/visuals/camera-rig.tsx",
+        "src/components/site/fleet-story/visuals/crust-marks.ts",
+        "src/components/site/fleet-story/visuals/crust-visual.tsx",
+        "src/components/site/fleet-story/visuals/globe-body.tsx",
+        "src/components/site/fleet-story/visuals/shared.ts",
+        "src/components/site/hero-board/hero-board-budget.ts",
+        "src/components/site/hero-board/hero-board-highlight.ts",
+        "src/components/site/hero-board/hero-board-theme.ts",
+        "src/components/site/hero-board/hero-board.tsx",
+        "src/components/site/hero-board/idle-measure.ts",
+        "src/components/site/site-links.ts",
+        "src/components/site/site-nav-download.tsx"
+      ],
+      "dependsOn": ["core", "fleet", "ui-model", "workspace"]
+    },
+    {
+      "id": "delivery",
+      "summary": "The delivery system: agent:land, the queue, landing checks, CI batching, dogfood and release tooling. Its suite is test:agent-delivery.",
+      "environment": "node",
+      "paths": ["scripts/", ".githooks/"],
+      "entrypoints": [
+        "scripts/lib/distribution-build.mjs",
+        "scripts/lib/hermetic-git.mjs",
+        "scripts/lib/open-source-paths.mjs"
+      ],
+      "dependsOn": ["core"],
+      "scripts": ["test:agent-delivery"]
+    }
+  ],
+  "integrationTests": [
+    {
+      "test": "src/components/workspace/turn-truth-pipeline.test.ts",
+      "modules": ["workspace", "pty", "harness-events"],
+      "why": "runs the turn-truth wiring main ships against the renderer status words it produces"
+    },
+    {
+      "test": "src/components/workspace/launch-verdict-parity.test.ts",
+      "modules": ["workspace", "pty"],
+      "why": "holds the renderer launch verdict to the Agent Source registry main decides with"
+    },
+    {
+      "test": "electron/main/harness-events/codex-app-server.test.ts",
+      "modules": ["harness-events", "workspace", "ui-model", "core"],
+      "why": "drives the Codex adapter through the local Session transport and the status words Team and Fleet show"
+    },
+    {
+      "test": "electron/main/harness-events/codex-real-shapes.test.ts",
+      "modules": ["harness-events", "workspace", "pty"],
+      "why": "replays captured Codex event shapes through attention and the renderer status words"
+    },
+    {
+      "test": "electron/main/pty/session-agent-name.test.ts",
+      "modules": ["pty", "bus"],
+      "why": "holds a Session's Agent name to the bus directory that addresses it"
+    },
+    {
+      "test": "electron/main/consumption/scanner-service.test.ts",
+      "modules": ["consumption", "core"],
+      "why": "scans the consumption fixtures core's own parser tests use"
+    }
+  ]
+}

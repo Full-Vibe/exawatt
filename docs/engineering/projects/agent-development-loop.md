@@ -159,6 +159,38 @@ under it. The same evening the coordinator ran the front as a manual train
 one `pnpm dogfood:request`); the entry records what it saves, what it costs,
 and the `agent:land --train` mode it needs.
 
+## 2026-10-21 — trains and module-owned checks
+
+**The two structural follow-ups the 2026-10-15 audit shaped are in the
+landing: a front lands as one train, and a change inside a module is checked
+by that module's own checks.** ENG-039 owns the design and the measurements
+([module declarations](module-topology.md#2026-10-21--module-declarations-and-the-module-closure-m0-m1-m3-first-mile),
+[the train](module-topology.md#2026-10-21--the-merge-train-is-first-class));
+the operations are in `docs/engineering/agent-delivery.md`, "Merge trains"
+and "Module-owned verification".
+
+- **`agent:land --train`** (`9032af94`, `18b94a36`): the manual train of
+  2026-10-15 becomes one command that stacks the packets' branches, runs the
+  landing checks and every gate they owe once, lands them linearly under one
+  ticket, bisects a red stack to the branch that broke it, and requests one
+  dogfood build. Per-packet whole-repo checks, head re-checks, gate runs and
+  builds become one of each per front, which is the 480 check-minutes a day
+  the audit estimated.
+- **Module-owned checks** (<sha pending>): of the audit's 720 whole-repo
+  minutes a day, lint (187) and type-check (70) ran on every landing. A
+  change inside a declared module, off its public surface, now runs its
+  module's lint, type-check and tests instead, and the whole checks run in
+  every train and CI batch and for the changes the topology cannot scope.
+  On five single-module edits, lint, type-check and tests went from a median
+  68 s to 18 s (`lint:modules` 3.0 s against 43.6 s, `type-check:modules`
+  12.9 s against a warm 19.5 s, the module closure's tests 1.8 s against
+  5.3 s for `vitest related`). How many landings stay inside one module is
+  what the observation window will show.
+
+Escapes are watched the H11 way: a CI batch or train that goes red on a
+change whose module checks passed is an escape, and M4's 30-landing window
+counts them before more of the tree moves onto the module path.
+
 ## 2026-10-18 — the delivery-system fixes from the train
 
 The operator, 2026-10-18: fix the overlapping delivery bugs by upgrading the
