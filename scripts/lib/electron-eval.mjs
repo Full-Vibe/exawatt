@@ -325,9 +325,17 @@ function packagedLaunchOptions({ packaged, ...launchOpts }) {
  * executable path. `launch` carries `performance.now()` stamps taken around
  * the launch (`startedAt`, `connectedAt`, `firstWindowAt`).
  *
+ * The app opens as a user at an unlocked Mac would see it: once the first
+ * window exists, the harness declares the screen unlocked through the same
+ * `powerMonitor` event the evals emit (`declareUnlockedHost`). The host's
+ * real lock state is not a fact any other eval is about, and the landing
+ * trains run while this Mac is locked, where Fleet correctly paints nothing
+ * (BUG-308). An eval that drives host power itself passes
+ * `drivesHostPower: true` and gets the real host.
+ *
  * @param {object} requested
  * @param {(app: any, page: any, launch: { startedAt: number, connectedAt: number, firstWindowAt: number }) => Promise<any>} body
- * @param {{ maxMs?: number, firstWindowMs?: number, gracefulMs?: number, attempts?: number }} [opts]
+ * @param {{ maxMs?: number, firstWindowMs?: number, gracefulMs?: number, attempts?: number, drivesHostPower?: boolean }} [opts]
  */
 export async function withElectronApp(requested, body, opts = {}) {
   const maxMs = opts.maxMs ?? 90_000;
@@ -365,6 +373,7 @@ export async function withElectronApp(requested, body, opts = {}) {
           maxMs,
           firstWindowMs,
           gracefulMs,
+          drivesHostPower: opts.drivesHostPower === true,
         });
       } catch (error) {
         if (attempt >= attempts || !isExternalTeardown(error)) throw error;
@@ -501,6 +510,17 @@ export function anchorMainEvaluate(app) {
   });
 }
 
+/**
+ * The test fixture of a user at an unlocked Mac: the screen-unlock event a
+ * real unlock delivers, through `powerMonitor`, the channel the app's host
+ * observer listens on. The app's own reads are untouched: a later `resume`
+ * still asks the native reader, and an unknown read is still not unlocked.
+ * `app` is the anchored app `withElectronApp` hands its body.
+ */
+export async function declareUnlockedHost(app) {
+  await app.evaluate(({ powerMonitor }) => powerMonitor.emit('unlock-screen'));
+}
+
 function resetThrowawayUserData(userData) {
   if (!userData) return;
   const temp = realpathOrSelf(tmpdir());
@@ -587,6 +607,7 @@ async function runElectronAttempt({
   maxMs,
   firstWindowMs,
   gracefulMs,
+  drivesHostPower,
 }) {
   sweepOrphans(evalRoot);
 
@@ -692,7 +713,11 @@ async function runElectronAttempt({
     }
     launch.firstWindowAt = performance.now();
     try {
-      return await body(anchorMainEvaluate(app), page, launch);
+      const anchored = anchorMainEvaluate(app);
+      // Main observes host power before it opens a window, so the
+      // declaration reaches the same observer the renderer reads.
+      if (!drivesHostPower) await declareUnlockedHost(anchored);
+      return await body(anchored, page, launch);
     } catch (error) {
       await recordFailure(page, error);
       throw error;

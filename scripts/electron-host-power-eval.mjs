@@ -395,7 +395,8 @@ try {
         })
       );
     },
-    { maxMs: 150_000 }
+    // It drives host power itself and starts from the real host's read.
+    { maxMs: 150_000, drivesHostPower: true }
   );
 } finally {
   rmSync(userData, { recursive: true, force: true });

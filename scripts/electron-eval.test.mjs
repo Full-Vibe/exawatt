@@ -28,6 +28,7 @@ import { _electron as electron } from 'playwright-core';
 import {
   anchorMainEvaluate,
   assertDevServerServesTree,
+  declareUnlockedHost,
   waitForPageCondition,
   withElectronApp,
 } from './lib/electron-eval.mjs';
@@ -562,5 +563,63 @@ require('electron').app.whenReady();`
     );
     const anchored = anchorMainEvaluate(app);
     assert.equal(await lost((fn, arg) => anchored.evaluate(fn, arg)), 0);
+  }
+);
+
+test(
+  "the harness declares a locked Mac unlocked through the app's own host observer, and leaves the app's reads alone (BUG-308)",
+  {
+    // Electron needs a display on Linux; CI's batch has none.
+    skip: process.platform !== 'darwin' && 'Electron needs a display here',
+  },
+  async t => {
+    const observer = new URL(
+      '../dist-electron/main/host-power.js',
+      import.meta.url
+    );
+    assert.ok(
+      existsSync(observer),
+      'compile the Electron main first: pnpm electron:compile'
+    );
+    const dir = mkdtempSync(join(tmpdir(), 'exawatt-declared-host-'));
+    writeFileSync(join(dir, 'package.json'), '{"main":"main.js"}');
+    // The Mac this fixture stands for is locked: every native read says so.
+    writeFileSync(
+      join(dir, 'main.js'),
+      `const { app, powerMonitor } = require('electron');
+const { observeHostPower } = require(${JSON.stringify(observer.pathname)});
+globalThis.__host = app.whenReady().then(() =>
+  observeHostPower(
+    {
+      isOnBatteryPower: () => false,
+      getScreenLockState: () => 'locked',
+      on: powerMonitor.on.bind(powerMonitor),
+      removeListener: powerMonitor.removeListener.bind(powerMonitor),
+    },
+    () => {}
+  )
+);`
+    );
+    const app = anchorMainEvaluate(
+      await electron.launch({
+        executablePath: createRequire(import.meta.url)('electron'),
+        args: [dir],
+      })
+    );
+    t.after(async () => {
+      await app.close().catch(() => {});
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const screenLock = () =>
+      app.evaluate(
+        async () => (await globalThis.__host).getSnapshot().screenLock
+      );
+    assert.equal(await screenLock(), 'locked');
+    await declareUnlockedHost(app);
+    assert.equal(await screenLock(), 'unlocked');
+    // A declaration is an event, not a rule: the app's next native read
+    // (resume) still answers for the real host.
+    await app.evaluate(({ powerMonitor }) => powerMonitor.emit('resume'));
+    assert.equal(await screenLock(), 'locked');
   }
 );
