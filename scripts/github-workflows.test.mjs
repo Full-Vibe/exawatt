@@ -123,6 +123,22 @@ test('the paid macOS runner belongs to the release workflow alone', async () => 
   }
 });
 
+// A scheduled run bills minutes whether or not anything changed, against a
+// $15/month hard stop (AGENTS.md). One run a day at most: a cron whose minute
+// and hour are each one number.
+test('every scheduled workflow runs at most once a day on Linux', async () => {
+  for (const { file, workflow } of await workflowSources()) {
+    for (const { cron } of triggers(workflow).schedule ?? []) {
+      const [minute, hour] = cron.trim().split(/\s+/u);
+      assert.match(`${minute} ${hour}`, /^\d+ \d+$/u, `${file}: ${cron}`);
+      for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+        assert.equal(job['runs-on'], 'ubuntu-latest', `${file}:${jobName}`);
+        assert.ok(job['timeout-minutes'] > 0, `${file}:${jobName} timeout`);
+      }
+    }
+  }
+});
+
 test('CI compiles both applications and builds without hosted-service configuration', async () => {
   const source = await readFile(
     path.join(workflowsDirectory, 'ci.yml'),

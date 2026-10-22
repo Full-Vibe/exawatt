@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import {
   assertFastForward,
   buildProjectionPlan,
+  comparePublicSnapshot,
   parseFilterRepoCommitMap,
   PROJECTOR_MODULES,
   projectPublicHistory,
@@ -50,7 +51,10 @@ test('a child that closes stdin and fails reports its own failure, not EPIPE', a
       input: UNREAD_INPUT,
     }),
     error => {
-      assert.match(error.message, /\(code 3, signal none\): refused the input$/u);
+      assert.match(
+        error.message,
+        /\(code 3, signal none\): refused the input$/u
+      );
       assert.doesNotMatch(error.message, /EPIPE/u);
       return true;
     }
@@ -2003,6 +2007,71 @@ test('snapshot epoch refuses a forged source mapping and a public epoch file', a
         epoch: snapshot.epochUpdate,
       }),
       /epoch must remain private/u
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// BUG-131: the scheduled public-sync check reads this comparison. It has to
+// mean what a reader of the public repository sees, so a private-only commit
+// owes nothing and a public edit is named by path.
+test('comparePublicSnapshot says whether the public tip is the projection of a source commit', async () => {
+  const fixture = sourceFixture();
+  try {
+    const seed = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('public'),
+      epoch: null,
+    });
+    const compare = sourceSha =>
+      comparePublicSnapshot({
+        sourceRepo: fixture.source,
+        sourceSha,
+        publicRepository: seed.destination,
+      });
+    const commit = (file, contents, message) => {
+      write(fixture.source, file, contents);
+      git(fixture.source, ['add', '--', file]);
+      git(fixture.source, ['commit', '--quiet', '-m', message]);
+      return git(fixture.source, ['rev-parse', 'HEAD']);
+    };
+
+    const current = await compare(fixture.head);
+    assert.equal(current.inSync, true);
+    assert.equal(current.publicSha, seed.publicSha);
+    assert.deepEqual(current.differingPaths, []);
+    // The projector keeps each source commit's times, which is how the check
+    // finds the source commit the public tip came from.
+    assert.equal(
+      `${current.publicAuthorTime} ${current.publicCommitTime}`,
+      git(fixture.source, ['log', '-1', '--format=%at %ct', fixture.head])
+    );
+
+    const privateOnly = commit(
+      'company/secret.md',
+      'private overlay, third\n',
+      'private only again'
+    );
+    assert.equal((await compare(privateOnly)).inSync, true);
+
+    const publicEdit = commit(
+      'src/a.ts',
+      'export const a = 12;\n',
+      'public edit'
+    );
+    const behind = await compare(publicEdit);
+    assert.equal(behind.inSync, false);
+    assert.deepEqual(behind.differingPaths, ['src/a.ts']);
+    assert.equal(behind.publicSha, seed.publicSha);
+
+    await assert.rejects(
+      comparePublicSnapshot({
+        sourceRepo: fixture.source,
+        sourceSha: publicEdit,
+        publicRepository: fixture.at('no-such-public'),
+      })
     );
   } finally {
     fixture.cleanup();

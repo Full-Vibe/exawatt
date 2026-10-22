@@ -2446,3 +2446,93 @@ export async function projectPublicCatchup({
     await rm(container, { recursive: true, force: true });
   }
 }
+
+/**
+ * Whether the public repository holds the projection of `sourceSha` (BUG-131).
+ *
+ * The answer is a tree comparison, so it means what a reader of the public
+ * repository sees: the public tip's tree against today's complete Gate A
+ * snapshot of the source, built by the same `materializePublicSnapshot` the
+ * catch-up uses. A private commit whose public render is unchanged (an edit
+ * inside an omitted region, a PRIVATE path) leaves the two equal, so it is
+ * never reported as owed. Read-only: nothing is committed, pushed or kept.
+ */
+export async function comparePublicSnapshot({
+  sourceRepo,
+  sourceSha,
+  publicRepository,
+  ref = 'master',
+  manifestPath = OPEN_SOURCE_PATH_MANIFEST,
+}) {
+  const resolvedSourceRepo = path.resolve(sourceRepo);
+  const resolvedSourceSha = (
+    await git(['rev-parse', '--verify', `${sourceSha}^{commit}`], {
+      cwd: resolvedSourceRepo,
+    })
+  ).trim();
+  const container = await mkdtemp(
+    path.join(tmpdir(), 'exawatt-public-compare-')
+  );
+  const projectionRepo = path.join(container, 'public');
+  try {
+    await mkdir(projectionRepo);
+    await git(['init', '--quiet', '--initial-branch=master', '.'], {
+      cwd: projectionRepo,
+    });
+    const existingRef = await fetchExistingPublicTip(projectionRepo, {
+      repository: publicRepository,
+      ref,
+    });
+    if (!existingRef) fail(`${publicRepository} has no ${ref} to compare`);
+    const publicTip = (
+      await git(['log', '-1', '--format=%H%x00%T%x00%at%x00%ct', existingRef], {
+        cwd: projectionRepo,
+      })
+    )
+      .trim()
+      .split('\0');
+    await fetchPrivateSourceObjects(
+      resolvedSourceRepo,
+      resolvedSourceSha,
+      projectionRepo
+    );
+    const snapshot = await materializePublicSnapshot({
+      sourceRepo: resolvedSourceRepo,
+      sourceSha: resolvedSourceSha,
+      projectionRepo,
+      manifestPath,
+      blobCache: new Map(),
+      renderedObjectCache: new Map(),
+    });
+    const differingPaths =
+      snapshot.tree === publicTip[1]
+        ? []
+        : nullSeparatedPaths(
+            await git(
+              [
+                'diff-tree',
+                '--no-commit-id',
+                '--name-only',
+                '-r',
+                '-z',
+                publicTip[1],
+                snapshot.tree,
+              ],
+              { cwd: projectionRepo, encoding: 'buffer' }
+            )
+          );
+    return {
+      sourceSha: resolvedSourceSha,
+      snapshotTree: snapshot.tree,
+      publicSha: publicTip[0],
+      publicTree: publicTip[1],
+      publicAuthorTime: Number(publicTip[2]),
+      publicCommitTime: Number(publicTip[3]),
+      inSync: snapshot.tree === publicTip[1],
+      differingPaths,
+      unrenderedOutputs: snapshot.unrenderedOutputs,
+    };
+  } finally {
+    await rm(container, { recursive: true, force: true });
+  }
+}

@@ -200,6 +200,7 @@
         "scripts/public-catchup.mjs",
         "scripts/public-content-scan.mjs",
         "scripts/public-metadata-audit.mjs",
+        "scripts/public-sync-check.mjs",
         "scripts/publication-check.mjs",
         "scripts/qa-browser-doctor.mjs",
         "scripts/qa-browser-smoke.mjs",
