@@ -1,10 +1,6 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import {
-  DOWNLOAD_HREF,
-  DOWNLOAD_LABEL,
-  DOWNLOAD_REQUIREMENT,
-} from './download';
+import { DOWNLOAD_HREF, DOWNLOAD_LABEL } from './download';
 
 /**
  * The homepage's download button (ENG-031 W3, cut to the homepage's own use
@@ -32,40 +28,26 @@ import {
  *   register and does not inherit the app's `--primary`, which moves with the
  *   theme contract. Highest contrast available, and stable across every theme
  *   the app ships.
- * - THE REQUIREMENT SITS AT THE BUTTON, never in a footnote. It is set in the
- *   reading face rather than in mono (operator, 2026-08-17). A tracked
- *   uppercase mono line under a conversion button reads as machine output,
- *   and the sentence it carries is written for a person.
+ * - NO REQUIREMENT LINE. The machine it needs is stated on the download
+ *   page (operator 2026-10-14: "we can remove the macOS 12 or later Apple
+ *   Silicon disclaimer. That can just be on the download page").
  */
 export function DownloadCta({
-  requirement = true,
   label = DOWNLOAD_LABEL,
 }: {
-  /** The machine it needs, under the button. The homepage leaves it to the
-   *  download page (operator 2026-10-14: "we can remove the macOS 12 or
-   *  later Apple Silicon disclaimer. That can just be on the download
-   *  page"). */
-  requirement?: boolean;
   /** The homepage may publish its own action label; other uses keep canon. */
   label?: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="flex items-center">
-        <Button
-          asChild
-          // a keyboard's focus rings it in white, clear of the button: the
-          // shared ring is one pixel of the app's theme colour
-          className="h-11 rounded-md bg-white px-7 text-base font-semibold text-black shadow-lg hover:bg-white/90 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-        >
-          <Link href={DOWNLOAD_HREF}>{label}</Link>
-        </Button>
-      </div>
-      {requirement ? (
-        <p className="text-[13px] leading-snug text-white/50">
-          {DOWNLOAD_REQUIREMENT}
-        </p>
-      ) : null}
+    <div className="flex items-center">
+      <Button
+        asChild
+        // a keyboard's focus rings it in white, clear of the button: the
+        // shared ring is one pixel of the app's theme colour
+        className="h-11 rounded-md bg-white px-7 text-base font-semibold text-black shadow-lg hover:bg-white/90 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+      >
+        <Link href={DOWNLOAD_HREF}>{label}</Link>
+      </Button>
     </div>
   );
 }

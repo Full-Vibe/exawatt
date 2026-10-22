@@ -1044,10 +1044,7 @@ function PanelBody({
         // desktop at least) because GH one isn't very legible"); where the
         // two do not fit across, the source goes under the download
         <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-3 pt-1">
-          <DownloadCta
-            requirement={false}
-            label={copyDocument?.actions.downloadLabel}
-          />
+          <DownloadCta label={copyDocument?.actions.downloadLabel} />
           {/* a keyboard's focus rings it in white, clear of the border, as it
               does the download */}
           <Button
