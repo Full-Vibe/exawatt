@@ -80,9 +80,10 @@ function checkEconomyCadence({ painted, ticks, tickMs, rotors }, label) {
 /** Every working rotor turns while its Agent works, at any power (BUG-263);
  * only reduced motion rests them. Vacuous when nothing on the board works.
  *
- * The readout walks the chain a static Working Agent can break at (BUG-113):
- * Working Agents the marks were given, rotors attached for them (both from
- * the canvas's frame demand), rotors in the scene, rotors that turned. */
+ * On v1 the readout walks the chain a static Working Agent can break at
+ * (BUG-113): Working Agents the marks were given, rotors attached for them
+ * (both from the canvas's frame demand), rotors in the scene, rotors that
+ * turned. v2 draws no rotors; its working bodies are sampled directly. */
 async function checkWorkingMotion(page, { expectMotion }) {
   const sample = await page.evaluate(async source => {
     const sampleRotors = new Function(`return (${source})()`);
@@ -98,16 +99,21 @@ async function checkWorkingMotion(page, { expectMotion }) {
     for (const [node, angle] of before)
       if (node.rotation.z !== angle) moving += 1;
     return {
+      view:
+        document.querySelector('[data-spatial-board]')?.dataset.boardView ??
+        'v1',
       working: claims.reduce((sum, claim) => sum + claim.working, 0),
       attached: claims.reduce((sum, claim) => sum + claim.rotors, 0),
       rotors: before.size,
       moving,
     };
   }, sampleRotorsInPage.toString());
-  check(
-    sample.attached === sample.working && sample.rotors === sample.working,
-    `Working ${sample.working}, rotors attached ${sample.attached}, in the scene ${sample.rotors}: a Working Agent has no rotor`
-  );
+  if (sample.view !== 'v2') {
+    check(
+      sample.attached === sample.working && sample.rotors === sample.working,
+      `Working ${sample.working}, rotors attached ${sample.attached}, in the scene ${sample.rotors}: a Working Agent has no rotor`
+    );
+  }
   if (sample.rotors === 0) return sample;
   check(
     expectMotion ? sample.moving === sample.rotors : sample.moving === 0,
