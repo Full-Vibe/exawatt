@@ -27,11 +27,8 @@ import {
   applyNativeAppearancePreference,
   testSystemDarkOverride,
 } from './appearance';
-import {
-  applyBuildIdentity,
-  assertPackagedRendererComposition,
-  resolveBuildIdentity,
-} from './build-identity';
+import { assertPackagedRendererComposition } from './build-identity';
+import { launchBuildIdentity } from './launch-identity';
 import {
   registerCommandEngineIPC,
   setCommandEnginePhase,
@@ -42,6 +39,7 @@ import {
   reloadWindow,
   reportCommandSurfaceFailure,
 } from './command-surface';
+import { routeSecondLaunches } from './app-instance';
 import { createDeepLinkRouter, registerDeepLinkProtocol } from './deep-link';
 import { recordWebLink } from './analytics-activity';
 import { distributionChildEnvironment } from './distribution';
@@ -70,6 +68,10 @@ import { clearSessionOrigins, createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
 import { loadSettings } from './settings-store';
 import { createNoticeDismissalStore } from './notice-dismissals';
+import {
+  createApplicationsPlacement,
+  readInstalledCopy,
+} from './installed-build';
 import { testProductUpdate } from './updater-test-double';
 import {
   createBeforeQuitHandler,
@@ -92,7 +94,8 @@ import {
 /**
  * Electron main's composition root. It decides nothing itself: it reads the
  * launch environment, builds each module with its dependencies, and connects
- * them. Behaviour lives in the modules it names.
+ * them. Behaviour lives in the modules it names. `main.ts` evaluates it only
+ * in the process that holds this profile's instance lock (BUG-305).
  */
 
 const env = process.env;
@@ -118,18 +121,13 @@ if (process.platform === 'darwin' && windowLaunchMode !== 'foreground') {
 // No default menu while booting; the real command menu arrives with services.
 Menu.setApplicationMenu(null);
 
-const build = resolveBuildIdentity({
-  isDev,
-  cwd: process.cwd(),
-  mainRoot: path.join(__dirname, '..'),
-  resourcesPath: process.resourcesPath,
-});
+// Settled by `main.ts` before the instance lock, which is the profile's.
+const build = launchBuildIdentity();
 const { buildInfo, distribution, identity } = build;
 const productUpdateFeedUrl = distribution.contract.updates?.feedUrl ?? null;
 /** An automated launch may drive Restart to Update through a double. */
 const testUpdateDouble =
   isTest && testProductUpdate(env.EXAWATT_TEST_PRODUCT_UPDATE) !== null;
-applyBuildIdentity(app, build, env);
 if (!isDev) assertPackagedRendererComposition(process.resourcesPath, buildInfo);
 
 const runtime = new CommandRuntime();
@@ -218,6 +216,7 @@ const mainWindow = createMainWindowController({
   promoteToRegularApp: () => {
     if (process.platform === 'darwin') app.setActivationPolicy('regular');
   },
+  activateApp: () => app.focus({ steal: true }),
   onNavigationReset: () => menu.resetAvailability(),
   onCheckpointOwnerLost: id => checkpoints.release(id),
   onLaunchScreenLoaded: () => startupScreen.repaint(),
@@ -255,6 +254,18 @@ const deepLinks = createDeepLinkRouter({
 });
 // Before app.whenReady(), so a link that launches the app is not lost.
 registerDeepLinkProtocol(app, identity.protocolScheme, deepLinks, process);
+// A later launch over this profile is the operator asking for Exawatt: it
+// brings this window forward, and its links take the deep-link entry.
+routeSecondLaunches(app, {
+  bringForward: () => {
+    if (isShuttingDown()) return 'quitting';
+    if (mainWindow.live()) return mainWindow.present();
+    openMainWindow(runtime.startupComplete);
+    return 'opened';
+  },
+  openLink: url => deepLinks.handle(url),
+  record: (event, fields) => mainDiagnostics(event, fields),
+});
 
 const shutdownSequence = createShutdownSequence({
   productName: identity.productName,
@@ -317,6 +328,29 @@ const shutdownSequence = createShutdownSequence({
 const notices = createNoticeDismissalStore({
   file: path.join(userDataPath(), 'notice-dismissals.json'),
   allWindows: () => BrowserWindow.getAllWindows(),
+});
+
+// BUG-305: an official build running outside Applications offers to move
+// there. An automated launch may ask for the offer to render it, and its
+// mover moves nothing.
+const testPlacement = isTest && env.EXAWATT_TEST_APP_PLACEMENT === 'outside';
+const placement = createApplicationsPlacement({
+  offered:
+    testPlacement ||
+    (process.platform === 'darwin' &&
+      app.isPackaged &&
+      !isTest &&
+      productUpdateFeedUrl !== null),
+  bundlePath: path.resolve(process.execPath, '..', '..', '..'),
+  running: { version: app.getVersion(), builtAt: buildInfo.builtAt },
+  mover: testPlacement
+    ? {
+        isInApplicationsFolder: () => false,
+        moveToApplicationsFolder: () => false,
+      }
+    : app,
+  installedCopy: testPlacement ? () => 'absent' : readInstalledCopy,
+  record: (event, fields) => mainDiagnostics(event, fields),
 });
 
 const menuCapabilities = commandVerbCapabilities(distribution.contract);
@@ -403,6 +437,7 @@ function startCommandSurface(): Promise<void> {
           menu.channels,
           shutdownSequence.channels,
           notices.channels,
+          placement.channels,
           {
             'app:installed-build': () =>
               runtime.installedBuildWatch?.current() ?? null,

@@ -65,6 +65,13 @@ mac:
     NSNetworkVolumesUsageDescription: >-
       Agents you launch in Exawatt read and write the project folders you
       open, including projects on network volumes.
+    # Agents in Exawatt's terminals are attributed to Exawatt, so their first
+    # connection to a LAN address or `.local` name raises Local Network
+    # privacy under Exawatt's name (BUG-274, TN3179).
+    NSLocalNetworkUsageDescription: >-
+      Agents you launch in Exawatt connect to computers and devices on your
+      network. Allow access so they can reach the servers and gateways you
+      run there.
   target:
     - target: dmg
       arch: [arm64]

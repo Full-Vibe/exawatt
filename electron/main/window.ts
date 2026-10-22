@@ -127,6 +127,8 @@ export interface MainWindowDependencies {
   openExternal: (url: string) => unknown;
   /** An inactive launch the operator clicks becomes a normal app. */
   promoteToRegularApp: () => void;
+  /** Makes Exawatt the active app, for a launch the operator asked for. */
+  activateApp: () => void;
   /** Renderer-published menu truth is invalid from here on. */
   onNavigationReset: () => void;
   /** This window's renderer no longer owns mutable workspace state. */
@@ -148,6 +150,10 @@ interface MainWindowController {
   /** The window when it can still parent a native dialog. */
   live(): BrowserWindow | null;
   open(initialUrl: string, appearance: NativeAppearanceResolution): void;
+  /** Brings the window forward as this launch's mode allows: a foreground
+   *  app focuses it, an inactive development launch shows it without taking
+   *  focus, and a hidden automated launch changes nothing on screen. */
+  present(): 'focused' | 'shown' | 'hidden';
   /** Reloads `focused` when it is a web window, else the main window. It
    *  never depends on the renderer being alive to receive focus (BUG-223). */
   reload(focused: unknown, options: { ignoringCache: boolean }): void;
@@ -295,6 +301,20 @@ export function createMainWindowController(
     current: () => mainWindow,
     live: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
     open: createWindow,
+    present() {
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) return 'hidden';
+      if (deps.launchMode === 'hidden') return 'hidden';
+      if (win.isMinimized()) win.restore();
+      if (deps.launchMode === 'inactive' && !inactiveLaunchPromoted) {
+        win.showInactive();
+        return 'shown';
+      }
+      win.show();
+      win.focus();
+      deps.activateApp();
+      return 'focused';
+    },
     reload(focused, { ignoringCache }) {
       const target =
         focused && typeof focused === 'object' && 'webContents' in focused

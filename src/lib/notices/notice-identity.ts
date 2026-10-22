@@ -1,4 +1,5 @@
 import type {
+  MoveToApplicationsOffer,
   NoticeDismissals,
   PreviousVersion,
   ProductUpdateStatus,
@@ -83,6 +84,16 @@ export function whatsNewNotice(
   }
   if (isUnreleasedVersion(currentVersion, availableVersion)) return null;
   return { id: 'whats-new', version: currentVersion };
+}
+
+/**
+ * The offer to move into Applications is about where this copy runs: Not Now
+ * holds for that location, and a copy somewhere else asks again (BUG-305).
+ */
+export function moveToApplicationsNotice(
+  offer: MoveToApplicationsOffer | null
+): NoticeIdentity | null {
+  return offer ? { id: 'move-to-applications', version: offer.location } : null;
 }
 
 export function isDismissed(

@@ -58,6 +58,8 @@ import type {
   SavedDiagnosticsReport,
   HeldOperatorState,
   HeldStateRequest,
+  MoveToApplicationsOffer,
+  MoveToApplicationsOutcome,
   NoticeDismissals,
   PreviousVersion,
   ShutdownStatus,
@@ -220,6 +222,9 @@ interface RequestTable {
   'app:dismiss-notice': Call<[id: string, version: string], NoticeDismissals>;
   /** What the run record knew of the version that ran before this launch. */
   'app:previous-version': Call<[], PreviousVersion>;
+  /** BUG-305: whether to offer moving this copy into Applications. */
+  'app:move-to-applications-offer': Call<[], MoveToApplicationsOffer | null>;
+  'app:move-to-applications': Call<[], MoveToApplicationsOutcome>;
 
   'auth:start-google': Call<[config: ElectronAuthStartConfig], void>;
   'auth:link-github': Call<[config: ElectronAuthLinkConfig], void>;

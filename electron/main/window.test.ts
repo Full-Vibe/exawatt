@@ -54,13 +54,23 @@ class FakeWindow extends EventEmitter {
   webContents = new FakeWebContents();
   destroyed = false;
   shownInactive = 0;
+  minimized = false;
+  calls: string[] = [];
   loaded: string[] = [];
   constructor(readonly options: BrowserWindowConstructorOptions) {
     super();
   }
   isDestroyed = () => this.destroyed;
+  isMinimized = () => this.minimized;
+  restore = () => {
+    this.minimized = false;
+    this.calls.push('restore');
+  };
+  show = () => this.calls.push('show');
+  focus = () => this.calls.push('focus');
   showInactive = () => {
     this.shownInactive += 1;
+    this.calls.push('show-inactive');
   };
   loadURL = async (url: string) => {
     this.loaded.push(url);
@@ -90,6 +100,7 @@ function harness(overrides: Partial<MainWindowDependencies> = {}) {
     isWorkspaceTarget: target => target.startsWith('http://127.0.0.1:23456/'),
     openExternal: url => external.push(url),
     promoteToRegularApp: () => log.push('promote'),
+    activateApp: () => log.push('activate'),
     onNavigationReset: () => log.push('menu-reset'),
     onCheckpointOwnerLost: id => log.push(`owner-lost:${id}`),
     onLaunchScreenLoaded: () => log.push('launch-screen'),
@@ -152,6 +163,30 @@ describe('createMainWindowController', () => {
     first.emit('closed');
     controller.open(WORKSPACE, appearance);
     expect(windows[1].options.show).toBe(true);
+  });
+
+  it('brings the window forward only as far as the launch mode allows', () => {
+    const foreground = harness();
+    foreground.controller.open(WORKSPACE, appearance);
+    foreground.windows[0].minimized = true;
+    expect(foreground.controller.present()).toBe('focused');
+    expect(foreground.windows[0].calls).toEqual(['restore', 'show', 'focus']);
+    expect(foreground.log).toContain('activate');
+
+    const inactive = harness({ launchMode: 'inactive' });
+    inactive.controller.open(WORKSPACE, appearance);
+    expect(inactive.controller.present()).toBe('shown');
+    expect(inactive.windows[0].calls).toEqual(['show-inactive']);
+    expect(inactive.log).not.toContain('activate');
+    // Once the operator has clicked it, it is his foreground app.
+    inactive.windows[0].emit('focus');
+    expect(inactive.controller.present()).toBe('focused');
+
+    const hidden = harness({ launchMode: 'hidden' });
+    hidden.controller.open(WORKSPACE, appearance);
+    expect(hidden.controller.present()).toBe('hidden');
+    expect(hidden.windows[0].calls).toEqual([]);
+    expect(hidden.log).not.toContain('activate');
   });
 
   it('keeps navigation on the workspace origin and sends https elsewhere to the browser', () => {

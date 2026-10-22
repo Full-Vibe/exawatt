@@ -345,6 +345,8 @@ interface DesktopAppApi {
   onNoticeDismissalsChanged: BridgeSubscribe<'app:notice-dismissals-changed'>;
   /** ENG-031 W28: the version this installation ran before this launch. */
   previousVersion: BridgeInvoke<'app:previous-version'>;
+  moveToApplicationsOffer: BridgeInvoke<'app:move-to-applications-offer'>;
+  moveToApplications: BridgeInvoke<'app:move-to-applications'>;
 }
 
 export interface DesktopAuthApi {

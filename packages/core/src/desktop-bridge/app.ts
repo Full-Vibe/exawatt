@@ -245,6 +245,27 @@ export interface UpdateReadyNotice {
   installedSha: string;
 }
 
+/**
+ * BUG-305: an official build is running from outside Applications, and
+ * nothing newer is installed there for a move to replace. `location` is the
+ * running copy's path, which is what Not Now is remembered against.
+ */
+export interface MoveToApplicationsOffer {
+  location: string;
+}
+
+/**
+ * How a move ended: `moving` (the app relaunches from Applications), or it
+ * stayed put because the operator declined macOS's authorization
+ * (`not-moved`), another Exawatt is open from Applications
+ * (`other-copy-open`), or the copy failed (`failed`).
+ */
+export type MoveToApplicationsOutcome =
+  | 'moving'
+  | 'not-moved'
+  | 'other-copy-open'
+  | 'failed';
+
 export interface WorkspaceRecoveryState {
   previousRunInterrupted: boolean;
 }
