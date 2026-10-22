@@ -4,9 +4,14 @@ import test from 'node:test';
 import {
   DEFAULT_MAX_HOURS,
   formatPublicSyncReport,
+  formatWorkflowReport,
+  githubRepository,
   owedSourceCommits,
   parsePublicSyncArgs,
   publicSyncVerdict,
+  publicWorkflowReport,
+  publicWorkflowVerdicts,
+  readPublicWorkflowRuns,
 } from './public-sync-check.mjs';
 
 // BUG-131. The comparison itself (`comparePublicSnapshot`) is proved against
@@ -151,4 +156,203 @@ test('arguments default to a day and refuse what they cannot use', () => {
   assert.throws(() => parsePublicSyncArgs(['--max-hours', '0']), /positive/u);
   assert.throws(() => parsePublicSyncArgs(['--public']), /Usage/u);
   assert.throws(() => parsePublicSyncArgs(['--force', 'x']), /Usage/u);
+});
+
+// BUG-316. Runs as GitHub's REST `GET /repos/Full-Vibe/exawatt/actions/runs`
+// returned them on 2026-10-22 (the fields the check reads, values verbatim):
+// Secret Scan red since run 199 after a pass, a cancelled run between them,
+// CI with no pass in the page, CodeQL green.
+const PUBLIC_RUNS = [
+  {
+    id: 39778751570,
+    name: 'Secret Scan',
+    path: '.github/workflows/gitleaks.yml',
+    workflow_id: 337625252,
+    head_branch: 'master',
+    head_sha: '19b534f970ae50549f4fb2f88fee93ee6e83957b',
+    event: 'push',
+    status: 'completed',
+    conclusion: 'failure',
+    run_number: 329,
+    created_at: '2026-10-22T12:29:25Z',
+    html_url: 'https://github.com/Full-Vibe/exawatt/actions/runs/39778751570',
+  },
+  {
+    id: 39778751387,
+    name: 'CI',
+    path: '.github/workflows/ci.yml',
+    workflow_id: 337625250,
+    head_branch: 'master',
+    head_sha: '19b534f970ae50549f4fb2f88fee93ee6e83957b',
+    event: 'push',
+    status: 'completed',
+    conclusion: 'failure',
+    run_number: 329,
+    created_at: '2026-10-22T12:29:25Z',
+    html_url: 'https://github.com/Full-Vibe/exawatt/actions/runs/39778751387',
+  },
+  {
+    id: 39778751376,
+    name: 'CodeQL',
+    path: '.github/workflows/codeql.yml',
+    workflow_id: 337625251,
+    head_branch: 'master',
+    head_sha: '19b534f970ae50549f4fb2f88fee93ee6e83957b',
+    event: 'push',
+    status: 'completed',
+    conclusion: 'success',
+    run_number: 338,
+    created_at: '2026-10-22T12:29:25Z',
+    html_url: 'https://github.com/Full-Vibe/exawatt/actions/runs/39778751376',
+  },
+  {
+    id: 37367135412,
+    name: 'Secret Scan',
+    path: '.github/workflows/gitleaks.yml',
+    workflow_id: 337625252,
+    head_branch: 'master',
+    head_sha: 'fe5fecf679d96e10a7cfc5b8638d8a4d317dc334',
+    event: 'push',
+    status: 'completed',
+    conclusion: 'failure',
+    run_number: 199,
+    created_at: '2026-10-05T20:01:18Z',
+    html_url: 'https://github.com/Full-Vibe/exawatt/actions/runs/37367135412',
+  },
+  {
+    id: 37366230830,
+    name: 'Secret Scan',
+    path: '.github/workflows/gitleaks.yml',
+    workflow_id: 337625252,
+    head_branch: 'master',
+    head_sha: 'fc601430fad231de089a5f464faf62ed262b195c',
+    event: 'push',
+    status: 'completed',
+    conclusion: 'cancelled',
+    run_number: 198,
+    created_at: '2026-10-05T19:52:48Z',
+    html_url: 'https://github.com/Full-Vibe/exawatt/actions/runs/37366230830',
+  },
+  {
+    id: 37261980484,
+    name: 'Secret Scan',
+    path: '.github/workflows/gitleaks.yml',
+    workflow_id: 337625252,
+    head_branch: 'master',
+    head_sha: '9511b7f459577ca480cf9cc61f30031fd269c7a6',
+    event: 'push',
+    status: 'completed',
+    conclusion: 'success',
+    run_number: 195,
+    created_at: '2026-10-05T04:05:01Z',
+    html_url: 'https://github.com/Full-Vibe/exawatt/actions/runs/37261980484',
+  },
+];
+
+/** A `fetch` that answers like GitHub, recording what it was asked. */
+function github(status, body, calls = []) {
+  return async (url, init) => {
+    calls.push({ url: new URL(url), headers: init.headers });
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+}
+
+test('the public repository is named from every form its remote takes', () => {
+  for (const url of [
+    'https://github.com/Full-Vibe/exawatt.git',
+    'https://github.com/Full-Vibe/exawatt',
+    'git@github.com:Full-Vibe/exawatt.git',
+    'ssh://git@github.com/Full-Vibe/exawatt.git',
+  ]) {
+    assert.equal(githubRepository(url), 'Full-Vibe/exawatt', url);
+  }
+  assert.equal(githubRepository('/tmp/public.git'), undefined);
+  assert.equal(githubRepository('https://example.test/a/b.git'), undefined);
+});
+
+test('the runs are read as concluded master pushes, with the token when there is one', async () => {
+  const calls = [];
+  const runs = await readPublicWorkflowRuns('Full-Vibe/exawatt', {
+    token: 'test-token',
+    request: github(200, { total_count: 6, workflow_runs: PUBLIC_RUNS }, calls),
+  });
+  assert.equal(runs.length, PUBLIC_RUNS.length);
+  const [{ url, headers }] = calls;
+  assert.equal(url.pathname, '/repos/Full-Vibe/exawatt/actions/runs');
+  assert.equal(url.searchParams.get('branch'), 'master');
+  assert.equal(url.searchParams.get('event'), 'push');
+  assert.equal(url.searchParams.get('status'), 'completed');
+  assert.equal(headers.authorization, 'Bearer test-token');
+  const anonymous = [];
+  await readPublicWorkflowRuns('Full-Vibe/exawatt', {
+    request: github(200, { total_count: 0, workflow_runs: [] }, anonymous),
+  });
+  assert.equal(anonymous[0].headers.authorization, undefined);
+});
+
+test('a refused or malformed answer is an error, never an empty list', async () => {
+  await assert.rejects(
+    readPublicWorkflowRuns('Full-Vibe/exawatt', {
+      request: github(403, { message: 'API rate limit exceeded' }),
+    }),
+    /GitHub answered 403/u
+  );
+  await assert.rejects(
+    readPublicWorkflowRuns('Full-Vibe/exawatt', {
+      request: github(200, { message: 'Not Found' }),
+    }),
+    /no workflow_runs/u
+  );
+});
+
+test('each workflow is judged by its newest pass or failure and dated from its newest pass', () => {
+  const verdicts = Object.fromEntries(
+    publicWorkflowVerdicts(PUBLIC_RUNS).map(verdict => [verdict.name, verdict])
+  );
+  assert.deepEqual(Object.keys(verdicts).sort(), [
+    'CI',
+    'CodeQL',
+    'Secret Scan',
+  ]);
+  assert.equal(verdicts.CodeQL.status, 'green');
+  const scan = verdicts['Secret Scan'];
+  assert.equal(scan.status, 'failing');
+  assert.equal(scan.latest.id, 39778751570);
+  // The cancelled run between them is neither a pass nor a failure.
+  assert.equal(scan.failures, 2);
+  assert.equal(scan.since.id, 37367135412);
+  assert.equal(scan.sinceIsBound, false);
+  assert.equal(verdicts.CI.status, 'failing');
+  assert.equal(verdicts.CI.sinceIsBound, true);
+  const report = formatWorkflowReport(Object.values(verdicts)).join('\n');
+  for (const name of ['CI', 'Secret Scan']) {
+    assert.match(report, new RegExp(`FAILING: ${name} `, 'u'));
+  }
+  assert.doesNotMatch(report, /CodeQL/u);
+  assert.match(report, /actions\/runs\/39778751570/u);
+});
+
+test('only a read that finds every workflow green lets the check pass', async () => {
+  const green = PUBLIC_RUNS.filter(run => run.name === 'CodeQL');
+  const cases = [
+    ['green', github(200, { workflow_runs: green }), true],
+    ['failing', github(200, { workflow_runs: PUBLIC_RUNS }), false],
+    ['empty', github(200, { workflow_runs: [] }), false],
+    ['refused', github(502, { message: 'Bad Gateway' }), false],
+  ];
+  for (const [label, request, passes] of cases) {
+    const report = await publicWorkflowReport(
+      'https://github.com/Full-Vibe/exawatt.git',
+      { request }
+    );
+    assert.equal(report.green, passes, label);
+    assert.ok(report.lines.length > 0, label);
+  }
+  const elsewhere = await publicWorkflowReport('/tmp/public.git', {
+    request: github(200, { workflow_runs: green }),
+  });
+  assert.equal(elsewhere.green, false);
 });

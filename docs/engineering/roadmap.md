@@ -1914,7 +1914,7 @@ Milestones:
 - [x] OS2.3 Public visibility flipped 2026-08-19 after the initial seed/history secret scan and BUG-100 proof; later live evidence corrected the early CI reading—BUG-110 is a Linux worker-exit hang, not expected concurrency—and OS5.5 owns the first green current-HEAD run.
 - [x] OS2.4 Public projection continuity: ordinary public add/change/delete/revert history remains deterministic and fast-forwardable; deterministic refusal stops public-path delivery; new commit metadata obeys the public/private boundary; a certified non-force snapshot restores current parity. Historical metadata disposition remains separate under BUG-112.
 - [x] OS5.4 Exact public recertification: the certified snapshot passes all 14 clean-room gates, including community packaging/runtime and network observation; evidence in the 2026-09-07 ENG-030 milestone.
-- [ ] OS5.5 First green public CI and live repository security: CI, Secret Scan and CodeQL runs pass on the repaired public source (2026-09-07); live-control verification and individual alert disposition remain separate work.
+- [ ] OS5.5 First green public CI and live repository security: CI, Secret Scan and CodeQL runs pass on the repaired public source (2026-09-07); live-control verification and individual alert disposition remain separate work. AMENDED 2026-10-22: two regressed since, public CI from 2026-09-29 (three delivery-script tests) and Secret Scan from 2026-10-05 (BUG-316); the daily public-sync check now fails naming a red public workflow.
 - [ ] OS4.4 Official public Release provenance: the private dispatch-only workflow publishes one immutable public tag/Release whose signed assets and source archive verify the embedded `ReleaseProvenanceV1` tuple before the Supabase feed advances. AMENDED 2026-09-13: official builds are published as GitHub Releases before the launch moment, which is also what retires BUG-130; the rescued `agent/oss-release-workflow` branch on origin is the R3/R4 packet and needs a rebase and review, not a merge. Rebased and landed 2026-09-29 (R4).
 - [x] OS4.5 Hosted reference-service conformance: all seven production operations and Exawatt's composed private handlers pass the same Apache V1, legacy, mismatch, absent-capability, idempotency, media, closed-envelope, problem, and no-replay matrix as the strict custom-distributor harness (completed 2026-08-20).
 - [ ] OS6.0 Public presentation polish after the operational gates: complete the already-promoted footer-copy removal, repository homepage/topics/labels, stable package metadata, social preview, and a CI badge only after a real public run is green. AMENDED 2026-09-13 (operator answers): create the Discord server and point README, SUPPORT.md and the launch post at it; publish `docs/engineering/guides/add-an-agent-source.md` with the ordered touch list and a copyable eval, and prepare contribution guidance (AMENDED 2026-09-18: publishing starter issues and recruiting contributors wait for OS6.2; launch prioritizes users and feedback); declare `engines.node` and `.nvmrc`; neutralize the projector commit trailer wording.
@@ -5278,3 +5278,26 @@ prefix failed, the last car is convicted only because the full stack failed
 twice, and the stack without the guilty car runs the check once, so the
 refusal says whether another car also breaks it. The run-everything-per-prefix
 path is deleted. Fixed in agent/train-bisect, `<sha pending>`.
+
+### BUG-316 Public Secret Scan was red for 17 days and nothing private said so
+
+Status: done · ENG-030 · found 2026-10-22 by the secret-scan packet; fixed the same day (`<sha pending>`).
+
+Public Secret Scan (gitleaks over the complete public history) failed every
+push from run 199 on 2026-10-05 (`fe5fecf6`, the projection of `a7b0ee03`):
+three findings that day, five from 2026-10-15. All five are `generic-api-key`
+matches and none is a credential: the `owner.token` UUIDs of three terminal
+delivery-queue tickets captured into
+`electron/main/roadmap/delivery-queue.fixtures.ts` (`a7b0ee03`), and the
+presentation preference's `exawatt.*.v1` localStorage key in
+`src/lib/presentation/preference-source.ts` (`4e1c3597`) and
+`scripts/settings-navigation-eval.mjs` (`d17fa254`). The private landing never
+runs gitleaks, and the public job's verdict reached no one. Fix: the fixture
+carries a synthetic token per ticket; `scripts/gitleaks.toml` allows the four
+historical values by exact value and rule, because public history is never
+rewritten; and `scripts/public-sync-check.mjs`
+now also reads the public repository's concluded push runs on `master` and
+fails the daily run, naming the workflow, when a workflow's newest one failed.
+Its first run also names public CI, red since 2026-09-29 on three
+delivery-script tests. The daily workflow passes no token, so that read is
+anonymous, one request a day.

@@ -8,10 +8,17 @@
 // they differ it dates the oldest source commit the public copy is missing.
 // Over the limit, it exits 1, so a scheduled run turns red and notifies.
 //
+// BUG-316. A copy that publishes on time can still be red where only the
+// public repository runs it: Secret Scan failed every public push from
+// 2026-10-05 and nothing private said so. The check also reads the public
+// repository's concluded push runs on master and fails, naming the workflow,
+// when any workflow's newest one failed.
+//
 // Usage: node scripts/public-sync-check.mjs [--public <repository>]
 //          [--source <rev>] [--max-hours <n>]
 //
-// `--public` defaults to this checkout's `public` remote.
+// `--public` defaults to this checkout's `public` remote. The runs are read
+// with `GH_TOKEN` or `GITHUB_TOKEN` when one is set, anonymously otherwise.
 
 import { execFile } from 'node:child_process';
 import { appendFile } from 'node:fs/promises';
@@ -26,8 +33,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOUR = 3600;
 const PATHS_SHOWN = 8;
 export const DEFAULT_MAX_HOURS = 24;
-const RECOVERY =
-  'docs/engineering/agent-delivery.md#reviewed-public-catch-up';
+const RECOVERY = 'docs/engineering/agent-delivery.md#reviewed-public-catch-up';
 
 export function parsePublicSyncArgs(argv) {
   const options = { source: 'HEAD', maxHours: DEFAULT_MAX_HOURS };
@@ -114,6 +120,120 @@ export function formatPublicSyncReport(verdict, comparison, maxHours) {
     '  A pending push clears on the next landing. A render refusal names its file in the landing log; fix the directive and land.',
     `  Recover a longer stall: ${RECOVERY}`,
   ];
+}
+
+// A run that was cancelled, skipped or neutral says nothing about the tree.
+const RED_CONCLUSIONS = new Set([
+  'failure',
+  'timed_out',
+  'startup_failure',
+  'action_required',
+]);
+const RUNS_READ = 100;
+
+/** `owner/name` of a github.com repository URL, or undefined. */
+export function githubRepository(url) {
+  const match =
+    /^(?:https:\/\/github\.com\/|(?:ssh:\/\/)?git@github\.com[:/])([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/u.exec(
+      url.trim()
+    );
+  return match ? `${match[1]}/${match[2]}` : undefined;
+}
+
+/**
+ * The newest concluded push runs on `ref`, from GitHub's REST
+ * `GET /repos/{repository}/actions/runs`. A refused or malformed answer
+ * throws: an unread repository is never reported as a green one.
+ */
+export async function readPublicWorkflowRuns(
+  repository,
+  { ref = 'master', token, request = globalThis.fetch } = {}
+) {
+  const query = new URLSearchParams({
+    branch: ref,
+    event: 'push',
+    status: 'completed',
+    per_page: String(RUNS_READ),
+  });
+  const url = `https://api.github.com/repos/${repository}/actions/runs?${query}`;
+  const response = await request(url, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      'x-github-api-version': '2022-11-28',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub answered ${response.status} for ${url}`);
+  }
+  const body = await response.json();
+  if (!Array.isArray(body?.workflow_runs)) {
+    throw new Error(`GitHub's answer for ${url} carries no workflow_runs`);
+  }
+  return body.workflow_runs;
+}
+
+/**
+ * One verdict per workflow among `runs`, judged by its newest run that
+ * passed or failed. A failing workflow is dated from the oldest failure after
+ * its newest pass; when the runs read hold no pass, `since` is only a bound.
+ */
+export function publicWorkflowVerdicts(runs) {
+  const byWorkflow = new Map();
+  const decisive = runs
+    .filter(
+      run => run.conclusion === 'success' || RED_CONCLUSIONS.has(run.conclusion)
+    )
+    .sort(
+      (a, b) =>
+        Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id
+    );
+  for (const run of decisive) {
+    const own = byWorkflow.get(run.workflow_id) ?? [];
+    own.push(run);
+    byWorkflow.set(run.workflow_id, own);
+  }
+  return [...byWorkflow.values()]
+    .map(own => {
+      const latest = own[0];
+      const lastGreen = own.findIndex(run => run.conclusion === 'success');
+      if (lastGreen === 0)
+        return { name: latest.name, status: 'green', latest };
+      const red = lastGreen === -1 ? own : own.slice(0, lastGreen);
+      return {
+        name: latest.name,
+        status: 'failing',
+        latest,
+        failures: red.length,
+        since: red[red.length - 1],
+        sinceIsBound: lastGreen === -1,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function formatWorkflowReport(verdicts) {
+  if (verdicts.length === 0) {
+    return [
+      '[public-sync] UNREAD: no concluded push run on public master names a workflow',
+    ];
+  }
+  const failing = verdicts.filter(verdict => verdict.status === 'failing');
+  if (failing.length === 0) {
+    return [
+      `[public-sync] public workflows green: ${verdicts.map(verdict => verdict.name).join(', ')}`,
+    ];
+  }
+  return failing.flatMap(verdict => {
+    const runs = `${verdict.failures} run${verdict.failures === 1 ? '' : 's'}`;
+    const since = verdict.sinceIsBound
+      ? `red in all ${runs} read, back to ${verdict.since.created_at}`
+      : `red since ${verdict.since.created_at} (${runs})`;
+    return [
+      `[public-sync] FAILING: ${verdict.name} on public master, ${since}`,
+      `  latest ${verdict.latest.html_url} on ${short(verdict.latest.head_sha)}`,
+    ];
+  });
 }
 
 async function git(args) {
@@ -204,13 +324,56 @@ async function main() {
     maxHours: options.maxHours,
   });
   const lines = formatPublicSyncReport(verdict, comparison, options.maxHours);
+  const workflows = await publicWorkflowReport(publicRepository, {
+    token: (process.env.GH_TOKEN || process.env.GITHUB_TOKEN)?.trim(),
+  });
+  lines.push(...workflows.lines);
   process.stdout.write(`${lines.join('\n')}\n`);
   const summary = process.env.GITHUB_STEP_SUMMARY?.trim();
   if (summary) {
     await appendFile(summary, `\`\`\`\n${lines.join('\n')}\n\`\`\`\n`);
   }
-  if (verdict.status === 'stalled' || verdict.status === 'diverged') {
+  if (
+    verdict.status === 'stalled' ||
+    verdict.status === 'diverged' ||
+    !workflows.green
+  ) {
     process.exitCode = 1;
+  }
+}
+
+/**
+ * What the check says about the public repository's workflows, and whether
+ * that lets it pass: only a read that found every workflow green does.
+ */
+export async function publicWorkflowReport(
+  publicRepository,
+  { token, request } = {}
+) {
+  const repository = githubRepository(publicRepository);
+  if (!repository) {
+    return {
+      green: false,
+      lines: [
+        '[public-sync] UNREAD: the public repository is not on github.com, so its workflows were not read',
+      ],
+    };
+  }
+  try {
+    const verdicts = publicWorkflowVerdicts(
+      await readPublicWorkflowRuns(repository, { token, request })
+    );
+    return {
+      green:
+        verdicts.length > 0 &&
+        verdicts.every(verdict => verdict.status === 'green'),
+      lines: formatWorkflowReport(verdicts),
+    };
+  } catch (error) {
+    return {
+      green: false,
+      lines: [`[public-sync] UNREAD: public workflow runs: ${error.message}`],
+    };
   }
 }
 

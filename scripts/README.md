@@ -69,7 +69,7 @@ human-facing package command:
 | `merge-append-docs.mjs`             | git merge driver `exawatt-append` (`.gitattributes`)      |
 | `open-source-paths.manifest.json`    | fail-closed publication path classifier                   |
 | `production-audit-baseline.json`     | production dependency audit input                         |
-| `public-sync-check.mjs`              | scheduled check that the public copy matches its source   |
+| `public-sync-check.mjs`              | scheduled check that the public copy is current and green |
 | `sign-renderer-archive.cjs`          | dogfood Electron Builder hook                             |
 
 The following are deliberately direct-use research, capture, or historical
