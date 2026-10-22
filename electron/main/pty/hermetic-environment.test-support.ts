@@ -20,8 +20,27 @@ export const HERMETIC_VARIABLES: readonly string[] = [
   ...new Set([...SHELL_STARTUP_VARIABLES, ...LOGIN_ENVIRONMENT_KEYS]),
 ];
 
+/**
+ * The variables an Exawatt Session gives every process it starts: the bus
+ * port and token and the Session id (`bus-ipc.ts`). Agents run this suite
+ * inside a Session and CI does not, so a test that read them passed in one
+ * and failed in the other (`session-launch-environment.test.ts` saw the
+ * agent's own bus port, 2026-10-21).
+ */
+const SESSION_VARIABLE = /^EXAWATT_(?:BUS|SESSION)_/u;
+
+/** The hermetic variables `env` holds now, a Session's included. */
+export function hermeticKeys(env: NodeJS.ProcessEnv): string[] {
+  return [
+    ...new Set([
+      ...HERMETIC_VARIABLES,
+      ...Object.keys(env).filter(key => SESSION_VARIABLE.test(key)),
+    ]),
+  ];
+}
+
 /** Clear every hermetic variable in `env` and give it `home`. */
 export function makeHermetic(env: NodeJS.ProcessEnv, home: string): void {
-  for (const key of HERMETIC_VARIABLES) delete env[key];
+  for (const key of hermeticKeys(env)) delete env[key];
   env.HOME = home;
 }

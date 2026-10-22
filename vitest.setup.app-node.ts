@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  HERMETIC_VARIABLES,
+  hermeticKeys,
   makeHermetic,
 } from './electron/main/pty/hermetic-environment.test-support';
 
@@ -25,7 +25,8 @@ import {
  * So every test file starts with a private, empty HOME, and without the
  * variables that point shells or harnesses at other startup files or state:
  * `HERMETIC_VARIABLES`, which takes the harness half from the product's own
- * declaration of what it resolves, so the two cannot drift.
+ * declaration of what it resolves, so the two cannot drift, and without the
+ * bus and Session variables of the Exawatt Session an agent runs it in.
  * A login shell then runs only the system's own startup, and a test that
  * wants a home with something in it writes one, as several already do. This
  * file runs before each test file's own imports, so a module that reads
@@ -56,7 +57,7 @@ for (const entry of readdirSync(HOMES)) {
 }
 
 const prior = new Map(
-  HERMETIC_VARIABLES.map(key => [key, process.env[key]] as const)
+  hermeticKeys(process.env).map(key => [key, process.env[key]] as const)
 );
 const home = mkdtempSync(join(HOMES, `${process.pid}-`));
 makeHermetic(process.env, home);
