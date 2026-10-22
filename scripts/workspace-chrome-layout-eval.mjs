@@ -1357,15 +1357,16 @@ try {
   await page.keyboard.press('Meta+Slash');
   const shortcutDialog = page.getByRole('dialog');
   await shortcutDialog.waitFor();
-  for (const label of [
-    'Move focus between the Session and app controls',
-    'Jump to Session 1–8, or 9 for the last Session',
-    'Return focus to the Session',
+  // Rows by their registry id, so a relabelled command stays covered.
+  for (const id of [
+    'fixed-focus-toggle',
+    'fixed-tab-ordinals',
+    'fixed-back-out',
   ]) {
-    await shortcutDialog.getByText(label).waitFor();
+    await shortcutDialog.locator(`[data-shortcut-id="${id}"]`).waitFor();
   }
   await shortcutDialog
-    .getByText('Return focus to the Session')
+    .locator('[data-shortcut-id="fixed-back-out"]')
     .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'shortcut-help-all-families.png'),

@@ -520,10 +520,11 @@ try {
       check(
         'Demo help entries name working fixed commands',
         (await demoHelp
-          .getByText('Move focus between the Session and app controls')
+          .locator('[data-shortcut-id="fixed-focus-toggle"]')
           .count()) === 1 &&
-          (await demoHelp.getByText('Return focus to the Session').count()) ===
-            1
+          (await demoHelp
+            .locator('[data-shortcut-id="fixed-back-out"]')
+            .count()) === 1
       );
       await page.keyboard.press('Escape');
       await demoHelp.waitFor({ state: 'detached' });
