@@ -36,6 +36,7 @@ import { useTeamOrderPreference } from './team-order-preference';
 import { useFlipTiles } from './use-flip-tiles';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import {
   delegationCopy,
   sessionGlyphState,
@@ -711,24 +712,20 @@ export function ExposeOverlay({
     return () => window.removeEventListener(FOCUS_SESSIONS_EVENT, focus);
   }, [focusSelection]);
 
-  useEffect(() => {
-    const closeFromShellChrome = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.key !== 'Escape') return;
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (rootRef.current?.contains(target)) return;
-      if (
-        target.closest('[role="dialog"], [cmdk-root], .xterm-helper-textarea')
-      ) {
-        return;
-      }
-      event.preventDefault();
+  // Leaving Team is this altitude's back-out rung (BUG-302). Ambient: it
+  // answers wherever focus is, the grid, Team's own controls or the shell
+  // chrome around it, once no dialog, field, panel or dock above it took the
+  // key. Its element sits inside the workspace, so it outranks the Agent
+  // altitude's return to the Session while Team is open.
+  useBackOut({
+    rung: 'altitude',
+    ambient: true,
+    element: rootRef,
+    back: () => {
       onClose();
-    };
-    window.addEventListener('keydown', closeFromShellChrome, true);
-    return () =>
-      window.removeEventListener('keydown', closeFromShellChrome, true);
-  }, [onClose]);
+      return true;
+    },
+  });
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     // keys born inside the dock belong to it (its panels stop propagation
@@ -738,11 +735,11 @@ export function ExposeOverlay({
     }
     // …and so do keys born inside anything that owns text or its own
     // activation. Without this the grid claims every key that is not an
-    // arrow, so a focused field never sees `j`/`k`, Enter picks a tile
-    // instead of committing, and Escape closes the altitude instead of
-    // cancelling the edit (FIX-006).
+    // arrow, so a focused field never sees `j`/`k` and Enter picks a tile
+    // instead of committing (FIX-006). Escape is not the grid's: the
+    // back-out ladder resolves it.
     if (teamGridYieldsTo(e.target)) return;
-    if (e.key === 'Escape' || (e.metaKey && e.key.toLowerCase() === 'o')) {
+    if (e.metaKey && e.key.toLowerCase() === 'o') {
       e.preventDefault();
       onClose();
       return;
@@ -1226,7 +1223,7 @@ export function ExposeOverlay({
               style={{ borderColor: HUD.strokeFaint }}
               onKeyDown={event => {
                 // these keys belong to the control, not the roving Team
-                // grid; Escape still bubbles to the altitude-level return
+                // grid; Escape still reaches the back-out ladder
                 if (event.key !== 'Escape') event.stopPropagation();
               }}
             >
@@ -1268,7 +1265,7 @@ export function ExposeOverlay({
               onClick={() => void setGoalVisualsEnabled(!goalVisualsEnabled)}
               onKeyDown={event => {
                 // Enter/Space belong to this switch, not the roving Team grid.
-                // Escape still bubbles to the altitude-level return handler.
+                // Escape still reaches the back-out ladder.
                 if (event.key !== 'Escape') event.stopPropagation();
               }}
               className="inline-flex h-7 shrink-0 items-center gap-2 rounded px-2 font-mono text-chrome-label outline-none transition-colors duration-200 hover:bg-hud-stroke-faint focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
@@ -1486,6 +1483,7 @@ export function ExposeOverlay({
           overlay={!dockDocked}
           tab={dockTab}
           onTabChange={setDockTab}
+          onBack={exitDockFocus}
           panels={[
             {
               id: 'roadmap',
@@ -1512,7 +1510,6 @@ export function ExposeOverlay({
                   }
                   onWrite={writeRoadmap}
                   onUndo={undoRoadmap}
-                  onExitFocus={exitDockFocus}
                 />
               ),
             },
@@ -1531,7 +1528,6 @@ export function ExposeOverlay({
                   participants={chatterParticipants}
                   visible={dockTab === 'chatter'}
                   onSelectSession={selectSessionTab}
-                  onExitFocus={exitDockFocus}
                 />
               ),
             },

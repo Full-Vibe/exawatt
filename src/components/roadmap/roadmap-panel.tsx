@@ -24,6 +24,7 @@ import {
   useState,
 } from 'react';
 import { takeTeamDockSummon } from '@/components/team/team-dock-summon';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha as withAlpha,
@@ -180,7 +181,6 @@ export function RoadmapPanel({
   projectName,
   projectColor,
   onSelectSession,
-  onExitFocus,
   untriagedFeedback,
   onStartAgent = async () => false,
   onStartRemediation = async () => false,
@@ -201,8 +201,6 @@ export function RoadmapPanel({
   projectColor: string | null;
   /** focus the terminal tab a chip points at */
   onSelectSession: (tabId: string) => void;
-  /** Escape at the queue: leave the panel (Team returns to its tiles) */
-  onExitFocus?: () => void;
   /** ENG-025 F2.1: operator inbox pressure. Omit to sample live Supabase
    *  state, which returns a count for operator accounts only (F3.1); the lab
    *  passes a fixture value. null hides the line. */
@@ -227,6 +225,21 @@ export function RoadmapPanel({
   const [shippedOpen, setShippedOpen] = useState(false);
   const [parkedOpen, setParkedOpen] = useState(false);
   const [drillId, setDrillId] = useState<string | null>(null);
+  // Escape is the panel's rung of the back-out ladder: an open item folds
+  // back to the queue (operator, 2026-07-12: drill, queue, out); at the queue
+  // there is nothing left here, and the dock takes the operator back to
+  // Team's tiles. Focus returns to the panel, never to a button the fold
+  // just removed.
+  useBackOut({
+    rung: 'panel',
+    element: rootRef,
+    back: () => {
+      if (!drillId) return false;
+      setDrillId(null);
+      rootRef.current?.focus({ preventScroll: true });
+      return true;
+    },
+  });
   const [sel, setSel] = useState(0);
   // milestone roving inside the drill (S7, the deferred R2 level)
   const [msel, setMsel] = useState(0);
@@ -496,15 +509,9 @@ export function RoadmapPanel({
       e.preventDefault();
       e.stopPropagation();
     };
-    if (key === 'Escape' || key === 'ArrowLeft') {
+    if (key === 'ArrowLeft') {
       handled();
       if (drillId) setDrillId(null);
-      else if (key === 'Escape') {
-        // the lens is scoped to the project, and Escape backs out of it
-        // (operator, 2026-07-12): drill → queue → out, and "out" is Team's
-        // tiles (S12)
-        onExitFocus?.();
-      }
       return;
     }
     if (drillId) {
@@ -597,6 +604,7 @@ export function RoadmapPanel({
       // reported the empty state as regressed when the empty state was
       // healthy and the panel was simply scoped elsewhere (BUG-040).
       data-roadmap-project={projectDir ?? undefined}
+      data-roadmap-mode={drillId ? 'item' : 'queue'}
       aria-label="Project roadmap"
       tabIndex={-1}
       onKeyDown={onKeyDown}

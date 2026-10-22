@@ -11,12 +11,14 @@
  * honest line, never an empty list.
  *
  * Keyboard: ↑/↓ (or j/k) move, Enter opens a row or opens a message in place,
- * Escape (or ←) backs out of the thread and then out of the panel; Tab from
- * the thread reaches Send as operator, where ⌘↩ sends and Escape returns.
+ * Escape (or ←) backs out of the thread; from the list Escape falls to the
+ * dock, which returns to Team's tiles. Tab from the thread reaches Send as
+ * operator, where ⌘↩ sends and Escape returns to the thread.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { markSeenThrough, seenThrough } from '@/lib/bus/read-state';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import { latestAt, newestFirst, threadOf } from '@/lib/bus/selectors';
 import type { BusEndpoint, MessageRecord, BusSendResult } from '@exawatt/core';
 import type { BusMessagesState } from '@/lib/bus/use-bus';
@@ -48,7 +50,6 @@ export function ChatterView({
   participants,
   visible,
   onSelectSession,
-  onExitFocus,
 }: {
   projectId: string | null;
   projectName: string | null;
@@ -60,8 +61,6 @@ export function ChatterView({
   visible: boolean;
   /** jump to a Session's tab */
   onSelectSession: (tabId: string) => void;
-  /** Escape at the list: leave the panel (Team returns to its tiles) */
-  onExitFocus?: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'list' });
@@ -137,6 +136,18 @@ export function ChatterView({
     focusRoot();
   };
 
+  // The panel's rung of the back-out ladder: a thread closes to the list;
+  // the list has nothing left, so Escape falls to the dock.
+  useBackOut({
+    rung: 'panel',
+    element: rootRef,
+    back: () => {
+      if (mode.kind !== 'thread') return false;
+      backToList();
+      return true;
+    },
+  });
+
   const toggle = (id: string) =>
     setExpanded(current => {
       const next = new Set(current);
@@ -155,7 +166,7 @@ export function ChatterView({
     };
     const key = event.key;
     if (mode.kind === 'thread') {
-      if (key === 'Escape' || key === 'ArrowLeft') {
+      if (key === 'ArrowLeft') {
         handled();
         backToList();
       } else if (key === 'ArrowDown' || key === 'j') {
@@ -173,10 +184,7 @@ export function ChatterView({
       }
       return;
     }
-    if (key === 'Escape') {
-      handled();
-      onExitFocus?.();
-    } else if (key === 'ArrowDown' || key === 'j') {
+    if (key === 'ArrowDown' || key === 'j') {
       handled();
       setSel(s => Math.min(list.length - 1, s + 1));
     } else if (key === 'ArrowUp' || key === 'k') {

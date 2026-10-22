@@ -7,7 +7,7 @@
  * bus client — plus every Chatter state side by side: each delivery result,
  * loading, empty, Live without a bus, and a failed read.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { DEMO_BASE_AGENTS, DEMO_PROJECTS } from '@exawatt/core';
 import { RoadmapPanel } from '@/components/roadmap/roadmap-panel';
 import { ROADMAP_LAB_STATES } from '@/components/roadmap/lab-fixtures';
@@ -88,6 +88,7 @@ function Frame({
 function DockSpecimen() {
   const [projectId, setProjectId] = useState(CHATTER_PROJECTS[0].dir);
   const [tab, setTab] = useTeamDockTab();
+  const gridRef = useRef<HTMLDivElement>(null);
   const project = CHATTER_PROJECTS.find(p => p.dir === projectId)!;
   const chatter = useBusMessages(projectId);
   const unread = useProjectUnread(projectId, chatter.state);
@@ -115,7 +116,9 @@ function DockSpecimen() {
         style={{ borderColor: HUD.strokeFaint, background: HUD.bg.void }}
       >
         <div
-          className="grid flex-1 place-items-center font-ui text-chrome-meta"
+          ref={gridRef}
+          tabIndex={-1}
+          className="grid flex-1 place-items-center font-ui text-chrome-meta outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan/60"
           style={{ color: HUD.textDim }}
         >
           Team grid
@@ -124,6 +127,7 @@ function DockSpecimen() {
           overlay={false}
           tab={tab}
           onTabChange={setTab}
+          onBack={() => gridRef.current?.focus()}
           panels={[
             {
               id: 'roadmap',

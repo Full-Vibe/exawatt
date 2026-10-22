@@ -119,9 +119,9 @@ const MATCH_CASES: MatchCase[] = [
     action: { kind: 'select-tab', index: 8 },
   },
   {
-    familyId: 'fixed-focus-terminal',
+    familyId: 'fixed-back-out',
     event: keyEvent({ key: 'Escape', code: 'Escape' }),
-    action: { kind: 'focus-terminal' },
+    action: { kind: 'back-out' },
   },
 ];
 

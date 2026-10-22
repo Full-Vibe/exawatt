@@ -22,6 +22,7 @@
  *   ⌘E           rename the active tab inline (S2)
  *   ⌘/           keyboard cheat-sheet (S2)
  *   F6           toggle focus between terminal and workspace chrome
+ *   Esc          the back-out ladder's last rung here: back to the Session
  *
  * ⌘-chords are global workspace verbs: they fire even while a terminal or
  * the working-dir input is focused (xterm consumes plain keys; ⌘-chords are
@@ -45,6 +46,7 @@ import {
   matchFixedFamily,
   type FixedFamilyAction,
 } from '@/lib/shortcuts/fixed-families';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 
 /** does this event match the registry's CURRENT binding for a shortcut id?
  *  (users can rebind any workspace verb; hard-coding combos here would make
@@ -89,7 +91,8 @@ export interface FixedWorkspaceShortcutActions {
   moveProject: (delta: 1 | -1) => boolean;
   /** move focus to the other Session/app-controls region */
   toggleFocus: () => boolean;
-  /** leave app controls and return to the active Session */
+  /** leave app controls and return to the active Session: the Agent
+   *  altitude's rung of the back-out ladder */
   focusTerminal: () => boolean;
 }
 
@@ -123,8 +126,12 @@ export interface WorkspaceShortcutActions extends FixedWorkspaceShortcutActions 
   openHelp: () => boolean;
 }
 
+/** The fixed actions this layer applies. Escape's `back-out` is resolved by
+ *  the back-out ladder, which this layer joins below, never here. */
+type WorkspaceFixedAction = Exclude<FixedFamilyAction, { kind: 'back-out' }>;
+
 export function applyFixedFamilyAction(
-  action: FixedFamilyAction,
+  action: WorkspaceFixedAction,
   actions: FixedWorkspaceShortcutActions
 ): boolean {
   switch (action.kind) {
@@ -140,8 +147,6 @@ export function applyFixedFamilyAction(
       return actions.selectTabOrdinal(action.index);
     case 'toggle-focus':
       return actions.toggleFocus();
-    case 'focus-terminal':
-      return actions.focusTerminal();
   }
 }
 
@@ -150,6 +155,16 @@ function useWorkspaceShortcutLayer(
   registryActions: WorkspaceShortcutActions | null,
   enabled = true
 ): void {
+  // Escape from app controls returns to the Session. It is the Agent
+  // altitude's rung, the lowest on the ladder: every dialog, field, panel and
+  // the Team altitude above it answers first. The Session's own terminal
+  // keeps Escape for its program (the ladder never reaches past it).
+  useBackOut({
+    rung: 'altitude',
+    ambient: true,
+    back: () => fixedActions.focusTerminal(),
+    enabled,
+  });
   useEffect(() => {
     if (!enabled) return;
     const onCaptureKey = (e: KeyboardEvent) => {
@@ -157,7 +172,7 @@ function useWorkspaceShortcutLayer(
       for (const family of WORKSPACE_KEY_FAMILIES) {
         if (family.phase !== 'capture' || !family.outranksAltitudes) continue;
         const action = matchFixedFamily(family, e);
-        if (!action) continue;
+        if (!action || action.kind === 'back-out') continue;
         if (applyFixedFamilyAction(action, fixedActions)) e.preventDefault();
         return;
       }
@@ -187,7 +202,7 @@ function useWorkspaceShortcutLayer(
       for (const family of WORKSPACE_KEY_FAMILIES) {
         if (family.phase !== 'capture' || family.outranksAltitudes) continue;
         const action = matchFixedFamily(family, e);
-        if (!action) continue;
+        if (!action || action.kind === 'back-out') continue;
         if (applyFixedFamilyAction(action, fixedActions)) e.preventDefault();
         return;
       }
@@ -199,26 +214,6 @@ function useWorkspaceShortcutLayer(
       // a modal surface (⌘K palette, help modal) owns the keyboard while
       // open — ⌘W there must not close a terminal tab behind it
       if (isOpenModalShortcutTarget(e.target)) return;
-      for (const family of WORKSPACE_KEY_FAMILIES) {
-        if (family.phase !== 'bubble') continue;
-        const action = matchFixedFamily(family, e);
-        if (!action) continue;
-        // Applicability belongs to the layer, not the matcher: Escape names
-        // focus-terminal everywhere, but the terminal keeps it for the TUI.
-        const sessionOwnsEscape =
-          action.kind === 'focus-terminal' &&
-          e.target instanceof Element &&
-          !!e.target.closest(
-            '.xterm-helper-textarea, [data-workspace-session-focus-owner]'
-          );
-        if (
-          !sessionOwnsEscape &&
-          applyFixedFamilyAction(action, fixedActions)
-        ) {
-          e.preventDefault();
-        }
-        return;
-      }
       // Demo and future source adapters mount only the source-agnostic fixed
       // layer. The global registry provider remains their command owner.
       if (!registryActions) return;

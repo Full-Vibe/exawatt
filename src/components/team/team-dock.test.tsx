@@ -161,16 +161,38 @@ describe('Chatter states', () => {
 });
 
 describe('Chatter keyboard and thread', () => {
-  it('opens a thread with Enter, backs out with Escape, then leaves the panel', () => {
-    const onExitFocus = vi.fn();
+  it('opens a thread with Enter, backs out with Escape, then hands Escape to the dock', () => {
+    const onBack = vi.fn();
     const messages = [
       message('q', 'a', 'b', 10),
       message('r', 'b', 'a', 20),
       message('other', 'c', 'd', 30),
     ];
-    const { container } = renderChatter(
-      { status: 'ok', messages },
-      { onExitFocus }
+    const { container } = render(
+      <TeamDock
+        overlay={false}
+        tab="chatter"
+        onTabChange={() => {}}
+        onBack={onBack}
+        panels={[
+          {
+            id: 'chatter',
+            label: 'Chatter',
+            content: (
+              <ChatterView
+                projectId={PROJECT}
+                projectName="Alpha"
+                projectColor="#50e6ff"
+                state={{ status: 'ok', messages }}
+                send={async () => refusedSend('Demo cannot send', 'demo')}
+                participants={new Map()}
+                visible={false}
+                onSelectSession={() => {}}
+              />
+            ),
+          },
+        ]}
+      />
     );
     const root = container.querySelector('[data-chatter]') as HTMLElement;
     fireEvent.keyDown(root, { key: 'ArrowDown' });
@@ -185,9 +207,17 @@ describe('Chatter keyboard and thread', () => {
     expect(container.querySelectorAll('[data-chatter-stamp]').length).toBe(1);
     fireEvent.keyDown(root, { key: 'Escape' });
     expect(root.getAttribute('data-chatter-mode')).toBe('list');
-    expect(onExitFocus).not.toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
     fireEvent.keyDown(root, { key: 'Escape' });
-    expect(onExitFocus).toHaveBeenCalledOnce();
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('Escape on a dock tab hands focus back, the key the dock says it takes', () => {
+    const onBack = vi.fn();
+    render(<Dock onBack={onBack} />);
+    const tab = screen.getByRole('tab', { selected: true });
+    expect(fireEvent.keyDown(tab, { key: 'Escape' })).toBe(false);
+    expect(onBack).toHaveBeenCalledOnce();
   });
 
   it('sends as operator to the chosen Session and shows the result', async () => {
@@ -280,13 +310,14 @@ describe('Chatter refusals', () => {
   });
 });
 
-function Dock() {
+function Dock({ onBack = () => {} }: { onBack?: () => void }) {
   const [tab, setTab] = useTeamDockTab();
   return (
     <TeamDock
       overlay={false}
       tab={tab}
       onTabChange={setTab}
+      onBack={onBack}
       panels={[
         {
           id: 'roadmap',

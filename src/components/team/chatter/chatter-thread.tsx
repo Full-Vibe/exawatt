@@ -9,6 +9,7 @@ import { useRef, useState } from 'react';
 import { sessionSource } from '@/components/workspace/harnesses';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { firstLine } from '@/lib/bus/selectors';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import type { BusEndpoint, MessageRecord, BusSendResult } from '@exawatt/core';
 import { DELIVERY_LABEL, chatterAge, chatterStamp } from './chatter-format';
 import {
@@ -169,13 +170,24 @@ export function ChatterComposer({
   defaultTo: string;
   participants: ChatterParticipants;
   onSend: (to: string, text: string) => Promise<BusSendResult>;
-  /** Escape in the field: hand the keyboard back to the thread */
+  /** Escape in the composer: hand the keyboard back to the thread */
   onLeave: () => void;
 }) {
   const [to, setTo] = useState(defaultTo);
   const [text, setText] = useState('');
   const [state, setState] = useState<ComposerState>({ phase: 'idle' });
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  // The composer's rung of the back-out ladder, from the field, a recipient
+  // or Send alike: the draft stays, the keyboard goes back to the thread.
+  useBackOut({
+    rung: 'field',
+    element: formRef,
+    back: () => {
+      onLeave();
+      return true;
+    },
+  });
   const recipient = recipients.find(r => r.sessionId === to) ?? recipients[0];
 
   const send = async () => {
@@ -193,6 +205,7 @@ export function ChatterComposer({
 
   return (
     <form
+      ref={formRef}
       data-chatter-composer
       onSubmit={event => {
         event.preventDefault();
@@ -256,10 +269,6 @@ export function ChatterComposer({
             event.preventDefault();
             event.stopPropagation();
             void send();
-          } else if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            onLeave();
           }
         }}
         className="min-h-12 w-full resize-none rounded border px-2 py-1.5 font-ui text-chrome-title outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"

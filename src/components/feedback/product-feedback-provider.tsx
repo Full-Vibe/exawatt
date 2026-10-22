@@ -66,6 +66,7 @@ import {
   type QuickFeedbackDetail,
   type QuickFeedbackKind,
 } from './quick-feedback-events';
+import { rememberFocus, type FocusReturn } from '@/lib/shortcuts/back-out';
 
 interface ContextRating {
   durableSessionId: string;
@@ -167,6 +168,8 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   const openingRef = useRef<string | null>(null);
   const temporaryCaptureRef = useRef(false);
   const [temporaryCapture, setTemporaryCapture] = useState(false);
+  // Where the draft was when the composer stepped aside for a capture.
+  const stepAsideRef = useRef<FocusReturn | null>(null);
   const captureReads = useLatestRequest();
   const imageReads = useLatestRequest();
   const [captureAvailable, setCaptureAvailable] = useState(false);
@@ -598,6 +601,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     temporaryCaptureRef.current = true;
     setTemporaryCapture(true);
     setPreparing(value => ({ ...value, image: true }));
+    // The composer steps aside for the capture and comes back to the draft's
+    // own caret and selection, wherever focus was when it left (BUG-284).
+    stepAsideRef.current = rememberFocus(inputRef.current);
     setOpen(false);
     // Capture closures skip exit motion. Two paints ensure the overlay is gone.
     await new Promise<void>(resolve =>
@@ -622,6 +628,8 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         setTemporaryCapture(false);
         setPreparing(value => ({ ...value, image: false }));
         setOpen(true);
+      } else {
+        stepAsideRef.current = null;
       }
     }
   }, [preparing, store, imageReads, patch, activeAttemptId]);
@@ -728,7 +736,10 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
           onCloseAutoFocus={restoreFocus}
           onOpenAutoFocus={event => {
             event.preventDefault();
-            inputRef.current?.focus({ preventScroll: true });
+            const stepAside = stepAsideRef.current;
+            stepAsideRef.current = null;
+            if (!stepAside?.restore(inputRef.current))
+              inputRef.current?.focus({ preventScroll: true });
           }}
           onEscapeKeyDown={event => {
             if (event.isComposing || event.keyCode === 229)

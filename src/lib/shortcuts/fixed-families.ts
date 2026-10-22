@@ -12,7 +12,7 @@ export type FixedFamilyAction =
   | { kind: 'select-project'; index: number }
   | { kind: 'select-tab'; index: number }
   | { kind: 'toggle-focus' }
-  | { kind: 'focus-terminal' };
+  | { kind: 'back-out' };
 
 /** Structural slice of KeyboardEvent, so matching stays pure and DOM-free. */
 export interface FixedFamilyKeyEvent {
@@ -51,7 +51,7 @@ type LiteralTrigger = {
   modifiers?: readonly ModifierKey[];
   action: Extract<
     FixedFamilyAction,
-    { kind: 'toggle-focus' | 'focus-terminal' }
+    { kind: 'toggle-focus' | 'back-out' }
   >;
 };
 
@@ -253,20 +253,22 @@ export const WORKSPACE_KEY_FAMILIES: readonly FixedKeyFamily[] = [
     discoverability:
       'The command palette lists every Session by name and status; a positional row would say less about the same target.',
   }),
+  // Resolved by the back-out ladder (`back-out.ts`), never by the workspace
+  // layer: dialog, field, panel, dock, grid, then the altitude.
   defineFixedFamily({
-    id: 'fixed-focus-terminal',
-    label: 'Return focus to the Session',
+    id: 'fixed-back-out',
+    label: 'Go back one level',
     category: 'workspace',
     phase: 'bubble',
     trigger: {
       kind: 'literal',
       key: 'Escape',
-      action: { kind: 'focus-terminal' },
+      action: { kind: 'back-out' },
     },
     paletteRowIds: null,
     menuCommandIds: null,
     discoverability:
-      'Escape belongs to the Session while its content owns focus; from app controls it is ambient back-out behavior with nothing to name.',
+      'Escape steps back from wherever focus is, and a Session keeps it for its own program; a palette row could only back out of the palette itself.',
   }),
 ];
 

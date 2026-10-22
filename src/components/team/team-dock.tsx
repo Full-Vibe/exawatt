@@ -15,8 +15,10 @@
  * mounted and hidden, so switching back finds a panel where it was left.
  *
  * Keyboard: ⌘B lands in the active panel; Shift+Tab from a panel reaches the
- * tabs, ←/→ switch them, Tab or ↓ returns to the panel; Escape inside a panel
- * backs out of it (the panel decides how far).
+ * tabs, ←/→ switch them, Tab or ↓ returns to the panel. Escape is the dock's
+ * rung of the back-out ladder: a panel first backs out of its own levels
+ * (an open item, a thread), and once it has none left, or from a tab, the
+ * dock hands focus back to the tiles (BUG-302).
  */
 import {
   useCallback,
@@ -31,6 +33,7 @@ import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha as withAlpha,
 } from '@/components/workspace/workspace-theme';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import {
   TEAM_DOCK_FOCUS_EVENT,
   takeTeamDockSummon,
@@ -103,16 +106,27 @@ export function TeamDock({
   overlay,
   tab,
   onTabChange,
+  onBack,
 }: {
   panels: readonly TeamDockPanel[];
   /** float over the grid as a drawer (narrow windows) instead of docking */
   overlay: boolean;
   tab: TeamDockTab;
   onTabChange: (tab: TeamDockTab) => void;
+  /** Escape out of the dock: hand focus back to what the dock sits beside */
+  onBack: () => void;
 }) {
   const rootRef = useRef<HTMLElement>(null);
   const idBase = useId();
   const [focused, setFocused] = useState(false);
+  useBackOut({
+    rung: 'dock',
+    element: rootRef,
+    back: () => {
+      onBack();
+      return true;
+    },
+  });
 
   const focusActivePanel = useCallback(() => {
     const root = rootRef.current;

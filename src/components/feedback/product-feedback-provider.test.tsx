@@ -602,6 +602,39 @@ describe('unified feedback composer continuity', () => {
     }
   );
 
+  it.each([
+    ['a collapsed caret', 6, 6, 'the screenshot'],
+    ['a selection', 6, 13, 'the screenshot'],
+    ['a collapsed caret after a refused capture', 6, 6, 'a refusal'],
+  ])(
+    'capture returns the draft with %s where it was (BUG-284)',
+    async (_label, start, end, outcome) => {
+      const capture = vi.fn(async () => {
+        if (outcome === 'a refusal') throw new Error('Screen recording off');
+        return SHOT;
+      });
+      installBridgeDouble({
+        feedback: { setAuthenticated: vi.fn(), captureScreenshot: capture },
+      });
+      await renderSignedIn();
+      await act(async () => feedback!.openFeedback());
+      const field = composerField() as HTMLTextAreaElement;
+      fireEvent.change(field, { target: { value: 'Typing in the middle' } });
+      field.focus();
+      field.setSelectionRange(start, end);
+      const opened = capture.mock.calls.length;
+
+      await act(async () => {
+        fireEvent.keyDown(field, { key: 's', metaKey: true });
+      });
+      await waitFor(() => expect(composerField()).toHaveFocus());
+      const back = composerField() as HTMLTextAreaElement;
+      expect(capture).toHaveBeenCalledTimes(opened + 1);
+      expect(back).toHaveValue('Typing in the middle');
+      expect([back.selectionStart, back.selectionEnd]).toEqual([start, end]);
+    }
+  );
+
   it('repeated invocation during initial capture cannot expose the capture overlay or begin another capture', async () => {
     const screenshot = deferred<string>();
     const capture = vi.fn(() => screenshot.promise);
