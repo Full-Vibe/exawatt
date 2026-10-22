@@ -740,7 +740,11 @@ export async function runElectronAttempt({
     } catch {
       /* the wait below is what verifies the exit */
     }
-    return waitForGroupExit(processGroup, gracefulMs);
+    return waitForTreeExit({
+      main: mainProcess,
+      group: processGroup,
+      timeoutMs: gracefulMs,
+    });
   };
   const shutdown = () => (stopping ??= stop());
 
@@ -844,24 +848,34 @@ export async function runElectronAttempt({
 }
 
 /**
- * Whether every member of the launch's verified process group exited within
- * `timeoutMs`. Nothing may touch the profile while one still runs, so only
- * `ps` listing the group empty counts as exited. A group never verified at
- * launch, a `ps` that keeps failing and a deadline each report the exit as
+ * Whether the launch's tree exited within `timeoutMs`: its main process
+ * exited AND was reaped, and no member of its verified process group still
+ * runs. Nothing may touch the profile before then.
+ *
+ * Main is this process's own child, so once it dies it stays a zombie until
+ * Node reaps it on a later loop turn, which is when its ChildProcess gets an
+ * exit code or signal. A zombie still answers `kill(pid, 0)`, and `ps` lists
+ * it as `<defunct>`, an identity the group never verified, so the group alone
+ * reads empty while main is not yet gone. A group never verified at launch,
+ * a `ps` that keeps failing and a deadline each report the exit as
  * unverified, with why; a `ps` failure is polled past until the deadline.
  */
-async function waitForGroupExit(group, timeoutMs) {
+export async function waitForTreeExit({ main, group, timeoutMs }) {
   const unverified = detail => ({ exited: false, withinMs: timeoutMs, detail });
   if (!group) return unverified('its process group was never verified');
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     let detail;
-    try {
-      const running = group.members().length;
-      if (running === 0) return { exited: true, withinMs: timeoutMs };
-      detail = `${running} of its processes still running`;
-    } catch (error) {
-      detail = `ps failed: ${String(error?.message ?? error).split('\n')[0]}`;
+    if (main.exitCode === null && main.signalCode === null) {
+      detail = `its main process ${main.pid} has not been reaped`;
+    } else {
+      try {
+        const running = group.members().length;
+        if (running === 0) return { exited: true, withinMs: timeoutMs };
+        detail = `${running} of its processes still running`;
+      } catch (error) {
+        detail = `ps failed: ${String(error?.message ?? error).split('\n')[0]}`;
+      }
     }
     if (Date.now() >= deadline) return unverified(detail);
     await new Promise(resolve => setTimeout(resolve, 100));

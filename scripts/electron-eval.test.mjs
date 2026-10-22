@@ -36,6 +36,7 @@ import {
   resetThrowawayUserData,
   runElectronAttempt,
   waitForPageCondition,
+  waitForTreeExit,
   withElectronApp,
 } from './lib/electron-eval.mjs';
 import { captureElectronProcessGroup } from './lib/electron-process-group.mjs';
@@ -716,6 +717,7 @@ test(
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     let runs = 0;
     let pid = 0;
+    let exit = null;
     const error = await attemptOf(
       dir,
       async (app, page) => {
@@ -725,7 +727,8 @@ test(
         // A step that never completes, as the hung roadmap step did.
         await page.waitForFunction(() => false, null, { timeout: 0 });
       },
-      8_000
+      8_000,
+      { reportExit: report => (exit = report) }
     );
     assert.equal(error?.name, 'ElectronEvalTimeout', String(error));
     assert.match(error.message, /8000ms/);
@@ -734,7 +737,9 @@ test(
     assert.ok(error.screenshot && statSync(error.screenshot).size > 0);
     assert.equal(isExternalTeardown(error), false);
     assert.equal(runs, 1);
-    // The attempt settled only after its tree exited: the profile is free.
+    // The attempt settled only after its tree exited and main was reaped:
+    // the profile is free.
+    assert.equal(exit?.exited, true, exit?.detail);
     assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
   }
 );
@@ -875,6 +880,46 @@ test(
       }
     );
     assert.equal(existsSync(join(kept, 'Preferences')), true);
+  }
+);
+
+test(
+  'a tree has exited only once its main is reaped, not when ps lists it as defunct',
+  { skip: process.platform === 'win32' && 'no process groups here' },
+  async t => {
+    // The launch's main as the harness holds it: this process's own child,
+    // leading its own process group.
+    const main = spawn('/bin/sleep', ['30'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    t.after(() => main.kill('SIGKILL'));
+    const group = captureElectronProcessGroup(main.pid);
+    assert.ok(group, 'the child leads a verifiable group');
+    const state = () =>
+      spawnSync('ps', ['-o', 'stat=', '-p', String(main.pid)], {
+        encoding: 'utf8',
+      }).stdout.trim();
+
+    // Alive: not reaped, so not exited, whatever the deadline.
+    const alive = await waitForTreeExit({ main, group, timeoutMs: 300 });
+    assert.equal(alive.exited, false);
+    assert.match(alive.detail, /has not been reaped/);
+
+    // Dead but unreaped: no loop turn has run since the kill, so Node has
+    // not collected it and `ps` lists it as a zombie, outside the group.
+    process.kill(main.pid, 'SIGKILL');
+    const until = Date.now() + 5_000;
+    while (!state().startsWith('Z')) {
+      // Synchronous: the event loop, and with it the reap, waits.
+      assert.ok(Date.now() < until, 'the killed child is listed as a zombie');
+    }
+    assert.deepEqual(group.members(), []);
+    assert.doesNotThrow(() => process.kill(main.pid, 0));
+
+    const exit = await waitForTreeExit({ main, group, timeoutMs: 10_000 });
+    assert.equal(exit.exited, true, exit.detail);
+    assert.throws(() => process.kill(main.pid, 0), { code: 'ESRCH' });
   }
 );
 
