@@ -1477,6 +1477,10 @@ export function classifyDeliveryPolicy(
       command: 'pnpm',
       args: ['run', 'security:secrets:landing'],
     },
+    // BUG-316: two fonts and a recaptured share image landed without their
+    // provenance on 2026-10-14, and only CI, already red, read the manifest.
+    // It reads the whole tree in under a second.
+    { id: 'assets:check', command: 'pnpm', args: ['run', 'assets:check'] },
   ];
   if (whole) {
     // BUG-136: the BUG-057 rule (assert the invariant, not the duration) is
@@ -1969,6 +1973,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'open-source:paths:check': LANDING,
   'content:scan': LANDING,
   'security:secrets:landing': LANDING,
+  'assets:check': LANDING,
   'docs:check': LANDING,
   'exports:check': LANDING,
   'copy:check': LANDING,
@@ -2065,7 +2070,6 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'publication:check': CI,
   'security:audit:prod': CI,
   'licenses:check': CI,
-  'assets:check': CI,
   'community:check': CI,
   'test:publication': CI,
   'test:asset-provenance': CI,

@@ -57,8 +57,8 @@
       "path": "public/images/og-home.png",
       "status": "included",
       "kind": "generated homepage link preview",
-      "sha256": "a809b959e81875b58afd62b150e96ed58f099b5fcf5da918ea6090cf86d348b4",
-      "origin": "Captured at 1200 by 630 from the homepage's landing scene (src/components/site/fleet-story, its synthetic fleet) in headless Chromium against a worktree server, with the scene steps hidden and the site header clipped out (ENG-031 W15m; recaptured in W15o for the landing's new line and framing, and in W15p for its new title; docs/engineering/projects/website-overhaul.md).",
+      "sha256": "c5e2606e375b89900f093aa0ef51f1b05d315ffccf464a569f3d175d53868724",
+      "origin": "Captured at 1200 by 630 from the homepage's landing scene (src/components/site/fleet-story, its synthetic fleet) in headless Chromium against a worktree server, with the scene steps hidden and the site header clipped out (ENG-031 W15m; recaptured in W15o for the landing's new line and framing, in W15p for its new title, and on 2026-10-14 without its copy, so the preview cannot contradict a headline published from the admin editor; docs/engineering/projects/website-overhaul.md).",
       "distributionBasis": "First-party generated asset derived only from repository code and the story's synthetic fleet; distributed under the repository license. The harness marks on its tiles are the vendors' own artwork, used to name the products that run each agent; their provenance and terms are recorded in LICENSES/brand/harness-marks.md."
     },
     {
@@ -100,6 +100,22 @@
       "sha256": "684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc",
       "origin": "Geist Mono normal variable weight 100–900 Latin subset from the versioned Google Fonts v6 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
       "distributionBasis": "SIL Open Font License 1.1; shared Geist license text is LICENSES/fonts/Geist-OFL-1.1.txt."
+    },
+    {
+      "path": "src/app/fonts/HankenGrotesk-Variable-Latin.woff2",
+      "status": "included",
+      "kind": "vendored variable webfont",
+      "sha256": "1f21c6eaa0000f3329cfcfac966b43d5bebf5aa610303e33294ac31bc6f4bb59",
+      "origin": "Hanken Grotesk normal variable weight 100–900 Latin subset from the versioned Google Fonts v12 distribution. Exact source provenance is recorded in LICENSES/fonts/README.md.",
+      "distributionBasis": "SIL Open Font License 1.1; license text is LICENSES/fonts/HankenGrotesk-OFL-1.1.txt."
+    },
+    {
+      "path": "src/app/hud-gallery/homepage-study/fonts/Manrope-Variable-Latin.woff2",
+      "status": "included",
+      "kind": "vendored variable webfont",
+      "sha256": "e310b55a7fd9677f5e3555e6c6c4d064fa1f1d24393f0ddbe217cea12a8c432f",
+      "origin": "Manrope normal variable weight 200–800 Latin subset from the versioned Google Fonts v20 distribution, used only by the homepage typography study. Exact source provenance is recorded in LICENSES/fonts/README.md.",
+      "distributionBasis": "SIL Open Font License 1.1; license text is LICENSES/fonts/Manrope-OFL-1.1.txt."
     },
     {
       "path": "src/app/icon.png",

@@ -5293,8 +5293,10 @@ presentation preference's `exawatt.*.v1` localStorage key in
 `src/lib/presentation/preference-source.ts` (`4e1c3597`) and
 `scripts/settings-navigation-eval.mjs` (`d17fa254`). Public CI had been red
 since 2026-09-29 (run 143), lately on three delivery-script tests, and private
-CI fails the first of them too, so its history secret scan never ran either.
-No landing ran gitleaks, and no verdict reached anyone.
+CI fails the first of them too, so the steps after it never ran in either
+repository: the history secret scan, and the asset check that two fonts and
+a recaptured share image had failed since 2026-10-14. No landing ran gitleaks
+or the asset check, and no verdict reached anyone.
 
 Fix, one system:
 
@@ -5309,7 +5311,9 @@ Fix, one system:
   manifest publishes nothing. The source still proves both.
 - Every landing, docs included, runs `pnpm security:secrets:landing`: the
   pinned gitleaks over only the commits it adds. A scanner it cannot obtain
-  fails the check.
+  fails the check. Every code landing also runs `pnpm assets:check`, and
+  `ASSET_PROVENANCE.json` now records Hanken Grotesk, Manrope and the
+  copy-neutral share image.
 - `scripts/public-sync-check.mjs` also fails the daily run, naming the
   workflow, when a public workflow's newest concluded push run on `master`
   failed. Operator-delegated change (2026-10-22): that step passes the run's
