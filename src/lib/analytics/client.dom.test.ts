@@ -100,6 +100,7 @@ describe('a community build sends nothing (decision 0036)', () => {
       client.captureAnalyticsEvent(event);
     client.recordWebAlias(OTHER_ID);
     expect(client.currentWebAnalyticsId()).toBeNull();
+    await expect(client.webAnalyticsId()).resolves.toBeNull();
     expect(state.initialized).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
     // Nor does it create an identity it will never use.

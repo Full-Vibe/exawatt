@@ -345,7 +345,7 @@ interface DownloadRequestedEvent {
   arch: DownloadArch;
 }
 
-/** A Project opened through one of the registry's open verbs. */
+/** A Project an operator gesture opened (`recordProjectOpened`). */
 interface ProjectOpenedEvent {
   name: 'project_opened';
   surface: AnalyticsSurface;

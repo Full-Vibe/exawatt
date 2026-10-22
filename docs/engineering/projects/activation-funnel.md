@@ -194,6 +194,8 @@ legacy origin's id rather than minting one.
 
 ### 2026-10-15 — F3: the dashboard, as definitions
 
+Both insight queries below are superseded by the 2026-10-21 entry's.
+
 No PostHog personal API key is in this worktree's environment (only the
 public project key, `NEXT_PUBLIC_POSTHOG_KEY`), so the insights were not
 created through the API. These are the exact definitions; create them in the
@@ -274,3 +276,112 @@ account UUID as the person; join it to a name in Supabase, never in PostHog:
   `DEFAULT_LAUNCH_PERMISSION_MODE` (`pty/harness-command.ts`) is now the one
   default shared by the command, the event-channel subscription and the
   event.
+
+### 2026-10-21 — the zeros read: no one downloaded, the operator's build predated the events
+
+**Both pipelines are proven live, and every Project open now records.**
+Evidence window: PostHog project 545032 since 2026-10-19 12:00 UTC.
+
+- **`download_requested` was truly zero.** After the 2026-10-19
+  simplification the page still puts the web id on both links. A headless
+  visit to the live `/download` clicked Download with the DMG redirect
+  blocked: the link was `/download/artifact?w=<id>`, the route answered 307,
+  and PostHog held the server's `download_requested` (`exawatt-server`,
+  `arm64`) under that id within a second (2026-10-22 00:57:28). Of the four
+  people who reached `/download` in the window, one is the operator's browser
+  and three are automated (three ids on three paths inside 0.4 s from one
+  Windows client; two Linux clients that left within 0.5 s). The only
+  download ever recorded is 2026-10-17's.
+- **The link waited for the SDK.** The id joined the link only after the
+  PostHog chunk loaded: 0.8 s after hydration on a 1.6 Mbps link, measured on
+  the live page, during which a click recorded nothing. `webAnalyticsId()`
+  answers at the identity decision instead. A click before hydration (3.3 s
+  on that link) still carries no id: the id lives in the visitor's browser
+  and no cookie carries it (decision `0031`).
+- **`project_opened` was not firing for the operator.** His app ran dogfood
+  `2112759d` (0.1.18, launched 2026-10-11) until 2026-10-22 00:17 UTC. That
+  build predates F1, so nothing he opened could record; its
+  `hosted_call_failed` kept arriving until 00:14. Since the 0.1.22 restart
+  his opens arrive (`recent`).
+- **Three ways an open still could not record, fixed as one system.** The
+  event fired only once the registry write succeeded, so a signed-in open
+  whose row could not sync (offline, a session that cannot refresh) recorded
+  nothing. A folderless Project opened from the chooser reached no registry
+  verb and recorded nothing. The reason was optional, so a new open path
+  skipped the event without a sound. Now every workspace open verb
+  (`openProject`, `openProjectAt`, `openContextProject`, `importProjectsAt`)
+  takes the gesture's reason and records when the Project opens, through
+  `recordProjectOpened` (`registry.ts`), the one place the event is made. The
+  registry writes are bookkeeping and record nothing; Connect records once it
+  has created the Project. A verb called without a reason does not compile
+  (`project-opened.dom.test.tsx`).
+- **The app, end to end.** An official package of this branch, on a
+  scratch profile with a fixture Claude, opened a Project from the Start
+  screen and from the chooser's suggestions (`suggested`, hint `claude`),
+  from the chooser's Project list and from ⌘K (`recent`), launched an Agent
+  (`first_for_install: true`), and followed `exawatt://welcome?w=<the web id
+above>` through main's own `open-url`. PostHog holds every one, and the
+  alias put the web id's `download_requested` and the installation's events
+  on one person (2026-10-22 01:31). Two harness facts: Playwright sets
+  `navigator.webdriver`, which posthog-js drops as a bot, so the probe hid
+  it; and the unsigned local package's own connections did not complete on
+  this machine, so the probe's requests were sent through the harness. A
+  real install's network path is the operator's 0.1.22 events above.
+- **`agent_finished` and the signed-in stream are sane.** The account stream
+  mirrors the installation stream one for one (`app_launched`,
+  `project_opened`, `agent_launched`); `agent_finished` is account-only by
+  design, and its three rows are the three Codex Agents that exited while the
+  Claude Agents kept running.
+- **The dashboard read its own data wrong.** The funnel compared each step's
+  first occurrence, so an Agent restored at launch before the day's first
+  open read as "never started an Agent" (the operator's install: first Agent
+  00:18, first open 00:47). A step now counts when it happened at or after
+  the previous step's first. The web-joined steps read zero past Download
+  because nobody has followed "Open Exawatt" yet, so an `installs` column now
+  reads the desktop funnel on its own. And the operator's 0.1.22 launch sent
+  two `app_launched` 0.5 s apart on both streams (a fresh profile loads the
+  workspace once), which "Where installs stop" read as a second launch;
+  launches less than 60 s apart now count once. The live insights still
+  carry the 2026-10-15 queries until these replace them.
+- **Seen, not fixed here.** The operator's install took a new id
+  (`6244e4cd…`) at the 0.1.22 restart rather than adopting its pre-F0 one
+  (`6e21a77a…`), so his history is two people; the cause is not
+  established. A 0.1.10 dogfood build started at 00:15 on a fallback port
+  with the same profile and minted a third id: Launch Services opened the
+  wrong bundle, which the instance packet owns. Restored Agents count as
+  `agent_launched` (13 in 35 s at that restart).
+
+**Insight 1, "Activation funnel"** (replaces the 2026-10-15 query):
+
+```json
+{
+  "kind": "DataVisualizationNode",
+  "source": {
+    "kind": "HogQLQuery",
+    "filters": {
+      "dateRange": {
+        "date_from": "-7d"
+      }
+    },
+    "query": "WITH people AS (SELECT person_id, minIf(toUnixTimestamp(timestamp), event = 'page_viewed') AS visit, minIf(toUnixTimestamp(timestamp), event = 'download_requested') AS download, maxIf(toUnixTimestamp(timestamp), event = 'download_requested') AS download_last, minIf(toUnixTimestamp(timestamp), event = 'app_launched' AND properties.surface = 'desktop') AS launch, maxIf(toUnixTimestamp(timestamp), event = 'app_launched' AND properties.surface = 'desktop') AS launch_last, minIf(toUnixTimestamp(timestamp), event = 'project_opened') AS project, maxIf(toUnixTimestamp(timestamp), event = 'project_opened') AS project_last, maxIf(toUnixTimestamp(timestamp), event = 'agent_launched') AS agent_last, minIf(toDate(timestamp), event = 'app_launched' AND properties.surface = 'desktop') AS first_day, maxIf(toDate(timestamp), event = 'app_launched' AND properties.surface = 'desktop') AS last_day FROM events WHERE {filters} AND event IN ('page_viewed', 'download_requested', 'app_launched', 'project_opened', 'agent_launched') AND coalesce(properties.$lib, '') != 'exawatt-account-stream' GROUP BY person_id), reached AS (SELECT visit > 0 AS s1, s1 AND download_last >= visit AS s2, s2 AND launch_last >= download AS s3, s3 AND project_last >= launch AS s4, s4 AND agent_last >= project AS s5, s5 AND last_day > first_day AS s6, launch > 0 AS d1, d1 AND project_last >= launch AS d2, d2 AND agent_last >= project AS d3, d3 AND last_day > first_day AS d4 FROM people) SELECT step, people, installs FROM (SELECT 1 AS n, 'Visited the site' AS step, countIf(s1) AS people, NULL AS installs FROM reached UNION ALL SELECT 2, 'Downloaded', countIf(s2), NULL FROM reached UNION ALL SELECT 3, 'Launched the app', countIf(s3), countIf(d1) FROM reached UNION ALL SELECT 4, 'Opened a Project', countIf(s4), countIf(d2) FROM reached UNION ALL SELECT 5, 'Started an Agent', countIf(s5), countIf(d3) FROM reached UNION ALL SELECT 6, 'Came back on a later day', countIf(s6), countIf(d4) FROM reached) ORDER BY n"
+  },
+  "display": "ActionsBar"
+}
+```
+
+**Insight 2, "Where installs stop"** (replaces the 2026-10-15 query):
+
+```json
+{
+  "kind": "DataTableNode",
+  "source": {
+    "kind": "HogQLQuery",
+    "filters": {
+      "dateRange": {
+        "date_from": "-7d"
+      }
+    },
+    "query": "SELECT multiIf(projects = 0, '1. Launched, no Project', agents = 0, '2. Project, no Agent', launches < 2, '3. Agent, no second launch', '4. Came back') AS stopped_at, count() AS installs, groupArray(10)(toString(person_id)) AS examples FROM (SELECT person_id, countIf(event = 'project_opened') AS projects, countIf(event = 'agent_launched') AS agents, arraySort(groupArrayIf(toUnixTimestamp(timestamp), event = 'app_launched')) AS starts, length(arrayFilter((t, previous) -> t - previous > 60, starts, arrayPushFront(arrayPopBack(starts), 0))) AS launches FROM events WHERE {filters} AND event IN ('app_launched', 'project_opened', 'agent_launched') AND properties.surface = 'desktop' AND coalesce(properties.$lib, '') != 'exawatt-account-stream' GROUP BY person_id HAVING launches > 0) GROUP BY stopped_at ORDER BY stopped_at"
+  }
+}
+```
