@@ -1142,6 +1142,7 @@ the rule and the three defects that produced it.
 | `agent-model-catalogs.json`     | one row per `(engine, shell, cwd)`                              | 48 rows, 14 days, and a row whose `cwd` no longer exists                                                                                                                                                                                                                                                                                                  | `AgentModelCatalogCache.write`, plus one sweep on load                                                       |
 | `agent-source-observations.json` | one row per Agent Source adapter: the last COMPLETE observation, keyed by adapter id | at most one row per declared adapter, none older than 30 days behind the newest row (an anchor no further than a day past wall time, `retentionAnchorMs`; a row stamped past that is evicted, BUG-182), all read through the same login shell as the newest write; an incomplete or simulated observation is never written | `AgentSourceObservationStore.remember`, plus one sweep on load |
 | `bus/<project key>.jsonl` | the agent-to-agent ledger: one append-only file per Project, a message line plus a line per delivery change | 2,000 messages and 4 MB per Project, pruned to 75% of both by whole message (never mid-record); a damaged log is never pruned or read as empty | `JsonlBusStore`'s write path |
+| `logs/harness-events.jsonl` | one content-free line per Session start, identity, exit, forget and harness event | 1 MB and one rotated generation; 120 lines a minute per family (`session`, `harness`), no run cap, so a long-lived run keeps recording | `createDiagnosticsLog`'s rotation, bounded in `harness-event-log.ts` |
 
 Two rules carry most of the weight. **A large per-Session artifact never rides
 a small-object record**: it goes in a content-addressed side store, written
@@ -1207,6 +1208,22 @@ Built:
   stacking beneath sibling board controls.
 - Electron agent terminal workspace with real `node-pty` sessions rendered by
   xterm.js for every local CLI source and for shells, behind a session-manager boundary
+- main owns each durable Session's process (BUG-305): `ensureRunning` is the
+  one way a process starts, and it answers an ask for a Session already
+  running, or already starting, with that process or that start; the
+  readiness probe runs inside the start, so a second ask joins it rather than
+  probing again. Every start reaches every window on `pty:start`, beside
+  `pty:exit`. Hydration folds the starts and exits that arrive while it reads
+  into the `pty:list` snapshot it restores from, and every later one moves the
+  layout directly, so no window's view rests on one read taken at mount. A
+  start lands on the tab holding its durable Session, or becomes a tab of its
+  own, except while that window's own launch waits for its answer
+- `logs/harness-events.jsonl` (BUG-102) records each Session's start, provider
+  identity, exit (code, signal, whether Exawatt asked for the stop) and every
+  event a harness reported through either transport with the truth it left,
+  keyed by durable Session and provider conversation so it reads across a
+  relaunch; PTY ids restart every launch. Content-free like `main.jsonl`,
+  which no longer carries harness boundaries
 - Electron-main turn-state ownership that distinguishes Agent work from PTY
   transport noise: output may establish working before a turn settles, while a
   quiet/BEL boundary latches finished until guaranteed operator engagement.

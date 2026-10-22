@@ -188,7 +188,10 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    `session-manager.ts`, `pty-ipc.ts`, the pty channels of the desktop bridge,
    preload's pty lines and the renderer's session runtime, hydration and
    layout restore; must not touch identity baselines, history seeding, the
-   shutdown owner's counters or the hook-token sweep.
+   shutdown owner's counters or the hook-token sweep. Built 2026-10-22
+   (`<sha pending>`): an exit during the hydration read was lost under the
+   restore too, and now ends its tab; `main.jsonl` no longer carries harness
+   boundaries, which moved to the new log.
 
 Run 1 to 4 now beside the owned packets; 5 and 6 follow as the first of them
 land (both need long Electron eval runs). Collisions: deps-lane holds the
@@ -5183,6 +5186,13 @@ cleared 406 whose bundle was gone. The August copy is still on disk at the
 main checkout's `release/mac-arm64/Exawatt.app` (0.1.10, `ai.exawatt.desktop`)
 for the operator to delete.
 [Milestone](projects/daily-driver-adoption.md#2026-10-22--one-running-exawatt-per-profile-bug-305-bug-274-bug-083).
+
+Code half (2026-10-22, `<sha pending>`): main owns each Session's process.
+An ask for a Session main already runs, or is starting, is answered with that
+process or that start, never refused, and every start reaches every window on
+`pty:start`. A window reloaded during a resume now shows the started Session
+attached, and the next Resume attaches the rest.
+[Milestone](projects/daily-driver-adoption.md#2026-10-22--main-owns-each-sessions-process-bug-305-bug-102).
 
 ### BUG-306 Settings repeats its page titles above a strip of links that repeats the rows
 

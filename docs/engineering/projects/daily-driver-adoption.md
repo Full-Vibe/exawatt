@@ -8415,3 +8415,55 @@ node tests.
 
 Left for the operator: delete the August copy at
 `exawatt/release/mac-arm64/Exawatt.app` (0.1.10, `ai.exawatt.desktop`).
+
+### 2026-10-22 — Main owns each Session's process (BUG-305, BUG-102)
+
+**An ask for a Session main runs is answered with it, every window follows
+main's starts and exits, and what a Session did survives a relaunch.**
+Session-custody packet of the Execution front (2026-10-21), `<sha pending>`.
+
+- **Ensure-running.** `PtySessionManager.create` is gone; `ensureRunning` is
+  the one way a process starts. An ask for a durable Session that runs is
+  answered with its live record, an ask during a start joins that start (one
+  readiness probe, one spawn), and only a Session mid-operation (pause,
+  close, model change) is still refused, naming the operation. The start is
+  registered before its first await, so a second process for one Session
+  cannot begin; the "already has a running process" and "already starting"
+  refusals are deleted. `pty-ipc` runs the readiness probe inside the start
+  and skips the launch effects (analytics, goal restore, engagement) for an
+  answer that started nothing, so a joined resume is not counted twice.
+- **Starts push to every window.** Main broadcasts `pty:start` on every
+  start, beside `pty:exit`. Hydration folds the starts and exits that arrive
+  while it reads into the `pty:list` snapshot (`withRuntimeEvents`), then
+  applies each later one directly (`adoptStartedSession`, `markPtyExited`).
+  A start lands on the tab holding its durable Session or becomes a tab of
+  its own, except while that window's own launch waits for its answer
+  (`startsInFlightRef`, declared through the Session-scope owner), which
+  places the tab once. Fell out: an exit that arrived during the read used
+  to be lost under the restore and left a tab live on a dead process; a
+  Session started from another window used to stay invisible until reload.
+- **The harness-event log.** `logs/harness-events.jsonl`: every Session
+  start (with its process id), provider identity, exit (code, signal,
+  whether Exawatt asked for the stop), forget, and every harness event from
+  either transport with the turn truth it left, keyed by durable Session and
+  provider conversation because PTY ids restart every launch. Content-free
+  (no prompt, reply, spawn label or path), 1 MB with one rotated generation,
+  120 lines a minute per family and no run cap. The `harness.turn-truth`
+  lines `main.jsonl` carried are deleted: the log supersedes them, and they
+  were crowding stall traces out of a 256 KB file. The manager's `exit`
+  event carries `stopRequested` for it. Not attached to diagnostics reports:
+  that would add to what leaves the machine, a separate call.
+
+Evidence, reproduced before each fix: the manager test failed with both
+refusals ("already has a running process", "already starting") before
+`ensureRunning`; `session-custody.dom.test.ts` drives `useWorkspaceState`
+against the real `PtySessionManager` behind an IPC double that answers and
+pushes only structured clones, in order, on later tasks, and drops what is
+owed a reloaded page. With the start subscription removed, its reload,
+second-window and other-window cases fail; with the launch guard removed,
+its one-tab case fails. `eval:electron:resume` gains the BUG-305 step on
+the packaged app: it holds the next `pty:create` where the readiness probe
+runs, reloads the window, releases it, and requires the reloaded window to
+show that Session attached and the next Resume to attach all six tabs with
+none refused. The harness-event log test relaunches a real owner over the
+same profile and reads both runs back by durable Session.
