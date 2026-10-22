@@ -39,9 +39,9 @@ try {
     async (_app, page) => {
       await waitForWorkspaceReady(page);
       await page.evaluate(() =>
-        window.electron.settings.setPresentation({
-          schemaVersion: 1,
-          fleetView: 'v1',
+        window.electron.settings.updatePresentation({
+          field: 'fleetView',
+          value: 'v1',
         })
       );
       // Two Projects with a Session each; B is opened last, so it is the
