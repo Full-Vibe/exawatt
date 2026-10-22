@@ -87,6 +87,13 @@ describe('the changelog shows only published versions (ENG-031 W25)', () => {
     expect(xml).not.toContain(`/changelog/${DRAFT.version}`);
   });
 
+  it('renders the sitemap per request, so a newly published release reaches it', async () => {
+    // BUG-304: a prerendered */sitemap.xml becomes a static file in Next's
+    // build output and never revalidates, whatever its `revalidate` says.
+    const sitemap = await import('../sitemap');
+    expect(sitemap.dynamic).toBe('force-dynamic');
+  });
+
   it('lists published entry pages in the sitemap, and never the draft', async () => {
     const { default: sitemap } = await import('../sitemap');
     const urls = (await sitemap()).map(item => item.url);
@@ -120,7 +127,6 @@ describe('the changelog shows only published versions (ENG-031 W25)', () => {
       import('./page'),
       import('./[version]/page'),
       import('./feed.xml/route'),
-      import('../sitemap'),
     ])) {
       expect(surface.revalidate).toBe(CHANGELOG_REVALIDATE_SECONDS);
     }
