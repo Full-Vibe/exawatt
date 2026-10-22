@@ -471,6 +471,74 @@ describe('right-click and ⌘K offer the same commands for the same target', () 
   });
 });
 
+describe('Escape closes ⌘K from every command row', () => {
+  const TERMINAL: CommandTarget = {
+    kind: 'terminal',
+    sessionId: 'pty-live',
+    link: null,
+  };
+  it.each(
+    [...ALL_TARGETS, TERMINAL].map(target => [describeTarget(target), target])
+  )('%s', async (_name, target) => {
+    const ops = everyOp();
+    publishCommandSubjects({ subjects: [target], scope: scopeWith(ops) });
+    const changes: boolean[] = [];
+    function Reopenable() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Reopen
+          </button>
+          <CommandPalette
+            open={open}
+            onOpenChange={next => {
+              changes.push(next);
+              setOpen(next);
+            }}
+            onOpenHelpModal={() => undefined}
+          />
+        </>
+      );
+    }
+    render(
+      <TooltipProvider>
+        <Reopenable />
+      </TooltipProvider>
+    );
+    const rowIds = () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-palette-subject] [cmdk-item][data-command-id]'
+        )
+      ).map(row => row.getAttribute('data-command-id')!);
+    await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));
+    const ids = rowIds();
+
+    for (const id of ids) {
+      fireEvent.click(screen.getByText('Reopen'));
+      const row = await waitFor(() => {
+        const element = document.querySelector<HTMLElement>(
+          `[data-palette-subject] [cmdk-item][data-command-id="${CSS.escape(id)}"]`
+        );
+        expect(element).not.toBeNull();
+        return element!;
+      });
+      // the row under the pointer is the one Escape leaves from
+      fireEvent.pointerMove(row);
+      const input = screen.getByPlaceholderText('Type a command or search...');
+      changes.length = 0;
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(changes, id).toEqual([false]);
+      await waitFor(() => expect(document.querySelector('[cmdk-root]')).toBeNull());
+    }
+    // Escape ran no command on the way out
+    for (const [name, op] of Object.entries(ops)) {
+      expect(op, name).not.toHaveBeenCalled();
+    }
+  });
+});
+
 describe('Mark unread from ⌘K', () => {
   it('marks the selected Agent unread through the shell’s own operation', async () => {
     const ops = everyOp();
