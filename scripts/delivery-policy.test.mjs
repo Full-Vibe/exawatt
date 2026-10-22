@@ -326,7 +326,7 @@ test('every test that reads the repository declares what it scans, and every glo
     ...new Set(
       tracked.filter(file => file.includes('/')).map(file => file.split('/')[0])
     ),
-  ].map(top => top.replace(/[.]/gu, '\\.'));
+  ].map(top => top.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&'));
   const anchor = new RegExp(
     `__dirname|process\\.cwd\\(\\)|import\\.meta\\.(?:url|dirname)|['"\`](?:${tops.join('|')})/`,
     'u'
