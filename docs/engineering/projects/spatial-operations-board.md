@@ -2603,7 +2603,7 @@ gate fails as recorded above.
 
 ### V4.1 Fleet Tiles: Fleet view v2 (shaped 2026-10-14)
 
-Status: P1–P5 landed 2026-10-15. v2 (Preview) is opt-in in every build; v1 remains default. Hands-on operator review follows installation.
+Status: P1–P5 landed 2026-10-15. v2 (Preview) is opt-in in every build; v1 remains default. Hands-on review on 2026-10-21 rejected the visual fidelity to the homepage; the material-and-territory candidate is in gallery review below.
 
 Decision `0050`. The operator's brief, 2026-10-14: "Do you see the recent
 homepage upgrades and various material / studies that went into refining the
@@ -3877,3 +3877,54 @@ Evidence: `/tmp/exawatt-fleet-oct19-land-retry.log`, ticket 688 in the shared
 delivery ledger, `/tmp/exawatt-fleet-review-final-evidence/`,
 `/tmp/exawatt-status-visibility/`, and `/tmp/exawatt-fleet-v2-review/`.
 BUG-300 remains a separate open diagnostic; this receipt does not invent its cause.
+
+
+### 2026-10-21 — V4.1 visual fidelity reopened after hands-on review
+
+**Fleet v2 must look like the homepage; sharing its tile geometry was insufficient.**
+The operator supplied a production screenshot of small parent tiles and v1
+child tokens inside a large, flat colored Project disc, and asked for the
+homepage/studies' quality while retaining v1 as default. This supersedes the
+2026-10-15 P3 look acceptance as evidence of a satisfactory installed composition;
+it does not undo the verified command, persistence or host-power contracts.
+
+Diagnosis: v2 still mounts v1's `ZoneLayer` and `DelegationUnitLayer`, fits the
+large circular footprint, and leaves the shared tile renderer on its default
+room environment while the homepage explicitly selects studio. The reflection
+environment also needs the same XZ-to-XY basis rotation as the tile world.
+Reusing an Agent body alone did not adopt the surrounding material language.
+
+Review surface: `/hud-gallery/board-study/quality`, within the existing Fleet
+board workbench, with Current v2/Candidate comparison, all five materials,
+Classic/Air/Night, 10/100/1k, fan-out and stopped fixtures. The candidate uses
+shared production tiles, status annotations, Agent/child DOM targets, camera
+controls and host-power policy. It proposes fitted neutral hex territory,
+studio reflections, matching child bodies with truthful unknown harness marks,
+quieter DOM Project labels, and tighter small-fleet framing. Agent positions,
+sizes, census and lineage remain unchanged; ground is bounded to 4,096 instances
+and has no Agent identity. No production preference or renderer is changed.
+
+Acceptance and next ownership boundary:
+
+- Operator reviews the actual material/territory composition before production
+  adoption, per ENG-036. Keep v1 as default and v2 explicitly opt-in.
+- On acceptance, promote the selected treatment through the existing v2 canvas
+  and shared owners, not a third view; retain v1 geometry and behavior.
+- Preserve the source boundary and complete production gates for status,
+  selection, gestures, motion, delegation lifecycle, scale and host power.
+  This frozen-fixture review does not certify lifecycle parity or GPU budgets.
+- Retire the candidate module after adoption; the standing board bench remains.
+
+Evidence is retained in `/tmp/exawatt-fleet-v2-quality/`: rendered composition
+captures and the source-identity/ground-budget checks. Delivery verification is
+recorded in the landing ticket, not inferred from screenshots.
+
+
+Review verification (2026-10-21): source/identity/ground-budget tests **4/4**,
+TypeScript and targeted ESLint passed. Signed-browser captures covered 10/100/1k,
+fan-out, stopped, all five materials and all three themes, with no page errors;
+keyboard Agent selection and Current/Candidate switching passed. Documentation
+recipe rendering, path classification and content scan passed; two scanning-test
+workers timed out on the contended host, then both files passed in isolation
+(**4/4**, `test:alone`), without changing code or timeouts. Production adoption
+remains pending operator look review.

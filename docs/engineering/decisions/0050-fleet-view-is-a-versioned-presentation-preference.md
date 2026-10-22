@@ -146,3 +146,18 @@ identity and the boundary. Presentation mutations are field intents applied at
 the persistence owner, while subscribers retain the versioned snapshot contract.
 The execution boundaries and acceptance live in ENG-004 V4.1's review repair
 architecture; this amendment does not expand the material or feature scope.
+
+
+## Installed-look review amendment (2026-10-21)
+
+**The homepage's composition is the visual target, not just its Agent mesh.**
+Hands-on operator feedback rejects v2's current visual fidelity while explicitly
+retaining v1 as default. The previous P3 screenshot acceptance is no longer a
+visual sign-off for the installed look. The existing Fleet board workbench now
+carries a material-and-territory candidate at `/hud-gallery/board-study/quality`:
+neutral tiled territory in place of colored discs, studio lighting in the board's
+world basis, child tiles in the shared material family, fitted framing, and
+lighter Project labels. This remains a review candidate; the registry,
+preferences, production layout and both installed renderers are unchanged.
+After operator acceptance, adopt through the existing v2 renderer and shared
+behavior owners, verify the full product contracts, and retire the candidate.

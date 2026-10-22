@@ -1144,3 +1144,14 @@ snapshot, never an intermediate layout storm.
   Ribbon placement retains D45's 210ms transform glide and fixed height, with
   a 150ms title-opacity reveal and a reduced-motion bypass. No type, color or
   spacing rung changes. Review screenshots retained outside the source tree.
+
+
+- 2026-10-21 — ENG-004 V4.1 installed-look correction (review pending): the
+  paired DOM/R3F candidate at `/hud-gallery/board-study/quality` proposes the
+  homepage's studio material language over neutral fitted hex territory, with
+  children in the same material family. Project labels use body/title weight
+  (`text-sm font-semibold`), chrome-meta counts, 4/8px spacing and the existing
+  Project identity dot; status stays D40, including stopped/unknown readings.
+  Classic/Air/Night consume the same concrete theme snapshot. No new color or
+  type rung and no production change is authorized by this candidate alone;
+  operator acceptance precedes adoption, then the candidate retires.
