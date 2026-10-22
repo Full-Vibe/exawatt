@@ -176,7 +176,11 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    layers, the hero board and `use-host-render-policy.ts`; must not touch the
    status mapping, BUG-263's resolution and bloom rules, "unknown is not
    unlocked", the hero's draw-call budget or the fleet story's loop; the
-   `eval:hero-board` trigger line goes to eng-039 as a data edit.
+   `eval:hero-board` trigger line goes to eng-039 as a data edit. READY
+   2026-10-21 on `agent/frame-demand` (<sha pending>): one scheduler per
+   canvas in `src/lib/frame-demand/`; BUG-280 and BUG-300 close with it,
+   BUG-113 has its readout, and BUG-308's cause is the Mac's lock state, with
+   the fix handed to the eval harness.
 6. **session-custody: main owns each Session's process** (ENG-016; M, about
    5 h). A window learns which Sessions are live from one read at mount, so a
    reload during a long resume strands a live process behind a paused tab and
@@ -4215,7 +4219,7 @@ reviewed material cross-surface visuals, and exact deployed/installed evidence.
 
 ### BUG-280 The hero board renders frames while parked
 
-Status: bug · ENG-031 · found by the G2.1 landing checks, 2026-10-05 21:04.
+Status: fixed (frame-demand train, <sha pending>) · ENG-031 · found by the G2.1 landing checks, 2026-10-05 21:04.
 
 `pnpm eval:hero-board`'s `frozen` check (`?force=frozen` must render zero
 frames after its first paint) reads `parkedFrames: 2` on `origin/master` at
@@ -4239,6 +4243,21 @@ rig's keyframe effect, which re-runs on a size change), and R3F turns an
 re-run yields exactly two parked frames. The gate's trigger matches only hero
 files, which is why no other landing ran it. Owner: the frame-demand packet
 of the Execution front (2026-10-21).
+
+Resolved 2026-10-21 (measured). The late invalidation is `HeroUnits`' passive
+`useEffect`s (focus retarget and lens), which wrote their attributes and
+called `invalidate()` after the first paint; the in-frame camera-controls
+update after them makes the second frame. On an idle host both land within
+150 ms of mount, before the eval's window (master: 0 parked frames in 12 runs,
+idle and under 6x CPU throttling); on a landing host under load the deferred
+passive effect lands inside it. The writes are now layout effects that
+precede the first frame, and the hero runs under the canvas's frame scheduler:
+its units hold the only continuous claim, which a frozen board's policy
+parks. After: the frozen board's only frames are R3F's own mount and its first
+size measurement (with camera-controls' follow-up), all within 100 ms under 6x
+throttling; 0 parked frames in 6 throttled runs. `eval:hero-board` green,
+`frozen` 0, every budget number unchanged.
+[Record](projects/spatial-operations-board.md#2026-10-21--frame-demand-one-owner-decides-when-a-board-renders).
 
 ### BUG-279 Sent feedback looks editable and waits for Done
 
@@ -4355,6 +4374,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ENG-022 H10 / BUG-136: every landing runs whole-repository lint and the whole-program type-check | ENG-039 M3 first mile, 2026-10-21 | A change inside declared modules (`modules.json`) off their public surface runs those modules' lint, the program the change can reach, the tests it reaches and its dependents' contract tests. Whole lint and type-check stay for undeclared paths, public-surface files, a file that left the tree, the manifest and shared configuration, and run in every train and every CI batch; dependencies, the Vitest configuration, shared test support and every train run the whole suite. A document alone owes no lint or type-check. |
 | Decision `0047`'s "`/old` stays reachable" and its open "when `/old` is retired"; ENG-031's band system, its studies `/hud-gallery/fold-close` and `/hud-gallery/altitude-scroll`, and the `site-closing` rung | ENG-031 W31, 2026-10-21 (operator) | "Delete /old". The band stack is deleted with no redirect, and with it every module, study, style rule and type rung that existed only for it. Rules that governed only the band stack govern nothing. `/old` and `/v2` stay outside the auth gate so both answer 404 to a signed-out visitor, never a sign-in page. |
+| BUG-263's mechanism: rotors and the selection ring request ambient frames from inside `useFrame` through `operations-board-ambient.ts`, `ResumeAmbientMotion` requests one frame on a cadence change, and every board layer keeps its own motion alive with `state.invalidate()` | Execution front (2026-10-21) frame-demand, BUG-280 and BUG-300 | One frame scheduler per demand canvas (`src/lib/frame-demand/`) is the only caller of `invalidate()`. Layers register demand (a transition held until it settles, a deadline, ambient held from data, a one-off request); the scheduler parks with `frameloop="never"` when nobody can see the canvas and re-arms with one frame on every policy change. BUG-263's rule is unchanged: power is a cadence, battery never lowers resolution or freezes a Working mark, and unknown is not unlocked. [Record](projects/spatial-operations-board.md#2026-10-21--frame-demand-one-owner-decides-when-a-board-renders). |
 | ENG-047 F1 "`project_opened` fires in the registry's open verbs when the caller passes a source"; F3's funnel comparing first occurrences and the stuck view counting every `app_launched` | ENG-047 funnel verification, 2026-10-21 | The workspace open verbs require the reason and record when the Project opens, whether or not its registry row syncs; registry writes record nothing. A funnel step counts when it happened at or after the previous step's first; launches less than 60 s apart count once. |
 | ENG-016 D57's ⌘K rows for verbs that act on a target (hand-built in the palette, one row per verb on the active tab) and BUG-259's "Mark unread uses the existing Session context menu" | ENG-016 D75, 2026-10-22 (BUG-307) | One target command registry (`src/components/workspace/target-commands.ts`) declares every verb that acts on a tab, a Project or a terminal. Right-click menus render it for the target under the pointer and ⌘K renders it for the selected Agent, its Project and its terminal, in groups headed by the target's name, with the same labels, disabled reasons and chords. The manifest's palette rows for those verbs name registry commands; the palette's hand-built target rows, its clone group and the clone catalog events are deleted. Move left/right joins the tab and Project menus; Pause Agents shows disabled with its reason when nothing runs. `command-parity.test.tsx` renders both surfaces per target and fails on any difference. |
 | BUG-285 acceptance "a genuinely different installation still produces its notice" | BUG-285 diagnosis (incident `0039`), 2026-10-18 | The reported return WAS a different installation under the same stale running build. The local-build notice's identity is the running build: once dismissed it stays dismissed until the operator runs a build that is superseded in turn. |
@@ -4966,7 +4986,7 @@ cleared.
 
 ### BUG-300 The live Demo board parked after a Project drill while AC and unlocked
 
-Status: open · ENG-004 · found 2026-10-18 reproducing BUG-295.
+Status: fixed by construction (frame-demand train, <sha pending>) · ENG-004 · found 2026-10-18 reproducing BUG-295.
 
 One `eval:electron:host-power` v1 run (`--js-flags=--gc-interval=2000`, on
 the BUG-175 harness) failed `live Demo must render working Agents`: right
@@ -4990,6 +5010,16 @@ no rotor registered, or one that reads a parked cadence, ends the chain, and
 only a cadence change re-arms it. And an unknown lock state parks ambient
 motion by design; `resume` re-reads the lock, `on-ac` does not. Owner: the
 frame-demand packet of the Execution front (2026-10-21).
+
+Resolved 2026-10-21 by the frame scheduler (not reproducible on demand, so
+closed on its mechanisms with tests on each). Working rotors hold the canvas's
+ambient demand from data, so no painted frame can end it; every policy change
+re-arms the canvas with one frame; and a power event re-reads an unknown lock
+in main (`host-power.ts`), so `on-ac` after an unanswered read no longer
+leaves ambient motion parked. Unknown is still not unlocked. Reopen with the
+eval's failure message, which now carries the canvas's frame demand beside
+the policy inputs.
+[Record](projects/spatial-operations-board.md#2026-10-21--frame-demand-one-owner-decides-when-a-board-renders).
 
 ### BUG-299 Extending a Fleet selection with Shift+arrows moved focus to another Project
 
@@ -5445,3 +5475,17 @@ eval-handles), each needing a hand rebase. Exit: the suite's membership lives
 where adding a test cannot conflict (a glob over a declared directory, or a
 list file with one path per line that the append driver merges), and
 `test:agent-delivery` reads it.
+
+2026-10-21, cause measured (frame-demand packet): nothing in the board
+changed; the Mac did. The eval inherits the real host's lock state, and the
+trains run while this Mac's screen is locked. Main reads `screenLock: locked`
+at launch, so the Fleet canvas sits at `frameloop="never"` by contract (a
+locked host renders zero frames): `__EVAL_GL__` counted 0 frames, the pan never
+moved the camera, and the board's save, which reports the painted camera, never
+changed. The 2026-10-19 repair ran with the screen unlocked. With the host
+declared unlocked after the first window (one
+`powerMonitor.emit('unlock-screen')`, as `eval:electron:host-power` already
+does), clean master passed 3 runs of 3. The fix is the harness's, not the
+board's: `withElectronApp` declares an unlocked, awake host unless an eval
+drives host power itself, which covers every Electron eval that needs Fleet
+frames on a locked Mac. Owner: the eval harness (ENG-022).

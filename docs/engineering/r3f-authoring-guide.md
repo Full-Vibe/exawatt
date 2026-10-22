@@ -69,7 +69,8 @@ Current boundaries:
   homepage hero over ONE frozen capture of the Demo Workspace. Three draw calls
   (ground, zones, one `InstancedMesh` for all units), `antialias: false` with
   analytic `fwidth` coverage in the mark shader, DPR capped at 1.5, no
-  postprocessing, and a demand loop that renders zero frames while parked. ONE
+  postprocessing, and a demand loop under the frame scheduler that renders
+  zero frames while parked (one ambient claim while live). ONE
   camera behaviour: planted at rest, page scroll drives Fleet to Team to Agent
   with distance in log space. It is the one R3F surface with a MEASURED idle
   budget, and that budget is a hard gate: `pnpm eval:hero-board` compares two
@@ -107,19 +108,28 @@ inspection.
 
 **Theme boundary:** production Three code accepts concrete sRGB strings and
 numbers from `SpatialThemeSnapshot`; it never parses CSS variables or merges OS
-state. Theme/contrast changes update material props and call `invalidate()` on
+state. Theme/contrast changes update material props and request one frame on
 the existing demand scene—never remounting the canvas or resetting camera,
 filters, selection, Project identity, status derivation, or Demo/Live data. Air
 must remain complete without bloom; Project identity stays data and is only
 contrast-corrected against the resolved ground.
 
 1. **Know your `frameloop`.** `demand` (spatial): `useFrame` runs but nothing
-   *paints* without `invalidate()`. Every continuous animation must call
-   `state.invalidate()` each frame **while animating** and stop once settled (so
-   the scene parks); programmatic changes (selection/resize) must `invalidate()`.
-   `always` (gallery): paints every frame — fine for a few small canvases, but
-   prefer `demand`+invalidate for many. **A missing `invalidate()` under demand
-   is the #1 cause of "it computed but nothing moved."**
+   *paints* until something asks for a frame. On the Fleet boards and the hero
+   the canvas's frame scheduler (`src/lib/frame-demand/`) is the ONLY caller of
+   `invalidate()` (ENG-004 frame-demand, 2026-10-21). A layer registers demand
+   instead: `useFrameDemand('transition', label)` held from the moment its
+   motion starts and released in `useFrame` once it settles; the shared
+   transition clock's deadline (every layer sampling it paints without asking);
+   `useAmbientDemand(label, active)` for continuous motion such as Working
+   rotors, held from data, never from a painted frame; `scheduler.request()` or
+   `usePaintOnChange` for a one-off change. A chain of in-frame
+   `state.invalidate()` calls ends silently the first frame nobody calls it,
+   and nothing restarts it (BUG-300). Release every claim on every path through
+   `useFrame`, including an early return for a missing ref, or the canvas
+   paints forever. `always` (fleet story, gallery): paints every frame — fine
+   for one continuous scene. **A missing claim under demand is the #1 cause of
+   "it computed but nothing moved."**
 2. **Never `setState` inside `useFrame`.** Mutate refs / object3D props directly.
 3. **Never allocate inside `useFrame`** (`new THREE.Color/Vector3/Euler`, array
    literals). Hoist to `useMemo`/refs/module scope and mutate in place.
@@ -218,15 +228,15 @@ contrast-corrected against the resolved ground.
     motion kills MOTION, not bloom — a static glow is fine; a pulsing one isn't.
     For damp transitions, SNAP to target when reduced.
 12b. **Power is a cadence, not a state** (BUG-263). Battery and weak hardware
-   slow the ambient paint through `operations-board-ambient.ts` (`display` /
-   `economy` / `parked`; one shared timer per canvas, requested from inside
-   `useFrame` in place of `state.invalidate()`); they never freeze a Working
-   mark and never lower `dpr`. Reduced motion, an unseen board (hidden,
-   locked, suspended), or an unknown desktop host observation parks ambient
-   cadence. Keep demand renders available when the native observation is
-   unknown; only known hiding/lock/suspend selects `frameloop="never"`. A cadence
-   change requests one frame
-   so leaving `parked` does not wait for an unrelated paint. Transitions
+   slow ambient demand through the frame policy (`resolveFramePolicy` in
+   `src/lib/frame-demand/frame-scheduler.ts`: `display` / `economy` /
+   `parked`; one economy timer per canvas, owned by its scheduler); they never
+   freeze a Working mark and never lower `dpr`. Reduced motion, an unseen board
+   (hidden, locked, suspended), or an unknown desktop host observation parks
+   ambient cadence. Keep demand renders available when the native observation
+   is unknown; only known hiding/lock/suspend selects `frameloop="never"`.
+   Every policy change re-arms with one frame, so leaving `parked` does not
+   wait for an unrelated paint and a claim made while parked resumes. Transitions
    (entrance, camera flights) still paint every refresh; an eval that measures
    the economy bound waits for the first unpainted refresh first. The
    2026-09-25 battery fix reused the weak-hardware `lowPower` gate (dpr 1.25,
@@ -245,26 +255,31 @@ contrast-corrected against the resolved ground.
 
 ## Motion patterns (zero new deps — `THREE.MathUtils`)
 
-Idle shimmer (delta-phase, settles, demand-safe):
+Idle shimmer (delta-phase, settles, demand-safe). Continuous motion is
+ambient demand, held from data; the canvas's cadence decides how often it
+paints:
 ```ts
 const mat = useRef<THREE.MeshBasicMaterial>(null);
 const phase = useRef(0);
-useFrame((state, delta) => {
+useAmbientDemand('shimmer', shimmer);                    // held while shimmer is on
+useFrame((_, delta) => {
   if (!mat.current) return;
   if (!shimmer) { mat.current.opacity = glow; return; } // settle to base, then PARK
   phase.current += delta * 2.2;                          // rad/sec
   mat.current.opacity = glow + Math.sin(phase.current) * 0.14;
-  state.invalidate();                                    // keep frames coming (demand)
 });
 ```
 > **Bug to avoid (was live in console3d Panel):** early-returning
 > `if (!shimmer) return` BEFORE resetting opacity freezes the glow mid-sine when
 > the gate flips false. Always set the base value on the off-branch, then park.
 
-Hover lift/glow (damp, reduced-motion aware, parks when settled):
+Hover lift/glow (damp, reduced-motion aware, parks when settled). A damped
+move is a transition claim: start it when the target changes, release it on
+the frame that arrives:
 ```ts
-const invalidate = useThree((s) => s.invalidate);
-useFrame((state, delta) => {
+const settling = useFrameDemand('transition', 'hover-lift');
+useEffect(() => settling.set(true), [settling, hovered]);
+useFrame((_, delta) => {
   if (!ref.current || !mat.current) return;
   const wantScale = hovered ? 1.05 : 1, wantGlow = hovered ? 0.95 : glow;
   if (reduced) { ref.current.scale.setScalar(wantScale); mat.current.opacity = wantGlow; }
@@ -272,10 +287,8 @@ useFrame((state, delta) => {
     ref.current.scale.setScalar(THREE.MathUtils.damp(ref.current.scale.x, wantScale, 9, delta));
     mat.current.opacity = THREE.MathUtils.damp(mat.current.opacity, wantGlow, 9, delta);
   }
-  if (hovered || Math.abs(ref.current.scale.x - wantScale) > 0.001) state.invalidate();
+  settling.set(Math.abs(ref.current.scale.x - wantScale) > 0.001);
 });
-// onPointerOver={(e) => { e.stopPropagation(); setHovered(true); invalidate(); }}
-// onPointerOut={() => { setHovered(false); invalidate(); }}
 ```
 
 ## Mesh interactivity (only when geometry IS the surface)
@@ -292,8 +305,8 @@ useFrame((state, delta) => {
   `raycast` as a function, so `null` fails type-check. Under `demand`, raycasting
   only runs on pointer events (a mesh moving under a still cursor won't fire hover).
 - Postprocessing does **not** break picking (raycaster runs on scene geometry).
-- Under `demand`, call `invalidate()` in the enter/leave handlers or the damp
-  tween won't start until the next repaint.
+- Under `demand`, start the layer's transition claim in the enter/leave
+  handlers or the damp tween won't start until the next repaint.
 
 ## Scaling to hundreds–thousands
 
@@ -400,7 +413,9 @@ Stay on the primary model; add **test-time compute**, not a vendor swap:
 
 ## Top traps (never repeat)
 
-- Missing `invalidate()` under demand → "computed but never painted / froze."
+- Missing demand claim under demand → "computed but never painted / froze."
+- A claim a `useFrame` path never releases → the canvas paints forever.
+- In-frame `state.invalidate()` chains on a board → end silently (BUG-300).
 - Early-return in `useFrame` before settling the animated value → frozen mid-anim.
 - Missing `toneMapped={false}` → dull, non-blooming neon.
 - `setState` / allocation in `useFrame`.

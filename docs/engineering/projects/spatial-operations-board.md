@@ -4025,3 +4025,96 @@ The signed dogfood installer verified `b552ec775f70` at `/Applications/Exawatt.a
 on 2026-10-22; the running app loads it on restart. The standalone review preview
 at port 7139 serves that commit independently of the temporary worktree and
 passed the same parent/child hover, press, audio and camera interaction probe.
+
+### 2026-10-21 — Frame demand: one owner decides when a board renders
+
+**Each demand canvas has one frame scheduler, the only caller of `invalidate()`; BUG-280 and BUG-300 close with it.**
+Execution front (2026-10-21) packet 5, `agent/frame-demand` (<sha pending>).
+
+Before: Fleet v1, Fleet v2 and the hero board mixed render policy into about
+ten layers that each kept the demand loop alive by calling `invalidate()` from
+inside their own painted frame. That chain has two quiet ends. A frame painted
+with no requester in it (the marks re-mounting during a drill, a ref not yet
+attached) ends the loop for good; and a frame asked for while the canvas was
+parked (`frameloop="never"`) is dropped, so motion that started while hidden
+never resumed until something unrelated painted. Policy lived in the same
+calls: the economy timer, `ResumeAmbientMotion`, per-layer reduced-motion and
+`animating` gates.
+
+Change (`src/lib/frame-demand/`):
+
+- `frame-scheduler.ts` takes a **policy** (may the canvas paint; at what
+  ambient cadence: `display`, `economy`, `parked`) and **registered demand**:
+  a `transition` claim held from the moment a motion starts until the frame
+  that settles it, a deadline (`until`) for motion with a known end, an
+  `ambient` claim held from data while there is continuous motion to show,
+  and a one-off `request`. From inside each painted frame it asks for the next
+  one while any claim is live and parks the moment none is. Every policy change
+  re-arms with one frame, so a claim made while parked resumes.
+- `frame-demand.tsx` binds it: `useFramePolicy` turns the shared host facts
+  (`useHostRenderPolicy`: page visibility, lock, sleep, battery) plus the
+  owner's own (reduced motion, weak hardware, frozen, on screen) into the
+  policy; `useCanvasFrames` owns one scheduler and the `frameloop` (`never`
+  whenever nobody can see the canvas); `<FrameDemandRoot>` attaches the
+  canvas's `invalidate` and reports each painted frame.
+- The shared transition clock reports its deadline, so the camera flight, the
+  field carry, focus recession and every reveal sampling it paint without
+  asking. Emergence trackers report theirs. The camera, anchors, selection
+  treatments, delegation spawns, population morphs and entrances hold
+  transition claims. Working rotors hold the ambient claim while any Working
+  Agent reaches the marks, never from a painted frame, and report Working
+  versus attached rotors (BUG-113's readout). Fleet v2's tile churn keeps its
+  ambient claim from the shared renderer's per-frame report.
+- The hero board takes the smallest change: its units hold one ambient claim
+  (a live board paints every refresh and every hero transition rides those
+  frames), its picture changes are requests, and its two mount writes became
+  layout effects. The fleet story keeps its own continuous loop and reads only
+  the policy's visibility, lock and sleep facts.
+- `electron/main/host-power.ts`: a power event re-reads an UNKNOWN lock
+  (`on-ac` did not), so ambient motion no longer stays parked behind an
+  unanswered read. A known lock still changes only by its events; unknown is
+  still not unlocked.
+
+Deleted: `operations-board-ambient.ts` and its test (policy and cadence
+constants moved, with their tests, to the scheduler), `ResumeAmbientMotion`,
+the v2 `RefreshScene`, the `ambient` props through the agent, status-mark,
+selection-ring and tiles layers, the aggregate marks' always-false `ambient`
+path, the hero's own `visibilitychange` listener, and every per-layer
+`invalidate()` on the boards and the hero.
+
+Diagnosis records:
+
+- **BUG-280.** Named the late invalidation: on a frozen hero, frame 1 is R3F's
+  mount and frame 2 is `HeroUnits`' passive `useEffect` (focus retarget and
+  lens) calling `invalidate()` after the first paint, plus one in-frame
+  camera-controls update. On an idle host all of it lands within 150 ms (12
+  runs measured 0 parked frames, idle and under 6x CPU throttling); on a loaded
+  landing host a deferred passive effect lands after the eval's window. The
+  writes are now layout effects that precede the first frame; what remains is
+  R3F's own mount and first size measurement, within 100 ms under 6x
+  throttling (6 runs, 0 parked frames).
+- **BUG-300.** Not reproducible on demand (1 in 18 runs). Both quiet ends the
+  2026-10-21 reading named are gone by construction: a Working Agent's rotor
+  demand no longer depends on who painted last (contract test "keeps a held
+  claim alive through frames in which nothing else asks"), every policy change
+  re-arms ("resumes ambient motion at the new cadence after on-ac"), and
+  `on-ac` re-reads an unknown lock (host-power test).
+- **BUG-308.** Not the board: the eval inherits the Mac's real lock state and
+  the trains run while it is locked (measured `screenLock: locked`, 0 frames).
+  Declaring the host unlocked after the first window passes clean master 3 of
+  3. Handed to the eval harness.
+
+Evidence: `frame-scheduler.test.ts` (21 contract tests: demand runs frames,
+settled demand parks, a policy change re-arms, a hidden or locked host paints
+zero frames, deadlines, economy, StrictMode's double mount) and the
+host-power tests. Gates on v1 and v2: `eval:spatial`, `:emergence`,
+`:pointer`, `:status-visibility`, `:tiles-bench`, `:motion`, `eval:r3f`,
+`eval:terrain-story` and `eval:hero-board` pass; measured cadences on the
+30-Agent density rig: display 20 of 20 refreshes painted, economy 6 of 20,
+reduced motion 0 with 92 rotors at rest. `eval:electron:host-power` passed 3
+runs in a row (live Demo on AC 60 of 60 refreshes painted with every rotor
+turning, battery 10 to 12 of 60, locked and suspended 0), as did
+`device-power`, `navigation:electron` and `session-parity`.
+`eval:electron:app-lifecycle`'s Fleet-camera step passed 3 of 3 with the Mac
+unlocked (one run then failed later, in the What's new section). Not run: a
+physical lock or unplug; the evals emit the host events.

@@ -128,6 +128,15 @@ availability from ambient eligibility: known lock/suspend or page hiding parks
 the canvas; unknown desktop state retains interaction but cannot authorize
 continuous ambience. Battery reduces ambient cadence without lowering resolution
 or freezing Working marks; weak hardware has its separate rendering budget.
+One frame scheduler per demand canvas (`src/lib/frame-demand/`, 2026-10-21)
+turns those facts into a frame policy (may it paint; at what ambient cadence)
+and is the only caller of the canvas's `invalidate()`: board and hero layers
+register demand (a transition held until it settles, a known deadline, Working
+rotors held while Agents work, a one-off change) instead of asking for frames
+from inside painted frames. It parks with `frameloop="never"` whenever nobody
+can see the canvas and re-arms with one frame on every policy change, so a
+claim made while parked resumes. The fleet story keeps its continuous loop and
+reads only the same visibility, lock and sleep facts.
 Demo and Live share this host boundary, while hosted browsers retain their
 visibility/hardware fallback.
 These observations never signal a Session or acquire a sleep assertion.
