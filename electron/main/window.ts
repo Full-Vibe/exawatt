@@ -154,9 +154,9 @@ interface MainWindowController {
    *  app focuses it, an inactive development launch shows it without taking
    *  focus, and a hidden automated launch changes nothing on screen. */
   present(): 'focused' | 'shown' | 'hidden';
-  /** Loads `url` into the main window once the document it opened with has
-   *  finished loading, failed, or lost its renderer. Rejects as `loadURL`
-   *  does when the load itself fails. */
+  /** Loads `url` into the main window once the navigation it opened with
+   *  has committed, failed, or lost its renderer. Rejects as `loadURL` does
+   *  when the load itself fails. */
   navigate(url: string): Promise<void>;
   /** Reloads `focused` when it is a web window, else the main window. It
    *  never depends on the renderer being alive to receive focus (BUG-223). */
@@ -168,7 +168,7 @@ export function createMainWindowController(
 ): MainWindowController {
   let mainWindow: BrowserWindow | null = null;
   let inactiveLaunchPromoted = false;
-  /** Settles when the window's opening document is done, however it ends. */
+  /** Settles when the window's opening navigation is over, however it ends. */
   let opening: Promise<void> = Promise.resolve();
   const resetMenuAvailability = () => deps.onNavigationReset();
 
@@ -261,9 +261,12 @@ export function createMainWindowController(
 
     // A second navigation never starts while this one is in flight
     // (`navigate`): at a new window's first frames an attaching debugger can
-    // miss both commits, and the opening document paints in milliseconds.
+    // miss both commits (BUG-308). The wait ends at the commit, not the load,
+    // so a launch screen whose renderer hangs after committing never keeps
+    // the window out of the workspace.
     opening = new Promise<void>(settle => {
-      win.loadURL(initialUrl).then(settle, settle);
+      win.loadURL(initialUrl).then(settle, () => settle());
+      win.webContents.once('did-navigate', () => settle());
       win.webContents.once('render-process-gone', () => settle());
       win.once('closed', () => settle());
     });

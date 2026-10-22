@@ -19,7 +19,7 @@ import { registerPermissionsIPC } from './permissions/permissions-ipc';
 import { installPermissions } from './permissions/runtime';
 import { testNotificationAuthorization } from './permissions/test-authorization';
 import { commandVerbCapabilities } from '@exawatt/core';
-import { registerMainChannels } from './app-ipc';
+import { registerAppearanceIpc, registerMainChannels } from './app-ipc';
 import { observeHostPower } from './host-power';
 import { createScreenLockReader } from './screen-lock-snapshot';
 import { broadcastToWindows } from './window-broadcast';
@@ -391,6 +391,18 @@ const menu = createMenuController({
     BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0],
 });
 
+/** The OS appearance's IPC, registered once, before the first window. */
+let appearanceIpc: ReturnType<typeof registerAppearanceIpc> | null = null;
+function appearanceChannels(): ReturnType<typeof registerAppearanceIpc> {
+  appearanceIpc ??= registerAppearanceIpc({
+    electron: { BrowserWindow, ipcMain, nativeTheme, systemPreferences },
+    assertTrustedSender: assertTrustedIpcSender,
+    safeTheme: safeThemeLaunch,
+    appearancePreference: () => loadSettings().appearance,
+  });
+  return appearanceIpc;
+}
+
 function startCommandSurface(): Promise<void> {
   return bootstrapCommandSurface({
     runtime,
@@ -428,8 +440,7 @@ function startCommandSurface(): Promise<void> {
         build,
         runtime,
         env,
-        safeTheme: safeThemeLaunch,
-        appearancePreference: () => loadSettings().appearance,
+        appearance: appearanceChannels(),
         record: mainDiagnostics,
         syncRegistrations: [onSync => shutdownSequence.registerSync(onSync)],
         tables: [
@@ -513,6 +524,9 @@ app.whenReady().then(() => {
   // Registered BEFORE bootstrap so it survives bootstrap failing: this is the
   // channel that reports exactly that (BUG-016).
   registerCommandEngineIPC(() => BrowserWindow.getAllWindows());
+  // Before any window: its preload's synchronous first-paint read must find
+  // an answer, or its renderer hangs (BUG-308).
+  appearanceChannels();
   // Warm server startup is already in flight. On a version cache miss, give
   // the native launch frame priority over archive extraction.
   let commandSurface = rendererWasWarmAtLaunch ? startCommandSurface() : null;

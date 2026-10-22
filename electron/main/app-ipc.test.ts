@@ -20,6 +20,7 @@ const {
   createAppearanceIpc,
   createDiagnosticsReports,
   dialogChannels,
+  registerAppearanceIpc,
   registerMainChannels,
 } = await import('./app-ipc');
 const { COMMUNITY_DISTRIBUTION } = await import('@exawatt/core');
@@ -433,8 +434,7 @@ describe('registerMainChannels', () => {
         liveSessionCount: () => 0,
       },
       env: {},
-      safeTheme: false,
-      appearancePreference: () => undefined,
+      appearance: { 'app:appearance': () => ({}) },
       record: () => {},
       tables,
     });
@@ -456,7 +456,39 @@ describe('registerMainChannels', () => {
       ])
     );
     expect(new Set(trusted).size).toBe(trusted.length);
-    expect(sync).toEqual(['app:appearance-bootstrap']);
+    // The first-paint read is registered earlier, before any window exists.
+    expect(sync).toEqual([]);
+  });
+
+  it('answers the first-paint read from the moment it is registered, before any window (BUG-308)', () => {
+    const sync = new Map<string, (event: unknown) => void>();
+    const channels = registerAppearanceIpc({
+      electron: {
+        BrowserWindow: { getAllWindows: () => [] },
+        ipcMain: {
+          on: (channel: string, listener: (event: unknown) => void) =>
+            sync.set(channel, listener),
+        },
+        nativeTheme: {
+          shouldUseDarkColors: true,
+          shouldUseHighContrastColors: false,
+          shouldUseInvertedColorScheme: false,
+          on: () => {},
+        },
+        systemPreferences: {},
+      } as never,
+      assertTrustedSender: () => {},
+      safeTheme: false,
+      appearancePreference: () => undefined,
+    });
+    // Electron never answers a sendSync nobody set returnValue for, and the
+    // renderer that sent it hangs; this one always answers.
+    const event: { returnValue?: unknown } = {};
+    sync.get('app:appearance-bootstrap')!(event);
+    expect('returnValue' in event).toBe(true);
+    expect(Object.keys(channels)).toEqual(
+      expect.arrayContaining(['app:appearance', 'app:accent-color'])
+    );
   });
 
   it('refuses a handed-in table that claims one of main’s channels', () => {

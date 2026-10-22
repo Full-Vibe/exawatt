@@ -411,6 +411,40 @@ interface MainChannelsElectron {
 }
 
 /**
+ * The OS appearance, registered before any window exists. A window's preload
+ * asks for its first-paint appearance synchronously, and Electron never
+ * answers a `sendSync` that finds no listener: the renderer hangs, the launch
+ * screen never paints, and a new window cannot enter the workspace after it
+ * (BUG-308). Returns the trusted reads `registerMainChannels` registers with
+ * the rest of main's channels.
+ */
+export function registerAppearanceIpc(deps: {
+  electron: Pick<
+    MainChannelsElectron,
+    'BrowserWindow' | 'ipcMain' | 'nativeTheme' | 'systemPreferences'
+  >;
+  assertTrustedSender: (event: IpcMainEvent) => void;
+  safeTheme: boolean;
+  appearancePreference: () => ElectronAppearancePreferencesV1 | undefined;
+}): TrustedChannels {
+  const { electron } = deps;
+  const appearance = createAppearanceIpc({
+    nativeTheme: electron.nativeTheme,
+    getAccentColor: electron.systemPreferences.getAccentColor
+      ? () => electron.systemPreferences.getAccentColor!()
+      : undefined,
+    appearancePreference: deps.appearancePreference,
+    safeTheme: deps.safeTheme,
+    allWindows: () => electron.BrowserWindow.getAllWindows(),
+    assertTrustedSender: deps.assertTrustedSender,
+  });
+  appearance.register((channel, listener) =>
+    electron.ipcMain.on(channel, listener)
+  );
+  return appearance.channels;
+}
+
+/**
  * Main's own channels, keyed by name and registered through the one trusted
  * door (`handle` is `handleTrusted`): sign-in, the folder picker, build info
  * and diagnostics, the OS appearance, and whatever tables other owners hand
@@ -434,11 +468,11 @@ export function registerMainChannels(deps: {
     liveSessionCount(): number;
   };
   env: NodeJS.ProcessEnv;
-  safeTheme: boolean;
-  appearancePreference: () => ElectronAppearancePreferencesV1 | undefined;
+  /** The OS appearance's trusted reads (`registerAppearanceIpc`). */
+  appearance: TrustedChannels;
   record: DiagnosticRecorder;
   tables: readonly TrustedChannels[];
-  /** Other owners' synchronous reads, registered beside the appearance one. */
+  /** Other owners' synchronous reads. */
   syncRegistrations?: ReadonlyArray<
     (
       onSync: (
@@ -451,16 +485,6 @@ export function registerMainChannels(deps: {
   const { electron, runtime, build } = deps;
   const windowFor = (sender: WebContents) =>
     electron.BrowserWindow.fromWebContents(sender);
-  const appearance = createAppearanceIpc({
-    nativeTheme: electron.nativeTheme,
-    getAccentColor: electron.systemPreferences.getAccentColor
-      ? () => electron.systemPreferences.getAccentColor!()
-      : undefined,
-    appearancePreference: deps.appearancePreference,
-    safeTheme: deps.safeTheme,
-    allWindows: () => electron.BrowserWindow.getAllWindows(),
-    assertTrustedSender: deps.assertTrustedSender,
-  });
   registerTrustedChannels(
     [
       authChannels({
@@ -514,7 +538,7 @@ export function registerMainChannels(deps: {
         record: deps.record,
         windowFor,
       }),
-      appearance.channels,
+      deps.appearance,
       ...deps.tables,
     ],
     deps.handle
@@ -523,6 +547,5 @@ export function registerMainChannels(deps: {
     channel: DesktopBridgeSyncChannel,
     listener: (event: IpcMainEvent) => void
   ) => electron.ipcMain.on(channel, listener);
-  appearance.register(onSync);
   for (const register of deps.syncRegistrations ?? []) register(onSync);
 }
