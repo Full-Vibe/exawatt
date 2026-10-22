@@ -48,6 +48,8 @@ import {
 import {
   findCommandTarget,
   MENU_ONLY_TARGET_COMMANDS,
+  paletteTargetCommands,
+  resolveTargetCommands,
   type CommandTarget,
   type TargetCommandOps,
   type TargetCommandScope,
@@ -419,19 +421,22 @@ describe('right-click and ⌘K offer the same commands for the same target', () 
     }
   );
 
-  it('holds in a shell that lacks operations (the Demo has no Finder)', async () => {
-    const ops: TargetCommandOps = {
-      closeTab: vi.fn(),
-      markUnread: vi.fn(),
-      moveTab: vi.fn(),
-      pauseProject: vi.fn(),
-    };
-    for (const target of ALL_TARGETS) {
+  // One target per case: a case renders one menu and one palette, so its
+  // cost does not grow with the workspace fixture.
+  it.each(ALL_TARGETS.map(target => [describeTarget(target), target]))(
+    'holds in a shell that lacks operations (the Demo has no Finder): %s',
+    async (_name, target) => {
+      const ops: TargetCommandOps = {
+        closeTab: vi.fn(),
+        markUnread: vi.fn(),
+        moveTab: vi.fn(),
+        pauseProject: vi.fn(),
+      };
       const menu = menuOffers(target, ops);
       const palette = await paletteOffers(target, scopeWith(ops));
-      expect(byId(palette), describeTarget(target)).toEqual(byId(menu));
+      expect(byId(palette)).toEqual(byId(menu));
     }
-  });
+  );
 
   it('holds for the terminal', async () => {
     // Without a PTY bridge the pane mounts no xterm; its menu does not need one.
@@ -477,61 +482,56 @@ describe('Escape closes ⌘K from every command row', () => {
     sessionId: 'pty-live',
     link: null,
   };
-  it.each(
-    [...ALL_TARGETS, TERMINAL].map(target => [describeTarget(target), target])
-  )('%s', async (_name, target) => {
+  // One row per case, enumerated from the projection ⌘K renders, so a case
+  // opens the palette once and its cost does not grow with the row count.
+  const ROWS = [...ALL_TARGETS, TERMINAL].flatMap(target =>
+    paletteTargetCommands(
+      resolveTargetCommands(target, scopeWith(everyOp()))
+    ).map(
+      row => [`${describeTarget(target)} › ${row.id}`, target, row.id] as const
+    )
+  );
+  it.each(ROWS)('%s', async (_name, target, id) => {
     const ops = everyOp();
     publishCommandSubjects({ subjects: [target], scope: scopeWith(ops) });
     const changes: boolean[] = [];
-    function Reopenable() {
+    function Closable() {
       const [open, setOpen] = useState(true);
       return (
-        <>
-          <button type="button" onClick={() => setOpen(true)}>
-            Reopen
-          </button>
-          <CommandPalette
-            open={open}
-            onOpenChange={next => {
-              changes.push(next);
-              setOpen(next);
-            }}
-            onOpenHelpModal={() => undefined}
-          />
-        </>
+        <CommandPalette
+          open={open}
+          onOpenChange={next => {
+            changes.push(next);
+            setOpen(next);
+          }}
+          onOpenHelpModal={() => undefined}
+        />
       );
     }
     render(
       <TooltipProvider>
-        <Reopenable />
+        <Closable />
       </TooltipProvider>
     );
-    const rowIds = () =>
-      Array.from(
-        document.querySelectorAll<HTMLElement>(
-          '[data-palette-subject] [cmdk-item][data-command-id]'
-        )
-      ).map(row => row.getAttribute('data-command-id')!);
-    await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));
-    const ids = rowIds();
-
-    for (const id of ids) {
-      fireEvent.click(screen.getByText('Reopen'));
-      const row = await waitFor(() => {
-        const element = document.querySelector<HTMLElement>(
-          `[data-palette-subject] [cmdk-item][data-command-id="${CSS.escape(id)}"]`
-        );
-        expect(element).not.toBeNull();
-        return element!;
-      });
-      // the row under the pointer is the one Escape leaves from
-      fireEvent.pointerMove(row);
-      const input = screen.getByPlaceholderText('Type a command or search...');
-      changes.length = 0;
-      fireEvent.keyDown(input, { key: 'Escape' });
-      expect(changes, id).toEqual([false]);
-      await waitFor(() => expect(document.querySelector('[cmdk-root]')).toBeNull());
-    }
+    const row = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>(
+        `[data-palette-subject] [cmdk-item][data-command-id="${CSS.escape(id)}"]`
+      );
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    // the row under the pointer is the one Escape leaves from
+    fireEvent.pointerMove(row);
+    fireEvent.keyDown(
+      screen.getByPlaceholderText('Type a command or search...'),
+      {
+        key: 'Escape',
+      }
+    );
+    expect(changes).toEqual([false]);
+    await waitFor(() =>
+      expect(document.querySelector('[cmdk-root]')).toBeNull()
+    );
     // Escape ran no command on the way out
     for (const [name, op] of Object.entries(ops)) {
       expect(op, name).not.toHaveBeenCalled();
