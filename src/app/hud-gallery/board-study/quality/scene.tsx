@@ -1,33 +1,17 @@
 'use client';
 
 import { Canvas, useThree } from '@react-three/fiber';
-import { Html, Line } from '@react-three/drei';
+import { CameraControls, Html, Line } from '@react-three/drei';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
-import type * as THREE from 'three';
+  Box3,
+  Vector3,
+  type WebGLRenderer,
+  type Scene,
+  type Camera,
+} from 'three';
 import type { OperationsBoardTilesProps } from '@/components/fleet/spatial/operations-board/tiles/operations-board-tiles-canvas';
-import { BoardCameraRig } from '@/components/fleet/spatial/operations-board/operations-board-camera-rig';
 import { BoardDisplayResolution } from '@/components/fleet/spatial/operations-board/operations-board-canvas';
-import { BoardTransitionProvider } from '@/components/fleet/spatial/operations-board/operations-board-field';
-import {
-  AgentControls,
-  DelegationControls,
-} from '@/components/fleet/spatial/operations-board/operations-board-controls';
-import {
-  createBoardHoverStore,
-  useBoardHoverSlice,
-} from '@/components/fleet/spatial/operations-board/operations-board-hover';
-import { StatusMarkLayer } from '@/components/fleet/spatial/operations-board/operations-board-status-marks';
-import { StoppedAgentOutlines } from '@/components/fleet/spatial/operations-board/operations-board-agent-layer';
-import { boardTileStatusSubjects } from '@/components/fleet/spatial/operations-board/tiles/board-tile-status';
-import { boardWorldPosition } from '@/components/fleet/spatial/operations-board/operations-board-camera';
 import {
   spatialProjectIdentityColor,
   spatialColorWithAlpha,
@@ -48,12 +32,6 @@ import { DEFAULT_MOTION } from '@/components/tiles/crust-motion';
 import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
 import { harnessMarkTone } from '@/components/workspace/harness-mark-tones';
 import { qualityModel } from './model';
-import { PopulationStatusMarks } from '@/components/fleet/spatial/operations-board/operations-board-population-layer';
-import { computePopulationDotField } from '@/components/fleet/spatial/operations-board/population-dots';
-import { useBoardProjectLabels } from '@/components/fleet/spatial/operations-board/use-board-project-labels';
-import type { ZoneLabelTierStore } from '@/components/fleet/spatial/operations-board/operations-board-label-tier';
-import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
-import type { OperationsBoardHandle } from '@/components/fleet/spatial/operations-board/operations-board-camera-rig';
 
 const MARKS = { paths: HARNESS_MARK_PATHS, tone: harnessMarkTone };
 const EMPTY = new Set<string>();
@@ -72,10 +50,14 @@ const GROUND_FRAME: TileFrame = {
 };
 const readGround = () => GROUND_FRAME;
 const readClock = () => performance.now() / 1000;
+export type QualityCamera = 'perspective' | 'low' | 'overhead';
+type QualityProps = OperationsBoardTilesProps & {
+  cameraPreset?: QualityCamera;
+  recenterToken?: number;
+};
 
-/** Gallery-only composition. Reuses the production camera, command targets,
- * materials, status protocol and host-power boundary; not a third Fleet view. */
-export function QualityCanvas(props: OperationsBoardTilesProps) {
+/** Review-only native XZ composition; the production board remains unchanged. */
+export function QualityCanvas(props: QualityProps) {
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
   const host = useHostRenderPolicy();
@@ -96,42 +78,37 @@ export function QualityCanvas(props: OperationsBoardTilesProps) {
   );
   return (
     <Canvas
-      orthographic
       frameloop={host.renderAllowed ? 'demand' : 'never'}
       dpr={[1, 2]}
-      camera={{ position: [0, 0, 100], zoom: 1, near: 0.1, far: 200 }}
+      camera={{ position: [0, 30, 30], fov: 38, near: 0.1, far: 2000 }}
       gl={{
         antialias: true,
         preserveDrawingBuffer: props.preserveDrawingBuffer,
       }}
       style={{ touchAction: 'none' }}
-      aria-hidden="true"
       data-board-view="quality-study"
       data-board-material={props.material}
+      onPointerMissed={props.onBackground}
       onCreated={({ gl, scene, camera }) => {
+        // Hide only WebGL pixels; Html's sibling command targets stay accessible.
+        gl.domElement.setAttribute('aria-hidden', 'true');
         (
           gl.domElement as HTMLCanvasElement & {
-            boardEvidence: {
-              gl: THREE.WebGLRenderer;
-              scene: THREE.Scene;
-              camera: THREE.Camera;
-            };
+            boardEvidence: { gl: WebGLRenderer; scene: Scene; camera: Camera };
           }
         ).boardEvidence = { gl, scene, camera };
       }}
     >
       <color attach="background" args={[props.theme.canvas]} />
       <BoardDisplayResolution lowPower={lowPower} />
-      <BoardTransitionProvider>
-        <QualityScene
-          {...props}
-          reduced={reduced}
-          ambient={ambient}
-          transmission={
-            !lowPower && !host.onBattery && !props.theme.reducedTransparency
-          }
-        />
-      </BoardTransitionProvider>
+      <QualityScene
+        {...props}
+        reduced={reduced}
+        ambient={ambient}
+        transmission={
+          !lowPower && !host.onBattery && !props.theme.reducedTransparency
+        }
+      />
     </Canvas>
   );
 }
@@ -141,54 +118,33 @@ function QualityScene({
   theme,
   material = 'gummy',
   sourceMarks = {},
-  controllerRef,
   onDrillProject,
   onSelectAgent,
   onSelectDelegationChild,
   multiSelection,
-  onToggleAgentSelect,
   reduced,
   ambient,
   transmission,
-}: OperationsBoardTilesProps & {
+  cameraPreset = 'perspective',
+  recenterToken = 0,
+}: QualityProps & {
   reduced: boolean;
   ambient: AmbientMotion;
   transmission: boolean;
 }) {
   const invalidate = useThree(state => state.invalidate);
-  const scene = useThree(state => state.scene);
-  useLayoutEffect(() => {
-    // The shared tiles are authored on XZ and rotated into the board's XY
-    // world. Reflect the same studio in that basis, like the local lights.
-    const previous = scene.environmentRotation.clone();
-    scene.environmentRotation.set(Math.PI / 2, 0, 0);
-    invalidate();
-    return () => {
-      scene.environmentRotation.copy(previous);
-    };
-  }, [scene, invalidate]);
+  const size = useThree(state => state.size);
+  const camera = useThree(state => state.camera);
+  const gl = useThree(state => state.gl);
+  const controls = useRef<CameraControls>(null);
   const model = useMemo(
     () => qualityModel(layout, sourceMarks),
     [layout, sourceMarks]
   );
-  const population = useMemo(
-    () => computePopulationDotField(layout.zones, layout.pieces),
-    [layout.zones, layout.pieces]
+  const groundTheme = useMemo(
+    () => ({ ...theme, zone: theme.zoneHover, grid: theme.gridMajor }),
+    [theme]
   );
-  const labels = useBoardProjectLabels(model.territories);
-  const framing = `${layout.altitude}:${layout.focusedProjectId}:${layout.stats.sourceAgentCount}`;
-  const lastFraming = useRef('');
-  const frameSmallFleet = useCallback(
-    (handle: OperationsBoardHandle) => {
-      if (lastFraming.current === framing) return;
-      lastFraming.current = framing;
-      if (model.territories.length === 1) handle.zoom(2.4);
-    },
-    [framing, model.territories.length]
-  );
-  const [hover] = useState(createBoardHoverStore);
-  const hoveredId = useBoardHoverSlice(hover, value => value.agentId);
-  const pressedId = useBoardHoverSlice(hover, value => value.pressedAgentId);
   const agentIds = useMemo(
     () =>
       new Set(model.tiles.filter(tile => tile.agentId).map(tile => tile.id)),
@@ -198,11 +154,9 @@ function QualityScene({
     () => ({
       focusId: null,
       selection: multiSelection ?? EMPTY,
-      hoveredId,
-      pressedId,
       tileAgent: id => agentIds.has(id),
     }),
-    [multiSelection, hoveredId, pressedId, agentIds]
+    [multiSelection, agentIds]
   );
   const readFrame = useCallback(() => frame, [frame]);
   const onMotionFrame = useCallback(
@@ -212,43 +166,71 @@ function QualityScene({
     [ambient, invalidate]
   );
   useEffect(() => invalidate(), [invalidate, theme, ambient, frame, model]);
-  const suppressMiss = useRef(0);
-  const subjects = useMemo(
-    () =>
-      boardTileStatusSubjects([
-        ...layout.pieces.filter(
-          piece => piece.visible && piece.kind === 'agent'
-        ),
-        ...model.children,
-      ]),
-    [layout.pieces, model.children]
-  );
-  const tethers = useMemo(
-    () =>
-      layout.delegationUnits.flatMap(unit => [
-        boardWorldPosition({ x: unit.tether.x1, y: unit.tether.y1 }, 0.06),
-        boardWorldPosition({ x: unit.tether.x2, y: unit.tether.y2 }, 0.06),
-      ]),
-    [layout.delegationUnits]
-  );
+  useEffect(() => {
+    const rig = controls.current;
+    if (!rig) return;
+    const { x, y, width, height } = model.bounds;
+    const box = new Box3(
+      new Vector3(x - 1, -0.3, y - 2),
+      new Vector3(x + width + 1, 1, y + height + 1)
+    );
+    // Measure the box in the selected camera basis, then let CameraControls
+    // solve its frustum fit. Fitting overhead before tilting clips front rows.
+    void rig.rotateTo(
+      cameraPreset === 'overhead' ? 0 : -0.12,
+      cameraPreset === 'overhead' ? 0.04 : cameraPreset === 'low' ? 1.0 : 0.8,
+      false
+    );
+    rig.update(0);
+    camera.updateMatrixWorld();
+    const extent = box
+      .clone()
+      .applyMatrix4(camera.matrixWorldInverse)
+      .getSize(new Vector3());
+    const center = box.getCenter(new Vector3());
+    void rig.moveTo(center.x, center.y, center.z, false);
+    void rig.dollyTo(
+      rig.getDistanceToFitBox(extent.x * 1.1, extent.y * 1.12, extent.z),
+      false
+    );
+    gl.domElement.setAttribute('data-camera-ready', cameraPreset);
+    invalidate();
+  }, [
+    model.bounds,
+    camera,
+    cameraPreset,
+    recenterToken,
+    size.width,
+    size.height,
+    gl,
+    invalidate,
+  ]);
+  const select = (id: string | null) => {
+    const target = model.targets.find(item => item.tile.agentId === id);
+    if (target?.agentId) onSelectAgent(target.agentId);
+    else if (target?.parentAgentId) {
+      if (target.childId && onSelectDelegationChild)
+        onSelectDelegationChild(target.parentAgentId, target.childId);
+      else onSelectAgent(target.parentAgentId);
+    }
+  };
   return (
     <>
-      <BoardCameraRig
-        layout={model.cameraLayout}
-        projection="fixed-angle"
-        reduced={reduced}
-        controllerRef={controllerRef}
-        onControllerReady={frameSmallFleet}
-        onZoomChange={labels.onZoomChange}
-        followSelection={false}
-        touchSelectionMode={false}
-        suppressMissRef={suppressMiss}
+      <CameraControls
+        ref={controls}
+        makeDefault
+        minPolarAngle={0.02}
+        maxPolarAngle={1.25}
+        minDistance={4}
+        maxDistance={700}
+        smoothTime={reduced ? 0 : 0.22}
+        onUpdate={() => invalidate()}
       />
-      <group rotation={[Math.PI / 2, 0, 0]}>
+      <group scale={[1, 0.3, 1]}>
         <TileRenderer
           tiles={model.ground}
           surface="plane"
-          theme={theme}
+          theme={groundTheme}
           material="glazed"
           shape="hex"
           detail="coarse"
@@ -263,165 +245,122 @@ function QualityScene({
           transmission={false}
           staticInstances
         />
-        <TileRenderer
-          tiles={model.tiles}
-          surface="plane"
-          theme={theme}
-          material={material}
-          shape="rounded"
-          detail="adaptive"
-          mark="relief"
-          motion={DEFAULT_MOTION}
-          signal="paint"
-          light="studio"
-          readFrame={readFrame}
-          readClock={readClock}
-          marks={MARKS}
-          reducedMotion={reduced || ambient.cadence === 'parked'}
-          calmAttention
-          interactive={false}
-          requestFrame={invalidate}
-          onMotionFrame={onMotionFrame}
-          transmission={transmission && model.tiles.length < 700}
-        />
       </group>
-      {tethers.length > 0 && (
+      <TileRenderer
+        tiles={model.tiles}
+        surface="plane"
+        theme={theme}
+        material={material}
+        shape="rounded"
+        detail={model.tiles.length > 200 ? 'coarse' : 'full'}
+        mark="relief"
+        motion={{ ...DEFAULT_MOTION, lift: 'still' }}
+        signal="paint"
+        light="studio"
+        readFrame={readFrame}
+        readClock={readClock}
+        marks={MARKS}
+        reducedMotion={reduced || ambient.cadence === 'parked'}
+        calmAttention
+        requestFrame={invalidate}
+        onMotionFrame={onMotionFrame}
+        transmission={transmission && model.tiles.length < 700}
+        onSelect={select}
+      />
+      {model.tethers.length > 0 && (
         <Line
-          points={tethers}
+          points={model.tethers}
           segments
           color={theme.labelMuted}
           lineWidth={1}
           transparent
-          opacity={0.45}
+          opacity={0.35}
           toneMapped={false}
           depthWrite={false}
           raycast={() => null}
         />
       )}
-      <StatusMarkLayer
-        pieces={subjects}
-        theme={theme}
-        ambient={ambient}
-        lens="status"
-        depthPolicy="overlay"
-      />
-      <PopulationStatusMarks
-        depthPolicy="overlay"
-        field={population}
-        lens="status"
-        ambient={false}
-        theme={theme}
-        backing
-      />
-      <StoppedAgentOutlines
-        pieces={layout.pieces}
-        lens="status"
-        theme={theme}
-      />
-      <TerritoryLabels
-        model={model}
-        theme={theme}
-        store={labels.store}
-        onDrillProject={onDrillProject}
-      />
-      {model.territories
-        .filter(
-          ({ zone }) =>
-            layout.stats.sourceAgentCount <= 100 ||
-            zone.id === layout.focusedProjectId
-        )
-        .map(({ zone }) => (
-          <group key={`controls:${zone.id}`}>
-            <AgentControls
-              pieces={layout.pieces}
-              altitude="project"
-              focusedProjectId={zone.id}
-              onSelectAgent={onSelectAgent}
-              onToggleAgentSelect={onToggleAgentSelect}
-              onHoverChange={hover.setAgent}
-              onPressedChange={hover.setPressed}
-              multiSelection={multiSelection}
-              reduced={reduced}
-              theme={theme}
-            />
-            <DelegationControls
-              units={layout.delegationUnits}
-              pieces={layout.pieces}
-              altitude="project"
-              focusedProjectId={zone.id}
-              onSelectAgent={onSelectAgent}
-              onSelectDelegationChild={onSelectDelegationChild}
-              onHoverChange={hover.setDelegation}
-              reduced={reduced}
-              theme={theme}
-            />
-          </group>
-        ))}
-    </>
-  );
-}
-
-function TerritoryLabels({
-  model,
-  theme,
-  store,
-  onDrillProject,
-}: {
-  model: ReturnType<typeof qualityModel>;
-  theme: SpatialThemeSnapshot;
-  store: ZoneLabelTierStore;
-  onDrillProject: (id: string) => void;
-}) {
-  const tier = useSyncExternalStore(store.subscribe, store.get, store.get);
-  return (
-    <>
       {model.territories.map(({ zone, rect }) => (
         <Html
           key={zone.id}
-          position={boardWorldPosition({ x: rect.x, y: rect.y - 0.5 }, 1)}
+          position={[rect.x + rect.width / 2, 0.1, rect.y - 0.8]}
+          center
           zIndexRange={[30, 0]}
-          style={{ pointerEvents: 'none' }}
         >
           <button
             data-board-zone={zone.id}
-            className="group pointer-events-auto flex w-max flex-col items-start gap-1 rounded-md px-2 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            disabled={zone.isAggregate}
+            onPointerDown={event => event.stopPropagation()}
+            onClick={event => {
+              event.stopPropagation();
+              onDrillProject(zone.id);
+            }}
+            aria-label={`Open Project ${zone.label}`}
+            className="flex w-max items-center gap-2 rounded-md px-2 py-1 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{
               color: theme.label,
-              background: spatialColorWithAlpha(theme.canvas, 0.92),
+              background: spatialColorWithAlpha(theme.canvas, 0.9),
             }}
-            disabled={zone.isAggregate}
-            onClick={() => onDrillProject(zone.id)}
-            aria-label={`Open Project ${zone.label}`}
           >
-            <span className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{
-                  background: spatialProjectIdentityColor(theme, zone.id),
-                }}
-              />
-              {tier === 'nano' ? zone.slotIndex + 1 : zone.label}
-              <span
-                className="font-mono text-chrome-meta font-normal"
-                style={{ color: theme.labelMuted }}
-              >
-                {zone.agentCount}
-              </span>
-            </span>
             <span
-              className={
-                tier === 'full'
-                  ? 'flex gap-3 whitespace-nowrap pl-3.5 font-mono text-chrome-meta'
-                  : 'hidden'
-              }
+              className="h-1.5 w-1.5 rounded-full"
+              style={{
+                background: spatialProjectIdentityColor(theme, zone.id),
+              }}
+            />
+            {zone.label}
+            <span
+              className="font-mono text-chrome-meta font-normal"
               style={{ color: theme.labelMuted }}
             >
-              <span>{zone.activeCount} active</span>
-              {zone.blockedCount > 0 && (
-                <span style={{ color: theme.status['needs-you'] }}>
-                  {zone.blockedCount} blocked
-                </span>
-              )}
+              {zone.agentCount}
+            </span>
+          </button>
+        </Html>
+      ))}
+      {model.targets.map(target => (
+        <Html
+          key={target.tile.id}
+          position={[target.tile.x, 0.65, target.tile.y]}
+          center
+          distanceFactor={24}
+          zIndexRange={[20, 0]}
+        >
+          <button
+            data-quality-agent={target.tile.id}
+            aria-label={target.label}
+            title={target.label}
+            aria-pressed={
+              target.agentId ? multiSelection?.has(target.agentId) : undefined
+            }
+            onPointerDown={event => event.stopPropagation()}
+            onClick={event => {
+              event.stopPropagation();
+              return target.agentId
+                ? onSelectAgent(target.agentId)
+                : target.parentAgentId
+                  ? target.childId && onSelectDelegationChild
+                    ? onSelectDelegationChild(
+                        target.parentAgentId,
+                        target.childId
+                      )
+                    : onSelectAgent(target.parentAgentId)
+                  : undefined;
+            }}
+            className="group relative grid h-8 w-8 place-items-center rounded-full text-chrome-label outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            style={{ color: theme.label }}
+          >
+            {target.overflow > 0 ? (
+              <span className="rounded bg-background px-1 font-mono">
+                +{target.overflow}
+              </span>
+            ) : target.stopped ? (
+              <span className="rounded bg-background px-1 text-chrome-meta">
+                Stopped
+              </span>
+            ) : null}
+            <span className="pointer-events-none absolute top-full mt-2 hidden w-max max-w-64 rounded-md border border-border bg-background px-3 py-2 text-left text-chrome-label group-hover:block group-focus-visible:block">
+              {target.label}
             </span>
           </button>
         </Html>

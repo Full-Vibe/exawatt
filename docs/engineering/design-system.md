@@ -1155,3 +1155,13 @@ snapshot, never an intermediate layout storm.
   Classic/Air/Night consume the same concrete theme snapshot. No new color or
   type rung and no production change is authorized by this candidate alone;
   operator acceptance precedes adoption, then the candidate retires.
+
+- 2026-10-21 — ENG-004 V4.1 follow-up review: operator rejects routine rotating
+  D40 overlays on status-colored bodies in the Fleet v2 candidate. Color is the
+  primary visible work signal there; harness relief stays still, while stopped
+  and overflow retain chrome-meta/label text exceptions and DOM labels/tooltips
+  retain work readings. This scopes an exception to the gallery candidate, not
+  v1. Floor uses the existing zone-hover/grid-major neutrals through the shared
+  tile palette, with shallower geometry. Exclusive axial addresses align bodies
+  and sockets. High/low/overhead perspective presets are reviewable in the same
+  DOM/R3F study; operator acceptance still precedes production adoption.

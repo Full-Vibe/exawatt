@@ -3897,12 +3897,13 @@ Reusing an Agent body alone did not adopt the surrounding material language.
 Review surface: `/hud-gallery/board-study/quality`, within the existing Fleet
 board workbench, with Current v2/Candidate comparison, all five materials,
 Classic/Air/Night, 10/100/1k, fan-out and stopped fixtures. The candidate uses
-shared production tiles, status annotations, Agent/child DOM targets, camera
-controls and host-power policy. It proposes fitted neutral hex territory,
+shared production tiles and host-power policy, with gallery-owned Agent/child
+DOM targets and perspective controls. It proposes fitted neutral hex territory,
 studio reflections, matching child bodies with truthful unknown harness marks,
-quieter DOM Project labels, and tighter small-fleet framing. Agent positions,
-sizes, census and lineage remain unchanged; ground is bounded to 4,096 instances
-and has no Agent identity. No production preference or renderer is changed.
+quieter DOM Project labels, and tighter small-fleet framing. The initial
+position-preserving candidate was rejected in the follow-up below; its
+independent decorative lattice did not align with the bodies. Source identity,
+census and lineage remain unchanged; ground has no Agent identity. No production preference or renderer is changed.
 
 Acceptance and next ownership boundary:
 
@@ -3928,3 +3929,34 @@ recipe rendering, path classification and content scan passed; two scanning-test
 workers timed out on the contended host, then both files passed in isolation
 (**4/4**, `test:alone`), without changing code or timeouts. Production adoption
 remains pending operator look review.
+
+
+### 2026-10-21 — V4.1 lattice and perspective review correction
+
+**One hex address now owns each body and its socket; status color replaces redundant rotors.**
+The operator rejected the first candidate's floating status icons, near-overhead
+camera and misaligned decorative tiles, and explicitly requested repeated visual
+self-review. This supersedes the candidate's position-preserving layout premise
+and mandatory D40 overlay, not the installed v1/v2 behavior contracts.
+
+The gallery adapter now allocates exclusive axial cells, groups delegated children
+around their parent, and derives floor, bodies, lineage and input from those
+addresses. It preserves source readings, Agent identity, unknown child harnesses,
+population census and overflow counts. Navigation frames the same mapped world.
+The scene stays in the shared material renderer's native XZ basis, with high
+perspective, low perspective and overhead camera presets plus orbit/pan/zoom.
+CameraControls fits camera-space bounds; fitting overhead then tilting was rejected
+because it clipped foreground Projects at 100/1k scale. A shallower, theme-derived
+floor makes grounding clear without heavy black extrusion. Body status is the
+primary visible signal, harness relief stays still, and stopped/overflow retain
+quiet text exceptions; names and work readings remain in DOM labels/tooltips.
+
+Visual iterations rejected the initial narrow strip, under-framing, dark thick
+floor and clipped front rows. Signed-browser captures cover the three camera
+presets, Classic/Air/Night, 10/100/1k, fan-out, stopped, alternative materials and
+narrow width. The 1k overview renders in four draw calls. Review screenshots and
+interaction evidence live under `/tmp/exawatt-fleet-v2-quality/iteration/`.
+Tests assert immutable source data, preserved population, exclusive occupancy,
+body/socket alignment and navigation stability (5 fixtures); they do not pin
+copy, spacing or a preferred camera angle. Production adoption still requires
+operator look acceptance and the full existing behavior/power/motion gates.

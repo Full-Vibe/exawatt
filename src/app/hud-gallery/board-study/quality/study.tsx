@@ -10,6 +10,7 @@ import {
   boardStudySourceMarks,
   type BoardStudyFixtureId,
 } from '@/components/hud/board-study-fixtures';
+import type { QualityCamera } from './scene';
 import { THEME_REGISTRY } from '@/generated/theme-registry';
 import { resolveAppearance } from '@/lib/appearance/resolve-appearance';
 import { resolvedAppearanceCssVariables } from '@/lib/appearance/dom-adapter';
@@ -44,6 +45,9 @@ export function QualityStudy() {
   ) as BoardStudyFixtureId;
   const [material, setMaterial] = useState<FleetMaterial>('gummy');
   const [themeId, setThemeId] = useState<keyof typeof THEMES>('night');
+  const [cameraPreset, setCameraPreset] =
+    useState<QualityCamera>('perspective');
+  const [recenterToken, setRecenterToken] = useState(0);
   const [current, setCurrent] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [project, setProject] = useState<string | null>(null);
@@ -167,6 +171,22 @@ export function QualityStudy() {
               ))}
             </select>
           </label>
+          <label className="flex items-center gap-2 text-muted-foreground">
+            Camera
+            <select
+              aria-label="Camera"
+              disabled={current}
+              value={cameraPreset}
+              onChange={event =>
+                setCameraPreset(event.target.value as QualityCamera)
+              }
+              className="rounded-md border border-border bg-background px-3 py-2 text-foreground disabled:opacity-40"
+            >
+              <option value="perspective">High perspective</option>
+              <option value="low">Low perspective</option>
+              <option value="overhead">Overhead</option>
+            </select>
+          </label>
           <nav className="flex flex-wrap gap-1" aria-label="Fixture">
             {BOARD_STUDY_FIXTURES.filter(item =>
               [
@@ -203,6 +223,7 @@ export function QualityStudy() {
               onClick={() => {
                 setProject(null);
                 controller.current?.recenter();
+                setRecenterToken(value => value + 1);
               }}
             >
               Fleet
@@ -222,6 +243,8 @@ export function QualityStudy() {
           >
             <Canvas
               layout={layout}
+              cameraPreset={cameraPreset}
+              recenterToken={recenterToken}
               theme={theme}
               projection="fixed-angle"
               controllerRef={controller}
@@ -237,7 +260,7 @@ export function QualityStudy() {
           </Suspense>
           <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex justify-between gap-4 text-chrome-meta text-muted-foreground">
             <span>
-              Scroll to explore · Click a Project to focus · Click an Agent to
+              Drag to orbit · Scroll to zoom · Right-drag to pan · Click to
               select
             </span>
             <span>
@@ -248,9 +271,8 @@ export function QualityStudy() {
           </div>
         </section>
         <p className="text-chrome-label text-muted-foreground">
-          Review candidate. Agent positions and source state are unchanged.
-          Studio lighting, fitted territory, shared child materials, and lighter
-          labels are under review.
+          Review candidate. Shared hex addresses, perspective cameras and
+          color-led status. Agent identity and source state are preserved.
         </p>
       </div>
     </main>

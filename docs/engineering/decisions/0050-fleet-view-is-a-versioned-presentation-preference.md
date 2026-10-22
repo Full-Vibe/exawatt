@@ -161,3 +161,19 @@ lighter Project labels. This remains a review candidate; the registry,
 preferences, production layout and both installed renderers are unchanged.
 After operator acceptance, adopt through the existing v2 renderer and shared
 behavior owners, verify the full product contracts, and retire the candidate.
+
+
+## Lattice and camera review amendment (2026-10-21)
+
+**The operator rejects redundant rotating status annotations and authorizes perspective exploration.**
+The follow-up screenshots expose the independent decorative lattice as the
+alignment defect. The gallery candidate now uses one presentation address for
+each body, socket, lineage endpoint and input target. This supersedes its earlier
+promise to retain the production XY coordinates verbatim. Source identities,
+readings and census remain immutable. The candidate's native XZ perspective
+camera offers high, low and overhead presets, with bounded orbit/pan/zoom;
+this explicitly opens the earlier no-orbit constraint for gallery review.
+Status-colored bodies replace routine D40 overlays in this candidate; stopped
+and overflow retain quiet text exceptions and every individual work reading
+remains accessible in DOM labels/tooltips. These are review proposals for v2,
+not an unreviewed change to v1, production camera ownership or saved preferences.
