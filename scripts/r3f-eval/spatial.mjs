@@ -86,15 +86,17 @@ function checkEconomyCadence({ painted, ticks, tickMs, rotors }, label) {
 async function checkWorkingMotion(page, { expectMotion }) {
   const sample = await page.evaluate(async source => {
     const sampleRotors = new Function(`return (${source})()`);
+    // One instant for the readout and the scene: live Demo ticks change
+    // who works between frames.
     const before = sampleRotors();
+    const claims = (window.__EVAL_FRAME_DEMAND__?.().ambient ?? []).filter(
+      claim => claim.label === 'rotors'
+    );
     for (let frame = 0; frame < 20; frame++)
       await new Promise(resolve => requestAnimationFrame(resolve));
     let moving = 0;
     for (const [node, angle] of before)
       if (node.rotation.z !== angle) moving += 1;
-    const claims = (window.__EVAL_FRAME_DEMAND__?.().ambient ?? []).filter(
-      claim => claim.label === 'rotors'
-    );
     return {
       working: claims.reduce((sum, claim) => sum + claim.working, 0),
       attached: claims.reduce((sum, claim) => sum + claim.rotors, 0),

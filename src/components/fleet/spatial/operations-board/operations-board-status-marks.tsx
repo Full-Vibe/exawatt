@@ -2,7 +2,14 @@
 
 import { Instances, Instance } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import * as THREE from 'three';
 import type { SpatialBoardLens, SpatialBoardPiece } from '@exawatt/ui-model';
 import {
@@ -90,8 +97,11 @@ export function StatusMarkLayer({
       ).length,
     [pieces]
   );
+  // Committed with the rotors it is compared against, never ahead of them.
   const workingRef = useRef(working);
-  workingRef.current = working;
+  useLayoutEffect(() => {
+    workingRef.current = working;
+  }, [working]);
   const [readout] = useState(() => () => ({
     working: workingRef.current,
     rotors: rotorRefs.current.size,
