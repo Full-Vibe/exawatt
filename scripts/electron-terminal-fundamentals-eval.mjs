@@ -434,11 +434,11 @@ await withElectronApp(
     const highlighted = await page.evaluate(() =>
       Array.from(
         document.querySelectorAll('[role="menuitem"][data-active]')
-      ).map(element => element.textContent)
+      ).map(element => element.getAttribute('data-command-id'))
     );
     check(
       'ArrowDown moves the menu highlight, not the shell',
-      highlighted.length === 1 && highlighted[0] === 'Paste',
+      highlighted.length === 1 && highlighted[0] === 'terminal.paste',
       JSON.stringify(highlighted)
     );
     await page.keyboard.press('Escape');

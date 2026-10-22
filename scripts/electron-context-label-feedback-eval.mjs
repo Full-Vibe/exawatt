@@ -282,8 +282,8 @@ try {
       );
 
       await page.evaluate(
-        ({ id }) => window.electron.pty.write(id, `${CORRECTED}\r`, true),
-        { id: first.id }
+        ({ id, text }) => window.electron.pty.write(id, `${text}\r`, true),
+        { id: first.id, text: CORRECTED }
       );
       if (hostedLabelsConfigured) {
         await waitForPageCondition(
