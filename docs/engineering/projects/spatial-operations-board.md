@@ -4014,3 +4014,14 @@ foreground while macOS is locked, and reports that condition for both v1 and v2.
 The delivery intentionally waives `eval:spatial:attention` for this environment
 limitation; no foreground truth is fabricated. Other required gates run through
 the normal delivery on the committed tree.
+
+
+Delivery receipt: `b552ec775f70` integrated and publicly projected through ticket
+705. Every declared browser, rendering, pointer, resize, lifecycle, material,
+power, navigation, packaged Session and connected-source gate passed. After the
+Mac unlocked, `eval:spatial:attention` passed both browser and native Electron
+checks for v1 and v2 on that same commit, closing the earlier environment waiver.
+The signed dogfood installer verified `b552ec775f70` at `/Applications/Exawatt.app`
+on 2026-10-22; the running app loads it on restart. The standalone review preview
+at port 7139 serves that commit independently of the temporary worktree and
+passed the same parent/child hover, press, audio and camera interaction probe.
