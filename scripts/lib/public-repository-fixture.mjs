@@ -8,6 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { writeDeliveryPolicy } from './delivery-queue-fixture.mjs';
 import { git } from './hermetic-git.mjs';
 
 /**
@@ -173,6 +174,8 @@ export function createPrivateFixture(prefix = 'exawatt-two-repo-') {
   write(root, 'src/config.ts', 'export const operator = null;\n');
   write(root, 'company/secret.md', 'private overlay\n');
   write(root, WORKFLOW_PATH, fixtureWorkflow());
+  // The policy a landing classifies this tree with (BUG-317).
+  writeDeliveryPolicy(root);
   git(root, ['add', '--all']);
   git(root, ['commit', '--quiet', '-m', 'root']);
   git(root, ['push', '--quiet', '-u', 'origin', 'master']);

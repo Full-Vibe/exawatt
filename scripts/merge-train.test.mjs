@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import { parseArgs } from './agent-land.mjs';
 import {
+  addsLandingCheck,
   commit,
   createQueueFixture,
   finished,
@@ -21,6 +22,7 @@ import {
   firstRedCar,
   trainOptionsRefusal,
 } from './lib/merge-train.mjs';
+import { TREE_POLICY_FILE } from './lib/tree-policy.mjs';
 
 /**
  * ENG-039 M3: `agent:land --train` lands a front's packets as one train. Each
@@ -425,6 +427,100 @@ test('a second car that breaks the same check is reported in the same run', asyn
       landed.output,
       /STATUS failed=train guilty=agent\/a check=lint rest=failed:lint/u
     );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// BUG-317: on 2026-10-22 a train carried ENG-039's new modules:check from a
+// master that predated it, so the check never ran on the stack and master
+// landed red. The fixture's master, which runs this train, predates the check
+// the middle car adds.
+test('a check a car adds to its own delivery policy runs on the stack, and a red one names that car', async () => {
+  for (const red of [false, true]) {
+    const fixture = createQueueFixture('exawatt-train-added-check-');
+    try {
+      fixture.agentWorktree('agent/a', { 'docs/a.md': '# A\n' });
+      fixture.agentWorktree('agent/policy', {
+        [TREE_POLICY_FILE]: fixture.policyWith(
+          addsLandingCheck('fixture:added')
+        ),
+        ...(red ? { RED: 'fails the check it adds\n' } : {}),
+      });
+      fixture.agentWorktree('agent/c', { 'docs/c.md': '# C\n' });
+      const log = fixture.at('pnpm.log');
+      const before = fixture.originMaster();
+      const landed = await finished(
+        fixture.land(
+          fixture.main,
+          ['--train', 'agent/a', 'agent/policy', 'agent/c'],
+          {
+            ...QUIET,
+            FIXTURE_FAILS: 'fixture:added=RED',
+            FIXTURE_PNPM_LOG: log,
+          }
+        )
+      );
+      if (!red) {
+        assert.equal(landed.code, 0, landed.output);
+        assert.equal(runs(log, 'run fixture:added'), 1, landed.output);
+        continue;
+      }
+      assertNothingLanded(fixture, before, landed);
+      assert.match(
+        landed.output,
+        /TRAIN red: agent\/policy broke fixture:added; agent\/a passed without it\. The other cars do not owe fixture:added without it\./u
+      );
+      assert.match(
+        landed.output,
+        /train bisect: agent\/a does not owe fixture:added/u
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  }
+});
+
+test('a car whose delivery policy does not load is the car the train names', async () => {
+  const fixture = createQueueFixture('exawatt-train-broken-policy-');
+  try {
+    fixture.agentWorktree('agent/a', { 'docs/a.md': '# A\n' });
+    fixture.agentWorktree('agent/broken', {
+      [TREE_POLICY_FILE]: fixture.policyWith(
+        "\nthrow new Error('fixture: this policy does not load');\n"
+      ),
+    });
+    fixture.agentWorktree('agent/c', { 'docs/c.md': '# C\n' });
+    const log = fixture.at('pnpm.log');
+    const before = fixture.originMaster();
+    const landed = await finished(
+      fixture.land(
+        fixture.main,
+        ['--train', 'agent/a', 'agent/broken', 'agent/c'],
+        { ...QUIET, FIXTURE_PNPM_LOG: log }
+      )
+    );
+    assertNothingLanded(fixture, before, landed);
+    assert.match(
+      landed.output,
+      /TRAIN red: agent\/broken broke delivery-policy; agent\/a passed without it\. The other cars pass delivery-policy without it\./u
+    );
+    assert.match(
+      landed.output,
+      /delivery-policy: scripts\/lib\/delivery-policy\.mjs of tree [0-9a-f]{12} did not load: Error: fixture: this policy does not load/u
+    );
+    assert.match(
+      landed.output,
+      /STATUS failed=train guilty=agent\/broken check=delivery-policy passed=agent\/a rest=passed/u
+    );
+    // A tree whose policy cannot answer owes nothing it can name, so no
+    // check ran on any stack.
+    assert.deepEqual(scriptRuns(log), {}, landed.output);
+    const failed = (await readDeliveryMetrics(fixture.main)).filter(
+      event => event.type === 'landing_check' && event.status === 'failed'
+    );
+    assert.ok(failed.length > 0);
+    assert.ok(failed.every(event => event.id === 'delivery-policy'));
   } finally {
     fixture.cleanup();
   }

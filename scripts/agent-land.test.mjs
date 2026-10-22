@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import { holdAwake, parseArgs, parseWorktrees } from './agent-land.mjs';
 import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
+import { writeDeliveryPolicy } from './lib/delivery-queue-fixture.mjs';
 import { gitAsync, hermeticGitEnv } from './lib/hermetic-git.mjs';
 
 const script = fileURLToPath(new URL('./agent-land.mjs', import.meta.url));
@@ -252,7 +253,7 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
         2
       )}\n`
     );
-    await git(main, 'add', 'package.json');
+    await git(main, 'add', 'package.json', ...writeDeliveryPolicy(main));
     await git(main, 'commit', '-m', 'Initial');
     await git(main, 'push', '-u', 'origin', 'master');
     await git(main, 'worktree', 'add', agent, '-b', 'agent/test');
@@ -344,7 +345,7 @@ test('serves concurrent landers in FIFO order, rebases the later tree, and ignor
         },
       })}\n`
     );
-    await git(main, 'add', 'package.json');
+    await git(main, 'add', 'package.json', ...writeDeliveryPolicy(main));
     await git(main, 'commit', '-m', 'Initial');
     await git(main, 'push', '-u', 'origin', 'master');
     await git(main, 'worktree', 'add', firstPath, '-b', 'agent/first');

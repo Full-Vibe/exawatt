@@ -367,7 +367,7 @@ test('two tickets appending backlog entries at one anchor both land through the 
 // load is forced here; a grace of -1 puts any ownerless lock past its
 // staleness bound at once.
 test('id:next never hands one id to two callers while the counter holder is starved', async () => {
-  const fixture = createQueueFixture('exawatt-id-starved-');
+  const fixture = createQueueFixture('exawatt-id-starved-', { policy: false });
   try {
     const root = fixture.main;
     write(root, ROADMAP, `${BASE}\n### BUG-7 Seven\n`);
@@ -421,7 +421,7 @@ test('id:next never hands one id to two callers while the counter holder is star
 });
 
 test('id:next allocates past origin/master and the queue, once each, under concurrency', async () => {
-  const fixture = createQueueFixture('exawatt-id-next-');
+  const fixture = createQueueFixture('exawatt-id-next-', { policy: false });
   try {
     const root = fixture.main;
     write(root, ROADMAP, `${BASE}\n### BUG-7 Seven\n\nD3 landed.\n`);

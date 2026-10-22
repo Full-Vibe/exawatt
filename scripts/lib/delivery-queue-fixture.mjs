@@ -4,6 +4,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -12,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { git, hermeticGitEnv } from './hermetic-git.mjs';
+import { TREE_POLICY_FILE } from './tree-policy.mjs';
 
 /**
  * A real local delivery queue for the landing-queue fixtures (BUG-200..204):
@@ -23,6 +25,10 @@ import { git, hermeticGitEnv } from './hermetic-git.mjs';
  * The one real check is a stand-in for the recipe-renderer contract, the docs
  * check that has refused real documentation (BUG-131, BUG-195): it fails when
  * a file under `docs/` carries the word SEAM.
+ *
+ * The fixture's tree carries this tree's delivery policy (BUG-317): a landing
+ * classifies every tree with the policy that tree holds, so a car can add a
+ * check or a gate to its own copy, or break it.
  */
 
 const LAND_SCRIPT = fileURLToPath(
@@ -58,6 +64,45 @@ export function write(root, file, contents) {
   writeFileSync(absolute, contents);
 }
 
+const SOURCE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const RELATIVE_IMPORT =
+  /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"](\.{1,2}\/[^'"]+)['"]/gu;
+
+/**
+ * Writes this tree's delivery policy and every file it imports into `root`,
+ * at the same paths, and returns those paths: the policy a landing loads
+ * from the tree it checks (BUG-317).
+ */
+export function writeDeliveryPolicy(root) {
+  const seen = new Set();
+  const pending = [TREE_POLICY_FILE];
+  while (pending.length > 0) {
+    const file = pending.pop();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const source = readFileSync(path.join(SOURCE_ROOT, file), 'utf8');
+    write(root, file, source);
+    for (const [, specifier] of source.matchAll(RELATIVE_IMPORT)) {
+      pending.push(path.posix.join(path.posix.dirname(file), specifier));
+    }
+  }
+  return [...seen].sort();
+}
+
+/**
+ * Appended to a tree's delivery policy: one more landing check, owed by
+ * every change, as a car that adds a check to its own policy writes it.
+ */
+export function addsLandingCheck(id) {
+  return `
+const classifiedBefore = classifyDeliveryPolicy;
+classifyDeliveryPolicy = (...args) => [
+  ...classifiedBefore(...args),
+  { id: '${id}', command: 'pnpm', args: ['run', '${id}'] },
+];
+`;
+}
+
 /** Stages `files` (or everything) and commits, returning the new SHA. */
 export function commit(root, message, files = null) {
   git(root, ['add', ...(files ?? ['--all'])]);
@@ -67,7 +112,10 @@ export function commit(root, message, files = null) {
 
 export function createQueueFixture(
   prefix = 'exawatt-queue-',
-  { scripts = {}, files = {} } = {}
+  // `policy: false` leaves the delivery policy out, for a repository no
+  // landing classifies whose tree must hold only what its test writes: the id
+  // counter reads every id a tracked file names.
+  { scripts = {}, files = {}, policy = true } = {}
 ) {
   const parent = mkdtempSync(path.join(tmpdir(), prefix));
   const at = name => path.join(parent, name);
@@ -91,6 +139,7 @@ export function createQueueFixture(
     )}\n`
   );
   write(main, 'scripts/recipe-renderers.test.mjs', RECIPE_RENDERERS_STAND_IN);
+  if (policy) writeDeliveryPolicy(main);
   write(main, 'docs/guide.md', '# Guide\n\nFirst paragraph.\n');
   write(main, 'src/app.ts', 'export const app = 1;\n');
   for (const [file, contents] of Object.entries(files)) {
@@ -215,6 +264,9 @@ export function createQueueFixture(
       return sha;
     },
     originMaster: () => git(origin, ['rev-parse', 'refs/heads/master']),
+    /** The delivery policy master carries, with `addition` appended. */
+    policyWith: addition =>
+      readFileSync(path.join(main, TREE_POLICY_FILE), 'utf8') + addition,
     land: (cwd, args = [], extra = {}) =>
       startLanding(cwd, args, { ...env, ...extra }),
     cleanup: () => rmSync(parent, { recursive: true, force: true }),

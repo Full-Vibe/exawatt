@@ -6,11 +6,13 @@ import test from 'node:test';
 import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 import { surfaceGateRecheck } from './lib/delivery-policy.mjs';
 import {
+  addsLandingCheck,
   createQueueFixture,
   finished,
   waitForOutput,
 } from './lib/delivery-queue-fixture.mjs';
 import { readDeliveryMetrics } from './lib/delivery-state.mjs';
+import { TREE_POLICY_FILE } from './lib/tree-policy.mjs';
 
 /**
  * BUG-205: after a queue-head rebase, a declared surface gate re-runs on the
@@ -265,5 +267,95 @@ test('the head re-check runs the scanning tests the rebased tree declares', asyn
     ]);
   } finally {
     fixture.cleanup();
+  }
+});
+
+// BUG-317: a landing classified every tree with the code of the checkout that
+// ran it. A gate a change adds for its own surface is owed by that change.
+test('a candidate that adds a gate for its own surface owes it in its own landing', async () => {
+  const fixture = createQueueFixture('exawatt-own-gate-', {
+    scripts: { 'eval:fixture:owned': 'node -e "process.exit(0)"' },
+  });
+  try {
+    const log = fixture.at('pnpm.log');
+    const before = fixture.originMaster();
+    const worktree = fixture.agentWorktree('agent/owned', {
+      'src/owned.ts': 'export const owned = 1;\n',
+      [TREE_POLICY_FILE]: fixture.policyWith(
+        `
+SURFACE_GATES.push({
+  gate: 'eval:fixture:owned',
+  why: 'the surface this change adds',
+  match: file => file === 'src/owned.ts',
+});
+`
+      ),
+    });
+    const env = {
+      FIXTURE_PNPM_LOG: log,
+      EXAWATT_AGENT_LAND_PROBE_SECONDS: '0',
+    };
+    const refused = await finished(fixture.land(worktree, [], env));
+    assert.notEqual(refused.code, 0, refused.output);
+    assert.match(
+      refused.output,
+      /touches surfaces that own eval gates[\s\S]*eval:fixture:owned . the surface this change adds\n\s+src\/owned\.ts/u
+    );
+    assert.equal(fixture.originMaster(), before);
+    assert.equal(runs(log, 'eval:fixture:owned'), 0);
+
+    const landed = await finished(
+      fixture.land(worktree, ['--verify', 'eval:fixture:owned'], env)
+    );
+    assert.equal(landed.code, 0, landed.output);
+    assert.equal(runs(log, 'eval:fixture:owned'), 1);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('the head re-check owes the checks the rebased tree’s own policy adds', async () => {
+  for (const red of [false, true]) {
+    const fixture = createQueueFixture('exawatt-policy-recheck-');
+    try {
+      const log = fixture.at('pnpm.log');
+      const worktree = fixture.agentWorktree('agent/earlier', {
+        'src/app.ts': 'export const app = 2;\n',
+      });
+      // Master gains a landing check after this candidate's base.
+      fixture.advanceMaster({
+        [TREE_POLICY_FILE]: fixture.policyWith(
+          addsLandingCheck('fixture:added')
+        ),
+      });
+      const landed = await finished(
+        fixture.land(worktree, [], {
+          FIXTURE_PNPM_LOG: log,
+          EXAWATT_AGENT_LAND_PROBE_SECONDS: '0',
+          ...(red ? { FIXTURE_FAILS: 'fixture:added=src/app.ts' } : {}),
+        })
+      );
+      assert.match(landed.output, /rebase onto/u);
+      assert.equal(
+        runs(log, 'fixture:added'),
+        1,
+        'the rebased tree owes it; the candidate did not'
+      );
+      const rechecked = (await readDeliveryMetrics(fixture.main)).filter(
+        event => event.type === 'landing_check' && event.id === 'fixture:added'
+      );
+      assert.deepEqual(
+        rechecked.map(event => [event.phase, event.status]),
+        [['rebase', red ? 'failed' : 'passed']]
+      );
+      if (red) {
+        assert.notEqual(landed.code, 0, landed.output);
+        assert.equal(tickets(fixture.main)[0].status, 'failed');
+      } else {
+        assert.equal(landed.code, 0, landed.output);
+      }
+    } finally {
+      fixture.cleanup();
+    }
   }
 });

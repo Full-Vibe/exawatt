@@ -21,17 +21,7 @@ import {
   setTicketHold,
   updateAttempt,
 } from './lib/delivery-queue.mjs';
-import {
-  classifyDeliveryPolicy,
-  classifyDocsChecks,
-  deliveryTree,
-  gateNeedsDevServer,
-  missingSurfaceGates,
-  quarantinedSurfaceGates,
-  surfaceGateMessage,
-  surfaceGateRecheck,
-  runDeliveryChecks,
-} from './lib/delivery-policy.mjs';
+import { runDeliveryChecks } from './lib/delivery-policy.mjs';
 import {
   appendDeliveryMetric,
   delay,
@@ -73,6 +63,11 @@ import {
   holdWhilePublicLatched,
   publicLatchHoldPolicy,
 } from './lib/queue-hold.mjs';
+import {
+  TREE_POLICY_CHECK,
+  TreePolicyError,
+  loadTreePolicy,
+} from './lib/tree-policy.mjs';
 
 const execFileAsync = promisify(execFile);
 const HEARTBEAT_INTERVAL_MS = 5_000;
@@ -86,6 +81,14 @@ const PROBE_SECONDS_ENV = 'EXAWATT_AGENT_LAND_PROBE_SECONDS';
  */
 function probeGitArgs(onto) {
   return [`--attr-source=${onto}`, ...appendMergeGitArgs()];
+}
+
+/**
+ * The ids among `ids` whose check reads the dev server, by the policy of the
+ * tree they run on (BUG-246, BUG-317).
+ */
+function serverChecks(policy, ids) {
+  return new Set(ids.filter(id => policy.gateNeedsDevServer(id)));
 }
 
 /** How often a waiting ticket looks for a moved master (BUG-202); 0 = never. */
@@ -636,8 +639,10 @@ async function main() {
       root: checkout.root,
       branch: `docs/${invokingBranch || 'detached'}`,
       close: checkout.close,
-      checksFor: (changed, _extras, tree) =>
-        classifyDocsChecks(changed, { tree }),
+      // A docs change owes no surface gate.
+      declare: async () => [],
+      checksFor: (policy, changed) =>
+        policy.classifyDocsChecks(changed, { tree: policy.tree }),
       runChecks: runDocsLaneChecks,
       // The docs checkout borrows the invoking checkout's node_modules through
       // links, which may be the shared master's; it never installs into them.
@@ -648,43 +653,47 @@ async function main() {
       openReuse: async () => null,
     };
   } else {
-    // Surface gates are declared, not run here: they need a dev server the
-    // landing checks do not own. Refuse before any expensive work so the omission is
-    // loud and early rather than invisible (D51).
-    const missingGates = missingSurfaceGates(files, [
-      ...options.verify,
-      ...options.waiveGate,
-    ]);
-    if (missingGates.length > 0) {
-      await appendDeliveryMetric(invokingRoot, 'surface_gate_refused', {
-        candidateSha,
-        gates: missingGates.map(entry => entry.gate),
-      });
-      throw new Error(surfaceGateMessage(missingGates));
-    }
-    for (const entry of quarantinedSurfaceGates(files)) {
-      console.warn(
-        `[agent-land] ${entry.gate} is quarantined (${entry.backlogId}) — this change would otherwise owe it: ${entry.why}`
-      );
-      await appendDeliveryMetric(invokingRoot, 'surface_gate_quarantined', {
-        candidateSha,
-        gate: entry.gate,
-        backlogId: entry.backlogId,
-      });
-    }
-    if (options.waiveGate.length > 0) {
-      await appendDeliveryMetric(invokingRoot, 'surface_gate_waived', {
-        candidateSha,
-        gates: options.waiveGate,
-      });
-    }
     lane = {
       kind: 'worktree',
       root: invokingRoot,
       branch: invokingBranch,
       close: async () => {},
-      checksFor: (changed, extras, tree) =>
-        classifyDeliveryPolicy(changed, extras, { tree }),
+      // Surface gates are declared, not run here: they need a dev server the
+      // landing checks do not own. The candidate's own policy names the gates
+      // it owes, and one it did not declare is refused before any landing
+      // check runs, so the omission is loud and early (D51).
+      declare: async (policy, changed) => {
+        const missing = policy.missingSurfaceGates(changed, [
+          ...options.verify,
+          ...options.waiveGate,
+        ]);
+        if (missing.length > 0) {
+          await appendDeliveryMetric(invokingRoot, 'surface_gate_refused', {
+            candidateSha,
+            gates: missing.map(entry => entry.gate),
+          });
+          throw new Error(policy.surfaceGateMessage(missing));
+        }
+        for (const entry of policy.quarantinedSurfaceGates(changed)) {
+          console.warn(
+            `[agent-land] ${entry.gate} is quarantined (${entry.backlogId}) — this change would otherwise owe it: ${entry.why}`
+          );
+          await appendDeliveryMetric(invokingRoot, 'surface_gate_quarantined', {
+            candidateSha,
+            gate: entry.gate,
+            backlogId: entry.backlogId,
+          });
+        }
+        if (options.waiveGate.length > 0) {
+          await appendDeliveryMetric(invokingRoot, 'surface_gate_waived', {
+            candidateSha,
+            gates: options.waiveGate,
+          });
+        }
+        return options.verify;
+      },
+      checksFor: (policy, changed, extras) =>
+        policy.classifyDeliveryPolicy(changed, extras, { tree: policy.tree }),
       runChecks: runDeliveryChecks,
       refreshInstall: () => reinstallWhenStale(invokingRoot, { run }),
       devServer: createLandingDevServer({
@@ -745,25 +754,50 @@ async function landTrain(invokingRoot, options) {
     await run('pnpm', ['worktree:setup'], root);
 
     // Every gate a stack owes is declared for it: the train runs the gates,
-    // where a single landing would refuse until they were named.
-    const declaredFor = paths => [
+    // where a single landing would refuse until they were named. Each stack
+    // the train checks answers with its own policy (BUG-317).
+    const declaredFor = (policy, paths) => [
       ...new Set([
         ...options.verify,
-        ...missingSurfaceGates(paths, [
-          ...options.verify,
-          ...options.waiveGate,
-        ]).map(entry => entry.gate),
+        ...policy
+          .missingSurfaceGates(paths, [...options.verify, ...options.waiveGate])
+          .map(entry => entry.gate),
       ]),
     ];
+    const checksFor = (policy, changed, extras) =>
+      policy.classifyDeliveryPolicy(changed, extras, {
+        tree: policy.tree,
+        wholeRepo: true,
+      });
     const files = await changedPaths(root, base);
-    const extras = declaredFor(files);
-    const gates = extras.filter(id => !options.verify.includes(id));
-    if (gates.length > 0) {
+    // What the whole stack owes, said once. A stack whose policy cannot
+    // answer fails its first landing-check run on that, and the bisection
+    // names the car; until then nobody can say whether a gate reads a dev
+    // server, so the train keeps a port for one.
+    let owes;
+    try {
+      const policy = await loadTreePolicy(root);
+      const extras = declaredFor(policy, files);
+      owes = {
+        gates: extras.filter(id => !options.verify.includes(id)),
+        quarantined: policy.quarantinedSurfaceGates(files),
+        server:
+          serverChecks(
+            policy,
+            checksFor(policy, files, extras).map(check => check.id)
+          ).size > 0,
+      };
+    } catch (error) {
+      if (!(error instanceof TreePolicyError)) throw error;
+      console.warn(`[agent-land] train: ${error.message}`);
+      owes = { gates: [], quarantined: [], server: null };
+    }
+    if (owes.gates.length > 0) {
       console.log(
-        `[agent-land] train declares the gates it owes: ${gates.join(', ')}`
+        `[agent-land] train declares the gates it owes: ${owes.gates.join(', ')}`
       );
     }
-    for (const entry of quarantinedSurfaceGates(files)) {
+    for (const entry of owes.quarantined) {
       console.warn(
         `[agent-land] ${entry.gate} is quarantined (${entry.backlogId}) — this train would otherwise owe it: ${entry.why}`
       );
@@ -774,17 +808,12 @@ async function landTrain(invokingRoot, options) {
         gates: options.waiveGate,
       });
     }
-    const checksFor = (changed, extra, tree) =>
-      classifyDeliveryPolicy(changed, extra, { tree, wholeRepo: true });
-    if (
-      !process.env.EXA_BASE &&
-      checksFor(files, extras, deliveryTree(root)).some(check =>
-        gateNeedsDevServer(check.id)
-      )
-    ) {
+    if (!process.env.EXA_BASE && owes.server !== false) {
       process.env.EXA_BASE = await trainServerBase();
       console.log(
-        `[agent-land] train: its gates read a dev server; the landing starts its own at ${process.env.EXA_BASE}`
+        owes.server
+          ? `[agent-land] train: its gates read a dev server; the landing starts its own at ${process.env.EXA_BASE}`
+          : `[agent-land] train: a dev server for any gate a stack owes starts at ${process.env.EXA_BASE}`
       );
     }
     lane = {
@@ -792,6 +821,7 @@ async function landTrain(invokingRoot, options) {
       root,
       branch: integration.branch,
       close: async () => {},
+      declare: async (policy, changed) => declaredFor(policy, changed),
       checksFor,
       runChecks: runDeliveryChecks,
       refreshInstall: () => reinstallWhenStale(root, { run }),
@@ -810,7 +840,6 @@ async function landTrain(invokingRoot, options) {
       base,
       cars: stacked.cars,
       options,
-      declaredFor,
     });
     lane.trainCars = outcome.cars;
     lane.train = {
@@ -861,14 +890,7 @@ async function landTrain(invokingRoot, options) {
  * the guilty car is left out, the rest is restacked (a later car that now
  * conflicts is left out too) and verified again in full.
  */
-async function verifyTrain({
-  lane,
-  session,
-  base,
-  cars,
-  options,
-  declaredFor,
-}) {
+async function verifyTrain({ lane, session, base, cars, options }) {
   const { root } = lane;
   const excluded = [];
   const bisect = [];
@@ -883,17 +905,20 @@ async function verifyTrain({
       cars: stack,
       phase: 'bisect',
       only: check,
-      declaredFor,
     });
+    // Every tree owes its own policy an answer; any other check is owed
+    // only when the prefix's policy names it.
+    const owed =
+      check === TREE_POLICY_CHECK || step.verified?.checks.length > 0;
     const answer = {
       cars: stack.map(car => car.branch),
       check,
       ...record,
       result: step.passed ? 'passed' : 'failed',
       ...(step.passed
-        ? step.verified.checks.length === 0
-          ? { owed: false }
-          : {}
+        ? owed
+          ? {}
+          : { owed: false }
         : { failedCheck: step.failedCheck }),
     };
     bisect.push(answer);
@@ -935,7 +960,6 @@ async function verifyTrain({
       cars: current,
       phase: 'candidate',
       recheck: true,
-      declaredFor,
     });
     if (attempt.passed) return { ...attempt, cars: current, excluded, bisect };
     const check = attempt.failedCheck;
@@ -946,7 +970,9 @@ async function verifyTrain({
       failedCheck: check,
     });
     console.log(
-      `[agent-land] train ${names(current)} failed ${check} twice on the same tree; asking each prefix only whether it fails ${check}`
+      check === TREE_POLICY_CHECK
+        ? `[agent-land] train ${names(current)} failed ${check}: the stack's own policy cannot answer; asking each prefix only whether its policy answers`
+        : `[agent-land] train ${names(current)} failed ${check} twice on the same tree; asking each prefix only whether it fails ${check}`
     );
     const prefixes = new Map();
     const guiltyIndex = await firstRedCar(current.length, async count => {
@@ -965,7 +991,9 @@ async function verifyTrain({
     // The last car is convicted by elimination: every shorter prefix passed,
     // and the only stack with it is the full one. That is sound only because
     // the full stack failed `check` twice on the same tree; a check that
-    // passes when run again is a suspected flake and never reaches here.
+    // passes when run again is a suspected flake and never reaches here. A
+    // policy that cannot answer is asked once: loading a tree's own files
+    // gives the same answer every time.
     const convicted =
       guiltyIndex === current.length - 1
         ? { failedCheck: check, message: attempt.message }
@@ -1028,9 +1056,10 @@ async function verifyTrain({
 
 /**
  * One landing-check run on the stack HEAD holds: its own changed paths, the
- * gates they owe and the caller's extras (or, with `only`, just that check
- * and what it needs). A failed check is a verdict; any other failure (an
- * install, a dev server) is not the cars' and is thrown.
+ * gates its own policy says they owe and the caller's extras (or, with
+ * `only`, just that check and what it needs). A failed check, the stack's
+ * policy included, is a verdict; any other failure (an install, a dev
+ * server) is not the cars' and is thrown.
  */
 async function verifyStack({
   lane,
@@ -1040,22 +1069,19 @@ async function verifyStack({
   phase,
   only = null,
   recheck = false,
-  declaredFor,
 }) {
   const sha = await git(lane.root, 'rev-parse', 'HEAD');
   const files = await changedPaths(lane.root, base);
-  const extras = declaredFor(files);
   try {
     const verified = await session.verify({
       phase,
       files,
-      extras,
       candidateSha: sha,
       only,
       recheck,
       extra: { trainCars: cars.map(car => car.branch) },
     });
-    return { passed: true, sha, files, extras, verified };
+    return { passed: true, sha, files, extras: verified.extras, verified };
   } catch (error) {
     if (!session.failedCheck) throw error;
     return {
@@ -1127,66 +1153,109 @@ function createLandingSession(lane) {
   // (or is gone), or refuses a server it does not own and cannot prove
   // fresh. Each restart is recorded and named on the STATUS line.
   const serverRefreshes = [];
-  const freshServerBefore = (phase, ownPaths, extra) => async check => {
-    if (!lane.devServer || !gateNeedsDevServer(check.id)) return;
-    let refreshed;
-    try {
-      refreshed = await lane.devServer.ensureFresh({
-        phase,
-        gate: check.id,
-        ownPaths,
+  const freshServerBefore =
+    (needsServer, phase, ownPaths, extra) => async check => {
+      if (!lane.devServer || !needsServer.has(check.id)) return;
+      let refreshed;
+      try {
+        refreshed = await lane.devServer.ensureFresh({
+          phase,
+          gate: check.id,
+          ownPaths,
+        });
+      } catch (error) {
+        await appendDeliveryMetric(
+          root,
+          error.serverRefresh?.kind === 'refused'
+            ? 'server_refused'
+            : 'server_refresh_failed',
+          { ...extra, phase, gate: check.id, reason: error.message }
+        );
+        throw error;
+      }
+      if (!refreshed) return;
+      serverRefreshes.push(phase);
+      await appendDeliveryMetric(root, 'server_refreshed', {
+        ...extra,
+        ...refreshed,
       });
+    };
+
+  /**
+   * Asks the policy of the tree checked out at the lane's root (BUG-317):
+   * `ask` receives a fresh instance of that tree's own
+   * `scripts/lib/delivery-policy.mjs`. A policy that does not load, or
+   * throws, fails as the landing check `delivery-policy`, recorded like any
+   * failed check, so a train bisects it to the car that broke it.
+   */
+  const classify = async (phase, extra, ask) => {
+    const startedAt = Date.now();
+    try {
+      return await ask(await loadTreePolicy(root));
     } catch (error) {
-      await appendDeliveryMetric(
-        root,
-        error.serverRefresh?.kind === 'refused'
-          ? 'server_refused'
-          : 'server_refresh_failed',
-        { ...extra, phase, gate: check.id, reason: error.message }
-      );
+      if (!(error instanceof TreePolicyError)) throw error;
+      await recordLandingCheck(extra)({
+        id: TREE_POLICY_CHECK,
+        phase,
+        status: 'failed',
+        durationMs: Date.now() - startedAt,
+        completedAt: new Date().toISOString(),
+        reason: error.message,
+      });
       throw error;
     }
-    if (!refreshed) return;
-    serverRefreshes.push(phase);
-    await appendDeliveryMetric(root, 'server_refreshed', {
-      ...extra,
-      ...refreshed,
-    });
   };
 
   /**
-   * One landing-check run on HEAD: every check classified from the tree it
-   * runs on, the install refreshed first, and the worktree clean afterwards.
-   * `only` (a train's bisection step) runs just that check and what it needs,
-   * and nothing when the tree does not owe it; `recheck` (a train's full
-   * stack) runs a failed check once more before it counts.
+   * One landing-check run on HEAD: every check and gate it owes classified by
+   * the tree it runs on, with that tree's own policy, the install refreshed
+   * first, and the worktree clean afterwards. `only` (a train's bisection
+   * step) runs just that check and what it needs, and nothing when the tree
+   * does not owe it; `recheck` (a train's full stack) runs a failed check
+   * once more before it counts. Returns the extras the lane declared, gates
+   * included.
    */
   const verify = async ({
     phase,
     files,
-    extras,
     candidateSha,
     extra = {},
     only = null,
     recheck = false,
   }) => {
     failedCheck = null;
-    // Every classification is of the tree it is about to check, read from that
-    // tree: the candidate here, the rebased tree at the head.
-    const owed = lane.checksFor(files, extras, deliveryTree(root));
+    const meta = { candidateSha, ...extra };
+    const { extras, owed, needsServer } = await classify(
+      phase,
+      meta,
+      async policy => {
+        const declared = await lane.declare(policy, files);
+        const checks = lane.checksFor(policy, files, declared);
+        return {
+          extras: declared,
+          owed: checks,
+          needsServer: serverChecks(
+            policy,
+            checks.map(check => check.id)
+          ),
+        };
+      }
+    );
+    // Asked only whether the tree's policy answers: it just did.
+    if (only === TREE_POLICY_CHECK) return { checks: [], evidence: [], extras };
     const checks = only ? bisectChecks(owed, only) : owed;
-    if (checks.length === 0) return { checks, evidence: [] };
-    await refreshInstall(phase, { candidateSha, ...extra });
+    if (checks.length === 0) return { checks, evidence: [], extras };
+    await refreshInstall(phase, meta);
     const evidence = await lane.runChecks(root, checks, {
       phase,
-      onResult: recordLandingCheck({ candidateSha, ...extra }),
-      beforeCheck: freshServerBefore(phase, files, { candidateSha, ...extra }),
+      onResult: recordLandingCheck(meta),
+      beforeCheck: freshServerBefore(needsServer, phase, files, meta),
       reuse: await lane.openReuse(),
       candidateSha,
       recheck,
     });
     await requireClean(root, 'Agent worktree after verification');
-    return { checks, evidence };
+    return { checks, evidence, extras };
   };
 
   return {
@@ -1197,6 +1266,7 @@ function createLandingSession(lane) {
     recordLandingCheck,
     refreshInstall,
     freshServerBefore,
+    classify,
     verify,
     /** The check whose failure ended the last `verify`, or null. */
     get failedCheck() {
@@ -1226,6 +1296,7 @@ async function landThroughQueue({
     recordLandingCheck,
     refreshInstall,
     freshServerBefore,
+    classify,
   } = session;
 
   let checks;
@@ -1275,7 +1346,6 @@ async function landThroughQueue({
     ({ checks, evidence } = await session.verify({
       phase: 'candidate',
       files,
-      extras: options.verify,
       candidateSha,
     }));
   }
@@ -1547,22 +1617,37 @@ async function landThroughQueue({
         ref = attemptRef(branch, attemptNumber);
         await pushAttempt(root, ref);
         const rebasedFiles = await changedPaths(root, remoteBase);
-        const rebaseChecks = lane.checksFor(
-          rebasedFiles,
-          [],
-          deliveryTree(root)
-        );
-        // BUG-205: a declared surface gate re-runs on the rebased tree when
-        // the commits rebased over touched its surface, on the head's
-        // reserved slot with the rest of this re-check; otherwise its
-        // pre-rebase evidence stands, and the ticket says which.
         const fromBase = ticket.baseSha;
-        const gateRecheck = surfaceGateRecheck(
-          options.verify,
-          (await git(root, 'diff', '--name-only', fromBase, remoteBase))
-            .split('\n')
-            .filter(Boolean)
-        );
+        const upstreamPaths = (
+          await git(root, 'diff', '--name-only', fromBase, remoteBase)
+        )
+          .split('\n')
+          .filter(Boolean);
+        const rebaseMeta = { ticketId: ticket.id, candidateSha: rebasedSha };
+        // The rebased tree's own policy says what this re-check owes
+        // (BUG-317). BUG-205: a declared surface gate re-runs on the rebased
+        // tree when the commits rebased over touched its surface, on the
+        // head's reserved slot with the rest of this re-check; otherwise its
+        // pre-rebase evidence stands, and the ticket says which.
+        const {
+          owed: rebaseChecks,
+          recheck: gateRecheck,
+          needsServer,
+        } = await classify('rebase', rebaseMeta, policy => {
+          const owed = lane.checksFor(policy, rebasedFiles, []);
+          const recheck = policy.surfaceGateRecheck(
+            options.verify,
+            upstreamPaths
+          );
+          return {
+            owed,
+            recheck,
+            needsServer: serverChecks(policy, [
+              ...owed.map(check => check.id),
+              ...recheck.rerun.map(entry => entry.gate),
+            ]),
+          };
+        });
         const declaresGates =
           gateRecheck.rerun.length + gateRecheck.stood.length > 0;
         if (declaresGates) {
@@ -1604,14 +1689,13 @@ async function landThroughQueue({
         const rebaseEvidence = await lane.runChecks(root, rebaseChecks, {
           phase: 'rebase',
           queueHead: true,
-          onResult: recordLandingCheck({
-            ticketId: ticket.id,
-            candidateSha: rebasedSha,
-          }),
-          beforeCheck: freshServerBefore('rebase', rebasedFiles, {
-            ticketId: ticket.id,
-            candidateSha: rebasedSha,
-          }),
+          onResult: recordLandingCheck(rebaseMeta),
+          beforeCheck: freshServerBefore(
+            needsServer,
+            'rebase',
+            rebasedFiles,
+            rebaseMeta
+          ),
           reuse: await lane.openReuse(),
           candidateSha: rebasedSha,
         });
