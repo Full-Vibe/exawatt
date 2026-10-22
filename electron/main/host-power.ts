@@ -83,9 +83,24 @@ export function observeHostPower(
       ...(lockBefore === lockObservation ? { screenLock } : {}),
     });
   };
+  // A power event is the one other moment the host is known to be awake, so
+  // an UNKNOWN lock gets one more read there (BUG-300: `on-ac` alone left a
+  // board's ambient motion parked). A known lock only changes by its events.
+  const power = (powerSource: HostPowerSnapshot['powerSource']) => {
+    if (snapshot.screenLock !== 'unknown') {
+      update({ powerSource });
+      return;
+    }
+    const lockBefore = lockObservation;
+    const screenLock = readLock();
+    update({
+      powerSource,
+      ...(lockBefore === lockObservation ? { screenLock } : {}),
+    });
+  };
   const listeners: Record<HostPowerEvent, () => void> = {
-    'on-ac': () => update({ powerSource: 'ac' }),
-    'on-battery': () => update({ powerSource: 'battery' }),
+    'on-ac': () => power('ac'),
+    'on-battery': () => power('battery'),
     'lock-screen': () => update({ screenLock: 'locked' }),
     'unlock-screen': () => update({ screenLock: 'unlocked' }),
     suspend: () => update({ systemSleep: 'suspended' }),
@@ -97,7 +112,8 @@ export function observeHostPower(
     source.on(event, listeners[event]);
   }
   // Subscribe first: a lock between monitor construction and this sample
-  // must not be lost. Reads happen only here and on resume, never on a timer.
+  // must not be lost. Reads happen only here, on resume and (for an unknown
+  // lock) on a power event; never on a timer.
   refresh();
   initializing = false;
   return {

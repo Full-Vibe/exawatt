@@ -66,6 +66,41 @@ describe('host power observations', () => {
     observer.dispose();
   });
 
+  it('re-reads an unknown lock on a power event, never a known one', () => {
+    // BUG-300: a board whose lock read was unknown kept ambient motion parked
+    // through `on-ac`, because only `resume` asked the native reader again.
+    const source = powerSource();
+    source.getScreenLockState.mockReturnValue('unknown');
+    const changed = vi.fn();
+    const observer = observeHostPower(source, changed);
+    expect(observer.getSnapshot().screenLock).toBe('unknown');
+    source.getScreenLockState.mockReturnValue('unlocked');
+    source.emit('on-ac');
+    expect(observer.getSnapshot()).toMatchObject({
+      powerSource: 'ac',
+      screenLock: 'unlocked',
+    });
+    expect(changed).toHaveBeenLastCalledWith(
+      expect.objectContaining({ screenLock: 'unlocked' })
+    );
+    const reads = source.getScreenLockState.mock.calls.length;
+    source.emit('on-battery');
+    expect(source.getScreenLockState).toHaveBeenCalledTimes(reads);
+    observer.dispose();
+  });
+
+  it('keeps an unknown lock unknown when the re-read cannot answer', () => {
+    const source = powerSource();
+    source.getScreenLockState.mockReturnValue('unknown');
+    const observer = observeHostPower(source, vi.fn());
+    source.emit('on-battery');
+    expect(observer.getSnapshot()).toMatchObject({
+      powerSource: 'battery',
+      screenLock: 'unknown',
+    });
+    observer.dispose();
+  });
+
   it('reports initial power and lock, then independently follows their events', () => {
     const source = powerSource();
     source.isOnBatteryPower.mockReturnValue(true);
