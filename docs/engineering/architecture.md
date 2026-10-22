@@ -72,9 +72,15 @@ renderer process that dies reloads itself, because Sessions, their PTYs and
 their history all live in main (BUG-223, incident `0028`). This is a
 presentation boundary, not a second application or alternate data source.
 
-Electron main is a composition root (ENG-039 M1): `main.ts` reads the launch
-environment and wires single-owner modules together, each taking its
-process boundaries as arguments so it is tested without Electron. The renderer
+Electron main is a composition root (ENG-039 M1). `main.ts` is only the
+entry: it settles the build identity and the profile, then asks for that
+profile's single-instance lock (BUG-305), and only the holder evaluates
+`composition-root.ts`; a second copy over the same profile brings the
+running window forward and exits. Electron keys the lock by `userData`, so the
+installed app, a development worktree and an eval's scratch profile run side
+by side. `composition-root.ts` reads the launch environment and wires
+single-owner modules together, each taking its process boundaries as
+arguments so it is tested without Electron. The renderer
 server and its port policy, deep links, the window, the menu's runtime state,
 main's IPC channel tables, the shutdown sequence, and the command-surface
 bootstrap are separate modules. IPC registration is data: module registrars

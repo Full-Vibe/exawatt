@@ -157,7 +157,11 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    `installed-build.ts` and its notice, `scripts/lib/packaged-app.mjs` and the
    plist keys in `electron-builder.yml`; must not touch deep-link parsing
    (funnel-verify), the shutdown owner, the updater or the landing scripts
-   (eng-039).
+   (eng-039). Built 2026-10-22 (`<sha pending>`): a second copy cannot wait
+   for a link (Electron never makes it `ready`) and needs none (macOS hands
+   the link to the running copy), so it exits at once; BUG-083's cause was
+   Switcheroo's (incident `0040`); BUG-310 filed for the renderer server's
+   second app registration.
 5. **frame-demand: one owner decides when a board renders** (ENG-004,
    ENG-031; M, about 5 h). Fleet v1, Fleet v2 and the hero board each mix
    render policy with self-sustaining `invalidate()` chains from about ten
@@ -4584,7 +4588,10 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 
 ### BUG-274 Agents on the local network raise an unexplained macOS prompt
 
-Status: bug · ENG-045 · found 2026-10-04 by the permissions research.
+Status: fixed 2026-10-22 (`<sha pending>`) · ENG-045 · found 2026-10-04 by the permissions research. The
+package declares `NSLocalNetworkUsageDescription` in Exawatt's voice, and
+`eval:electron:instance` reads it from the built `Info.plist`. The primer
+still belongs to ENG-045.
 
 Exawatt declares no `NSLocalNetworkUsageDescription` (`electron-builder.yml`
 `extendInfo`). Command-line tools run from Terminal are exempt from Local
@@ -5151,7 +5158,7 @@ the feed advancing.
 
 ### BUG-305 A resume refused with "This Session already has a running process"
 
-Status: bug · ENG-016 · operator feedback 7900248b, 2026-10-22.
+Status: instance half fixed 2026-10-22 (`<sha pending>`); code half open (session-custody) · ENG-016 · operator feedback 7900248b, 2026-10-22.
 
 The report came from a stale August copy of the app (0.1.10, `b35366b6`)
 still on disk in the checkout's build directory, launched beside the
@@ -5164,6 +5171,16 @@ with macOS after their worktree is gone (239 of 243 registrations on the
 operator's Mac). Fix by system: main owns durable Session to live process,
 and the app owns its own instance.
 [Diagnosis and exit](projects/daily-driver-adoption.md#2026-10-22--a-resume-refused-by-a-stale-copy-and-mark-unread-missing-from-the-palette-bug-305-bug-307).
+
+Instance half (2026-10-22): `main.ts` asks for the profile's single-instance
+lock before the composition root runs, so a second copy over one profile
+brings the running window forward and exits without touching the profile;
+an official build outside Applications offers to move there; packaged evals
+forget their Launch Services registration, and `pnpm launch-services:sweep`
+cleared 406 whose bundle was gone. The August copy is still on disk at the
+main checkout's `release/mac-arm64/Exawatt.app` (0.1.10, `ai.exawatt.desktop`)
+for the operator to delete.
+[Milestone](projects/daily-driver-adoption.md#2026-10-22--one-running-exawatt-per-profile-bug-305-bug-274-bug-083).
 
 ### BUG-306 Settings repeats its page titles above a strip of links that repeats the rows
 
@@ -5215,3 +5232,17 @@ Section 3 ("Restart to Update keeps your place") waits for "the panned Fleet cam
 `origin/master` checkout as well as on the branch, so it predates the What's new notice (section 4, which passed run alone).
 The 2026-10-19 lifecycle review repaired this step once (it pans with a scroll gesture and waits for the board's own save);
 find what changed since. Exit: the eval passes three runs in a row on master and the train waiver is no longer needed.
+
+### BUG-310 The packaged renderer server registers with macOS as a second Exawatt
+
+Status: bug · ENG-016 · found 2026-10-22 by the instance packet.
+
+The packaged app starts its Next server with its own executable
+(`process.execPath` with `ELECTRON_RUN_AS_NODE`, `renderer-server.ts`), so
+macOS lists it as a running application: `next-server (v16.3.3)`, bundle id
+`ai.exawatt.desktop`, activation policy regular, beside Exawatt itself
+(NSWorkspace, 2026-10-22). App switchers that list processes see two
+Exawatts, and one of them has no window; it was one of the two inputs to
+BUG-083. Exit: the server runs as a helper that macOS does not list as an
+application (Electron's `utilityProcess` or the `LSUIElement` helper
+executable), with the renderer-server lifecycle evals still passing.

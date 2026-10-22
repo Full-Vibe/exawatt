@@ -8349,3 +8349,69 @@ on its own element any more.** Back-out packet of the Execution front
   set, the next Escape leaves Team. `expose-overlay.back-out.test.tsx` walks
   every Team focus position in four dock states and fails naming any
   position where Escape goes unanswered.
+
+### 2026-10-22 — One running Exawatt per profile (BUG-305, BUG-274, BUG-083)
+
+**The app owns its own instance: one copy per profile, an offer to move into
+Applications, no registrations left behind, and the Local Network prompt
+explained.** Instance packet of the Execution front (2026-10-21), `<sha pending>`.
+
+- **One copy per profile.** `main.ts` is now only the entry: it settles the
+  build identity and the profile (`launch-identity.ts`), then asks for
+  Electron's single-instance lock (`app-instance.ts`). Only the holder
+  evaluates `composition-root.ts` (the former `main.ts`, moved by a pure
+  rename), so a second copy over the same profile claims no URL scheme,
+  starts no server and writes nothing. The holder answers a second launch by
+  bringing its window forward as its launch mode allows (focus for the
+  foreground app, show-inactive for a development launch, nothing for a
+  hidden eval) and records `instance.second-launch` in `logs/main.jsonl`.
+  Electron keys the lock by `userData`, so the installed app (`exawatt`), a
+  development worktree (`ai.exawatt.community`) and every eval's scratch
+  profile run side by side; two development worktrees over the default
+  community profile no longer do, and the second says so on stderr.
+- **Falsified: forwarding the link from the second copy.** The brief had the
+  second copy pass its `exawatt://` link on. A packaged run hung, and a
+  minimal Electron 43 probe showed why: a process that lost the lock reaches
+  `will-finish-launching` and runs timers, but never `ready`. A second probe,
+  `open -a <copy at another path> <url>` with the same bundle id already
+  running, showed macOS delivering the link to the running process's
+  `open-url` (the existing deep-link entry) while it launched the copy. So the
+  second copy exits at once and nothing is forwarded.
+- **Move to Applications.** An official build running from outside
+  Applications (`app.isInApplicationsFolder()`) offers, once per location,
+  to move there through `app.moveToApplicationsFolder`. The offer never
+  replaces a copy in Applications that is newer (version, then build time) or
+  unreadable, and never closes one that is open. In-app dialog with macOS
+  semantics, one sentence; Not Now and Escape are kept in the notice record
+  (`move-to-applications`, keyed by location). Main side in
+  `installed-build.ts`; dialog in `move-to-applications-dialog.tsx`.
+- **Launch Services.** A packaged eval forgets its bundle at teardown
+  (`forgetLaunchedPackage`), and `pnpm launch-services:sweep [-- --execute]`
+  unregisters registrations under this repository's worktrees (the main
+  checkout, `exawatt-<slug>` siblings, dogfood snapshots in the user temp
+  directory) whose bundle is gone. It never touches `/Applications` or other
+  paths. Run once on the operator's Mac on 2026-10-22: 406 unregistered, 0
+  refused (173 development `Electron.app`, 136 worktree packages, 97 dogfood
+  snapshots; 82 of them `ai.exawatt.desktop`), plus one removed by hand while
+  proving `lsregister -u` accepts a deleted path. Exawatt-related bundle
+  records went from 428 to 29: the installed app, live worktrees, the August
+  copy, and 16 dead ones outside the sweep's paths (release-package and
+  public-recertification temp checkouts, bus-live fake handlers). One fresh
+  build was re-registered by macOS after its eval's teardown; the sweep
+  clears such a record once its worktree is gone.
+- **BUG-083.** The cause is Switcheroo's, fixed there as SWR-016
+  (2026-08-17); Exawatt fed it dead registrations and a renderer server that
+  registers as a regular app under Exawatt's bundle id (BUG-310). Incident
+  `0040`. Not observed live (it needs a keypress on the operator's screen).
+- **BUG-274.** `NSLocalNetworkUsageDescription` is in `electron-builder.yml`.
+
+Proof: `pnpm eval:electron:instance` (packaged): the built `Info.plist`
+carries the Local Network string; the move offer renders and Not Now is kept;
+a clone of the package at another path over the same profile exits 0 and the
+running app records `presented: hidden`; a clone over another profile runs.
+Passed twice on the rebased branch. `pnpm test:related` over every changed
+file; `packaged-app`, `eval-boundaries`, `script-layout` and `electron-eval`
+node tests.
+
+Left for the operator: delete the August copy at
+`exawatt/release/mac-arm64/Exawatt.app` (0.1.10, `ai.exawatt.desktop`).
