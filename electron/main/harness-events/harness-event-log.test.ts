@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// @scans none: reads only its own temporary directory (process.cwd() is a record field)
+
 const processes = vi.hoisted(
   () => [] as Array<{ exit: (code?: number, signal?: number) => void }>
 );
