@@ -67,6 +67,41 @@ describe('Fleet presentation choices', () => {
       });
     }
   });
+  it('names each view, material and the reset by id', async () => {
+    renderSettings();
+    await waitFor(() =>
+      expect(document.querySelector('[data-fleet-material]')).not.toBeDisabled()
+    );
+    expect(
+      Array.from(
+        document.querySelectorAll('#fleet-view [data-settings-option]'),
+        element => element.getAttribute('data-settings-option')
+      )
+    ).toEqual(['v1', 'v2']);
+    expect(
+      Array.from(document.querySelectorAll('[data-fleet-material]'), element =>
+        element.getAttribute('data-fleet-material')
+      )
+    ).toEqual(FLEET_MATERIALS.map(material => material.id));
+    const choice = FLEET_MATERIALS.at(-1)!.id;
+    fireEvent.click(
+      document.querySelector(`[data-fleet-material="${choice}"]`)!
+    );
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-fleet-material-reset]')
+      ).not.toBeDisabled()
+    );
+    fireEvent.click(document.querySelector('[data-fleet-material-reset]')!);
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-fleet-material-reset]')
+      ).toBeDisabled()
+    );
+    expect(
+      (await createPresentationPreferenceSource().load())?.fleetMaterial
+    ).toBeUndefined();
+  });
   it('restores a saved choice in production without rewriting it', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     const saved = JSON.stringify({

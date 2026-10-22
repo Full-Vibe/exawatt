@@ -1024,6 +1024,7 @@ function ClusterLabel({
     >
       <button
         type="button"
+        data-board-zone={cluster.id}
         disabled={!interactive}
         onPointerDown={event => event.stopPropagation()}
         onClick={event => {

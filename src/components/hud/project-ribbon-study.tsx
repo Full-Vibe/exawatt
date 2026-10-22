@@ -282,6 +282,7 @@ export function ProjectRibbonStudy() {
         <div className="flex gap-2 font-mono text-[11px]">
           <button
             type="button"
+            data-ribbon-study-empty-tail
             className="rounded border border-white/10 px-2 py-1 hover:bg-white/5"
             onClick={() =>
               setDormant(current =>

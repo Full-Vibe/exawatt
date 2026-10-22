@@ -142,6 +142,7 @@ export function FeedbackComposerView({
                 <Button
                   type="button"
                   size="sm"
+                  data-feedback-action="retry"
                   onClick={() => onRetry(attempt.id)}
                   className="min-w-40 text-sm"
                 >
@@ -151,6 +152,7 @@ export function FeedbackComposerView({
                 <Button
                   type="button"
                   size="sm"
+                  data-feedback-action="close"
                   onClick={props.onDismiss}
                   className="min-w-40 text-sm"
                 >
@@ -179,6 +181,7 @@ export function FeedbackComposerView({
                               type="button"
                               variant="ghost"
                               size="sm"
+                              data-feedback-action="edit"
                               onClick={() => onEdit(attempt)}
                               className="text-sm"
                             >
@@ -192,6 +195,7 @@ export function FeedbackComposerView({
                               type="button"
                               variant="ghost"
                               size="sm"
+                              data-feedback-action="finish-without-image"
                               onClick={() => onFinishWithoutImage(attempt.id)}
                               className="text-sm"
                             >

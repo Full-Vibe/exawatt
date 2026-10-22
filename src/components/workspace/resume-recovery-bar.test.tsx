@@ -98,6 +98,50 @@ describe('ResumeRecoveryBar', () => {
     expect(value.onResumeAll).toHaveBeenCalledOnce();
   });
 
+  it('marks the scope menu and each scope row by its scope id', async () => {
+    const value = props();
+    const { container } = render(<ResumeRecoveryBar {...value} />);
+    const open = () =>
+      fireEvent.pointerDown(
+        container.querySelector('[data-resume-scope-trigger]')!,
+        { button: 0, ctrlKey: false }
+      );
+    const handlers = {
+      agent: 'onResumeActiveTab',
+      project: 'onResumeActiveProject',
+      all: 'onResumeAll',
+    } as const;
+    for (const [scope, handler] of Object.entries(handlers)) {
+      open();
+      await screen.findAllByRole('menuitem');
+      fireEvent.click(
+        document.querySelector(
+          `[role="menuitem"][data-resume-scope="${scope}"]`
+        )!
+      );
+      expect(value[handler]).toHaveBeenCalledOnce();
+    }
+  });
+
+  it.each([
+    { overrides: {}, scope: 'project', handler: 'onResumeActiveProject' },
+    {
+      overrides: { activeProjectReadyCount: 0, activeTabCanResume: false },
+      scope: 'all',
+      handler: 'onResumeAll',
+    },
+  ] as const)(
+    'names the bar and its $scope scope by handle',
+    ({ overrides, scope, handler }) => {
+      const value = props(overrides);
+      const { container } = render(<ResumeRecoveryBar {...value} />);
+      const bar = container.querySelector('[data-resume-recovery]');
+      expect(bar).not.toBeNull();
+      fireEvent.click(bar!.querySelector(`[data-resume-scope="${scope}"]`)!);
+      expect(value[handler]).toHaveBeenCalledOnce();
+    }
+  );
+
   it('falls back to the remaining all-Project action after this Project resumes', () => {
     const value = props({
       readyAgents: { count: 3, allPaused: true },
@@ -186,4 +230,9 @@ it('makes restart recovery an explicit action over the previously running set on
   expect(onResumePreviouslyRunning).toHaveBeenCalledTimes(1);
   expect(value.onResumeAll).not.toHaveBeenCalled();
   expect(value.onResumeActiveProject).not.toHaveBeenCalled();
+  expect(
+    document
+      .querySelector('[data-resume-scope]')
+      ?.getAttribute('data-resume-scope')
+  ).toBe('previously-running');
 });

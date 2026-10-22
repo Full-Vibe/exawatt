@@ -507,6 +507,7 @@ describe('Connect: testing in place', () => {
       'Nothing answered on the server’s SSH port.'
     );
     expect(bridge.detach).toHaveBeenCalledWith('source-1');
+    expect(row('atlas-box')).toHaveAttribute('data-server-released');
     // The rest of the list is still there to pick from.
     expect(
       screen.getByRole('button', { name: /beacon-box/ })
@@ -530,6 +531,7 @@ describe('Connect: testing in place', () => {
         'It is still saved; remove it in Settings.'
       )
     );
+    expect(row('atlas-box')).not.toHaveAttribute('data-server-released');
   });
 
   it('tries a failed server again from its own row', async () => {

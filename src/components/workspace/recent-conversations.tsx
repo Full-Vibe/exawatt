@@ -370,6 +370,11 @@ export const RecentConversations = forwardRef<
                 disabled={disabled || opening !== null}
                 onClick={() => void open(conversation, 'resume')}
                 onKeyDown={event => handleRowKeyDown(event, index)}
+                data-conversation-action={
+                  reopensExawatt && !conversation.providerSessionId
+                    ? 'reopen'
+                    : 'resume'
+                }
                 aria-labelledby={`${actionId} ${titleId} ${targetId}`}
                 aria-describedby={`${
                   conversation.description &&
@@ -469,6 +474,7 @@ export const RecentConversations = forwardRef<
                 disabled={disabled || opening !== null}
                 onClick={() => void open(conversation, 'fresh')}
                 onKeyDown={event => handleRowKeyDown(event, index)}
+                data-conversation-action="fresh"
                 aria-label={`Start fresh from ${conversation.title}`}
                 title="Start a new Agent from this handoff"
                 className="my-1 mr-1.5 inline-flex min-h-11 shrink-0 items-center gap-1 rounded border border-transparent px-2 font-mono text-chrome-micro outline-none transition-[border-color,color] hover:border-hud-cyan/20 hover:text-hud-cyan disabled:opacity-50 focus-visible:border-hud-cyan/30 focus-visible:text-hud-cyan focus-visible:ring-1 focus-visible:ring-hud-cyan @max-[560px]:mb-2 @max-[560px]:ml-12 motion-reduce:transition-none"

@@ -88,6 +88,7 @@ export function UsageScenariosStudy() {
             {USAGE_SCENARIOS.map(s => (
               <Link
                 key={s.id}
+                data-usage-scenario-link={s.id}
                 href={href({ s: s.id, h: 0, burn: 1 })}
                 aria-current={s.id === base.id ? 'page' : undefined}
                 className="rounded px-2 py-1.5 text-sm outline-none hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"

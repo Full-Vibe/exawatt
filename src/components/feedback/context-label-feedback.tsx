@@ -83,6 +83,7 @@ export function ContextLabelFeedback({
             <button
               type="button"
               aria-label={`Improve context label: ${label}`}
+              data-context-label-improve
               title="This context label needs work"
               className="rounded p-1 text-muted-foreground outline-none transition-colors hover:bg-rose-400/10 hover:text-rose-300 focus-visible:ring-1 focus-visible:ring-hud-cyan"
               onClick={event => event.stopPropagation()}

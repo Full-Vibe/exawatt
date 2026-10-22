@@ -691,6 +691,8 @@ export function RoadmapPanel({
           <div className="flex items-center gap-1.5">
             <span
               data-roadmap-readiness
+              data-roadmap-conformance={view.trust.conformance}
+              data-roadmap-convention={view.trust.convention}
               className="rounded border px-1.5 py-0.5 font-ui text-chrome-meta"
               style={{
                 color:
@@ -718,6 +720,7 @@ export function RoadmapPanel({
             {view.trust.conformance !== 'declared' && (
               <button
                 type="button"
+                data-roadmap-remediation
                 onClick={() => void onStartRemediation()}
                 className="rounded px-1.5 py-0.5 font-ui text-chrome-meta outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{ color: HUD.cyan }}
@@ -806,12 +809,13 @@ export function RoadmapPanel({
         ) : view.status === 'error' ? (
           <RoadmapReadError error={view.error ?? 'unknown error'} />
         ) : drilled ? (
-          <div>
+          <div data-roadmap-detail={drilled.id}>
             <div className="flex items-center gap-1.5 px-3 py-2">
               <button
                 type="button"
                 tabIndex={-1}
                 onClick={() => setDrillId(null)}
+                data-roadmap-back
                 aria-label="Back to queue"
                 className="rounded px-1 font-mono text-xs outline-none hover:bg-hud-fill-hi"
                 style={{ color: HUD.textDim }}
@@ -937,6 +941,10 @@ export function RoadmapPanel({
                   <button
                     type="button"
                     tabIndex={-1}
+                    data-roadmap-group={row.group}
+                    aria-expanded={
+                      row.group === 'shipped' ? shippedOpen : parkedOpen
+                    }
                     data-selected={i === sel || undefined}
                     onClick={() => activateRow(row)}
                     onMouseEnter={() => setSel(i)}
@@ -987,6 +995,7 @@ export function RoadmapPanel({
       >
         {view.status === 'ok' && view.trust && (
           <span
+            data-roadmap-item-count={view.trust.itemCount}
             className="font-ui text-chrome-meta"
             style={{
               color:
@@ -1013,7 +1022,11 @@ export function RoadmapPanel({
             </span>
           )}
         {view.file && (
-          <span className="font-mono text-chrome-meta" title={view.file}>
+          <span
+            data-roadmap-file={view.file}
+            className="font-mono text-chrome-meta"
+            title={view.file}
+          >
             {view.file.split('/').pop()}
           </span>
         )}

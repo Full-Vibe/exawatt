@@ -100,9 +100,18 @@ export function PowerSettings() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="never">Never</SelectItem>
-            <SelectItem value="ac-only">On AC only</SelectItem>
-            <SelectItem value="ac-and-battery">On AC and battery</SelectItem>
+            <SelectItem value="never" data-power-policy="never">
+              Never
+            </SelectItem>
+            <SelectItem value="ac-only" data-power-policy="ac-only">
+              On AC only
+            </SelectItem>
+            <SelectItem
+              value="ac-and-battery"
+              data-power-policy="ac-and-battery"
+            >
+              On AC and battery
+            </SelectItem>
           </SelectContent>
         </Select>
       </SettingRow>

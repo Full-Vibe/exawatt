@@ -76,6 +76,7 @@ function PermissionControls({
     <div className="flex shrink-0 items-center gap-3 max-[520px]:justify-between">
       <p
         role="status"
+        data-permission-state={state}
         className="flex items-center gap-2 font-ui text-chrome-meta text-[var(--settings-dim)]"
       >
         <StateDot state={state} />
@@ -85,6 +86,7 @@ function PermissionControls({
         <Button
           type="button"
           size="sm"
+          data-permission-action={action}
           onClick={() => void ensure(declaration.id, declaration.why)}
         >
           Allow
@@ -95,6 +97,7 @@ function PermissionControls({
           type="button"
           size="sm"
           variant="outline"
+          data-permission-action={action}
           onClick={() => openSettings(declaration.id)}
         >
           Open System Settings

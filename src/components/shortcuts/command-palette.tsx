@@ -1114,6 +1114,7 @@ export function CommandPalette({
             <CommandItem
               key={`recent-use-${row.id}`}
               value={`recent ${row.id}`}
+              data-command-id={row.id}
               onSelect={() => {
                 recordPaletteUse(row.id);
                 row.onSelect();
@@ -1320,6 +1321,7 @@ export function CommandPalette({
               'project-sign-in'
             )}
             keywords={['project', 'sign in', 'sync', 'account']}
+            data-command-id="project-sign-in"
             onSelect={() => handleSelect(() => router.push('/sign-in'))}
           >
             <LogIn className="mr-2 h-3.5 w-3.5 shrink-0" />
@@ -1337,6 +1339,7 @@ export function CommandPalette({
             'directory',
             'browse',
           ]}
+          data-command-id="project-add"
           onSelect={addProject}
         >
           <FolderOpen className="mr-2 h-3.5 w-3.5 shrink-0" />
@@ -1364,6 +1367,7 @@ export function CommandPalette({
                 item.availability ? !item.availability.available : undefined
               }
               title={item.availability?.reason ?? undefined}
+              data-command-id={item.id}
               onSelect={() => {
                 recordPaletteUse(item.id);
                 item.onSelect();
@@ -1463,6 +1467,7 @@ export function CommandPalette({
             key={item.id}
             value={item.value}
             keywords={item.keywords}
+            data-command-id={item.id}
             onSelect={() => {
               recordPaletteUse(item.id);
               item.onSelect();
@@ -1540,6 +1545,7 @@ export function CommandPalette({
               item.availability ? !item.availability.available : undefined
             }
             title={item.availability?.reason ?? undefined}
+            data-command-id={item.id}
             onSelect={() => {
               recordPaletteUse(item.id);
               item.onSelect();

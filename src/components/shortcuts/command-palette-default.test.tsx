@@ -33,7 +33,10 @@ import {
   DEMO_WORKSPACE_ID,
   PERSONAL_WORKSPACE_ID,
 } from '@/lib/tenancy/workspace-scope';
-import { CommandPalette } from './command-palette';
+import { CommandPalette, STATIC_PALETTE_ROW_IDS } from './command-palette';
+import { recordPaletteUse } from './palette-recents';
+import { commandPaletteSurfaces } from '@/components/nav/surfaces';
+import { getCommandVerb } from '@exawatt/core';
 import type { PtySessionInfo } from '@exawatt/core/desktop-bridge';
 import {
   installBridgeDouble,
@@ -238,6 +241,24 @@ describe('⌘K opening highlight', () => {
     }
   });
 
+  it('names each workspace verb row by its palette row id', async () => {
+    const originalPath = window.location.pathname;
+    window.history.replaceState(null, '', '/workspace');
+    try {
+      renderPalette();
+      const rowId = getCommandVerb('workspace-jump-attention').palette?.rowId;
+      await waitFor(() =>
+        expect(
+          document.querySelector(
+            `[data-palette-group="workspace"] [cmdk-item][data-command-id="${rowId}"]`
+          )
+        ).not.toBeNull()
+      );
+    } finally {
+      window.history.replaceState(null, '', originalPath);
+    }
+  });
+
   it('never lands on a tenant switch, even with nothing else to offer', async () => {
     renderPalette();
     await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
@@ -377,5 +398,61 @@ describe('command service availability', () => {
     await openingHighlight();
     for (const row of feedbackRows())
       expect(row.getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('names every action row by its palette row id', async () => {
+    distribution = {
+      ...COMMUNITY_DISTRIBUTION,
+      services: {
+        ...COMMUNITY_DISTRIBUTION.services,
+        productFeedback: {
+          protocolVersion: 1,
+          url: 'https://feedback.example.test',
+        },
+      },
+    };
+    renderPalette();
+    await openingHighlight();
+    const ids = Array.from(
+      document.querySelectorAll('[data-palette-group="actions"] [cmdk-item]'),
+      row => row.getAttribute('data-command-id')
+    );
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(STATIC_PALETTE_ROW_IDS.has(id!)).toBe(true);
+    expect(ids).toContain(getCommandVerb('quick-feedback').palette?.rowId);
+  });
+});
+
+describe('palette row ids', () => {
+  it('names every navigation row by its surface and a recent row by its source row', async () => {
+    const [recentSurface] = commandPaletteSurfaces();
+    recordPaletteUse(`nav-${recentSurface.id}`);
+    renderPalette();
+    await openingHighlight();
+    const navigationIds = Array.from(
+      document.querySelectorAll(
+        '[data-palette-group="navigation"] [cmdk-item]'
+      ),
+      row => row.getAttribute('data-command-id')
+    );
+    expect(navigationIds).toEqual(
+      commandPaletteSurfaces().map(surface => `nav-${surface.id}`)
+    );
+    expect(
+      document.querySelector(
+        `[data-palette-group="recent"] [cmdk-item][data-command-id="nav-${recentSurface.id}"]`
+      )
+    ).not.toBeNull();
+  });
+
+  it('names the Add project row', async () => {
+    renderPalette();
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-palette-group="projects"] [cmdk-item][data-command-id="project-add"]'
+        )
+      ).not.toBeNull()
+    );
   });
 });

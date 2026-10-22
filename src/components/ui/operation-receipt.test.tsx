@@ -44,4 +44,21 @@ describe('operation receipt accessibility', () => {
     expect(recover).toHaveBeenCalledOnce();
     expect(dismiss).toHaveBeenCalledOnce();
   });
+
+  it('carries its caller’s handles and marks its dismissal', () => {
+    const dismiss = vi.fn();
+    const { container } = render(
+      <OperationReceipt
+        state="success"
+        title="Handle fixture"
+        data-receipt-fixture="subject"
+        onDismiss={dismiss}
+      />
+    );
+    const receipt = container.querySelector('[data-operation-receipt]')!;
+    expect(receipt.getAttribute('data-operation-receipt')).toBe('success');
+    expect(receipt.getAttribute('data-receipt-fixture')).toBe('subject');
+    fireEvent.click(receipt.querySelector('[data-operation-receipt-dismiss]')!);
+    expect(dismiss).toHaveBeenCalledOnce();
+  });
 });

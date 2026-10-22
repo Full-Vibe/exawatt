@@ -222,6 +222,7 @@ function BoardMiniMap({
   return (
     <button
       type="button"
+      data-board-minimap
       // Keyboard activation recenters (a key press carries no board point), so
       // that is the honest accessible name; pointer clicks jump instead.
       aria-label="Recenter board from minimap"
@@ -989,6 +990,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             >
               Camera
               <select
+                data-board-camera
                 aria-label="Camera"
                 value={cameraPreset}
                 onChange={event =>
@@ -1012,6 +1014,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
                 <button
                   key={option}
                   type="button"
+                  data-board-projection-option={option}
                   aria-pressed={projection === option}
                   onClick={() => onProjectionChange(option)}
                   className="min-h-11 px-3 text-chrome-label font-medium outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
@@ -1044,6 +1047,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
           >
             <button
               type="button"
+              data-board-zoom="out"
               aria-label="Zoom out"
               onClick={() => controller.current?.zoom(-1)}
               className="grid h-11 w-11 place-items-center font-mono text-sm outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring"
@@ -1053,6 +1057,9 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             </button>
             <button
               type="button"
+              data-board-overview={
+                layout.altitude === 'fleet' ? 'fit' : 'return'
+              }
               aria-label={
                 layout.altitude === 'fleet'
                   ? 'Fit Fleet overview'
@@ -1076,6 +1083,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
               aria-label={
                 followSelection ? 'Pause Agent follow' : 'Follow selected Agent'
               }
+              data-board-follow
               aria-pressed={followSelection}
               disabled={!layout.selectedAgentId}
               onClick={() => {
@@ -1101,6 +1109,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             </button>
             <button
               type="button"
+              data-board-zoom="in"
               aria-label="Zoom in"
               onClick={() => controller.current?.zoom(1)}
               className="grid h-11 w-11 place-items-center font-mono text-sm outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring"

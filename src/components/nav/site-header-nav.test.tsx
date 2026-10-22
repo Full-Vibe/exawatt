@@ -7,6 +7,7 @@ import {
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteHeaderNav } from './site-header-nav';
+import { BUILT_IN_THEME_IDS } from '@/lib/appearance/types';
 
 const { commitPreferences } = vi.hoisted(() => ({
   commitPreferences: vi.fn(async () => undefined),
@@ -133,5 +134,27 @@ describe('SiteHeaderNav leaderboard link', () => {
         selection: { mode: 'manual', themeId: 'exawatt-air-light' },
       })
     );
+  });
+
+  it('names every theme choice by its selection id', async () => {
+    render(<SiteHeaderNav isAuthenticated userEmail="person@example.com" />);
+    fireEvent.pointerDown(
+      document.querySelector('[data-account-menu-trigger]')!,
+      { button: 0, ctrlKey: false }
+    );
+    await screen.findByRole('menu');
+    const themeMenu = document.querySelector<HTMLElement>(
+      '[data-account-theme-menu]'
+    )!;
+    await act(async () => {
+      themeMenu.focus();
+      fireEvent.keyDown(themeMenu, { key: 'ArrowRight' });
+    });
+    await screen.findAllByRole('menuitemradio');
+    expect(
+      screen
+        .getAllByRole('menuitemradio')
+        .map(choice => choice.getAttribute('data-account-theme-choice'))
+    ).toEqual(['auto', ...BUILT_IN_THEME_IDS]);
   });
 });

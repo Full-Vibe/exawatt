@@ -135,7 +135,11 @@ export function AccountThemeMenu() {
           value={value}
           onValueChange={next => void selectTheme(next)}
         >
-          <DropdownMenuRadioItem value="auto" disabled={!ready || saving}>
+          <DropdownMenuRadioItem
+            value="auto"
+            data-account-theme-choice="auto"
+            disabled={!ready || saving}
+          >
             Auto
           </DropdownMenuRadioItem>
           <DropdownMenuSeparator />
@@ -143,6 +147,7 @@ export function AccountThemeMenu() {
             <DropdownMenuRadioItem
               key={themeId}
               value={themeId}
+              data-account-theme-choice={themeId}
               disabled={!ready || saving}
             >
               {THEME_REGISTRY[themeId].label}

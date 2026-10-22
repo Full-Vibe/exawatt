@@ -117,4 +117,37 @@ describe('Recent Conversations distribution boundary', () => {
       window.electron!.pty!.enrichRecentConversations
     ).toHaveBeenCalledWith('/project', 'official-token');
   });
+
+  it('marks each row action by what it opens', async () => {
+    const live = { ...LOCAL_CONVERSATION, agentName: null };
+    const saved = {
+      ...live,
+      id: 'saved-session',
+      providerSessionId: null,
+      continuation: {
+        kind: 'exawatt-session' as const,
+        durableSessionId: 'saved-session',
+      },
+    };
+    vi.mocked(window.electron!.pty!.listRecentConversations).mockResolvedValue([
+      live,
+      saved,
+    ]);
+    render(
+      <RecentConversations
+        projectDir="/project"
+        onOpen={vi.fn(async () => true)}
+        onReturnToComposer={vi.fn()}
+      />
+    );
+    const row = (id: string) =>
+      document.querySelector(`[data-conversation-id="${id}"]`);
+    await waitFor(() => expect(row(saved.id)).not.toBeNull());
+    const actions = (id: string) =>
+      [...row(id)!.querySelectorAll('button')].map(button =>
+        button.getAttribute('data-conversation-action')
+      );
+    expect(actions(LOCAL_CONVERSATION.id)).toEqual(['resume', 'fresh']);
+    expect(actions(saved.id)).toEqual(['reopen', 'fresh']);
+  });
 });

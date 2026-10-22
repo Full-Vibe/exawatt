@@ -57,6 +57,7 @@ function ThemeCard({
     <button
       type="button"
       aria-pressed={selected}
+      data-theme-id={theme.id}
       disabled={disabled}
       onClick={onSelect}
       className="min-w-0 rounded-md border p-2 text-left outline-none transition-[border-color,background-color] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] disabled:cursor-not-allowed disabled:opacity-50"

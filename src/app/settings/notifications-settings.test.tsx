@@ -182,6 +182,20 @@ describe('the native notifications switch', () => {
     expect(permissions.openSettings).toHaveBeenCalledWith('notifications');
   });
 
+  it('marks the switch that sets attention notifications', async () => {
+    const { settings } = install('granted');
+    await mount();
+    const handle = document.querySelectorAll<HTMLElement>(
+      '[data-notifications-attention]'
+    );
+    expect(handle).toHaveLength(1);
+    expect(handle[0]!.getAttribute('role')).toBe('switch');
+    await act(async () => {
+      fireEvent.click(handle[0]!);
+    });
+    expect(settings.setAttentionNotifications).toHaveBeenCalledWith(true);
+  });
+
   it('says nothing about macOS when it is on and allowed', async () => {
     install('granted', true);
     await mount();

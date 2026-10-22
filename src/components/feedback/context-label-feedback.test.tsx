@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ContextLabelFeedback } from './context-label-feedback';
 
@@ -58,6 +64,32 @@ describe('ContextLabelFeedback', () => {
     fireEvent.submit(input.closest('form')!);
     await waitFor(() =>
       expect(onRate).toHaveBeenCalledWith(-1, 'Improve agent context summaries')
+    );
+  });
+
+  it('marks the control that opens the correction form', async () => {
+    const onRate = vi.fn(async () => true);
+    render(
+      <ContextLabelFeedback
+        label="Fix auth redirect loop"
+        enabled
+        alwaysVisible
+        onRate={onRate}
+      />
+    );
+    fireEvent.click(document.querySelector('[data-context-label-improve]')!);
+    const popover = await waitFor(() => {
+      const element = document.querySelector(
+        '[data-context-label-feedback-popover]'
+      );
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    });
+    const input = within(popover).getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Repair the redirect' } });
+    fireEvent.submit(input.closest('form')!);
+    await waitFor(() =>
+      expect(onRate).toHaveBeenCalledWith(-1, 'Repair the redirect')
     );
   });
 

@@ -1,4 +1,10 @@
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { THEME_REGISTRY } from '@/generated/theme-registry';
 import {
@@ -48,7 +54,10 @@ const xterm = vi.hoisted(() => {
     dispose() {
       state.disposeCalls += 1;
     }
-    attachCustomKeyEventHandler() {}
+    keyHandler: ((event: KeyboardEvent) => boolean) | null = null;
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
+      this.keyHandler = handler;
+    }
     registerLinkProvider() {
       return { dispose: vi.fn() };
     }
@@ -249,5 +258,31 @@ describe('xterm theme lifecycle', () => {
     expect(xterm.state.fitCalls).toBe(fitCalls);
     expect(vi.mocked(pty.resize)).toHaveBeenCalledTimes(resizeCalls);
     expect(terminal.options.minimumContrastRatio).toBe(4.5);
+  });
+});
+
+describe('terminal scrollback search', () => {
+  it('marks the control that closes the search it opened', async () => {
+    render(
+      <TerminalPane active cwd="/tmp/project" font={font} sessionId="live-1" />
+    );
+    await waitFor(() =>
+      expect(xterm.state.terminals[0]?.keyHandler).toBeTruthy()
+    );
+    const terminal = xterm.state.terminals[0];
+    act(() => {
+      terminal.keyHandler!(
+        new KeyboardEvent('keydown', { key: 'f', metaKey: true })
+      );
+    });
+    const close = await waitFor(() => {
+      const element = document.querySelector(
+        '[data-terminal-search] [data-terminal-search-close]'
+      );
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    });
+    fireEvent.click(close);
+    expect(document.querySelector('[data-terminal-search]')).toBeNull();
   });
 });

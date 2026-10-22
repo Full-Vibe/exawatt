@@ -1931,6 +1931,7 @@ export function TabStrip({
                   <button
                     type="button"
                     data-ribbon-passive
+                    data-tab-close
                     tabIndex={visible ? 0 : -1}
                     onPointerDown={event => {
                       if (event.button === 0) armPointerClose(token.key);

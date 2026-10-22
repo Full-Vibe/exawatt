@@ -41,8 +41,17 @@ vi.mock('@/components/ui/select', () => ({
     </select>
   ),
   SelectContent: ({ children }: { children: ReactNode }) => <>{children}</>,
-  SelectItem: ({ value, children }: { value: string; children: ReactNode }) => (
-    <option value={value}>{children}</option>
+  SelectItem: ({
+    value,
+    children,
+    ...rest
+  }: {
+    value: string;
+    children: ReactNode;
+  }) => (
+    <option value={value} {...rest}>
+      {children}
+    </option>
   ),
   SelectTrigger: () => null,
   SelectValue: () => null,
@@ -190,5 +199,16 @@ describe('PowerSettings native state ownership', () => {
     );
     expect(screen.getByRole('alert')).not.toBeEmptyDOMElement();
     expect(screen.getByRole('combobox')).toHaveValue(stored.policy);
+  });
+
+  it('marks every policy option with the policy it saves', async () => {
+    // Evals pick a policy by this attribute, never by the option's words.
+    const bridge = installPower();
+    render(<PowerSettings />);
+    await act(async () => bridge.initial.resolve(snapshot(1, 'ac-only')));
+    const options = screen.getAllByRole('option') as HTMLOptionElement[];
+    expect(options.length).toBeGreaterThan(0);
+    for (const option of options)
+      expect(option.dataset.powerPolicy).toBe(option.value);
   });
 });

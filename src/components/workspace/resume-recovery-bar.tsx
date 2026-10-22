@@ -129,6 +129,7 @@ export function ResumeRecoveryBar({
     <div
       role="region"
       aria-label="Saved Agent recovery"
+      data-resume-recovery
       className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 font-mono text-chrome-label"
       style={{
         borderColor: withThemeAlpha(HUD.cyan, 0.18),
@@ -157,6 +158,9 @@ export function ResumeRecoveryBar({
                 recoveringPrevious
                   ? 'Resume the exact conversations that were running before restart. Previously paused Agents stay paused.'
                   : undefined
+              }
+              data-resume-scope={
+                recoveringPrevious ? 'previously-running' : 'project'
               }
               onClick={
                 recoveringPrevious
@@ -194,6 +198,7 @@ export function ResumeRecoveryBar({
                     size="sm"
                     disabled={disabled}
                     aria-label="Choose resume scope"
+                    data-resume-scope-trigger
                     className="h-7 w-7 rounded-l-none px-0"
                   >
                     <ChevronDownIcon className="h-3.5 w-3.5" />
@@ -212,6 +217,7 @@ export function ResumeRecoveryBar({
                   {agentIsDistinctScope && (
                     <DropdownMenuItem
                       aria-label={SESSION_RESUME_SCOPE_LABEL.agent}
+                      data-resume-scope="agent"
                       onSelect={onResumeActiveTab}
                     >
                       This Agent
@@ -223,6 +229,7 @@ export function ResumeRecoveryBar({
                   )}
                   <DropdownMenuItem
                     aria-label={`Resume ${agentsNoun(activeProjectReadyCount)} in this project`}
+                    data-resume-scope="project"
                     onSelect={onResumeActiveProject}
                   >
                     This project
@@ -240,6 +247,7 @@ export function ResumeRecoveryBar({
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         aria-label={`${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(readyAgentCount)}`}
+                        data-resume-scope="all"
                         onSelect={onResumeAll}
                       >
                         All projects
@@ -263,6 +271,9 @@ export function ResumeRecoveryBar({
               recoveringPrevious
                 ? `Resume previously running (${previouslyRunningCount})`
                 : `${SESSION_RESUME_SCOPE_LABEL.all} ${agentsNoun(readyAgentCount)}`
+            }
+            data-resume-scope={
+              recoveringPrevious ? 'previously-running' : 'all'
             }
             onClick={
               recoveringPrevious ? onResumePreviouslyRunning : onResumeAll

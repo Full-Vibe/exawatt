@@ -125,6 +125,7 @@ function MeterRow({
             {meter.label}
           </span>
           <span
+            data-usage-percent
             className="ml-auto text-chrome-meta tabular-nums"
             style={{ color: CHROME.text }}
           >
@@ -156,6 +157,7 @@ function MeterRow({
       </div>
       <UsageBar meter={meter} />
       <span
+        data-usage-percent
         className="text-right text-sm tabular-nums"
         style={{ color: CHROME.text }}
       >

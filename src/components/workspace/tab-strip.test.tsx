@@ -373,6 +373,32 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(stopped?.querySelector(`[aria-label="${word}"]`)).not.toBeNull();
   });
 
+  it('scopes each tab’s Close control under its own tab', () => {
+    const onCloseTab = vi.fn();
+    const { container } = strip({
+      tabs: [
+        tab({ id: 'a', title: 'alpha' }),
+        tab({
+          id: 'd',
+          title: 'New agent',
+          sessionId: null,
+          resumeState: 'identity-missing',
+          lifecycle: 'draft',
+        }),
+      ],
+      onCloseTab,
+    });
+    for (const id of ['a', 'd']) {
+      expect(
+        container.querySelectorAll(`[data-tab-id="${id}"] [data-tab-close]`)
+      ).toHaveLength(1);
+    }
+    fireEvent.click(
+      container.querySelector('[data-tab-lifecycle="draft"] [data-tab-close]')!
+    );
+    expect(onCloseTab).toHaveBeenCalledWith('d');
+  });
+
   it('a ⌘T draft is a real chip — fresh ring, no badge, discardable', () => {
     const { container } = strip({
       tabs: [
@@ -584,6 +610,55 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(onCloneTab).toHaveBeenCalledWith(
       'a',
       expect.objectContaining({ id: 'opencode-config', source: 'opencode' })
+    );
+  });
+
+  it('marks each Clone to target row with the source it launches', async () => {
+    const cloneTargets: CloneSessionTarget[] = [
+      {
+        id: 'codex-config',
+        sourceId: 'codex-local',
+        source: 'codex',
+        modelId: 'gpt-5.6-sol',
+        effort: 'high',
+        label: 'GPT-5.6 Codex',
+        accessibleLabel: 'Codex, GPT-5.6 Codex, High',
+      },
+      {
+        id: 'claude-config',
+        sourceId: 'claude-local',
+        source: 'claude',
+        modelId: 'claude-opus',
+        effort: null,
+        label: 'Claude Opus',
+        accessibleLabel: 'Claude Code, Claude Opus',
+      },
+    ];
+    strip({
+      tabs: [tab({ id: 'a' })],
+      engaged: { 'session-a': true },
+      cloneTargets,
+      onCloneTab: vi.fn(),
+    });
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'New agent · result ready' }),
+      { key: 'ContextMenu' }
+    );
+    const clone = document.querySelector<HTMLElement>(
+      '[role="menuitem"][data-command-id="session.clone"]'
+    )!;
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
+    expect(screen.getByRole('menu')).toHaveAttribute(
+      'aria-activedescendant',
+      clone.id
+    );
+    fireEvent.keyDown(clone, { key: 'ArrowRight' });
+    await waitFor(() =>
+      expect(
+        [...document.querySelectorAll('[data-clone-source]')].map(row =>
+          row.getAttribute('data-clone-source')
+        )
+      ).toEqual(cloneTargets.map(target => target.source))
     );
   });
 

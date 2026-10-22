@@ -75,6 +75,25 @@ describe('shortcut help manifest coverage', () => {
     view.unmount();
   });
 
+  it('marks its filter field, which narrows the rows', async () => {
+    const view = render(
+      <TooltipProvider>
+        <ShortcutHelpModal open onOpenChange={vi.fn()} />
+      </TooltipProvider>
+    );
+    const filter = document.querySelector('[data-shortcut-filter]');
+    expect(filter).toBe(screen.getByRole('textbox'));
+    await act(async () => {
+      fireEvent.change(filter!, { target: { value: '⌘[' } });
+    });
+    expect(
+      Array.from(document.querySelectorAll('[data-shortcut-id]'), el =>
+        el.getAttribute('data-shortcut-id')
+      )
+    ).toEqual(['history-back']);
+    view.unmount();
+  });
+
   it('searches the status vocabulary as well as shortcuts', async () => {
     const view = render(
       <TooltipProvider>

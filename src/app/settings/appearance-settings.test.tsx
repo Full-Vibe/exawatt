@@ -7,7 +7,10 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppearancePreferencesV1 } from '@/lib/appearance/types';
+import {
+  BUILT_IN_THEME_IDS,
+  type AppearancePreferencesV1,
+} from '@/lib/appearance/types';
 import {
   selectAutoThemes,
   selectManualTheme,
@@ -125,6 +128,33 @@ describe('AppearanceSettings', () => {
       },
       interfaceScale: 100,
       interfaceFont: 'theme',
+    });
+  });
+
+  it('names each mode and Manual theme card by id', async () => {
+    render(<AppearanceSettings />);
+    expect(
+      Array.from(
+        document.querySelectorAll('#theme-mode [data-settings-option]'),
+        element => element.getAttribute('data-settings-option')
+      )
+    ).toEqual(['auto', 'manual']);
+    expect(
+      Array.from(
+        document.querySelectorAll('#theme-mode button[data-theme-id]'),
+        element => element.getAttribute('data-theme-id')
+      )
+    ).toEqual([...BUILT_IN_THEME_IDS]);
+    fireEvent.click(
+      document.querySelector('[data-theme-id="exawatt-air-light"]')!
+    );
+    await waitFor(() => expect(commitPreferences).toHaveBeenCalledOnce());
+    const calls = commitPreferences.mock.calls as unknown as Array<
+      [AppearancePreferencesV1]
+    >;
+    expect(calls[0][0].selection).toEqual({
+      mode: 'manual',
+      themeId: 'exawatt-air-light',
     });
   });
 

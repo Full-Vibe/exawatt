@@ -101,6 +101,8 @@ export interface OptionMenuProps {
   triggerMark?: React.ReactNode;
   className?: string;
   contentClassName?: string;
+  /** Product hooks the trigger carries (`data-session-model`). */
+  attributes?: Record<`data-${string}`, string>;
 }
 
 const SEARCHABLE_THRESHOLD = 10;
@@ -123,6 +125,7 @@ export function OptionMenu({
   triggerMark,
   className,
   contentClassName,
+  attributes,
 }: OptionMenuProps) {
   const [localOpen, setLocalOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
@@ -250,7 +253,9 @@ export function OptionMenu({
           type="button"
           disabled={disabled}
           data-option-menu-trigger
+          data-option-menu-value={selected?.id}
           data-tone={tone}
+          {...attributes}
           aria-label={`${label}: ${triggerLabel ?? selected?.label ?? placeholder ?? 'not set'}`}
           aria-haspopup="listbox"
           aria-expanded={open}
@@ -373,6 +378,7 @@ export function OptionMenu({
                     role="option"
                     aria-selected={option.id === value}
                     aria-disabled={option.disabled || undefined}
+                    data-option-id={option.id}
                     data-active={isActive || undefined}
                     onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => commit(option)}
@@ -397,7 +403,10 @@ export function OptionMenu({
                         {option.label}
                       </span>
                       {option.description ? (
-                        <span className="font-mono text-chrome-micro leading-4 text-hud-text-dim">
+                        <span
+                          data-option-description
+                          className="font-mono text-chrome-micro leading-4 text-hud-text-dim"
+                        >
                           {option.description}
                         </span>
                       ) : null}

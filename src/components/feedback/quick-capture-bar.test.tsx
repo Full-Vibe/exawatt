@@ -222,6 +222,17 @@ describe('QuickCaptureBar', () => {
     expect(screen.getByRole('button', { name: 'Attach image' })).toBeEnabled();
   });
 
+  it('marks the visible control that opens the image picker', () => {
+    const onPickImage = vi.fn();
+    renderBar({ screenshot: null, onPickImage });
+    const control = document.querySelector<HTMLButtonElement>(
+      '[data-feedback-action="attach-image"]'
+    );
+    expect(control).toBeVisible();
+    fireEvent.click(control!);
+    expect(onPickImage).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps ordinary text paste native and routes file-bearing paste only within the composer', () => {
     const onImageFiles = vi.fn();
     renderBar({ onImageFiles });
@@ -363,5 +374,25 @@ describe('QuickCaptureBar', () => {
     renderBar({ dialogSemantics: false, autoFocus: false });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByLabelText('Feedback')).not.toHaveFocus();
+  });
+
+  it('names its field, preview and actions by handle', () => {
+    const props = renderBar({
+      onCaptureImage: vi.fn(),
+      onRemoveImage: vi.fn(),
+    });
+    const handle = (selector: string) =>
+      document.querySelector<HTMLElement>(`[data-feedback-composer] ${selector}`)!;
+    expect(handle('[data-feedback-message]').tagName).toBe('TEXTAREA');
+    expect(handle('img[data-feedback-image-preview]')).toHaveAttribute(
+      'src',
+      SHOT
+    );
+    fireEvent.click(handle('[data-feedback-action="screenshot"]'));
+    expect(props.onCaptureImage).toHaveBeenCalledTimes(1);
+    fireEvent.click(handle('[data-feedback-action="remove-image"]'));
+    expect(props.onRemoveImage).toHaveBeenCalledTimes(1);
+    fireEvent.click(handle('[data-feedback-action="send"]'));
+    expect(props.onSubmit).toHaveBeenCalledTimes(1);
   });
 });

@@ -204,6 +204,7 @@ export function SettingsClient() {
         {query.trim() ? (
           <section
             aria-label="Settings search results"
+            data-settings-search-results
             className="min-w-0 px-4 py-6 sm:px-8"
           >
             <div className="mx-auto max-w-4xl">

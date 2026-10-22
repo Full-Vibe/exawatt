@@ -355,6 +355,7 @@ export function PauseProjectConfirm({
             ref={cancelRef}
             type="button"
             size="sm"
+            data-confirm-action="cancel"
             onClick={onCancel}
             className="font-mono"
           >
@@ -365,6 +366,7 @@ export function PauseProjectConfirm({
             type="button"
             variant="outline"
             size="sm"
+            data-confirm-action="pause"
             onClick={onPause}
             className="font-mono"
           >

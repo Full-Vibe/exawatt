@@ -127,6 +127,67 @@ describe('AgentLauncher keyboard navigation', () => {
     );
   });
 
+  it('names the task, each axis value and each option by id', async () => {
+    const permission: DetailAxis = {
+      id: 'permission',
+      label: 'Permission',
+      value: 'unrestricted',
+      options: [
+        { id: 'prompt', label: 'Ask first', description: 'Asks first.' },
+        { id: 'unrestricted', label: 'YOLO', description: 'No approvals.' },
+      ],
+      onChange: vi.fn(),
+    };
+    const detailAxes = [...axes, permission];
+    render(
+      <AgentLauncher
+        setups={setups}
+        selectedId="claude-opus"
+        state="ready"
+        axes={detailAxes}
+        task=""
+        onTaskChange={vi.fn()}
+        onSelect={vi.fn()}
+        onOpenCatalog={vi.fn()}
+        onStart={vi.fn()}
+      />
+    );
+    expect(document.querySelector('[data-launcher-task]')?.tagName).toBe(
+      'TEXTAREA'
+    );
+    const tile = document.querySelector<HTMLElement>(
+      '[data-setup-id="claude-opus"]'
+    )!;
+    act(() => tile.focus());
+    fireEvent.keyDown(tile, { key: 'ArrowDown' });
+    const trigger = (id: string) =>
+      document.querySelector(
+        `[data-detail-axis="${id}"] [data-option-menu-trigger]`
+      );
+    await waitFor(() => expect(trigger('engine')).not.toBeNull());
+    for (const axis of detailAxes) {
+      expect(trigger(axis.id)).toHaveAttribute(
+        'data-option-menu-value',
+        axis.value!
+      );
+    }
+
+    fireEvent.click(trigger('permission')!);
+    await waitFor(() =>
+      expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
+    );
+    const options = Array.from(document.querySelectorAll('[role="option"]'));
+    expect(
+      options.map(option => option.getAttribute('data-option-id'))
+    ).toEqual(permission.options.map(option => option.id));
+    for (const option of options) {
+      expect(option.querySelector('[data-option-description]')).not.toBeNull();
+    }
+    expect(
+      document.querySelector('[role="option"][aria-selected="true"]')
+    ).toHaveAttribute('data-option-id', permission.value!);
+  });
+
   it('retains horizontal selection and focus movement between tiles', () => {
     const { onSelect } = renderLauncher();
     const tile = screen.getByRole('radio', {

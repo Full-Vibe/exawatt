@@ -24,6 +24,7 @@ export function OperationReceipt({
   onDismiss,
   dismissLabel = 'Dismiss notice',
   className,
+  ...handles
 }: {
   state: OperationReceiptState;
   title: string;
@@ -32,6 +33,8 @@ export function OperationReceipt({
   onDismiss?: () => void;
   dismissLabel?: string;
   className?: string;
+  /** The caller's own `data-*` handles, for what this receipt is about. */
+  [handle: `data-${string}`]: string | undefined;
 }) {
   const Icon =
     state === 'pending'
@@ -43,6 +46,7 @@ export function OperationReceipt({
           : Info;
   return (
     <section
+      {...handles}
       data-operation-receipt={state}
       className={cn(
         'exa-material-overlay flex items-start gap-3 rounded-lg border border-border p-4 text-foreground shadow-lg',
@@ -74,6 +78,7 @@ export function OperationReceipt({
           className="size-8 shrink-0"
           onClick={onDismiss}
           aria-label={dismissLabel}
+          data-operation-receipt-dismiss
         >
           <X className="size-4" aria-hidden="true" />
         </Button>

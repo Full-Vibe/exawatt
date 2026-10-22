@@ -1191,6 +1191,7 @@ function ServerRowView({
       data-connect-server={row.alias}
       data-server-state={row.state}
       data-connected={row.state === 'connected' || undefined}
+      data-server-released={row.released || undefined}
       role={row.state === 'failed' ? 'alert' : undefined}
       style={active}
     >

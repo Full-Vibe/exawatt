@@ -18,7 +18,12 @@ vi.mock('./operations-board-canvas', () => ({
   OperationsBoardCanvas: () => <div data-mocked-board-canvas />,
 }));
 
+vi.mock('./tiles/operations-board-tiles-canvas', () => ({
+  OperationsBoardTilesCanvas: () => <div data-mocked-board-canvas />,
+}));
+
 import { OperationsBoardSurface } from './operations-board-surface';
+import { boardViewFor } from './operations-board-views';
 
 function resolveClassicDark() {
   const theme = THEME_REGISTRY['exawatt-classic-dark'];
@@ -144,5 +149,63 @@ describe('board empty states', () => {
     });
     const { view } = renderSurface(filteredOut);
     expect(view.getByText('No Agents match this view')).toBeInTheDocument();
+  });
+});
+
+describe('board tool handles', () => {
+  // Evals drive the board's tools by these attributes, never by their labels.
+  it('marks each tool by what it does, at the altitude it is shown', () => {
+    const { view } = renderSurface();
+    const tool = (selector: string) =>
+      view.container.querySelector(`[data-board-tool-cluster] ${selector}`);
+    expect(tool('button[data-board-minimap]')).not.toBeNull();
+    expect(tool('button[data-board-zoom="in"]')).not.toBeNull();
+    expect(tool('button[data-board-zoom="out"]')).not.toBeNull();
+    expect(tool('button[data-board-overview="fit"]')).not.toBeNull();
+    expect(
+      tool('button[data-board-follow]')?.getAttribute('aria-pressed')
+    ).not.toBeNull();
+    expect(
+      Array.from(
+        view.container.querySelectorAll('[data-board-projection-option]'),
+        option => option.getAttribute('data-board-projection-option')
+      )
+    ).toEqual(boardViewFor('v1').projections);
+  });
+
+  it('marks Overview as a return once the board leaves the Fleet', () => {
+    const fleet = selectSpatialBoardLayout(populated);
+    const project = selectSpatialBoardLayout(populated, {
+      altitude: 'project',
+      focusedProjectId: fleet.zones.find(zone => zone.visible)!.id,
+    });
+    const { view } = renderSurface(project);
+    expect(
+      view.container
+        .querySelector('[data-board-overview]')
+        ?.getAttribute('data-board-overview')
+    ).toBe('return');
+  });
+
+  it('offers the v2 camera presets and no single-projection toggle', () => {
+    const { projections } = boardViewFor('v2');
+    const view = render(
+      <OperationsBoardSurface
+        fleetView="v2"
+        layout={selectSpatialBoardLayout(populated)}
+        projection="fixed-angle"
+        onDrillProject={() => undefined}
+        onSelectAgent={() => undefined}
+        onOverview={() => undefined}
+        onProjectionChange={() => undefined}
+        resolvedAppearance={resolveClassicDark()}
+      />
+    );
+    expect(
+      view.container.querySelector('select[data-board-camera]')
+    ).not.toBeNull();
+    expect(
+      view.container.querySelectorAll('[data-board-projection-option]')
+    ).toHaveLength(projections.length > 1 ? projections.length : 0);
   });
 });

@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PERMISSIONS,
   PERMISSION_STATE_LABELS,
+  permissionAction,
   type PermissionEnsureResult,
   type PermissionState,
 } from '@exawatt/core';
@@ -120,6 +121,26 @@ describe('Settings > Permissions', () => {
     expect(button('Open System Settings')).toBeNull();
     expect(button('Allow')).not.toBeNull();
   });
+
+  it.each<PermissionState>(['not-determined', 'granted', 'denied'])(
+    'names the %s state and its action by id',
+    async state => {
+      install(state);
+      await renderSection();
+      expect(
+        row('notifications')
+          .querySelector('[data-permission-state]')
+          ?.getAttribute('data-permission-state')
+      ).toBe(state);
+      const action = permissionAction(state);
+      expect(
+        Array.from(
+          row('notifications').querySelectorAll('[data-permission-action]'),
+          element => element.getAttribute('data-permission-action')
+        )
+      ).toEqual(action ? [action] : []);
+    }
+  );
 
   it('says it lives in the desktop app when there is no bridge', async () => {
     removeBridgeDouble();

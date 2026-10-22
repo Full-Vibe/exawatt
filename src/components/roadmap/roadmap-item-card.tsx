@@ -170,6 +170,9 @@ export function RoadmapItemCard({
             </p>
           ) : nextMilestone ? (
             <p
+              data-roadmap-next-milestone={item.milestones.indexOf(
+                nextMilestone
+              )}
               className="truncate font-ui text-chrome-meta"
               style={{ color: HUD.textDim }}
             >

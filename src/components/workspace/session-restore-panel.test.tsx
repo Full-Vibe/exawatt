@@ -73,6 +73,18 @@ describe('SessionRestorePanel', () => {
     expect(screen.queryByText(/Resume All/i)).toBeNull();
   });
 
+  it('marks its action with the lifecycle verb it performs', () => {
+    const tab = stoppedTab();
+    const onResumeTab = vi.fn(async () => true);
+    render(<SessionRestorePanel tab={tab} onResumeTab={onResumeTab} />);
+    const action = document.querySelector(
+      `[data-session-lifecycle-verb="${sessionLifecyclePresentation(tab).verb}"]`
+    );
+    expect(action).toBe(screen.getByRole('button'));
+    fireEvent.click(action!);
+    expect(onResumeTab).toHaveBeenCalledWith('tab-one');
+  });
+
   it('offers reconnection when the conversation identity was never recorded', async () => {
     listResumeCandidates.mockResolvedValue([
       {

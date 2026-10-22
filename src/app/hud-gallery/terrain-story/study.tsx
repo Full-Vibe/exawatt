@@ -267,6 +267,7 @@ export function TerrainStudy() {
           ).map(([id, label]) => (
             <button
               key={id}
+              data-study-mode={id}
               aria-pressed={mode === id}
               onClick={() => switchMode(id)}
             >
@@ -375,6 +376,7 @@ export function TerrainStudy() {
         <div
           ref={scrollRef}
           className={`${styles.scroller} ${mode === 'lab' ? styles.labScroller : ''}`}
+          data-study-scroller={mode}
           tabIndex={0}
           aria-label={
             mode === 'story'
@@ -603,6 +605,7 @@ export function TerrainStudy() {
                     </button>
                   ))}
                   <button
+                    data-add-agent
                     aria-label="Add one demo agent"
                     disabled={shownCount >= 100}
                     onClick={() => addAgent()}

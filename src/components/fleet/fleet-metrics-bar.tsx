@@ -68,6 +68,8 @@ export function FleetMetricsBar({
           <button
             key={state}
             type="button"
+            data-fleet-status={state}
+            data-fleet-status-count={counts[state]}
             aria-pressed={selectedStates.includes(state)}
             aria-label={`${STATUS_LIGHT_META[state].label}: ${countLabel(state)}. Filter by this status.`}
             onClick={() => onToggleState(state)}
@@ -83,6 +85,8 @@ export function FleetMetricsBar({
         ) : (
           <span
             key={state}
+            data-fleet-status={state}
+            data-fleet-status-count={counts[state]}
             className="inline-flex items-center gap-1 whitespace-nowrap text-muted-foreground"
             title={description(state)}
           >

@@ -201,6 +201,8 @@ export function UpdateReadyNotice() {
   return (
     <NoticeLaneItem lane="update">
       <OperationReceipt
+        data-update-notice={shutdownActive ? 'shutdown' : dismissed?.id}
+        data-shutdown-waiting={waitingOn ?? undefined}
         state={
           news
             ? 'neutral'
@@ -231,6 +233,7 @@ export function UpdateReadyNotice() {
               type="button"
               size="sm"
               variant="outline"
+              data-update-action="cancel"
               onClick={() => void window.electron?.app?.cancelShutdown?.()}
             >
               Cancel
@@ -256,6 +259,7 @@ export function UpdateReadyNotice() {
               type="button"
               size="sm"
               variant="outline"
+              data-update-action="restart"
               onClick={() => void window.electron?.app?.updates?.restart()}
             >
               <RefreshCw className="size-4" aria-hidden="true" />

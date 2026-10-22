@@ -7,6 +7,7 @@ export default function RootLoading() {
       className="flex h-[calc(100svh-3rem)] items-center justify-center bg-[var(--exa-foundation-canvas)]"
       role="status"
       aria-label="Loading"
+      data-route-loading
     >
       <p className="animate-pulse font-mono text-xs text-[var(--exa-foundation-text-muted)]">
         Loading…

@@ -17,6 +17,7 @@ export function ProjectCard({
   name,
   color,
   detail,
+  remoteHome = false,
   onOpen,
 }: {
   name: string;
@@ -24,11 +25,15 @@ export function ProjectCard({
   color: string | null;
   /** The folder line under the name (path, "No folder", a sync note). */
   detail: ReactNode;
+  /** The Remote home connected coworkers land in (ENG-033 H2.4 P1). */
+  remoteHome?: boolean;
   onOpen: () => void;
 }) {
   return (
     <button
       type="button"
+      data-project-card={name}
+      data-remote-home={remoteHome || undefined}
       onClick={onOpen}
       className="group min-w-0 rounded-md border p-3 text-left outline-none transition-colors hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
       style={{

@@ -403,6 +403,65 @@ describe('unified feedback composer continuity', () => {
     }
   );
 
+  it.each([
+    { status: 503, retryable: true, actions: ['retry'] },
+    { status: 400, retryable: false, actions: ['close', 'edit'] },
+  ])(
+    'names a failed attempt’s way forward by handle (status $status)',
+    async ({ status, retryable, actions }) => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn<typeof fetch>()
+          .mockResolvedValueOnce(feedbackProblem(status, retryable))
+      );
+      await renderSignedIn();
+      await act(async () => feedback!.openFeedback());
+      fireEvent.change(composerField(), {
+        target: { value: 'Name the way forward' },
+      });
+      fireEvent.keyDown(composerField(), { key: 'Enter' });
+      await waitFor(() =>
+        expect(receiptRegion()).toHaveAttribute('data-feedback-state', 'error')
+      );
+      expect(
+        Array.from(
+          receiptRegion().querySelectorAll('[data-feedback-action]'),
+          action => action.getAttribute('data-feedback-action')
+        )
+      ).toEqual(actions);
+    }
+  );
+
+  it('names a partial attempt’s retry and finish by handle', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValueOnce(feedbackResponse(false))
+    );
+    installBridgeDouble({
+      feedback: {
+        setAuthenticated: vi.fn(),
+        captureScreenshot: vi.fn(async () => SHOT),
+      },
+      app: { getDiagnosticsReport: vi.fn(async () => REPORT) },
+    });
+    await renderSignedIn();
+    await act(async () => feedback!.openQuickCapture('bug'));
+    fireEvent.change(composerField(), {
+      target: { value: 'Name the partial way forward' },
+    });
+    fireEvent.keyDown(composerField(), { key: 'Enter' });
+    await waitFor(() =>
+      expect(receiptRegion()).toHaveAttribute('data-feedback-state', 'partial')
+    );
+    expect(
+      Array.from(
+        receiptRegion().querySelectorAll('[data-feedback-action]'),
+        action => action.getAttribute('data-feedback-action')
+      )
+    ).toEqual(['retry', 'finish-without-image']);
+  });
+
   it('an invalid success response preserves its frozen report without offering another uncertain write', async () => {
     const fetchSpy = vi.fn<typeof fetch>(async () =>
       Response.json(

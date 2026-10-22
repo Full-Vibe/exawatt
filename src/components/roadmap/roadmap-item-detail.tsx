@@ -184,7 +184,12 @@ export function RoadmapItemDetail({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <Button size="sm" onClick={() => void launch()} disabled={launching}>
+        <Button
+          size="sm"
+          data-roadmap-start-agent
+          onClick={() => void launch()}
+          disabled={launching}
+        >
           {launching ? 'Starting…' : 'Start agent'}
         </Button>
         {unmappedSessions.length > 0 && (
@@ -485,6 +490,7 @@ export function RoadmapItemDetail({
         item.exitCriteria.length > 0 ||
         item.description.length > 1) && (
         <details
+          data-roadmap-scope
           className="group rounded border px-3 py-2"
           style={{ borderColor: HUD.strokeSoft }}
         >

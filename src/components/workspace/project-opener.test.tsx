@@ -9,6 +9,7 @@ import {
 import { type ComponentProps, useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectOpener, useProjectOpenerState } from './project-opener';
+import { REMOTE_HOME_KIND } from '@/lib/projects/contract';
 import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
 
 const { listProjects, projectRegistryScope, rebindProjectPath } = vi.hoisted(
@@ -262,6 +263,50 @@ describe('Project opener', () => {
     );
   });
 
+  it('names its search, Project cards and import review by handle', async () => {
+    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue(
+      '/parent'
+    );
+    vi.mocked(window.electron!.projects!.scanDirectory).mockResolvedValue({
+      ok: true,
+      candidates: [
+        { projectDir: '/parent/a', projectName: 'A', suggested: true },
+      ],
+    });
+    const onImportProjects = vi.fn(async () => true);
+    const project = {
+      dir: '/project',
+      registryId: 'project-1',
+      name: 'Project',
+      color: '#19E6FF',
+    };
+    renderControlledProjectOpener({
+      workspaceProjects: [project],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects,
+    });
+
+    const opener = document.querySelector('[data-project-opener]')!;
+    expect(opener.querySelector('[data-project-opener-search]')).toBe(
+      document.activeElement
+    );
+    await waitFor(() =>
+      expect(
+        opener.querySelector(`[data-project-card="${project.name}"]`)
+      ).not.toBeNull()
+    );
+    fireEvent.click(opener.querySelector('[data-project-route="import"]')!);
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-project-import-review]')
+      ).not.toBeNull()
+    );
+    fireEvent.click(document.querySelector('[data-project-import-confirm]')!);
+    await waitFor(() =>
+      expect(onImportProjects).toHaveBeenCalledWith(['/parent/a'])
+    );
+  });
+
   it('locates and rebinds a synced Project whose directory moved', async () => {
     listProjects.mockResolvedValue([
       {
@@ -451,6 +496,37 @@ describe('Project opener', () => {
     const hosted = screen.getByRole('button', { name: /Nebula/ });
     expect(local.textContent).toMatch(/Local/);
     expect(hosted.textContent).not.toMatch(/Local/);
+  });
+
+  it('marks the Remote home by its kind, never its name', async () => {
+    const project = (id: string, name: string, kind: string) => ({
+      id,
+      user_id: 'local',
+      name,
+      kind,
+      root_path: null,
+      git_remote: null,
+      color: null,
+      sort_order: 0,
+      last_opened_at: null,
+      archived_at: null,
+      created_at: '',
+      updated_at: '',
+    });
+    listProjects.mockResolvedValue([
+      project('home-1', 'Nebula', REMOTE_HOME_KIND),
+      project('manual-1', 'Remote', 'manual'),
+    ]);
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
+    const home = await screen.findByRole('button', { name: /Nebula/ });
+    expect(home).toHaveAttribute('data-remote-home');
+    expect(screen.getByRole('button', { name: /^Remote/ })).not.toHaveAttribute(
+      'data-remote-home'
+    );
   });
 
   it('carries no sync label in a Community build, which has nothing to sync', async () => {

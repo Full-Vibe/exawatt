@@ -19,6 +19,7 @@ export default function AgentStartKeyswitchEvalPage() {
           onActivate={() => setActivationCount(count => count + 1)}
         />
         <output
+          data-activation-count={activationCount}
           aria-label="Activation count"
           className="font-mono text-xs text-white/60"
         >

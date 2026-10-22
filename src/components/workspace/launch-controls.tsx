@@ -1762,6 +1762,7 @@ export function AgentComposer({
                     type="button"
                     className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     aria-label={entry.item.accessibleLabel}
+                    data-launch-configuration={entry.target.id}
                     onClick={() => {
                       if (entry.target.kind === 'shell') {
                         void openShell();
@@ -1931,6 +1932,7 @@ export function AgentComposer({
               </label>
               {roadmapItems.length > 0 ? (
                 <select
+                  data-launch-roadmap-item
                   aria-label="Roadmap item this session will work on"
                   value={roadmapItemId}
                   onChange={event => {

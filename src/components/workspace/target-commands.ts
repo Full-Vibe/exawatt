@@ -219,6 +219,8 @@ interface ChildCommand {
   label: string;
   detail?: string;
   accessibleLabel?: string;
+  /** Product hooks on the drill-in row (`data-clone-source`). */
+  attributes?: Record<`data-${string}`, string>;
   run(): void;
 }
 
@@ -421,6 +423,7 @@ const TARGET_COMMANDS: readonly AnyCommandSpec[] = [
         label: clone.label,
         detail: clone.detail,
         accessibleLabel: `Clone to ${clone.accessibleLabel}`,
+        attributes: { 'data-clone-source': clone.source },
         run: () => ops.cloneTab?.(target.tab.id, clone),
       })),
   }),
@@ -778,6 +781,7 @@ export function resolveTargetCommands(
         danger: false,
         disabledReason: null,
         announced: null,
+        attributes: child.attributes,
         run: child.run,
         children: [],
         menuOnly: !!spec.reach,

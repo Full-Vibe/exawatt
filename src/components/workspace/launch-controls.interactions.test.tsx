@@ -547,6 +547,11 @@ describe('Agent composer · interactions and drafts', () => {
     expect(
       screen.getByLabelText('Roadmap item this session will work on')
     ).toHaveValue('ENG-017');
+    expect(
+      document.querySelector(
+        '[data-all-launch-configurations] [data-launch-roadmap-item]'
+      )
+    ).toHaveValue('ENG-017');
     fireEvent.change(
       screen.getByLabelText('Branch name for the new worktree'),
       { target: { value: 'agent/revised-branch' } }

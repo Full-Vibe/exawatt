@@ -507,7 +507,10 @@ export function ProjectOpener({
           </DialogHeader>
 
           {candidates ? (
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div
+              data-project-import-review
+              className="flex min-h-0 flex-1 flex-col"
+            >
               <div className="max-h-[480px] overflow-y-auto p-3">
                 {candidates.length === 0 ? (
                   <p
@@ -583,6 +586,7 @@ export function ProjectOpener({
                 <button
                   type="button"
                   disabled={selected.size === 0}
+                  data-project-import-confirm
                   onClick={() => void finishImport()}
                   className="flex h-8 items-center gap-1.5 rounded border px-3 font-mono text-xs outline-none disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                   style={{
@@ -616,6 +620,7 @@ export function ProjectOpener({
                     onChange={event => setQuery(event.target.value)}
                     placeholder="Search Projects"
                     aria-label="Search Projects"
+                    data-project-opener-search
                     className="min-w-0 flex-1 bg-transparent font-mono text-sm outline-none"
                     style={{ color: HUD.text }}
                   />
@@ -666,6 +671,7 @@ export function ProjectOpener({
                         key={project.dir}
                         name={project.name}
                         color={project.color}
+                        remoteHome={project.remoteHome}
                         onOpen={() => void choose(project)}
                         detail={
                           <>

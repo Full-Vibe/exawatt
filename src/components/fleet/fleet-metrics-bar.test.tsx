@@ -34,6 +34,7 @@ vi.mock('@/lib/fleet/fleet-provider', () => ({
 }));
 
 const { FleetMetricsBar } = await import('./fleet-metrics-bar');
+const { fleetStatusCounts } = await import('./fleet-status-counts');
 
 function agent(id: string, status: ExawattAgent['status']): ExawattAgent {
   return {
@@ -134,5 +135,25 @@ describe('the fleet status row', () => {
     expect(
       container.querySelector('[data-status-light="off"]')
     ).toBeInTheDocument();
+  });
+
+  it('marks every status filter with its state and fleet-wide count', () => {
+    // Evals filter and read totals by state id, never by the status words.
+    fleet.agents = [
+      agent('busy', 'working'),
+      agent('done', 'complete'),
+      agent('resting', 'idle'),
+      agent('stuck', 'error'),
+    ];
+    const { readings } = fleetStatusCounts(fleet.agents);
+    const { container } = render(<FleetMetricsBar onToggleState={vi.fn()} />);
+    const filters = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[data-fleet-status]')
+    );
+    expect(filters.length).toBeGreaterThan(0);
+    for (const filter of filters) {
+      const state = filter.dataset.fleetStatus as keyof typeof readings;
+      expect(filter.dataset.fleetStatusCount).toBe(String(readings[state]));
+    }
   });
 });

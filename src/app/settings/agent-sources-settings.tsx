@@ -79,7 +79,10 @@ function FactRow({
         ? 'Simulated'
         : 'Declared';
   return (
-    <div className="grid min-h-[66px] grid-cols-[minmax(112px,0.62fr)_minmax(0,1.38fr)] items-center gap-5 border-t border-[var(--settings-line)] py-3 max-[520px]:grid-cols-1 max-[520px]:gap-1.5">
+    <div
+      data-source-fact-state={fact.state}
+      className="grid min-h-[66px] grid-cols-[minmax(112px,0.62fr)_minmax(0,1.38fr)] items-center gap-5 border-t border-[var(--settings-line)] py-3 max-[520px]:grid-cols-1 max-[520px]:gap-1.5"
+    >
       <span className="font-ui text-chrome-title text-[var(--settings-dim)]">
         {label}
       </span>
@@ -141,6 +144,7 @@ function RegistryRail({
   return (
     <section
       aria-label="Agent Source registry"
+      data-agent-source-registry
       className="border-b border-[var(--settings-line)] bg-[var(--settings-panel)] lg:border-r lg:border-b-0"
     >
       <div className="flex min-h-[72px] items-center justify-between border-b border-[var(--settings-line)] px-5">
@@ -150,6 +154,7 @@ function RegistryRail({
         <button
           type="button"
           aria-label="Browse Agent Sources"
+          data-agent-source-browse
           aria-pressed={adding}
           onClick={onAdd}
           className="flex size-10 items-center justify-center rounded-lg border outline-none transition-colors hover:bg-[var(--settings-hover-strong)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
@@ -173,6 +178,7 @@ function RegistryRail({
               type="button"
               onClick={() => onSelect(source.id)}
               aria-label={`${source.label}, ${source.connectionName}, ${source.stateLabel}`}
+              data-agent-source={source.adapterId}
               aria-pressed={active}
               className="group relative flex min-h-[78px] min-w-0 items-center gap-3 rounded-lg border px-3 text-left outline-none transition-[background-color,border-color] duration-150 hover:bg-[var(--settings-hover)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
               style={{

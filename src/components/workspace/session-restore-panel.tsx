@@ -90,7 +90,11 @@ export function SessionRestorePanel({
           )}
         </div>
         {(verb === 'resume' || verb === 'new-shell') && (
-          <Button size="sm" onClick={() => void onResumeTab(tab.id)}>
+          <Button
+            size="sm"
+            data-session-lifecycle-verb={verb}
+            onClick={() => void onResumeTab(tab.id)}
+          >
             <Play className="h-3.5 w-3.5" />
             {SESSION_LIFECYCLE_VERB_LABEL[verb]}
           </Button>

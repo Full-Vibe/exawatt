@@ -328,6 +328,36 @@ describe('Agent Source Settings', () => {
       })
     ).toBeEnabled();
   });
+
+  it('marks the registry, each source and each fact state by id', async () => {
+    const registry = fallbackAgentSourceRegistry('all');
+    installBridgeDouble({
+      agentSources: { list: vi.fn(async () => registry) },
+    });
+    render(<AgentSourcesSettings />);
+    const rail = document.querySelector('[data-agent-source-registry]')!;
+    await waitFor(() =>
+      expect(
+        [...rail.querySelectorAll('[data-agent-source]')].map(row =>
+          row.getAttribute('data-agent-source')
+        )
+      ).toEqual(registry.sources.map(source => source.adapterId))
+    );
+    const selected = registry.sources[0];
+    const card = document.querySelector(
+      `[data-source-card="${selected.adapterId}"]`
+    )!;
+    expect(
+      [...card.querySelectorAll('[data-source-fact-state]')]
+        .map(row => row.getAttribute('data-source-fact-state'))
+        .sort()
+    ).toEqual(
+      Object.values(selected.facts)
+        .map(fact => fact.state)
+        .sort()
+    );
+    expect(rail.querySelectorAll('[data-agent-source-browse]')).toHaveLength(1);
+  });
 });
 
 /**

@@ -15,6 +15,7 @@ import {
   startButton,
 } from './launch-controls.test-support';
 import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
+import { SHELL_LAUNCH_TARGET } from '@/lib/launch-configurations';
 
 describe('Agent composer · launching', () => {
   const { recordAgentSourceUse, setAgentPermissionMode } =
@@ -101,6 +102,26 @@ describe('Agent composer · launching', () => {
         dir: '/project',
       })
     );
+  });
+
+  it('names each catalog entry by its launch configuration id', async () => {
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+    const catalog = document.querySelector<HTMLButtonElement>(
+      '[data-setup-catalog-trigger]'
+    )!;
+    await settled(() => expect(catalog).not.toBeDisabled());
+    fireEvent.click(catalog);
+    expect(
+      document.querySelector(
+        `[data-all-launch-configurations] [data-launch-configuration="${SHELL_LAUNCH_TARGET.id}"]`
+      )
+    ).not.toBeNull();
   });
 
   it('opens Shell immediately when the command palette requests it', async () => {

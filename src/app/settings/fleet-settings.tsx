@@ -66,6 +66,7 @@ export function FleetSettings() {
               <button
                 key={material.id}
                 aria-label={material.name}
+                data-fleet-material={material.id}
                 type="button"
                 aria-pressed={fleetMaterial === material.id}
                 disabled={!ready || saving}
@@ -97,6 +98,7 @@ export function FleetSettings() {
           type="button"
           size="sm"
           variant="outline"
+          data-fleet-material-reset
           disabled={!ready || saving || !preference?.fleetMaterial}
           onClick={() => void select(resetFleetMaterial)}
         >

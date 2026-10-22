@@ -85,6 +85,7 @@ export function NotificationsSettings() {
         <SettingSwitch
           checked={attention}
           label="Native macOS notifications"
+          dataAttribute="data-notifications-attention"
           onChange={next => {
             const settingsApi = window.electron?.settings;
             if (!next) {

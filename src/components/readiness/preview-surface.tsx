@@ -39,7 +39,10 @@ export function PreviewSurfaceShell({
 }) {
   const surface = surfaceById(surfaceId);
   return (
-    <main className="min-h-svh bg-background font-ui text-foreground">
+    <main
+      data-preview-surface={surfaceId}
+      className="min-h-svh bg-background font-ui text-foreground"
+    >
       <div
         className={`mx-auto w-full space-y-6 px-8 py-16 ${
           width === 'wide' ? 'max-w-[1040px]' : 'max-w-[760px]'

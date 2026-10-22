@@ -51,3 +51,16 @@ it('keeps a failed change visible and never invokes a busy Session', async () =>
   ).toBeDisabled();
   expect(apply).toHaveBeenCalledTimes(1);
 });
+
+it('marks its trigger and its apply action for anything driving the control', async () => {
+  render(
+    <SessionModelControl loadCatalog={demoModelCatalog} apply={vi.fn()} />
+  );
+  const trigger = document.querySelector('[data-session-model]')!;
+  expect(trigger).toHaveAttribute('data-option-menu-trigger');
+  fireEvent.click(trigger);
+  await screen.findAllByRole('option');
+  expect(document.querySelectorAll('[data-session-model-apply]')).toHaveLength(
+    1
+  );
+});

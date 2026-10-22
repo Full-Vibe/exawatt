@@ -336,6 +336,7 @@ export function QuickCaptureBar({
             rows={3}
             placeholder={PLACEHOLDERS[kind]}
             aria-label="Feedback"
+            data-feedback-message
             onChange={event => onMessageChange(event.target.value)}
             // Submitted text stays readable content but drops every input cue.
             className="max-h-48 min-h-24 w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring read-only:border-transparent read-only:bg-muted/50 read-only:caret-transparent read-only:focus-visible:ring-0 [field-sizing:content]"
@@ -363,6 +364,7 @@ export function QuickCaptureBar({
                     variant="ghost"
                     disabled={imageLocked}
                     onClick={pickImage}
+                    data-feedback-action="attach-image"
                     className="gap-1.5 px-2 text-sm"
                   >
                     <ImagePlus aria-hidden />
@@ -376,6 +378,7 @@ export function QuickCaptureBar({
                     variant="ghost"
                     disabled={!screenshotAction.enabled}
                     aria-label={screenshotAction.label}
+                    data-feedback-action="screenshot"
                     aria-keyshortcuts={formatShortcutKeysAria(
                       screenshotAction.keys
                     )}
@@ -422,6 +425,7 @@ export function QuickCaptureBar({
                 <img
                   src={screenshot}
                   alt="Feedback attachment preview"
+                  data-feedback-image-preview
                   className="h-full w-full object-contain"
                 />
               </Button>
@@ -436,6 +440,7 @@ export function QuickCaptureBar({
                   disabled={imageLocked}
                   aria-label="Remove attached image"
                   title="Remove attached image"
+                  data-feedback-action="remove-image"
                   className="size-8 shrink-0"
                   onClick={() => {
                     if (onRemoveImage) onRemoveImage();
@@ -573,6 +578,7 @@ export function QuickCaptureBar({
               disabled={readOnly || busy || sendDisabled || !message.trim()}
               onClick={onSubmit}
               aria-keyshortcuts="Enter"
+              data-feedback-action="send"
               className="min-w-40 text-sm"
             >
               {busy && (

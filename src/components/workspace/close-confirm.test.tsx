@@ -133,4 +133,25 @@ describe('PauseProjectConfirm', () => {
     expect(invoker).toHaveFocus();
     invoker.remove();
   });
+
+  it('marks each action and focuses Cancel first', () => {
+    const onPause = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <PauseProjectConfirm
+        title="Exawatt"
+        activeCount={1}
+        color="#19E6FF"
+        onPause={onPause}
+        onCancel={onCancel}
+      />
+    );
+    const action = (id: string) =>
+      document.querySelector<HTMLElement>(`[data-confirm-action="${id}"]`)!;
+    expect(action('cancel')).toHaveFocus();
+    fireEvent.click(action('pause'));
+    expect(onPause).toHaveBeenCalledOnce();
+    fireEvent.click(action('cancel'));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
 });

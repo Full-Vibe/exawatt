@@ -368,6 +368,19 @@ describe('Settings navigation contract', () => {
       'page'
     );
   });
+  it('marks search results only while a search is running', async () => {
+    await renderSettings();
+    const search = document.querySelector<HTMLInputElement>(
+      '[data-settings-shell] input[type="search"]'
+    )!;
+    expect(document.querySelector('[data-settings-search-results]')).toBeNull();
+    fireEvent.change(search, { target: { value: 'anodized' } });
+    expect(
+      document.querySelector('[data-settings-search-results]')
+    ).not.toBeNull();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(document.querySelector('[data-settings-search-results]')).toBeNull();
+  });
 });
 
 /*

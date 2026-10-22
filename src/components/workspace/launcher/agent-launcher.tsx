@@ -186,6 +186,7 @@ export function AgentLauncher({
         }}
         placeholder="What should this Agent do?"
         aria-label="Initial task for the new Agent"
+        data-launcher-task
         className="max-h-40 min-h-11 w-full resize-none rounded-md border border-hud-stroke-soft bg-hud-surface-input px-3 py-2 font-mono text-xs leading-5 text-hud-text outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
       />
 

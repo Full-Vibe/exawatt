@@ -615,6 +615,8 @@ export interface ServerRow {
   detail: string | null;
   /** The source's own words for a failure, or what to do next. */
   note: string | null;
+  /** Present on a Failed row: the attempt left nothing saved. */
+  released?: boolean;
 }
 
 export function initialConnectFlowState(): ConnectFlowState {
@@ -678,6 +680,7 @@ function rowFor(state: ConnectFlowState, alias: string): ServerRow {
           : 'It is still saved; remove it in Settings.'
       }`,
       note: nonEmpty(failure.message) ?? copy.nextStep,
+      released: failure.released,
     };
   }
   const connected = state.servers.connected.find(

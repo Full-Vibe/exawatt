@@ -178,6 +178,7 @@ export function ShortcutHelpModal({
           onChange={e => setQuery(e.target.value)}
           placeholder="Filter shortcuts…"
           aria-label="Filter shortcuts"
+          data-shortcut-filter
           autoFocus
         />
 

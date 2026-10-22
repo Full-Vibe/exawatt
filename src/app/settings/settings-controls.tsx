@@ -168,11 +168,13 @@ export function SettingSwitch({
   onChange,
   label,
   disabled = false,
+  dataAttribute,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   label: string;
   disabled?: boolean;
+  dataAttribute?: string;
 }) {
   return (
     <button
@@ -181,6 +183,7 @@ export function SettingSwitch({
       aria-checked={checked}
       aria-label={label}
       disabled={disabled}
+      {...(dataAttribute ? { [dataAttribute]: '' } : {})}
       onClick={() => onChange(!checked)}
       className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
     >
@@ -245,6 +248,7 @@ export function SettingsSegmentedControl<T extends string>({
           key={option.value}
           type="button"
           aria-pressed={value === option.value}
+          data-settings-option={option.value}
           disabled={disabled}
           onClick={() => onChange(option.value)}
           className="h-8 rounded px-3 font-ui text-chrome-label font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] disabled:cursor-not-allowed disabled:opacity-50"

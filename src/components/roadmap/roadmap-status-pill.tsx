@@ -67,6 +67,7 @@ export function RoadmapStatusPill({
 export function RoadmapBlockedBadge() {
   return (
     <span
+      data-roadmap-blocked
       className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-ui text-chrome-micro font-medium leading-4"
       style={{
         color: HUD.red,

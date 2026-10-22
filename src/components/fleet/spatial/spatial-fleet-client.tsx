@@ -946,6 +946,7 @@ export function SpatialFleetClient() {
                     statuses: statusFilter,
                   })
                 }
+                data-spatial-search
                 placeholder="Search agents…"
                 aria-label="Search agents"
                 className="w-24 rounded-sm bg-transparent text-chrome-meta text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-40"
@@ -953,6 +954,9 @@ export function SpatialFleetClient() {
             </div>
             {filtered && (
               <span
+                data-spatial-filter-count={
+                  Object.keys(filteredState.agents).length
+                }
                 className="font-mono text-chrome-micro tabular-nums text-muted-foreground"
                 aria-live="polite"
               >
@@ -961,6 +965,7 @@ export function SpatialFleetClient() {
             )}
             {filtered && (
               <button
+                data-spatial-filter-clear
                 onClick={() => {
                   updateFilters({ query: '', statuses: [] });
                 }}
@@ -978,6 +983,7 @@ export function SpatialFleetClient() {
           variant="outline"
           className="fleet-action-button grid h-11 w-11 place-items-center p-0"
           onClick={openHelpModal}
+          data-spatial-shortcut-help
           aria-label="Keyboard shortcuts"
           aria-keyshortcuts={
             helpKeys ? formatShortcutKeysAria(helpKeys) : undefined
@@ -1001,6 +1007,7 @@ export function SpatialFleetClient() {
         }`}
       >
         <section
+          data-spatial-surface
           className="relative min-h-0 min-w-0 overflow-hidden"
           aria-label="Fleet surface"
         >

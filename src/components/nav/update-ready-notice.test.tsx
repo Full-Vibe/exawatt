@@ -15,6 +15,10 @@ import type {
 import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
 import { changelogEntryUrl } from '@/lib/changelog/versions.mjs';
 import {
+  localBuildNotice,
+  productUpdateNotice,
+} from '@/lib/notices/notice-identity';
+import {
   installBridgeDouble,
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
@@ -428,6 +432,67 @@ describe('UpdateReadyNotice', () => {
     expect(
       screen.queryByRole('button', { name: 'Cancel' })
     ).not.toBeInTheDocument();
+  });
+
+  it('names the notice it shows, its wait and its actions by handle', async () => {
+    const restart = installApi();
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    const notice = () =>
+      document.querySelector<HTMLElement>('[data-update-notice]');
+    const installed = { currentSha: 'running', installedSha: 'first' };
+    act(() => emitInstalled?.(installed));
+    expect(notice()?.dataset.updateNotice).toBe(
+      localBuildNotice(installed)!.id
+    );
+    fireEvent.click(
+      notice()!.querySelector('[data-operation-receipt-dismiss]')!
+    );
+    expect(notice()).toBeNull();
+
+    const downloaded: ProductUpdateStatus = {
+      phase: 'downloaded',
+      currentVersion: '1.0.0',
+      availableVersion: '1.1.0',
+      percent: 100,
+      liveSessions: 1,
+      error: null,
+      enabled: true,
+      disabledReason: null,
+      logPath: null,
+    };
+    act(() => emitStatus?.(downloaded));
+    expect(notice()?.dataset.updateNotice).toBe(
+      productUpdateNotice(downloaded)!.id
+    );
+    fireEvent.click(notice()!.querySelector('[data-update-action="restart"]')!);
+    expect(restart).toHaveBeenCalledOnce();
+
+    act(() =>
+      emitShutdown?.(
+        shutdownAt({
+          phase: 'preparing',
+          waitingOn: 'update-staging',
+          cancellable: true,
+        })
+      )
+    );
+    expect(notice()?.dataset.updateNotice).toBe('shutdown');
+    expect(notice()?.dataset.shutdownWaiting).toBe('update-staging');
+    fireEvent.click(notice()!.querySelector('[data-update-action="cancel"]')!);
+    expect(main.cancelled).toBe(1);
+
+    act(() => emitShutdown?.(idle));
+    const failed: ProductUpdateStatus = {
+      ...downloaded,
+      phase: 'error',
+      error: 'network unavailable',
+    };
+    act(() => emitStatus?.(failed));
+    expect(notice()?.dataset.updateNotice).toBe(
+      productUpdateNotice(failed)!.id
+    );
+    expect(notice()?.dataset.shutdownWaiting).toBeUndefined();
   });
 
   // Review of 0.1.22: the mount-time reads committed whenever they arrived,

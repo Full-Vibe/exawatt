@@ -2194,6 +2194,7 @@ export function WorkspaceClient() {
                 : 'Enable attention notifications'
             }
             aria-pressed={notificationsEnabled}
+            data-attention-notifications
             title={
               notificationsEnabled
                 ? 'Attention notifications enabled'
@@ -2303,6 +2304,7 @@ export function WorkspaceClient() {
                 {activeSessionTab && activeItemChip && (
                   <button
                     type="button"
+                    data-active-roadmap-item={activeItemChip.item.id}
                     title={`working on ${activeItemChip.item.title} · open in roadmap`}
                     onClick={() => summonRoadmap(activeItemChip.item.id)}
                     className="shrink-0 rounded border px-1.5 py-px font-mono text-chrome-meta outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"

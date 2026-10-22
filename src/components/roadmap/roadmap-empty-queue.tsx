@@ -20,7 +20,10 @@ export function RoadmapEmptyQueue({
   onOpenFile: (() => void) | null;
 }) {
   return (
-    <div className="relative flex flex-col gap-2 py-4 pl-6 pr-3">
+    <div
+      data-roadmap-empty-queue
+      className="relative flex flex-col gap-2 py-4 pl-6 pr-3"
+    >
       {/* the spine runs into a hollow amber terminus */}
       <span
         aria-hidden
@@ -60,7 +63,7 @@ export function RoadmapEmptyQueue({
 
 export function RoadmapNoRoadmap({ checkedPaths }: { checkedPaths: string[] }) {
   return (
-    <div className="flex flex-col gap-2 px-3 py-4">
+    <div data-roadmap-no-roadmap className="flex flex-col gap-2 px-3 py-4">
       <p
         className="font-display text-sm font-semibold"
         style={{ color: HUD.text }}

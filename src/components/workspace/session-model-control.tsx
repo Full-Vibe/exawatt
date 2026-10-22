@@ -75,6 +75,7 @@ export function SessionModelControl({
   return (
     <OptionMenu
       label="Session model"
+      attributes={{ 'data-session-model': '' }}
       triggerLabel={
         choices.find(
           choice =>
@@ -144,6 +145,7 @@ export function SessionModelControl({
             </Button>
             <Button
               size="sm"
+              data-session-model-apply
               disabled={!selected || pending || !!reason}
               onClick={async () => {
                 if (!selected || pending) return;

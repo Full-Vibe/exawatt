@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   AnnouncedChip,
   ComingSoonMarker,
+  PreviewSurfaceShell,
   SurfaceReadinessMarker,
   Unbuilt,
 } from '@/components/readiness';
@@ -30,6 +31,21 @@ describe('readiness grammar (ENG-026 N0)', () => {
 
     const live = render(<SurfaceReadinessMarker surfaceId="consumption" />);
     expect(live.container).toBeEmptyDOMElement();
+  });
+
+  it('a preview surface shell names the surface it renders', () => {
+    render(
+      <PreviewSurfaceShell
+        surfaceId="organization"
+        owner="ENG-012"
+        today="Today"
+      >
+        <p>Body</p>
+      </PreviewSurfaceShell>
+    );
+    expect(
+      document.querySelector('[data-preview-surface="organization"]')
+    ).toContainElement(screen.getByRole('heading', { level: 1 }));
   });
 
   it('an announced chip names what is coming and cannot be operated', () => {

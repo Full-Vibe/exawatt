@@ -57,6 +57,7 @@ export function RoadmapSessionChipButton({
       type="button"
       tabIndex={-1}
       data-roadmap-chip={chip.sessionId}
+      data-roadmap-chip-method={chip.method}
       data-selected={selected || undefined}
       title={chipTooltip(chip)}
       onClick={onJump}

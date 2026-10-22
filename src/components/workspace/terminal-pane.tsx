@@ -650,6 +650,7 @@ export function TerminalPane({
             type="button"
             className="grid h-7 w-7 place-items-center text-hud-text-dim hover:text-hud-text"
             aria-label="Close terminal search"
+            data-terminal-search-close
             title="Close search"
             onClick={closeSearch}
           >
