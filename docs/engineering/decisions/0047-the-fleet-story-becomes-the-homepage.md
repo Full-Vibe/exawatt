@@ -1,7 +1,7 @@
 # 0047 The fleet story becomes the homepage
 
 Date: 2026-10-14
-Status: accepted 2026-10-14; implemented in ENG-031 W15m
+Status: accepted 2026-10-14; implemented in ENG-031 W15m; amended 2026-10-21 (W31: `/old` deleted)
 
 **The homepage study's fleet story replaces the band stack on `/`.** The
 story at `/hud-gallery/homepage-study` (ENG-031 W15 to W15l) is one pinned 3D
@@ -84,8 +84,9 @@ withheld promotion. Each is named under "What this reverses".
 
 ## What this reverses
 
-Each rule below remains true of the band stack at `/old`, and stops governing
-`/`.
+Each rule below remained true of the band stack at `/old`, and stopped
+governing `/`. Since `/old` was deleted (2026-10-21, amendment below), the
+band-only rules govern nothing.
 
 | Rule                                                                                            | Where it lives                                                                                                                                                                                                                                                                                   | What `/` does instead                                                                                                                                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -113,6 +114,16 @@ Each rule below remains true of the band stack at `/old`, and stops governing
 
 - Whether Soft replaces Page on `/`, and whether Acrylic replaces Gummy. Both
   are the operator's to call after living with the page.
-- When `/old` is retired.
+- When `/old` is retired. Decided 2026-10-21; see the amendment below.
 - Any change to pricing, the waitlist or the account question in front of the
   download. Those stay as marketing canon records them.
+
+## Amendment (2026-10-21, ENG-031 W31)
+
+**`/old` is deleted, with no redirect** (operator, 2026-10-21: "Delete
+/old"). The band stack, the studies that existed only for it
+(`/hud-gallery/fold-close` and `/hud-gallery/altitude-scroll`) and the band
+components went with it. The proxy keeps `/old` outside the auth gate beside
+the other retired addresses, so a signed-out visitor gets the 404 rather than
+a sign-in page. The hero board stays: its own study and eval rig still render
+it.

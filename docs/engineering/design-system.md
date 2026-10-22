@@ -61,7 +61,6 @@ The core of the scale is the **D39 chrome type roles**, already tokens in `globa
 | surface-title | 20        | `text-surface-title`              | a surface's h1 (settings, labs)                                                                                                                        |
 | display       | 22        | `text-display`                    | hero numbers and top-level headings on dense surfaces                                                                                                  |
 | marketing     | 24+       | `text-2xl` … `text-4xl`           | marketing/site pages only, never app chrome                                                                                                            |
-| site-closing  | 72        | `text-7xl` (`text-5xl` under `sm`) | the homepage closing band ONLY (ENG-031); the largest type on the page, one per page, never app chrome                                                  |
 
 Weights: `font-medium` for labels/controls, `font-semibold` for titles/headings (164/163 uses — the two workhorses); `font-bold` is rare and stays rare. Uppercase is legal **only** on mono micro-labels ≤ 11px with wide tracking (`tracking-[0.1em]`–`[0.18em]`) — the established HUD label idiom; never on sentences or headings.
 
@@ -697,6 +696,11 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-10-21 — ENG-031 W31: the band homepage at `/old` is deleted, and the
+  `site-closing` rung (72px) retires with the closing band, its only use; the
+  type scale above loses its row. The W1, W3 and W4 entries below stay as the
+  record of the band system.
 
 - 2026-10-22 — Settings: the shell owns every page's frame (BUG-306,
   operator feedback `3cb932c9`). Five destinations repeated their title in
