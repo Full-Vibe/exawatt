@@ -135,7 +135,7 @@ afterEach(() => {
 });
 
 describe('board renderer readiness', () => {
-  it('restores after lazy controller readiness and carries the operator pose across views', async () => {
+  it('restores after lazy readiness without applying a pose from another coordinate family', async () => {
     window.sessionStorage.setItem(storageKey, JSON.stringify(remembered));
     const view = render(surface('v1'));
     const first = handle();
@@ -169,11 +169,9 @@ describe('board renderer readiness', () => {
       rig.props.get('v2')!.onControllerReady?.(second);
       rig.props.get('v2')!.onControllerReady?.(second);
     });
-    expect(second.restoreViewport).toHaveBeenCalledExactlyOnceWith({
-      ...remembered,
-      centerX: 23,
-      zoom: 4,
-    });
+    // v2 now uses a native XZ perspective lattice. A v1 XY rectangle would
+    // put its camera in unrelated territory; only a compatible pose restores.
+    expect(second.restoreViewport).not.toHaveBeenCalled();
     await act(async () => view.rerender(surface('v1')));
     const third = handle();
     act(() => rig.props.get('v1')!.onControllerReady?.(third));
@@ -237,7 +235,19 @@ describe('board renderer readiness', () => {
         onProjectionChange={() => undefined}
       />
     );
-    window.sessionStorage.setItem(storageKey, JSON.stringify(remembered));
+    const perspectiveViewport = {
+      ...remembered,
+      perspective: {
+        target: [12, 0, 15],
+        distance: 90,
+        azimuth: 0.2,
+        polar: 0.8,
+      },
+    };
+    window.sessionStorage.setItem(
+      storageKey,
+      JSON.stringify(perspectiveViewport)
+    );
     rig.rejectLoad = 'v2';
     const view = render(renderSelected());
     await act(async () => {
@@ -259,7 +269,7 @@ describe('board renderer readiness', () => {
     const controller = handle();
     act(() => rig.props.get('v2')!.onControllerReady?.(controller));
     expect(controller.restoreViewport).toHaveBeenCalledExactlyOnceWith(
-      remembered
+      perspectiveViewport
     );
     await act(async () => view.rerender(renderSelected('matte')));
     expect(rig.props.get('v2')!.layout.selectedAgentId).toBe(agent.id);
