@@ -5412,3 +5412,15 @@ the exact Runs, day and token counts it implies, instead of waiting 75 s on
 this Mac's corpus. Held by `eval-boundaries.test.mjs` ("an eval
 reads empty harness history unless it opts in to this Mac"). The scan's own
 first-launch cost is tracked under ENG-008.
+
+### BUG-318 Closing a tab moves the tabs to its right before the strip settles
+
+Status: open · ENG-016 · found 2026-10-22 by the eval-handles packet, when
+`eval:workspace:ribbon` reached its stabilization step for the first time.
+
+Closing a tab holds the strip for 600 ms. The hold keeps the closing tab's
+position but not its width, so the Project to its right moved 60 px inside
+the hold in a probe. The eval's close step had matched no
+tab since `2c0f2e1b` renamed tabs to their Agent, which is why this stayed
+hidden. Exit: nothing right of the closed tab moves during the hold, and
+`eval:workspace:ribbon` asserts it.
