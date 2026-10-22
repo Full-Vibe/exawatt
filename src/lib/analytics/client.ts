@@ -52,6 +52,9 @@ let emitting = false;
 /** Between a configured build's start and the device's identity answering. */
 let deciding = false;
 let started: Promise<AnalyticsDecision> | null = null;
+/** Settles once the device's identity has decided this load (whether to emit,
+ *  and as whom), which is before the SDK has finished loading. */
+let identityDecided: Promise<void> | null = null;
 /**
  * Set by an opt-out and never cleared in this launch (opting back in takes
  * effect on the next one). The start awaits main's identity answer and then
@@ -102,11 +105,13 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
   if (!configured.enabled) {
     pending.length = 0;
     started = Promise.resolve(configured);
+    identityDecided = Promise.resolve();
     return started;
   }
 
   deciding = true;
-  started = (async (): Promise<AnalyticsDecision> => {
+  let bootstrapId = '';
+  const decided = (async (): Promise<AnalyticsDecision> => {
     const identity = await loadAnalyticsIdentity({ ensureId: true });
     if (optedOutThisLaunch) return OPTED_OUT;
     if (!identity?.installationId) {
@@ -120,8 +125,18 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
     emitting = true;
     target = { apiHost: configured.apiHost, key: configured.key };
     installationId = identity.installationId;
+    bootstrapId = identity.installationId;
     // The account stream is the desktop app's: Sessions live there.
     if (detectElectron()) accountStream = startAccountStream(target);
+    return configured;
+  })();
+  identityDecided = decided.then(
+    () => undefined,
+    () => undefined
+  );
+  started = (async (): Promise<AnalyticsDecision> => {
+    const decision = await decided;
+    if (!decision.enabled) return decision;
     // ─────────────────────────────────────────────────────────────────────
     // READ THIS BEFORE DEBUGGING "analytics are not arriving" (2026-08-06).
     //
@@ -177,11 +192,11 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
       property_denylist: [...ANALYTICS_PROPERTY_DENYLIST],
       before_send: scrubAnalyticsCapture,
       // Anonymous, per-installation, generated locally. Never an account id.
-      bootstrap: { distinctID: identity.installationId },
+      bootstrap: { distinctID: bootstrapId },
     });
     sink = posthog as unknown as AnalyticsSink;
     flushPending();
-    return configured;
+    return decision;
   })().catch(() => {
     stopEmission();
     return { enabled: false, reason: 'load_failed' } as AnalyticsDecision;
@@ -260,6 +275,18 @@ export function currentWebAnalyticsId(): string | null {
 }
 
 /**
+ * `currentWebAnalyticsId`, as soon as this load has decided. The decision is
+ * the identity read, so the id is known before the SDK has loaded: a
+ * download link that waited for the SDK went out without it on a slow
+ * connection, and the server records no download without it.
+ */
+export async function webAnalyticsId(): Promise<string | null> {
+  void initAnalytics();
+  await identityDecided;
+  return currentWebAnalyticsId();
+}
+
+/**
  * ENG-047 F2: alias the visitor's web id to this installation, once (main
  * decides "once"). The only join between two anonymous ids, made by the
  * user's own click on "Open Exawatt"; the account identity is never part of
@@ -286,5 +313,6 @@ export function recordWebAlias(webId: unknown): void {
 export function __resetAnalyticsForTests(): void {
   stopEmission();
   started = null;
+  identityDecided = null;
   optedOutThisLaunch = false;
 }

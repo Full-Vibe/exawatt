@@ -3,19 +3,19 @@
  *
  * The whole surface: `initAnalytics()` at startup, `captureAnalyticsEvent()`
  * with one of the allowlisted events, `setAnalyticsOptOut()` for the runtime
- * off switch, and the ENG-047 web-to-app link (`currentWebAnalyticsId`,
+ * off switch, and the ENG-047 web-to-app link (`webAnalyticsId`,
  * `recordWebAlias`). Decisions `0031` and `0034` bind this directory;
  * `docs/engineering/outbound-data.md` is its published manifest.
  */
 
 export {
   captureAnalyticsEvent,
-  currentWebAnalyticsId,
   initAnalytics,
   isAnalyticsEmitting,
   readAnalyticsOptOut,
   recordWebAlias,
   setAnalyticsOptOut,
+  webAnalyticsId,
 } from './client';
 
 export {

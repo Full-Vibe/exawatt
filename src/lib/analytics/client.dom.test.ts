@@ -140,6 +140,30 @@ describe('an official website build', () => {
     expect(client.currentWebAnalyticsId()).toBe(WEB_ID);
     await client.setAnalyticsOptOut(true);
     expect(client.currentWebAnalyticsId()).toBeNull();
+    await expect(client.webAnalyticsId()).resolves.toBeNull();
+  });
+
+  // The download link carries this id, and the server records a download
+  // only under it: an id that waited for the SDK left every click made while
+  // the SDK loaded unrecorded.
+  it('hands out the web id at the decision, before the SDK has loaded', async () => {
+    let releaseImport: () => void = () => undefined;
+    const importGate = new Promise<void>(resolve => (releaseImport = resolve));
+    vi.doMock('posthog-js/dist/module.full.no-external', async () => {
+      await importGate;
+      return recordingPosthog();
+    });
+    try {
+      const client = await freshClient();
+      await expect(client.webAnalyticsId()).resolves.toBe(WEB_ID);
+      expect(state.initialized).toEqual([]);
+      releaseImport();
+      await client.initAnalytics();
+      expect(state.initialized).toHaveLength(1);
+    } finally {
+      releaseImport();
+      vi.doMock('posthog-js/dist/module.full.no-external', recordingPosthog);
+    }
   });
 
   it('posts one $create_alias from the installation id, and refuses junk', async () => {
@@ -178,6 +202,7 @@ describe('an official website build', () => {
     for (const event of EVERY_ANALYTICS_EVENT)
       client.captureAnalyticsEvent(event);
     client.recordWebAlias(OTHER_ID);
+    await expect(client.webAnalyticsId()).resolves.toBeNull();
     expect(state.captured).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });

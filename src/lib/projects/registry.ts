@@ -14,6 +14,7 @@ import { resolveDistributionIdentity } from '@exawatt/core/distribution';
 import {
   analyticsSurface,
   captureAnalyticsEvent,
+  type ProjectBinding,
   type ProjectOpenSource,
 } from '@/lib/analytics';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
@@ -29,10 +30,9 @@ import {
 export type { Project };
 
 /**
- * Why an open verb ran, when an operator gesture ran it (ENG-047). Passing
- * one records `project_opened` once the Project is open; a verb run for
- * bookkeeping (registering the folder an Agent launched in, a rename's
- * reconcile) passes none and records nothing.
+ * Why the operator opened a Project (ENG-047): the gesture's reason, which
+ * every open verb in the workspace requires, so an open path cannot exist
+ * without one.
  */
 export interface ProjectOpenedContext {
   source: ProjectOpenSource;
@@ -40,20 +40,25 @@ export interface ProjectOpenedContext {
   harnessHint?: AgentHarness | null;
 }
 
-function recordOpened(
-  project: Project,
-  opened: ProjectOpenedContext | undefined
-): Project {
-  if (opened) {
-    captureAnalyticsEvent({
-      name: 'project_opened',
-      surface: analyticsSurface(),
-      source: opened.source,
-      harnessHint: opened.harnessHint ?? null,
-      bound: project.root_path === null ? 'folderless' : 'folder',
-    });
-  }
-  return project;
+/**
+ * ENG-047 `project_opened`, recorded the moment a gesture opens a Project:
+ * the one place the event is made. It never waits on the registry below. A
+ * Project opens in the workspace whether or not its row syncs (offline, a
+ * session that cannot refresh), and an event recorded only once the write
+ * succeeded lost exactly those opens. The write verbs below are bookkeeping
+ * and record nothing.
+ */
+export function recordProjectOpened(
+  opened: ProjectOpenedContext,
+  bound: ProjectBinding
+): void {
+  captureAnalyticsEvent({
+    name: 'project_opened',
+    surface: analyticsSurface(),
+    source: opened.source,
+    harnessHint: opened.harnessHint ?? null,
+    bound,
+  });
 }
 
 export const LOCAL_PROJECTS_STORAGE_VERSION = 1 as const;
@@ -353,13 +358,8 @@ export async function listProjects(): Promise<Project[]> {
  *  Idempotent via the (user_id, root_path) unique index — launching in a known
  *  directory reuses its Project instead of creating a duplicate. */
 export async function openRepositoryProject(
-  ref: RepositoryProjectRef,
-  opened?: ProjectOpenedContext
+  ref: RepositoryProjectRef
 ): Promise<Project> {
-  return recordOpened(await openRepositoryRow(ref), opened);
-}
-
-async function openRepositoryRow(ref: RepositoryProjectRef): Promise<Project> {
   const store = await projectStore();
   if (store.kind === 'local') {
     const projects = readLocalProjects();
@@ -428,10 +428,9 @@ async function openRepositoryRow(ref: RepositoryProjectRef): Promise<Project> {
  * launch, Finder, and worktree verbs must gate on `root_path`.
  */
 export async function openManualProject(
-  ref: ManualProjectRef,
-  opened?: ProjectOpenedContext
+  ref: ManualProjectRef
 ): Promise<Project> {
-  return recordOpened(await openFolderlessProject(ref, 'manual'), opened);
+  return openFolderlessProject(ref, 'manual');
 }
 
 /** Create or idempotently reopen a folderless Project of one kind, by id. */
@@ -529,14 +528,10 @@ async function openFolderlessProject(
  * whether the operator is signed in refuses here, as every read does.
  */
 export async function openRemoteHomeProject(
-  ref: ManualProjectRef,
-  opened?: ProjectOpenedContext
+  ref: ManualProjectRef
 ): Promise<Project> {
   const home = (await listProjects()).find(isRemoteHome);
-  return recordOpened(
-    home ?? (await openFolderlessProject(ref, REMOTE_HOME_KIND)),
-    opened
-  );
+  return home ?? (await openFolderlessProject(ref, REMOTE_HOME_KIND));
 }
 
 export async function renameProject(id: string, name: string): Promise<void> {

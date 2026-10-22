@@ -85,7 +85,9 @@ export function useProjectOpenerState(): {
   const onOpenChange = useCallback(
     (next: boolean) =>
       setPosition(
-        next ? { route: 'projects', importDirectory: null } : { route: 'closed' }
+        next
+          ? { route: 'projects', importDirectory: null }
+          : { route: 'closed' }
       ),
     []
   );
@@ -117,15 +119,18 @@ export function ProjectOpener({
   workspaceProjects: WorkspaceProjectSummary[];
   onOpenProject: (
     dir: string,
-    opened?: ProjectOpenedContext
+    opened: ProjectOpenedContext
   ) => Promise<boolean>;
   onImportProjects: (dirs: string[]) => Promise<boolean>;
   /** Open a durable folderless Context Group without resolving a path. */
-  onOpenContextProject?: (project: {
-    id: string;
-    name: string;
-    color: string | null;
-  }) => void;
+  onOpenContextProject?: (
+    project: {
+      id: string;
+      name: string;
+      color: string | null;
+    },
+    opened: ProjectOpenedContext
+  ) => void;
   /** ENG-010 C2: a saved source hands back its mapping and the Agent to open. */
   onAgentSourceConnected?: (result: ConnectSourceResult) => void;
   /** ENG-046: open a harness-store suggestion, exactly as Browse would. */
@@ -319,11 +324,10 @@ export function ProjectOpener({
 
   const choose = async (project: ProjectLibraryEntry) => {
     if (project.rootPath === null) {
-      onOpenContextProject?.({
-        id: project.projectId,
-        name: project.name,
-        color: project.color,
-      });
+      onOpenContextProject?.(
+        { id: project.projectId, name: project.name, color: project.color },
+        { source: 'recent' }
+      );
       onOpenChange(false);
       return;
     }

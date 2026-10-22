@@ -45,7 +45,7 @@ export function useWorkspaceRequests({
     harness: PtyHarness,
     options?: { shellCommand?: string }
   ) => boolean;
-  openProject: (dir: string, opened?: ProjectOpenedContext) => Promise<boolean>;
+  openProject: (dir: string, opened: ProjectOpenedContext) => Promise<boolean>;
   togglePin: () => boolean;
 }): void {
   // ---- palette requests (S2): the ⌘K switcher lives at the app root and

@@ -178,11 +178,10 @@ describe('Project opener', () => {
       await screen.findByRole('button', { name: /Remote operations/ })
     );
 
-    expect(onOpenContextProject).toHaveBeenCalledWith({
-      id: 'project-manual',
-      name: 'Remote operations',
-      color: null,
-    });
+    expect(onOpenContextProject).toHaveBeenCalledWith(
+      { id: 'project-manual', name: 'Remote operations', color: null },
+      { source: 'recent' }
+    );
     expect(window.electron!.dialog!.pathExists).not.toHaveBeenCalled();
   });
 

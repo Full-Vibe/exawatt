@@ -17,6 +17,7 @@ import {
 import {
   openRepositoryProject,
   listProjects,
+  recordProjectOpened,
   type ProjectOpenedContext,
   renameProject as registryRenameProject,
   reorderProjects as registryReorderProjects,
@@ -47,6 +48,9 @@ import {
 } from './project-list';
 import type { RecentProjects } from './recent-projects';
 
+/** Import's own reason, for a folder the caller gave no other one. */
+const IMPORTED: ProjectOpenedContext = { source: 'import' };
+
 export function useWorkspaceProjects({
   stateRef,
   recents,
@@ -73,12 +77,12 @@ export function useWorkspaceProjects({
   // in flight (its snapshot is already stale), and instead pushes it up.
   const editedDirsRef = useRef<Set<string>>(new Set());
 
+  /** Register (or refresh) a folder's durable Project. Bookkeeping: it
+   *  records no `project_opened`, because the open verbs below already did,
+   *  and a launch registering its folder opened nothing. */
   const syncProjectIdentity = useCallback(
-    (
-      ref: { rootPath: string; name: string },
-      opened?: ProjectOpenedContext
-    ) => {
-      void openRepositoryProject(ref, opened)
+    (ref: { rootPath: string; name: string }) => {
+      void openRepositoryProject(ref)
         .then(proj => {
           setProjects(prev => linkRegistryProject(prev, proj));
           if (!proj.color) {
@@ -138,11 +142,15 @@ export function useWorkspaceProjects({
 
   /** Open a Project independently of Sessions. Main-process resolution keeps
    *  git worktrees grouped under the same durable Project identity. Answers
-   *  the Project's canonical folder, or null when nothing opened. */
+   *  the Project's canonical folder, or null when nothing opened.
+   *
+   *  Every open verb here takes the gesture's reason and records
+   *  `project_opened` when the Project opens (ENG-047), never after its
+   *  registry row syncs: the sync is best-effort, the open is not. */
   const openProjectAt = useCallback(
     async (
       dir: string,
-      opened?: ProjectOpenedContext
+      opened: ProjectOpenedContext
     ): Promise<string | null> => {
       const claim = operatorPosition.claimHere();
       const result = await window.electron?.projects?.resolve(dir);
@@ -164,17 +172,15 @@ export function useWorkspaceProjects({
       if (mayMove) moveOperator(canonicalDir, null);
       setLastUsedDir(canonicalDir);
       setError(null);
-      syncProjectIdentity(
-        { rootPath: canonicalDir, name: result.projectName },
-        opened
-      );
+      recordProjectOpened(opened, 'folder');
+      syncProjectIdentity({ rootPath: canonicalDir, name: result.projectName });
       return canonicalDir;
     },
     [moveOperator, setError, setLastUsedDir, setProjects, syncProjectIdentity]
   );
 
   const openProject = useCallback(
-    async (dir: string, opened?: ProjectOpenedContext): Promise<boolean> =>
+    async (dir: string, opened: ProjectOpenedContext): Promise<boolean> =>
       (await openProjectAt(dir, opened)) !== null,
     [openProjectAt]
   );
@@ -283,9 +289,13 @@ export function useWorkspaceProjects({
 
   /** Open a durable Context Group whose local folder binding is absent. */
   const openContextProject = useCallback(
-    (ref: { id: string; name: string; color: string | null }): void => {
+    (
+      ref: { id: string; name: string; color: string | null },
+      opened: ProjectOpenedContext
+    ): void => {
       setProjects(prev => openContextGroup(prev, ref));
       moveOperator(ref.id, null);
+      recordProjectOpened(opened, 'folderless');
     },
     [moveOperator, setProjects]
   );
@@ -334,10 +344,14 @@ export function useWorkspaceProjects({
       setLastUsedDir(first.projectDir);
       setError(null);
       refs.forEach((ref, index) => {
-        syncProjectIdentity(
-          { rootPath: ref.projectDir, name: ref.projectName },
-          openedFor?.get(unique[index]) ?? { source: 'import' }
+        recordProjectOpened(
+          openedFor?.get(unique[index]) ?? IMPORTED,
+          'folder'
         );
+        syncProjectIdentity({
+          rootPath: ref.projectDir,
+          name: ref.projectName,
+        });
       });
       return new Map(unique.map((dir, index) => [dir, refs[index].projectDir]));
     },
