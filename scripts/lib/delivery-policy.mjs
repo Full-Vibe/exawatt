@@ -128,11 +128,18 @@ const BOARD_CANVAS_MODULES = [
   'operations-board-materials.ts',
   'operations-board-population-layer.tsx',
   'operations-board-zone-layer.tsx',
+  // The shared transition clock and the field it carries: every flight,
+  // recession and reveal paints through their deadline.
+  'operations-board-field.tsx',
+  'operations-board-transition.ts',
 ];
+/** The frame scheduler decides when every board canvas paints. */
+const FRAME_DEMAND_DIR = 'src/lib/frame-demand/';
 const isBoardCanvas = file =>
   BOARD_CANVAS_MODULES.some(
     module => file === `${BOARD_CANVAS_DIR}${module}`
   ) ||
+  (file.startsWith(FRAME_DEMAND_DIR) && !/\.test\.tsx?$/.test(file)) ||
   (file.startsWith(`${BOARD_CANVAS_DIR}tiles/`) &&
     !/\.test\.tsx?$/.test(file)) ||
   (file.startsWith('src/components/tiles/') && !/\.test\.tsx?$/.test(file));
@@ -779,7 +786,10 @@ export const SURFACE_GATES = [
     match: file =>
       file.startsWith('src/components/site/hero-board/') ||
       file.startsWith('src/app/eval/t12-hero-board/') ||
-      file === 'scripts/hero-board-idle-eval.mjs',
+      file === 'scripts/hero-board-idle-eval.mjs' ||
+      // What decides when the hero paints: its frame scheduler and policy.
+      (file.startsWith(FRAME_DEMAND_DIR) && !/\.test\.tsx?$/.test(file)) ||
+      file === 'src/lib/host-power/use-host-render-policy.ts',
   },
   {
     gate: 'eval:typography-stability',
