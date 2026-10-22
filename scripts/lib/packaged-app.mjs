@@ -16,8 +16,9 @@
  * projected through, so a third distribution cannot break the evals again.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
@@ -317,7 +318,10 @@ export async function ensurePackagedApp({
   let stale = packagedTreeError(packaged, expectedSha);
   if (stale && !process.env.EXAWATT_APP_PATH) {
     console.log(`[${label}] ${stale.message}; building the exact current tree`);
-    execFileSync('pnpm', ['electron:build:dir'], { cwd: root, stdio: 'inherit' });
+    execFileSync('pnpm', ['electron:build:dir'], {
+      cwd: root,
+      stdio: 'inherit',
+    });
     // Packaging stages dist-electron/node_modules onto the DEVELOPMENT module
     // resolution path (incident 0012). Leaving it behind poisons every dev
     // Electron eval that runs after this one in the same tree.
@@ -351,4 +355,186 @@ export function ensuredExecutable(packaged) {
 /** The bundle path, for the evals that inspect the .app rather than run it. */
 export async function packagedAppBundle(options) {
   return (await resolvePackagedApp(options)).appPath;
+}
+
+/** Clones of a verified package, for an eval that needs two copies of one
+ *  build at different paths (BUG-305). */
+export function clonePackagedApp(packaged, directory) {
+  ensuredExecutable(packaged);
+  const appPath = path.join(directory, path.basename(packaged.appPath));
+  // clonefile(2): APFS shares the blocks, so a second copy costs no disk.
+  execFileSync('cp', ['-cR', packaged.appPath, appPath]);
+  assertPackagedContract(appPath, packaged.digest);
+  const clone = {
+    ...packaged,
+    appPath,
+    executablePath: path.join(
+      appPath,
+      'Contents',
+      'MacOS',
+      packaged.identity.productName
+    ),
+  };
+  ENSURED.add(clone);
+  return clone;
+}
+
+/** Removes a clone and its Launch Services registration. */
+export function discardPackagedClone(clone) {
+  forgetLaunchedPackage(clone, { belongs: () => true });
+  rmSync(clone.appPath, { recursive: true, force: true });
+}
+
+// ---------------------------------------------------------------------------
+// Launch Services (BUG-305, BUG-083).
+//
+// macOS registers every bundle that launches, and a registration outlives its
+// bundle. On 2026-10-21 the operator's Mac held 243 Exawatt registrations, 239
+// of them in worktrees that no longer existed, and every launched build claims
+// `exawatt://` for itself, so a link or an app switcher could resolve Exawatt
+// to a copy that is gone. A packaged eval therefore forgets its bundle when it
+// is done with it, and the sweep forgets registrations under this repository's
+// worktrees whose bundle has gone. Neither ever touches `/Applications` or a
+// path outside this repository's worktrees.
+
+export const LSREGISTER =
+  '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
+
+/** The bundle records in `lsregister -dump Bundle` output: path and id. */
+export function launchServicesBundles(dump) {
+  const bundles = [];
+  for (const record of dump.split(/^-{20,}$/mu)) {
+    if (!/^\s*bundle id:/u.test(record)) continue;
+    const bundlePath = /^path:\s+(.+?) \(0x[0-9a-f]+\)$/mu.exec(record)?.[1];
+    if (!bundlePath) continue;
+    const identifier = /^identifier:\s+(.+)$/mu.exec(record)?.[1]?.trim();
+    bundles.push({ path: bundlePath, identifier: identifier ?? null });
+  }
+  return bundles;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+/**
+ * Whether a bundle path lies in one of this repository's worktrees: the main
+ * checkout, a sibling `<checkout>-<slug>` worktree (AGENTS.md), or a dogfood
+ * build's temporary worktree (`git-build-snapshot.mjs`). `/Applications` is
+ * never one of them, whatever the checkout is called.
+ */
+export function repositoryBundlePredicate({
+  mainCheckout,
+  temporaryDirectories,
+}) {
+  const patterns = [
+    new RegExp(`^${escapeRegExp(mainCheckout)}(?:-[^/]+)?/`, 'u'),
+    ...temporaryDirectories.map(
+      directory =>
+        new RegExp(
+          `^${escapeRegExp(directory)}/exawatt-dogfood-source-[^/]+/source/`,
+          'u'
+        )
+    ),
+  ];
+  return candidate =>
+    path.isAbsolute(candidate) &&
+    !candidate.startsWith('/Applications/') &&
+    patterns.some(pattern => pattern.test(candidate));
+}
+
+function realpathOrSelf(candidate) {
+  try {
+    return realpathSync(candidate);
+  } catch {
+    return candidate;
+  }
+}
+
+/** This repository's worktree predicate, read from git and the user's temp
+ *  directories (both spellings: the shell's TMPDIR and macOS's own). */
+export function repositoryBundles({
+  root = process.cwd(),
+  run = execFileSync,
+} = {}) {
+  const commonDirectory = run(
+    'git',
+    ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+    { cwd: root, encoding: 'utf8' }
+  ).trim();
+  const temporaryDirectories = new Set([realpathOrSelf(tmpdir())]);
+  try {
+    const userTemp = run('getconf', ['DARWIN_USER_TEMP_DIR'], {
+      encoding: 'utf8',
+    }).trim();
+    if (userTemp)
+      temporaryDirectories.add(realpathOrSelf(userTemp.replace(/\/$/u, '')));
+  } catch {
+    /* not macOS: TMPDIR is the only temp directory */
+  }
+  return repositoryBundlePredicate({
+    mainCheckout: path.dirname(realpathOrSelf(commonDirectory)),
+    temporaryDirectories: [...temporaryDirectories],
+  });
+}
+
+/**
+ * Forgets a launched package's Launch Services registration, so a worktree
+ * that is later deleted leaves nothing behind. Best effort: it answers whether
+ * macOS accepted, and never fails the eval that launched the package.
+ */
+export function forgetLaunchedPackage(
+  packaged,
+  { run = execFileSync, belongs = repositoryBundles() } = {}
+) {
+  if (process.platform !== 'darwin') return 'not-macos';
+  const appPath = realpathOrSelf(packaged.appPath);
+  if (appPath.startsWith('/Applications/') || !belongs(appPath)) {
+    return 'not-ours';
+  }
+  try {
+    run(LSREGISTER, ['-u', appPath], { stdio: 'ignore' });
+    return 'forgotten';
+  } catch {
+    return 'refused';
+  }
+}
+
+/**
+ * Registrations under this repository's worktrees whose bundle no longer
+ * exists. With `execute`, each is unregistered; without, they are only listed.
+ */
+export function sweepLaunchServices({
+  root = process.cwd(),
+  execute = false,
+  run = execFileSync,
+  exists = existsSync,
+  belongs = repositoryBundles({ root, run }),
+} = {}) {
+  const dump = run(LSREGISTER, ['-dump', 'Bundle'], {
+    encoding: 'utf8',
+    maxBuffer: 512 * 1024 * 1024,
+  });
+  const byPath = new Map();
+  for (const bundle of launchServicesBundles(dump)) {
+    if (belongs(bundle.path) && !exists(bundle.path)) {
+      byPath.set(bundle.path, bundle);
+    }
+  }
+  const stale = [...byPath.values()].sort((a, b) =>
+    a.path.localeCompare(b.path)
+  );
+  const unregistered = [];
+  const refused = [];
+  if (execute) {
+    for (const bundle of stale) {
+      try {
+        run(LSREGISTER, ['-u', bundle.path], { stdio: 'ignore' });
+        unregistered.push(bundle);
+      } catch (error) {
+        refused.push({ ...bundle, error: String(error?.message ?? error) });
+      }
+    }
+  }
+  return { stale, unregistered, refused };
 }

@@ -8,10 +8,15 @@ import test from 'node:test';
 import { prepareDistribution } from './lib/distribution-build.mjs';
 import { encodeAsar } from './lib/asar.mjs';
 import {
+  LSREGISTER,
   assertPackagedContract,
   assertPackagedSource,
+  forgetLaunchedPackage,
+  launchServicesBundles,
   readPackagedBuildInfo,
+  repositoryBundlePredicate,
   resolvePackagedApp,
+  sweepLaunchServices,
 } from './lib/packaged-app.mjs';
 
 /**
@@ -63,10 +68,7 @@ test('the packaged bundle and its owed capabilities come from the contract', asy
   assert.equal(official.identity.productName, 'Exawatt');
   assert.equal(official.identity.appId, 'ai.exawatt.desktop');
   assert.equal(official.identity.protocolScheme, 'exawatt');
-  assert.equal(
-    official.identity.iconPath,
-    'electron/resources/icon.icns'
-  );
+  assert.equal(official.identity.iconPath, 'electron/resources/icon.icns');
   assert.equal(official.identity.updateChannel, 'stable');
   assert.equal(
     official.executablePath,
@@ -178,5 +180,192 @@ test('a stale package is refused by the source SHA embedded in app.asar', async 
   assert.throws(
     () => assertPackagedSource(app, 'source-b'),
     /was built from source source-a.*expects source-b/
+  );
+});
+
+// Launch Services (BUG-305, BUG-083). The dump below has the shape
+// `lsregister -dump Bundle` prints on macOS 26: a dashed separator, then the
+// record's kind on its first line; only bundle records name a bundle path.
+const SEPARATOR = '-'.repeat(80);
+const record = (kind, fields) =>
+  `${SEPARATOR}\n${kind}\n${fields.map(([key, value]) => `${`${key}:`.padEnd(28)}${value}`).join('\n')}\n`;
+const DUMP = [
+  record('bundle id:                  Exawatt (0x1084)', [
+    ['container', '/ (0x4)'],
+    [
+      'path',
+      '/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app (0x204c)',
+    ],
+    ['identifier', 'ai.exawatt.desktop'],
+  ]),
+  record('bundle id:                  Exawatt (0x1085)', [
+    ['path', '/Applications/Exawatt.app (0x2050)'],
+    ['identifier', 'ai.exawatt.desktop'],
+  ]),
+  record('bundle id:                  Electron (0x1086)', [
+    [
+      'path',
+      '/Users/me/src/exawatt/node_modules/electron/dist/Electron.app (0x2054)',
+    ],
+    ['identifier', 'com.github.Electron'],
+  ]),
+  record('bundle id:                  Exawatt (0x1087)', [
+    [
+      'path',
+      '/private/var/T/exawatt-dogfood-source-AbC123/source/release/mac-arm64/Exawatt.app (0x2058)',
+    ],
+    ['identifier', 'ai.exawatt.desktop'],
+  ]),
+  record('bundle id:                  Other (0x1088)', [
+    ['path', '/Users/me/src/other/Other.app (0x205c)'],
+    ['identifier', 'com.example.other'],
+  ]),
+  record('claim id:                   Exawatt (0x2000)', [
+    [
+      'path',
+      '/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app (0x204c)',
+    ],
+  ]),
+].join('');
+
+const belongs = repositoryBundlePredicate({
+  mainCheckout: '/Users/me/src/exawatt',
+  temporaryDirectories: ['/private/var/T'],
+});
+
+test('Launch Services bundle records are read from the dump, and nothing else is', () => {
+  assert.deepEqual(
+    launchServicesBundles(DUMP).map(bundle => bundle.path),
+    [
+      '/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app',
+      '/Applications/Exawatt.app',
+      '/Users/me/src/exawatt/node_modules/electron/dist/Electron.app',
+      '/private/var/T/exawatt-dogfood-source-AbC123/source/release/mac-arm64/Exawatt.app',
+      '/Users/me/src/other/Other.app',
+    ]
+  );
+  assert.equal(launchServicesBundles(DUMP)[0].identifier, 'ai.exawatt.desktop');
+});
+
+test('only this repository’s worktrees are ours, and /Applications never is', () => {
+  assert.equal(
+    belongs('/Users/me/src/exawatt/release/mac-arm64/Exawatt.app'),
+    true
+  );
+  assert.equal(belongs('/Users/me/src/exawatt-slug/release/X.app'), true);
+  assert.equal(
+    belongs('/private/var/T/exawatt-dogfood-source-AbC/source/release/X.app'),
+    true
+  );
+  assert.equal(belongs('/Users/me/src/exawattish/X.app'), false);
+  assert.equal(belongs('/Users/me/src/other/X.app'), false);
+  assert.equal(
+    belongs('/private/var/T/exawatt-exact-public-1/checkout/X.app'),
+    false
+  );
+  assert.equal(belongs('/Applications/Exawatt.app'), false);
+  assert.equal(
+    repositoryBundlePredicate({
+      mainCheckout: '/Applications',
+      temporaryDirectories: [],
+    })('/Applications/Exawatt.app'),
+    false
+  );
+});
+
+test('the sweep lists gone registrations under our worktrees, and unregisters only with execute', () => {
+  const present = new Set([
+    '/Applications/Exawatt.app',
+    '/Users/me/src/exawatt/node_modules/electron/dist/Electron.app',
+  ]);
+  const calls = [];
+  const run = (command, args) => {
+    calls.push([command, ...args]);
+    if (args[0] === '-dump') return DUMP;
+    if (args[1].includes('dogfood-source'))
+      throw new Error('lsregister: -10814');
+    return '';
+  };
+  const exists = candidate => present.has(candidate);
+
+  const listed = sweepLaunchServices({ run, exists, belongs });
+  assert.deepEqual(
+    listed.stale.map(bundle => bundle.path),
+    [
+      '/private/var/T/exawatt-dogfood-source-AbC123/source/release/mac-arm64/Exawatt.app',
+      '/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app',
+    ]
+  );
+  assert.deepEqual(calls, [[LSREGISTER, '-dump', 'Bundle']]);
+
+  const swept = sweepLaunchServices({ run, exists, belongs, execute: true });
+  assert.deepEqual(
+    swept.unregistered.map(bundle => bundle.path),
+    ['/Users/me/src/exawatt-gone/release/mac-arm64/Exawatt.app']
+  );
+  // A refusal is reported as one, never folded into "nothing to do".
+  assert.equal(swept.refused.length, 1);
+  assert.match(swept.refused[0].error, /-10814/u);
+  assert.ok(
+    calls.every(
+      ([, flag, target]) =>
+        flag !== '-u' || !target.startsWith('/Applications/')
+    )
+  );
+});
+
+test('a launched package is forgotten only when it is ours, never in /Applications', () => {
+  const calls = [];
+  const run = (command, args) => calls.push([command, ...args]);
+  const anywhere = () => true;
+  if (process.platform !== 'darwin') {
+    assert.equal(
+      forgetLaunchedPackage(
+        { appPath: '/x/Exawatt.app' },
+        { run, belongs: anywhere }
+      ),
+      'not-macos'
+    );
+    return;
+  }
+  assert.equal(
+    forgetLaunchedPackage(
+      { appPath: '/Applications/Exawatt.app' },
+      { run, belongs: anywhere }
+    ),
+    'not-ours'
+  );
+  assert.equal(
+    forgetLaunchedPackage(
+      { appPath: '/Users/me/src/other/Other.app' },
+      { run, belongs }
+    ),
+    'not-ours'
+  );
+  assert.equal(
+    forgetLaunchedPackage(
+      { appPath: '/Users/me/src/exawatt-slug/release/mac-arm64/Exawatt.app' },
+      { run, belongs }
+    ),
+    'forgotten'
+  );
+  assert.deepEqual(calls, [
+    [
+      LSREGISTER,
+      '-u',
+      '/Users/me/src/exawatt-slug/release/mac-arm64/Exawatt.app',
+    ],
+  ]);
+  assert.equal(
+    forgetLaunchedPackage(
+      { appPath: '/Users/me/src/exawatt-slug/X.app' },
+      {
+        run: () => {
+          throw new Error('denied');
+        },
+        belongs,
+      }
+    ),
+    'refused'
   );
 });

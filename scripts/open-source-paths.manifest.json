@@ -188,6 +188,7 @@
         "scripts/gitleaks.toml",
         "scripts/hooks-install.mjs",
         "scripts/id-next.mjs",
+        "scripts/launch-services-sweep.mjs",
         "scripts/macos-atomic-swap.c",
         "scripts/merge-append-docs.mjs",
         "scripts/modules-check.mjs",

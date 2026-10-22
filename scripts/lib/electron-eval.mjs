@@ -24,7 +24,7 @@ import {
   readDevServerIdentity,
   servesCheckout,
 } from './dev-server-identity.mjs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   closeSync,
   copyFileSync,
@@ -46,7 +46,7 @@ import {
 } from './native-preflight.mjs';
 import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
 import { assertFixtureHarnesses } from './harness-probe-fixture.mjs';
-import { ensuredExecutable } from './packaged-app.mjs';
+import { ensuredExecutable, forgetLaunchedPackage } from './packaged-app.mjs';
 import { captureElectronProcessGroup } from './electron-process-group.mjs';
 
 /** Kill any orphaned playwright Electron left by a prior SIGKILLed run of THIS
@@ -354,7 +354,7 @@ export async function withElectronApp(requested, body, opts = {}) {
   if (!launchOpts.executablePath) assertCompiledElectronMain(evalRoot);
 
   const attempts = opts.attempts ?? 6;
-  return withElectronEvalLock(evalRoot, async () => {
+  const launched = withElectronEvalLock(evalRoot, async () => {
     for (let attempt = 1; ; attempt += 1) {
       try {
         return await runElectronAttempt({
@@ -381,6 +381,64 @@ export async function withElectronApp(requested, body, opts = {}) {
       }
     }
   });
+  // Launching registered the package with Launch Services, and that
+  // registration would outlive this worktree (BUG-305).
+  return launched.finally(() => {
+    if (requested.packaged) forgetLaunchedPackage(requested.packaged);
+  });
+}
+
+/**
+ * Launch a second copy of a package while the app `withElectronApp` launched
+ * is running, and run `body(second)` (BUG-305). Only for use inside that
+ * app's body, which already holds the eval lock. The copy is the package's
+ * own executable started directly, the way a terminal or a stale bundle
+ * starts one, which is the launch macOS's own single-instance rule misses.
+ * `second.exited` resolves with its exit and the tail of its output; when
+ * `body` returns, a copy still running is stopped, its whole process group
+ * included.
+ *
+ * @param {object} packaged a package `ensurePackagedApp` or
+ *   `clonePackagedApp` returned
+ * @param {NodeJS.ProcessEnv} env
+ * @param {(second: { pid: number, exited: Promise<{ code: number | null, signal: string | null, output: string }> }) => Promise<any>} body
+ */
+export async function withSecondCopy(packaged, env, body) {
+  const child = spawn(ensuredExecutable(packaged), [], {
+    env,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const output = keepOutputTail(child);
+  const exited = new Promise(resolve =>
+    child.once('exit', (code, signal) =>
+      resolve({ code, signal, output: output() })
+    )
+  );
+  let group = null;
+  try {
+    group = captureElectronProcessGroup(child.pid);
+  } catch {
+    /* it may already have left; the exit carries the evidence */
+  }
+  try {
+    return await body({ pid: child.pid, exited });
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      group?.captureMembers();
+      child.kill('SIGTERM');
+      const stopped = await Promise.race([
+        exited.then(() => true),
+        new Promise(resolve => setTimeout(() => resolve(false), 8_000)),
+      ]);
+      if (!stopped) child.kill('SIGKILL');
+    }
+    try {
+      group?.forceKill();
+    } catch {
+      /* verification failed; never broaden ownership */
+    }
+  }
 }
 
 /**
