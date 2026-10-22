@@ -194,6 +194,23 @@ await page.getByRole('button', { name: 'Resume 2 agents in this project' }).clic
   );
 });
 
+test('a template renders a run only when its own words carry it', () => {
+  const product = {
+    ...PRODUCT,
+    'src/study.tsx': 'export const name = (index: number) => `Agent ${index}`;',
+  };
+  assert.deepEqual(
+    copy(
+      `
+await page.getByText('Agent Source launch eval').waitFor();
+await page.getByText('Agent 7').waitFor();
+`,
+      product
+    ),
+    [{ line: 3, kind: 'getByText' }]
+  );
+});
+
 test('a label reached through a loop over literals fails, the shape that broke', () => {
   assert.deepEqual(
     copy(`

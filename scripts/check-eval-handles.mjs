@@ -725,6 +725,7 @@ function containsWords(text, run) {
   return false;
 }
 
+const letterCount = text => (text.match(/\p{L}/gu) ?? []).length;
 const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 
 /** Product files whose text is fixtures and studies, not shipped copy. */
@@ -804,7 +805,7 @@ function productCopy(sources) {
         if (parts.some(part => hasLetters(part.text))) {
           templates.push({
             pattern: new RegExp(
-              `^${parts.map(part => escapeRegExp(part.text)).join('.+?')}$`,
+              `^${parts.map(part => escapeRegExp(part.text)).join('(.+?)')}$`,
               'su'
             ),
             file,
@@ -831,12 +832,15 @@ function writtenByProduct(product, text) {
       if (containsWords(fold(candidate), run)) return file;
     }
     for (const { pattern, file } of product.templates) {
-      if (
-        text.fold
-          ? new RegExp(pattern.source, 'siu').test(raw)
-          : pattern.test(raw)
-      ) {
-        return file;
+      const match = (
+        text.fold ? new RegExp(pattern.source, 'siu') : pattern
+      ).exec(raw);
+      // A template renders the run when its own words are at least as much
+      // of the run as what fills its holes: `Resume ${n} agents in this
+      // project`, not `Agent ${index}` against a fixture's long title.
+      if (match) {
+        const filled = letterCount(match.slice(1).join(''));
+        if (letterCount(raw) - filled >= filled) return file;
       }
     }
   }
