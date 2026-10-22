@@ -32,6 +32,7 @@ import {
   assertDevServerServesTree,
   declareUnlockedHost,
   isExternalTeardown,
+  resetForRelaunch,
   resetThrowawayUserData,
   runElectronAttempt,
   waitForPageCondition,
@@ -817,6 +818,63 @@ test(
       assert.match(exit.detail, /^ps failed: /);
     }
     assert.deepEqual(added(), []);
+  }
+);
+
+test(
+  'a relaunch resets the profile only once the killed tree is verified gone, and refuses without that proof',
+  { skip: process.platform !== 'darwin' && 'Electron needs a display here' },
+  async t => {
+    const dir = windowFixture();
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const ps = failingPs(t);
+    const track = launchedTrees(t);
+    const killedMidStep = async (gracefulMs, install = () => {}) => {
+      let exit = null;
+      const error = await attemptOf(
+        dir,
+        async (app, page) => {
+          track(app);
+          const pending = page.waitForFunction(() => false, null, {
+            timeout: 0,
+          });
+          install();
+          // Something outside this run kills the app mid-step.
+          process.kill(app.process().pid, 'SIGKILL');
+          await pending;
+        },
+        60_000,
+        { gracefulMs, reportExit: report => (exit = report) }
+      );
+      ps.restore();
+      assert.equal(isExternalTeardown(error), true, String(error));
+      return { error, exit };
+    };
+    const profile = () => {
+      const userData = mkdtempSync(join(tmpdir(), 'exawatt-relaunch-'));
+      t.after(() => rmSync(userData, { recursive: true, force: true }));
+      writeFileSync(join(userData, 'Preferences'), '{}');
+      return userData;
+    };
+
+    const verified = await killedMidStep(5_000);
+    assert.equal(verified.exit.exited, true);
+    const reset = profile();
+    resetForRelaunch(verified.exit, reset, verified.error);
+    assert.equal(existsSync(reset), false);
+
+    const unverified = await killedMidStep(1_000, ps.install);
+    assert.equal(unverified.exit.exited, false);
+    const kept = profile();
+    assert.throws(
+      () => resetForRelaunch(unverified.exit, kept, unverified.error),
+      {
+        name: 'ElectronEvalUnverifiedExit',
+        message:
+          /the previous Electron tree did not exit within 1000ms \(ps failed: .+\); not reusing its profile/,
+      }
+    );
+    assert.equal(existsSync(join(kept, 'Preferences')), true);
   }
 );
 

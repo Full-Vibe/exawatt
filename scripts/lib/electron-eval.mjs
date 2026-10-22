@@ -368,6 +368,7 @@ export async function withElectronApp(requested, body, opts = {}) {
   const attempts = opts.attempts ?? 6;
   const launched = withElectronEvalLock(evalRoot, async () => {
     for (let attempt = 1; ; attempt += 1) {
+      let exit = null;
       try {
         return await runElectronAttempt({
           launchOpts,
@@ -377,6 +378,7 @@ export async function withElectronApp(requested, body, opts = {}) {
           firstWindowMs,
           gracefulMs,
           drivesHostPower: opts.drivesHostPower === true,
+          reportExit: report => (exit = report),
         });
       } catch (error) {
         if (attempt >= attempts || !isExternalTeardown(error)) throw error;
@@ -384,11 +386,7 @@ export async function withElectronApp(requested, body, opts = {}) {
           `[harness] the Electron app disappeared mid-run (attempt ${attempt}/${attempts}) — ` +
             'something outside this run killed it; relaunching'
         );
-        // A relaunch must start from the same state the first attempt did, or
-        // the retry silently exercises a different app (a Project already open,
-        // a tab already selected). Only ever reset a throwaway temp profile,
-        // and only now: the attempt returns after its process tree has exited.
-        resetThrowawayUserData(launchOpts.env?.EXAWATT_USER_DATA);
+        resetForRelaunch(exit, launchOpts.env?.EXAWATT_USER_DATA, error);
         await new Promise(resolve =>
           setTimeout(resolve, Math.min(2_000 * 2 ** (attempt - 1), 20_000))
         );
@@ -525,6 +523,28 @@ export async function declareUnlockedHost(app) {
   await app.evaluate(({ powerMonitor }) => powerMonitor.emit('unlock-screen'));
 }
 
+/**
+ * A relaunch must start from the same state the first attempt did, or the
+ * retry silently exercises a different app (a Project already open, a tab
+ * already selected), so it resets the throwaway profile. Only once the
+ * killed attempt's tree is verified gone: one still running could write
+ * into the profile under the relaunch, and an exit nobody could verify is
+ * not an exit. Without that proof there is no reset and no relaunch.
+ */
+export function resetForRelaunch(exit, userData, cause) {
+  if (exit?.exited !== true) {
+    throw Object.assign(
+      new Error(
+        `[harness] the previous Electron tree did not exit within ${exit?.withinMs ?? 0}ms` +
+          ` (${exit?.detail ?? 'its teardown never reported'}); not reusing its profile`,
+        { cause }
+      ),
+      { name: 'ElectronEvalUnverifiedExit' }
+    );
+  }
+  resetThrowawayUserData(userData);
+}
+
 export function resetThrowawayUserData(userData) {
   if (!userData) return;
   const temp = realpathOrSelf(tmpdir());
@@ -627,7 +647,8 @@ function recordLaunchFailure({ error, output, userData, processGroup }) {
  * failure screenshot taken before the app closes; it is never mistaken for
  * an external kill. The attempt settles only after its teardown, with the
  * run's own result: teardown never replaces it. `reportExit` receives
- * whether the tree's exit was verified.
+ * whether the tree's exit was verified, the proof a relaunch needs before
+ * it touches the profile (`resetForRelaunch`).
  */
 export async function runElectronAttempt({
   launchOpts,
