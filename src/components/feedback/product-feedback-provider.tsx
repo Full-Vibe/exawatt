@@ -741,10 +741,6 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             if (!stepAside?.restore(inputRef.current))
               inputRef.current?.focus({ preventScroll: true });
           }}
-          onEscapeKeyDown={event => {
-            if (event.isComposing || event.keyCode === 229)
-              event.preventDefault();
-          }}
         >
           <DialogTitle className="sr-only">Submit feedback</DialogTitle>
           <DialogDescription className="sr-only">

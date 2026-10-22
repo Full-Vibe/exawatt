@@ -93,6 +93,7 @@ import {
   type ProjectTarget,
   type ServerRow,
 } from './connect-source-model';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 
 export interface ConnectProjectOption {
   /** Opaque durable Project identity, never inferred from the display name. */
@@ -1534,6 +1535,19 @@ function AgentGroup({
   onRename: (nativeAgentId: string, name: string | null) => void;
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
+  // The rename's rung of the back-out ladder: Escape leaves the rename, and
+  // only the next Escape reaches the dialog.
+  const renameField = useRef<HTMLInputElement>(null);
+  useBackOut({
+    rung: 'field',
+    element: renameField,
+    enabled: renaming !== null,
+    returnFocus: true,
+    back: () => {
+      setRenaming(null);
+      return true;
+    },
+  });
   return (
     <section className="grid gap-1">
       <h3 className="text-chrome-meta" style={{ color: HUD.textDim }}>
@@ -1576,6 +1590,7 @@ function AgentGroup({
                 <span className="min-w-0 flex-1">
                   {renaming === agent.nativeAgentId ? (
                     <input
+                      ref={renameField}
                       id={nameId}
                       aria-label={`Name for ${agent.displayName}`}
                       autoFocus
@@ -1589,11 +1604,6 @@ function AgentGroup({
                         if (event.key === 'Enter' && !event.metaKey) {
                           event.preventDefault();
                           event.currentTarget.blur();
-                        }
-                        if (event.key === 'Escape') {
-                          // Escape leaves the rename, not the dialog.
-                          event.stopPropagation();
-                          setRenaming(null);
                         }
                       }}
                       className="h-7 w-full min-w-0 rounded border px-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"

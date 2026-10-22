@@ -717,6 +717,26 @@ describe('Connect: Agents, names, and the Project', () => {
     );
   });
 
+  it('Escape leaves a rename first and closes the dialog only on the next press', async () => {
+    const bridge = makeBridge();
+    renderDialog({ bridge });
+    await reachReady();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Rename social-poster' })
+    );
+    const field = screen.getByLabelText('Name for social-poster');
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(screen.queryByLabelText('Name for social-poster')).toBeNull();
+    expect(document.querySelector('[data-connect-source]')).not.toBeNull();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+    });
+    await waitFor(() =>
+      expect(document.querySelector('[data-connect-source]')).toBeNull()
+    );
+  });
+
   it('puts the batch into one new Remote Project by default', async () => {
     const bridge = makeBridge();
     const onConnected = vi.fn();

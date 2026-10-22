@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import presence from './overlay-presence.module.css';
 import { getDefaultShortcut } from '@/lib/shortcuts';
+import { backOutWithin } from '@/lib/shortcuts/back-out';
 import {
   formatShortcutKeys,
   formatShortcutKeysAria,
@@ -210,6 +211,7 @@ function DialogContent({
   forceMount,
   primaryAction,
   inert,
+  onEscapeKeyDown,
   ...props
 }: DialogContentProps) {
   // Exit presence retains the DOM, never its keyboard, pointer or AX
@@ -228,6 +230,23 @@ function DialogContent({
           className
         )}
         {...props}
+        // Radix answers Escape before anything inside the dialog can, so the
+        // dialog first asks its own rungs of the back-out ladder: a field
+        // inside it cancels its edit, and the next Escape closes the dialog.
+        onEscapeKeyDown={event => {
+          // An IME candidate owns Escape: it cancels the composition, never
+          // the dialog around the field.
+          if (event.isComposing || event.keyCode === 229) {
+            event.preventDefault();
+            return;
+          }
+          onEscapeKeyDown?.(event);
+          const content =
+            event.target instanceof Element
+              ? event.target.closest('[data-slot="dialog-content"]')
+              : null;
+          if (content) backOutWithin(content, event);
+        }}
         inert={!open || inert}
       >
         <DialogPrimaryActionScopeProvider declaration={primaryAction}>

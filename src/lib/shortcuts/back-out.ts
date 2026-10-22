@@ -150,6 +150,34 @@ function resolveBackOut(event: KeyboardEvent): boolean {
   return false;
 }
 
+/**
+ * A dialog asks the rungs inside it for one step back before it closes
+ * itself: a field in a dialog cancels its edit first, and the dialog closes
+ * on the next Escape. Ambient rungs and overlays never answer here; they
+ * belong to the page behind the dialog. Returns whether a rung took the key.
+ */
+export function backOutWithin(
+  container: Element,
+  event: KeyboardEvent
+): boolean {
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229) {
+    return false;
+  }
+  if (!isBackOutKey(event)) return false;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || !container.contains(target)) return false;
+  for (const layer of ladderFor(target)) {
+    if (layer.ambient || !layer.element || layer.rung === 'overlay') continue;
+    const element = layer.element();
+    if (!element || !container.contains(element)) continue;
+    if (layer.back(event)) {
+      event.preventDefault();
+      return true;
+    }
+  }
+  return false;
+}
+
 // Bubble phase on window: after Radix's dialogs and menus (document capture)
 // and after every element's own handler, so a surface that has not joined the
 // ladder still keeps a key it prevents.
