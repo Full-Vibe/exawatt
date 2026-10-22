@@ -51,3 +51,34 @@ regexTarget = "secret"
 regexes = [
   '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJ1c2VyIn0\.c2lnbmF0dXJl$''',
 ]
+
+[[allowlists]]
+description = """
+The localStorage key the presentation preference was saved under before each
+field got its own key (`PRESENTATION_STORAGE_KEY` in
+`src/lib/presentation/preference-source.ts`, still read as migration input and
+named in `docs/engineering/architecture.md`). It is a public name, not key
+material; gitleaks reports it only because the identifier next to it ends in
+`KEY` and the `.v1` suffix carries a digit. Changing it would strand saved
+preferences, and the public history keeps it either way (BUG-316).
+"""
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^exawatt\.presentation\.v1$''']
+
+[[allowlists]]
+description = """
+The `owner.token` of delivery-queue tickets 579, 577 and 574, captured into
+`electron/main/roadmap/delivery-queue.fixtures.ts` on 2026-10-05. Each is the
+`randomUUID()` one landing held its ticket's local lock with
+(`scripts/lib/delivery-queue.mjs`): it authorizes nothing outside that lock,
+and all three landings ended that day. The fixture now carries a synthetic id
+per ticket; these values stay in the history it replaced (BUG-316).
+"""
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = [
+  '''^563afe8b-66d7-4b1c-bac9-ed069c6d149f$''',
+  '''^9ad5b0c7-d5dc-4173-9bf3-5815aab3f34f$''',
+  '''^e839f065-b6b3-42aa-9084-51fec4907d05$''',
+]
