@@ -83,8 +83,11 @@ let nextId = 0;
 const pending = new Map();
 socket.addEventListener('message', message => {
   const reply = JSON.parse(message.data);
-  pending.get(reply.id)?.(reply.result?.result?.value);
+  // Inspector events carry no id; only a reply to one of our requests does.
+  if (!Number.isInteger(reply.id)) return;
+  const resolve = pending.get(reply.id);
   pending.delete(reply.id);
+  if (typeof resolve === 'function') resolve(reply.result?.result?.value);
 });
 /** Evaluates `expression` in Electron main, where `electron` is in scope. */
 const inMain = expression =>
