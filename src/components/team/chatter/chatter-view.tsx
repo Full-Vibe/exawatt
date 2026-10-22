@@ -20,6 +20,7 @@ import { markSeenThrough, seenThrough } from '@/lib/bus/read-state';
 import { latestAt, newestFirst, threadOf } from '@/lib/bus/selectors';
 import type { BusEndpoint, MessageRecord, BusSendResult } from '@exawatt/core';
 import type { BusMessagesState } from '@/lib/bus/use-bus';
+import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
 import {
   ChatterEndpoint,
   isOperator,
@@ -31,6 +32,9 @@ import { ChatterComposer, ChatterThreadMessage } from './chatter-thread';
 type Mode =
   | { kind: 'list' }
   | { kind: 'thread'; a: BusEndpoint; b: BusEndpoint; fromRow: number };
+
+/** Where an empty Project's line leads (ENG-031 W28): the review-loop guide. */
+const REVIEW_GUIDE_URL = `${EXAWATT_HOSTED_ORIGIN}/guides/agents-review-each-other`;
 
 /** keys typed into these belong to them, not to the panel's roving */
 const OWNS_KEYS = 'textarea, input, select, [role="radio"], [type="submit"]';
@@ -337,7 +341,17 @@ export function ChatterView({
             className="px-3 py-4 font-ui text-chrome-label leading-5"
             style={{ color: HUD.textDim }}
           >
-            No agent messages in this project yet.
+            Ask an agent to message another by name.{' '}
+            <a
+              href={REVIEW_GUIDE_URL}
+              target="_blank"
+              rel="noreferrer"
+              data-chatter-guide
+              className="whitespace-nowrap underline underline-offset-2 outline-none hover:opacity-80 focus-visible:ring-1 focus-visible:ring-current"
+              style={{ color: HUD.text }}
+            >
+              Try a review loop
+            </a>
           </p>
         ) : mode.kind === 'thread' ? (
           <ul data-chatter-thread aria-label="Conversation">

@@ -6,6 +6,7 @@ import { refusedSend } from '@/lib/bus/client';
 import { resetSeenThroughForTest, seenThrough } from '@/lib/bus/read-state';
 import type { BusDeliveryState, MessageRecord } from '@exawatt/core';
 import type { BusMessagesState } from '@/lib/bus/use-bus';
+import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
 import { ChatterView } from './chatter/chatter-view';
 import { TeamDock, resetTeamDockTabForTest, useTeamDockTab } from './team-dock';
 import {
@@ -77,6 +78,19 @@ describe('Chatter states', () => {
     ).toBe('No bus here.');
     expect(container.querySelector('[data-chatter-empty]')).toBeNull();
     expect(container.querySelector('[data-chatter-list]')).toBeNull();
+  });
+
+  // ENG-031 W28: an empty Project says how agents start talking, and where.
+  it('links an empty Project to the review guide, outside the app', () => {
+    const { container } = renderChatter({ status: 'ok', messages: [] });
+    const guide = container.querySelector<HTMLAnchorElement>(
+      '[data-chatter-empty] a[data-chatter-guide]'
+    );
+    expect(guide).not.toBeNull();
+    const url = new URL(guide!.href);
+    expect(url.origin).toBe(EXAWATT_HOSTED_ORIGIN);
+    expect(url.pathname).toBe('/guides/agents-review-each-other');
+    expect(guide!.target).toBe('_blank');
   });
 
   it('tells an empty Project apart from unavailable and from a failed read', () => {
