@@ -28,7 +28,7 @@ const { PtySessionManager } = await import('./session-manager');
 describe('Session operation ordering', () => {
   it('owns an explicit roadmap assignment on the exact live Session and retains it on process replacement', async () => {
     const manager = new PtySessionManager();
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'claude',
       cwd: process.cwd(),
       roadmapItemId: 'ENG-015',
@@ -46,7 +46,7 @@ describe('Session operation ordering', () => {
     expect(
       manager.assignRoadmapItem(session.id, session.durableSessionId, 'ENG-015')
     ).toBeNull();
-    const resumed = await manager.create({
+    const { session: resumed } = await manager.ensureRunning({
       harness: 'claude',
       cwd: process.cwd(),
       durableSessionId: session.durableSessionId,
@@ -59,7 +59,7 @@ describe('Session operation ordering', () => {
 
   it('waits for the exit event and blocks resume/model changes while pausing', async () => {
     const manager = new PtySessionManager();
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'claude',
       cwd: process.cwd(),
       durableSessionId: 'operation-session',
@@ -71,7 +71,7 @@ describe('Session operation ordering', () => {
     await new Promise<void>(resolve => setImmediate(resolve));
     expect(complete).toBe(false);
     await expect(
-      manager.create({
+      manager.ensureRunning({
         harness: 'claude',
         cwd: process.cwd(),
         durableSessionId: session.durableSessionId,
@@ -98,7 +98,7 @@ describe('Session operation ordering', () => {
   });
   it('refuses an unsafe stop and releases its operation ownership', async () => {
     const manager = new PtySessionManager();
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'claude',
       cwd: process.cwd(),
     });
@@ -113,7 +113,7 @@ describe('Session operation ordering', () => {
   });
   it('refuses shells rather than calling their next process a resumed conversation', async () => {
     const manager = new PtySessionManager();
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'shell',
       cwd: process.cwd(),
     });
@@ -125,7 +125,7 @@ describe('Session operation ordering', () => {
   });
   it('close owns the durable identity through exit and forget', async () => {
     const manager = new PtySessionManager();
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'claude',
       cwd: process.cwd(),
     });
@@ -135,7 +135,7 @@ describe('Session operation ordering', () => {
       manager.changeModel(session.id, { model: 'sonnet' })
     ).rejects.toThrow('operation in progress');
     await expect(
-      manager.create({
+      manager.ensureRunning({
         harness: 'claude',
         cwd: process.cwd(),
         durableSessionId: session.durableSessionId,

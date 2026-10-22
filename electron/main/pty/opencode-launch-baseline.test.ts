@@ -80,7 +80,7 @@ afterEach(() => {
 describe('launching OpenCode when the pre-spawn catalog snapshot fails', () => {
   it('still creates the Session instead of aborting the launch', async () => {
     const manager = new PtySessionManager();
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'opencode',
       cwd,
       durableSessionId: 'session-opencode-baseline',

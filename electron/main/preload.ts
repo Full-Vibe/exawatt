@@ -233,6 +233,7 @@ const bridge = {
     onEngaged: subscribe('pty:engaged'),
     onDelegation: subscribe('pty:delegation'),
     onNotificationClick: subscribe('pty:notification-click'),
+    onStart: subscribe('pty:start'),
   },
   permissions: {
     snapshot: () => invoke('permissions:snapshot'),

@@ -88,39 +88,6 @@ describe('wireReportedTurnTruth', () => {
     expect(r.attention.get('S')).toBeNull();
   });
 
-  it('keeps content-free evidence of a Stop and its remaining census', () => {
-    const r = rig();
-    r.delegation.report('S', { kind: 'turn-start' });
-    r.delegation.report('S', {
-      kind: 'turn-end',
-      census: { live: [], completed: [], at: 1 },
-    });
-    expect(
-      r.log
-        .filter(entry => entry.event === 'harness.turn-truth')
-        .map(entry => entry.fields)
-    ).toEqual([
-      {
-        sessionId: 'S',
-        harness: 'claude',
-        boundary: 'turn-start',
-        ownTurn: 'generating',
-        blockedOn: null,
-        childCount: 0,
-        backgroundTypes: [],
-      },
-      {
-        sessionId: 'S',
-        harness: 'claude',
-        boundary: 'turn-end',
-        ownTurn: 'available',
-        blockedOn: null,
-        childCount: 0,
-        backgroundTypes: [],
-      },
-    ]);
-  });
-
   it('keeps an async request through completion and quiet unknown observations', () => {
     const r = rig();
     r.delegation.report('S', { kind: 'turn-start' });

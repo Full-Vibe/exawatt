@@ -61,19 +61,22 @@ describe('Agent names at launch', () => {
     first.on('agent-names', (records: { name: string }[]) =>
       announced.push(records.map(record => record.name))
     );
-    const a = await first.create({
+    const { session: a } = await first.ensureRunning({
       harness: 'claude',
       cwd,
       projectKey: 'project-one',
       durableSessionId: 'session-a',
     });
-    const b = await first.create({
+    const { session: b } = await first.ensureRunning({
       harness: 'claude',
       cwd,
       projectKey: 'project-one',
       durableSessionId: 'session-b',
     });
-    const shell = await first.create({ harness: 'shell', cwd });
+    const { session: shell } = await first.ensureRunning({
+      harness: 'shell',
+      cwd,
+    });
     expect([a.agentName, b.agentName, shell.agentName]).toEqual([
       'claude-1',
       'claude-2',
@@ -84,7 +87,7 @@ describe('Agent names at launch', () => {
 
     // A new main process, the same durable Session: the same name.
     const second = await manager();
-    const relaunched = await second.create({
+    const { session: relaunched } = await second.ensureRunning({
       harness: 'claude',
       cwd,
       projectKey: 'project-one',
@@ -95,7 +98,7 @@ describe('Agent names at launch', () => {
 
   it('renames into the live row and the directory the bus resolves against', async () => {
     const owner = await manager();
-    const session = await owner.create({
+    const { session } = await owner.ensureRunning({
       harness: 'codex',
       cwd,
       projectKey: 'project-one',
@@ -135,13 +138,13 @@ describe('Agent names at launch', () => {
     owner.on('agent-names', (records: { name: string }[]) =>
       announced.push(records.map(record => record.name).sort())
     );
-    await owner.create({
+    await owner.ensureRunning({
       harness: 'claude',
       cwd,
       projectKey: 'project-one',
       durableSessionId: 'session-a',
     });
-    const moved = await owner.create({
+    const { session: moved } = await owner.ensureRunning({
       harness: 'claude',
       cwd,
       projectKey: 'project-two',
@@ -219,13 +222,13 @@ describe('Agent names at launch', () => {
         records.map(record => [record.durableSessionId, record.name])
       );
     });
-    const live = await owner.create({
+    const { session: live } = await owner.ensureRunning({
       harness: 'claude',
       cwd,
       projectKey: 'project-one',
       durableSessionId: 'session-a',
     });
-    await owner.create({
+    await owner.ensureRunning({
       harness: 'claude',
       cwd,
       projectKey: 'project-one',
@@ -272,7 +275,7 @@ describe('Agent names at launch', () => {
 
   it("names the launcher's rows by the Session that ran them (BUG-117)", async () => {
     const owner = await manager();
-    await owner.create({
+    await owner.ensureRunning({
       harness: 'codex',
       cwd,
       projectKey: 'project-one',
@@ -312,7 +315,7 @@ describe('Agent names at launch', () => {
 
   it('frees a name only when the Session is gone for good', async () => {
     const owner = await manager();
-    await owner.create({
+    await owner.ensureRunning({
       harness: 'claude',
       cwd,
       projectKey: 'project-one',

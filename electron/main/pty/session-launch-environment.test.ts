@@ -59,7 +59,7 @@ describe('the launch environment seam', () => {
         release: () => released.push(launch.id),
       };
     });
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'claude',
       cwd,
       durableSessionId: 'session-env',
@@ -101,7 +101,7 @@ describe('the launch environment seam', () => {
     }));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // Codex takes the server on its argv: handed over.
-    await manager.create({
+    await manager.ensureRunning({
       harness: 'codex',
       cwd,
       durableSessionId: 'session-codex',
@@ -109,7 +109,7 @@ describe('the launch environment seam', () => {
     });
     // Claude Code takes it as a file this manager has nowhere to write:
     // offered, never handed over.
-    await manager.create({
+    await manager.ensureRunning({
       harness: 'claude',
       cwd,
       durableSessionId: 'session-claude',
@@ -127,7 +127,7 @@ describe('the launch environment seam', () => {
       throw new Error('channel down');
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await manager.create({
+    await manager.ensureRunning({
       harness: 'claude',
       cwd,
       durableSessionId: 'session-x',

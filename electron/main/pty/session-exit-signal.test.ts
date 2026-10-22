@@ -45,7 +45,9 @@ class FakePty {
   });
   kill(signal = 'SIGHUP'): void {
     this.exit(
-      this.onSignal(os.constants.signals[signal as keyof typeof os.constants.signals])
+      this.onSignal(
+        os.constants.signals[signal as keyof typeof os.constants.signals]
+      )
     );
   }
 }
@@ -88,7 +90,7 @@ async function started() {
   const manager = new PtySessionManager();
   const exits: unknown[][] = [];
   manager.on('exit', (...args: unknown[]) => exits.push(args));
-  const session = await manager.create({
+  const { session } = await manager.ensureRunning({
     harness: 'shell',
     cwd,
     durableSessionId: 'session-ended',
@@ -100,7 +102,7 @@ async function endWith(event: NodePtyExit) {
   const manager = new PtySessionManager();
   const exits: unknown[][] = [];
   manager.on('exit', (...args: unknown[]) => exits.push(args));
-  const session = await manager.create({
+  const { session } = await manager.ensureRunning({
     harness: 'shell',
     cwd,
     durableSessionId: 'session-ended',

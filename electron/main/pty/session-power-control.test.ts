@@ -69,7 +69,7 @@ describe('power evidence belongs to the process', () => {
       reason: 'Control probe failed',
     });
     const manager = new PtySessionManager();
-    const original = await manager.create({
+    const { session: original } = await manager.ensureRunning({
       harness: 'codex',
       cwd: process.cwd(),
       durableSessionId: 'power-session',
@@ -92,7 +92,7 @@ describe('power evidence belongs to the process', () => {
       "'/opt/verified-codex' --disable prevent_idle_sleep"
     );
     fixture.exits[0]();
-    const replacement = await manager.create({
+    const { session: replacement } = await manager.ensureRunning({
       harness: 'codex',
       cwd: process.cwd(),
       durableSessionId: original.durableSessionId,

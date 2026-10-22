@@ -47,7 +47,7 @@ interface TurnTruthWiringOptions {
   attention: AttentionMonitor;
   delegation: DelegationMonitor;
   now?: () => number;
-  /** Diagnostics sink for reclaims and boundaries; absent means no evidence kept. */
+  /** Diagnostics sink for reclaims; absent means no evidence kept. */
   record?: DiagnosticRecorder;
   /** Names the harness for the evidence line; absent reads as unknown. */
   harnessOf?: (sessionId: string) => string | null;
@@ -75,33 +75,9 @@ export function wireReportedTurnTruth({
     attention.noteReportedBackgroundWork(id);
   });
 
-  const lifecycle = record
-    ? boundDiagnosticRecorder(record, { perMinute: 120, perRun: 4000, now })
-    : null;
+  // Every reported boundary, with the truth it left, is evidence in the
+  // harness-event log (`harness-event-log.ts`), keyed by durable Session.
   delegation.on('harness-event', (id: string, event: HarnessEvent) => {
-    if (
-      event.kind === 'turn-start' ||
-      event.kind === 'request-coverage' ||
-      event.kind === 'turn-settled' ||
-      event.kind === 'turn-end' ||
-      event.kind === 'turn-unknown' ||
-      event.kind === 'blocked' ||
-      event.kind === 'unblocked'
-    ) {
-      const truth = delegation.get(id);
-      lifecycle?.('harness.turn-truth', {
-        sessionId: id,
-        harness: harnessOf(id),
-        boundary: event.kind,
-        ownTurn: truth?.ownTurn ?? null,
-        blockedOn: truth?.blockedOn ?? null,
-        childCount: truth?.children.length ?? 0,
-        ...(truth?.requestCoverage
-          ? { requestCoverage: truth.requestCoverage }
-          : {}),
-        backgroundTypes: truth?.backgroundTasks?.map(task => task.type) ?? [],
-      });
-    }
     // A reported turn boundary is stronger evidence than inferred quiescence,
     // and it arrives 6–7 s sooner. Turn-start also matters for the turn a
     // CHILD opens by returning its result: no keystroke precedes it, so

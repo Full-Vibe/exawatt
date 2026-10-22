@@ -312,6 +312,8 @@ interface RequestTable {
     ProjectSuggestionsResult
   >;
 
+  /** Ensure-running (BUG-305): the Session's live process, the start already
+   *  under way, or a new start. Asking again is answered, never refused. */
   'pty:create': Call<[options: PtyCreateOptions], PtyCreateResult>;
   'pty:pause-sessions': Call<
     [durableSessionIds: string[], confirmed?: boolean],
@@ -604,6 +606,9 @@ interface PushTable {
   'pty:identity': PtyIdentityEvent;
   'pty:notification-click': { id: string };
   'pty:recap': PtyReentryRecap;
+  /** Main started a Session's process, whoever asked (BUG-305): every window
+   *  adopts it, so none depends on the list it read at mount. */
+  'pty:start': PtySessionRecord;
   /** A message was logged or its delivery moved; upsert by `id`. */
   'bus:message': MessageRecord;
   'roadmap:session-assigned': PtySessionRecord;

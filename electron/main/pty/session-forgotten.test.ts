@@ -86,7 +86,7 @@ describe('PtySessionManager announces a forgotten Session', () => {
   it('identifies the resolved distribution to child terminals', async () => {
     const manager = new PtySessionManager();
     manager.setProductName('Acme Agent Console');
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'shell',
       cwd,
       durableSessionId: 'session-distribution-name',
@@ -121,7 +121,7 @@ describe('PtySessionManager announces a forgotten Session', () => {
 
   it('never announces a Session whose process is still running', async () => {
     const manager = new PtySessionManager();
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'shell',
       cwd,
       durableSessionId: 'session-live',
@@ -136,7 +136,7 @@ describe('PtySessionManager announces a forgotten Session', () => {
 
   it('announces a kill exactly once, after the runtime record is gone', async () => {
     const manager = new PtySessionManager();
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'shell',
       cwd,
       durableSessionId: 'session-killed',
@@ -164,7 +164,7 @@ describe('closing a Session frees its main-process context', () => {
     });
     summarizer.attach(manager);
     summarizer.setAccessToken('jwt');
-    const session = await manager.create({
+    const { session } = await manager.ensureRunning({
       harness: 'shell',
       cwd,
       durableSessionId: 'session-closed',
@@ -192,7 +192,7 @@ describe('closing a Session frees its main-process context', () => {
     try {
       const manager = new PtySessionManager();
       await manager.configurePersistence(path.join(store, 'sessions'));
-      const session = await manager.create({
+      const { session } = await manager.ensureRunning({
         harness: 'shell',
         cwd,
         durableSessionId: 'session-parked',

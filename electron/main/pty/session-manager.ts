@@ -70,13 +70,20 @@ const OPENCODE_IDENTITY_TIMEOUT_MS = 20_000;
  * that resolves to spawning the harness CLI through the user's login shell
  * (GUI apps get a minimal PATH — the login shell restores brew/nvm/etc.).
  *
- * This interface (create/write/resize/kill/list/serialize) is deliberately
- * the ONLY surface the UI sees, so a detachable backend (tmux-style or a
- * standalone daemon) can replace the in-process owner later without UI
- * changes.
+ * This interface (ensureRunning/write/resize/kill/list/serialize) is
+ * deliberately the ONLY surface the UI sees, so a detachable backend
+ * (tmux-style or a standalone daemon) can replace the in-process owner later
+ * without UI changes.
  */
 
 export type { AgentHarness, AgentPermissionMode, PtyHarness };
+
+/** How `ensureRunning` answered: it started the process, joined the start
+ *  already under way, or found the process running. */
+export interface EnsuredSession {
+  session: PtySessionRecord;
+  answer: 'started' | 'joined' | 'running';
+}
 
 /** A signal number as this platform names it; numbering differs between
  *  macOS and Linux past the common few, so the name is resolved here. */
@@ -166,7 +173,8 @@ export class PtySessionManager extends EventEmitter {
   private creating = 0;
   /** `settleStarts` callers, released when `creating` returns to zero. */
   private readonly startsSettled = new Set<() => void>();
-  private creatingDurableIds = new Set<string>();
+  /** The start under way for each durable Session; a second ask joins it. */
+  private readonly starts = new Map<string, Promise<PtySessionRecord>>();
   private sessionOperations = new Set<string>();
   private claimedCodexIds = new Set<string>();
   private claimedOpencodeIds = new Set<string>();
@@ -393,35 +401,85 @@ export class PtySessionManager extends EventEmitter {
     this.acceptingCreates = true;
   }
 
-  async create(options: PtyCreateOptions): Promise<PtySessionRecord> {
-    return this.createForOperation(options);
+  /**
+   * Make one durable Session's process run (BUG-305). Main owns that
+   * process, so asking again is answered, never refused: the live record
+   * when it already runs, the start already under way when one is, and
+   * otherwise a new start. A window that missed a start (a reload during a
+   * long resume, a second window) asks for a Session it believes is paused
+   * and gets the process main is running.
+   *
+   * `prepare` runs only for a new start, inside it, so an ask that arrives
+   * while it runs joins the start instead of preparing a second one. A
+   * Session mid-operation (pause, close, model change) is still refused:
+   * its process is changing hands, and the operation's own answer says how.
+   */
+  async ensureRunning(
+    options: PtyCreateOptions,
+    prepare?: () => Promise<void>
+  ): Promise<EnsuredSession> {
+    const durableSessionId =
+      options.durableSessionId ?? `session-${randomUUID()}`;
+    if (this.sessionOperations.has(durableSessionId)) {
+      throw new Error('This Session already has an operation in progress');
+    }
+    const live = this.liveSession(durableSessionId);
+    if (live) return { session: { ...live.info }, answer: 'running' };
+    const starting = this.starts.get(durableSessionId);
+    if (starting) return { session: await starting, answer: 'joined' };
+    if (!this.acceptingCreates) {
+      throw new Error(`${this.productName} is stopping Sessions`);
+    }
+    return {
+      session: await this.start(options, durableSessionId, prepare),
+      answer: 'started',
+    };
   }
 
-  private async createForOperation(
+  private liveSession(durableSessionId: string): Session | undefined {
+    for (const session of this.sessions.values()) {
+      if (
+        session.info.durableSessionId === durableSessionId &&
+        !session.info.exited
+      )
+        return session;
+    }
+    return undefined;
+  }
+
+  /**
+   * The one start path. Registered synchronously, before its first await,
+   * so every later ask for this durable Session finds it and joins it; a
+   * second process for one Session cannot begin.
+   */
+  private start(
     options: PtyCreateOptions,
-    ownedIdentity?: string
+    durableSessionId: string,
+    prepare?: () => Promise<void>
+  ): Promise<PtySessionRecord> {
+    const started: Promise<PtySessionRecord> = (async () => {
+      await prepare?.();
+      return this.createCounted(options, durableSessionId);
+    })().finally(() => {
+      if (this.starts.get(durableSessionId) === started)
+        this.starts.delete(durableSessionId);
+    });
+    this.starts.set(durableSessionId, started);
+    return started;
+  }
+
+  private async createCounted(
+    options: PtyCreateOptions,
+    durableSessionId: string
   ): Promise<PtySessionRecord> {
     if (!this.acceptingCreates) {
       throw new Error(`${this.productName} is stopping Sessions`);
     }
-    const durableSessionId =
-      options.durableSessionId ?? `session-${randomUUID()}`;
-    if (
-      this.sessionOperations.has(durableSessionId) &&
-      ownedIdentity !== durableSessionId
-    ) {
-      throw new Error('This Session already has an operation in progress');
-    }
-    if (this.creatingDurableIds.has(durableSessionId)) {
-      throw new Error('This Session is already starting');
-    }
     this.creating += 1;
-    this.creatingDurableIds.add(durableSessionId);
     try {
       return await this.createUnlocked(options, durableSessionId);
     } finally {
       this.creating -= 1;
-      this.creatingDurableIds.delete(durableSessionId);
       if (this.creating === 0) {
         const waiting = Array.from(this.startsSettled);
         this.startsSettled.clear();
@@ -499,13 +557,12 @@ export class PtySessionManager extends EventEmitter {
       }
     }
     const id = `pty-${this.nextId++}`;
-    const existing = Array.from(this.sessions.entries()).find(
+    // Only an ended record can be here: `start` admits one start per durable
+    // Session and `ensureRunning` answers a live one before starting.
+    const ended = Array.from(this.sessions.entries()).find(
       ([, session]) => session.info.durableSessionId === durableSessionId
     );
-    if (existing && !existing[1].info.exited) {
-      throw new Error('This Session already has a running process');
-    }
-    if (existing) this.sessions.delete(existing[0]);
+    if (ended) this.sessions.delete(ended[0]);
     const retained = this.history
       ? await this.history.load(durableSessionId)
       : { text: '', cursor: 0, updatedAt: 0, corrupt: false };
@@ -793,7 +850,14 @@ export class PtySessionManager extends EventEmitter {
       // A dead process cannot report anything else, and its token is now
       // worthless — retire both before anyone can reuse the id.
       this.cleanupHarnessWiring(id);
-      this.emit('exit', id, info.exitCode, durableSessionId, info.exitSignal);
+      this.emit(
+        'exit',
+        id,
+        info.exitCode,
+        durableSessionId,
+        info.exitSignal,
+        !!owner.stopRequested
+      );
     });
 
     const session = this.sessions.get(id)!;
@@ -1418,10 +1482,7 @@ export class PtySessionManager extends EventEmitter {
   }
 
   private acquireSessionOperation(identity: string): () => void {
-    if (
-      this.sessionOperations.has(identity) ||
-      this.creatingDurableIds.has(identity)
-    )
+    if (this.sessionOperations.has(identity) || this.starts.has(identity))
       throw new Error('This Session already has an operation in progress.');
     this.sessionOperations.add(identity);
     return () => {
@@ -1537,7 +1598,7 @@ export class PtySessionManager extends EventEmitter {
         choice
       );
       await this.stopAndConfirmExit(id);
-      return this.createForOperation(options, session.info.durableSessionId);
+      return this.start(options, session.info.durableSessionId);
     });
   }
 

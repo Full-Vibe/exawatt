@@ -205,6 +205,8 @@ interface DesktopPtyApi {
   enrichRecentConversations: BridgeInvoke<'pty:enrich-recent-conversations'>;
   onData: BridgeSubscribe<'pty:data'>;
   onExit: BridgeSubscribe<'pty:exit'>;
+  /** Every process main starts, for every window (BUG-305). */
+  onStart: BridgeSubscribe<'pty:start'>;
   onIdentity: BridgeSubscribe<'pty:identity'>;
   onContext: BridgeSubscribe<'pty:context'>;
   onGoalVisual: BridgeSubscribe<'pty:goal-visual'>;

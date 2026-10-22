@@ -44,6 +44,10 @@ import {
 import { delegationMonitor } from './harness-events/delegation-monitor';
 import { codexDelegationObserver } from './harness-events/codex-app-server';
 import { wireReportedTurnTruth } from './harness-events/turn-truth';
+import {
+  attachHarnessEventLog,
+  openHarnessEventLog,
+} from './harness-events/harness-event-log';
 import { ClosedSessionLedger } from './pty/closed-session-ledger';
 import { createWorktree, expandTilde } from './pty/project-resolve';
 import {
@@ -254,6 +258,11 @@ export function registerPtyIPC(
       broadcast('pty:data', { id, durableSessionId, data, cursor });
     }
   );
+  // Starts and exits reach every window (BUG-305), whoever asked: a window
+  // follows main's events, never only the list it read at mount.
+  ptySessions.on('created', (session: PtySessionRecord) => {
+    broadcast('pty:start', session);
+  });
   ptySessions.on(
     'exit',
     (
@@ -317,6 +326,13 @@ export function registerPtyIPC(
   // stream it here, so "the team is working" stops depending on byte
   // quiescence. A source without the capability simply never publishes.
   delegationMonitor.attach(harnessEventChannel, ptySessions);
+  // What each Session's process and harness did, readable after a relaunch
+  // (BUG-102): `logs/harness-events.jsonl`.
+  const sessionLog = attachHarnessEventLog(
+    openHarnessEventLog(app.getPath('userData')),
+    ptySessions,
+    delegationMonitor
+  );
   // ENG-044 safety controls: a launch carries the hooks of the controls that
   // are on, and the guard answers them against the live settings. An
   // unreadable settings file keeps the last choice read in this run; with
@@ -480,59 +496,67 @@ export function registerPtyIPC(
     });
   });
 
+  /** A new start refuses only what the source itself observed it cannot
+   *  launch. Asked only when a start is needed: a Session main already runs,
+   *  or is starting, is answered without probing anything. */
+  const assertLaunchReady = async (options: PtyCreateOptions) => {
+    if (options.harness !== 'shell') {
+      const shellPath = await defaultShell();
+      const registry = await inspectAgentSources(
+        shellPath,
+        'launch',
+        false,
+        options.harness
+      );
+      const readiness = agentSourceLaunchReadiness(registry, options.harness);
+      const source = registry.sources.find(
+        candidate => candidate.harness === options.harness
+      );
+      const homeOnlyOpencodeSeamError =
+        options.harness === 'opencode' &&
+        source?.facts.reachability.value ===
+          'Launch configuration seam occupied';
+      // Only an OBSERVED negative refuses a launch (BUG-063). When a probe
+      // never answered, the launch attempt is itself the better probe and
+      // the harness speaks for itself in the pane, which is what the
+      // operator got by clicking Resume a second time.
+      if (readiness.known && readiness.blocked && !homeOnlyOpencodeSeamError) {
+        throw new Error(readiness.message);
+      }
+      if (options.harness === 'opencode') {
+        const launchCwd =
+          expandTilde((options.cwd ?? '').trim()) || os.homedir();
+        const launchEnvironment = await inspectOpencodeLaunchEnvironment(
+          shellPath,
+          launchCwd
+        );
+        if (launchEnvironment === 'occupied') {
+          throw new Error(
+            'OpenCode launch cannot replace the non-empty OPENCODE_CONFIG_CONTENT value active in this workspace. Remove it from the workspace shell environment and try again.'
+          );
+        }
+        // 'unknown' means the seam check never came back. Same rule: an
+        // unanswered probe does not refuse the launch.
+      }
+    }
+  };
   // structured result instead of a thrown error: IPC rejections arrive as
   // opaque "Error invoking remote method" strings — useless for UX
   handleBounded('pty:create', async (_event, options) => {
     try {
-      if (options.harness !== 'shell') {
-        const shellPath = await defaultShell();
-        const registry = await inspectAgentSources(
-          shellPath,
-          'launch',
-          false,
-          options.harness
-        );
-        const readiness = agentSourceLaunchReadiness(registry, options.harness);
-        const source = registry.sources.find(
-          candidate => candidate.harness === options.harness
-        );
-        const homeOnlyOpencodeSeamError =
-          options.harness === 'opencode' &&
-          source?.facts.reachability.value ===
-            'Launch configuration seam occupied';
-        // Only an OBSERVED negative refuses a launch (BUG-063). When a probe
-        // never answered, the launch attempt is itself the better probe and
-        // the harness speaks for itself in the pane, which is what the
-        // operator got by clicking Resume a second time.
-        if (
-          readiness.known &&
-          readiness.blocked &&
-          !homeOnlyOpencodeSeamError
-        ) {
-          throw new Error(readiness.message);
-        }
-        if (options.harness === 'opencode') {
-          const launchCwd =
-            expandTilde((options.cwd ?? '').trim()) || os.homedir();
-          const launchEnvironment = await inspectOpencodeLaunchEnvironment(
-            shellPath,
-            launchCwd
-          );
-          if (launchEnvironment === 'occupied') {
-            throw new Error(
-              'OpenCode launch cannot replace the non-empty OPENCODE_CONFIG_CONTENT value active in this workspace. Remove it from the workspace shell environment and try again.'
-            );
-          }
-          // 'unknown' means the seam check never came back. Same rule: an
-          // unanswered probe does not refuse the launch.
-        }
-      }
-      const session = await withInitialSessionAttention(
+      const { session, answer } = await withInitialSessionAttention(
         ptySessions,
         attentionMonitor,
         options,
-        () => ptySessions.create(options)
+        () =>
+          ptySessions.ensureRunning(options, () => assertLaunchReady(options))
       );
+      // A Session that already ran, or whose start this ask joined, was
+      // launched once: the start that launched it did the rest.
+      if (answer !== 'started') {
+        sessionLog.ensured(answer, session);
+        return { ok: true as const, session };
+      }
       recordAgentLaunched(session, options); // ENG-047 `agent_launched`
       // the composer's task is the goal — show it as the subtitle instantly;
       // a resume re-anchors the goal persisted with the layout (D21)
