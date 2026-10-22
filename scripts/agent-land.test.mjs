@@ -144,10 +144,20 @@ test('a landing holds the Mac awake until its own process ends, and never fails 
       `#!/bin/sh\nprintf '%s ' "$@" > ${JSON.stringify(recorded)}\n`
     );
     await chmod(path.join(bin, 'caffeinate'), 0o755);
+    // Off macOS nothing spawns, so there is nothing to wait for.
+    assert.equal(
+      holdAwake({ platform: 'linux', env: { ...process.env, PATH: bin } }),
+      null
+    );
+
+    // The macOS path, on every OS: the platform is injected.
     const held = holdAwake({
       platform: 'darwin',
       env: { ...process.env, PATH: bin },
     });
+    // holdAwake unrefs the child so the landing never waits on it. This test
+    // does wait on it, so it holds the event loop open itself.
+    held.ref();
     await once(held, 'exit');
     // `-w` with this process's pid: the assertion ends when the landing
     // does, crash included, and nothing has to stop it.
@@ -165,7 +175,6 @@ test('a landing holds the Mac awake until its own process ends, and never fails 
     assert.ok(missing.listenerCount('error') > 0);
     const [error] = await once(missing, 'error');
     assert.equal(error.code, 'ENOENT');
-    assert.equal(holdAwake({ platform: 'linux' }), null);
   } finally {
     await rm(bin, { recursive: true, force: true });
   }
