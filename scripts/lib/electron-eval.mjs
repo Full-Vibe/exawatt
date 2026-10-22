@@ -625,8 +625,9 @@ function recordLaunchFailure({ error, output, userData, processGroup }) {
  * The watchdog (`maxMs`) fails the attempt as a timeout that names the
  * budget, the eval's last progress line and the page it was on, with the
  * failure screenshot taken before the app closes; it is never mistaken for
- * an external kill. The attempt settles only after its process tree exits,
- * so nothing touches the profile while the tree can still write to it.
+ * an external kill. The attempt settles only after its teardown, with the
+ * run's own result: teardown never replaces it. `reportExit` receives
+ * whether the tree's exit was verified.
  */
 export async function runElectronAttempt({
   launchOpts,
@@ -636,6 +637,7 @@ export async function runElectronAttempt({
   firstWindowMs,
   gracefulMs,
   drivesHostPower,
+  reportExit,
 }) {
   sweepOrphans(evalRoot);
 
@@ -695,10 +697,12 @@ export async function runElectronAttempt({
   // Chromium child processes (a bare SIGKILL on main is uncatchable, so the
   // helpers would reparent to launchd and our playwright-scoped sweep — which
   // matches only the main's argv — wouldn't catch them). hardKill is the
-  // backstop for a wedged renderer where app.close() itself hangs.
+  // backstop for a wedged renderer where app.close() itself hangs. Every
+  // caller, the attempt and a signal mid-run alike, waits on the one
+  // teardown and gets its report of whether the tree exited.
   let watchdog;
-  const shutdown = async () => {
-    if (done) return;
+  let stopping = null;
+  const stop = async () => {
     done = true;
     if (watchdog) clearTimeout(watchdog);
     try {
@@ -710,9 +714,14 @@ export async function runElectronAttempt({
       app.close().catch(() => {}),
       new Promise(r => setTimeout(r, gracefulMs)),
     ]);
-    hardKill();
-    await waitForGroupExit(processGroup, gracefulMs);
+    try {
+      hardKill();
+    } catch {
+      /* the wait below is what verifies the exit */
+    }
+    return waitForGroupExit(processGroup, gracefulMs);
   };
+  const shutdown = () => (stopping ??= stop());
 
   // watchdog REPLACES the external `timeout`: on a hang it fails the attempt
   // as a timeout, and the teardown below is graceful-then-kill so nothing is
@@ -789,18 +798,51 @@ export async function runElectronAttempt({
     throw error;
   } finally {
     progress.restore();
-    await shutdown();
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
+    // Teardown reports and never throws: the attempt settles with the run's
+    // own result, its value, its failure or its timeout.
+    let exit;
+    try {
+      exit = await shutdown();
+    } catch (error) {
+      exit = {
+        exited: false,
+        withinMs: gracefulMs,
+        detail: `teardown failed: ${String(error?.message ?? error)}`,
+      };
+    } finally {
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+    }
+    if (!exit.exited) {
+      console.warn(
+        `[harness] the Electron tree's exit is unverified after ${exit.withinMs}ms: ${exit.detail}`
+      );
+    }
+    reportExit?.(exit);
   }
 }
 
-/** Until every member of the launch's verified process group has exited, or
- *  `timeoutMs` passes. Nothing may touch the profile while one still runs. */
+/**
+ * Whether every member of the launch's verified process group exited within
+ * `timeoutMs`. Nothing may touch the profile while one still runs, so only
+ * `ps` listing the group empty counts as exited. A group never verified at
+ * launch, a `ps` that keeps failing and a deadline each report the exit as
+ * unverified, with why; a `ps` failure is polled past until the deadline.
+ */
 async function waitForGroupExit(group, timeoutMs) {
-  if (!group) return;
+  const unverified = detail => ({ exited: false, withinMs: timeoutMs, detail });
+  if (!group) return unverified('its process group was never verified');
   const deadline = Date.now() + timeoutMs;
-  while (group.members().length > 0 && Date.now() < deadline) {
+  for (;;) {
+    let detail;
+    try {
+      const running = group.members().length;
+      if (running === 0) return { exited: true, withinMs: timeoutMs };
+      detail = `${running} of its processes still running`;
+    } catch (error) {
+      detail = `ps failed: ${String(error?.message ?? error).split('\n')[0]}`;
+    }
+    if (Date.now() >= deadline) return unverified(detail);
     await new Promise(resolve => setTimeout(resolve, 100));
   }
 }

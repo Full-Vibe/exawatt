@@ -645,7 +645,7 @@ app.whenReady().then(() => {
   return dir;
 }
 
-const attemptOf = (dir, body, maxMs) =>
+const attemptOf = (dir, body, maxMs, options = {}) =>
   runElectronAttempt({
     launchOpts: {
       executablePath: createRequire(import.meta.url)('electron'),
@@ -658,10 +658,54 @@ const attemptOf = (dir, body, maxMs) =>
     firstWindowMs: 30_000,
     gracefulMs: 5_000,
     drivesHostPower: true,
+    ...options,
   }).then(
     () => null,
     error => error
   );
+
+/** A `ps` that fails as one does under load (EAGAIN, its own timeout): first
+ *  on PATH from `install()` to `restore()`, so the harness's real calls hit
+ *  it after the launch has verified its process group. */
+function failingPs(t) {
+  const bin = mkdtempSync(join(tmpdir(), 'exawatt-failing-ps-'));
+  writeFileSync(
+    join(bin, 'ps'),
+    '#!/bin/sh\necho "ps: fork: Resource temporarily unavailable" >&2\nexit 1\n'
+  );
+  chmodSync(join(bin, 'ps'), 0o755);
+  const original = process.env.PATH;
+  const restore = () => {
+    process.env.PATH = original;
+  };
+  t.after(() => {
+    restore();
+    rmSync(bin, { recursive: true, force: true });
+  });
+  return {
+    install: () => {
+      process.env.PATH = `${bin}:${original}`;
+    },
+    restore,
+  };
+}
+
+/** The launched tree, verified by the test itself, so it can prove the tree
+ *  is gone once the real `ps` is back, whatever teardown could verify. */
+function launchedTrees(t) {
+  const groups = [];
+  t.after(async () => {
+    for (const group of groups) {
+      group?.forceKill();
+      const deadline = Date.now() + 10_000;
+      while (group && group.members().length > 0) {
+        assert.ok(Date.now() < deadline, 'the launched tree must exit');
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+  });
+  return app => groups.push(captureElectronProcessGroup(app.process().pid));
+}
 
 test(
   'a watchdog timeout fails as a timeout naming its budget and the last progress, screenshots before closing, and is never an external kill (BUG-314)',
@@ -714,6 +758,65 @@ test(
     );
     assert.ok(error, 'the killed run must fail');
     assert.equal(isExternalTeardown(error), true, String(error));
+  }
+);
+
+test(
+  "a ps that fails through teardown never replaces the run's result, and the signal handlers still go",
+  { skip: process.platform !== 'darwin' && 'Electron needs a display here' },
+  async t => {
+    const dir = windowFixture();
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const ps = failingPs(t);
+    const track = launchedTrees(t);
+    // Playwright adds and drops its own signal handlers as its launches
+    // come and go; what must not remain is one this run added.
+    const before = new Set([
+      ...process.listeners('SIGINT'),
+      ...process.listeners('SIGTERM'),
+    ]);
+    const added = () =>
+      [...process.listeners('SIGINT'), ...process.listeners('SIGTERM')].filter(
+        listener => !before.has(listener)
+      );
+    const attempt = async step => {
+      let exit = null;
+      const outcome = await runElectronAttempt({
+        launchOpts: {
+          executablePath: createRequire(import.meta.url)('electron'),
+          args: [dir],
+        },
+        body: async app => {
+          track(app);
+          ps.install();
+          return step();
+        },
+        evalRoot: dir,
+        maxMs: 60_000,
+        firstWindowMs: 30_000,
+        gracefulMs: 1_000,
+        drivesHostPower: true,
+        reportExit: report => (exit = report),
+      }).then(
+        value => ({ value }),
+        error => ({ error })
+      );
+      ps.restore();
+      return { outcome, exit };
+    };
+
+    const passed = await attempt(async () => 'passed');
+    assert.deepEqual(passed.outcome, { value: 'passed' });
+    const failure = new Error('the step failed');
+    const failed = await attempt(async () => {
+      throw failure;
+    });
+    assert.equal(failed.outcome.error, failure);
+    for (const { exit } of [passed, failed]) {
+      assert.equal(exit.exited, false);
+      assert.match(exit.detail, /^ps failed: /);
+    }
+    assert.deepEqual(added(), []);
   }
 );
 
