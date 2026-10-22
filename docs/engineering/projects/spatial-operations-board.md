@@ -4134,3 +4134,20 @@ turning, battery 10 to 12 of 60, locked and suspended 0), as did
 `eval:electron:app-lifecycle`'s Fleet-camera step passed 3 of 3 with the Mac
 unlocked (one run then failed later, in the What's new section). Not run: a
 physical lock or unplug; the evals emit the host events.
+
+2026-10-22, train follow-up, measured: the final train's `eval:spatial` failed
+Fleet v2 now and then with "Board drew no Agent bodies" (`projects=0 units=0`),
+a different scenario each run. The board was not parked: the eval read the
+scene as soon as the canvas existed, and v2's tile bodies are written only
+inside a painted frame, which on a slow client lands after that read. A probe
+of the eval's own steps read before the first frame in 4 of 10 runs on this
+branch and 6 of 10 on master's lattice, and the bodies were there within about
+160 ms every time; nineteen eval runs on one long-lived dev server beside a
+CPU hog never failed. With the page's CPU throttled 8 times, the eval failed
+the same way on this branch (2 of 4 scenarios) and on master's lattice (2 and
+3 of 4). The eval now waits for the canvas's first painted frame before any
+check reads the scene (`waitForSpatialCanvas`), and a canvas that never paints
+fails there by name with its frame demand; throttled and beside the hog it
+passed 4 runs of 4, and the v1 and v2 matrix passed 22 of 22.
+`use-tile-emergence.dom.test.tsx` holds that Agents arriving after the canvas
+parked ask for frames (it fails without the hook's request).
