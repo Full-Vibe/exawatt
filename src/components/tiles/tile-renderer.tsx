@@ -916,11 +916,7 @@ export function TileRenderer({
   // their GPU buffers; the ordinary renderer (including the homepage) never
   // enters this path. Dynamic host-clock callbacks must stay on the full path.
   const staticDraw =
-    staticInstances &&
-    detail === 'coarse' &&
-    mark === 'off' &&
-    reducedMotion &&
-    !interactive;
+    staticInstances && detail === 'coarse' && mark === 'off' && reducedMotion;
   const staticRevision = useMemo(
     () => ({
       tiles,
@@ -966,25 +962,33 @@ export function TileRenderer({
     ]
   );
   const uploadedStaticRevision = useRef<object | null>(null);
+  const uploadedPointer = useRef({ hover: -1, press: -1 });
 
   useFrame((state, rawDelta) => {
-    if (staticDraw && uploadedStaticRevision.current === staticRevision) {
-      onMotionFrame?.(false, false);
-      return;
-    }
-    const delta = Math.min(rawDelta, 0.05);
-    // The rig moved the camera this frame; refresh its matrices so every anchor
-    // projected below lands on this frame's picture, not the last one's.
-    state.camera.updateMatrixWorld();
     const input = readFrame();
-    const selected = agentSlots.get(input.focusId ?? '') ?? -1;
-    const exemplar = agentSlots.get(input.exemplarId ?? '') ?? -1;
     if (input.hoveredId !== undefined)
       anim.hover = agentSlots.get(input.hoveredId ?? '') ?? -1;
     if (input.pressedId !== undefined) {
       anim.press = agentSlots.get(input.pressedId ?? '') ?? -1;
       anim.pressTouch = false;
     }
+    if (
+      staticDraw &&
+      uploadedStaticRevision.current === staticRevision &&
+      uploadedPointer.current.hover === anim.hover &&
+      uploadedPointer.current.press === anim.press
+    ) {
+      onMotionFrame?.(false, false);
+      return;
+    }
+    uploadedPointer.current.hover = anim.hover;
+    uploadedPointer.current.press = anim.press;
+    const delta = Math.min(rawDelta, 0.05);
+    // The rig moved the camera this frame; refresh its matrices so every anchor
+    // projected below lands on this frame's picture, not the last one's.
+    state.camera.updateMatrixWorld();
+    const selected = agentSlots.get(input.focusId ?? '') ?? -1;
+    const exemplar = agentSlots.get(input.exemplarId ?? '') ?? -1;
 
     const ground = groundRef.current;
     const agents = agentsRef.current;

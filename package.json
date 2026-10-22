@@ -176,7 +176,8 @@
     "eval:electron:device-power": "node scripts/electron-device-power-eval.mjs",
     "eval:spatial:status-visibility": "node scripts/board-status-visibility-eval.mjs",
     "eval:spatial:tiles-bench": "node scripts/board-tiles-bench-eval.mjs",
-    "eval:electron:fleet-direct": "node scripts/electron-fleet-direct-eval.mjs"
+    "eval:electron:fleet-direct": "node scripts/electron-fleet-direct-eval.mjs",
+    "eval:spatial:tiles-interaction": "node scripts/fleet-v2-interaction-eval.mjs"
   },
   "dependencies": {
     "@exawatt/core": "workspace:*",

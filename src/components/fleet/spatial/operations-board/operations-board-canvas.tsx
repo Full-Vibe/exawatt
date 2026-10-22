@@ -143,7 +143,10 @@ export function OperationsBoardCanvas({
   multiSelection?: ReadonlySet<string>;
   onToggleAgentSelect?: (agentId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
-  onBandSelect?: (band: SpatialBoardRect) => void;
+  onBandSelect?: (
+    band: SpatialBoardRect,
+    presentation?: SpatialBoardLayout
+  ) => void;
   bandOverlayRef?: { current: HTMLDivElement | null };
   followSelection?: boolean;
   touchSelectionMode?: boolean;

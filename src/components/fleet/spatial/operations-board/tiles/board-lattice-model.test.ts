@@ -5,7 +5,7 @@ import {
   boardStudySourceMarks,
 } from '@/components/hud/board-study-fixtures';
 import { boardTileModel } from '@/components/fleet/spatial/operations-board/tiles/board-tiles-model';
-import { qualityModel } from './model';
+import { boardLatticeModel } from './board-lattice-model';
 
 describe('Fleet territory review keeps source truth on a shared lattice', () => {
   it.each([
@@ -20,7 +20,7 @@ describe('Fleet territory review keeps source truth on a shared lattice', () => 
       const layout = selectSpatialBoardLayout(boardStudyFleet(fixture));
       const before = structuredClone(layout);
       const marks = boardStudySourceMarks(fixture);
-      const model = qualityModel(layout, marks);
+      const model = boardLatticeModel(layout, marks);
       const source = boardTileModel(layout, marks);
       for (const piece of layout.pieces.filter(
         piece => piece.visible && piece.kind === 'agent'
@@ -71,7 +71,7 @@ describe('Fleet territory review keeps source truth on a shared lattice', () => 
         altitude: 'project',
         focusedProjectId: layout.zones[0]?.id ?? null,
       });
-      const focused = qualityModel(focusedLayout, marks);
+      const focused = boardLatticeModel(focusedLayout, marks);
       // The source selector may expand an aggregate into newly visible
       // Projects. Every surviving territory must keep its physical addresses.
       for (const { zone } of model.territories) {

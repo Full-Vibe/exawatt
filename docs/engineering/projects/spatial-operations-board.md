@@ -3963,3 +3963,54 @@ Tests assert immutable source data, preserved population, exclusive occupancy,
 body/socket alignment and navigation stability (5 fixtures); they do not pin
 copy, spacing or a preferred camera angle. Production adoption still requires
 operator look acceptance and the full existing behavior/power/motion gates.
+
+
+### 2026-10-21 — V4.1 approved composition and interaction adoption
+
+**The operator approved the lattice composition; v2 adopts it with complete hover and press feedback.**
+The final review requested mouseover effects for all Agents, including delegated
+children, and audible material presses. The missing feedback came from DOM hit
+targets intercepting input without forwarding hover/press state or invoking the
+shared material sound hook. A single pointer store now feeds the shared physical
+lift/compression, with scoped blur/leave cleanup so a previously focused Agent
+cannot cancel the next Agent's press. Keyboard activation uses the same path.
+Aggregate bodies react without inventing an individual command identity.
+
+The accepted adapter becomes production v2's address owner: body/socket pairs,
+lineage, hit targets, selection bands, keyboard walk and minimap consume its
+presentation layout over unchanged source identities/readings/census. Native
+perspective implements the board camera handle, high/low/overhead controls,
+selection follow, viewport reporting, touch/pointer manipulation and Team arrival.
+Semantic flights use the board ease and log-distance interpolation. Inspector
+resize preserves the camera; a window/device resize refits. Lifecycle retention
+uses the shared emergence tracker and releases the demand loop after retirement.
+v1 remains the default, with its renderer and preferences unchanged. The isolated
+quality candidate redirects to the standing production bench.
+
+Verification artifacts: `/tmp/exawatt-fleet-v2-interaction/` records actual GPU
+hover/press transforms for all 19 visible parent/child bodies, gesture-unlocked
+material audio voices, keyboard activation and all three cameras. The material
+matrix and status visibility probes retain screenshots across themes and scales.
+Power evidence reads actual v2 shader attributes instead of removed status rotor
+geometry. Final verification and integration receipts belong to the delivery
+ledger; screenshots alone do not certify installation.
+
+### 2026-10-22 — V4.1 interaction verification
+
+**Parent, child and aggregate feedback now runs through the production board.**
+Twelve model/navigation contract tests pass. Browser passes cover all 19 detailed
+body hover/press transforms, gesture-unlocked audio, keyboard activation, aggregate
+hover/drill, three camera presets, material/theme matrix, source work readings,
+resize, mouse/touch selection, pinch, emergence and reduced-motion parking.
+Perspective viewport persistence stores the actual camera pose; screen-space
+selection projects body centers into the visible marquee, including after orbit.
+Inspector resizing changes the frustum without moving that pose. Pointer checks
+therefore compare the actual pose rather than mistaking a resized frustum for a
+camera move.
+
+Electron navigation and host-power probes passed. The attention browser probe
+passed for both views; the native foreground attention probe cannot establish
+foreground while macOS is locked, and reports that condition for both v1 and v2.
+The delivery intentionally waives `eval:spatial:attention` for this environment
+limitation; no foreground truth is fabricated. Other required gates run through
+the normal delivery on the committed tree.

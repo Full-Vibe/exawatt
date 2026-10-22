@@ -132,6 +132,14 @@ const isBoardCanvas = file =>
 
 export const SURFACE_GATES = [
   {
+    gate: 'eval:spatial:tiles-interaction',
+    why: 'every parent and child body must answer hover, press and keyboard input with material audio',
+    match: file =>
+      (file.startsWith(`${BOARD_CANVAS_DIR}tiles/`) &&
+        !/\.test\.tsx?$/.test(file)) ||
+      file === 'scripts/fleet-v2-interaction-eval.mjs',
+  },
+  {
     gate: 'eval:electron:fleet-direct',
     why: 'a Fleet ghost slot must open the one composer in its own Project, and Direct must answer for every recipient on the real bridge',
     match: file =>
@@ -153,12 +161,17 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:spatial:status-visibility',
-    why: 'semantic status glyphs must remain visible over every Fleet material',
+    why: 'source work readings must remain visible and accessible over every Fleet material',
     match: file =>
-      ['operations-board-status-marks.tsx', 'operations-board-population-layer.tsx',
-        'status-mark-rendering.ts'].some(module => file === `${BOARD_CANVAS_DIR}${module}`) ||
-      (file.startsWith(`${BOARD_CANVAS_DIR}tiles/`) && !/\.test\.tsx?$/.test(file)) ||
-      (file.startsWith('src/components/tiles/') && !/\.test\.tsx?$/.test(file)) ||
+      [
+        'operations-board-status-marks.tsx',
+        'operations-board-population-layer.tsx',
+        'status-mark-rendering.ts',
+      ].some(module => file === `${BOARD_CANVAS_DIR}${module}`) ||
+      (file.startsWith(`${BOARD_CANVAS_DIR}tiles/`) &&
+        !/\.test\.tsx?$/.test(file)) ||
+      (file.startsWith('src/components/tiles/') &&
+        !/\.test\.tsx?$/.test(file)) ||
       file === 'src/components/hud/board-study-fixtures.ts' ||
       file === 'src/app/hud-gallery/board-study/page.tsx' ||
       file === 'scripts/board-status-visibility-eval.mjs',
@@ -793,6 +806,7 @@ export const SURFACE_GATES = [
       isBoardCanvas(file) ||
       file.startsWith('src/app/eval/t11-altitude-handoff/') ||
       file === 'scripts/r3f-eval/spatial.mjs' ||
+      file === 'scripts/lib/board-work-motion-eval.mjs' ||
       file === 'scripts/lib/fleet-view-eval.mjs' ||
       isBoardFixtureBoundary(file),
   },
@@ -803,6 +817,7 @@ export const SURFACE_GATES = [
       file === 'electron/main/host-power.ts' ||
       file === 'src/lib/host-power/use-host-render-policy.ts' ||
       file === 'scripts/electron-host-power-eval.mjs' ||
+      file === 'scripts/lib/board-work-motion-eval.mjs' ||
       isBoardFixtureBoundary(file) ||
       isBoardCanvas(file),
   },
@@ -1866,6 +1881,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:electron:packaged': GATE,
   'eval:settings:navigation': GATE,
   'eval:spatial:tiles-bench': GATE,
+  'eval:spatial:tiles-interaction': GATE,
   'eval:spatial:status-visibility': GATE,
   'eval:spatial:viewport': GATE,
   'eval:spatial:attention': GATE,

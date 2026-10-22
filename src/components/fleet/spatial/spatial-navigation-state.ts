@@ -146,6 +146,24 @@ export function parseStoredViewport(
     ) {
       return null;
     }
+    if (candidate.perspective !== undefined) {
+      const pose = candidate.perspective;
+      if (
+        !pose ||
+        !Array.isArray(pose.target) ||
+        pose.target.length !== 3 ||
+        ![...pose.target, pose.distance, pose.azimuth, pose.polar].every(
+          item =>
+            typeof item === 'number' &&
+            Number.isFinite(item) &&
+            Math.abs(item) <= maxMagnitude
+        ) ||
+        pose.distance <= 0 ||
+        pose.polar <= 0 ||
+        pose.polar >= Math.PI / 2
+      )
+        return null;
+    }
     return candidate as OperationsBoardViewport;
   } catch {
     return null;

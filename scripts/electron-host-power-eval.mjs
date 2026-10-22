@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { sampleBoardWorkMotion } from './lib/board-work-motion-eval.mjs';
 
 // Real Electron bridge and Fleet rendering; synthetic events affect only
 // this isolated app. Never locks, sleeps, or changes power on the operator's Mac.
@@ -35,12 +36,15 @@ const artifacts = join('/tmp/exawatt-host-power-eval', fleetView);
 mkdirSync(artifacts, { recursive: true });
 
 async function renderPasses(page, count) {
-  return page.evaluate(async ticks => {
-    for (let tick = 0; tick < ticks; tick++) {
-      await new Promise(resolve => requestAnimationFrame(resolve));
-    }
-    return window.__EVAL_GL__.info.render.frame;
-  }, count);
+  return page.evaluate(
+    async ({ ticks, sampler }) => {
+      for (let tick = 0; tick < ticks; tick++) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+      return window.__EVAL_GL__.info.render.frame;
+    },
+    { ticks: count, sampler: sampleBoardWorkMotion.toString() }
+  );
 }
 
 /** A refresh this fast can show the economy bound; a starved host's rAF is
@@ -51,41 +55,39 @@ const HEALTHY_TICK_MS = 30;
  * refreshes, so one sample answers both halves of BUG-263. Refreshes that
  * painted are counted, not `render()` calls: a bloom frame makes several. */
 async function ambientSample(page, count) {
-  return page.evaluate(async ticks => {
-    const gl = window.__EVAL_GL__;
-    const before = new Map();
-    window.__EVAL_SCENE__.traverse(node => {
-      if (
-        node.name.startsWith('mark:') &&
-        node.parent?.geometry?.parameters?.thetaLength === Math.PI
-      )
-        before.set(node, node.rotation.z);
-    });
-    const frameStart = gl.info.render.frame;
-    const times = [];
-    let painted = 0;
-    for (let tick = 0; tick < ticks; tick++) {
-      const renders = gl.info.render.frame;
-      times.push(await new Promise(resolve => requestAnimationFrame(resolve)));
-      if (gl.info.render.frame !== renders) painted += 1;
-    }
-    const intervals = times
-      .slice(1)
-      .map((time, index) => time - times[index])
-      .sort((a, b) => a - b);
-    let moving = 0;
-    for (const [node, angle] of before)
-      if (node.rotation.z !== angle) moving += 1;
-    return {
-      renders: gl.info.render.frame - frameStart,
-      painted,
-      ticks: times.length,
-      tickMs: intervals[Math.floor(intervals.length / 2)] ?? null,
-      rotors: before.size,
-      moving,
-      dpr: gl.getPixelRatio(),
-    };
-  }, count);
+  return page.evaluate(
+    async ({ ticks, sampler }) => {
+      const gl = window.__EVAL_GL__;
+      const before = new Function(`return (${sampler})()`)();
+      const frameStart = gl.info.render.frame;
+      const times = [];
+      let painted = 0;
+      for (let tick = 0; tick < ticks; tick++) {
+        const renders = gl.info.render.frame;
+        times.push(
+          await new Promise(resolve => requestAnimationFrame(resolve))
+        );
+        if (gl.info.render.frame !== renders) painted += 1;
+      }
+      const intervals = times
+        .slice(1)
+        .map((time, index) => time - times[index])
+        .sort((a, b) => a - b);
+      let moving = 0;
+      for (const [node, angle] of before)
+        if (node.rotation.z !== angle) moving += 1;
+      return {
+        renders: gl.info.render.frame - frameStart,
+        painted,
+        ticks: times.length,
+        tickMs: intervals[Math.floor(intervals.length / 2)] ?? null,
+        rotors: before.size,
+        moving,
+        dpr: gl.getPixelRatio(),
+      };
+    },
+    { ticks: count, sampler: sampleBoardWorkMotion.toString() }
+  );
 }
 
 /** What the board's render policy reads, for a failure message: a parked

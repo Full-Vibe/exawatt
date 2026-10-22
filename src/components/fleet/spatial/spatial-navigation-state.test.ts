@@ -86,6 +86,37 @@ describe('spatial navigation state', () => {
     }
   });
 
+  it('restores a native perspective pose and rejects corrupt pose coordinates', () => {
+    const viewport = {
+      centerX: 1,
+      centerY: 2,
+      width: 30,
+      height: 20,
+      perspective: {
+        target: [1, 0, 2],
+        distance: 30,
+        azimuth: -0.12,
+        polar: 0.8,
+      },
+    };
+    expect(parseStoredViewport(JSON.stringify(viewport))).toEqual(viewport);
+    for (const patch of [
+      { target: [1, 2] },
+      { target: [null, 0, 0] },
+      { distance: 0 },
+      { polar: Math.PI },
+      { azimuth: 'bad' },
+    ])
+      expect(
+        parseStoredViewport(
+          JSON.stringify({
+            ...viewport,
+            perspective: { ...viewport.perspective, ...patch },
+          })
+        )
+      ).toBeNull();
+  });
+
   it('accepts only finite, positive stored viewports', () => {
     expect(
       parseStoredViewport(

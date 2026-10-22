@@ -54,6 +54,23 @@ await page.waitForTimeout(1600);
 // assert the command panel's exact IDs rather than only a positive count.
 const fleetAgentPoint = excluded =>
   page.evaluate(excluded => {
+    if (
+      document.querySelector('[data-spatial-board]')?.dataset.boardView === 'v2'
+    ) {
+      for (const button of document.querySelectorAll('[data-board-agent]')) {
+        const id = button.dataset.boardAgent;
+        if (excluded.includes(id)) continue;
+        const rect = button.getBoundingClientRect();
+        const x = rect.x + rect.width / 2,
+          y = rect.y + rect.height / 2;
+        if (
+          document.elementFromPoint(x, y)?.closest('[data-board-agent]') ===
+          button
+        )
+          return { id, x, y };
+      }
+      return null;
+    }
     const node = window.__EVAL_SCENE__?.getObjectByName(
       'fleet-agent-hit-targets'
     );
@@ -106,10 +123,29 @@ const expectSelectedIds = async ids => {
 };
 const shiftClick = async point => {
   if (!point) throw new Error('No unobscured Fleet Agent target');
-  await page.keyboard.down('Shift');
-  await page.mouse.click(point.x, point.y);
-  await page.keyboard.up('Shift');
+  if (fleetView === 'v2') {
+    await page
+      .locator(`[data-board-agent="${point.id}"]`)
+      .click({ modifiers: ['Shift'] });
+  } else {
+    await page.keyboard.down('Shift');
+    await page.mouse.click(point.x, point.y);
+    await page.keyboard.up('Shift');
+  }
 };
+if (fleetView === 'v2')
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas');
+    if (!canvas?.boardEvidence?.gl.info.render.triangles) return false;
+    return [...document.querySelectorAll('[data-board-agent]')].some(button => {
+      const rect = button.getBoundingClientRect();
+      return (
+        document
+          .elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+          ?.closest('[data-board-agent]') === button
+      );
+    });
+  });
 const firstAgent = await fleetAgentPoint([]);
 await shiftClick(firstAgent);
 await expectSelectedIds([firstAgent.id]);
@@ -122,7 +158,9 @@ check('Fleet Shift-click adds exactly one Agent', true);
 await page.keyboard.press('Escape');
 await expectSelectedIds([]);
 const plainAgent = await fleetAgentPoint([]);
-await page.mouse.click(plainAgent.x, plainAgent.y);
+if (fleetView === 'v2')
+  await page.locator(`[data-board-agent="${plainAgent.id}"]`).click();
+else await page.mouse.click(plainAgent.x, plainAgent.y);
 await page.waitForURL(/altitude=project/);
 check('ordinary Fleet Agent click still drills its Project', true);
 await page.keyboard.press('0');
@@ -140,6 +178,27 @@ const viewportOf = () => {
     : null;
 };
 
+// An inspector can resize the projection without moving a perspective camera.
+// Compare its actual pose; orthographic v1 retains its existing viewport check.
+const sameCamera = (before, after) => {
+  if (!before || !after) return false;
+  if (before.perspective && after.perspective) {
+    const a = before.perspective,
+      b = after.perspective;
+    return (
+      a.target.every(
+        (value, index) => Math.abs(value - b.target[index]) < 0.2
+      ) &&
+      Math.abs(a.distance - b.distance) < 0.2 &&
+      Math.abs(a.azimuth - b.azimuth) < 0.001 &&
+      Math.abs(a.polar - b.polar) < 0.001
+    );
+  }
+  return (
+    Math.abs(after.centerX - before.centerX) < 0.2 &&
+    Math.abs(after.centerY - before.centerY) < 0.2
+  );
+};
 const before = await page.evaluate(viewportOf);
 
 // Primary drag draws a full-board selection band and does not move the camera.
@@ -152,13 +211,7 @@ await page.mouse.move(canvasBox.x + canvasBox.width - 12, canvasBox.y + 12, {
 await page.mouse.up();
 await page.waitForTimeout(700);
 const afterDrag = await page.evaluate(viewportOf);
-check(
-  'primary drag keeps the camera fixed',
-  !!before &&
-    !!afterDrag &&
-    Math.abs(afterDrag.centerX - before.centerX) < 0.2 &&
-    Math.abs(afterDrag.centerY - before.centerY) < 0.2
-);
+check('primary drag keeps the camera fixed', sameCamera(before, afterDrag));
 check(
   'primary drag band-selects Agents',
   Number(
@@ -333,8 +386,7 @@ const touchBandCount = Number(
 );
 check(
   'touch selection mode keeps camera fixed',
-  Math.abs(afterTouchBand.centerX - beforeTouchBand.centerX) < 0.2 &&
-    Math.abs(afterTouchBand.centerY - beforeTouchBand.centerY) < 0.2
+  sameCamera(beforeTouchBand, afterTouchBand)
 );
 check('touch selection mode band-selects Agents', touchBandCount > 0);
 
@@ -388,10 +440,11 @@ await cdp.send('Input.dispatchTouchEvent', {
 });
 await touchPage.waitForTimeout(700);
 const pinchAfter = await touchViewport();
-check(
-  'two-finger touch pinch zooms',
-  pinchAfter.width < pinchBefore.width * 0.8
-);
+const pinchZoomed = pinchBefore.perspective
+  ? pinchAfter.perspective.distance < pinchBefore.perspective.distance * 0.95
+  : pinchAfter.width < pinchBefore.width * 0.8;
+if (!pinchZoomed) console.log('pinch evidence', { pinchBefore, pinchAfter });
+check('two-finger touch pinch zooms', pinchZoomed);
 
 // Direct touch selection remains available after camera gestures. Use a
 // center whose topmost hit target is the Agent control so the probe tests the

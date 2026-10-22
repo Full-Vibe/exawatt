@@ -9,6 +9,13 @@ export interface BoardCameraTarget {
 }
 
 export interface OperationsBoardViewport {
+  /** v2's native pose. Its lattice coordinates cannot restore a v1 XY camera. */
+  perspective?: {
+    target: [number, number, number];
+    distance: number;
+    azimuth: number;
+    polar: number;
+  };
   /** Logical camera zoom, when authored by the rig; old stored viewports omit it. */
   zoom?: number;
   centerX: number;
@@ -304,9 +311,10 @@ export function boardCameraLimits(
     minY: -(bounds.y + bounds.height) - slackY,
     maxY: -bounds.y + slackY,
     minZoom: safeFit > 0 ? safeFit * BOARD_CAMERA_LIMIT_POLICY.zoomOutRatio : 0,
-    maxZoom: safeFit > 0
-      ? safeFit * BOARD_CAMERA_LIMIT_POLICY.zoomInRatio
-      : Number.POSITIVE_INFINITY,
+    maxZoom:
+      safeFit > 0
+        ? safeFit * BOARD_CAMERA_LIMIT_POLICY.zoomInRatio
+        : Number.POSITIVE_INFINITY,
     overshootX: halfWidth * BOARD_CAMERA_LIMIT_POLICY.panOvershoot,
     overshootY: halfHeight * BOARD_CAMERA_LIMIT_POLICY.panOvershoot,
   };
@@ -398,8 +406,7 @@ export function relaxBoardCameraTargetInPlace(
   const x = relaxAxis(target.x, limits.minX, limits.maxX, delta);
   const y = relaxAxis(target.y, limits.minY, limits.maxY, delta);
   const zoom = relaxAxis(target.zoom, limits.minZoom, limits.maxZoom, delta);
-  const moved =
-    x !== target.x || y !== target.y || zoom !== target.zoom;
+  const moved = x !== target.x || y !== target.y || zoom !== target.zoom;
   target.x = x;
   target.y = y;
   target.zoom = zoom;

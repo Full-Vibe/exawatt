@@ -1174,3 +1174,16 @@ snapshot, never an intermediate layout storm.
   tile palette, with shallower geometry. Exclusive axial addresses align bodies
   and sockets. High/low/overhead perspective presets are reviewable in the same
   DOM/R3F study; operator acceptance still precedes production adoption.
+
+
+- 2026-10-21 — ENG-004 V4.1 adoption accepted: the operator approved the
+  lattice/perspective composition and requested hover feedback on every Agent,
+  including children, plus audible material presses. The preceding gallery-only
+  exception is now the v2 production contract: status-colored bodies, still
+  harness relief, explicit stopped/overflow text and accessible work readings.
+  v1 remains default. Parent/child targets share the existing TileRenderer
+  lift/compression and material press/release sounds; keyboard focus mirrors
+  hover. Aggregate population responds visually without claiming individual
+  Agent identity. High/low/overhead are in-board camera choices. Typography,
+  spacing and concrete theme roles remain those of the accepted candidate.
+  The candidate redirects to the standing production board bench.

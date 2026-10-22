@@ -119,6 +119,8 @@ function checkRestored(arrived, baseline) {
       original && Math.abs(body.scale - original.scale) < 1e-6,
       'Arrival did not reach its final body scale'
     );
+    // v2's accepted color-led bodies replace the routine D40 overlay.
+    if (fleetView === 'v2') continue;
     const marks = arrived.marks.filter(
       mark => mark.name === body.name.replace('body:', 'mark:')
     );

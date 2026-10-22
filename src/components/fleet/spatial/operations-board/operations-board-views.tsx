@@ -6,6 +6,7 @@ import type { SpatialBoardProjection } from '@exawatt/ui-model';
 import type { OperationsBoardCanvas } from './operations-board-canvas';
 
 type BoardViewProps = ComponentProps<typeof OperationsBoardCanvas> & {
+  cameraPreset?: import('./tiles/operations-board-tiles-canvas').BoardCameraPreset;
   material?: FleetMaterial;
   sourceMarks?: Readonly<Record<string, string>>;
 };

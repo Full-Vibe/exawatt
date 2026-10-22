@@ -37,10 +37,14 @@ positions, status, an injected mark registry, neutral frame state (presence,
 highlights, focus and selection), and the `sphere` or `plane` surface. Instance
 storage grows with spare capacity and preserves surviving identities through
 reordering. The homepage adapter retains scroll staging, globe, camera and
-Project label/border ownership; Fleet v2 will reuse the tile layer over the
-existing board layout. Motion cadence remains owned by the mounting surface;
-transmission can be removed for overview and low-power rendering. This slice
-changes no design-system rung or production Fleet presentation.
+Project label/border ownership. Fleet v2 reuses the tile layer in native XZ
+perspective. `board-lattice-model` maps immutable source layout into one shared
+presentation layout for bodies, floor, lineage, DOM targets, keyboard/band
+selection and minimap; `board-lattice-camera` implements the common command
+handle with perspective framing and high/low/overhead choices. DOM interaction
+feeds the shared hover/press store and material audio for parents and children.
+v1 keeps its original XY camera and remains the default. Motion cadence remains owned by the mounting surface;
+transmission can be removed for overview and low-power rendering. The accepted adoption changes no design-system type or color rung.
 
 The privileged desktop renderer is local application code packaged in the same
 versioned Electron artifact as main/preload (decision `0008`). It must not load

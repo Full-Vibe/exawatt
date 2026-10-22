@@ -1,15 +1,9 @@
 'use client';
 
 import { Canvas, useThree } from '@react-three/fiber';
-import { CameraControls, Html, Line } from '@react-three/drei';
+import { Html, Line } from '@react-three/drei';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Box3,
-  Vector3,
-  type WebGLRenderer,
-  type Scene,
-  type Camera,
-} from 'three';
+import { type WebGLRenderer, type Scene, type Camera } from 'three';
 import type { OperationsBoardTilesProps } from '@/components/fleet/spatial/operations-board/tiles/operations-board-tiles-canvas';
 import { BoardDisplayResolution } from '@/components/fleet/spatial/operations-board/operations-board-canvas';
 import {
@@ -31,7 +25,12 @@ import type { TileFrame } from '@/components/tiles/tile-contract';
 import { DEFAULT_MOTION } from '@/components/tiles/crust-motion';
 import { HARNESS_MARK_PATHS } from '@/components/workspace/harness-icons';
 import { harnessMarkTone } from '@/components/workspace/harness-mark-tones';
-import { qualityModel } from './model';
+import { boardLatticeModel } from './board-lattice-model';
+import { LatticeCamera } from './board-lattice-camera';
+import { createBoardHoverStore } from '../operations-board-hover';
+import { usePressSound } from '@/components/tiles/use-press-sound';
+import { useTileEmergence } from './use-tile-emergence';
+import { MATERIAL_SOUND } from '@/components/tiles/press-sounds';
 
 const MARKS = { paths: HARNESS_MARK_PATHS, tone: harnessMarkTone };
 const EMPTY = new Set<string>();
@@ -50,14 +49,10 @@ const GROUND_FRAME: TileFrame = {
 };
 const readGround = () => GROUND_FRAME;
 const readClock = () => performance.now() / 1000;
-export type QualityCamera = 'perspective' | 'low' | 'overhead';
-type QualityProps = OperationsBoardTilesProps & {
-  cameraPreset?: QualityCamera;
-  recenterToken?: number;
-};
+type LatticeProps = OperationsBoardTilesProps;
 
-/** Review-only native XZ composition; the production board remains unchanged. */
-export function QualityCanvas(props: QualityProps) {
+/** Accepted Fleet v2: a single XZ address mapping for bodies, sockets and input. */
+export function LatticeCanvas(props: LatticeProps) {
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
   const host = useHostRenderPolicy();
@@ -86,9 +81,8 @@ export function QualityCanvas(props: QualityProps) {
         preserveDrawingBuffer: props.preserveDrawingBuffer,
       }}
       style={{ touchAction: 'none' }}
-      data-board-view="quality-study"
+      data-board-view="v2"
       data-board-material={props.material}
-      onPointerMissed={props.onBackground}
       onCreated={({ gl, scene, camera }) => {
         // Hide only WebGL pixels; Html's sibling command targets stay accessible.
         gl.domElement.setAttribute('aria-hidden', 'true');
@@ -97,11 +91,18 @@ export function QualityCanvas(props: QualityProps) {
             boardEvidence: { gl: WebGLRenderer; scene: Scene; camera: Camera };
           }
         ).boardEvidence = { gl, scene, camera };
+        if (process.env.NODE_ENV !== 'production') {
+          Object.assign(window, {
+            __EVAL_GL__: gl,
+            __EVAL_SCENE__: scene,
+            __EVAL_CAM__: camera,
+          });
+        }
       }}
     >
       <color attach="background" args={[props.theme.canvas]} />
       <BoardDisplayResolution lowPower={lowPower} />
-      <QualityScene
+      <LatticeScene
         {...props}
         reduced={reduced}
         ambient={ambient}
@@ -113,10 +114,11 @@ export function QualityCanvas(props: QualityProps) {
   );
 }
 
-function QualityScene({
+function LatticeScene({
   layout,
   theme,
-  material = 'gummy',
+  material: chosenMaterial = 'gummy',
+  greybox = false,
   sourceMarks = {},
   onDrillProject,
   onSelectAgent,
@@ -125,29 +127,79 @@ function QualityScene({
   reduced,
   ambient,
   transmission,
-  cameraPreset = 'perspective',
-  recenterToken = 0,
-}: QualityProps & {
+  ...commands
+}: LatticeProps & {
   reduced: boolean;
   ambient: AmbientMotion;
   transmission: boolean;
 }) {
+  const material = greybox ? 'matte' : chosenMaterial;
   const invalidate = useThree(state => state.invalidate);
-  const size = useThree(state => state.size);
-  const camera = useThree(state => state.camera);
-  const gl = useThree(state => state.gl);
-  const controls = useRef<CameraControls>(null);
+  const narrow = useThree(state => state.size.width < 600);
+
+  const { rendered, getTracker } = useTileEmergence(layout.pieces, reduced);
   const model = useMemo(
-    () => qualityModel(layout, sourceMarks),
-    [layout, sourceMarks]
+    () =>
+      boardLatticeModel(
+        {
+          ...layout,
+          pieces: [
+            ...layout.pieces.filter(
+              piece =>
+                piece.kind !== 'agent' || piece.sessionState === 'stopped'
+            ),
+            ...rendered,
+          ],
+        },
+        sourceMarks
+      ),
+    [layout, sourceMarks, rendered]
   );
-  const detailedTiles = useMemo(
-    () => model.tiles.filter(tile => !tile.id.startsWith('population:')),
-    [model]
-  );
+  const records = useRef(new Map<string, (typeof model.tiles)[number]>());
+  for (const tile of model.tiles)
+    if (!tile.id.startsWith('population:')) records.current.set(tile.id, tile);
+  const detailedTiles = useMemo(() => {
+    const live = model.tiles.filter(tile => !tile.id.startsWith('population:'));
+    const ids = new Set(live.map(tile => tile.id));
+    return [
+      ...live,
+      ...rendered
+        .filter(piece => !ids.has(piece.id))
+        .flatMap(piece => {
+          const tile = records.current.get(piece.id);
+          return tile ? [tile] : [];
+        }),
+    ];
+  }, [model, rendered]);
+  useEffect(() => {
+    const retained = new Set([
+      ...detailedTiles.map(tile => tile.id),
+      ...getTracker().retiring(performance.now()),
+    ]);
+    for (const id of records.current.keys())
+      if (!retained.has(id)) records.current.delete(id);
+  }, [detailedTiles, getTracker]);
   const populationTiles = useMemo(
     () => model.tiles.filter(tile => tile.id.startsWith('population:')),
     [model]
+  );
+  const displayTiles = useMemo(
+    () =>
+      greybox
+        ? detailedTiles.map(tile => ({
+            ...tile,
+            status: undefined,
+            mark: undefined,
+          }))
+        : detailedTiles,
+    [greybox, detailedTiles]
+  );
+  const displayPopulation = useMemo(
+    () =>
+      greybox
+        ? populationTiles.map(tile => ({ ...tile, status: undefined }))
+        : populationTiles,
+    [greybox, populationTiles]
   );
   const groundTheme = useMemo(
     () => ({ ...theme, zone: theme.zoneHover, grid: theme.gridMajor }),
@@ -155,89 +207,85 @@ function QualityScene({
   );
   const agentIds = useMemo(
     () =>
-      new Set(model.tiles.filter(tile => tile.agentId).map(tile => tile.id)),
-    [model]
+      new Set(detailedTiles.filter(tile => tile.agentId).map(tile => tile.id)),
+    [detailedTiles]
   );
   const frame = useMemo<TileFrame>(
     () => ({
-      focusId: multiSelection?.values().next().value ?? null,
+      focusId: commands.selectedDelegationUnitId ?? layout.selectedAgentId,
       selection: multiSelection ?? EMPTY,
       tileAgent: id => agentIds.has(id),
+      tileScale: id =>
+        layout.pieces.find(piece => piece.id === id)?.sessionState === 'stopped'
+          ? 1
+          : getTracker().scaleOf(id, performance.now()),
       tileEmphasis: id =>
         !layout.focusedProjectId ||
         model.tileProjects.get(id) === layout.focusedProjectId
           ? 1
           : 0.12,
     }),
-    [multiSelection, agentIds, layout.focusedProjectId, model.tileProjects]
+    [
+      multiSelection,
+      getTracker,
+      layout.pieces,
+      agentIds,
+      layout.focusedProjectId,
+      layout.selectedAgentId,
+      commands.selectedDelegationUnitId,
+      model.tileProjects,
+    ]
   );
-  const readFrame = useCallback(() => frame, [frame]);
+  const [hover] = useState(createBoardHoverStore);
+  const play = usePressSound(greybox ? false : MATERIAL_SOUND[material]);
+  const press = useCallback(
+    (id: string | null) => {
+      const previous = hover.get().pressedAgentId;
+      if (previous === id) return;
+      hover.setPressed(id);
+      if (previous) play('release');
+      if (id) play('press');
+    },
+    [hover, play]
+  );
+  useEffect(() => hover.subscribe(invalidate), [hover, invalidate]);
+  const paintedFrame = useRef<TileFrame>({ focusId: null, selection: EMPTY });
+  const readFrame = useCallback(() => {
+    const result = paintedFrame.current;
+    Object.assign(result, frame);
+    result.hoveredId = hover.get().agentId;
+    result.pressedId = hover.get().pressedAgentId;
+    return result;
+  }, [frame, hover]);
+  const populationFrame = useRef<TileFrame>({
+    focusId: null,
+    selection: EMPTY,
+  });
+  const readPopulation = useCallback(() => {
+    const frame = populationFrame.current;
+    frame.hoveredId = hover.get().agentId;
+    frame.pressedId = hover.get().pressedAgentId;
+    return frame;
+  }, [hover]);
   const onMotionFrame = useCallback(
     (settling: boolean, working: boolean) => {
-      if (settling || working) ambient.requestFrame(invalidate);
+      if (getTracker().active(performance.now())) invalidate();
+      else if (settling || working) ambient.requestFrame(invalidate);
     },
-    [ambient, invalidate]
+    [ambient, invalidate, getTracker]
   );
   useEffect(() => invalidate(), [invalidate, theme, ambient, frame, model]);
-  useEffect(() => {
-    const rig = controls.current;
-    if (!rig) return;
-    const { x, y, width, height } = model.bounds;
-    const box = new Box3(
-      new Vector3(x - 1, -0.3, y - 2),
-      new Vector3(x + width + 1, 1, y + height + 1)
-    );
-    // Measure the box in the selected camera basis, then let CameraControls
-    // solve its frustum fit. Fitting overhead before tilting clips front rows.
-    void rig.rotateTo(
-      cameraPreset === 'overhead' ? 0 : -0.12,
-      cameraPreset === 'overhead' ? 0.04 : cameraPreset === 'low' ? 1.0 : 0.8,
-      false
-    );
-    rig.update(0);
-    camera.updateMatrixWorld();
-    const extent = box
-      .clone()
-      .applyMatrix4(camera.matrixWorldInverse)
-      .getSize(new Vector3());
-    const center = box.getCenter(new Vector3());
-    void rig.moveTo(center.x, center.y, center.z, false);
-    void rig.dollyTo(
-      rig.getDistanceToFitBox(extent.x * 1.1, extent.y * 1.12, extent.z),
-      false
-    );
-    gl.domElement.setAttribute('data-camera-ready', cameraPreset);
-    invalidate();
-  }, [
-    model.bounds,
-    camera,
-    cameraPreset,
-    recenterToken,
-    size.width,
-    size.height,
-    gl,
-    invalidate,
-  ]);
-  const select = (id: string | null) => {
-    const target = model.targets.find(item => item.tile.agentId === id);
-    if (target?.agentId) onSelectAgent(target.agentId);
-    else if (target?.parentAgentId) {
-      if (target.childId && onSelectDelegationChild)
-        onSelectDelegationChild(target.parentAgentId, target.childId);
-      else onSelectAgent(target.parentAgentId);
-    }
-  };
   return (
     <>
-      <CameraControls
-        ref={controls}
-        makeDefault
-        minPolarAngle={0.02}
-        maxPolarAngle={1.25}
-        minDistance={4}
-        maxDistance={700}
-        smoothTime={reduced ? 0 : 0.22}
-        onUpdate={() => invalidate()}
+      <LatticeCamera
+        {...commands}
+        layout={model.presentation}
+        population={populationTiles}
+        tileProjects={model.tileProjects}
+        hover={hover}
+        press={press}
+        onDrillProject={onDrillProject}
+        reduced={reduced}
       />
       <group scale={[1, 0.3, 1]}>
         <TileRenderer
@@ -260,7 +308,7 @@ function QualityScene({
         />
       </group>
       <TileRenderer
-        tiles={detailedTiles}
+        tiles={displayTiles}
         surface="plane"
         theme={theme}
         material={material}
@@ -278,10 +326,10 @@ function QualityScene({
         requestFrame={invalidate}
         onMotionFrame={onMotionFrame}
         transmission={transmission && detailedTiles.length < 700}
-        onSelect={select}
+        interactive={false}
       />
       <TileRenderer
-        tiles={populationTiles}
+        tiles={displayPopulation}
         surface="plane"
         theme={theme}
         material={material}
@@ -290,7 +338,7 @@ function QualityScene({
         mark="off"
         motion={STILL}
         signal="paint"
-        readFrame={readFrame}
+        readFrame={readPopulation}
         marks={MARKS}
         reducedMotion
         lighting={false}
@@ -319,12 +367,16 @@ function QualityScene({
           zIndexRange={[30, 0]}
         >
           <button
+            data-board-zone-tier={narrow ? 'nano' : 'full'}
             data-board-zone={zone.id}
+            data-board-work-counts={JSON.stringify(zone.statusCounts)}
             disabled={zone.isAggregate}
             onPointerDown={event => event.stopPropagation()}
             onClick={event => {
               event.stopPropagation();
-              onDrillProject(zone.id);
+              if (event.shiftKey && commands.onToggleZoneSelect)
+                commands.onToggleZoneSelect(zone.id);
+              else onDrillProject(zone.id);
             }}
             aria-label={`Open Project ${zone.label}`}
             className="flex w-max items-center gap-2 rounded-md px-2 py-1 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -343,7 +395,7 @@ function QualityScene({
                 background: spatialProjectIdentityColor(theme, zone.id),
               }}
             />
-            {zone.label}
+            {!narrow && zone.label}
             <span
               className="font-mono text-chrome-meta font-normal"
               style={{ color: theme.labelMuted }}
@@ -362,15 +414,69 @@ function QualityScene({
           zIndexRange={[20, 0]}
         >
           <button
-            data-quality-agent={target.tile.id}
+            data-lattice-unit={target.tile.id}
+            data-board-work={
+              target.stopped ? 'stopped' : (target.tile.status ?? 'unreported')
+            }
+            data-board-agent={target.agentId ?? undefined}
+            data-board-status-light={target.reading}
+            data-board-session-state={
+              target.agentId ? (target.stopped ? 'stopped' : 'live') : undefined
+            }
+            data-board-delegation-parent={target.parentAgentId}
+            data-board-delegation-unit={
+              target.parentAgentId ? target.tile.id : undefined
+            }
+            aria-current={
+              target.agentId && layout.selectedAgentId === target.agentId
+                ? true
+                : undefined
+            }
             aria-label={target.label}
             title={target.label}
             aria-pressed={
               target.agentId ? multiSelection?.has(target.agentId) : undefined
             }
-            onPointerDown={event => event.stopPropagation()}
+            onPointerEnter={() => hover.setAgent(target.tile.agentId ?? null)}
+            onPointerLeave={() => {
+              if (hover.get().agentId === target.tile.agentId)
+                hover.setAgent(null);
+              if (hover.get().pressedAgentId === target.tile.agentId)
+                press(null);
+            }}
+            onFocus={() => hover.setAgent(target.tile.agentId ?? null)}
+            onBlur={() => {
+              if (hover.get().agentId === target.tile.agentId)
+                hover.setAgent(null);
+              if (hover.get().pressedAgentId === target.tile.agentId)
+                press(null);
+            }}
+            onPointerDown={event => {
+              event.stopPropagation();
+              if (event.button === 0) press(target.tile.agentId ?? null);
+            }}
+            onPointerUp={() => press(null)}
+            onPointerCancel={() => press(null)}
+            onKeyDown={event => {
+              if (!event.repeat && (event.key === 'Enter' || event.key === ' '))
+                press(target.tile.agentId ?? null);
+            }}
+            onKeyUp={() => press(null)}
             onClick={event => {
               event.stopPropagation();
+              if (
+                event.shiftKey &&
+                target.agentId &&
+                commands.onToggleAgentSelect
+              ) {
+                commands.onToggleAgentSelect(target.agentId);
+                return;
+              }
+              const project = model.tileProjects.get(target.tile.id);
+              if (layout.altitude === 'fleet' && project) {
+                onDrillProject(project);
+                return;
+              }
               return target.agentId
                 ? onSelectAgent(target.agentId)
                 : target.parentAgentId
@@ -382,7 +488,7 @@ function QualityScene({
                     : onSelectAgent(target.parentAgentId)
                   : undefined;
             }}
-            className="group relative grid h-8 w-8 place-items-center rounded-full text-chrome-label outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="group relative grid h-12 w-12 place-items-center rounded-full text-chrome-label outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{ color: theme.label }}
           >
             {target.overflow > 0 ? (

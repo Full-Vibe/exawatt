@@ -147,7 +147,17 @@ function HandoffFixture() {
           window as unknown as { __EVAL_CAM__?: { zoom: number } }
         ).__EVAL_CAM__;
         if (camera) {
-          evalState().entryZoom = camera.zoom;
+          const perspective =
+            document
+              .querySelector('[data-spatial-board]')
+              ?.getAttribute('data-board-view') === 'v2';
+          evalState().entryZoom = perspective
+            ? ((
+                window as unknown as {
+                  __EVAL_BOARD_VIEWPORT__?: { zoom: number };
+                }
+              ).__EVAL_BOARD_VIEWPORT__?.zoom ?? null)
+            : camera.zoom;
         } else if (attempt < 12) {
           window.requestAnimationFrame(() => readZoom(attempt + 1));
         }

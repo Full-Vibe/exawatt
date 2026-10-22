@@ -29,6 +29,8 @@ import {
 import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide';
 import type { OperationsBoardHandle } from './operations-board-canvas';
 import type { FleetView, FleetMaterial } from '@exawatt/core/desktop-bridge';
+import { boardLatticeModel } from './tiles/board-lattice-model';
+import type { BoardCameraPreset } from './tiles/operations-board-tiles-canvas';
 import { boardViewFor } from './operations-board-views';
 import { boardArrowStep } from './board-arrow-walk';
 import type {
@@ -259,7 +261,7 @@ function BoardMiniMap({
             <circle
               key={zone.id}
               cx={zone.minimapRect.x + minimapRadius}
-              cy={zone.minimapRect.y + minimapRadius}
+              cy={zone.minimapRect.y + zone.minimapRect.height / 2}
               r={minimapRadius}
               fill={
                 !zone.visible
@@ -319,7 +321,7 @@ function initialRendererAttempts() {
  * boundary is what makes that fact count.
  */
 export const OperationsBoardSurface = memo(function OperationsBoardSurface({
-  layout,
+  layout: sourceLayout,
   projection: requestedProjection,
   fleetView = 'v1',
   material = 'gummy',
@@ -364,7 +366,10 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   multiSelection?: ReadonlySet<string>;
   onToggleAgentSelect?: (agentId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
-  onBandSelect?: (band: SpatialBoardRect) => void;
+  onBandSelect?: (
+    band: SpatialBoardRect,
+    presentation?: SpatialBoardLayout
+  ) => void;
   /** Shift+arrows (V3.2's owed keyboard path): the Agents the walk passes
    *  join the multi-selection, the keyboard twin of shift-clicking each. */
   onExtendAgentSelection?: (agentIds: readonly string[]) => void;
@@ -385,6 +390,20 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
    * the app-global AppearanceProvider snapshot. */
   resolvedAppearance?: ResolvedAppearance;
 }) {
+  const layout = useMemo(
+    () =>
+      fleetView === 'v2'
+        ? boardLatticeModel(sourceLayout, sourceMarks ?? {}).presentation
+        : sourceLayout,
+    [fleetView, sourceLayout, sourceMarks]
+  );
+  const [cameraPreset, setCameraPreset] =
+    useState<BoardCameraPreset>('perspective');
+  const selectBand = useCallback(
+    (band: SpatialBoardRect, presented = layout) =>
+      onBandSelect?.(band, presented),
+    [onBandSelect, layout]
+  );
   const view = boardViewFor(fleetView);
   const projection = view.projections.includes(requestedProjection)
     ? requestedProjection
@@ -489,8 +508,11 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     [layout.pieces]
   );
   const units = useMemo(
-    () => delegationUnits ?? selectSpatialDelegationUnits(layout),
-    [delegationUnits, layout]
+    () =>
+      fleetView === 'v2'
+        ? selectSpatialDelegationUnits(layout)
+        : (delegationUnits ?? selectSpatialDelegationUnits(layout)),
+    [delegationUnits, layout, fleetView]
   );
   // Arrow navigation walks one field of Agents and delegated children, so the
   // keyboard reaches everything the board draws as a unit.
@@ -551,9 +573,10 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
               window.sessionStorage.getItem(viewportStorageKey)
             )
           : null);
-      if (viewport) handle.restoreViewport(viewport);
+      if (viewport && (fleetView === 'v2') === Boolean(viewport.perspective))
+        handle.restoreViewport(viewport);
     },
-    [rendererKey, viewportStorageKey]
+    [rendererKey, viewportStorageKey, fleetView]
   );
 
   const updateViewport = useCallback(
@@ -664,7 +687,8 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
         return;
       }
       if (event.key === '0') {
-        if (layout.altitude === 'fleet') controller.current?.recenter();
+        if (view.id === 'v1' && layout.altitude === 'fleet')
+          controller.current?.recenter();
         else {
           controller.current?.focusFleet();
           onOverview();
@@ -827,7 +851,8 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             <ViewCanvas
               material={material}
               sourceMarks={sourceMarks}
-              layout={layout}
+              layout={sourceLayout}
+              cameraPreset={cameraPreset}
               projection={projection}
               lens={lens}
               controllerRef={controller}
@@ -839,7 +864,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
               multiSelection={multiSelection}
               onToggleAgentSelect={onToggleAgentSelect}
               onToggleZoneSelect={onToggleZoneSelect}
-              onBandSelect={onBandSelect}
+              onBandSelect={onBandSelect ? selectBand : undefined}
               bandOverlayRef={bandOverlay}
               followSelection={followSelection}
               touchSelectionMode={touchSelectionMode}
@@ -956,6 +981,26 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
             >
               Select units
             </button>
+          )}
+          {fleetView === 'v2' && (
+            <label
+              className="exa-material-chrome flex min-h-11 items-center gap-2 border px-3 text-chrome-label"
+              style={spatialMaterialFrame(theme)}
+            >
+              Camera
+              <select
+                aria-label="Camera"
+                value={cameraPreset}
+                onChange={event =>
+                  setCameraPreset(event.target.value as BoardCameraPreset)
+                }
+                className="bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="perspective">High angle</option>
+                <option value="low">Low angle</option>
+                <option value="overhead">Overhead</option>
+              </select>
+            </label>
           )}
           {view.projections.length > 1 && (
             <div

@@ -1,4 +1,8 @@
 import type { SpatialBoardLayout, SpatialBoardRect } from '@exawatt/ui-model';
+import {
+  statusLightWord,
+  workStateReading,
+} from '@/components/status-light/protocol';
 import type { TileInstance } from '@/components/tiles/tile-contract';
 import { boardTileModel } from '@/components/fleet/spatial/operations-board/tiles/board-tiles-model';
 import { hexSpiral, axialKey, type Axial } from '@/components/tiles/hex';
@@ -11,9 +15,9 @@ function point(cell: Axial) {
   };
 }
 
-/** Gallery presentation addresses. Source identities, readings and census stay
+/** Fleet v2 presentation addresses. Source identities, readings and census stay
  * immutable. Bodies, sockets, lineage and input all consume this one mapping. */
-export function qualityModel(
+export function boardLatticeModel(
   layout: SpatialBoardLayout,
   marks: Readonly<Record<string, string>>
 ) {
@@ -27,6 +31,7 @@ export function qualityModel(
     agentId: string | null;
     parentAgentId?: string;
     childId?: string;
+    reading: ReturnType<typeof workStateReading>;
     stopped: boolean;
     overflow: number;
   }[] = [];
@@ -88,8 +93,9 @@ export function qualityModel(
       local.push(tile);
       targets.push({
         tile,
-        label: `${piece.label} · ${piece.sessionState === 'stopped' ? 'Stopped' : piece.status}`,
+        label: `${piece.label} · ${piece.sessionState === 'stopped' ? 'Stopped' : statusLightWord(workStateReading(piece.status))}`,
         agentId: piece.agentId,
+        reading: workStateReading(piece.status),
         stopped: piece.sessionState === 'stopped',
         overflow: 0,
       });
@@ -116,6 +122,7 @@ export function qualityModel(
           agentId: null,
           parentAgentId: unit.parentAgentId,
           childId: unit.childId ?? undefined,
+          reading: unit.kind === 'child' ? 'active' : 'unreported',
           stopped: false,
           overflow: unit.overflowCount ?? 0,
         });
@@ -192,5 +199,67 @@ export function qualityModel(
       Math.max(...frames.map(item => item.rect.y + item.rect.height)) -
       bounds.y;
   }
-  return { tiles, ground, targets, tethers, territories, bounds, tileProjects };
+  const allBounds = territories.length
+    ? {
+        x: Math.min(...territories.map(item => item.rect.x)),
+        y: Math.min(...territories.map(item => item.rect.y)),
+        width: Math.max(
+          ...territories.map(item => item.rect.x + item.rect.width)
+        ),
+        height: Math.max(
+          ...territories.map(item => item.rect.y + item.rect.height)
+        ),
+      }
+    : bounds;
+  const byId = new Map(tiles.map(tile => [tile.id, tile]));
+  const presentation: SpatialBoardLayout = {
+    ...layout,
+    bounds: allBounds,
+    cameraBounds: bounds,
+    minimap: { ...layout.minimap, bounds: allBounds },
+    zones: layout.zones.map(zone => {
+      const rect = territories.find(item => item.zone.id === zone.id)?.rect;
+      return rect
+        ? {
+            ...zone,
+            rect,
+            minimapRect: rect,
+            radius: Math.max(rect.width, rect.height) / 2,
+            unitSize: 1.48,
+          }
+        : zone;
+    }),
+    pieces: layout.pieces.map(piece => {
+      const tile = byId.get(piece.id);
+      return tile
+        ? { ...piece, x: tile.x, y: tile.y, size: (tile.radius ?? 1) * 1.64 }
+        : piece;
+    }),
+    delegationUnits: layout.delegationUnits.map(unit => {
+      const tile = byId.get(unit.id);
+      const parent = byId.get(unit.parentPieceId);
+      return tile && parent
+        ? {
+            ...unit,
+            x: tile.x,
+            y: tile.y,
+            parentX: parent.x,
+            parentY: parent.y,
+            size: (tile.radius ?? 1) * 1.64,
+          }
+        : unit;
+    }),
+  };
+  return {
+    tiles,
+    ground,
+    targets,
+    tethers,
+    territories,
+    bounds,
+    tileProjects,
+    presentation,
+  };
 }
+
+export type BoardLatticeModel = ReturnType<typeof boardLatticeModel>;

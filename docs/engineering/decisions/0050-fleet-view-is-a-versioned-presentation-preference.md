@@ -177,3 +177,23 @@ Status-colored bodies replace routine D40 overlays in this candidate; stopped
 and overflow retain quiet text exceptions and every individual work reading
 remains accessible in DOM labels/tooltips. These are review proposals for v2,
 not an unreviewed change to v1, production camera ownership or saved preferences.
+
+
+## Accepted lattice adoption (2026-10-21)
+
+**The operator accepted the composition and authorized v2 adoption, retaining v1 as default.**
+“Looks good overall though, proceed” follows the lattice/perspective review,
+with explicit corrections for missing parent/child hover and inaudible presses.
+This supersedes the gallery-only restriction above and v2's old routine D40
+annotation/no-orbit constraints. Native XZ perspective has high, low and overhead
+presets. One presentation adapter owns bodies, ground, lineage, selection bands,
+keyboard geometry and minimap addresses; the source model remains immutable.
+The perspective rig implements the existing board command handle, preserves
+host cadence, reduced motion and lifecycle cleanup, and carries Team card
+identities into projected territory before the arrival pull-back. v1 retains
+its renderer, camera and default preference. DOM input owns individual hover,
+press, keyboard activation and material audio; aggregate population retains
+truthful Project drill behavior. The separate candidate is retired into the
+standing `/hud-gallery/board-study` bench. Product gates measure work colors and
+accessible readings for v2, and actual material shader motion for power checks;
+requiring removed rotor geometry would test an obsolete appearance.

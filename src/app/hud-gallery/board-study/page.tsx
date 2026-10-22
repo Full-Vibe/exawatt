@@ -145,9 +145,12 @@ function BoardStudyBench() {
 
   const selectProject = useCallback(
     (projectId: string) => {
-      router.replace(href(state, { selectedProjectId: projectId }), {
-        scroll: false,
-      });
+      router.replace(
+        href(state, { selectedProjectId: projectId, altitude: 'project' }),
+        {
+          scroll: false,
+        }
+      );
     },
     [router, state]
   );
@@ -186,11 +189,15 @@ function BoardStudyBench() {
     () => new Set<string>()
   );
   const bandSelect = useCallback(
-    (band: SpatialBoardRect) => {
-      const caught = selectSpatialBandSelection(layout, delegationUnits, band);
+    (band: SpatialBoardRect, presentation = layout) => {
+      const caught = selectSpatialBandSelection(
+        presentation,
+        selectSpatialDelegationUnits(presentation),
+        band
+      );
       setSelected(new Set(caught.agentIds));
     },
-    [delegationUnits, layout]
+    [layout]
   );
   const toggleAgent = useCallback((agentId: string) => {
     setSelected(previous => {
@@ -326,7 +333,7 @@ function BoardStudyBench() {
           <span>{active.note}</span>
         </div>
 
-        {state.view === 'v2' ? (
+        {state.view === 'v2' && state.material === 'compare' ? (
           <div
             className={
               state.material === 'compare'
@@ -368,11 +375,21 @@ function BoardStudyBench() {
         ) : (
           <div className="h-[76svh] min-h-[520px] overflow-hidden rounded-lg border border-border">
             <OperationsBoardSurface
+              viewportStorageKey={`exawatt:board-bench:${state.fixture}:${state.view}:${state.altitude}`}
+              fleetView={state.view}
+              material={state.material === 'compare' ? 'gummy' : state.material}
+              sourceMarks={sourceMarks}
               layout={layout}
               projection={state.projection}
               onDrillProject={selectProject}
-              onSelectAgent={() => undefined}
-              onOverview={() => undefined}
+              onSelectAgent={id => {
+                if (id) toggleAgent(id);
+              }}
+              onOverview={() =>
+                router.replace(href(state, { altitude: 'fleet' }), {
+                  scroll: false,
+                })
+              }
               onProjectionChange={() => undefined}
               multiSelection={selected}
               onToggleAgentSelect={toggleAgent}

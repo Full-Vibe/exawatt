@@ -4,6 +4,7 @@
  *
  * Run: EXA_BASE=http://localhost:7000 pnpm eval:spatial
  */
+import { sampleBoardWorkMotion as sampleRotorsInPage } from '../lib/board-work-motion-eval.mjs';
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -75,17 +76,6 @@ function checkEconomyCadence({ painted, ticks, tickMs, rotors }, label) {
 }
 
 /** Working rotors in the live scene: the half-disc geometry marks them. */
-function sampleRotorsInPage() {
-  const before = new Map();
-  window.__EVAL_SCENE__.traverse(node => {
-    if (
-      node.name.startsWith('mark:') &&
-      node.parent?.geometry?.parameters?.thetaLength === Math.PI
-    )
-      before.set(node, node.rotation.z);
-  });
-  return before;
-}
 
 /** Every working rotor turns while its Agent works, at any power (BUG-263);
  * only reduced motion rests them. Vacuous when nothing on the board works. */
@@ -639,6 +629,7 @@ async function checkMarkStackDrawOrder(page) {
     return layers;
   });
   check(stack.bodies.length > 0, 'Board drew no Agent bodies');
+  if (fleetView === 'v2') return stack; // Color-led bodies are checked by status-visibility.
   check(stack.marks.length > 1, 'Board drew no status marks');
   const after = (a, b) =>
     a.pass > b.pass || (a.pass === b.pass && a.order > b.order);
@@ -724,62 +715,63 @@ async function checkDisplayResolution(browser, lowPower = false) {
         expected,
         { timeout: 2000 }
       );
-      const sample = await page.evaluate(async economy => {
-        const gl = window.__EVAL_GL__;
-        const canvas = gl.domElement;
-        // The entrance choreography paints every refresh for about 1.4 s.
-        // Under economy the ambient loop then leaves refreshes unpainted, so
-        // wait for the first quiet refresh (the effect, not a duration); the
-        // display cadence never produces one, which the deadline reports.
-        let settled = !economy;
-        for (let tick = 0; tick < 240 && !settled; tick++) {
-          const painted = gl.info.render.frame;
-          await new Promise(resolve => requestAnimationFrame(resolve));
-          settled = gl.info.render.frame === painted;
-        }
-        const before = new Map();
-        window.__EVAL_SCENE__.traverse(node => {
-          if (node.name.startsWith('mark:')) before.set(node, node.rotation.z);
-        });
-        const frameStart = gl.info.render.frame;
-        const times = [];
-        let painted = 0;
-        for (let frame = 0; frame < 20; frame++) {
-          const renders = gl.info.render.frame;
-          times.push(
-            await new Promise(resolve => requestAnimationFrame(resolve))
-          );
-          if (gl.info.render.frame !== renders) painted += 1;
-        }
-        const intervals = times
-          .slice(1)
-          .map((time, index) => time - times[index])
-          .sort((a, b) => a - b);
-        const rotors = [];
-        const quiet = [];
-        for (const [node, angle] of before) {
-          const isRotor =
-            node.parent?.geometry?.parameters?.thetaLength === Math.PI;
-          (isRotor ? rotors : quiet).push(node.rotation.z !== angle);
-        }
-        return {
-          dpr: window.devicePixelRatio,
-          rendererDpr: gl.getPixelRatio(),
-          width: canvas.width,
-          cssWidth: canvas.clientWidth,
-          retained:
-            canvas === window.__DISPLAY_ORIGINAL__.canvas &&
-            window.__EVAL_CAM__ === window.__DISPLAY_ORIGINAL__.camera,
-          rotors: rotors.length,
-          moving: rotors.filter(Boolean).length,
-          quietMoved: quiet.some(Boolean),
-          renders: gl.info.render.frame - frameStart,
-          painted,
-          ticks: times.length,
-          tickMs: intervals[Math.floor(intervals.length / 2)] ?? null,
-          settled,
-        };
-      }, lowPower);
+      const sample = await page.evaluate(
+        async ({ economy, sampler }) => {
+          const gl = window.__EVAL_GL__;
+          const canvas = gl.domElement;
+          // The entrance choreography paints every refresh for about 1.4 s.
+          // Under economy the ambient loop then leaves refreshes unpainted, so
+          // wait for the first quiet refresh (the effect, not a duration); the
+          // display cadence never produces one, which the deadline reports.
+          let settled = !economy;
+          for (let tick = 0; tick < 240 && !settled; tick++) {
+            const painted = gl.info.render.frame;
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            settled = gl.info.render.frame === painted;
+          }
+          const before = new Function(`return (${sampler})()`)();
+          const frameStart = gl.info.render.frame;
+          const times = [];
+          let painted = 0;
+          for (let frame = 0; frame < 20; frame++) {
+            const renders = gl.info.render.frame;
+            times.push(
+              await new Promise(resolve => requestAnimationFrame(resolve))
+            );
+            if (gl.info.render.frame !== renders) painted += 1;
+          }
+          const intervals = times
+            .slice(1)
+            .map((time, index) => time - times[index])
+            .sort((a, b) => a - b);
+          const rotors = [];
+          const quiet = [];
+          for (const [node, angle] of before) {
+            const isRotor =
+              !node.isObject3D ||
+              node.parent?.geometry?.parameters?.thetaLength === Math.PI;
+            (isRotor ? rotors : quiet).push(node.rotation.z !== angle);
+          }
+          return {
+            dpr: window.devicePixelRatio,
+            rendererDpr: gl.getPixelRatio(),
+            width: canvas.width,
+            cssWidth: canvas.clientWidth,
+            retained:
+              canvas === window.__DISPLAY_ORIGINAL__.canvas &&
+              window.__EVAL_CAM__ === window.__DISPLAY_ORIGINAL__.camera,
+            rotors: rotors.length,
+            moving: rotors.filter(Boolean).length,
+            quietMoved: quiet.some(Boolean),
+            renders: gl.info.render.frame - frameStart,
+            painted,
+            ticks: times.length,
+            tickMs: intervals[Math.floor(intervals.length / 2)] ?? null,
+            settled,
+          };
+        },
+        { economy: lowPower, sampler: sampleRotorsInPage.toString() }
+      );
       check(
         sample.settled,
         'Low power painted every refresh for 240 ticks; economy must bound ambient frames'
@@ -1295,7 +1287,11 @@ async function runHandoffScenario(browser, scenario) {
       await page.waitForTimeout(1_500); // pull-back settles
       const state = await page.evaluate(() => ({
         ...window.__EVAL_HANDOFF__,
-        settledZoom: window.__EVAL_CAM__?.zoom ?? null,
+        settledZoom:
+          document.querySelector('[data-spatial-board]')?.dataset.boardView ===
+          'v2'
+            ? window.__EVAL_BOARD_VIEWPORT__?.zoom
+            : (window.__EVAL_CAM__?.zoom ?? null),
       }));
       check(state.attempted, 'Handoff was not attempted');
       check(

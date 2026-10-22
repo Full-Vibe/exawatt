@@ -345,17 +345,17 @@ export function SpatialFleetClient() {
     ReadonlySet<string>
   >(() => new Set<string>());
   const bandSelect = useCallback(
-    (band: SpatialBoardRect) => {
+    (band: SpatialBoardRect, presentation = boardLayout) => {
       const caught = selectSpatialBandSelection(
-        boardLayout,
-        delegationUnits,
+        presentation,
+        selectSpatialDelegationUnits(presentation),
         band,
         visibleAgentIds
       );
       setMultiSelectedIds(new Set(caught.agentIds));
       setSelectedChildUnitIds(new Set(caught.childUnitIds));
     },
-    [boardLayout, delegationUnits, visibleAgentIds]
+    [boardLayout, visibleAgentIds]
   );
   // Live units only: a child whose parent stopped reporting it must not linger
   // in the working set as a phantom member.

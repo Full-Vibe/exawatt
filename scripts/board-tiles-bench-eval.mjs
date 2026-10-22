@@ -142,12 +142,7 @@ try {
     ];
     return (
       targets.length > 0 &&
-      targets.every(
-        node =>
-          parseFloat(
-            getComputedStyle(node).getPropertyValue('--board-hit-size')
-          ) > 0
-      )
+      targets.every(node => node.getBoundingClientRect().width > 0)
     );
   });
   const hits = await fanout.evaluate(() =>
