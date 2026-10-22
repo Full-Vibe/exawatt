@@ -215,6 +215,25 @@ function createChecker(scripts, declarations, root) {
   const getSourceFile = host.getSourceFile.bind(host);
   host.readFile = file => files.get(path.resolve(file)) ?? readFile(file);
   host.fileExists = file => files.has(path.resolve(file)) || fileExists(file);
+  // Virtual files resolve each other's imports, even under a directory a
+  // fixture invents.
+  const directories = new Set(
+    [...files.keys()].flatMap(file => {
+      const out = [];
+      for (
+        let at = path.dirname(file);
+        at !== path.dirname(at);
+        at = path.dirname(at)
+      ) {
+        out.push(at);
+      }
+      return out;
+    })
+  );
+  const directoryExists = host.directoryExists?.bind(host);
+  host.directoryExists = directory =>
+    directories.has(path.resolve(directory)) ||
+    (directoryExists ? directoryExists(directory) : true);
   host.getSourceFile = (file, language, onError, create) => {
     const text = files.get(path.resolve(file));
     if (text === undefined) {
@@ -444,29 +463,63 @@ function writtenText(node, checker, seen = new Set()) {
       ? { display: at.getText(), runs, fold: false }
       : undefined;
   }
-  if (!ts.isIdentifier(at) || !checker) return undefined;
+  if (!checker) return undefined;
+  // `option.label`: the literal each object the value can be wrote there.
+  if (ts.isPropertyAccessExpression(at)) {
+    return combined(
+      (checker.getSymbolAtLocation(at.name)?.declarations ?? [])
+        .filter(
+          declaration =>
+            ts.isPropertyAssignment(declaration) && !fromProduct(declaration)
+        )
+        .map(property => writtenText(property.initializer, checker, seen))
+    );
+  }
+  if (!ts.isIdentifier(at)) return undefined;
   const declaration = checker.getSymbolAtLocation(at)?.valueDeclaration;
-  if (
-    !declaration ||
-    seen.has(declaration) ||
-    !ts.isVariableDeclaration(declaration)
-  ) {
+  if (!declaration || seen.has(declaration) || fromProduct(declaration)) {
     return undefined;
   }
   seen.add(declaration);
+  if (ts.isParameter(declaration) && ts.isIdentifier(declaration.name)) {
+    // A helper's parameter carries whatever its callers in the file pass.
+    return combined(
+      callersOf(declaration.parent, checker).map(call =>
+        writtenText(
+          call.arguments[declaration.parent.parameters.indexOf(declaration)],
+          checker,
+          seen
+        )
+      )
+    );
+  }
+  if (ts.isBindingElement(declaration)) {
+    const key = declaration.propertyName ?? declaration.name;
+    const pattern = declaration.parent;
+    if (!ts.isIdentifier(key) || !ts.isObjectBindingPattern(pattern)) {
+      return undefined;
+    }
+    const property = checker.getPropertyOfType(
+      checker.getTypeAtLocation(pattern),
+      key.text
+    );
+    return combined(
+      (property?.declarations ?? [])
+        .filter(
+          declaration =>
+            ts.isPropertyAssignment(declaration) && !fromProduct(declaration)
+        )
+        .map(assignment => writtenText(assignment.initializer, checker, seen))
+    );
+  }
+  if (!ts.isVariableDeclaration(declaration)) return undefined;
   const statement = declaration.parent?.parent;
   if (statement && ts.isForOfStatement(statement)) {
-    const iterable = unwrap(statement.expression);
-    if (!ts.isArrayLiteralExpression(iterable)) return undefined;
-    const texts = iterable.elements
-      .map(element => writtenText(element, checker, seen))
-      .filter(Boolean);
-    return texts.length > 0
-      ? {
-          display: texts.map(text => text.display).join(' | '),
-          runs: texts.flatMap(text => text.runs),
-          fold: texts.some(text => text.fold),
-        }
+    const iterable = arrayLiteral(statement.expression, checker);
+    return iterable
+      ? combined(
+          iterable.elements.map(element => writtenText(element, checker, seen))
+        )
       : undefined;
   }
   if (
@@ -477,6 +530,72 @@ function writtenText(node, checker, seen = new Set()) {
     return writtenText(declaration.initializer, checker, seen);
   }
   return undefined;
+}
+
+/**
+ * Whether a value comes from product source an eval imports (a registry, a
+ * manifest). Copy read from where the product reads it moves with the
+ * product, so it is the contract, not a second copy of it.
+ */
+const fromProduct = declaration =>
+  /\.(?:[cm]?ts|tsx)$/u.test(declaration.getSourceFile().fileName);
+
+function combined(texts) {
+  const found = texts.filter(Boolean);
+  return found.length > 0
+    ? {
+        display: found.map(text => text.display).join(' | '),
+        runs: found.flatMap(text => text.runs),
+        fold: found.some(text => text.fold),
+      }
+    : undefined;
+}
+
+/** An array literal, written in place or bound to a constant. */
+function arrayLiteral(node, checker) {
+  const at = unwrap(node);
+  if (ts.isArrayLiteralExpression(at)) return at;
+  if (!ts.isIdentifier(at)) return undefined;
+  const declaration = checker.getSymbolAtLocation(at)?.valueDeclaration;
+  return declaration &&
+    ts.isVariableDeclaration(declaration) &&
+    declaration.parent.flags & ts.NodeFlags.Const &&
+    declaration.initializer &&
+    ts.isArrayLiteralExpression(unwrap(declaration.initializer))
+    ? unwrap(declaration.initializer)
+    : undefined;
+}
+
+const callSites = new WeakMap();
+
+/** Every call in its file to the function `fn` declares. */
+function callersOf(fn, checker) {
+  const name =
+    ts.isFunctionDeclaration(fn) && fn.name
+      ? fn.name
+      : (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) &&
+          ts.isVariableDeclaration(fn.parent) &&
+          ts.isIdentifier(fn.parent.name)
+        ? fn.parent.name
+        : undefined;
+  const symbol = name && checker.getSymbolAtLocation(name);
+  if (!symbol) return [];
+  const sourceFile = fn.getSourceFile();
+  let calls = callSites.get(sourceFile);
+  if (!calls) {
+    calls = [];
+    const visit = node => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        calls.push(node);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    callSites.set(sourceFile, calls);
+  }
+  return calls.filter(
+    call => checker.getSymbolAtLocation(call.expression) === symbol
+  );
 }
 
 /** Whether a value is the text, or a copy attribute, an element renders. */

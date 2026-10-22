@@ -234,6 +234,57 @@ check('offers start', (await panelText(page)).includes('Start'));
   );
 });
 
+test('copy handed to a helper, or kept in a fixture table, fails at the locator', () => {
+  assert.deepEqual(
+    copy(`
+const pick = (page, label) => page.getByRole('option', { name: label });
+await pick(page, 'Start').click();
+const ROWS = [{ id: 'back', label: 'Return focus to the Session' }];
+for (const row of ROWS) await page.getByText(row.label).waitFor();
+for (const { label } of ROWS) await page.getByText(label).waitFor();
+`),
+    [
+      { line: 2, kind: 'getByRole name' },
+      { line: 5, kind: 'getByText' },
+      { line: 6, kind: 'getByText' },
+    ]
+  );
+});
+
+test('copy read from the product source an eval imports is the contract', () => {
+  const labels = "export const LABELS = { start: 'Start' } as const;";
+  const { copy: found } = check(
+    `
+import { LABELS } from './labels.ts';
+await page.getByRole('button', { name: LABELS.start }).click();
+`,
+    {
+      product: { ...PRODUCT, 'fixture/labels.ts': labels },
+      declarations: new Map([...BRIDGE, ['fixture/labels.ts', labels]]),
+    }
+  );
+  assert.deepEqual(found, []);
+  // The same table kept in a script is a second copy of the product's words.
+  const { copy: copied } = checkEvalHandles({
+    scripts: new Map([
+      [
+        'fixture/eval.mjs',
+        `import { LABELS } from './labels.mjs';
+await page.getByRole('button', { name: LABELS.start }).click();`,
+      ],
+      ['fixture/labels.mjs', labels.replace(' as const', '')],
+    ]),
+    declarations: BRIDGE,
+    product: new Map(Object.entries(PRODUCT)),
+    root,
+    bridgeDirectory: 'fixture/bridge/',
+  });
+  assert.deepEqual(
+    copied.map(({ file, line }) => ({ file, line })),
+    [{ file: 'fixture/eval.mjs', line: 2 }]
+  );
+});
+
 test('handles, roles and text the eval wrote itself pass', () => {
   assert.deepEqual(
     copy(`
