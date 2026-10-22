@@ -106,3 +106,143 @@ describe('cmdk group ordering (FIX-007)', () => {
     expect(headings()).toEqual(['Projects', 'Sessions']);
   });
 });
+
+/**
+ * Disabled rows (BUG-313). cmdk sorted only the rows the cursor can land on
+ * and appended each to the end of its group, so a disabled row was never
+ * moved and ended up above every enabled row in its group, whatever it
+ * scored: "unread" listed a disabled "Move left" above "Mark unread", while
+ * ⏎ ran Mark unread. The rule now: a disabled row ranks by its score like any
+ * other row and loses every tie to an enabled one, inside a group and between
+ * groups by their best row. The cursor still skips it.
+ *
+ * Scores come from a table through cmdk's own `filter` prop, so each case
+ * states exactly how well every row matches.
+ */
+interface ScoredRow {
+  value: string;
+  score: number;
+  disabled?: boolean;
+}
+
+function ScoredHarness({
+  groups,
+}: {
+  groups: ReadonlyArray<{ heading: string; rows: readonly ScoredRow[] }>;
+}) {
+  const scores = new Map(
+    groups.flatMap(group => group.rows.map(row => [row.value, row.score]))
+  );
+  return (
+    <Command shouldFilter filter={value => scores.get(value) ?? 0}>
+      <CommandInput placeholder="search" />
+      <CommandList>
+        {groups.map(group => (
+          <CommandGroup key={group.heading} heading={group.heading}>
+            {group.rows.map(row => (
+              <CommandItem
+                key={row.value}
+                value={row.value}
+                disabled={row.disabled}
+              >
+                {row.value}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        ))}
+      </CommandList>
+    </Command>
+  );
+}
+
+const rowOrder = () =>
+  Array.from(document.querySelectorAll('[cmdk-item]')).map(
+    el => el.textContent
+  );
+const cursorRow = () =>
+  document.querySelector('[cmdk-item][aria-selected="true"]')?.textContent;
+const search = (query: string) =>
+  fireEvent.change(screen.getByPlaceholderText('search'), {
+    target: { value: query },
+  });
+
+describe('cmdk ranks disabled rows by their score (BUG-313)', () => {
+  it('ranks a weakly matching disabled row below a better enabled match', () => {
+    render(
+      <ScoredHarness
+        groups={[
+          {
+            heading: 'Session',
+            rows: [
+              { value: 'Move left', score: 0.02, disabled: true },
+              { value: 'Rename', score: 0.3 },
+              { value: 'Mark unread', score: 6 },
+            ],
+          },
+        ]}
+      />
+    );
+    search('unread');
+    expect(rowOrder()).toEqual(['Mark unread', 'Rename', 'Move left']);
+    expect(cursorRow()).toBe('Mark unread');
+  });
+
+  it('ranks a disabled row that matches best above weaker enabled rows', () => {
+    render(
+      <ScoredHarness
+        groups={[
+          {
+            heading: 'Session',
+            rows: [
+              { value: 'Rename', score: 0.3 },
+              { value: 'Move left', score: 8, disabled: true },
+            ],
+          },
+        ]}
+      />
+    );
+    search('move left');
+    expect(rowOrder()).toEqual(['Move left', 'Rename']);
+    // the cursor never lands on it
+    expect(cursorRow()).toBe('Rename');
+  });
+
+  it('gives a tie to the enabled row', () => {
+    render(
+      <ScoredHarness
+        groups={[
+          {
+            heading: 'Session',
+            rows: [
+              { value: 'Move left', score: 7, disabled: true },
+              { value: 'Move right', score: 7 },
+            ],
+          },
+        ]}
+      />
+    );
+    search('move');
+    expect(rowOrder()).toEqual(['Move right', 'Move left']);
+    expect(cursorRow()).toBe('Move right');
+  });
+
+  it('gives a tie between groups to the group whose best row is enabled', () => {
+    render(
+      <ScoredHarness
+        groups={[
+          {
+            heading: 'Session',
+            rows: [{ value: 'Move Session left', score: 8, disabled: true }],
+          },
+          {
+            heading: 'Project',
+            rows: [{ value: 'Move Project left', score: 8 }],
+          },
+        ]}
+      />
+    );
+    search('move left');
+    expect(headings()).toEqual(['Project', 'Session']);
+    expect(cursorRow()).toBe('Move Project left');
+  });
+});

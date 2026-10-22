@@ -10,7 +10,7 @@ overrides:
 
 patchedDependencies:
   cmdk:
-    hash: 1f16d38f079d351427caec26fa3e7d2d3726fdf9b11f3b6b68fb224626e0eb17
+    hash: 312606353f9b4f042f25abcecac5c165a99c7e7d123f051d267daa5f2bd58ea9
     path: patches/cmdk.patch
 
 importers:
@@ -88,7 +88,7 @@ importers:
         version: 2.1.1
       cmdk:
         specifier: ^1.1.1
-        version: 1.1.1(patch_hash=1f16d38f079d351427caec26fa3e7d2d3726fdf9b11f3b6b68fb224626e0eb17)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+        version: 1.1.1(patch_hash=312606353f9b4f042f25abcecac5c165a99c7e7d123f051d267daa5f2bd58ea9)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
@@ -6776,7 +6776,7 @@ snapshots:
 
   clsx@2.1.1: {}
 
-  cmdk@1.1.1(patch_hash=1f16d38f079d351427caec26fa3e7d2d3726fdf9b11f3b6b68fb224626e0eb17)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.0(react@19.2.0))(react@19.2.0):
+  cmdk@1.1.1(patch_hash=312606353f9b4f042f25abcecac5c165a99c7e7d123f051d267daa5f2bd58ea9)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.0(react@19.2.0))(react@19.2.0):
     dependencies:
       '@radix-ui/react-compose-refs': 1.1.2(@types/react@19.2.18)(react@19.2.0)
       '@radix-ui/react-dialog': 1.1.23(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)

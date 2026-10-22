@@ -31,6 +31,12 @@
  * `src/components/ui/command-group-order.test.tsx`. There is deliberately no
  * second, React-side group sort here — one owner, or the two fight over the
  * same DOM nodes.
+ *
+ * A disabled row is scored like any other and ranks by that score, losing
+ * every tie to an enabled row (BUG-313). cmdk used to sort only the rows the
+ * cursor can land on, so a disabled row never moved and sat above every
+ * enabled row in its group; the same patch owns that. A row is found by its
+ * name and keywords, never by the reason it is disabled.
  */
 import { defaultFilter } from 'cmdk';
 

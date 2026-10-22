@@ -5319,3 +5319,20 @@ Fix, one system:
   failed. Operator-delegated change (2026-10-22): that step passes the run's
   `GITHUB_TOKEN`, so the read is not held to the anonymous per-IP limit; the
   workflow keeps `contents: read`.
+
+### BUG-313 A disabled ⌘K row sits above an enabled row that matches better
+
+Status: fixed 2026-10-22 (`<sha pending>`) · ENG-016 · found 2026-10-22 by the command-parity packet (BUG-307, D75); palette-rank packet, Execution front (2026-10-21).
+
+In a Session tab's ⌘K, "unread" listed the disabled "Move left" above "Mark unread", though ⏎ ran Mark unread. It
+predates D75. Two causes stacked. cmdk's sort ordered only the rows the cursor can land on and appended each to the end
+of its group, so a disabled row was never moved and ended up above every enabled row in its group, whatever it scored;
+no `filter` can reach a row the sort skips. And ⌘K searched a row's disabled reason, so "Already the first Session in
+the Project" let "unread" fuzzy-match Move left at all.
+
+Fix: a disabled row ranks by how well it matches, like any other row, and loses every tie to an enabled one, inside a
+group and between groups by their best row; the cursor still skips it. `patches/cmdk.patch` sorts every row, and
+ranks groups, by (score, enabled), re-recorded in the lockfile. A row is found by its name and keywords, never by why
+it is disabled: the target-command and Workspace groups stop adding the reason to `keywords`. Every cmdk list (⌘K, the
+theme picker) inherits the sort; a right-click menu's type-ahead already matches enabled labels only. Pinned by
+`command-group-order.test.tsx` (cmdk) and "⌘K disabled rows" in `command-palette-ranking.test.tsx`.

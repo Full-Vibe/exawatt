@@ -1077,10 +1077,8 @@ export function CommandPalette({
           <CommandItem
             key={row.id}
             value={paletteValue(row.label, row.id)}
-            keywords={[
-              ...row.keywords,
-              ...(row.disabledReason ? [row.disabledReason] : []),
-            ]}
+            // found by what it does, never by why it is disabled (BUG-313)
+            keywords={[...row.keywords]}
             disabled={row.disabledReason !== null || undefined}
             title={row.disabledReason ?? undefined}
             aria-label={row.accessibleLabel}
@@ -1361,12 +1359,7 @@ export function CommandPalette({
             <CommandItem
               key={item.id}
               value={item.value}
-              keywords={[
-                ...(item.keywords ?? []),
-                ...(item.availability?.reason
-                  ? [item.availability.reason]
-                  : []),
-              ]}
+              keywords={item.keywords}
               disabled={
                 item.availability ? !item.availability.available : undefined
               }

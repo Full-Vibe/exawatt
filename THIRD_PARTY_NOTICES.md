@@ -5,7 +5,7 @@
 This inventory records the declared distribution basis for 815 third-party
 package versions in the current macOS pnpm dependency graph. Platform binary
 families use a `<platform>` placeholder so the same policy is checkable on Linux.
-Lockfile SHA-256: `c462e7258034386c7d1c78f364853af217839a20da705e2954ec8fe2ff6d581e`.
+Lockfile SHA-256: `86802462a561adff1f4d1bfee978b9be60167ab94df50abdcc58aef62ce5e54e`.
 
 Regenerate it on macOS
 with `pnpm licenses:generate`; `pnpm licenses:check` fails when the graph,

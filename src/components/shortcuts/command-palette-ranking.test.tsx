@@ -42,6 +42,11 @@ import {
   publishCommandSubjects,
   resetCommandSubjects,
 } from '@/components/workspace/command-subjects';
+import {
+  resolveTargetCommands,
+  type CommandTarget,
+  type TargetCommandScope,
+} from '@/components/workspace/target-commands';
 import type { SessionTab } from '@/components/workspace/use-workspace-state';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { CommandPalette } from './command-palette';
@@ -692,5 +697,119 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
       vi.useRealTimers();
       window.removeEventListener(RESUME_PARKED_SCOPE_EVENT, onScope);
     }
+  });
+});
+
+// ── BUG-313: a disabled row never sits above an enabled row that matches at
+// least as well. Reported on the Session tab's ⌘K: "unread" listed the
+// disabled "Move left" above "Mark unread", though ⏎ ran Mark unread.
+describe('⌘K disabled rows (BUG-313)', () => {
+  const tab = (id: string, title: string): SessionTab => ({
+    kind: 'session',
+    id,
+    durableSessionId: `dur-${id}`,
+    harness: 'claude',
+    title,
+    titleKind: 'operator',
+    cwd: '/Users/example/Code/exawatt',
+    sessionId: `pty-${id}`,
+    harnessSessionId: null,
+    resumeState: 'live',
+    lifecycle: 'running',
+    exitCode: null,
+    roadmapItemId: null,
+    initialTask: null,
+  });
+  // The selected Session is the Project's first tab, so Move left is offered
+  // disabled and Move right enabled.
+  const first = tab('tab-first', 'Rebuild the billing exporter');
+  const project = {
+    dir: '/Users/example/Code/exawatt',
+    name: 'exawatt',
+    color: '#50E6FF',
+    tabs: [first, tab('tab-second', 'Audit the ledger')],
+    activeTabId: first.id,
+  };
+  const target: CommandTarget = { kind: 'session', project, tab: first };
+  const markUnread = vi.fn();
+  const moveTab = vi.fn();
+  const scope: TargetCommandScope = {
+    ops: { closeTab: vi.fn(), markUnread, moveTab },
+    facts: {
+      projects: [project],
+      pinnedTabId: null,
+      summaries: {},
+      engaged: {},
+      agentNames: new Map(),
+      cloneTargets: [],
+    },
+  };
+  const disabledCommand = () => {
+    const row = resolveTargetCommands(target, scope).find(
+      candidate => candidate.disabledReason !== null
+    );
+    if (!row) throw new Error('fixture offers no disabled command');
+    return row;
+  };
+
+  beforeEach(() => {
+    activeWorkspaceId = 'personal';
+    window.history.replaceState({}, '', '/workspace');
+    installBridgeDouble({
+      pty: {
+        list: vi.fn(async () => []),
+        closedSessions: vi.fn(async () => []),
+      },
+      workspace: { load: vi.fn(async () => null) },
+    });
+    publishCommandSubjects({ subjects: [target], scope });
+  });
+
+  afterEach(() => {
+    resetCommandSubjects();
+    markUnread.mockReset();
+    moveTab.mockReset();
+    window.history.replaceState({}, '', '/');
+    removeBridgeDouble();
+  });
+
+  const disabled = (row: HTMLElement) =>
+    row.getAttribute('aria-disabled') === 'true';
+
+  /** The top row is the one ⏎ runs: no disabled row is ranked above it. */
+  async function expectTopRowRuns(query: string, commandId: string) {
+    renderPalette();
+    await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+    await typeQuery(query);
+    const rows = visibleRows();
+    expect(disabled(rows[0])).toBe(false);
+    expect(rows[0].getAttribute('data-command-id')).toBe(commandId);
+    expect(rows[0].getAttribute('aria-selected')).toBe('true');
+  }
+
+  it('lists Mark unread first for "unread" and runs it on Enter', async () => {
+    await expectTopRowRuns('unread', 'session.mark-unread');
+    fireEvent.keyDown(paletteInput(), { key: 'Enter' });
+    await waitFor(() =>
+      expect(markUnread).toHaveBeenCalledExactlyOnceWith(first.id)
+    );
+  });
+
+  it('gives a tie to the enabled row: "move" lists Move right first', async () => {
+    await expectTopRowRuns('move', 'session.move-right');
+    const rows = visibleRows().map(row => row.getAttribute('data-command-id'));
+    expect(rows.indexOf('session.move-left')).toBeGreaterThan(
+      rows.indexOf('session.move-right')
+    );
+  });
+
+  it('never finds a row by the reason it is disabled', async () => {
+    const row = disabledCommand();
+    renderPalette();
+    await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+    await typeQuery(row.disabledReason ?? '');
+    expect(
+      visibleRows().some(el => el.getAttribute('data-command-id') === row.id)
+    ).toBe(false);
   });
 });
