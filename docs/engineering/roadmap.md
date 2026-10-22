@@ -5504,7 +5504,9 @@ screen was still loading; with Playwright attaching, Chromium sometimes
 reported neither commit, so Playwright kept `/workspace` pending forever and
 every locator waited over a page that showed the notice (incident `0041`).
 Main now enters the workspace only once the launch screen has committed
-(the window controller's `navigate`). Waiting for its full load first fixed
+(the window controller's `navigate`), or after 5 s, a failed load, a lost
+renderer or a closed window, each recorded in `main.jsonl` as
+`launch-screen.not-committed`. Waiting for its full load first fixed
 the lifecycle eval (10 of 10) but deadlocked `eval:electron:device-power`'s
 relaunch, which exposed a second defect: main opened the window before it
 answered the preload's synchronous first-paint read, and an unanswered
@@ -5535,10 +5537,15 @@ died on `ENOTEMPTY`: no step named, no screenshot. The hang itself is BUG-315
 Resolved 2026-10-22 in the harness. A teardown the harness starts (watchdog
 or signal) is marked as its own and never retried; a watchdog timeout fails as
 `TIMED OUT after <maxMs>ms` with the eval's last progress line and page, and
-records the screenshot before the app closes. An attempt settles only after
-its verified process group has exited, and the relaunch reset retries through
-late writes and otherwise fails with a named error. Real external kills keep
-their relaunch. Tests (`scripts/electron-eval.test.mjs`) use a real Electron
-launch for the timeout (named, screenshot, not retried, tree gone) and for an
-outside kill (still external), and a real dying writer for the reset (it
-fails 4 of 4 without the retries).
+records the screenshot before the app closes. Teardown never replaces the
+run's result: it reports whether its process group's exit was verified, and
+a `ps` that fails under load is polled past, not thrown. A relaunch resets
+the profile only after a verified exit; anything less fails as "the previous
+Electron tree did not exit within N ms; not reusing its profile". The reset
+retries through late writes and otherwise fails with a named error. Real
+external kills keep their relaunch. Tests (`scripts/electron-eval.test.mjs`)
+use a real Electron launch for the timeout (named, screenshot, not retried,
+tree gone), for an outside kill (still external), for a `ps` that fails
+through teardown (the value and the failure both survive, the signal
+handlers go) and for both relaunch branches, and a real dying writer for the
+reset (it fails 4 of 4 without the retries).
