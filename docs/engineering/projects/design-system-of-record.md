@@ -942,3 +942,49 @@ Exit: `eval:settings:navigation` proves, for every destination, exactly one
 heading named after it, no topic strip, and that every `settingsHref(id,
 topic)` lands on an element with that id that shows the highlight; before and
 after screenshots of all nine destinations in Classic, Air and Night.
+
+### 2026-10-22 — The Settings shell owns every page frame (BUG-306)
+
+**One frame per Settings page, drawn by the shell; links land on a marked
+row** (`<sha pending>`, settings-frame packet). The diagnosis above held in
+the app: Appearance and Fleet showed their title twice under a strip of
+topic links, Notifications, Power and Keyboard shortcuts repeated the title
+in their first card, and Agent Sources, Permissions, Privacy and Safety drew
+a second header style (`text-display`, no group label).
+
+- `SettingsPage` (in `settings-controls.tsx`) renders the group label, title
+  and description from the registry for all nine destinations, and provides
+  the landed topic to its rows. `wide` gives Agent Sources' two panes the
+  full width under the header; the panes are unchanged except the registry
+  pane's own "Agent Sources" title, now "Built-in sources" beside
+  "Connected sources".
+- Deleted: `SELF_HEADED`, the topic strip, the shell's Power message and its
+  `PermissionsExplainer` mount, the self-drawn headers in Permissions,
+  Privacy and Safety, the card titles of the five single-group pages,
+  Keyboard's `Card`, Fleet's hand-built material block and Diagnostics' plain
+  button.
+- `SettingRow` takes `topic?: SettingsTopicId` (derived from the registry),
+  an optional `description` and a full-width `body`. A landing focuses the
+  row and sets `data-settings-landed` for two seconds; the row's `::before`
+  washes across the card (`--settings-teal-wash` with a teal edge), with no
+  transition under reduced motion. Only registry topics land.
+- Appearance's Theme mode and theme choice are one Theme row, so the "Theme"
+  topic (`theme-mode`, id unchanged) lands on it in Auto (Light and Dark
+  pickers) and Manual (theme cards). A topic's label is the title of the row
+  it lands on.
+- Fleet's material picker is a `SettingRow` with the grid as its body and
+  Reset material as an outline `Button`. Keyboard's Reset all is the last
+  row of its group. Permissions' Files and folders explainer is a row in the
+  On this Mac group; a page with one group shows no group title.
+- Notifications and Power say they are desktop-only in a browser
+  (`DesktopOnlyNote`) instead of rendering an empty page. Privacy's search
+  vocabulary adds diagnostics, report, logs and support.
+- Copy: page and row descriptions now say what each setting decides. Power
+  lost two paragraphs of mechanism; Notifications its defaults paragraph.
+- `eval:settings:navigation` now proves, in Classic, Air and Night, one
+  heading per destination named after it, the registry description, no link
+  from a page to its own rows, and that every `settingsHref(id, topic)` lands
+  focused and in view on a row titled with the topic's label, marked, then
+  unmarked. Its surface gate now covers every non-test file under
+  `src/app/settings/`.
+

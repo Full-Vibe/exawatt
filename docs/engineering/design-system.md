@@ -635,6 +635,20 @@ notifications, power and trust settings remain distinct destinations.
 Future projects must select or deliberately add a coherent destination.
 Use the existing Settings operational neutrals, type rungs and spacing grid.
 
+**The shell owns every page's frame** (BUG-306, 2026-10-22). `SettingsPage`
+draws a destination's group label, title (`text-surface-title`) and
+description once, from its registry entry; a feature module fills the page and
+never titles it. A destination with one group drops that card's title, since
+the page header already names it; a page with several keeps them. A page
+never shows a strip of links to its own rows: topics surface in search and
+deep links. A topic names the row it lands on (its label is that row's
+title), and `SettingRow`'s typed `topic` gives the row its id; a link that
+lands there focuses the row and washes it across the card for two seconds. A
+desktop-only destination says so in one line in a browser
+(`DesktopOnlyNote`) rather than showing an empty page. A row's action is the
+shared `Button` (outline, small). `eval:settings:navigation` proves one
+heading per page, no strip, and every topic link landing and marking its row.
+
 ### Appearance snapshot consistency
 
 An application surface consumes one resolved appearance snapshot at a time.
@@ -652,6 +666,14 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-10-22 — Settings: the shell owns every page's frame (BUG-306,
+  operator feedback `3cb932c9`). Five destinations repeated their title in
+  their first card and four drew their own header in another style; a strip
+  of topic links repeated the rows beneath it and a deep link landed with no
+  visible mark. One `SettingsPage` header from the registry, no strip, and a
+  typed `topic` on `SettingRow` that marks where a link lands. Screenshot
+  evidence: all nine destinations in Classic, Air and Night.
 
 - 2026-10-22 — Menus: a right-click menu and ⌘K never diverge (operator
   standing rule, feedback `2264aa5f`). Both surfaces read one command

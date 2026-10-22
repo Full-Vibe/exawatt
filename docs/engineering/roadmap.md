@@ -5125,7 +5125,8 @@ and the app owns its own instance.
 
 ### BUG-306 Settings repeats its page titles above a strip of links that repeats the rows
 
-Status: bug · ENG-036 · operator feedback 3cb932c9, 2026-10-22.
+Status: fixed 2026-10-22 (`<sha pending>`) · ENG-036 · operator feedback
+3cb932c9, 2026-10-22; settings-frame packet, Execution front (2026-10-21).
 
 On Appearance the operator met the title twice and a row of plain links
 ("Theme", "System accent", ...) he could not place: "These text label links
@@ -5135,6 +5136,14 @@ their title in their first card because the page header has two owners. Fix
 by system, not by deleting one strip: the Settings shell owns the page frame
 for every destination and a deep link highlights the row it lands on.
 [Diagnosis and acceptance](projects/design-system-of-record.md#2026-10-22--queued-the-settings-page-frame-bug-306).
+
+Fix (2026-10-22): one `SettingsPage` frame draws every destination's header
+from the registry; `SELF_HEADED` and the topic strip are deleted; a typed
+`topic` on `SettingRow` sets the row's id and washes it when a link lands. The
+Theme topic lands on the Theme row, Fleet's material block is a `SettingRow`,
+Power's browser line and the Files and folders explainer live in their own
+modules, and search finds Diagnostics.
+[Milestone](projects/design-system-of-record.md#2026-10-22--the-settings-shell-owns-every-page-frame-bug-306).
 
 ### BUG-307 Mark unread is in a tab's right-click menu but not in ⌘K
 
