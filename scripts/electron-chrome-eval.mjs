@@ -53,18 +53,18 @@ try {
       await terminal.waitFor();
       const context = page.locator('[data-active-session-context]');
       await context.waitFor();
-      const enableNotifications = page.getByRole('button', {
-        name: 'Enable attention notifications',
-      });
-      await enableNotifications.waitFor();
+      const notificationsToggle = page.locator(
+        '[data-attention-notifications]'
+      );
+      await notificationsToggle.waitFor();
       if (
-        (await enableNotifications.getAttribute('aria-pressed')) !== 'false'
+        (await notificationsToggle.getAttribute('aria-pressed')) !== 'false'
       ) {
         throw new Error('Attention notifications did not default off');
       }
-      await enableNotifications.click();
+      await notificationsToggle.click();
       await page
-        .getByRole('button', { name: 'Disable attention notifications' })
+        .locator('[data-attention-notifications][aria-pressed="true"]')
         .waitFor();
       const savedSettings = JSON.parse(
         readFileSync(join(userData, 'settings.json'), 'utf8')

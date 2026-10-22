@@ -38,7 +38,7 @@ async function checkViewport(label) {
     element.scrollTop = 0;
   });
   await page.waitForFunction(() => {
-    const board = document.querySelector('[aria-label="Fleet surface"]');
+    const board = document.querySelector('[data-spatial-surface]');
     const canvas = board?.querySelector('canvas');
     if (!board || !canvas || !canvas.width || !canvas.height) return false;
     const surface = board.getBoundingClientRect();
@@ -56,7 +56,7 @@ async function checkViewport(label) {
       header: rect('#site-header'),
       slot: rect('[data-spatial-viewport]'),
       toolbar: rect('[data-spatial-command] > header'),
-      surface: rect('[aria-label="Fleet surface"]'),
+      surface: rect('[data-spatial-surface]'),
       panel: document.querySelector('[data-spatial-selection-panel]')
         ? rect('[data-spatial-selection-panel]')
         : null,
@@ -182,7 +182,7 @@ try {
   await page.locator('[data-spatial-board]').waitFor();
   await assertFleetView(page);
   await checkViewport('direct Fleet');
-  await page.locator('button[aria-label^="Open Project "]').first().click();
+  await page.locator('button[data-board-zone]').first().click();
   await page.waitForURL(/altitude=project/);
   const projectUrl = page.url();
   await page.locator('button[data-board-agent]').first().click();

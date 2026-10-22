@@ -84,13 +84,11 @@ try {
         .locator('[data-tab-harness="claude"]')
         .first()
         .click({ button: 'right' });
+      const cloneRow = page.locator(
+        '[role="menuitem"][data-command-id="session.clone"]'
+      );
       await until(async () => {
-        if (
-          await page
-            .getByRole('menuitem', { name: 'Clone to…', exact: true })
-            .count()
-        )
-          return true;
+        if (await cloneRow.count()) return true;
         await page.keyboard.press('Escape');
         await page
           .locator('[data-tab-harness="claude"]')
@@ -98,11 +96,9 @@ try {
           .click({ button: 'right' });
         return false;
       }, 'Clone targets ready');
+      await cloneRow.click();
       await page
-        .getByRole('menuitem', { name: 'Clone to…', exact: true })
-        .click();
-      await page
-        .getByRole('menuitem', { name: /^Clone to .*Claude/ })
+        .locator('[role="menuitem"][data-clone-source="claude"]')
         .first()
         .click();
       const clone = await until(

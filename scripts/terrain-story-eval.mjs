@@ -28,7 +28,7 @@ try {
     waitUntil: 'load',
   });
   await page.locator('[data-ready="true"]').waitFor();
-  const scroller = page.locator('[aria-label="Homepage scroll preview"]');
+  const scroller = page.locator('[data-study-scroller="story"]');
   const canvas = await page.locator('canvas').elementHandle();
   const canvasBounds = await page.locator('canvas').boundingBox();
   const height = await scroller.evaluate(el => el.clientHeight);
@@ -70,9 +70,7 @@ try {
     await page.mouse.wheel(0, direction * height);
     await page.waitForFunction(
       ({ before, direction }) => {
-        const root = document.querySelector(
-          '[aria-label="Homepage scroll preview"]'
-        );
+        const root = document.querySelector('[data-study-scroller="story"]');
         return direction * (root.scrollTop - before) > 100;
       },
       { before, direction }
@@ -82,14 +80,11 @@ try {
   await page.keyboard.press('PageDown');
   await page.waitForFunction(
     () =>
-      document.querySelector('[aria-label="Homepage scroll preview"]')
-        .scrollTop > 100
+      document.querySelector('[data-study-scroller="story"]').scrollTop > 100
   );
   await page.keyboard.press('Home');
   await page.waitForFunction(
-    () =>
-      document.querySelector('[aria-label="Homepage scroll preview"]')
-        .scrollTop < 1
+    () => document.querySelector('[data-study-scroller="story"]').scrollTop < 1
   );
   // Every chapter is reached with browser input and shares the reading column.
   let column;
@@ -122,18 +117,14 @@ try {
     initialCount
   );
   assert(await canvas.evaluate(el => el.isConnected));
-  await page.getByRole('button', { name: 'Visual lab', exact: true }).click();
+  await page.locator('[data-study-mode="lab"]').click();
   await page.waitForFunction(
-    () =>
-      document.querySelector('[aria-label="Fleet visual laboratory"]')
-        .scrollTop === 0
+    () => document.querySelector('[data-study-scroller="lab"]').scrollTop === 0
   );
   // An inactive selection must not park the rest of the working fleet.
   await page.locator('[data-agent="4"]').focus();
   await page.keyboard.press('Enter');
-  await page
-    .getByRole('button', { name: 'Add one demo agent', exact: true })
-    .click();
+  await page.locator('[data-add-agent]').click();
   assert.equal(
     await page.locator('[data-agent="4"]').getAttribute('aria-pressed'),
     'true',
@@ -153,9 +144,7 @@ try {
   await page.mouse.move(hit.x + hit.width / 2, hit.y + hit.height / 2);
   await page.mouse.wheel(0, 400);
   await page.waitForFunction(
-    () =>
-      document.querySelector('[aria-label="Fleet visual laboratory"]')
-        .scrollTop > 100
+    () => document.querySelector('[data-study-scroller="lab"]').scrollTop > 100
   );
   await page.close();
   const mobile = await browser.newPage({
@@ -188,19 +177,17 @@ try {
       touchPoints: [],
     });
   };
-  const mobileRoot = mobile.locator('[aria-label="Homepage scroll preview"]');
+  const mobileRoot = mobile.locator('[data-study-scroller="story"]');
   await touch(670, 290);
   await mobile.waitForFunction(
     () =>
-      document.querySelector('[aria-label="Homepage scroll preview"]')
-        .scrollTop > 100
+      document.querySelector('[data-study-scroller="story"]').scrollTop > 100
   );
   const after = await mobileRoot.evaluate(el => el.scrollTop);
   await touch(290, 670);
   await mobile.waitForFunction(
     after =>
-      document.querySelector('[aria-label="Homepage scroll preview"]')
-        .scrollTop < after,
+      document.querySelector('[data-study-scroller="story"]').scrollTop < after,
     after
   );
   await mobile.screenshot({ path: `${output}/mobile.png` });
@@ -210,7 +197,7 @@ try {
     )
   );
   await mobile.emulateMedia({ reducedMotion: 'reduce' });
-  await mobile.getByRole('button', { name: 'Visual lab', exact: true }).click();
+  await mobile.locator('[data-study-mode="lab"]').click();
   await mobile.getByRole('button', { name: '1', exact: true }).click();
   // The reduced-motion path still renders and remains usable.
   assert.equal(await mobile.locator('canvas').count(), 1);

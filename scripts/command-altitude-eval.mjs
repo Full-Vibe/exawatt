@@ -362,7 +362,7 @@ try {
     fullPage: true,
   });
 
-  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.locator('[data-board-zoom="in"]').click();
   await page.waitForTimeout(500);
   const zoomedViewport = await page.evaluate(() => {
     const value = window.sessionStorage.getItem(
@@ -394,30 +394,25 @@ try {
   );
 
   await page.setViewportSize({ width: 1000, height: 800 });
-  const shortcutHelpButton = page.getByRole('button', {
-    name: 'Keyboard shortcuts',
-  });
+  const shortcutHelpButton = page.locator('[data-spatial-shortcut-help]');
   requireState(
     await shortcutHelpButton.isVisible(),
     'Narrow Spatial layout did not expose shortcut help'
   );
   await shortcutHelpButton.click();
-  await page.getByLabel('Filter shortcuts').waitFor();
+  await page.locator('[data-shortcut-filter]').waitFor();
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  const spatialSearch = page.getByLabel('Search agents');
+  const spatialSearch = page.locator('[data-spatial-search]');
   await spatialSearch.fill('navigation');
   await page.waitForURL(url => url.searchParams.get('q') === 'navigation');
-  // The status chips carry a full accessible sentence ("Working: 3 of 9
-  // Agents. Filter by this status."), and the D30/D33/D40 protocol renamed
-  // the state itself — this used to wait for a bare 'working' button and
-  // hung forever once neither existed (BUG-011). Anchor on the label the
-  // protocol actually ships, and on the status the chip selects rather than
-  // on the whole parameter: the `active` signal selects working AND
-  // reviewing, so an equality check would encode a narrower contract than
-  // the product has.
-  await page.getByRole('button', { name: /^Working:/ }).click();
+  // The chip is found by the status signal it filters, not its sentence: a
+  // label lookup hung forever once the protocol renamed the state (BUG-011).
+  // The URL is read for the status the chip selects rather than the whole
+  // parameter: the `active` signal selects working AND reviewing, so an
+  // equality check would encode a narrower contract than the product has.
+  await page.locator('button[data-fleet-status="active"]').click();
   await page.waitForURL(url =>
     (url.searchParams.get('status') ?? '').split(',').includes('working')
   );
@@ -429,7 +424,7 @@ try {
   await page.waitForURL(
     url => `${url.pathname}${url.search}` === filteredAddress
   );
-  await page.getByTitle('Clear search and filters').click();
+  await page.locator('[data-spatial-filter-clear]').click();
   await page.waitForURL(
     url => !url.searchParams.has('q') && !url.searchParams.has('status')
   );
@@ -479,7 +474,7 @@ try {
     'Repeated Spatial shortcut left Spatial instead of recentering it'
   );
 
-  await page.getByRole('button', { name: 'Angle' }).click();
+  await page.locator('[data-board-projection-option="fixed-angle"]').click();
   await page.waitForURL(
     url => url.searchParams.get('projection') === 'fixed-angle'
   );

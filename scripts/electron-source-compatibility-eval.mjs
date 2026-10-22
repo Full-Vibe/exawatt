@@ -112,7 +112,11 @@ try {
       assert.match(await panel.innerText(), /future-source/);
       assert.equal(await panel.getByRole('button').count(), 0);
       await page.getByText('Keep unsupported task', { exact: true }).waitFor();
-      await page.getByRole('button', { name: 'Show transcript' }).click();
+      await page
+        .locator(
+          '[data-paused-agent-record="durable-unsupported"] [data-show-transcript]'
+        )
+        .click();
       await page
         .getByText('Retained original source transcript', { exact: true })
         .waitFor();
@@ -191,8 +195,9 @@ try {
       await page.keyboard.press('Control+Meta+1');
       await page.locator('[data-tab-id="known"]').click();
       await page
-        .locator('[data-session-restore="known"]')
-        .getByRole('button', { name: /Resume/ })
+        .locator(
+          '[data-session-restore="known"] [data-session-lifecycle-verb="resume"]'
+        )
         .click();
       await waitForPageCondition(
         page,

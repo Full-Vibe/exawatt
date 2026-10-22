@@ -67,10 +67,7 @@ try {
       await page.locator('[data-spatial-board]').waitFor();
       // Drill into Project A by its own control, then use its ghost.
       const leafA = projectA.split('/').pop();
-      await page
-        .locator(`button[aria-label^="Open Project ${leafA}"]`)
-        .first()
-        .click();
+      await page.locator(`button[data-board-zone$="${leafA}"]`).first().click();
       await page.waitForURL(/altitude=project/);
       const ghost = page.locator('button[data-board-ghost]');
       await ghost.first().waitFor({ state: 'visible' });

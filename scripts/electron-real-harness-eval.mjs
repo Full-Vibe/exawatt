@@ -100,7 +100,7 @@ try {
       }, projectDir);
       await page.locator('[data-agent-composer]').waitFor();
 
-      await page.getByRole('button', { name: 'Start' }).click();
+      await page.locator('[data-agent-composer] [data-launcher-start]').click();
       const claude = await waitFor(
         page,
         current => current.find(session => session.harness === 'claude'),

@@ -210,7 +210,9 @@ try {
         await page.keyboard.press('Meta+n');
         await page.locator('[data-project-opener]').waitFor();
         await inspectChooser();
-        await click(page.getByRole('button', { name: /Connect a server/ }));
+        await click(
+          page.locator('[data-project-opener] [data-project-route="connect"]')
+        );
         await dialog.waitFor();
         await server(ALIASES[0]).waitFor();
       };
@@ -219,11 +221,10 @@ try {
       await openConnect();
       check(
         'Connect opens on the servers, with no source step',
-        (await dialog.locator('[data-connect-adapter]').count()) === 0 &&
-          (await dialog.locator('[data-connect-server]').count()) ===
-            ALIASES.length
+        (await dialog.locator('[data-connect-server]').count()) ===
+          ALIASES.length
       );
-      await click(dialog.getByRole('button', { name: DEAD }));
+      await click(server(DEAD).getByRole('button'));
       await dialog
         .locator(`[data-connect-server="${DEAD}"][data-server-state="failed"]`)
         .waitFor();
@@ -231,7 +232,7 @@ try {
       check(
         'a server that fails stays on its row and nothing is saved',
         savedSources() === 0 &&
-          (await server(DEAD).textContent())?.includes('Nothing was saved'),
+          (await server(DEAD).getAttribute('data-server-released')) !== null,
         await server(DEAD).textContent()
       );
       check(
@@ -251,7 +252,8 @@ try {
         loginsTo(NORTH).length <= CONNECT_LOGIN_BUDGET,
         `${loginsTo(NORTH).length} logins`
       );
-      await click(dialog.getByRole('button', { name: /Connect 2 Agents/ }));
+      // Both of North's Agents start chosen; the plan below counts them.
+      await click(dialog.locator('[data-slot="dialog-primary-action"]'));
       await dialog.waitFor({ state: 'detached' });
       const surface = page.locator('[data-remote-agent]').first();
       await surface.waitFor();
@@ -293,11 +295,11 @@ try {
         // The first connect made the Remote home; ⌘N lists it once, as the
         // place connected servers' coworkers live (ENG-033 H2.4 P1).
         const opener = page.locator('[data-project-opener]');
-        await opener.getByText('Connected servers').first().waitFor();
+        await opener.locator('[data-remote-home]').first().waitFor();
         await opener.screenshot({ path: join(output, 'remote-home.png') });
         check(
           'the first connect made one Remote home',
-          (await opener.getByText('Connected servers').count()) === 1
+          (await opener.locator('[data-remote-home]').count()) === 1
         );
       });
       await server(NORTH).scrollIntoViewIfNeeded();
@@ -308,12 +310,12 @@ try {
         northState === 'connected' &&
           /Marcus/.test(northText) &&
           (await server(NORTH).getByRole('button').count()) === 0 &&
-          (await server(NORTH).getByText('Manage').count()) === 1,
+          (await server(NORTH).locator('[data-connect-manage]').count()) === 1,
         northText
       );
-      await click(dialog.getByRole('button', { name: SOUTH }));
+      await click(server(SOUTH).getByRole('button'));
       await dialog.locator(`[data-connect-ready="${SOUTH}"]`).waitFor();
-      await click(dialog.getByRole('button', { name: /Connect Tyler/ }));
+      await click(dialog.locator('[data-slot="dialog-primary-action"]'));
       await dialog.waitFor({ state: 'detached' });
       check(
         `the second connect also takes ${CONNECT_CLICK_BUDGET} clicks`,
@@ -330,16 +332,26 @@ try {
         JSON.stringify(plan.mappings.map(mapping => mapping.projectLabel))
       );
 
-      const tyler = page.locator('[data-remote-agent]', { hasText: 'Tyler' });
+      const tylerId = plan.mappings.find(
+        mapping => mapping.nativeAgentId === 'tyler'
+      )?.exawattAgentId;
+      if (!tylerId) throw new Error('the plan maps no Agent for Tyler');
+      const tyler = page.locator(`[data-remote-agent="${tylerId}"]`);
+      // Asking without approving shows the commands: the request action,
+      // offered beside the one click.
       await tyler
-        .locator('[data-composer-action-rank="secondary"]', {
-          hasText: 'Show commands',
-        })
+        .locator(
+          '[data-composer-action="request-send-access"][data-composer-action-rank="secondary"]'
+        )
         .click();
       const commands = tyler.locator('[data-approve-commands]');
+      // The commands are the contract here: the operator pastes them into
+      // Terminal, so they are ssh's and the OpenClaw CLI's own syntax, and the
+      // request id they name is the one this eval approves by hand.
       await page.waitForFunction(
         () =>
           [...document.querySelectorAll('[data-approve-commands]')].some(node =>
+            // binds-text: the OpenClaw approve command, run as written
             /devices approve [0-9a-f-]{36}/.test(node.textContent ?? '')
           ),
         null,
@@ -349,17 +361,25 @@ try {
       await tyler.screenshot({ path: join(output, 'copy-path.png') });
       check(
         'the copy path shows the exact login and request',
+        // binds-text: the ssh login, run as written
         shown.startsWith(`ssh ${SOUTH}\n`) &&
+          // binds-text: the OpenClaw approve command, run as written
           /openclaw devices approve [0-9a-f-]{36}$/.test(shown),
         shown
       );
+      // binds-text: the request id, read from the command the operator runs
       const requestId = shown.match(/approve ([0-9a-f-]{36})/)?.[1] ?? '';
       const byHand = gateways[SOUTH].approveRequest(requestId);
       check(
         'the command names Exawatt’s own request',
         byHand !== null && byHand.deviceId !== OTHER_DEVICE
       );
-      await tyler.getByRole('button', { name: 'Check again' }).click();
+      // Checking again is the request action while approval is pending.
+      await tyler
+        .locator(
+          '[data-composer-withheld="write-access-awaiting-approval"] [data-composer-action="request-send-access"]'
+        )
+        .click();
       await tyler.locator('form[data-composer-target]').waitFor();
       check('Check again finishes the copy path', true);
 

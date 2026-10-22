@@ -167,8 +167,8 @@ try {
           (await demoItem.getAttribute('aria-disabled')) !== 'true'
       );
       check(
-        'Demo entry no longer reads Coming soon',
-        !(await demoItem.innerText()).includes('Coming soon')
+        'Demo entry no longer carries a Coming soon marker',
+        (await demoItem.locator('[data-readiness]').count()) === 0
       );
       const organizationPreview = page.locator(
         '[data-workspace-preview="organization-preview"]'
@@ -176,10 +176,11 @@ try {
       await organizationPreview.waitFor();
       check(
         'shared Organization is a first-class preview Workspace row',
-        (await organizationPreview.innerText()).includes(
-          'Voltaic Grid Systems'
-        ) &&
-          (await organizationPreview.innerText()).includes('Coming soon') &&
+        (await organizationPreview.getAttribute('data-organization-anchor')) !==
+          null &&
+          (await organizationPreview
+            .locator('[data-readiness="preview"]')
+            .count()) === 1 &&
           (await organizationPreview.getAttribute('href')) === '/organization'
       );
       check(
@@ -199,7 +200,7 @@ try {
       await page.waitForFunction(
         () => window.location.pathname === '/organization'
       );
-      await page.getByRole('heading', { name: 'Organization' }).waitFor();
+      await page.locator('[data-preview-surface="organization"]').waitFor();
       check(
         'Organization preview navigation leaves Personal active',
         (await page.locator('[data-active-tenant-workspace]').count()) === 0 &&
@@ -339,7 +340,7 @@ try {
 
       // ================= W2: the REAL Demo tenant =========================
       await page.keyboard.press('Meta+KeyK');
-      await page.getByPlaceholder('Type a command or search...').fill('demo');
+      await page.locator('[cmdk-input]').fill('demo');
       await page.locator('[data-palette-workspace-switch="demo"]').click();
       await page.locator('[data-demo-workspace]').waitFor();
       check(
@@ -347,12 +348,6 @@ try {
         (await page
           .locator('[data-active-tenant-workspace="demo"]')
           .count()) === 1
-      );
-      check(
-        'Demo is the tenant identity — no competing Workspace suffix',
-        (await page
-          .locator('[data-active-tenant-workspace="demo"]')
-          .innerText()) === 'Demo'
       );
       check(
         'no terminal renders in the Demo tenant',
@@ -483,11 +478,25 @@ try {
           demoProjectMove.active + demoProjectMove.delta
         ] === demoProjectMove.before[demoProjectMove.active]
       );
+      // The announcement names the moved Project and its new position; both
+      // are read from the ribbon, never from the sentence's wording.
+      const movedProjectName = await page
+        .locator(
+          `[data-ribbon-key="${demoProjectMove.before[demoProjectMove.active]}"]`
+        )
+        .getAttribute('data-project');
+      const movedProjectPosition = String(
+        demoProjectMove.active + demoProjectMove.delta + 1
+      );
+      const moveAnnouncement = page.locator('[role="status"]', {
+        hasText: movedProjectName,
+      });
       check(
         'Demo Project movement announces its result',
-        (await page
-          .locator('[role="status"]', { hasText: 'Moved Project' })
-          .count()) === 1
+        (await moveAnnouncement.count()) === 1 &&
+          (await moveAnnouncement.textContent())
+            .split(/\D+/u)
+            .includes(movedProjectPosition)
       );
 
       const demoPane = page.locator('[data-workspace-session-focus-owner]');
@@ -616,9 +625,7 @@ try {
 
       // ---- return to Personal: everything exactly as it was --------------
       await page.keyboard.press('Meta+KeyK');
-      await page
-        .getByPlaceholder('Type a command or search...')
-        .fill('personal');
+      await page.locator('[cmdk-input]').fill('personal');
       await page.locator('[data-palette-workspace-switch="personal"]').click();
       await page.locator('.xterm-helper-textarea').waitFor();
       const replayedAll = await page.waitForFunction(

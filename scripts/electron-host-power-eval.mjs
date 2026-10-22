@@ -125,7 +125,7 @@ async function liveDemoPower(app, page) {
   await page.waitForFunction(
     () => window.__EVAL_GL__ && document.querySelector('canvas')?.width > 0
   );
-  await page.locator('button[aria-label^="Open Project "]').first().click();
+  await page.locator('button[data-board-zone]').first().click();
   await page.waitForURL(/altitude=project/);
   await event(app, 'on-ac');
   await renderPasses(page, 180);

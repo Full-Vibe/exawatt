@@ -343,7 +343,11 @@ try {
       `Expected five impacted live sessions, got ${downloaded.liveSessions}`
     );
   }
-  const restartButton = page.getByRole('button', { name: 'Restart to Update' });
+  // The baseline is a signed release, which may predate the handle.
+  const restartButton = page
+    .locator('[data-update-action="restart"]')
+    // binds-text: a signed baseline release built before this handle renders only its label
+    .or(page.getByRole('button', { name: 'Restart to Update' }));
   await restartButton.waitFor({ timeout: 10_000 });
 
   const oldProcess = matchingPids()[0];
@@ -418,12 +422,16 @@ try {
   if ((await sessions(page)).length !== 0) {
     throw new Error('Updated relaunch spawned work without operator action');
   }
-  const resumeBanner = page.getByRole('region', {
-    name: 'Saved Agent recovery',
-  });
+  // The update is a published release, which may predate these handles.
+  const resumeBanner = page
+    .locator('[data-resume-recovery]')
+    // binds-text: a published release built before this handle renders only its label
+    .or(page.getByRole('region', { name: 'Saved Agent recovery' }));
   await resumeBanner.waitFor({ timeout: 20_000 });
   await resumeBanner
-    .getByRole('button', { name: /Resume 4 agents in /i })
+    .locator('[data-resume-scope="project"]')
+    // binds-text: a published release built before this handle renders only its label
+    .or(resumeBanner.getByRole('button', { name: /Resume 4 agents in /i }))
     .click();
   const resumed = await waitForSessions(page, 4);
   if (resumed.some(session => session.harness === 'shell')) {

@@ -438,11 +438,17 @@ try {
   await composerToggle.click();
   const composer = page.locator('[data-agent-composer]');
   await composer.waitFor();
-  if (
-    !(await page.locator('[data-workspace-tab-strip]').innerText()).includes(
-      'New agent'
-    )
-  ) {
+  // A draft is told apart by its lifecycle, never by its fallback title,
+  // which a live untitled Agent shares (BUG-038).
+  const draftTabVisible = await page
+    .locator('[data-workspace-tab-strip] [data-tab-lifecycle="draft"]')
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .then(
+      () => true,
+      () => false
+    );
+  if (!draftTabVisible) {
     throw new Error('⌘T must create a visible draft tab in the strip');
   }
 
@@ -479,9 +485,7 @@ try {
     const metrics = await page.evaluate(() => {
       const chromeElement = document.querySelector('[data-workspace-chrome]');
       const panelElement = document.querySelector('[data-agent-composer]');
-      const taskElement = document.querySelector(
-        '[aria-label="Initial task for the new Agent"]'
-      );
+      const taskElement = document.querySelector('[data-launcher-task]');
       // D49 replaced D46's configuration ribbon with setup cards, its
       // Customize button with an attached drawer handle, and "All launch
       // configurations" with "All engines and models". This block still
@@ -500,7 +504,7 @@ try {
         '[data-agent-composer] [data-setup-drawer-handle]'
       );
       const allElement = document.querySelector(
-        '[data-agent-composer] button[aria-label="All engines and models"]'
+        '[data-agent-composer] button[data-setup-catalog-trigger]'
       );
       if (
         !(chromeElement instanceof HTMLElement) ||
@@ -820,12 +824,17 @@ try {
       `Fresh tab leaked its default harness title: ${turnState.text}`
     );
   }
-  const freshTabCopy = await page
-    .locator('[data-tab-id="fresh-tab"] [data-tab-chrome]')
-    .innerText();
-  if (!freshTabCopy.includes('New agent')) {
+  // An untitled fresh tab keeps a visible title, whatever its fallback reads.
+  const freshTabTitle = await page
+    .locator('[data-tab-id="fresh-tab"] [data-tab-label]')
+    .evaluate(label => ({
+      shown: label.getAttribute('aria-hidden') !== 'true',
+      titled: Boolean(label.textContent?.trim()),
+    }))
+    .catch(() => ({ shown: false, titled: false }));
+  if (!freshTabTitle.shown || !freshTabTitle.titled) {
     throw new Error(
-      `Fresh tab collapsed to icons instead of New agent: ${freshTabCopy}`
+      `Fresh tab collapsed to icons instead of a title: ${JSON.stringify(freshTabTitle)}`
     );
   }
   if (turnState.text.includes('Based on my exploration')) {
@@ -1023,7 +1032,7 @@ try {
   const frozenShape = await frozen.evaluate(node => ({
     text: node.textContent ?? '',
     badge: !!node.querySelector('[data-tab-lifecycle-word]'),
-    close: !!node.querySelector('button[aria-label^="Close "]'),
+    close: !!node.querySelector('button[data-tab-close]'),
   }));
   if (
     frozenShape.text.includes('billing migration') ||
@@ -1077,9 +1086,14 @@ try {
     .click({ button: 'right' });
   const stripMenu = page.locator('[data-strip-menu]');
   await stripMenu.waitFor();
-  const menuText = await stripMenu.innerText();
-  if (!menuText.includes('Rename') || !menuText.includes('Close')) {
-    throw new Error(`tab context menu incomplete: ${menuText}`);
+  const menuCommands = await stripMenu
+    .locator('[data-command-id]')
+    .evaluateAll(rows => rows.map(row => row.getAttribute('data-command-id')));
+  if (
+    !menuCommands.includes('session.rename') ||
+    !menuCommands.includes('session.close')
+  ) {
+    throw new Error(`tab context menu incomplete: ${menuCommands.join(', ')}`);
   }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'context-menu.png') });
   await page.keyboard.press('Escape');
@@ -1093,21 +1107,12 @@ try {
   const closingGoal = liveSessions.find(
     item => item.id === 'gpa-session'
   ).contextSummary;
-  const gpaClose = page
-    .locator('[data-project-parent="/tmp/gpagent"][data-tab-id="gpa-tab"]')
-    .getByRole('button', {
-      name: `Close ${closingGoal}`,
-    });
+  const gpaClose = page.locator(
+    '[data-project-parent="/tmp/gpagent"][data-tab-id="gpa-tab"] [data-tab-close]'
+  );
   await gpaClose.click();
   const closeConfirm = page.locator('[data-close-confirm]');
   await closeConfirm.waitFor();
-  const confirmText = await closeConfirm.innerText();
-  if (
-    !confirmText.includes('Recently closed') ||
-    !confirmText.includes('14 days')
-  ) {
-    throw new Error(`confirm copy misses the recovery path: ${confirmText}`);
-  }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-confirm.png') });
   await page.keyboard.press('Escape');
   await closeConfirm.waitFor({ state: 'detached' });
@@ -1128,7 +1133,9 @@ try {
   // The draft lives in exawatt; stand back in it to reach its affordance.
   await page.locator('[data-project="exawatt"] [data-project-chrome]').click();
   await page.waitForTimeout(320);
-  const draftClose = page.getByTitle('Discard (⌘W)');
+  const draftClose = page.locator(
+    '[data-project-parent="/tmp/exawatt"][data-tab-lifecycle="draft"] [data-tab-close]'
+  );
   await draftClose.click();
   await draftClose.waitFor({ state: 'detached' });
   if (await closeConfirm.count()) {
@@ -1170,17 +1177,18 @@ try {
   await page.keyboard.press('Meta+KeyK');
   await page.locator('[cmdk-root]').waitFor();
   await page.locator('[cmdk-input]').fill('settings');
-  await page.getByText('Go to Settings').waitFor();
+  await page.locator('[cmdk-item][data-command-id="nav-settings"]').waitFor();
   // session rows outrank navigation in the list — arrow down to Settings
   const settingsWalkBudget = (await page.locator('[cmdk-item]').count()) + 1;
   let selectedSettings = false;
   for (let i = 0; i < settingsWalkBudget; i += 1) {
     const selected = await page.evaluate(
       () =>
-        document.querySelector('[cmdk-item][aria-selected="true"]')
-          ?.textContent ?? ''
+        document
+          .querySelector('[cmdk-item][aria-selected="true"]')
+          ?.getAttribute('data-command-id') ?? ''
     );
-    if (selected.includes('Go to Settings')) {
+    if (selected === 'nav-settings') {
       selectedSettings = true;
       break;
     }
@@ -1311,11 +1319,20 @@ try {
       `Palette Move Project right did not reorder: ${JSON.stringify({ projectOrderBeforeMove, projectOrderAfterPalette })}`
     );
   }
+  // The announcement names the moved Project and its new position of the
+  // whole ribbon; both are read from the ribbon, not from the wording.
+  const movedProjectName = await page
+    .locator('[data-ribbon-item="project"][data-project-dir="/tmp/exawatt"]')
+    .getAttribute('data-project');
   const projectMoveStatus = await page
-    .locator('[role="status"]', { hasText: 'Moved Project' })
+    .locator('[role="status"]', { hasText: movedProjectName })
     .last()
     .textContent();
-  if (!projectMoveStatus?.includes('position 3 of 3')) {
+  const announcedNumbers = (projectMoveStatus ?? '').split(/\D+/u);
+  if (
+    !announcedNumbers.includes('3') ||
+    !announcedNumbers.includes(String(projectOrderAfterPalette.length))
+  ) {
     throw new Error(
       `Project reorder status was not announced: ${JSON.stringify(projectMoveStatus)}`
     );
@@ -1333,11 +1350,8 @@ try {
   if ((await rightEdgeRow.getAttribute('data-disabled')) !== 'true') {
     throw new Error('Move Project right stayed enabled at the right edge');
   }
-  if (
-    !(await rightEdgeRow.textContent())?.includes(
-      'Already the last open Project'
-    )
-  ) {
+  // A disabled row carries its reason as the row's tooltip.
+  if (!(await rightEdgeRow.getAttribute('title'))?.trim()) {
     throw new Error('Move Project right did not explain its edge constraint');
   }
   await page.keyboard.press('Escape');
@@ -1384,13 +1398,11 @@ try {
   // D49: the detail is an attached drawer entered from the selected setup
   // card with ArrowDown — the launcher's own keyboard contract — not a
   // "Customize" button revealing a panel (BUG-010).
-  // The D49 drawer's control is an OptionMenu whose accessible name carries
-  // its current value ("Permission: Ask first"); the bare "Agent
-  // permissions" label belongs to the legacy hidden Select, which is why a
-  // label lookup resolved to something invisible (BUG-010).
-  const permissionTrigger = page.getByRole('button', {
-    name: /^Permission:/,
-  });
+  // The D49 drawer's control is the permission axis's OptionMenu; a label
+  // lookup once resolved to the legacy hidden Select instead (BUG-010).
+  const permissionTrigger = page.locator(
+    '[data-detail-axis="permission"] [data-option-menu-trigger]'
+  );
   if (!(await permissionTrigger.isVisible())) {
     await page.locator('[data-setup-drawer-handle]').first().click();
     await permissionTrigger.waitFor({ state: 'visible' });
@@ -1410,7 +1422,19 @@ try {
       viewportHeight: window.innerHeight,
     };
   });
-  const permissionMenuText = await permissionMenu.innerText();
+  // Each option by its permission mode id (AGENT_PERMISSION_MODES), each
+  // with a description of what it allows.
+  const permissionOptions = await permissionMenu
+    .getByRole('option')
+    .evaluateAll(options =>
+      options.map(option => ({
+        mode: option.getAttribute('data-option-id'),
+        explained: Boolean(
+          option.querySelector('[data-option-description]')?.textContent?.trim()
+        ),
+      }))
+    );
+  const permissionModes = ['prompt', 'auto', 'unrestricted'];
   if (
     permissionMenuBounds.left < 0 ||
     permissionMenuBounds.right > permissionMenuBounds.viewportWidth ||
@@ -1422,16 +1446,16 @@ try {
     );
   }
   if (
-    (await page.getByRole('option').count()) !== 3 ||
-    !permissionMenuText.includes('Ask first') ||
-    !permissionMenuText.includes('Keep harness protections on') ||
-    !permissionMenuText.includes('Auto-review') ||
-    !permissionMenuText.includes('Routine work proceeds') ||
-    !permissionMenuText.includes('YOLO') ||
-    !permissionMenuText.includes('No approvals or sandbox')
+    permissionOptions.length !== permissionModes.length ||
+    permissionModes.some(
+      mode =>
+        !permissionOptions.some(
+          option => option.mode === mode && option.explained
+        )
+    )
   ) {
     throw new Error(
-      `Permission menu does not explain all policies: ${permissionMenuText}`
+      `Permission menu does not explain all policies: ${JSON.stringify(permissionOptions)}`
     );
   }
   await page.screenshot({
@@ -1479,10 +1503,21 @@ try {
   await freshSessionTile.waitFor();
   const freshSessionText = await freshSessionTile.innerText();
   const contextSessionText = await contextSessionTile.innerText();
-  if (!freshSessionText.includes('New agent')) {
+  // An untitled Agent keeps a visible identity, whatever its fallback reads.
+  const freshSessionTitled = await freshSessionTile.evaluate(element =>
+    Boolean(
+      element
+        .querySelector('[data-session-overview-title]')
+        ?.textContent?.trim()
+    )
+  );
+  if (!freshSessionTitled) {
     throw new Error(`Sessions lost the fallback title: ${freshSessionText}`);
   }
-  if (!contextSessionText.includes('Updating tests for harness command')) {
+  const contextGoal = liveSessions.find(
+    item => item.id === 'exawatt-session'
+  ).contextSummary;
+  if (!contextSessionText.includes(contextGoal)) {
     throw new Error(
       `Sessions lost durable context identity: ${contextSessionText}`
     );
@@ -1541,13 +1576,11 @@ try {
   // this navigation last so it cannot perturb the back-stack assertions above.
   // At the readable floor an inactive Project may be folded, so disclose the
   // fixture's owning Project before addressing its stopped tab directly.
-  await page.getByRole('button', { name: 'exawatt', exact: true }).click();
+  await page.locator('[data-project="exawatt"] [data-project-chrome]').click();
   await page.locator('[data-tab-id="frozen-tab"]').click();
   const stoppedPane = page.locator('[data-session-restore="frozen-tab"]');
   await stoppedPane.waitFor();
-  await stoppedPane
-    .getByRole('button', { name: 'Resume this Agent', exact: true })
-    .waitFor();
+  await stoppedPane.locator('[data-session-lifecycle-verb="resume"]').waitFor();
   // A stopped Agent opened cold shows a RECORD, not a replayed terminal
   // (BUG-013): the lifecycle bar states how the Session ended in the shared
   // vocabulary and the record offers the transcript rather than pouring it

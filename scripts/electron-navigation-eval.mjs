@@ -189,12 +189,27 @@ try {
       ) {
         throw new Error(`Sessions leaked terminal output: ${previewText}`);
       }
+      // The Now line states the live shell's state. Read the state it is
+      // drawn from rather than its sentence: a running Session whose light is
+      // working or quiet, with a sentence rendered for it.
+      const currentState = await card.evaluate(element => ({
+        lifecycle: element.getAttribute('data-expose-lifecycle'),
+        status:
+          element
+            .closest('[data-expose-card]')
+            ?.querySelector('[data-status]')
+            ?.getAttribute('data-status') ?? null,
+        stated: Boolean(
+          element.querySelector('[data-session-current]')?.textContent?.trim()
+        ),
+      }));
       if (
-        !previewText.includes('Shell is active') &&
-        !previewText.includes('Shell is idle')
+        currentState.lifecycle !== 'running' ||
+        !['working', 'quiet'].includes(currentState.status) ||
+        !currentState.stated
       ) {
         throw new Error(
-          `Sessions omitted truthful current state: ${previewText}`
+          `Sessions omitted truthful current state: ${JSON.stringify(currentState)} ${previewText}`
         );
       }
       const cardType = await card.evaluate(element => {
@@ -254,7 +269,9 @@ try {
         fullPage: true,
       });
 
-      await page.getByRole('button', { name: 'Angle' }).click();
+      await page
+        .locator('[data-board-projection-option="fixed-angle"]')
+        .click();
       await page.waitForURL(
         url => url.searchParams.get('projection') === 'fixed-angle'
       );

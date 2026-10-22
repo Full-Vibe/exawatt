@@ -111,8 +111,7 @@ async function measure(page) {
         const bar = meter.querySelector('[data-usage-bar]');
         if (!bar) continue;
         const barBox = rect(bar);
-        for (const label of meter.querySelectorAll('span')) {
-          if (!/% used$/u.test(label.textContent ?? '')) continue;
+        for (const label of meter.querySelectorAll('[data-usage-percent]')) {
           if (overlaps(rect(label), barBox)) {
             out.push(`${name}: percent label overlaps its bar`);
           }
@@ -158,8 +157,8 @@ async function shoot(page, errors, view, query, name) {
 
 const { page: indexPage } = await openPage(VIEWS[0]);
 await indexPage.goto(`${BASE}${ROUTE}`, { waitUntil: 'load' });
-await indexPage.waitForSelector('nav[aria-label="Scenarios"] a');
-const scenarios = await indexPage.$$eval('nav[aria-label="Scenarios"] a', links =>
+await indexPage.waitForSelector('[data-usage-scenario-link]');
+const scenarios = await indexPage.$$eval('[data-usage-scenario-link]', links =>
   links.map(a => new URL(a.href).searchParams.get('s')).filter(Boolean)
 );
 await indexPage.close();

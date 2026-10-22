@@ -240,8 +240,29 @@ async function waitForSpatialCanvas(page) {
   }
 }
 
+/** A board projection toggle, by the projection it selects. */
+function projectionOption(page, projection) {
+  return page.locator(`[data-board-projection-option="${projection}"]`);
+}
+
+/** Fleet-wide Agents in the statuses the Working + Result filter leaves out. */
+function excludedStatusTotal(page) {
+  return page.evaluate(() =>
+    ['needs-you', 'fault', 'off'].reduce(
+      (sum, state) =>
+        sum +
+        Number(
+          document
+            .querySelector(`[data-fleet-status="${state}"]`)
+            ?.getAttribute('data-fleet-status-count') ?? 0
+        ),
+      0
+    )
+  );
+}
+
 async function openProject(page) {
-  const projects = page.locator('button[aria-label^="Open Project "]');
+  const projects = page.locator('button[data-board-zone]');
   await projects.first().waitFor({ state: 'visible' });
   const projectCount = await projects.count();
   check(projectCount > 0, 'Fleet regime has no keyboard-accessible Projects');
@@ -300,14 +321,12 @@ async function openProject(page) {
 }
 
 async function checkPersistentProjectWorld(page, projectCount) {
-  const projects = page.locator('button[aria-label^="Open Project "]');
+  const projects = page.locator('button[data-board-zone]');
   check(
     (await projects.count()) === projectCount,
     'Project focus removed neighboring Projects from the board'
   );
-  const minimap = page.getByRole('button', {
-    name: 'Recenter board from minimap',
-  });
+  const minimap = page.locator('[data-board-minimap]');
   check(
     (await minimap.locator('svg circle').count()) === projectCount,
     'Project focus removed neighboring Projects from the minimap'
@@ -336,37 +355,33 @@ async function checkPersistentProjectWorld(page, projectCount) {
     Math.abs(panned.centerX - before.centerX) > 0.5,
     'Project focus swallowed a horizontal pan'
   );
-  const resumeFollow = page.getByRole('button', {
-    name: 'Follow selected Agent',
-  });
-  await resumeFollow.waitFor({ state: 'visible' });
-  check(
-    (await resumeFollow.getAttribute('aria-pressed')) === 'false',
-    'Manual pan did not suspend Agent follow'
+  // The follow reticle's state is its aria-pressed: unpressed once a manual
+  // pan suspends follow, pressed again once it resumes.
+  const resumeFollow = page.locator(
+    '[data-board-follow][aria-pressed="false"]'
   );
+  const pauseFollow = page.locator('[data-board-follow][aria-pressed="true"]');
+  await resumeFollow
+    .waitFor({ state: 'visible' })
+    .catch(() => check(false, 'Manual pan did not suspend Agent follow'));
   await resumeFollow.click();
-  const pauseFollow = page.getByRole('button', {
-    name: 'Pause Agent follow',
-  });
-  await pauseFollow.waitFor({ state: 'visible' });
-  check(
-    (await pauseFollow.getAttribute('aria-pressed')) === 'true',
-    'Agent follow reticle did not resume soft follow'
-  );
+  await pauseFollow
+    .waitFor({ state: 'visible' })
+    .catch(() =>
+      check(false, 'Agent follow reticle did not resume soft follow')
+    );
   await page.waitForTimeout(700);
   const followed = await readViewport();
   if (fleetView === 'v1') {
-    await page.getByRole('button', { name: 'Angle' }).click();
+    await projectionOption(page, 'fixed-angle').click();
   } else {
     check(
-      (await page
-        .getByRole('button', { name: 'Angle', exact: true })
-        .count()) === 0,
+      (await projectionOption(page, 'fixed-angle').count()) === 0,
       'v2 exposes an unsupported projection toggle'
     );
   }
   if (fleetView === 'v1') {
-    await page.getByRole('button', { name: 'Top' }).click();
+    await projectionOption(page, 'top-down').click();
   } else {
     await pauseFollow.click();
     await resumeFollow.click();
@@ -382,16 +397,10 @@ async function checkPersistentProjectWorld(page, projectCount) {
 }
 
 async function checkCanonicalStatusFilters(page) {
-  const working = page.getByRole('button', {
-    name: /^Working: .*Filter by this status\.$/,
-  });
-  const result = page.getByRole('button', {
-    name: /^Result ready: .*Filter by this status\.$/,
-  });
+  const working = page.locator('button[data-fleet-status="active"]');
+  const result = page.locator('button[data-fleet-status="result"]');
   await working.waitFor({ state: 'visible' });
-  const totalsBefore = await page
-    .locator('[aria-label="Fleet Agent statuses"]')
-    .innerText();
+  const totalsBefore = await excludedStatusTotal(page);
   await working.click();
   await result.click();
   await page.waitForFunction(() => {
@@ -408,7 +417,7 @@ async function checkCanonicalStatusFilters(page) {
     'Canonical Fleet status pills did not preserve multi-selection'
   );
   check(
-    await page.getByText(/\d+ shown/).isVisible(),
+    await page.locator('[data-spatial-filter-count]').isVisible(),
     'Filtered result count is not visible'
   );
   // The totals are fleet-wide, so the statuses the filter leaves OUT keep
@@ -416,19 +425,12 @@ async function checkCanonicalStatusFilters(page) {
   // the Demo fleet is alive (ENG-027 W14) and ticks every second, so the two
   // readings legitimately differ by whatever changed in between, which made
   // the old equality fail on every run once the Demo stopped holding still.
-  const excluded = text =>
-    ['Needs you', 'Error', 'Idle'].reduce((sum, label) => {
-      const match = text.match(new RegExp(`${label}\\s*(\\d+)`));
-      return sum + (match ? Number(match[1]) : 0);
-    }, 0);
-  const totalsAfter = await page
-    .locator('[aria-label="Fleet Agent statuses"]')
-    .innerText();
+  const totalsAfter = await excludedStatusTotal(page);
   check(
-    excluded(totalsBefore) === 0 || excluded(totalsAfter) > 0,
+    totalsBefore === 0 || totalsAfter > 0,
     'Fleet-wide status totals followed the active filter'
   );
-  await page.getByTitle('Clear search and filters').click();
+  await page.locator('[data-spatial-filter-clear]').click();
   await page.waitForFunction(
     () => !new URL(location.href).searchParams.has('status')
   );
@@ -443,7 +445,7 @@ async function checkCanonicalStatusFilters(page) {
  * `eval:spatial:scale`.
  */
 async function checkVoltaicFleet(page) {
-  const projects = page.locator('button[aria-label^="Open Project "]');
+  const projects = page.locator('button[data-board-zone]');
   await projects.first().waitFor({ state: 'visible', timeout: 10_000 });
   const projectCount = await projects.count();
   check(projectCount > 0, 'Voltaic fleet rendered no Projects');
@@ -459,7 +461,7 @@ async function checkVoltaicFleet(page) {
       ? 'Phone-width fleet kept full name cards on every zone (nano tier absent)'
       : `Desktop fleet fit dropped ${nanoChips} zone label(s) to nano (names lost)`
   );
-  const agentNavigator = page.getByLabel('Select Agent on board');
+  const agentNavigator = page.locator('[data-board-agent-navigator]');
   check(
     (await agentNavigator.locator('option').count()) > 1,
     'Fleet Agents have no keyboard-accessible DOM selection path'
@@ -482,17 +484,13 @@ async function checkVoltaicFleet(page) {
 }
 
 async function checkBoardTools(page) {
-  const minimap = page.getByRole('button', {
-    name: 'Recenter board from minimap',
-  });
+  const minimap = page.locator('[data-board-minimap]');
   await minimap.waitFor({ state: 'visible' });
   const viewport = minimap.locator('svg rect').last();
   const widthBefore = Number(await viewport.getAttribute('width'));
-  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.locator('[data-board-zoom="in"]').click();
   await page.waitForFunction(previous => {
-    const map = document.querySelector(
-      'button[aria-label="Recenter board from minimap"]'
-    );
+    const map = document.querySelector('[data-board-minimap]');
     const rects = map?.querySelectorAll('svg rect');
     const viewportRect = rects?.[rects.length - 1];
     return Number(viewportRect?.getAttribute('width')) < previous;
@@ -503,12 +501,10 @@ async function checkBoardTools(page) {
     Array.from(window.__EVAL_CAM__.quaternion)
   );
   if (fleetView === 'v1') {
-    await page.getByRole('button', { name: 'Angle' }).click();
+    await projectionOption(page, 'fixed-angle').click();
   } else {
     check(
-      (await page
-        .getByRole('button', { name: 'Angle', exact: true })
-        .count()) === 0,
+      (await projectionOption(page, 'fixed-angle').count()) === 0,
       'v2 exposes an unsupported projection toggle'
     );
   }
@@ -534,9 +530,7 @@ async function checkBoardTools(page) {
   // Read both projections in one page task. The camera is still damped; four
   // separate attribute awaits can span frames and compare different poses.
   const { projectedViewport, minimapViewport } = await page.evaluate(() => {
-    const map = document.querySelector(
-      'button[aria-label="Recenter board from minimap"]'
-    );
+    const map = document.querySelector('[data-board-minimap]');
     const rects = map?.querySelectorAll('svg rect');
     const rect = rects?.[rects.length - 1];
     return {
@@ -572,7 +566,7 @@ async function checkBoardTools(page) {
     );
   }
   await page
-    .locator('button[aria-label^="Open Project "]')
+    .locator('button[data-board-zone]')
     .first()
     .waitFor({ state: 'visible' });
   await page.evaluate(
@@ -587,7 +581,7 @@ async function checkBoardTools(page) {
   });
 
   if (fleetView === 'v1') {
-    await page.getByRole('button', { name: 'Top' }).click();
+    await projectionOption(page, 'top-down').click();
     await page.waitForFunction(
       () =>
         document
@@ -595,21 +589,17 @@ async function checkBoardTools(page) {
           ?.getAttribute('data-board-projection') === 'top-down'
     );
   }
-  await page
-    .getByRole('button', { name: 'Fit Fleet overview', exact: true })
-    .click();
+  await page.locator('[data-board-overview="fit"]').click();
   return { widthBefore, widthAfter, quaternionDelta };
 }
 
 async function checkAgentProjectionPersistence(page) {
   const before = new URL(page.url()).searchParams.get('agent');
   if (fleetView === 'v1') {
-    await page.getByRole('button', { name: 'Angle' }).click();
+    await projectionOption(page, 'fixed-angle').click();
   } else {
     check(
-      (await page
-        .getByRole('button', { name: 'Angle', exact: true })
-        .count()) === 0,
+      (await projectionOption(page, 'fixed-angle').count()) === 0,
       'v2 exposes an unsupported projection toggle'
     );
   }
@@ -633,7 +623,7 @@ async function checkAgentProjectionPersistence(page) {
     'Projection hid the Agent selection panel'
   );
   if (fleetView === 'v1') {
-    await page.getByRole('button', { name: 'Top' }).click();
+    await projectionOption(page, 'top-down').click();
     await page.waitForFunction(
       () =>
         document

@@ -268,6 +268,8 @@ export const SURFACE_GATES = [
       file === 'electron/main/host-power.ts' ||
       file === 'electron/main/pty-ipc.ts' ||
       file === 'src/app/settings/power-settings.tsx' ||
+      // The eval reaches Power through the registry's own link.
+      file === 'src/app/settings/settings-registry.ts' ||
       file === 'scripts/electron-device-power-eval.mjs',
   },
   {
@@ -280,6 +282,8 @@ export const SURFACE_GATES = [
       file.startsWith('src/components/permissions/') ||
       file === 'src/app/settings/permissions-settings.tsx' ||
       file === 'src/app/settings/notifications-settings.tsx' ||
+      // The eval reaches Settings through the registry's own links.
+      file === 'src/app/settings/settings-registry.ts' ||
       file === 'scripts/electron-permissions-eval.mjs',
   },
   {
@@ -393,6 +397,8 @@ export const SURFACE_GATES = [
     match: file =>
       /^src\/lib\/appearance\/(?:color|resolve-appearance)\.ts$/.test(file) ||
       /^themes\/v1\/.+\.json$/.test(file) ||
+      // The eval reaches Appearance through the registry's own link.
+      file === 'src/app/settings/settings-registry.ts' ||
       file === 'scripts/theme-system-eval.mjs',
   },
   {

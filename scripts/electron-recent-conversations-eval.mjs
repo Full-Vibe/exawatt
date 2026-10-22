@@ -177,8 +177,7 @@ try {
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
       await page
-        .locator('[data-project-opener]')
-        .getByRole('button', { name: 'Browse Folder' })
+        .locator('[data-project-opener] [data-project-route="browse"]')
         .click();
       await page.locator('[data-agent-composer]').waitFor();
       const target = page.locator(`[data-conversation-id="${targetId}"]`);
@@ -187,7 +186,7 @@ try {
       check(
         'new task remains the focused default',
         await page
-          .getByLabel('Initial task for the new Agent')
+          .locator('[data-launcher-task]')
           .evaluate(node => node === document.activeElement)
       );
       check(
@@ -199,16 +198,23 @@ try {
       check(
         'exact resume and fresh migration are both discoverable',
         (await target.getByRole('button').count()) === 2 &&
-          (await target.getByText('Start fresh').count()) === 1
+          (await target
+            .locator('[data-conversation-action="resume"]')
+            .count()) === 1 &&
+          (await target
+            .locator('[data-conversation-action="fresh"]')
+            .count()) === 1
       );
       check(
         'all harnesses share one recent browser',
         (await page
           .locator('[data-recent-conversations] [data-conversation-id]')
           .count()) === 15 &&
-          /codex/i.test(
-            await page.locator('[data-recent-conversations]').innerText()
-          )
+          (await page
+            .locator(
+              '[data-recent-conversations] [data-conversation-id] [data-agent-source-mark="codex"]'
+            )
+            .count()) > 0
       );
       const projectOwned = page.locator(
         '[data-conversation-id="11111111-1111-4111-8111-111111111111"]'
@@ -221,9 +227,10 @@ try {
             'Audit consent state from Project history'
           ) &&
           (await projectOwned
-            .getByRole('button', {
-              name: 'Resume Audit consent state from Project history in Codex',
-            })
+            .locator('[data-conversation-action="resume"]')
+            .count()) === 1 &&
+          (await projectOwned
+            .locator('[data-agent-source-mark="codex"]')
             .count()) === 1 &&
           (await page
             .locator('[data-conversation-id="session-project-only"]')
@@ -270,15 +277,11 @@ try {
         path: join(output, '01-new-agent-recents-800.png'),
       });
 
-      await page
-        .getByLabel('Initial task for the new Agent')
-        .press('ArrowDown');
+      await page.locator('[data-launcher-task]').press('ArrowDown');
       check(
         'Down moves from the empty composer to the first recent',
         await target
-          .getByRole('button', {
-            name: 'Resume client-side-deidentification-mmhc in Claude Code',
-          })
+          .locator('[data-conversation-action="resume"]')
           .evaluate(node => node === document.activeElement)
       );
 
@@ -286,12 +289,10 @@ try {
       check(
         'Up from the first recent returns to the new-task composer',
         await page
-          .getByLabel('Initial task for the new Agent')
+          .locator('[data-launcher-task]')
           .evaluate(node => node === document.activeElement)
       );
-      await page
-        .getByLabel('Initial task for the new Agent')
-        .press('ArrowDown');
+      await page.locator('[data-launcher-task]').press('ArrowDown');
 
       for (let index = 0; index < 9; index += 1) {
         await page.keyboard.press('ArrowDown');
@@ -328,9 +329,7 @@ try {
       check('mouse and trackpad wheel scroll the same pane', true);
 
       await page.keyboard.press('Escape');
-      await page
-        .getByLabel('Initial task for the new Agent')
-        .press('ArrowDown');
+      await page.locator('[data-launcher-task]').press('ArrowDown');
       await page.keyboard.press('Enter');
       let session;
       const sessionDeadline = Date.now() + 20_000;
@@ -437,11 +436,7 @@ try {
         path: join(output, '03-split-pane-recents-1200.png'),
       });
 
-      await splitTarget
-        .getByRole('button', {
-          name: 'Resume Audit consent state from Project history in Codex',
-        })
-        .click();
+      await splitTarget.locator('[data-conversation-action="resume"]').click();
       await waitForPageCondition(page, async () =>
         ((await window.electron?.pty?.list()) ?? []).some(
           session =>

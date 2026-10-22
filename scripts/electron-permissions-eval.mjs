@@ -14,6 +14,7 @@ import {
   openFixtureSession,
 } from './lib/harness-event-fixture.mjs';
 import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
+import { settingsHref } from '../src/app/settings/settings-registry.ts';
 
 const base = process.env.EXA_BASE ?? 'http://localhost:7000';
 const screenshots =
@@ -81,51 +82,58 @@ async function shot(page, file) {
 }
 /** Settings hydrates after it paints, so a click can land before React hears
  *  it. Click again until the section it opens is there. */
-async function openSection(page, name, ready) {
+async function openSection(page, section, ready) {
   await until(async () => {
     if ((await ready.count()) > 0) return true;
-    await page.getByRole('link', { name, exact: true }).click();
+    await page
+      .locator(`[data-settings-shell] nav a[href="${settingsHref(section)}"]`)
+      .click();
     return (await ready.count()) > 0;
-  }, `the ${name} section`);
+  }, `the ${section} section`);
 }
 const openPermissions = page =>
   openSection(
     page,
-    'Permissions',
+    'permissions',
     page.locator('[data-permission="notifications"]')
   );
 const openPreferences = page =>
-  openSection(page, 'Notifications', nativeSwitch(page));
+  openSection(page, 'notifications', nativeSwitch(page));
 /** By attribute, not by role: while a dialog is open the page behind it is
  *  hidden from the accessibility tree, and the switch is still on screen. */
 const nativeSwitch = page =>
-  page.locator(
-    'button[role="switch"][aria-label="Native macOS notifications"]'
-  );
+  page.locator('button[role="switch"][data-notifications-attention]');
 const row = page => page.locator('[data-permission="notifications"]');
+const rowState = (page, state) =>
+  row(page).locator(`[data-permission-state="${state}"]`);
+const rowAction = (page, action) =>
+  row(page).locator(`[data-permission-action="${action}"]`);
 const primer = page => page.locator('[data-permission-primer]');
+/** The primer's one button is the dialog's primary action. */
+const primerAction = page =>
+  primer(page).locator('[data-slot="dialog-primary-action"]');
 
 // 1. A Mac that never answered: Allow shows the primer, the primer raises
 //    nothing, and only Continue reaches the system.
 await run('first-run', 'not-determined', async (_app, page) => {
   await openPermissions(page);
-  await row(page).getByText('Not asked yet').waitFor();
-  assert.equal(
-    await row(page)
-      .getByRole('button', { name: 'Open System Settings' })
-      .count(),
-    0
-  );
+  await rowState(page, 'not-determined').waitFor();
+  assert.equal(await rowAction(page, 'open-settings').count(), 0);
   await shot(page, '1-section-not-asked');
 
-  await row(page).getByRole('button', { name: 'Allow' }).click();
+  await rowAction(page, 'allow').click();
   await primer(page).waitFor();
   assert.equal(
     await primer(page).locator('button').count(),
     1,
     'the primer has one button'
   );
-  assert.match(await primer(page).locator('button').innerText(), /Continue/);
+  assert.equal(
+    await primerAction(page).count(),
+    1,
+    'the one button is the primer’s primary action'
+  );
+  assert.equal(await primer(page).getAttribute('data-primer-step'), 'intro');
   assert.equal(
     await state(page),
     'not-determined',
@@ -133,11 +141,9 @@ await run('first-run', 'not-determined', async (_app, page) => {
   );
   await shot(page, '2-primer');
 
-  await primer(page)
-    .getByRole('button', { name: /Continue/ })
-    .click();
+  await primerAction(page).click();
   await primer(page).waitFor({ state: 'detached' });
-  await row(page).getByText('Allowed').waitFor();
+  await rowState(page, 'granted').waitFor();
   assert.equal(await state(page), 'granted');
   await shot(page, '3-section-allowed');
 });
@@ -157,9 +163,7 @@ await run('switch', 'not-determined', async (_app, page) => {
     'false',
     'off until it is allowed'
   );
-  await primer(page)
-    .getByRole('button', { name: /Continue/ })
-    .click();
+  await primerAction(page).click();
   await waitForPageCondition(
     page,
     async () =>
@@ -184,8 +188,10 @@ await run(
     await send('turn');
     await send('stop');
     await primer(page).waitFor({ timeout: 30_000 });
+    assert.equal(await primer(page).getAttribute('data-primer-step'), 'intro');
     assert.match(
       await primer(page).innerText(),
+      // binds-text: main's attention-moment reason is the only thing that tells this primer from the unreadable-state notice's; no attribute carries the source
       /An agent needed you while Exawatt was in the background/
     );
     assert.equal(await primer(page).locator('button').count(), 1);
@@ -195,9 +201,7 @@ await run(
       'the moment of need must not raise the system prompt before the primer'
     );
     await shot(page, '6-primer-at-the-moment');
-    await primer(page)
-      .getByRole('button', { name: /Continue/ })
-      .click();
+    await primerAction(page).click();
     await until(async () => (await state(page)) === 'granted', 'the answer');
     await primer(page).waitFor({ state: 'detached' });
   },
@@ -207,13 +211,10 @@ await run(
 // 4. A denial: System Settings is the way forward, and nothing prompts.
 await run('denied', 'denied', async (app, page) => {
   await openPermissions(page);
-  await row(page).getByText('Off in macOS').waitFor();
-  assert.equal(
-    await row(page).getByRole('button', { name: 'Allow' }).count(),
-    0
-  );
+  await rowState(page, 'denied').waitFor();
+  assert.equal(await rowAction(page, 'allow').count(), 0);
   await shot(page, '4-section-denied');
-  await row(page).getByRole('button', { name: 'Open System Settings' }).click();
+  await rowAction(page, 'open-settings').click();
   await until(
     async () => (await opened(app)).length > 0,
     'System Settings to be opened'

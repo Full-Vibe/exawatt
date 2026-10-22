@@ -119,9 +119,7 @@ try {
   await parent.focus();
   await page.keyboard.press('Enter');
   for (const camera of ['perspective', 'low', 'overhead']) {
-    await page
-      .getByRole('combobox', { name: 'Camera', exact: true })
-      .selectOption(camera);
+    await page.locator('select[data-board-camera]').selectOption(camera);
     await page.waitForFunction(
       camera => document.querySelector('canvas').dataset.cameraReady === camera,
       camera

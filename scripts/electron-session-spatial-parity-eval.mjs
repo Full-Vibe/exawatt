@@ -201,7 +201,13 @@ try {
       await page.waitForURL(
         url => url.searchParams.get('altitude') === 'agent'
       );
-      await page.getByRole('button', { name: 'Open stopped session' }).click();
+      // The board unit above proved this Agent's Session is stopped; its
+      // panel opens that Session by the Agent's id.
+      await page
+        .locator(
+          '[data-spatial-selection-panel="agent"] button[data-open-agent-session]'
+        )
+        .click();
       await page.waitForURL(url => url.pathname === '/workspace');
       try {
         await page

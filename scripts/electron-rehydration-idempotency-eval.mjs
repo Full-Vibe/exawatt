@@ -109,7 +109,7 @@ async function prepare(page) {
   page.setDefaultTimeout(25_000);
   await page.locator('[data-command-altitude]').waitFor();
   await page.waitForFunction(
-    () => !document.body.innerText.includes('Loading…'),
+    () => !document.querySelector('[data-route-loading]'),
     undefined,
     { timeout: 25_000 }
   );
@@ -117,7 +117,7 @@ async function prepare(page) {
     await page.locator('[data-command-altitude-level="terminal"]').click();
     await page.waitForURL('**/workspace*');
     await page.waitForFunction(
-      () => !document.body.innerText.includes('Loading…'),
+      () => !document.querySelector('[data-route-loading]'),
       undefined,
       { timeout: 25_000 }
     );
@@ -203,9 +203,7 @@ try {
         );
       }, projectDir);
       await page
-        .locator(
-          '[data-agent-composer], [data-composer-toggle], button:has-text("New Agent")'
-        )
+        .locator('[data-agent-composer], [data-composer-toggle]')
         .first()
         .waitFor();
 
@@ -328,9 +326,7 @@ try {
             `g${generation}: relaunch spawned ${spawned.length} sessions`
           );
         }
-        const banner = page.getByRole('region', {
-          name: 'Saved Agent recovery',
-        });
+        const banner = page.locator('[data-resume-recovery]');
         await banner.waitFor();
         // The primary recovery action resumes this generation's previously
         // running set. Verify its identities below, independently of its copy.

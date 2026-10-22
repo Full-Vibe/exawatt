@@ -490,7 +490,7 @@ async function grantAndSend(page, gateway, sourceId, agent) {
   const composer = surface.locator('form[data-composer-target]');
   await composer.waitFor();
   await composer.locator('textarea').fill(FIXTURE_MESSAGE);
-  await composer.getByRole('button', { name: 'Send' }).click();
+  await composer.locator('button[type="submit"]').click();
   await surface
     .getByText(`${gateway.label} received: ${FIXTURE_MESSAGE}`)
     .waitFor();

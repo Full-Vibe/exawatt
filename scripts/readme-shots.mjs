@@ -16,9 +16,9 @@
  *    before a byte is written. Fail closed: no assertion, no file.
  * 2. **No web-build chrome.** These surfaces ship in the Mac app, which has no
  *    site header. The web header is hidden so the image shows the app's own
- *    surface. It is hidden by matching the wordmark, not by a blanket `header`
- *    rule — the Fleet status bar is a `<header>` too, and it carries the
- *    entire point of the shot.
+ *    surface. It is found by its brand mark (`[data-chrome-brand]`), not by a
+ *    blanket `header` rule: the Fleet status bar is a `<header>` too, and it
+ *    carries the entire point of the shot.
  * 3. **No metadata, no post-processing.** Chromium's PNG encoder writes no
  *    tEXt/EXIF; ImageMagick would add `date:create` and `Software` chunks that
  *    `pnpm assets:check` then flags. So the capture geometry is exact and the
@@ -105,13 +105,13 @@ for (const shot of SHOTS) {
   await page.waitForTimeout(shot.settleMs);
 
   const headerHeight = await page.evaluate(() => {
-    for (const header of document.querySelectorAll('header')) {
-      if (!header.textContent?.includes('Exawatt Community')) continue;
-      const { height } = header.getBoundingClientRect();
-      header.style.display = 'none';
-      return height;
-    }
-    return 0;
+    const header = document
+      .querySelector('[data-chrome-brand]')
+      ?.closest('header');
+    if (!header) return 0;
+    const { height } = header.getBoundingClientRect();
+    header.style.display = 'none';
+    return height;
   });
   if (!headerHeight) {
     throw new Error(

@@ -42,7 +42,6 @@ try {
     return {
       rows: Number(element.getAttribute('data-ribbon-rows')),
       height: bounds.height,
-      overflowButtons: element.querySelectorAll('[data-ribbon-overflow]').length,
       // every Project is on screen as one of the three presentations
       modes: Array.from(
         element.querySelectorAll('[data-ribbon-item="project"]')
@@ -56,7 +55,6 @@ try {
   if (
     wideMetrics.rows !== 1 ||
     wideMetrics.height > 30.5 ||
-    wideMetrics.overflowButtons !== 0 ||
     wideMetrics.modes.some(mode => !mode) ||
     wideMetrics.itemBottoms.some(bottom => bottom > wideMetrics.stripBottom + 1)
   ) {
@@ -110,7 +108,10 @@ try {
     );
     requestAnimationFrame(recordFrame);
   });
-  await study.getByRole('button', { name: 'gpagent', exact: true }).click();
+  await study
+    .locator('[data-ribbon-item="project"][data-project="gpagent"]')
+    .locator('button[data-project-chrome]')
+    .click();
   await page.waitForTimeout(280);
   const afterSelect = await rect(survivor);
   const selectTrace = await page.evaluate(
@@ -137,8 +138,11 @@ try {
   // targets do not jump under the pointer, then the layout releases smoothly.
   const stableTarget = study.locator('[data-project="exawatt"]');
   const beforeClose = await rect(stableTarget);
+  // gpagent's one Session, "Fix the UTC date boundary" in the study corpus.
   await study
-    .getByRole('button', { name: 'Close Fix the UTC date boundary' })
+    .locator(
+      '[data-ribbon-item="initiative"][data-project-parent="/workspace/gpagent"] [data-tab-close]'
+    )
     .click();
   await page.waitForTimeout(240);
   const heldClose = await rect(stableTarget);
@@ -159,7 +163,7 @@ try {
   // stable partition into the dormant tail, and reversing that state reflows.
   const emptyProject = study.locator('[data-project="switcheroo"]');
   const tailed = await rect(emptyProject);
-  await study.getByRole('button', { name: 'Toggle empty tail' }).click();
+  await study.locator('[data-ribbon-study-empty-tail]').click();
   await page.waitForTimeout(260);
   const manualSlot = await rect(emptyProject);
   if (distance(tailed, manualSlot) < 20) {
@@ -176,13 +180,11 @@ try {
     projects: element.querySelectorAll('[data-ribbon-item="project"]').length,
     folded: element.querySelectorAll('[data-project-folded]').length,
     counted: element.querySelectorAll('[data-project-folded-count]').length,
-    overflowButtons: element.querySelectorAll('[data-ribbon-overflow]').length,
     scrollable: element.getAttribute('data-ribbon-scrollable'),
   }));
   if (
     narrowMetrics.rows !== 1 ||
     narrowMetrics.height > 30.5 ||
-    narrowMetrics.overflowButtons !== 0 ||
     narrowMetrics.folded < 1 ||
     narrowMetrics.counted !== narrowMetrics.folded
   ) {

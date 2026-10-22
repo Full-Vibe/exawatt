@@ -178,8 +178,7 @@ try {
       await page.locator('[data-project-opener]').waitFor();
       const openedAt = Date.now();
       await page
-        .locator('[data-project-opener]')
-        .getByRole('button', { name: 'Browse Folder', exact: true })
+        .locator('[data-project-opener] [data-project-route="browse"]')
         .click();
       await page.locator('[data-agent-composer]').waitFor();
       await page

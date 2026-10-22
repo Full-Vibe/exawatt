@@ -20,7 +20,11 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  launcherAxis,
+  openSetupDrawer,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 import { writeFakeHarness } from './lib/harness-probe-fixture.mjs';
 
 /**
@@ -195,7 +199,7 @@ async function chooseFromLauncher(page, pattern) {
   // rather than racing the first paint.
   const deadline = Date.now() + 40_000;
   for (;;) {
-    await page.getByRole('button', { name: 'All engines and models' }).click();
+    await page.locator('[data-setup-catalog-trigger]').click();
     await page.locator('[data-all-launch-configurations]').waitFor();
     const row = page
       .locator('[data-all-launch-configurations] button')
@@ -212,7 +216,7 @@ async function chooseFromLauncher(page, pattern) {
           .innerText()}`
       );
     }
-    await page.getByRole('button', { name: 'All engines and models' }).click();
+    await page.locator('[data-setup-catalog-trigger]').click();
     await page.waitForTimeout(1_000);
   }
 }
@@ -260,8 +264,7 @@ try {
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
       await page
-        .locator('[data-project-opener]')
-        .getByRole('button', { name: 'Browse Folder' })
+        .locator('[data-project-opener] [data-project-route="browse"]')
         .click();
       await page.locator('[data-agent-composer]').waitFor();
 
@@ -293,21 +296,19 @@ try {
       const composerText = await page
         .locator('[data-agent-composer]')
         .innerText();
+      await openSetupDrawer(page);
       check(
-        'the composer names Grok Build and its source-reported default model',
-        composerText.includes('Grok Build') &&
-          composerText.includes('Eval Grok 4.5'),
+        'the composer selects Grok Build and its source-reported default model',
+        (await launcherAxis(page, 'engine').getAttribute(
+          'data-option-menu-value'
+        )) === 'grok' && composerText.includes('Eval Grok 4.5'),
         composerText.replace(/\n/g, ' / ')
       );
 
       await page
-        .getByLabel('Initial task for the new Agent')
+        .locator('[data-launcher-task]')
         .fill('Verify the Grok Build launch adapter');
-      const startButton = page.getByRole('button', {
-        name: 'Start',
-        exact: true,
-      });
-      await startButton.click();
+      await page.locator('[data-launcher-start]').click();
       const launched = await sessionOfHarness(
         page,
         'grok',

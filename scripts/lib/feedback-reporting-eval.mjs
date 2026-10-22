@@ -125,7 +125,7 @@ export async function installFeedbackTransport(page, endpoint) {
 async function injectImage(form, eventType) {
   // Paste/drop originates at the editing target, then bubbles to the shared
   // composer's handlers. Dispatching on its Radix ancestor cannot reach down.
-  await form.getByRole('textbox', { name: 'Feedback', exact: true }).evaluate(
+  await form.locator('[data-feedback-message]').evaluate(
     (element, { eventType, bytes, name }) => {
       const transfer = new DataTransfer();
       transfer.items.add(
@@ -147,9 +147,9 @@ async function injectImage(form, eventType) {
     },
     { eventType, bytes: [...IMAGE.buffer], name: IMAGE.name }
   );
-  await form.getByAltText('Feedback attachment preview').waitFor();
+  await form.locator('[data-feedback-image-preview]').waitFor();
   await form
-    .getByAltText('Feedback attachment preview')
+    .locator('[data-feedback-image-preview]')
     .evaluate(image => image.decode());
 }
 
@@ -168,8 +168,10 @@ async function waitForState(page, id, state) {
 export async function evaluateFeedbackReporting({
   app, page, transport, check, screenshotDir, originSessionId, alternateTabId,
 }) {
-  const composer = page.getByRole('dialog', { name: 'Submit feedback', exact: true });
-  const field = () => composer.getByLabel('Feedback', { exact: true });
+  const composer = page.getByRole('dialog').filter({ has: page.locator('[data-feedback-composer]') });
+  const field = () => composer.locator('[data-feedback-message]');
+  const preview = () => composer.locator('[data-feedback-image-preview]');
+  const action = (scope, name) => scope.locator(`[data-feedback-action="${name}"]`);
   const openComposerShortcut = async () => {
     await page.keyboard.press('Meta+Shift+KeyF');
     await composer.waitFor();
@@ -241,8 +243,8 @@ export async function evaluateFeedbackReporting({
   await checkToolbar(toolbar, 'switching feedback kind keeps the evidence toolbar within its original inline bounds');
   await page.keyboard.press('Meta+Digit1');
   await composer.locator('[data-feedback-image-input]').setInputFiles(IMAGE);
-  await composer.getByAltText('Feedback attachment preview').waitFor();
-  const chosenImage = await composer.getByAltText('Feedback attachment preview').getAttribute('src');
+  await preview().waitFor();
+  const chosenImage = await preview().getAttribute('src');
   check('Help accepts a local image through its file picker', chosenImage?.startsWith('data:image/png;base64,'));
   await field().press('Escape');
   await composer.waitFor({ state: 'hidden' });
@@ -250,23 +252,24 @@ export async function evaluateFeedbackReporting({
   await openComposerShortcut();
   check('the global shortcut reopens the Help draft with its chosen evidence',
     (await field().inputValue()) === helpMessage &&
-    (await composer.getByAltText('Feedback attachment preview').getAttribute('src')) === chosenImage);
+    (await preview().getAttribute('src')) === chosenImage);
   await field().press('Escape');
   await composer.waitFor({ state: 'hidden' });
   await page.keyboard.press('Meta+KeyK');
-  const palette = page.getByRole('dialog', { name: 'Command palette', exact: true });
+  const palette = page.getByRole('dialog').filter({ has: page.locator('[cmdk-root]') });
   await palette.waitFor();
   await palette.getByRole('combobox').fill('Send feedback');
-  await palette.getByRole('option', { name: /^Send feedback/ }).click();
+  // The quick-feedback verb's palette row (`palette.rowId` in command-verbs).
+  await palette.locator('[data-palette-group="actions"] [cmdk-item][data-command-id="action-feedback"]').click();
   await composer.waitFor();
   check('the palette feedback action reaches that same draft and evidence',
     (await field().inputValue()) === helpMessage &&
-    (await composer.getByAltText('Feedback attachment preview').getAttribute('src')) === chosenImage);
-  const capture = composer.getByRole('button', { name: 'Screenshot', exact: true });
+    (await preview().getAttribute('src')) === chosenImage);
+  const capture = action(composer, 'screenshot');
   const beforeCapture = transport.payloads.length;
   await capture.focus();
   await page.keyboard.press('Enter');
-  await page.waitForFunction(() => [...document.querySelectorAll('img[alt="Feedback attachment preview"]')]
+  await page.waitForFunction(() => [...document.querySelectorAll('img[data-feedback-image-preview]')]
     .some(image => image.getAttribute('src')?.startsWith('data:image/jpeg;base64,')));
   check('Enter activates focused window capture without submitting', transport.payloads.length === beforeCapture);
   await waitForEditingFocus();
@@ -314,13 +317,13 @@ export async function evaluateFeedbackReporting({
   await page.keyboard.type(report);
   await injectImage(composer, 'paste');
   check('image paste preserves report text', (await field().inputValue()) === report);
-  await composer.getByRole('button', { name: 'Remove attached image', exact: true }).click();
+  await action(composer, 'remove-image').click();
   await injectImage(composer, 'drop');
   await composer.locator('[data-feedback-image-input]').setInputFiles(IMAGE);
-  await composer.getByAltText('Feedback attachment preview').waitFor();
+  await preview().waitFor();
   await page.screenshot({ path: join(screenshotDir, 'feedback-composer-images.png') });
   const pending = transport.hold();
-  await composer.getByRole('button', { name: 'Send feedback', exact: true }).evaluate(button => {
+  await action(composer, 'send').evaluate(button => {
     button.click(); button.click();
   });
   const first = await pending.observed;
@@ -368,7 +371,7 @@ export async function evaluateFeedbackReporting({
     !(await attempt(page, partialId).locator('[data-operation-receipt="success"]').count()));
   await page.screenshot({ path: join(screenshotDir, 'feedback-partial-receipt.png') });
   const retryResponse = transport.hold();
-  await partial.getByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/, exact: true }).focus();
+  await action(partial, 'retry').focus();
   await page.keyboard.press('Enter');
   const retry = await retryResponse.observed;
   await waitForState(page, partialId, 'sending');
@@ -390,17 +393,16 @@ export async function evaluateFeedbackReporting({
   const failedPayload = transport.payloads.find(payload => payload.idempotencyKey === failedId);
   check('uncertain failure retains the report without offering an unrelated new write',
     (await field().inputValue()) === failedMessage && await field().evaluate(element => element.readOnly) &&
-    !(await failed.getByRole('button', { name: 'Edit feedback', exact: true }).count()) &&
-    !(await failed.getByRole('button', { name: 'New feedback', exact: true }).count()));
-  await composer.getByRole('button', { name: 'Close', exact: true }).click();
+    !(await failed.locator('button:not([data-feedback-action="retry"])').count()));
+  await composer.locator('[data-slot="dialog-close"]').click();
   await composer.waitFor({ state: 'hidden' });
   await openComposerShortcut();
   await waitForState(page, failedId, 'error');
   check('closing an uncertain result keeps its chosen evidence for same-report recovery',
     (await field().inputValue()) === failedMessage &&
-    (await composer.getByAltText('Feedback attachment preview').getAttribute('src'))?.startsWith('data:image/png;base64,'));
+    (await preview().getAttribute('src'))?.startsWith('data:image/png;base64,'));
   const failedRetryResponse = transport.hold();
-  await attempt(page, failedId).getByRole('button', { name: /^(?:Retry(?: image)?|Try again)$/, exact: true }).click();
+  await action(attempt(page, failedId), 'retry').click();
   const failedRetry = await failedRetryResponse.observed;
   check('failure retry preserves its frozen attempt after closing and reopening', JSON.stringify(failedRetry.payload) === JSON.stringify(failedPayload));
   failedRetryResponse.release();
@@ -416,7 +418,7 @@ export async function evaluateFeedbackReporting({
   await partial.waitFor();
   const finishId = await partial.getAttribute('data-feedback-attempt');
   const beforeFinish = transport.payloads.length;
-  await partial.getByRole('button', { name: 'Finish without image', exact: true }).click();
+  await action(partial, 'finish-without-image').click();
   await waitForState(page, finishId, 'sent');
   check('finishing without image sends no replacement report', transport.payloads.length === beforeFinish);
   await done();

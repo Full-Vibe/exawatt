@@ -47,7 +47,7 @@ for (const harness of ['codex', 'claude']) {
 // it had just launched could land after it, so the relaunch found a layout
 // without either tab and timed out on the restored chip (BUG-216). While the
 // app runs, the renderer is the layout's only writer.
-const CORRECTED = 'Improve agent context summaries';
+const CORRECTED = 'Tighten agent recap wording';
 const fixtureTab = (id, task) => ({
   id: `tab-context-${id}`,
   durableSessionId: `persisted-context-${id}`,
@@ -117,9 +117,9 @@ const server = createServer(async (request, response) => {
         relationship: 'new_context',
         confidence: 0.96,
       }
-    : /improve agent context/i.test(latest)
+    : latest.includes(CORRECTED)
       ? {
-          label: 'Improve agent context summaries',
+          label: CORRECTED,
           relationship: 'new_context',
           confidence: 0.98,
         }
@@ -282,31 +282,25 @@ try {
       );
 
       await page.evaluate(
-        ({ id }) =>
-          window.electron.pty.write(
-            id,
-            'Improve agent context summaries\r',
-            true
-          ),
+        ({ id }) => window.electron.pty.write(id, `${CORRECTED}\r`, true),
         { id: first.id }
       );
       if (hostedLabelsConfigured) {
         await waitForPageCondition(
           page,
-          async durableId =>
+          async ({ durableId, label }) =>
             (await window.electron.pty.list()).find(
               item => item.durableSessionId === durableId
-            )?.contextSummary === 'Improve agent context summaries',
-          first.durableSessionId,
-          { label: 'the hosted label "Improve agent context summaries"' }
+            )?.contextSummary === label,
+          { durableId: first.durableSessionId, label: CORRECTED },
+          { label: `the hosted label "${CORRECTED}"` }
         );
         check(
           'submitted pivot replaces the stale reopen-tabs label',
           requests.some(
             body =>
               body.currentLabel === 'Implement cmd+shift+t to reopen tabs' &&
-              body.recentInstructions?.at(-1)?.text ===
-                'Improve agent context summaries'
+              body.recentInstructions?.at(-1)?.text === CORRECTED
           )
         );
 
@@ -329,7 +323,7 @@ try {
         );
         check(
           'hosted failure retains the last good label',
-          afterFailure === 'Improve agent context summaries'
+          afterFailure === CORRECTED
         );
 
         await page.evaluate(
@@ -502,12 +496,12 @@ try {
         // Programmatic click: at eval window widths the hover-revealed close ×
         // overlaps this control's hit target (ribbon layout, not under test).
         await staleTab
-          .getByRole('button', {
-            name: /Improve context label: Fix auth redirect loop/,
-          })
+          .locator('[data-context-label-improve]')
           .dispatchEvent('click');
-        const correction = page.getByLabel('Better context');
-        await correction.fill('Improve agent context summaries');
+        const correction = page
+          .locator('[data-context-label-feedback-popover]')
+          .getByRole('textbox');
+        await correction.fill(CORRECTED);
         await correction.press('Enter');
         // An accepted correction closes the popover (stopped chips no longer
         // render their title — D42 review round — so the durable-store
@@ -521,7 +515,7 @@ try {
             payload =>
               payload.kind === 'context_label' &&
               payload.sentiment === -1 &&
-              payload.message === 'Improve agent context summaries'
+              payload.message === CORRECTED
           )
         );
 
@@ -544,13 +538,12 @@ try {
             window.electron.pty.correctContext(durableSessionId, label),
           {
             durableSessionId: 'persisted-context-b',
-            label: 'Improve agent context summaries',
+            label: CORRECTED,
           }
         );
         check(
           'community build keeps operator corrections local and available',
-          acceptedCorrection === 'Improve agent context summaries' &&
-            feedbackPayloads.length === 0
+          acceptedCorrection === CORRECTED && feedbackPayloads.length === 0
         );
       }
       // The relaunch reads what the layout persisted, so wait for the
@@ -592,7 +585,7 @@ try {
       // stopped chips no longer render their title (D42 review round) —
       // identity lives in the chip's aria-label/tooltip
       const restoredChips = page.locator(
-        '[data-tab-id] [aria-label*="Improve agent context summaries"]'
+        '[data-tab-id] [aria-label*="Tighten agent recap wording"]'
       );
       await restoredChips
         .first()
@@ -639,6 +632,7 @@ try {
       );
       check(
         'no clipboard temp path reappears after relaunch',
+        // binds-text: the temp directory main pastes images into (clipboard-paste.ts), a path that must never render
         !(await page.locator('body').innerText()).includes('exawatt-clipboard')
       );
     },

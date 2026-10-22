@@ -193,13 +193,13 @@ try {
       page.setDefaultTimeout(20_000);
       await page.locator('[data-command-altitude]').waitFor();
       await page.waitForFunction(
-        () => !document.body.innerText.includes('Loading…')
+        () => !document.querySelector('[data-route-loading]')
       );
       if (!new URL(page.url()).pathname.startsWith('/workspace')) {
         await page.locator('[data-command-altitude-level="terminal"]').click();
         await page.waitForURL('**/workspace*');
         await page.waitForFunction(
-          () => !document.body.innerText.includes('Loading…')
+          () => !document.querySelector('[data-route-loading]')
         );
       }
       await waitForWorkspaceReady(page);
@@ -272,30 +272,24 @@ try {
     launchOptions,
     async (app, page) => {
       page.setDefaultTimeout(20_000);
-      const resumeBanner = page.getByRole('region', {
-        name: 'Saved Agent recovery',
-      });
+      const resumeBanner = page.locator('[data-resume-recovery]');
       await resumeBanner.waitFor();
       const before = await page.evaluate(
         async () => (await window.electron?.pty?.list())?.length
       );
       if (before !== 0)
         throw new Error(`Relaunch silently spawned ${before} sessions`);
-      const scope = resumeBanner.getByRole('button', {
-        name: 'Choose resume scope',
-      });
+      const scope = resumeBanner.locator('[data-resume-scope-trigger]');
+      const scopeRow = id =>
+        page.locator(`[role="menuitem"][data-resume-scope="${id}"]`);
       await page.setViewportSize({ width: 1200, height: 800 });
       await page.screenshot({
         path: join(screenshots, 'project-default-1200.png'),
       });
       await scope.click();
-      await page.getByRole('menuitem', { name: 'Resume this agent' }).waitFor();
-      await page
-        .getByRole('menuitem', { name: 'Resume 2 agents in this project' })
-        .waitFor();
-      await page
-        .getByRole('menuitem', { name: 'Resume all 6 agents' })
-        .waitFor();
+      await scopeRow('agent').waitFor();
+      await scopeRow('project').waitFor();
+      await scopeRow('all').waitFor();
       await page.screenshot({
         path: join(screenshots, 'scope-menu-1200.png'),
       });
@@ -306,9 +300,7 @@ try {
       await page.keyboard.press('Escape');
 
       await scope.click();
-      await page
-        .getByRole('menuitem', { name: 'Resume 2 agents in this project' })
-        .click();
+      await scopeRow('project').click();
       await waitForSessionCount(page, 2);
 
       const scopedIds = await page.evaluate(async () => {

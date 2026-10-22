@@ -269,9 +269,6 @@ async function main() {
         mode: frame.getAttribute('data-hero-board-mode'),
         canvases: document.querySelectorAll('canvas').length,
         poster: !!document.querySelector('[data-hero-board-poster]'),
-        stamp: document
-          .querySelector('[data-hero-board-stamp]')
-          ?.textContent?.trim(),
         box: { width: Math.round(rect.width), height: Math.round(rect.height) },
       };
     });
@@ -294,8 +291,8 @@ async function main() {
     mkdirSync(dirname(POSTER_PATH), { recursive: true });
     // The BOARD FRAME, minus anything that renders live on top of the poster.
     // The Project labels are part of the composition and must be in the
-    // substitute, or a reduced-motion visitor gets unnamed circles; the stamp,
-    // the counts, and the legend render over the poster, so baking them in
+    // substitute, or a reduced-motion visitor gets unnamed circles; the
+    // counts and the legend render over the poster, so baking them in
     // would double them. The site header is hidden because an element
     // screenshot of a box taller than the viewport otherwise captures it
     // (it baked the app chrome into the first poster W2 shipped).
@@ -304,7 +301,7 @@ async function main() {
         '#site-header{display:none!important}' +
         // The dev server's issue indicator is a portal on top of everything.
         'nextjs-portal{display:none!important}' +
-        '[data-hero-overlay-fixed],[data-hero-board-stamp]{display:none!important}',
+        '[data-hero-overlay-fixed]{display:none!important}',
     });
     await page.waitForTimeout(400);
     const buffer = await page

@@ -83,7 +83,7 @@ try {
     await page.waitForFunction(
       () =>
         document.querySelector(
-          '[data-fleet-settings] button[aria-label="Gummy"]'
+          '[data-fleet-settings] [data-fleet-material="gummy"]'
         )?.disabled === false
     );
     assert.equal(
@@ -99,22 +99,20 @@ try {
       false,
       'reading Settings must not persist defaults'
     );
-    const view = page.getByRole('group', { name: 'Fleet view', exact: true });
+    const view = page.locator('#fleet-view');
     assert.equal(
       await view
-        .getByRole('button', { name: 'v1', exact: true })
+        .locator('[data-settings-option="v1"]')
         .getAttribute('aria-pressed'),
       'true'
     );
-    await view.getByRole('button', { name: /v2/ }).click();
+    await view.locator('[data-settings-option="v2"]').click();
     await page.waitForFunction(
       key => JSON.parse(localStorage.getItem(key) || 'null') === 'v2',
       storageKeys.fleetView
     );
     for (const material of FLEET_MATERIALS) {
-      await page
-        .getByRole('button', { name: material.name, exact: true })
-        .click();
+      await page.locator(`[data-fleet-material="${material.id}"]`).click();
       await page.waitForFunction(
         ({ keys, material }) =>
           JSON.parse(localStorage.getItem(keys.fleetMaterial) || 'null') ===
@@ -126,24 +124,23 @@ try {
     await page.reload({ waitUntil: 'domcontentloaded' });
     const last = FLEET_MATERIALS.at(-1);
     await page.waitForFunction(
-      name =>
+      id =>
         document
-          .querySelector(`[data-fleet-settings] button[aria-label="${name}"]`)
+          .querySelector(`[data-fleet-settings] [data-fleet-material="${id}"]`)
           ?.getAttribute('aria-pressed') === 'true',
-      last.name
+      last.id
     );
-    await page
-      .getByRole('button', { name: 'Reset material', exact: true })
-      .click();
+    await page.locator('[data-fleet-material-reset]').click();
     await page.waitForFunction(
       keys =>
         JSON.parse(localStorage.getItem(keys.fleetView) || 'null') === 'v2' &&
         localStorage.getItem(keys.fleetMaterial) === 'null',
       storageKeys
     );
+    // With no saved material the presentation default (gummy) is selected.
     assert.equal(
       await page
-        .getByRole('button', { name: 'Gummy', exact: true })
+        .locator('[data-fleet-material="gummy"]')
         .getAttribute('aria-pressed'),
       'true'
     );
@@ -152,13 +149,12 @@ try {
       fullPage: true,
     });
 
-    const search = page.getByRole('searchbox', { name: 'Search Settings' });
+    const shell = page.locator('[data-settings-shell]');
+    const search = shell.getByRole('searchbox');
     await search.fill('anodized');
-    const result = page.getByRole('region', {
-      name: 'Settings search results',
-    });
+    const result = page.locator('[data-settings-search-results]');
     await result
-      .getByRole('link', { name: 'Tile material', exact: true })
+      .locator(`a[href="${settingsHref('fleet', 'fleet-material')}"]`)
       .click();
     assert.equal(new URL(page.url()).searchParams.get('section'), 'fleet');
     assert.equal(new URL(page.url()).hash, '#fleet-material');
@@ -167,23 +163,14 @@ try {
     );
     const frames = [];
     for (const destination of SETTINGS_DESTINATIONS) {
-      const nav = page.getByRole('navigation', {
-        name: 'Settings',
-        exact: true,
-      });
-      await nav
-        .getByRole('link', { name: destination.label, exact: true })
-        .click();
+      const nav = shell.getByRole('navigation');
+      const link = nav.locator(`a[href="${settingsHref(destination.id)}"]`);
+      await link.click();
       await page.waitForFunction(
         id => new URL(location.href).searchParams.get('section') === id,
         destination.id
       );
-      assert.equal(
-        await nav
-          .getByRole('link', { name: destination.label, exact: true })
-          .getAttribute('aria-current'),
-        'page'
-      );
+      assert.equal(await link.getAttribute('aria-current'), 'page');
       // One frame, drawn from the registry: one heading named for the page,
       // and the page body never links to its own rows.
       const frame = page.getByRole('region', {
@@ -250,20 +237,18 @@ try {
     await page.goto(`${base}${settingsHref('fleet')}`, {
       waitUntil: 'domcontentloaded',
     });
-    await page
-      .getByRole('navigation', { name: 'Settings', exact: true })
-      .getByRole('link', { name: 'Fleet', exact: true })
+    await shell
+      .getByRole('navigation')
+      .locator(`a[href="${settingsHref('fleet')}"]`)
       .click();
-    await page
-      .getByRole('navigation', { name: 'Settings', exact: true })
-      .getByRole('link', { name: 'Appearance', exact: true })
+    await shell
+      .getByRole('navigation')
+      .locator(`a[href="${settingsHref('appearance')}"]`)
       .click();
     await page.goBack();
     await page.locator('[data-fleet-settings]').waitFor();
     await search.fill('font');
-    await page
-      .getByRole('region', { name: 'Settings search results' })
-      .waitFor();
+    await page.locator('[data-settings-search-results]').waitFor();
     await page.screenshot({
       path: join(output, `settings-${theme}-search.png`),
       fullPage: true,

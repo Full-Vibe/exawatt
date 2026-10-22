@@ -237,7 +237,7 @@ async function runTask(browser, task) {
     if (task.id === 't3-spatial-sparse') {
       const composition = await page.evaluate(() => {
         const controls = Array.from(
-          document.querySelectorAll('button[aria-label^="Open Project "]')
+          document.querySelectorAll('button[data-board-zone]')
         );
         const rects = controls.map(control => control.getBoundingClientRect());
         if (rects.length !== 2) return { ok: false, count: rects.length };
@@ -378,8 +378,9 @@ async function runTask(browser, task) {
       await button.press('Enter');
       await page.waitForFunction(
         () =>
-          document.querySelector('[aria-label="Activation count"]')
-            ?.textContent === '1',
+          document
+            .querySelector('[data-activation-count]')
+            ?.getAttribute('data-activation-count') === '1',
         undefined,
         { timeout: 2_000 }
       );
@@ -407,9 +408,9 @@ async function runTask(browser, task) {
           hintPressGuard: root?.getAttribute('data-hint-press-guard'),
           activeSoundProfile: root?.getAttribute('data-active-sound-profile'),
           pointerHoldPolicy: root?.getAttribute('data-pointer-hold-policy'),
-          activationCount: document.querySelector(
-            '[aria-label="Activation count"]'
-          )?.textContent,
+          activationCount: document
+            .querySelector('[data-activation-count]')
+            ?.getAttribute('data-activation-count'),
           assemblyCount: window.__EVAL_SCENE__
             ? window.__EVAL_SCENE__.getObjectsByProperty(
                 'name',

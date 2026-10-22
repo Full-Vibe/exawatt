@@ -31,12 +31,14 @@ try {
         ?.projects.flatMap(project => project.tabs)
         .find(tab => tab.durableSessionId === claude.durableSessionId);
     const before = await until(storedTab, 'persisted Session');
-    const projectMenu = async action => {
+    const projectMenu = async commandId => {
       await page
         .locator('[data-ribbon-key^="project:"]')
         .first()
         .click({ button: 'right' });
-      await page.getByRole('menuitem', { name: action, exact: true }).click();
+      await page
+        .locator(`[role="menuitem"][data-command-id="${commandId}"]`)
+        .click();
     };
     await send('turn');
     await until(
@@ -66,13 +68,13 @@ try {
       assert.equal(tab.exitSignal ?? null, null, 'the tab kept a signal');
       assert.equal(tab.exitCode ?? 0, 0);
     };
-    await projectMenu('Pause Agents');
+    await projectMenu('project.pause');
     const dialog = page.locator('[data-project-pause-confirm]');
     await dialog.waitFor();
     await page.screenshot({ path: '/tmp/exawatt-project-pause.png' });
     assert.equal(
       await dialog
-        .getByRole('button', { name: /Cancel/ })
+        .locator('[data-confirm-action="cancel"]')
         .evaluate(el => el === document.activeElement),
       true
     );
@@ -82,12 +84,12 @@ try {
       (await sessions()).find(s => s.id === claude.id)?.exited,
       false
     );
-    await projectMenu('Pause Agents');
+    await projectMenu('project.pause');
     await dialog.waitFor();
     await page.keyboard.press('Tab');
     assert.equal(
       await dialog
-        .getByRole('button', { name: 'Pause now', exact: true })
+        .locator('[data-confirm-action="pause"]')
         .evaluate(el => el === document.activeElement),
       true
     );
@@ -98,7 +100,7 @@ try {
     );
     await assertCleanStop(claude.id);
     await page.locator(`[data-tab-id="${before.id}"]`).waitFor();
-    await projectMenu('Resume Agents');
+    await projectMenu('project.resume');
     const resumed = await until(
       async () =>
         (await sessions()).find(
@@ -125,7 +127,7 @@ try {
       async () => !(await sessions()).find(s => s.id === resumed.id)?.working,
       'quiet boundary'
     );
-    await projectMenu('Pause Agents');
+    await projectMenu('project.pause');
     await until(
       async () => (await sessions()).find(s => s.id === resumed.id)?.exited,
       'quiet pause without confirmation'

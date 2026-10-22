@@ -276,8 +276,7 @@ try {
           await page.keyboard.press('Meta+KeyN');
           await page.locator('[data-project-opener]').waitFor();
           await page
-            .locator('[data-project-opener]')
-            .getByRole('button', { name: 'Browse Folder', exact: true })
+            .locator('[data-project-opener] [data-project-route="browse"]')
             .click();
           await page.locator('[data-agent-composer]').waitFor();
           for (let j = 0; j < 4; j++) {

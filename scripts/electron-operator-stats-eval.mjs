@@ -184,7 +184,9 @@ try {
     },
     async (_app, page) => {
       page.setDefaultTimeout(30_000);
-      await page.getByRole('heading', { name: 'Command more.' }).waitFor();
+      // Every board outcome (unconfigured, unavailable, empty, ranked) marks
+      // itself, so this waits for the route to render whichever it is.
+      await page.locator('[data-board-state]').waitFor();
 
       const result = await page.evaluate(async timezone => {
         const api = window.electron?.operatorStats;

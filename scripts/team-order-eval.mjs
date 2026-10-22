@@ -144,7 +144,7 @@ try {
     document.addEventListener('transitionrun', record, true);
     document.addEventListener('transitionstart', record, true);
   });
-  await page.getByRole('radio', { name: 'Activity' }).click();
+  await page.locator('[data-team-order-mode="activity"]').click();
   await page.waitForTimeout(700);
   const midFlight = await page.evaluate(() => window.__glideSlots.size);
   const activeOrder = await titles();
@@ -177,7 +177,7 @@ try {
     );
   }
   const checked = await page
-    .getByRole('radio', { name: 'Activity' })
+    .locator('[data-team-order-mode="activity"]')
     .getAttribute('aria-checked');
   if (checked !== 'true') {
     throw new Error(

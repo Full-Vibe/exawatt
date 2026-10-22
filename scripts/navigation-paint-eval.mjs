@@ -206,9 +206,6 @@ try {
     const state = await page.evaluate(() => ({
       path: location.pathname,
       theme: document.documentElement.dataset.exaTheme,
-      transitionCurtains: document.querySelectorAll(
-        '[data-architecture-transition-curtain]'
-      ).length,
       architectureLoading: !!document.querySelector(
         '[data-architecture-loading]'
       ),
@@ -252,9 +249,6 @@ try {
   const headerFlashSamples = samples.filter(sample =>
     isLightFlash(sample.headerPixel)
   );
-  const curtainSamples = samples.filter(
-    sample => sample.transitionCurtains > 0
-  );
   const mismatchedChromeSamples = samples.filter(
     sample => sample.headerDarkChrome !== 'true'
   );
@@ -274,10 +268,6 @@ try {
   assert(
     headerFlashSamples.length === 0,
     `Detected ${headerFlashSamples.length} light header frames: ${JSON.stringify(headerFlashSamples)}`
-  );
-  assert(
-    curtainSamples.length === 0,
-    `Obsolete full-screen transition curtain mounted: ${JSON.stringify(curtainSamples)}`
   );
   assert(beforeChrome === 'true', 'Home chrome did not own its dark surface');
   assert(

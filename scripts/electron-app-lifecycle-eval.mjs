@@ -81,7 +81,11 @@ function install(sha) {
   renameSync(`${file}.tmp`, file);
 }
 
-const localNotice = page => page.getByText('New local build installed.');
+// Notice ids are main's dismissal keys (`src/lib/notices/notice-identity.ts`).
+const updateNotice = (page, id) => page.locator(`[data-update-notice="${id}"]`);
+const localNotice = page => updateNotice(page, 'local-build-installed');
+const dismissNotice = notice =>
+  notice.locator('[data-operation-receipt-dismiss]').click();
 
 async function installedSeen(page, sha) {
   await waitForPageCondition(
@@ -120,8 +124,7 @@ async function liveSessions(page) {
   );
 }
 
-const restartToUpdate = page =>
-  page.getByRole('button', { name: 'Restart to Update' });
+const restartToUpdate = page => page.locator('[data-update-action="restart"]');
 
 try {
   // ---- 1. BUG-285 ---------------------------------------------------------
@@ -136,7 +139,7 @@ try {
       ).sha;
       install('dogfood-first');
       await localNotice(page).waitFor();
-      await page.getByRole('button', { name: 'Dismiss update notice' }).click();
+      await dismissNotice(localNotice(page));
       await localNotice(page).waitFor({ state: 'detached' });
 
       // 2026-10-05 19:41: a second build installs under the same stale one.
@@ -189,8 +192,12 @@ try {
       page.setDefaultTimeout(30_000);
       await openProjectWithShell(page);
       await restartToUpdate(page).click();
-      await page.getByText('Waiting for macOS to accept the update.').waitFor();
-      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      // The stall is named: the shutdown says what it waits on.
+      const stalled = page.locator(
+        '[data-update-notice="shutdown"][data-shutdown-waiting="update-staging"]'
+      );
+      await stalled.waitFor();
+      await stalled.locator('[data-update-action="cancel"]').click();
       await waitForPageCondition(
         page,
         async () =>
@@ -214,11 +221,16 @@ try {
       page.setDefaultTimeout(30_000);
       await openProjectWithShell(page);
       await restartToUpdate(page).click();
-      await page
-        .getByText(
-          /Update failed, so .* stays installed\. Could not locate update bundle/
-        )
-        .waitFor();
+      // The refusal shows main's reason, not a hang on "Closing".
+      const refused = updateNotice(page, 'product-update:failed');
+      await refused.waitFor();
+      const { error: reason } = await page.evaluate(() =>
+        window.electron.app.updates.getStatus()
+      );
+      assert.ok(
+        reason && (await refused.innerText()).includes(reason),
+        `BUG-286: the refusal did not show its reason (${reason})`
+      );
       assert.equal(
         await liveSessions(page),
         1,
@@ -423,7 +435,9 @@ try {
         new RegExp(`/changelog/${running.replaceAll('.', '\\.')}$`),
         "W28: What's new does not lead to this version's changelog page"
       );
-      await page.getByRole('button', { name: 'Dismiss update notice' }).click();
+      await dismissNotice(
+        page.locator('[data-operation-receipt]').filter({ has: news(page) })
+      );
       await news(page).waitFor({ state: 'detached' });
       await page.reload();
       assert.equal(

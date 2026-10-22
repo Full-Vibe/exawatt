@@ -81,11 +81,17 @@ try {
         'delegation dots to appear'
       );
       check('a delegated child shows as a dot', (await dots.count()) === 1);
+      // The kind is the harness's own word for the child, as it reported it.
+      const reportedChildren =
+        (await sessions()).find(s => s.id === claude.id)?.delegation
+          ?.children ?? [];
+      const childKind = reportedChildren[0]?.agentType ?? null;
       check(
         'one child reads as one working agent',
-        /^1 delegated agent working\b.*\bExplore$/.test(
-          (await dots.getAttribute('aria-label')) ?? ''
-        )
+        (await dots.getAttribute('data-delegation')) === '1' &&
+          reportedChildren.length === 1 &&
+          !!childKind &&
+          ((await dots.getAttribute('aria-label')) ?? '').includes(childKind)
       );
 
       // The parent's own turn ended and it has gone quiet. Before ENG-023
@@ -149,7 +155,8 @@ try {
       const railText = await rail.textContent();
       check(
         'the Sessions tile names the child and its spawn label',
-        railText.includes('Explore') &&
+        !!childKind &&
+          railText.includes(childKind) &&
           railText.includes('Map the Sessions tab layout')
       );
       check(
@@ -471,7 +478,7 @@ try {
           isolated?.attention?.kind !== 'turn-end'
       );
       await page.goto(new URL('/settings', page.url()).href);
-      await page.getByRole('button', { name: /^Codex,/ }).click();
+      await page.locator('[data-agent-source="codex"]').click();
       const partialFact = await sourceFact();
       await page.getByText(partialFact.value, { exact: true }).waitFor();
       await page

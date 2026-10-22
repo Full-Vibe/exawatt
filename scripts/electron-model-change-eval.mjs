@@ -52,14 +52,12 @@ try {
       async () => !(await sessions()).find(s => s.id === claude.id)?.working,
       'idle boundary'
     );
-    await page.getByRole('button', { name: /^Session model:/ }).click();
+    await page.locator('[data-session-model]').click();
     await page
       .getByRole('option', { name: 'Fixture Claude Sol · High', exact: true })
       .click();
     await page.screenshot({ path: '/tmp/exawatt-session-model.png' });
-    await page
-      .getByRole('button', { name: 'Apply and resume', exact: true })
-      .click();
+    await page.locator('[data-session-model-apply]').click();
     const replacement = await until(
       async () =>
         (await sessions()).find(
@@ -113,11 +111,15 @@ try {
         ).length === 1,
       'one live process after renderer reload'
     );
-    await page
-      .getByRole('button', {
-        name: new RegExp(`^Session model: ${FIXTURE_CLAUDE_MODEL_ID}`),
-      })
-      .waitFor();
+    // The reloaded control names the model the Session now runs.
+    await page.waitForFunction(
+      model =>
+        document
+          .querySelector('[data-session-model]')
+          ?.getAttribute('aria-label')
+          ?.includes(model),
+      FIXTURE_CLAUDE_MODEL_ID
+    );
     console.log(
       'PASS model change: busy/invalid choices preserve process; exact identity, launch flags, permission policy and single replacement proven'
     );

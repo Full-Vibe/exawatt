@@ -205,10 +205,11 @@ if (!geometry.pending || !geometry.real) {
   }
 }
 
-// Gate: fixed-height card rows may not wrap into each other, and ranking
-// provenance is not card content. The operator caught both failures in the
-// rendered bench: "Extra high thinking" painted over "Suggested" while Opus
-// surrendered its name to the context label beside it.
+// Gate: fixed-height card rows may not wrap into each other. The operator
+// caught both failures in the rendered bench: "Extra high thinking" painted
+// over "Suggested" while Opus surrendered its name to the context label
+// beside it. That ranking provenance stays off the card is asserted on the
+// chip itself (agent-launcher.test.tsx).
 const cardAudit = await page.evaluate(() => {
   const cards = Array.from(
     document.querySelectorAll(
@@ -217,15 +218,10 @@ const cardAudit = await page.evaluate(() => {
   );
   const overflow = [];
   const overlap = [];
-  const provenance = [];
   let opus = null;
 
   for (const card of cards) {
     const id = card.getAttribute('data-setup-id') ?? 'unknown';
-    const text = card.textContent ?? '';
-    if (/\b(?:Suggested|Pinned|Used once|Used \d+[×x])\b/.test(text)) {
-      provenance.push({ id, text: text.trim() });
-    }
 
     const secondary = card.querySelector('[data-setup-secondary]');
     const thinking = card.querySelector('[data-setup-thinking]');
@@ -253,8 +249,9 @@ const cardAudit = await page.evaluate(() => {
       }
     }
 
+    // The bench's Opus setup, found by the model id in its configuration id.
     const model = card.querySelector('[data-setup-model]');
-    if (model?.textContent?.trim().startsWith('Opus')) {
+    if (model && decodeURIComponent(id).includes('"opus[1m]"')) {
       opus = {
         text: model.textContent.trim(),
         scroll: model.scrollWidth,
@@ -263,14 +260,9 @@ const cardAudit = await page.evaluate(() => {
     }
   }
 
-  return { overflow, overlap, provenance, opus };
+  return { overflow, overlap, opus };
 });
 
-if (cardAudit.provenance.length > 0) {
-  errors.push(
-    `[gate] launcher cards still show ranking provenance: ${JSON.stringify(cardAudit.provenance)}`
-  );
-}
 if (cardAudit.overflow.length > 0) {
   errors.push(
     `[gate] fixed-height launcher card rows wrap: ${JSON.stringify(cardAudit.overflow)}`
@@ -292,7 +284,6 @@ if (!cardAudit.opus) {
   );
 }
 if (
-  cardAudit.provenance.length === 0 &&
   cardAudit.overflow.length === 0 &&
   cardAudit.overlap.length === 0 &&
   cardAudit.opus &&

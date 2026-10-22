@@ -298,7 +298,7 @@ try {
         phase: 'status-changed',
         ...(await park(page, 'status-changed')),
       });
-      await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+      await page.locator('[data-board-zoom="in"]').click();
       result.phases.push({
         phase: 'interaction',
         ...(await park(page, 'interaction')),

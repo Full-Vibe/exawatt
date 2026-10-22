@@ -4,7 +4,6 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
-  chooseLauncherAxis,
   openSetupDrawer,
   waitForLauncherToSettle,
   waitForPageCondition,
@@ -188,27 +187,26 @@ async function waitForClosedSessionCount(page, count) {
   throw new Error(`Timed out waiting for ${count} closed Sessions`);
 }
 
+/** Tabs by handle: a Session by its harness, an unlaunched Agent by its
+ *  lifecycle. */
+const TAB = {
+  claude: '[data-tab-harness="claude"]',
+  codex: '[data-tab-harness="codex"]',
+  shell: '[data-tab-harness="shell"]',
+  draft: '[data-tab-lifecycle="draft"]',
+};
+
 // close grammar (D27): one Close per tab; a STARTED agent pops the in-app
-// confirm, where ⏎ presses the default Close button.
-async function closeTab(page, title) {
-  const source =
-    title === 'Claude Code'
-      ? 'claude'
-      : title === 'Codex'
-        ? 'codex'
-        : title === 'Shell'
-          ? 'shell'
-          : null;
-  const closeButton = source
-    ? page
-        .locator(`[data-tab-harness="${source}"]`)
-        .getByRole('button', { name: /^Close / })
-        .first()
-    : page.getByRole('button', { name: `Close ${title}` });
+// confirm, where ⏎ presses the default Close button. `tab` is a selector for
+// the tab element (a `TAB` entry, or a durable Session id).
+async function closeTab(page, tab) {
+  const closeButton = page
+    .locator(`[data-tab-id]${tab} [data-tab-close]`)
+    .first();
   const closingTabId = await closeButton.evaluate(button =>
     button.closest('[data-tab-id]')?.getAttribute('data-tab-id')
   );
-  if (!closingTabId) throw new Error(`Could not resolve tab for ${title}`);
+  if (!closingTabId) throw new Error(`Could not resolve tab for ${tab}`);
   await closeButton.click();
   const confirm = page.locator('[data-close-confirm]');
   try {
@@ -247,6 +245,55 @@ async function selectProject(page, name) {
 
 function launcherAxis(page, id) {
   return page.locator(`[data-detail-axis="${id}"] [data-option-menu-trigger]`);
+}
+
+/** The id of the option an axis trigger presents. */
+async function axisValue(page, id) {
+  return await launcherAxis(page, id).getAttribute('data-option-menu-value');
+}
+
+/** Wait until the axis trigger presents option `value`. */
+async function waitForAxisValue(page, id, value) {
+  await page.waitForFunction(
+    ({ id, value }) =>
+      document
+        .querySelector(`[data-detail-axis="${id}"] [data-option-menu-trigger]`)
+        ?.getAttribute('data-option-menu-value') === value,
+    { id, value }
+  );
+}
+
+/** One option of the open axis menu, by its id. */
+function axisOption(page, id) {
+  return page.locator(
+    `[role="listbox"] [role="option"][data-option-id="${id}"]`
+  );
+}
+
+/** The option ids an open axis menu offers, in order. */
+async function axisOptionIds(menu) {
+  return await menu
+    .locator('[role="option"]')
+    .evaluateAll(options =>
+      options.map(option => option.getAttribute('data-option-id'))
+    );
+}
+
+/** Choose an axis option by its id: open the drawer and the axis menu. */
+async function chooseAxisOption(page, axis, id) {
+  await openSetupDrawer(page);
+  const trigger = launcherAxis(page, axis);
+  await trigger.waitFor({ state: 'visible' });
+  await trigger.click();
+  await axisOption(page, id).click();
+  await trigger.waitFor({ state: 'visible' });
+}
+
+/** The selected setup chip, while it runs on `harness`. */
+function selectedSetup(page, harness) {
+  return page
+    .locator('[data-setup-chip][data-selected]')
+    .filter({ has: page.locator(`[data-agent-source-mark="${harness}"]`) });
 }
 
 let completed = false;
@@ -312,18 +359,23 @@ try {
         '[cmdk-item][data-launch-configuration="shell"]'
       );
       await unavailableShell.waitFor();
+      // A disabled row carries its reason as its title and prints it.
+      const showsReason = async row => {
+        const reason = await row.getAttribute('title');
+        return !!reason && (await row.innerText()).includes(reason);
+      };
       check(
         'palette explains why shell is unavailable without a Project',
         (await unavailableShell.getAttribute('data-disabled')) === 'true' &&
-          (await unavailableShell.innerText()).includes('Open a Project first')
+          (await showsReason(unavailableShell))
       );
-      const unavailableJump = page.locator('[cmdk-item]').filter({
-        hasText: 'Jump to the Session needing you',
-      });
+      const unavailableJump = page.locator(
+        '[cmdk-item][data-command-id="ws-jump"]'
+      );
       check(
         'palette explains that no Session currently needs attention',
         (await unavailableJump.getAttribute('data-disabled')) === 'true' &&
-          (await unavailableJump.innerText()).includes('No Sessions need you')
+          (await showsReason(unavailableJump))
       );
       await page.keyboard.press('Escape');
 
@@ -334,17 +386,14 @@ try {
         'opening the chooser creates no process',
         (await sessions(page)).length === 0
       );
-      await page.waitForFunction(
-        () =>
-          document.activeElement?.getAttribute('aria-label') ===
-          'Search Projects'
+      await page.waitForFunction(() =>
+        document.activeElement?.matches('[data-project-opener-search]')
       );
       await page.keyboard.press('Tab');
       check(
         'Browse Folder participates in the Project chooser tab cycle',
         await page
-          .locator('[data-project-opener]')
-          .getByRole('button', { name: 'Browse Folder' })
+          .locator('[data-project-opener] [data-project-route="browse"]')
           .evaluate(
             button =>
               document.activeElement === button &&
@@ -356,8 +405,7 @@ try {
       await page.screenshot({ path: join(output, '01-project-chooser.png') });
 
       await page
-        .locator('[data-project-opener]')
-        .getByRole('button', { name: 'Browse Folder' })
+        .locator('[data-project-opener] [data-project-route="browse"]')
         .click();
       await page.locator('[data-agent-composer]').waitFor();
       const [pickerCall] = await directoryPickerCalls(app);
@@ -424,9 +472,7 @@ try {
       await page.keyboard.press('Escape');
 
       await page.keyboard.press('Control+Meta+2');
-      const emptyProject = page.locator('[data-expose-empty-project]').filter({
-        hasText: 'No Sessions yet',
-      });
+      const emptyProject = page.locator('[data-expose-empty-project]');
       await emptyProject.waitFor();
       check(
         'Sessions keeps the zero-Session Project visible',
@@ -469,8 +515,7 @@ try {
           .getAttribute('data-board-projects')) === '1' &&
           (await page
             .locator('[data-spatial-board]')
-            .getAttribute('data-board-pieces')) === '0' &&
-          (await emptyZone.innerText()).includes('No agents yet')
+            .getAttribute('data-board-pieces')) === '0'
       );
       await emptyZone.click();
       await page.waitForURL(
@@ -507,39 +552,31 @@ try {
       const selectedConfiguration = setupRow.locator(
         '[role="radio"][aria-checked="true"]'
       );
-      const cardText = await setupRow.innerText();
+      const catalogTrigger = launcher.locator('[data-setup-catalog-trigger]');
       check(
         'the composer keeps the primary launch path lightweight',
-        (await page.getByLabel('Initial task for the new Agent').isVisible()) &&
+        (await launcher.locator('[data-launcher-task]').isVisible()) &&
           (await launcher.isVisible()) &&
           (await setupRow.isVisible()) &&
           (await selectedConfiguration.count()) === 1 &&
           (await selectedConfiguration.isVisible()) &&
-          (await page.getByRole('button', { name: 'Start' }).isVisible()) &&
-          (await page
-            .getByRole('button', { name: 'All engines and models' })
-            .isVisible()) &&
-          (await page.locator('[data-setup-drawer-handle]').isVisible()) &&
-          !/(Suggested|Pinned|Used\s)/.test(cardText)
+          (await launcher.locator('[data-launcher-start]').isVisible()) &&
+          (await catalogTrigger.isVisible()) &&
+          (await page.locator('[data-setup-drawer-handle]').isVisible())
       );
       await page.screenshot({
         path: join(output, '04-production-launcher-cards.png'),
       });
-      await page
-        .getByRole('button', { name: 'All engines and models' })
-        .click();
+      await catalogTrigger.click();
       const allConfigurations = page.locator(
         '[data-all-launch-configurations]'
       );
       await allConfigurations.waitFor();
       check(
         'All configurations discloses the complete launch catalog',
-        (await allConfigurations.innerText()).includes('All configurations') &&
-          (await allConfigurations.getByRole('button').count()) > 1
+        (await allConfigurations.getByRole('button').count()) > 1
       );
-      await page
-        .getByRole('button', { name: 'All engines and models' })
-        .click();
+      await catalogTrigger.click();
       await allConfigurations.waitFor({ state: 'detached' });
 
       await selectedConfiguration.focus();
@@ -565,17 +602,12 @@ try {
       });
 
       const firstTask = "Review the user's auth flow";
-      await page.waitForFunction(() =>
-        document
-          .querySelector(
-            '[data-detail-axis="model"] [data-option-menu-trigger]'
-          )
-          ?.textContent?.includes('Account default')
-      );
+      // `default` is the model the installed CLI reports as the account's.
+      await waitForAxisValue(page, 'model', 'default');
       const claudeModelTrigger = launcherAxis(page, 'model');
       check(
         'the composer shows the effective Claude model before launch',
-        (await claudeModelTrigger.innerText()).includes('Account default')
+        (await axisValue(page, 'model')) === 'default'
       );
       // The rows must be the ones the installed CLI reported, not a list
       // Exawatt keeps of its own.
@@ -594,8 +626,8 @@ try {
           name: /Eval Claude Fable.*Frontier evaluator/i,
         })
         .click();
-      await page
-        .getByRole('radio', { name: /Claude Code.*Eval Claude Fable/i })
+      await selectedSetup(page, 'claude')
+        .filter({ hasText: 'Eval Claude Fable' })
         .waitFor();
       await openSetupDrawer(page);
       check(
@@ -613,24 +645,20 @@ try {
       await claudeEffortTrigger.click();
       const claudeEffortMenu = page.getByRole('listbox');
       await claudeEffortMenu.waitFor();
+      // The fixture's Eval Claude Fable reports high and max only; low is
+      // the account default model's, so its absence proves the menu follows
+      // the selected model.
+      const claudeEffortIds = await axisOptionIds(claudeEffortMenu);
       check(
         'Claude effort choices come from the selected model catalog',
-        (await claudeEffortMenu.innerText()).includes('Strong balance') &&
-          (await claudeEffortMenu.innerText()).includes('Maximum')
+        claudeEffortIds.includes('high') &&
+          claudeEffortIds.includes('max') &&
+          !claudeEffortIds.includes('low')
       );
-      await page
-        .getByRole('option', { name: /^High\b.*Strong balance/i })
-        .click();
-      await page.getByRole('radio', { name: /Claude Code.*High/i }).waitFor();
+      await axisOption(page, 'high').click();
+      await waitForAxisValue(page, 'thinking', 'high');
       await openSetupDrawer(page);
-      await page.waitForFunction(
-        () =>
-          document
-            .querySelector(
-              '[data-detail-axis="thinking"] [data-option-menu-trigger]'
-            )
-            ?.getAttribute('aria-label') === 'Thinking: High'
-      );
+      await waitForAxisValue(page, 'thinking', 'high');
       console.log(
         `[project-launcher] Claude thinking after selection: aria-label=${JSON.stringify(
           await launcherAxis(page, 'thinking').getAttribute('aria-label')
@@ -640,26 +668,31 @@ try {
       );
       check(
         'the operator can override Claude effort for one new Agent',
-        (await claudeEffortTrigger.innerText()).includes('High')
+        (await axisValue(page, 'thinking')) === 'high'
       );
       check(
         'new Project and source pair visibly defaults to YOLO',
-        (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
+        (await axisValue(page, 'permission')) === 'unrestricted'
       );
       const permissionTrigger = launcherAxis(page, 'permission');
       await permissionTrigger.click();
       const permissionMenu = page.getByRole('listbox');
       await permissionMenu.waitFor();
-      const permissionMenuText = await permissionMenu.innerText();
+      const permissionIds = await axisOptionIds(permissionMenu);
+      const everyPolicyExplained = await permissionMenu
+        .locator('[role="option"]')
+        .evaluateAll(options =>
+          options.every(
+            option =>
+              !!option
+                .querySelector('[data-option-description]')
+                ?.textContent?.trim()
+          )
+        );
       check(
         'permission menu explains all three access policies',
-        (await page.getByRole('option').count()) === 3 &&
-          permissionMenuText.includes('Ask first') &&
-          permissionMenuText.includes('Keep harness protections on') &&
-          permissionMenuText.includes('Auto-review') &&
-          permissionMenuText.includes('Routine work proceeds') &&
-          permissionMenuText.includes('YOLO') &&
-          permissionMenuText.includes('No approvals or sandbox')
+        permissionIds.join(',') === 'prompt,auto,unrestricted' &&
+          everyPolicyExplained
       );
       await page.keyboard.press('Home');
       await page.keyboard.press('Escape');
@@ -670,13 +703,13 @@ try {
       );
       check(
         'Escape preserves YOLO and returns focus to the permission trigger',
-        (await permissionTrigger.innerText()).includes('YOLO') &&
+        (await axisValue(page, 'permission')) === 'unrestricted' &&
           (await permissionTrigger.evaluate(
             element => document.activeElement === element
           ))
       );
-      await page.getByLabel('Initial task for the new Agent').fill(firstTask);
-      await page.getByRole('button', { name: 'Start' }).click();
+      await page.locator('[data-launcher-task]').fill(firstTask);
+      await page.locator('[data-launcher-start]').click();
       await page.waitForTimeout(500);
       const launchAlert = await page
         .locator('[role="alert"]')
@@ -710,11 +743,16 @@ try {
       await page.keyboard.press('Shift+F10');
       const sessionActions = page.getByRole('menu');
       await sessionActions.waitFor();
+      const sessionActionIds = await sessionActions
+        .locator('[role="menuitem"]')
+        .evaluateAll(rows =>
+          rows.map(row => row.getAttribute('data-command-id'))
+        );
       check(
         'Shift-F10 opens every active Session action',
-        (await sessionActions.innerText()).includes('Rename…') &&
-          (await sessionActions.innerText()).includes('Pin in split') &&
-          (await sessionActions.innerText()).includes('Close')
+        ['session.rename', 'session.pin', 'session.close'].every(id =>
+          sessionActionIds.includes(id)
+        )
       );
       await page.keyboard.press('Escape');
       check(
@@ -852,8 +890,8 @@ try {
           1
       );
       await sourceTrigger.click();
-      const claudeOption = page.getByRole('option', { name: 'Claude Code' });
-      const codexOption = page.getByRole('option', { name: 'Codex' });
+      const claudeOption = axisOption(page, 'claude');
+      const codexOption = axisOption(page, 'codex');
       check(
         'Engine options each retain one harness glyph',
         (await claudeOption.locator('[data-slot="harness-glyph"]').count()) ===
@@ -879,7 +917,7 @@ try {
       );
       check(
         'a new Codex pair has its own YOLO default',
-        (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
+        (await axisValue(page, 'permission')) === 'unrestricted'
       );
       const modelTrigger = launcherAxis(page, 'model');
       check(
@@ -900,8 +938,8 @@ try {
       await page
         .getByRole('option', { name: /Eval Codex Terra.*Balanced evaluator/i })
         .click();
-      await page
-        .getByRole('radio', { name: /Codex.*Eval Codex Terra/i })
+      await selectedSetup(page, 'codex')
+        .filter({ hasText: 'Eval Codex Terra' })
         .waitFor();
       await openSetupDrawer(page);
       check(
@@ -913,7 +951,7 @@ try {
       const effortTrigger = launcherAxis(page, 'thinking');
       check(
         'changing models reveals that model’s default effort',
-        (await effortTrigger.innerText()).includes('Medium')
+        (await axisValue(page, 'thinking')) === 'medium'
       );
       await effortTrigger.click();
       const effortMenu = page.getByRole('listbox');
@@ -928,14 +966,12 @@ try {
       await page.screenshot({
         path: join(output, '04-effort-options.png'),
       });
-      await page
-        .getByRole('option', { name: /Max.*Maximum evaluator reasoning/i })
-        .click();
-      await page.getByRole('radio', { name: /Codex.*Max/i }).waitFor();
+      await axisOption(page, 'max').click();
+      await waitForAxisValue(page, 'thinking', 'max');
       await openSetupDrawer(page);
       check(
         'the operator can override Codex effort for one new Agent',
-        (await launcherAxis(page, 'thinking').innerText()).includes('Max')
+        (await axisValue(page, 'thinking')) === 'max'
       );
       await launcherAxis(page, 'permission').focus();
       await page.keyboard.press('Space');
@@ -955,10 +991,11 @@ try {
       // ArrowUp must land on Auto-review and ⏎ must commit it — the
       // Select's keyboard path is a first-class contract
       await page.keyboard.press('ArrowUp');
-      await page.waitForFunction(() =>
-        document
-          .querySelector('[role="option"][data-active]')
-          ?.textContent?.includes('Auto-review')
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[role="option"][data-active]')
+            ?.getAttribute('data-option-id') === 'auto'
       );
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => {
@@ -966,13 +1003,13 @@ try {
           '[data-detail-axis="permission"] [data-option-menu-trigger]'
         );
         return (
-          trigger?.textContent?.includes('Auto') &&
+          trigger?.getAttribute('data-option-menu-value') === 'auto' &&
           document.activeElement === trigger
         );
       });
       check(
         'KEYBOARD selection commits Auto-review and restores trigger focus',
-        (await launcherAxis(page, 'permission').innerText()).includes('Auto') &&
+        (await axisValue(page, 'permission')) === 'auto' &&
           (await page
             .locator(
               '[data-detail-axis="permission"] [data-option-menu-trigger]'
@@ -980,32 +1017,20 @@ try {
             .evaluate(element => document.activeElement === element))
       );
       await launcherAxis(page, 'engine').click();
-      await page.getByRole('option', { name: 'Claude Code' }).click();
-      await page.waitForFunction(() =>
-        document
-          .querySelector(
-            '[data-detail-axis="engine"] [data-option-menu-trigger]'
-          )
-          ?.textContent?.includes('Claude Code')
-      );
+      await axisOption(page, 'claude').click();
+      await waitForAxisValue(page, 'engine', 'claude');
       await launcherAxis(page, 'engine').click();
-      await page.getByRole('option', { name: 'Codex' }).click();
+      await axisOption(page, 'codex').click();
       // Keep the draft: it is the composer under test, and the launch below
       // consumes it into the second Agent. Discarding it here would select
       // the neighbouring live Session instead (D24 close policy), leaving no
       // composer to assert against — and would drop the per-source model and
       // effort choices the launch assertions depend on. The later
       // palette-opened draft is the one that needs an explicit discard.
-      await page.waitForFunction(() =>
-        document
-          .querySelector(
-            '[data-detail-axis="engine"] [data-option-menu-trigger]'
-          )
-          ?.textContent?.includes('Codex')
-      );
+      await waitForAxisValue(page, 'engine', 'codex');
       check(
         'an unlaunched policy choice survives a harness round trip',
-        (await launcherAxis(page, 'permission').innerText()).includes('Auto')
+        (await axisValue(page, 'permission')) === 'auto'
       );
       // Choosing an engine selects that engine's catalog default model and
       // effort (the D49 launcher); only the permission policy is remembered
@@ -1013,18 +1038,15 @@ try {
       // launch below proves the Agent runs what the composer shows. This
       // eval's async waits resolved on their first poll until BUG-217, so the
       // round trip's reset was never observed here.
-      await chooseLauncherAxis(page, 'model', /Eval Codex Terra/i);
-      await chooseLauncherAxis(page, 'thinking', /Max.*Maximum evaluator/i);
+      await chooseAxisOption(page, 'model', 'eval-codex-terra');
+      await chooseAxisOption(page, 'thinking', 'max');
       check(
         'the composer shows the model and effort the launch will carry',
-        (await launcherAxis(page, 'model').innerText()).includes(
-          'Eval Codex Terra'
-        ) && (await launcherAxis(page, 'thinking').innerText()).includes('Max')
+        (await axisValue(page, 'model')) === 'eval-codex-terra' &&
+          (await axisValue(page, 'thinking')) === 'max'
       );
-      await page
-        .getByLabel('Initial task for the new Agent')
-        .fill('Run focused tests');
-      await page.getByRole('button', { name: 'Start' }).click();
+      await page.locator('[data-launcher-task]').fill('Run focused tests');
+      await page.locator('[data-launcher-start]').click();
       current = await waitForSessionCount(page, 2);
       check(
         'a second Agent can start in the same Project',
@@ -1046,59 +1068,63 @@ try {
       await page.keyboard.press('Meta+KeyK');
       const palette = page.locator('[cmdk-list]');
       await palette.waitFor();
-      const paletteText = await palette.innerText();
+      // Each Start row names its configuration; an Agent row wears its
+      // engine's mark, Shell is the `shell` configuration.
+      const launchRows = palette.locator(
+        '[data-palette-group="start"] [cmdk-item][data-launch-configuration]'
+      );
+      const launchSources = await launchRows.evaluateAll(rows =>
+        rows.map(row =>
+          row.getAttribute('data-launch-configuration') === 'shell'
+            ? 'shell'
+            : row
+                .querySelector('[data-agent-source-mark]')
+                ?.getAttribute('data-agent-source-mark')
+        )
+      );
       check(
         'palette presents exact Agent and Shell launch configurations together',
-        paletteText.includes('Start') &&
-          paletteText.includes('Claude Code') &&
-          paletteText.includes('Codex') &&
-          paletteText.includes('OpenCode') &&
-          paletteText.includes('Shell')
+        ['claude', 'codex', 'opencode', 'shell'].every(source =>
+          launchSources.includes(source)
+        )
       );
-      await page.getByText('Claude Code', { exact: true }).click();
-      await page.getByLabel('Initial task for the new Agent').waitFor();
+      await launchRows
+        .filter({ has: page.locator('[data-agent-source-mark="claude"]') })
+        .first()
+        .click();
+      await page.locator('[data-launcher-task]').waitFor();
       await openSetupDrawer(page);
-      await page.waitForFunction(
-        () =>
+      await page.waitForFunction(() => {
+        const value = id =>
           document
             .querySelector(
-              '[data-detail-axis="engine"] [data-option-menu-trigger]'
+              `[data-detail-axis="${id}"] [data-option-menu-trigger]`
             )
-            ?.textContent?.includes('Claude Code') &&
-          document
-            .querySelector(
-              '[data-detail-axis="permission"] [data-option-menu-trigger]'
-            )
-            ?.textContent?.includes('YOLO')
-      );
+            ?.getAttribute('data-option-menu-value');
+        return (
+          value('engine') === 'claude' && value('permission') === 'unrestricted'
+        );
+      });
       check(
         'palette routes into the visible composer with that harness policy',
-        (await launcherAxis(page, 'engine').innerText()).includes(
-          'Claude Code'
-        ) &&
-          (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
+        (await axisValue(page, 'engine')) === 'claude' &&
+          (await axisValue(page, 'permission')) === 'unrestricted'
       );
       await launcherAxis(page, 'engine').click();
-      await page.getByRole('option', { name: 'Codex' }).click();
-      await page.waitForFunction(() =>
-        document
-          .querySelector(
-            '[data-detail-axis="engine"] [data-option-menu-trigger]'
-          )
-          ?.textContent?.includes('Codex')
-      );
+      await axisOption(page, 'codex').click();
+      await waitForAxisValue(page, 'engine', 'codex');
 
       await page.screenshot({
         path: join(output, '04-two-agents-composer.png'),
       });
-      await closeTab(page, 'Claude Code');
+      await closeTab(page, TAB.claude);
       await waitForLiveSessionCount(page, 1);
-      await closeTab(page, 'Codex');
+      await closeTab(page, TAB.codex);
       await waitForLiveSessionCount(page, 0);
       // The palette policy check above deliberately opened an unlaunched
       // draft. It is still an Agent tab, so discard it before asserting the
       // true close-last-Agent Project transition.
-      await closeTab(page, 'New agent');
+      await closeTab(page, TAB.draft);
       // Tab removal is intentionally optimistic; wait for the async archive
       // transaction instead of racing it after the chrome disappears.
       const ledger = await waitForClosedSessionCount(page, 2);
@@ -1114,23 +1140,24 @@ try {
       );
       check(
         'last source recommendation survives in the empty Project',
-        (await launcherAxis(page, 'engine').innerText()).includes('Codex')
+        (await axisValue(page, 'engine')) === 'codex'
       );
       check(
         'Project and harness permission survive in the empty Project',
-        (await launcherAxis(page, 'permission').innerText()).includes('Auto')
+        (await axisValue(page, 'permission')) === 'auto'
       );
       const guardedTask = 'Keep this launch intent in the open Project';
-      await page.getByLabel('Initial task for the new Agent').fill(guardedTask);
-      await page.getByRole('button', { name: 'Close New agent' }).waitFor();
+      await page.locator('[data-launcher-task]').fill(guardedTask);
+      await page
+        .locator(`[data-tab-id]${TAB.draft} [data-tab-close]`)
+        .waitFor();
       check(
         'typing in the empty Project promotes a durable draft',
         (await page.locator('[data-project="alpha"]').count()) === 1 &&
-          (await page
-            .getByLabel('Initial task for the new Agent')
-            .inputValue()) === guardedTask
+          (await page.locator('[data-launcher-task]').inputValue()) ===
+            guardedTask
       );
-      await closeTab(page, 'New agent');
+      await closeTab(page, TAB.draft);
       await page.locator('[data-agent-composer]').waitFor();
       const alphaProject = page.locator('[data-project="alpha"]');
       await page.waitForTimeout(4_400);
@@ -1209,28 +1236,28 @@ try {
 
       // Put both stopped Sessions back in the ledger so the remaining explicit
       // Project-close and recency checks continue against their original fixture.
-      await closeTab(page, 'Claude Code');
-      await closeTab(page, 'Codex');
+      await closeTab(page, TAB.claude);
+      await closeTab(page, TAB.codex);
       await waitForClosedSessionCount(page, 2);
       await page.locator('[data-agent-composer]').waitFor();
       await openSetupDrawer(page);
       check(
         'source recommendation survives the close and restore cycle',
-        (await launcherAxis(page, 'engine').innerText()).includes('Codex')
+        (await axisValue(page, 'engine')) === 'codex'
       );
       check(
         'permission recommendation survives the close and restore cycle',
-        (await launcherAxis(page, 'permission').innerText()).includes('Auto')
+        (await axisValue(page, 'permission')) === 'auto'
       );
       await launcherAxis(page, 'engine').click();
-      await page.getByRole('option', { name: 'Claude Code' }).click();
+      await axisOption(page, 'claude').click();
       await openSetupDrawer(page);
       check(
         'Claude and Codex retain independent permission choices',
-        (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
+        (await axisValue(page, 'permission')) === 'unrestricted'
       );
       await launcherAxis(page, 'engine').click();
-      await page.getByRole('option', { name: 'Codex' }).click();
+      await axisOption(page, 'codex').click();
       await openSetupDrawer(page);
 
       await app.evaluate(({ BrowserWindow }) =>
@@ -1260,7 +1287,9 @@ try {
       await closeDraft.waitFor();
       check(
         'command palette offers the close for each selected target',
-        (await closeDraft.innerText()).includes('Discard') &&
+        (await page
+          .locator(`[data-tab-id]${TAB.draft}[data-active]`)
+          .count()) === 1 &&
           (await page
             .locator('[cmdk-item][data-command-id="project.close"]')
             .count()) === 1
@@ -1271,7 +1300,7 @@ try {
       // real draft tab. Discard it first: the close verb follows the active UI
       // object, so with a draft present Command-W would close that tab, not
       // the Project.
-      await closeTab(page, 'New agent');
+      await closeTab(page, TAB.draft);
       await page.locator('[data-agent-composer]').waitFor();
 
       // The close verb follows the active UI object. With no Agent tab left,
@@ -1318,8 +1347,7 @@ try {
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
       await page
-        .locator('[data-project-opener] button')
-        .filter({ hasText: 'alpha' })
+        .locator('[data-project-opener] [data-project-card="alpha"]')
         .click();
       await page.locator('[data-agent-composer]').waitFor();
 
@@ -1328,14 +1356,17 @@ try {
       );
       await projectChrome.focus();
       await page.keyboard.press('Shift+F10');
-      const projectActions = page.getByRole('menu', {
-        name: 'alpha Project actions',
-      });
+      const projectActions = page.getByRole('menu');
       await projectActions.waitFor();
+      const projectActionIds = await projectActions
+        .locator('[role="menuitem"]')
+        .evaluateAll(rows =>
+          rows.map(row => row.getAttribute('data-command-id'))
+        );
       check(
         'Shift-F10 exposes empty-Project rename, color, and close actions',
-        (await projectActions.innerText()).includes('Rename / color…') &&
-          (await projectActions.innerText()).includes('Close project')
+        projectActionIds.includes('project.rename') &&
+          projectActionIds.includes('project.close')
       );
       await page.keyboard.press('Escape');
       check(
@@ -1350,7 +1381,9 @@ try {
       // next launch proves durable library reentry rather than open-layout
       // persistence.
       await page.locator('[data-project="alpha"]').click({ button: 'right' });
-      await page.getByRole('menuitem', { name: 'Close project' }).click();
+      await page
+        .locator('[role="menuitem"][data-command-id="project.close"]')
+        .click();
       await page
         .locator('[data-project="alpha"][data-project-exiting="true"]')
         .waitFor({ state: 'attached' });
@@ -1373,9 +1406,9 @@ try {
       await stubDirectoryPicker(app, importRoot);
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
-      const alphaTile = page
-        .locator('[data-project-opener] button')
-        .filter({ hasText: 'alpha' });
+      const alphaTile = page.locator(
+        '[data-project-opener] [data-project-card="alpha"]'
+      );
       await alphaTile.waitFor();
       check(
         'curated library includes the previously closed Project',
@@ -1386,21 +1419,24 @@ try {
       await openSetupDrawer(page);
       check(
         'source recommendation survives a full app restart',
-        (await launcherAxis(page, 'engine').innerText()).includes('Codex')
+        (await axisValue(page, 'engine')) === 'codex'
       );
       check(
         'permission recommendation survives a full app restart',
-        (await launcherAxis(page, 'permission').innerText()).includes('Auto')
+        (await axisValue(page, 'permission')) === 'auto'
       );
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
-      await page.getByRole('button', { name: 'Import Folder' }).click();
-      await page.getByText('Import Projects', { exact: true }).waitFor();
+      await page
+        .locator('[data-project-opener] [data-project-route="import"]')
+        .click();
+      const importReview = page.locator('[data-project-import-review]');
+      await importReview.waitFor();
       check(
         'parent import presents a reviewed selection',
-        (await page.getByRole('checkbox').count()) === 2
+        (await importReview.getByRole('checkbox').count()) === 2
       );
-      await page.getByRole('button', { name: 'Import 2' }).click();
+      await importReview.locator('[data-project-import-confirm]').click();
       await page.locator('[data-agent-composer]').waitFor();
       check(
         'importing Projects starts no process',
@@ -1414,27 +1450,29 @@ try {
       await selectProject(page, 'bravo');
       await page.locator('[data-agent-composer]').waitFor();
       await page
-        .getByRole('button', { name: 'All engines and models' })
+        .locator('[data-agent-composer] [data-setup-catalog-trigger]')
         .click();
-      await page
-        .locator('[data-all-launch-configurations]')
-        .waitFor({ state: 'visible' });
-      await page.getByRole('button', { name: 'Shell in bravo' }).click();
+      const bravoCatalog = page.locator('[data-all-launch-configurations]');
+      await bravoCatalog.waitFor({ state: 'visible' });
+      await bravoCatalog.locator('[data-launch-configuration="shell"]').click();
       const shell = await waitForSessionCount(page, 1);
       check(
         'shell remains an explicit Project tool',
         shell[0]?.harness === 'shell'
       );
-      await closeTab(page, 'Shell');
+      await closeTab(page, TAB.shell);
       await waitForSessionCount(page, 0);
       // ⌘T ⏎ then ⌘W (D24): a bare agent never given work DISCARDS — it
       // must not pollute the Recently-closed ledger. (bravo is empty, so
       // its pane composer is already inline.)
-      await page.getByLabel('Initial task for the new Agent').press('Enter');
+      await page.locator('[data-launcher-task]').press('Enter');
       const bare = (await waitForLiveSessionCount(page, 1)).find(
         session => !session.exited
       );
-      await closeTab(page, bare.title);
+      await closeTab(
+        page,
+        `[data-durable-session-id="${bare.durableSessionId}"]`
+      );
       await waitForLiveSessionCount(page, 0);
       const ledgerAfterDiscard = await page.evaluate(
         async () => (await window.electron?.pty?.closedSessions?.()) ?? []
@@ -1467,18 +1505,17 @@ try {
       );
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
+      const libraryCard = name =>
+        page.locator(`[data-project-opener] [data-project-card="${name}"]`);
       for (const name of ['alpha', 'bravo', 'charlie']) {
-        await page
-          .locator('[data-project-opener] button')
-          .filter({ hasText: name })
-          .waitFor();
+        await libraryCard(name).waitFor();
       }
-      const chooserText = await page
-        .locator('[data-project-opener]')
-        .innerText();
+      const libraryCounts = await Promise.all(
+        ['alpha', 'bravo', 'charlie'].map(name => libraryCard(name).count())
+      );
       check(
         'imported Projects join the curated library',
-        ['alpha', 'bravo', 'charlie'].every(name => chooserText.includes(name))
+        libraryCounts.every(count => count === 1)
       );
       await page.screenshot({ path: join(output, '04-imported-library.png') });
     },

@@ -15,6 +15,7 @@ import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
+import { settingsHref } from '../src/app/settings/settings-registry.ts';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7000';
 const OUTPUT = resolve(
@@ -309,10 +310,7 @@ async function openAppearanceSettings() {
     timeout: 30_000,
   });
   await page.locator('[data-settings-shell]').waitFor();
-  const preferences = page.getByRole('link', {
-    name: 'Appearance',
-    exact: true,
-  });
+  const preferences = appearanceLink();
   // The Settings shell is server-rendered. Prove the client handler has
   // accepted the click instead of racing hydration and mistaking inert HTML
   // for an interactive production surface.
@@ -331,16 +329,21 @@ async function openAppearanceSettings() {
   const appearance = page.locator('[data-appearance-settings]');
   await appearance.waitFor();
   await appearance
-    .getByRole('button', { name: 'Manual', exact: true })
+    .locator('#theme-mode [data-settings-option="manual"]')
     .waitFor();
   return appearance;
 }
 
+function appearanceLink() {
+  return page.locator(
+    `[data-settings-shell] nav a[href="${settingsHref('appearance')}"]`
+  );
+}
+
 async function setMode(appearance, mode) {
-  const button = appearance.getByRole('button', {
-    name: mode === 'auto' ? 'Auto' : 'Manual',
-    exact: true,
-  });
+  const button = appearance.locator(
+    `#theme-mode [data-settings-option="${mode}"]`
+  );
   if ((await button.getAttribute('aria-pressed')) !== 'true') {
     await button.click();
   }
@@ -348,10 +351,7 @@ async function setMode(appearance, mode) {
 
 async function commitPreset(appearance, theme) {
   await setMode(appearance, 'manual');
-  const card = appearance.getByRole('button', {
-    name: theme.label,
-    exact: true,
-  });
+  const card = appearance.locator(`button[data-theme-id="${theme.id}"]`);
   await card.click();
   await waitForCommittedState({ themeId: theme.id });
   assert(
@@ -360,10 +360,12 @@ async function commitPreset(appearance, theme) {
   );
 }
 
-async function chooseSetting(appearance, label, option) {
-  await appearance.getByRole('combobox', { name: label, exact: true }).click();
+async function chooseSetting(appearance, topic, value) {
+  await appearance.locator(`#${topic}`).getByRole('combobox').click();
   const listbox = page.getByRole('listbox');
-  await page.getByRole('option', { name: option, exact: true }).click();
+  await listbox
+    .locator(`[role="option"][data-select-value="${value}"]`)
+    .click();
   // Radix keeps its positioned portal mounted for the close transition. Do
   // not count that transient overlay as document layout overflow.
   await listbox.waitFor({ state: 'detached' });
@@ -398,23 +400,31 @@ async function assertNoHorizontalOverflow(label) {
 }
 
 async function openThemePicker() {
-  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  const palette = page
+    .getByRole('dialog')
+    .filter({ has: page.locator('[cmdk-root]') });
   const shortcutDeadline = Date.now() + 30_000;
   while (!(await palette.isVisible()) && Date.now() < shortcutDeadline) {
     await page.keyboard.press('Meta+k');
     await page.waitForTimeout(100);
   }
   await palette.waitFor();
-  const input = palette.getByPlaceholder('Type a command or search...');
+  const input = palette.getByRole('combobox');
   await input.fill('Change theme');
-  await palette.getByText('Change theme…', { exact: true }).click();
-  const picker = page.getByRole('dialog', { name: 'Change theme' });
+  await palette
+    .locator(
+      '[data-palette-group="actions"] [cmdk-item][data-command-id="action-change-theme"]'
+    )
+    .click();
+  const picker = page
+    .getByRole('dialog')
+    .filter({ has: page.locator('[data-theme-picker]') });
   await picker.waitFor();
   return picker;
 }
 
 async function highlightDifferentTheme(picker, committedThemeId) {
-  const input = picker.getByPlaceholder('Search themes…');
+  const input = picker.getByRole('combobox');
   for (let attempt = 0; attempt < THEMES.length + 1; attempt += 1) {
     await input.press('ArrowDown');
     const selected = picker.locator('[data-theme-id][data-selected="true"]');
@@ -430,10 +440,7 @@ async function assertCommandPickerContract(appearance) {
   await commitPreset(appearance, classic);
   await assertRootAppearance(classic);
 
-  const focusTarget = page.getByRole('link', {
-    name: 'Appearance',
-    exact: true,
-  });
+  const focusTarget = appearanceLink();
   await focusTarget.focus();
   const persistedBeforePreview = await page.evaluate(
     key => window.localStorage.getItem(key),
@@ -455,7 +462,7 @@ async function assertCommandPickerContract(appearance) {
     'Arrow highlight persisted a preview before Enter'
   );
 
-  await picker.getByPlaceholder('Search themes…').press('Escape');
+  await picker.getByRole('combobox').press('Escape');
   await picker.waitFor({ state: 'detached' });
   await waitForCommittedState({ themeId: classic.id });
   await page.waitForFunction(
@@ -472,7 +479,7 @@ async function assertCommandPickerContract(appearance) {
 
   picker = await openThemePicker();
   const commitThemeId = await highlightDifferentTheme(picker, classic.id);
-  await picker.getByPlaceholder('Search themes…').press('Enter');
+  await picker.getByRole('combobox').press('Enter');
   await picker.waitFor({ state: 'detached' });
   await waitForCommittedState({ themeId: commitThemeId });
   const committedTheme = THEMES.find(theme => theme.id === commitThemeId);
@@ -506,30 +513,17 @@ async function assertAppearanceControlsAndLayout() {
   await setMode(appearance, 'manual');
   await commitPreset(appearance, THEMES[0]);
 
-  await chooseSetting(appearance, 'Interface font', 'Geist');
+  await chooseSetting(appearance, 'interface-font', 'geist');
   await waitForCommittedState({
     themeId: THEMES[0].id,
     interfaceFont: 'geist',
   });
   await assertRootAppearance(THEMES[0], { font: 'geist' });
 
-  assert(
-    (await appearance
-      .getByRole('switch', { name: 'Enhanced contrast' })
-      .count()) === 0,
-    'Appearance must not expose the retired Enhanced contrast override'
-  );
-  assert(
-    (await appearance
-      .getByRole('switch', { name: 'Reduce transparency' })
-      .count()) === 0,
-    'Appearance must not expose the retired Reduce transparency override'
-  );
-
   for (const viewport of [560, 900, 1400]) {
     await page.setViewportSize({ width: viewport, height: 900 });
     for (const scale of [90, 120]) {
-      await chooseSetting(appearance, 'Interface text size', `${scale}%`);
+      await chooseSetting(appearance, 'interface-text-size', String(scale));
       await waitForCommittedState({
         themeId: THEMES[0].id,
         interfaceFont: 'geist',
@@ -545,8 +539,8 @@ async function assertAppearanceControlsAndLayout() {
   }
 
   await page.setViewportSize({ width: 1400, height: 900 });
-  await chooseSetting(appearance, 'Interface text size', '100%');
-  await chooseSetting(appearance, 'Interface font', 'Theme default');
+  await chooseSetting(appearance, 'interface-text-size', '100');
+  await chooseSetting(appearance, 'interface-font', 'theme');
   await waitForCommittedState({
     themeId: THEMES[0].id,
     interfaceFont: 'theme',

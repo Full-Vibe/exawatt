@@ -12,7 +12,6 @@ import { join, resolve } from 'node:path';
 import {
   launcherAxis,
   openSetupDrawer,
-  selectedLauncherSetup,
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
@@ -233,7 +232,7 @@ for argument in "$@"; do
   if [ "$previous" = "--agent" ]; then printf '%s' "$argument" > "$agent_state"; break; fi
   previous="$argument"
 done
-printf '[{"id":"ses_eval_opencode_1234","title":"Agent Source launch eval","directory":"%s","created":%s,"updated":%s}]\\n' "$PWD" "$now" "$now" > "$state"
+printf '[{"id":"ses_eval_opencode_1234","title":"OpenCode launch eval","directory":"%s","created":%s,"updated":%s}]\\n' "$PWD" "$now" "$now" > "$state"
 printf 'FAKE_OPENCODE_ARGS:'
 printf ' <%s>' "$@"
 printf '\\nFAKE_OPENCODE_CONFIG_CONTENT:%s\\n' "$OPENCODE_CONFIG_CONTENT"
@@ -462,11 +461,7 @@ try {
       // servers were the rows below the fold, with no scrollbar and no hint.
       // The contract is mechanism, not markup: the element that overflows is
       // one the operator can scroll, and its last row lands inside the dialog.
-      await page
-        .locator('[data-connected-sources-empty] button', {
-          hasText: 'Connect a server',
-        })
-        .click();
+      await page.locator('[data-connected-sources-empty] button').click();
       const connectDialog = page.locator('[data-connect-source]');
       await connectDialog.waitFor();
       const serverRows = connectDialog.locator('[data-connect-server]');
@@ -609,8 +604,9 @@ try {
       );
       check(
         'Antigravity declares what it cannot report: needs-you and delegation',
-        antigravity?.summary.includes('does not yet tell Exawatt when it needs you') ===
-          true &&
+        antigravity?.summary.includes(
+          'does not yet tell Exawatt when it needs you'
+        ) === true &&
           antigravity?.capabilities.delegationObservation.includes(
             'no completion'
           ) === true &&
@@ -622,12 +618,8 @@ try {
       const gemini = contract.sources.find(
         source => source.adapterId === 'antigravity'
       );
-      await page
-        .getByRole('button', {
-          name: `${gemini.label}, ${gemini.connectionName}, ${antigravity?.stateLabel}`,
-        })
-        .click();
-      await page.getByRole('heading', { name: gemini.label }).waitFor();
+      await page.locator(`[data-agent-source="${gemini.adapterId}"]`).click();
+      await page.locator(`[data-source-card="${gemini.adapterId}"]`).waitFor();
       check(
         'the Gemini card links the terms its declaration owes and offers a signed-in account no step',
         (await page
@@ -636,9 +628,7 @@ try {
           (await page.locator('[data-source-step]').count()) === 0
       );
       await page
-        .getByRole('button', {
-          name: new RegExp(`^${contract.sources[0].label}, `),
-        })
+        .locator(`[data-agent-source="${contract.sources[0].adapterId}"]`)
         .click();
       check(
         'configured unreachable OpenClaw is degraded, not disconnected/absent',
@@ -657,14 +647,13 @@ try {
           !serialized.includes('fixture-never-crosses-ipc')
       );
 
-      await page.getByRole('heading', { name: 'Claude Code' }).waitFor();
+      await page
+        .locator(`[data-source-card="${contract.sources[0].adapterId}"]`)
+        .waitFor();
       check(
         'desktop registry/detail geometry is present',
-        (
-          await page
-            .locator('[aria-label="Agent Source registry"]')
-            .boundingBox()
-        )?.width >= 280
+        (await page.locator('[data-agent-source-registry]').boundingBox())
+          ?.width >= 280
       );
       await page.screenshot({
         path: join(output, 'settings-agent-sources-1400x900.png'),
@@ -716,26 +705,43 @@ try {
       }
       await previewTheme(page, previewThemes[2]);
 
-      await page.getByRole('button', { name: /^OpenClaw,/ }).click();
-      await page.getByRole('heading', { name: 'OpenClaw' }).waitFor();
+      await page.locator('[data-agent-source="openclaw"]').click();
+      const openclawCard = page.locator('[data-source-card="openclaw"]');
+      await openclawCard.waitFor();
+      // Every fact the registry reported stays on the card, each in the state
+      // it was reported in: a degraded gateway does not blank the detail.
+      const openclawFactStates = await openclawCard
+        .locator('[data-source-fact-state]')
+        .evaluateAll(rows =>
+          rows.map(row => row.getAttribute('data-source-fact-state')).sort()
+        );
       check(
         'degraded gateway detail keeps existing facts visible',
-        (await page.getByText('Gateway responds').count()) === 0 &&
-          (await page.getByText('Protocol probe failed').count()) > 0
+        openclaw?.facts.reachability.state === 'degraded' &&
+          JSON.stringify(openclawFactStates) ===
+            JSON.stringify(
+              Object.values(openclaw.facts)
+                .map(fact => fact.state)
+                .sort()
+            ),
+        JSON.stringify(openclawFactStates)
       );
 
-      await page.getByRole('button', { name: 'Browse Agent Sources' }).click();
-      await page
-        .getByRole('heading', { name: 'Browse Agent Sources' })
-        .waitFor();
+      await page.locator('[data-agent-source-browse]').click();
+      const availableSources = page.locator(
+        'section[aria-labelledby="available-sources-heading"]'
+      );
+      const futureSources = page.locator(
+        'section[aria-labelledby="future-sources-heading"]'
+      );
+      await availableSources.waitFor();
       check(
         'add flow separates supported-now and future adapters',
-        (await page.getByRole('heading', { name: 'Available now' }).count()) ===
-          1 &&
-          (await page
-            .getByRole('heading', { name: 'Future sources' })
-            .count()) === 1 &&
-          (await page.getByText('Coming soon', { exact: true }).count()) > 0
+        (await availableSources.count()) === 1 &&
+          (await futureSources.count()) === 1 &&
+          (await futureSources.locator('[data-readiness="preview"]').count()) >
+            0 &&
+          (await availableSources.locator('[data-readiness]').count()) === 0
       );
 
       await page.setViewportSize({ width: 760, height: 900 });
@@ -757,18 +763,20 @@ try {
         JSON.stringify(overflow)
       );
 
-      await page.getByRole('link', { name: 'Keyboard shortcuts' }).click();
       await page
-        .getByRole('heading', { name: 'Keyboard shortcuts', exact: true })
-        .first()
-        .waitFor();
+        .locator(
+          '[data-settings-shell] nav a[href="/settings?section=keyboard"]'
+        )
+        .click();
+      const keyboardPage = page.locator('[data-settings-page="keyboard"]');
+      await keyboardPage.waitFor();
       await page.screenshot({
         path: join(output, 'settings-keyboard-760x900.png'),
         fullPage: true,
       });
       check(
         'existing preferences remain reachable in the shared shell',
-        (await page.getByText(/Keyboard shortcuts/i).count()) > 0
+        (await keyboardPage.count()) === 1
       );
 
       await page.goto(`${base}/workspace`);
@@ -817,9 +825,10 @@ try {
       await openSetupDrawer(page);
       check(
         'native OpenCode launch command opens the composer with OpenCode preselected',
-        (await selectedLauncherSetup(page).getAttribute('aria-label')).includes(
-          'OpenCode'
-        ) && (await page.locator('[data-agent-composer]').count()) === 1
+        (await launcherAxis(page, 'engine').getAttribute(
+          'data-option-menu-value'
+        )) === 'opencode' &&
+          (await page.locator('[data-agent-composer]').count()) === 1
       );
       await launcherAxis(page, 'model').click();
       await page.getByRole('option', { name: /Eval Open Model/ }).click();
@@ -830,11 +839,11 @@ try {
         ) && !(await launcherAxis(page, 'thinking').isDisabled())
       );
       await launcherAxis(page, 'thinking').click();
-      await page.getByRole('option', { name: /^High\b/ }).click();
+      await page.locator('[role="option"][data-option-id="high"]').click();
       await page
-        .getByLabel('Initial task for the new Agent')
+        .locator('[data-launcher-task]')
         .fill('Verify the OpenCode launch adapter');
-      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      await page.locator('[data-launcher-start]').click();
       const launched = await page.evaluate(async () => {
         const deadline = Date.now() + 20_000;
         while (Date.now() < deadline) {
@@ -902,9 +911,7 @@ try {
           'provider' &&
           (await recentOpenCode.getAttribute('data-title-source')) ===
             'native' &&
-          (await recentOpenCode.innerText()).includes(
-            'Agent Source launch eval'
-          )
+          (await recentOpenCode.innerText()).includes('OpenCode launch eval')
       );
       await recentOpenCode.locator('button').first().click();
       const resumed = await page.evaluate(async originalSessionId => {
@@ -969,9 +976,10 @@ try {
       await openSetupDrawer(page);
       check(
         'native Grok Build launch command opens the composer with Grok preselected',
-        (await selectedLauncherSetup(page).getAttribute('aria-label')).includes(
-          'Grok Build'
-        ) && (await page.locator('[data-agent-composer]').count()) === 1
+        (await launcherAxis(page, 'engine').getAttribute(
+          'data-option-menu-value'
+        )) === 'grok' &&
+          (await page.locator('[data-agent-composer]').count()) === 1
       );
       check(
         'the source default model is pinned and no effort control is offered',
@@ -981,9 +989,9 @@ try {
         await launcherAxis(page, 'model').innerText()
       );
       await page
-        .getByLabel('Initial task for the new Agent')
+        .locator('[data-launcher-task]')
         .fill('Verify the Grok Build launch adapter');
-      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      await page.locator('[data-launcher-start]').click();
       const grokLaunched = await page.evaluate(async () => {
         const deadline = Date.now() + 20_000;
         while (Date.now() < deadline) {
@@ -1104,9 +1112,9 @@ try {
         await launcherAxis(page, 'model').innerText()
       );
       await page
-        .getByLabel('Initial task for the new Agent')
+        .locator('[data-launcher-task]')
         .fill('Verify the Qwen Code launch adapter');
-      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      await page.locator('[data-launcher-start]').click();
       const qwenLaunched = await page.evaluate(async () => {
         const deadline = Date.now() + 20_000;
         while (Date.now() < deadline) {
@@ -1231,9 +1239,9 @@ try {
         await launcherAxis(page, 'model').innerText()
       );
       await page
-        .getByLabel('Initial task for the new Agent')
+        .locator('[data-launcher-task]')
         .fill('Verify the Antigravity launch adapter');
-      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      await page.locator('[data-launcher-start]').click();
       const antigravityLaunched = await page.evaluate(async () => {
         const deadline = Date.now() + 20_000;
         while (Date.now() < deadline) {

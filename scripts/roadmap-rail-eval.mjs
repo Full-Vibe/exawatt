@@ -5,7 +5,13 @@
 // no-roadmap, declare-at-launch, and empty-attention ⌘J — and screenshot each
 // state.
 // Run with EXA_BASE pointing at a dev server serving THIS checkout.
-import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
@@ -22,9 +28,7 @@ const OUT =
 
 // fixture projects (non-git dirs are their own Project)
 const healthy = mkdtempSync(join(tmpdir(), 'rail-healthy-'));
-writeFileSync(
-  join(healthy, 'ROADMAP.md'),
-  `---
+const healthyRoadmap = `---
 exawatt-roadmap: v2
 ---
 
@@ -80,8 +84,10 @@ Status: small-fix · ACME-007 · operator-triage 2026-08-03
 ### ACME-001 Auth
 
 ### ACME-002 Team invites
-`
-);
+`;
+writeFileSync(join(healthy, 'ROADMAP.md'), healthyRoadmap);
+/** Every heading in the fixture is an item the parser must count. */
+const healthyItems = healthyRoadmap.match(/^### /gm).length;
 const empty = mkdtempSync(join(tmpdir(), 'rail-empty-'));
 writeFileSync(
   join(empty, 'ROADMAP.md'),
@@ -213,7 +219,7 @@ await withElectronApp(
     );
     const startAndWaitForLiveAgent = async () => {
       const before = await liveAgentTabs.count();
-      await page.getByRole('button', { name: 'Start' }).click();
+      await page.locator('[data-launcher-start]').click();
       await liveAgentTabs.nth(before).waitFor({ timeout: 60_000 });
     };
 
@@ -244,33 +250,60 @@ await withElectronApp(
     results.sequenceBar =
       (await rail(page, healthy).locator('[data-roadmap-sequence]').count()) ===
       1;
+    const healthyReadiness = rail(page, healthy).locator(
+      '[data-roadmap-readiness]'
+    );
     results.declaredV2Ready =
-      (await rail(page, healthy)
-        .locator('[data-roadmap-readiness]')
-        .textContent()) === 'Ready · v2';
+      (await healthyReadiness.getAttribute('data-roadmap-conformance')) ===
+        'declared' &&
+      (await healthyReadiness.getAttribute('data-roadmap-convention')) ===
+        'exawatt-v2';
     // the dock owns the frame (ENG-029 B3): it widens while it holds focus
     results.focusExpandsRail =
       Math.round(
         await rail(page, healthy).evaluate(
-          el => el.closest('[data-team-dock]')?.getBoundingClientRect().width ?? 0
+          el =>
+            el.closest('[data-team-dock]')?.getBoundingClientRect().width ?? 0
         )
       ) === 420;
     const text = await railText(page, healthy);
     results.heroVisible = text.includes('ACME-003');
-    results.milestoneReadout = text.includes('Next up:');
-    results.blockedBadge = /blocked/i.test(text);
-    results.shippedCollapsed = text.includes('2 shipped');
-    results.trustLine = text.includes('9 items');
+    const healthyRail = rail(page, healthy);
+    // M2 is the fixture's first open milestone
+    results.milestoneReadout =
+      (await healthyRail
+        .locator('[data-roadmap-row="ACME-003"] [data-roadmap-next-milestone]')
+        .getAttribute('data-roadmap-next-milestone')) === '1';
+    results.blockedBadge =
+      (await healthyRail
+        .locator('[data-roadmap-row="ACME-009"] [data-roadmap-blocked]')
+        .count()) === 1;
+    results.shippedCollapsed =
+      (await healthyRail
+        .locator('[data-roadmap-group="shipped"][aria-expanded="false"]')
+        .count()) === 1 &&
+      (await healthyRail
+        .locator('[data-roadmap-row="ACME-001"], [data-roadmap-row="ACME-002"]')
+        .count()) === 0;
+    const itemCount = () =>
+      healthyRail
+        .locator('[data-roadmap-item-count]')
+        .getAttribute('data-roadmap-item-count');
+    results.trustLine = (await itemCount()) === String(healthyItems);
     results.backlogProvenance =
       text.includes('quick-capture 2026-08-03') && text.includes('ACME-003');
-    results.readOnlyFooter = text.includes('ROADMAP.md');
+    results.readOnlyFooter =
+      (await healthyRail
+        .locator('[data-roadmap-file]')
+        .getAttribute('data-roadmap-file')) === 'ROADMAP.md';
     // the plain shell session matches no item → visibly unmapped (S3)
-    results.unmappedShelf = text.includes('not linked to an item');
+    results.unmappedShelf =
+      (await healthyRail.locator('[data-roadmap-unmapped]').count()) >= 1;
 
     // live update (S5): an on-disk edit reparses without any focus change
     appendFileSync(join(healthy, 'ROADMAP.md'), '\n### ACME-013 Live probe\n');
     await page.waitForTimeout(2000);
-    results.liveUpdate = (await railText(page, healthy)).includes('10 items');
+    results.liveUpdate = (await itemCount()) === String(healthyItems + 1);
     await shot(page, '2-live-update');
 
     // keyboard walk + drill + milestone roving (S7/R2)
@@ -281,29 +314,39 @@ await withElectronApp(
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);
     await shot(page, '3-drilled');
-    results.drillShowsDetail = (await railText(page, healthy)).includes(
-      'Roadmap ·'
-    );
+    results.drillShowsDetail =
+      (await healthyRail
+        .locator('[data-roadmap-detail="ACME-003"]')
+        .count()) === 1;
     results.progressiveDisclosure =
-      (await page.getByText('Scope & criteria').count()) === 1;
+      (await rail(page, healthy).locator('[data-roadmap-scope]').count()) === 1;
     results.launchFromItem =
-      (await page.getByRole('button', { name: 'Start agent' }).count()) === 1;
-    await page.getByRole('button', { name: /Tick M2/ }).click();
+      (await rail(page, healthy)
+        .locator('[data-roadmap-start-agent]')
+        .count()) === 1;
+    await healthyRail.locator('[data-roadmap-milestone="1"] button').click();
     await page.waitForTimeout(1200);
     const writeState = page.locator('[data-roadmap-write-state]');
+    const fixtureText = () => readFileSync(join(healthy, 'ROADMAP.md'), 'utf8');
     results.inlineWriteApplied =
-      (await writeState.getAttribute('data-roadmap-write-state')) === 'applied';
+      (await writeState.getAttribute('data-roadmap-write-state')) ===
+        'applied' && fixtureText().includes('- [x] M2 export endpoint');
     if (!results.inlineWriteApplied) {
       console.log(
         '[rail] write state',
         await writeState.textContent().catch(() => 'missing')
       );
     } else {
-      await page.getByRole('button', { name: 'Undo' }).click();
+      // An applied write offers one action: undoing it.
+      await page
+        .locator('[data-roadmap-write-state="applied"]')
+        .getByRole('button')
+        .click();
       await page.waitForTimeout(400);
-      results.inlineUndo = (await railText(page, healthy)).includes(
-        'Change undone'
-      );
+      // Undone means the file on disk has M2 open again.
+      results.inlineUndo =
+        (await writeState.getAttribute('data-roadmap-write-state')) ===
+          'applied' && fixtureText().includes('- [ ] M2 export endpoint');
     }
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(200);
@@ -311,11 +354,12 @@ await withElectronApp(
       (await page
         .locator('[data-roadmap-milestone][data-selected]')
         .count()) === 1;
-    await page.getByRole('button', { name: 'Back to queue' }).click();
+    await rail(page, healthy).locator('[data-roadmap-back]').click();
     await page.waitForTimeout(300);
-    results.backReturnsToQueue = !(await railText(page, healthy)).includes(
-      'Roadmap ·'
-    );
+    results.backReturnsToQueue =
+      (await healthyRail.locator('[data-roadmap-detail]').count()) === 0 &&
+      (await healthyRail.locator('[data-roadmap-row="ACME-003"]').count()) ===
+        1;
 
     // S12: Escape at queue level leaves rail FOCUS but the rail stays — it
     // is a fixture of the Sessions altitude, not a dismissable panel
@@ -336,11 +380,12 @@ await withElectronApp(
     results.cmdBRefocusesRail = await railFocused();
 
     // shipped group expands
-    await page.getByRole('button', { name: /shipped/ }).click();
+    await rail(page, healthy).locator('[data-roadmap-group="shipped"]').click();
     await page.waitForTimeout(300);
-    results.shippedExpands = (await railText(page, healthy)).includes(
-      'ACME-001'
-    );
+    results.shippedExpands =
+      (await rail(page, healthy)
+        .locator('[data-roadmap-row="ACME-001"], [data-roadmap-row="ACME-002"]')
+        .count()) === 2;
     await shot(page, '5-shipped-expanded');
 
     await toTerminal();
@@ -360,9 +405,12 @@ await withElectronApp(
       (await rail(page, healthy).locator('[data-roadmap-chip]').count()) >= 1;
     await page.click('[data-roadmap-row="ACME-007"]');
     await page.waitForTimeout(400);
-    results.declaredChipInDetail = (await railText(page, healthy)).includes(
-      'Sessions'
-    );
+    results.declaredChipInDetail =
+      (await rail(page, healthy)
+        .locator(
+          '[data-roadmap-detail="ACME-007"] [data-roadmap-chip-method="declared"]'
+        )
+        .count()) >= 1;
     results.declaredChipSolid = await rail(page, healthy)
       .locator('[data-roadmap-chip]')
       .first()
@@ -422,16 +470,20 @@ await withElectronApp(
     await page.keyboard.press('Meta+b');
     await page.waitForURL('**view=sessions**');
     await page.waitForTimeout(600);
-    results.emptyQueueHero = (await railText(page, empty)).includes(
-      'Queue empty'
-    );
+    await rail(page, empty).waitFor();
+    results.emptyQueueHero =
+      (await rail(page, empty)
+        .locator('[data-roadmap-empty-queue]')
+        .count()) === 1;
+    // The empty fixture parses but declares no convention: detected, so the
+    // rail reads it and will not write it.
     results.detectedRepoViewOnly =
       (await rail(page, empty)
         .locator('[data-roadmap-readiness]')
-        .textContent()) === 'View only · adaptation needed';
+        .getAttribute('data-roadmap-conformance')) === 'detected';
     results.remediationGesture =
       (await rail(page, empty)
-        .getByRole('button', { name: 'Adapt with agent' })
+        .locator('[data-roadmap-remediation]')
         .count()) === 1;
     await shot(page, '7-empty-queue');
 
@@ -468,9 +520,9 @@ await withElectronApp(
     await page.waitForURL('**view=sessions**');
     await rail(page, bare).waitFor();
     await page.waitForTimeout(800);
-    results.noRoadmapState = (await railText(page, bare)).includes(
-      'No roadmap found'
-    );
+    results.noRoadmapState =
+      (await rail(page, bare).locator('[data-roadmap-no-roadmap]').count()) ===
+      1;
     await shot(page, '8-no-roadmap');
     await toTerminal();
 
@@ -481,9 +533,11 @@ await withElectronApp(
     await page.waitForURL('**view=sessions**');
     await rail(page, selfProject).waitFor();
     await page.waitForTimeout(1200);
-    results.realRepoRenders = (await railText(page, selfProject)).includes(
-      'ENG-'
-    );
+    // the real roadmap's items are ENG-numbered
+    results.realRepoRenders =
+      (await rail(page, selfProject)
+        .locator('[data-roadmap-row^="ENG-"]')
+        .count()) > 0;
     await shot(page, '9-exawatt-real');
     await toTerminal();
 
@@ -495,27 +549,33 @@ await withElectronApp(
     await openShellFromLauncher(page);
     await page.locator('.xterm-helper-textarea').last().waitFor();
     await page.waitForTimeout(1500);
-    const contextBar = await page.evaluate(
-      () =>
-        document.querySelector('[data-active-session-context]')?.textContent ??
-        ''
-    );
-    results.reciprocalChip = contextBar.includes('FIX-042');
+    results.reciprocalChip =
+      (await page
+        .locator(
+          '[data-active-session-context] [data-active-roadmap-item="FIX-042"]'
+        )
+        .count()) === 1;
     await shot(page, '9b-git-fixture');
 
     // the reciprocal chip now SUMMONS Sessions drilled into its item (S12)
     if (results.reciprocalChip) {
       await page.click(
-        '[data-active-session-context] button[title*="open in roadmap"]'
+        '[data-active-session-context] [data-active-roadmap-item="FIX-042"]'
       );
       await page.waitForURL('**view=sessions**');
       await rail(page, gitFix).waitFor();
       await page.waitForTimeout(800);
-      const drillText = await railText(page, gitFix);
+      const drilled = rail(page, gitFix).locator(
+        '[data-roadmap-detail="FIX-042"]'
+      );
       results.reciprocalDrill =
-        drillText.includes('Roadmap · FIX-042') &&
-        drillText.includes('Sessions');
-      results.inferredChipBadge = drillText.includes('FIX-042');
+        (await drilled.count()) === 1 &&
+        (await drilled.locator('[data-roadmap-chip]').count()) >= 1;
+      // the branch carries the id, so the shell Session's link is inferred
+      results.inferredChipBadge =
+        (await drilled
+          .locator('[data-roadmap-chip-method="inferred"]')
+          .count()) >= 1;
       await shot(page, '10-reciprocal-drill');
     }
 

@@ -978,10 +978,8 @@ async function waitForLaunchToLand(page) {
 export async function summonComposer(page) {
   await waitForLaunchToLand(page);
   if ((await page.locator('[data-agent-composer]').count()) > 0) return;
-  const toggle = page.locator('[data-composer-toggle]').first();
-  if ((await toggle.count()) > 0) await toggle.click();
-  else
-    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
+  // The toggle is the only New Agent control; clicking it waits for it.
+  await page.locator('[data-composer-toggle]').first().click();
   await page.locator('[data-agent-composer]').waitFor();
 }
 
@@ -996,7 +994,9 @@ export async function openLaunchCatalog(page) {
   const catalog = page.locator('[data-all-launch-configurations]');
   if (await catalog.isVisible().catch(() => false)) return catalog;
   await waitForLauncherToSettle(page);
-  await page.getByRole('button', { name: 'All engines and models' }).click();
+  await page
+    .locator('[data-agent-composer] [data-setup-catalog-trigger]')
+    .click();
   await catalog.waitFor();
   return catalog;
 }
@@ -1027,8 +1027,8 @@ export async function waitForLauncherToSettle(page) {
  * "Open shell in <project>" button this replaced no longer exists in src.
  */
 export async function openShellFromLauncher(page) {
-  await openLaunchCatalog(page);
-  await page.getByRole('button', { name: /^Shell in / }).click();
+  const catalog = await openLaunchCatalog(page);
+  await catalog.locator('[data-launch-configuration="shell"]').click();
 }
 
 /** Declare the roadmap item a launch will work on (ENG-017 S4). The control
@@ -1036,7 +1036,7 @@ export async function openShellFromLauncher(page) {
 export async function declareRoadmapItem(page, itemId) {
   await openLaunchCatalog(page);
   await page.selectOption(
-    '[data-all-launch-configurations] select[aria-label="Roadmap item this session will work on"]',
+    '[data-all-launch-configurations] [data-launch-roadmap-item]',
     itemId
   );
 }
@@ -1120,7 +1120,7 @@ export async function startAgentFromLauncher(page, options = {}) {
   await waitForLauncherToSettle(page);
   if (engine) await selectLauncherEngine(page, engine);
   if (task) {
-    await page.getByLabel('Initial task for the new Agent').fill(task);
+    await page.locator('[data-launcher-task]').fill(task);
   }
   const start = page.locator('[data-launcher-start]');
   await start.waitFor({ state: 'visible' });

@@ -12,6 +12,7 @@ import {
   fixtureLaunch,
 } from './lib/harness-event-fixture.mjs';
 import { FIXTURE_CODEX_VERSION } from './lib/harness-probe-fixture.mjs';
+import { settingsHref } from '../src/app/settings/settings-registry.ts';
 
 const fixture = createHarnessFixture('exawatt-device-power', {
   codexProtocol: true,
@@ -342,12 +343,14 @@ try {
       await page
         .locator('[data-agent-source-registry-status="live"]')
         .waitFor();
-      await page.getByRole('link', { name: 'Power', exact: true }).click();
+      await page
+        .locator(`[data-settings-shell] nav a[href="${settingsHref('power')}"]`)
+        .click();
       const group = page.locator('[data-power-settings]');
       await group.waitFor();
       const control = group.getByRole('combobox');
       await control.click();
-      await page.getByRole('option', { name: 'Never', exact: true }).click();
+      await page.locator('[role="option"][data-power-policy="never"]').click();
       await waitForPageCondition(
         page,
         async () => (await window.electron.app.devicePower()).policy === 'never'

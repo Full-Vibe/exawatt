@@ -4,11 +4,13 @@ import assert from 'node:assert/strict';
  * clipping a submenu. A successful unforced click proves hit-testing too. */
 export async function verifyAccountThemeMenu(page) {
   const originalViewport = page.viewportSize();
-  const account = page.getByRole('button', {
-    name: 'Account and Workspace menu',
-  });
+  const account = page.locator('[data-account-menu-trigger]');
   const theme = page.locator('[data-account-theme-menu]');
-  const air = page.getByRole('menuitemradio', { name: 'Air', exact: true });
+  const choice = value =>
+    page.locator(
+      `[role="menuitemradio"][data-account-theme-choice="${value}"]`
+    );
+  const air = choice('exawatt-air-light');
 
   try {
     for (const viewport of [
@@ -21,9 +23,7 @@ export async function verifyAccountThemeMenu(page) {
       await air.waitFor();
       // Real pointer movement crosses the trigger before entering the popup;
       // teleporting misses Radix's direction-aware pointer-grace corridor.
-      const entry = await page
-        .getByRole('menuitemradio', { name: 'Auto', exact: true })
-        .boundingBox();
+      const entry = await choice('auto').boundingBox();
       assert.ok(entry);
       await page.mouse.move(
         entry.x + entry.width / 2,

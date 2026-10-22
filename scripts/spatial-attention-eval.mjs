@@ -76,9 +76,9 @@ try {
   await page.waitForURL('**/fleet/spatial*');
   await assertFleetView(page);
   await page.keyboard.press('0');
-  await page.getByPlaceholder('Search agents…').fill(result.name);
+  await page.locator('[data-spatial-search]').fill(result.name);
   await page.waitForURL(url => url.searchParams.get('q') === result.name);
-  await page.getByPlaceholder('Search agents…').press('Tab');
+  await page.locator('[data-spatial-search]').press('Tab');
   await page.keyboard.press('Meta+j');
 
   await page.waitForFunction(
@@ -93,9 +93,9 @@ try {
   await page.waitForURL('**/fleet/spatial*');
   await assertFleetView(page);
   await page.keyboard.press('0');
-  await page.getByPlaceholder('Search agents…').fill(result.name);
+  await page.locator('[data-spatial-search]').fill(result.name);
   await page.waitForURL(url => url.searchParams.get('q') === result.name);
-  await page.getByPlaceholder('Search agents…').press('Tab');
+  await page.locator('[data-spatial-search]').press('Tab');
   const before = page.url();
   await page.keyboard.press('Meta+j');
   assert.equal(page.url(), before);

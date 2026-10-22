@@ -71,7 +71,7 @@ export async function verifyStaticTileBuffers(context, base) {
         `Static population uploaded during camera input: ${before.version} -> ${cameraVersion}`
       );
 
-    await page.getByRole('link', { name: 'air', exact: true }).click();
+    await page.locator('a[data-study-option="air"]').click();
     await page.waitForURL(/theme=air/);
     await page.waitForFunction(
       previous =>
@@ -93,7 +93,7 @@ export async function verifyStaticTileBuffers(context, base) {
         'Theme changed by remounting the static population canvas'
       );
 
-    await page.getByRole('link', { name: '100 Agents', exact: true }).click();
+    await page.locator('a[data-study-option="scale-100"]').click();
     await page.waitForURL(/fixture=scale-100&/);
     await page.waitForFunction(previous => {
       const probe = window.__TILE_BUFFER_PROBE__;

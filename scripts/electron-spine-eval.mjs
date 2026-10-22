@@ -105,14 +105,16 @@ await withElectronApp(
   });
   await page.waitForTimeout(100);
   await page.keyboard.press('Meta+Shift+KeyF');
-  const quickFeedback = page.getByRole('dialog', { name: 'Submit feedback' });
+  const quickFeedback = page
+    .getByRole('dialog')
+    .filter({ has: page.locator('[data-feedback-composer]') });
   if (feedbackEnabled) {
     await quickFeedback.waitFor();
     // A file input also has an implicit button role; scope this check to the
     // visible control that opens it, while upload scenes target the input.
-    const imageAction = quickFeedback.locator('button').filter({
-      hasText: /^(Screenshot|Image|Attach image)$/,
-    });
+    const imageAction = quickFeedback.locator(
+      '[data-feedback-action="attach-image"]'
+    );
     check(
       'feedback exposes a discoverable scoped image picker',
       (await imageAction.isVisible()) &&
@@ -333,7 +335,7 @@ await withElectronApp(
 
   // D11: a focused search field keeps text, but modified global commands must
   // still provide an escape path back to the Agent altitude.
-  const spatialSearch = page.getByLabel('Search agents');
+  const spatialSearch = page.locator('[data-spatial-search]');
   await spatialSearch.fill('operator query');
   await page.keyboard.press('Control+Meta+1');
   await page.waitForURL(url => url.pathname.endsWith('/workspace'));
@@ -359,32 +361,37 @@ await withElectronApp(
   if (!feedbackEnabled) {
     check('palette omits unconfigured feedback service commands', await page.locator('[cmdk-item][data-value*="action-feedback"]').count() === 0);
   }
-  const paletteText = await page.locator('[cmdk-list]').innerText();
-  check('palette has Go to Agent', paletteText.includes('Go to Agent'));
-  check('palette has Go to Team', paletteText.includes('Go to Team'));
-  check('palette has Go to Fleet', paletteText.includes('Go to Fleet'));
+  // Rows by their palette row id (`nav-<surface id>`), so a renamed
+  // destination stays covered.
+  const paletteRows = id =>
+    page.locator(`[cmdk-list] [cmdk-item][data-command-id="${id}"]`).count();
+  check('palette has Go to Agent', (await paletteRows('nav-terminal')) > 0);
+  check('palette has Go to Team', (await paletteRows('nav-sessions')) > 0);
+  check('palette has Go to Fleet', (await paletteRows('nav-spatial')) > 0);
   check(
     'palette has public Leaderboard destination',
-    paletteText.includes('Go to Leaderboard')
+    (await paletteRows('nav-leaderboard')) > 0
   );
   check(
     'palette has no Legacy group (trio retired, decision 0023)',
-    !paletteText.includes('Legacy') && !paletteText.includes('Lattice')
+    (await page.locator('[data-palette-group="legacy"]').count()) === 0 &&
+      (await paletteRows('nav-fleet')) === 0 &&
+      (await paletteRows('nav-dashboard')) === 0 &&
+      (await paletteRows('nav-board')) === 0
   );
-  check('palette has Add project row', paletteText.includes('Add project'));
+  check('palette has Add project row', (await paletteRows('project-add')) > 0);
   check(
     'palette keeps Community Projects local without a sign-in error',
-    !paletteText.includes('Sign in to sync Projects')
+    (await paletteRows('project-sign-in')) === 0
   );
   await page.screenshot({ path: join(OUT, 'palette-project-first.png') });
 
   // ENG-035: public route presentation and command discovery are independent.
   // Search and execute the real row so a manifest-only assertion cannot hide
   // a palette wiring regression.
-  await page.getByPlaceholder('Type a command or search...').fill('leaderboard');
+  await page.locator('[cmdk-input]').fill('leaderboard');
   const leaderboardRow = page
-    .locator('[cmdk-item]')
-    .filter({ hasText: 'Go to Leaderboard' })
+    .locator('[cmdk-item][data-command-id="nav-leaderboard"]')
     .first();
   check(
     'Leaderboard is searchable in the palette',
@@ -512,30 +519,37 @@ await withElectronApp(
   // searchable help overlay lists workspace verbs dynamically
   await page.keyboard.press('Meta+Slash');
   await page.waitForTimeout(600);
-  const helpFilter = page.getByLabel('Filter shortcuts');
+  const helpFilter = page.locator('[data-shortcut-filter]');
   check('help overlay has a filter input', await helpFilter.isVisible());
-  const wsSection = page.locator('[data-help-category="workspace"]');
+  // Rows by their registry id, so a relabelled verb stays covered.
+  const helpRows = selector => page.locator(selector).count();
+  const anyHelpRow = '[data-help-category] [data-shortcut-id]';
   check(
     'help lists workspace verbs dynamically',
-    (await wsSection.innerText()).includes('Rename the active tab')
+    (await helpRows(
+      '[data-help-category="workspace"] [data-shortcut-id="workspace-rename"]'
+    )) === 1
   );
+  const unfilteredRows = await helpRows(anyHelpRow);
   await helpFilter.fill('rename');
   await page.waitForTimeout(300);
-  const filtered = (
-    await page.locator('[data-help-category]').allInnerTexts()
-  ).join(' ');
   check(
     'help filter narrows to matching rows',
-    filtered.includes('Rename the active tab') &&
-      !filtered.includes('Overview of all sessions')
+    (await helpRows(
+      '[data-help-category] [data-shortcut-id="workspace-rename"]'
+    )) === 1 &&
+      (await helpRows(
+        '[data-help-category] [data-shortcut-id="go-sessions"]'
+      )) === 0 &&
+      (await helpRows(anyHelpRow)) < unfilteredRows
   );
   await helpFilter.fill('projection');
   await page.waitForTimeout(300);
   check(
     'help makes Fleet raw keys searchable',
-    (await page.locator('[data-help-category="view"]').innerText()).includes(
-      'toggle projection'
-    )
+    (await helpRows(
+      '[data-help-category="view"] [data-shortcut-id="fixed-board-projection"]'
+    )) === 1
   );
   // chord gating: g m behind the open modal must not navigate
   await page.keyboard.press('Shift+Tab'); // leave the filter input
@@ -554,8 +568,7 @@ await withElectronApp(
   await page.keyboard.press('Meta+KeyK');
   await page.waitForTimeout(600);
   await page
-    .locator('[cmdk-item]')
-    .filter({ hasText: 'Go to Team' })
+    .locator('[cmdk-item][data-command-id="nav-sessions"]')
     .first()
     .click();
   await page.waitForURL('**view=sessions**');
@@ -567,22 +580,34 @@ await withElectronApp(
   await page.waitForTimeout(400);
   // dev-mode Fast Refresh can momentarily detach listeners — retry the
   // palette open a bounded number of times before judging it broken
-  let paletteEmptyText = '';
-  for (let attempt = 0; attempt < 3 && !paletteEmptyText; attempt++) {
+  let paletteOpen = false;
+  for (let attempt = 0; attempt < 3 && !paletteOpen; attempt++) {
     await page.keyboard.press('Meta+KeyK');
     await page.waitForTimeout(800);
-    paletteEmptyText = await page
+    paletteOpen = await page
       .locator('[cmdk-list]')
-      .innerText({ timeout: 3000 })
-      .catch(() => '');
+      .waitFor({ timeout: 3000 })
+      .then(
+        () => true,
+        () => false
+      );
   }
   const recentOk =
-    paletteEmptyText.includes('Recent') &&
-    paletteEmptyText.includes('Go to Team');
+    (await page
+      .locator(
+        '[data-palette-group="recent"] [cmdk-item][data-command-id="nav-sessions"]'
+      )
+      .count()) > 0;
   if (!recentOk) {
     console.log(
-      '[debug] palette text head:',
-      JSON.stringify(paletteEmptyText.slice(0, 200))
+      '[debug] palette groups:',
+      JSON.stringify(
+        await page
+          .locator('[data-palette-group]')
+          .evaluateAll(groups =>
+            groups.map(group => group.getAttribute('data-palette-group'))
+          )
+      )
     );
   }
   check('palette shows a Recent group after use', recentOk);

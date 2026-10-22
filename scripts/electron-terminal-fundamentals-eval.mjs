@@ -312,10 +312,11 @@ await withElectronApp(
     await page.mouse.click(oscPoint.x, oscPoint.y, { button: 'right' });
     const copyTarget = page.locator('[data-terminal-copy-target]');
     await copyTarget.waitFor();
+    const openTarget = page.locator('[data-terminal-open-target]');
     check(
       'the context menu names the target under the pointer',
-      (await copyTarget.innerText()).trim() === 'Copy Path',
-      await copyTarget.innerText()
+      (await openTarget.innerText()).includes(MISSING_ABSOLUTE),
+      await openTarget.innerText()
     );
     await app.evaluate(({ clipboard }) => clipboard.writeText('unset'));
     await copyTarget.click();
@@ -370,7 +371,7 @@ await withElectronApp(
 
     await textarea.focus();
     await textarea.press('Meta+f');
-    const search = page.getByLabel('Search terminal scrollback');
+    const search = page.locator('[data-terminal-search]').getByRole('textbox');
     await search.fill('EXAWATT_LINE_00001');
     await page.waitForFunction(() => {
       const value = document.querySelector(
@@ -378,12 +379,14 @@ await withElectronApp(
       )?.textContent;
       return value && value !== '0/0';
     });
-    await page.getByLabel('Close terminal search').click();
+    await page.locator('[data-terminal-search-close]').click();
 
     await page
       .locator('.terminal-pane')
       .click({ button: 'right', position: { x: 40, y: 80 } });
-    await page.getByRole('menuitem', { name: 'Select All' }).click();
+    await page
+      .locator('[role="menuitem"][data-command-id="terminal.select-all"]')
+      .click();
     await textarea.focus();
     await textarea.press('Meta+c');
     const copied = await app.evaluate(({ clipboard }) => clipboard.readText());
@@ -416,7 +419,10 @@ await withElectronApp(
     await page
       .locator('.terminal-pane')
       .click({ button: 'right', position: { x: 40, y: 80 } });
-    const terminalMenu = page.getByRole('menu', { name: 'Terminal actions' });
+    // The terminal's menu is the one listing the terminal's own commands.
+    const terminalMenu = page
+      .getByRole('menu')
+      .filter({ has: page.locator('[data-command-id="terminal.select-all"]') });
     await terminalMenu.waitFor();
     check(
       'the terminal menu takes the keyboard',

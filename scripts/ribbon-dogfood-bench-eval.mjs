@@ -124,7 +124,7 @@ try {
   // Reverse mid-flight using the same nodes: no terminal resize or selection loss.
   const collapse = await page.evaluate(async () => {
     const header = document.querySelector(
-      '[data-ribbon-item="project"][data-project="exawatt"] button[aria-label="exawatt"]'
+      '[data-ribbon-item="project"][data-project="exawatt"] button[data-project-chrome]'
     );
     const active = document.querySelector(
       '[data-ribbon-item="initiative"][data-active="true"]'
@@ -504,7 +504,9 @@ try {
     for (let round = 0; round < 8; round += 1) {
       const closable = page
         .locator(
-          '[data-ribbon-item="initiative"]:not([aria-hidden="true"]):not([data-close-stabilized]) button[title^="Close — kept"]'
+          // A draft's close discards it; every other close is kept in
+          // Recently closed, and those are the closes this gate drives.
+          '[data-ribbon-item="initiative"]:not([aria-hidden="true"]):not([data-close-stabilized]):not([data-tab-lifecycle="draft"]) [data-tab-close]'
         )
         .first();
       if (!(await closable.count())) break;

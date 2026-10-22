@@ -98,13 +98,13 @@ async function prepare(page) {
   page.setDefaultTimeout(25_000);
   await page.locator('[data-command-altitude]').waitFor();
   await page.waitForFunction(
-    () => !document.body.innerText.includes('Loading…')
+    () => !document.querySelector('[data-route-loading]')
   );
   if (!new URL(page.url()).pathname.startsWith('/workspace')) {
     await page.locator('[data-command-altitude-level="terminal"]').click();
     await page.waitForURL('**/workspace*');
     await page.waitForFunction(
-      () => !document.body.innerText.includes('Loading…')
+      () => !document.querySelector('[data-route-loading]')
     );
   }
   // Hydrated: the open-project event is ignored before this, and a relaunch
@@ -379,9 +379,14 @@ try {
       console.log('[eng-018] clean restore ready');
       if ((await sessions(page)).length !== 0)
         throw new Error('Relaunch spawned work silently');
-      const ready = page.getByRole('region', { name: 'Saved Agent recovery' });
+      const ready = page.locator('[data-resume-recovery]');
       await ready.waitFor();
-      await page.getByText('Shell', { exact: true }).last().click();
+      await page
+        .locator(
+          `[data-tab-id][data-durable-session-id="${savedShell.durableSessionId}"] [data-tab-chrome]`
+        )
+        .first()
+        .click();
       // A paused Session shows a RECORD, not a replayed terminal (BUG-013,
       // incident 0008), and an unreadable transcript SAYS so rather than swapping
       // in an empty pane. The pre-record pane's 'Retained history unavailable'
@@ -399,11 +404,13 @@ try {
       await page.screenshot({
         path: join(screenshots, 'restored-800x600.png'),
       });
-      await page.getByRole('button', { name: 'Start new shell' }).click();
-      await waitForSessions(page, 1);
-      await ready
-        .getByRole('button', { name: 'Resume previously running (3)' })
+      await page
+        .locator(
+          `[data-session-durable="${savedShell.durableSessionId}"] [data-session-lifecycle-verb="new-shell"]`
+        )
         .click();
+      await waitForSessions(page, 1);
+      await ready.locator('[data-resume-scope="previously-running"]').click();
       await waitForSessions(page, 4);
       if (
         (await sessions(page)).some(
@@ -422,7 +429,7 @@ try {
       if (!request)
         throw new Error('Restart dropped the retained request Session');
       // The remaining paused Agent is still explicitly resumable by Project scope.
-      await ready.getByRole('button', { name: /Resume 1 agent in /i }).click();
+      await ready.locator('[data-resume-scope="project"]').click();
       await waitForSessions(page, 5);
       console.log('[eng-018] workspace Agent recovery completed');
       const resumed = await sessions(page);
@@ -508,7 +515,10 @@ try {
     async (app, page) => {
       await prepare(page);
       console.log('[eng-018] interrupted restore ready');
-      await page.getByText('Interrupted', { exact: true }).last().waitFor();
+      await page
+        .locator('[data-tab-id][data-tab-lifecycle="interrupted"]')
+        .first()
+        .waitFor();
       await page.screenshot({
         path: join(screenshots, 'interrupted-1400x900.png'),
       });
