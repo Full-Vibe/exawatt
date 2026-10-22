@@ -455,10 +455,7 @@ function startCommandSurface(): Promise<void> {
     rebuildMenu: () => menu.rebuild(),
     mainDiagnostics,
     setEnginePhase: setCommandEnginePhase,
-    enterWorkspace: async () => {
-      const win = mainWindow.current();
-      if (win && !win.isDestroyed()) await win.loadURL(workspace.url());
-    },
+    enterWorkspace: () => mainWindow.navigate(workspace.url()),
     quitApp: () => app.quit(),
   });
 }

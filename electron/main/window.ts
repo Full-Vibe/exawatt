@@ -154,6 +154,10 @@ interface MainWindowController {
    *  app focuses it, an inactive development launch shows it without taking
    *  focus, and a hidden automated launch changes nothing on screen. */
   present(): 'focused' | 'shown' | 'hidden';
+  /** Loads `url` into the main window once the document it opened with has
+   *  finished loading, failed, or lost its renderer. Rejects as `loadURL`
+   *  does when the load itself fails. */
+  navigate(url: string): Promise<void>;
   /** Reloads `focused` when it is a web window, else the main window. It
    *  never depends on the renderer being alive to receive focus (BUG-223). */
   reload(focused: unknown, options: { ignoringCache: boolean }): void;
@@ -164,6 +168,8 @@ export function createMainWindowController(
 ): MainWindowController {
   let mainWindow: BrowserWindow | null = null;
   let inactiveLaunchPromoted = false;
+  /** Settles when the window's opening document is done, however it ends. */
+  let opening: Promise<void> = Promise.resolve();
   const resetMenuAvailability = () => deps.onNavigationReset();
 
   function createWindow(
@@ -253,7 +259,14 @@ export function createMainWindowController(
     win.webContents.on('unresponsive', () => deps.onRenderUnresponsive(win));
     win.webContents.on('responsive', () => deps.onRenderResponsive());
 
-    void win.loadURL(initialUrl);
+    // A second navigation never starts while this one is in flight
+    // (`navigate`): at a new window's first frames an attaching debugger can
+    // miss both commits, and the opening document paints in milliseconds.
+    opening = new Promise<void>(settle => {
+      win.loadURL(initialUrl).then(settle, settle);
+      win.webContents.once('render-process-gone', () => settle());
+      win.once('closed', () => settle());
+    });
 
     win.webContents.on('will-navigate', (event, target) => {
       if (!deps.isWorkspaceTarget(target)) {
@@ -314,6 +327,13 @@ export function createMainWindowController(
       win.focus();
       deps.activateApp();
       return 'focused';
+    },
+    async navigate(url) {
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) return;
+      await opening;
+      if (mainWindow !== win || win.isDestroyed()) return;
+      await win.loadURL(url);
     },
     reload(focused, { ignoringCache }) {
       const target =

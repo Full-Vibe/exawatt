@@ -318,6 +318,48 @@ describe('createMainWindowController', () => {
     expect(log).toEqual(['launch-screen', `workspace:${WORKSPACE}`]);
   });
 
+  it('enters the workspace only after the launch screen loads, fails, or loses its renderer (BUG-308)', async () => {
+    // A launch screen and the workspace in flight together at a new window's
+    // first frames is the one moment an attaching debugger can miss both
+    // commits; the launch screen itself paints in a few milliseconds.
+    for (const end of ['loaded', 'failed', 'renderer-gone'] as const) {
+      const { controller, windows } = harness({
+        createBrowserWindow: options => {
+          const win = new FakeWindow(options);
+          windows.push(win);
+          let first = true;
+          win.loadURL = (url: string) => {
+            win.loaded.push(url);
+            if (!first) return Promise.resolve();
+            first = false;
+            return new Promise<void>((resolve, reject) => {
+              win.webContents.once('test-end', (how: string) =>
+                how === 'failed' ? reject(new Error('ERR_FAILED')) : resolve()
+              );
+            });
+          };
+          return win as unknown as BrowserWindow;
+        },
+      });
+      controller.open('data:text/html,launch', appearance);
+      const win = windows[0];
+      let entered = false;
+      const entering = controller.navigate(WORKSPACE).then(() => {
+        entered = true;
+      });
+      await new Promise(resolve => setImmediate(resolve));
+      expect(win.loaded, end).toEqual(['data:text/html,launch']);
+      expect(entered).toBe(false);
+      if (end === 'renderer-gone') {
+        win.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+      } else {
+        win.webContents.emit('test-end', end);
+      }
+      await entering;
+      expect(win.loaded, end).toEqual(['data:text/html,launch', WORKSPACE]);
+    }
+  });
+
   it('offers a window as a dialog parent only while it is alive', () => {
     const { controller, windows } = harness();
     controller.open(WORKSPACE, appearance);
