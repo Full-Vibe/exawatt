@@ -4065,6 +4065,10 @@ Change (`src/lib/frame-demand/`):
   Agent reaches the marks, never from a painted frame, and report Working
   versus attached rotors (BUG-113's readout). Fleet v2's tile churn keeps its
   ambient claim from the shared renderer's per-frame report.
+- Fleet v2's lattice canvas and camera (adopted 2026-10-22) take the same
+  owner: tile churn and working motion hold the ambient claim, the semantic
+  flight a transition claim, everything else a one-off request;
+  camera-controls' own damped moves stay painted by drei's update events.
 - The hero board takes the smallest change: its units hold one ambient claim
   (a live board paints every refresh and every hero transition rides those
   frames), its picture changes are requests, and its two mount writes became
@@ -4099,10 +4103,22 @@ Diagnosis records:
   claim alive through frames in which nothing else asks"), every policy change
   re-arms ("resumes ambient motion at the new cadence after on-ac"), and
   `on-ac` re-reads an unknown lock (host-power test).
-- **BUG-308.** Not the board: the eval inherits the Mac's real lock state and
-  the trains run while it is locked (measured `screenLock: locked`, 0 frames).
-  Declaring the host unlocked after the first window passes clean master 3 of
-  3. Handed to the eval harness.
+- **BUG-308.** Not the board, two causes. Section 3: the eval inherited the
+  Mac's real lock state and the trains run while it is locked (measured
+  `screenLock: locked`, 0 frames); `withElectronApp` now declares the screen
+  unlocked after the first window, and the power evals opt out. Section 4:
+  main navigated each new window twice at once (launch screen, then the
+  workspace about 20 ms later), and with Playwright attaching Chromium
+  sometimes reported neither commit, so Playwright kept `/workspace` pending
+  forever (incident `0041`). Main now enters the workspace once the launch
+  screen has committed, and answers the preload's synchronous first-paint
+  read before any window exists (unanswered, it hung the launch screen on a
+  cold start). Final tree with the Mac locked: `app-lifecycle` 3 of 3,
+  `device-power` 2 of 2.
+- **BUG-314.** A harness watchdog timeout now names its budget, the eval's
+  last progress line and page, with the screenshot taken before the app
+  closes; it is never retried as an external kill, and a relaunch resets the
+  profile only after the old tree has exited.
 
 Evidence: `frame-scheduler.test.ts` (21 contract tests: demand runs frames,
 settled demand parks, a policy change re-arms, a hidden or locked host paints

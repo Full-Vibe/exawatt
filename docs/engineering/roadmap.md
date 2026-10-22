@@ -179,8 +179,9 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    `eval:hero-board` trigger line goes to eng-039 as a data edit. READY
    2026-10-21 on `agent/frame-demand` (<sha pending>): one scheduler per
    canvas in `src/lib/frame-demand/`; BUG-280 and BUG-300 close with it,
-   BUG-113 has its readout, and BUG-308's cause is the Mac's lock state, with
-   the fix handed to the eval harness.
+   BUG-113 has its readout, BUG-308 closes (the harness declares an unlocked
+   Mac; a new window's launch screen always loads and the workspace waits for
+   its commit), and BUG-314 closes (a harness timeout names itself).
 6. **session-custody: main owns each Session's process** (ENG-016; M, about
    5 h). A window learns which Sessions are live from one read at mount, so a
    reload during a long resume strands a live process behind a paused tab and
@@ -5276,7 +5277,7 @@ reached ⌘K; Move left and Move right reached the tab and Project menus.
 
 ### BUG-308 `eval:electron:app-lifecycle` times out at its Fleet-camera step on master
 
-Status: bug · ENG-022 · found 2026-10-21 by the in-app moments packet; waived at the 2026-10-22 train landing (`00f1fcb1`).
+Status: fixed (frame-demand train, <sha pending>) · ENG-022 · found 2026-10-21 by the in-app moments packet; waived at the 2026-10-22 train landing (`00f1fcb1`).
 
 Section 3 ("Restart to Update keeps your place") waits for "the panned Fleet camera, settled" and times out on a clean
 `origin/master` checkout as well as on the branch, so it predates the What's new notice (section 4, which passed run alone).
@@ -5489,3 +5490,55 @@ does), clean master passed 3 runs of 3. The fix is the harness's, not the
 board's: `withElectronApp` declares an unlocked, awake host unless an eval
 drives host power itself, which covers every Electron eval that needs Fleet
 frames on a locked Mac. Owner: the eval harness (ENG-022).
+
+Resolved 2026-10-22, two causes, both measured. Section 3: `withElectronApp`
+now declares the screen unlocked once the first window exists, through the
+same `powerMonitor` event the evals emit; the app is untouched (its next
+native read still answers for the real host, and unknown is still not
+unlocked), and `eval:electron:host-power` and `eval:electron:device-power` opt
+out with `drivesHostPower: true`. A harness test proves it on the app's own
+compiled host observer reading a locked Mac. Section 4 (the What's new step,
+about one run in four): main navigated each new window to the launch screen
+and, with a warm engine, to `/workspace` about 20 ms later while the launch
+screen was still loading; with Playwright attaching, Chromium sometimes
+reported neither commit, so Playwright kept `/workspace` pending forever and
+every locator waited over a page that showed the notice (incident `0041`).
+Main now enters the workspace only once the launch screen has committed
+(the window controller's `navigate`). Waiting for its full load first fixed
+the lifecycle eval (10 of 10) but deadlocked `eval:electron:device-power`'s
+relaunch, which exposed a second defect: main opened the window before it
+answered the preload's synchronous first-paint read, and an unanswered
+`sendSync` hangs the renderer, so on a cold start the launch screen never
+painted until the workspace replaced it. The appearance read now registers
+before any window (`registerAppearanceIpc`). Final tree, Mac locked:
+`app-lifecycle` 3 of 3, `device-power` 2 of 2, `host-power` and
+`project-agent` green. The train waiver is no longer needed. One more environmental factor
+for night runs, not fixed here: after about 02:00 this Mac idles into system
+sleep and maintenance wakes, which suspends a launch mid-flight ("no window"
+at `firstWindow`); runs held awake (`caffeinate -s`) were clean. Whether the
+harness should hold a sleep assertion for a launch is an operator call on
+this Mac's power policy.
+[Incident](incidents/0041-eval-waits-on-a-navigation-the-window-finished.md).
+
+### BUG-314 An Electron eval that hits its watchdog dies with ENOTEMPTY instead of naming the step
+
+Status: fixed (frame-demand train, <sha pending>) · ENG-022 · found 2026-10-22 in the train on the new master (Mac locked), `eval:roadmap:rail`.
+
+`eval:roadmap:rail` ran past its 180 s budget after shot `9-exawatt-real`.
+The watchdog closed the app under a body still mid call; the body threw
+"Target closed"; `withElectronApp`'s retry loop read that as an external kill
+("the Electron app disappeared mid-run ... relaunching") and reset the
+throwaway profile while the dying Electron still wrote to it, and the process
+died on `ENOTEMPTY`: no step named, no screenshot. The hang itself is BUG-315
+(a first consumption scan blocking main for 412 s), not this.
+
+Resolved 2026-10-22 in the harness. A teardown the harness starts (watchdog
+or signal) is marked as its own and never retried; a watchdog timeout fails as
+`TIMED OUT after <maxMs>ms` with the eval's last progress line and page, and
+records the screenshot before the app closes. An attempt settles only after
+its verified process group has exited, and the relaunch reset retries through
+late writes and otherwise fails with a named error. Real external kills keep
+their relaunch. Tests (`scripts/electron-eval.test.mjs`) use a real Electron
+launch for the timeout (named, screenshot, not retried, tree gone) and for an
+outside kill (still external), and a real dying writer for the reset (it
+fails 4 of 4 without the retries).

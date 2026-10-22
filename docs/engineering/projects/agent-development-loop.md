@@ -499,6 +499,25 @@ tests remain the recovery baseline during the rollout.
 
 ## Findings log
 
+- 2026-10-22, BUG-308: **an eval declares the host it assumes.** Electron
+  evals inherited the Mac's real screen lock, and trains run while it is
+  locked, where Fleet correctly paints nothing. `withElectronApp` now declares
+  the screen unlocked after the first window through the evals' own
+  `powerMonitor` channel; an eval that drives host power passes
+  `drivesHostPower: true`. Separately, a hang that looked like a missing
+  What's new notice was Playwright waiting on a navigation Chromium never
+  reported committed, because main navigated each new window twice at once
+  ([incident 0041](../incidents/0041-eval-waits-on-a-navigation-the-window-finished.md)).
+  Its protocol recipe applies to any locator that waits for "navigation to
+  finish" over a loaded page.
+- 2026-10-22, BUG-314: **a timeout the harness causes is its own.** A
+  watchdog timeout used to close the app under a pending call, read the
+  resulting "Target closed" as an external kill, and relaunch onto a profile
+  the dying tree still wrote to (`ENOTEMPTY`). Harness-started teardowns are
+  never retried, a timeout names `maxMs`, the last progress line and the
+  page with a screenshot taken first, and attempts settle after their
+  process group exits.
+
 - 2026-10-02, BUG-271: **server freshness includes generated artifact custody.**
   [Incident 0031](../incidents/0031-community-build-poisons-live-distribution-icon.md)
   records community verification replacing the mutable icon file beneath a
