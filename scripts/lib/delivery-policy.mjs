@@ -864,6 +864,16 @@ export const SURFACE_GATES = [
       file === 'scripts/electron-offline-eval.mjs',
   },
   {
+    gate: 'eval:electron:instance',
+    why: 'a second copy over the same profile must hand off and exit, and an official build outside Applications must offer the move once',
+    match: file =>
+      file === 'electron/main/main.ts' ||
+      file === 'electron/main/app-instance.ts' ||
+      file === 'electron/main/launch-identity.ts' ||
+      file === 'electron/main/installed-build.ts' ||
+      file === 'scripts/electron-instance-eval.mjs',
+  },
+  {
     gate: 'eval:electron:helper-death',
     why: 'a window whose renderer, GPU and network helpers are killed must come back by itself with every death recorded (BUG-223)',
     match: file =>
@@ -2008,6 +2018,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'eval:spatial:pointer': GATE,
   'qa:browser:smoke': GATE,
   'eval:electron:offline': GATE,
+  'eval:electron:instance': GATE,
   'eval:electron:helper-death': GATE,
   'eval:electron:renderer-errors': GATE,
   'eval:electron:renderer-hang': manual(
