@@ -50,3 +50,34 @@ describe('one menu primitive', () => {
     expect(RENDERED_MENU_ROLE.test(readFileSync(PRIMITIVE, 'utf8'))).toBe(true);
   });
 });
+
+/**
+ * A right-click menu names its target and renders that target's commands
+ * from the registry (`CommandMenu`, `target-commands.ts`); it never builds a
+ * row list of its own. A hand-built list is exactly how Mark unread came to
+ * live in the tab menu and nowhere in ⌘K (operator, 2026-10-22).
+ * `command-parity.test.tsx` holds the rows equal; this holds the shape that
+ * makes them equal, so the next context menu cannot be born outside it.
+ */
+describe('context menus render target commands', () => {
+  const CONTEXT_MENU = /\bonContextMenu\s*=/;
+  const OWN_ROW_LIST = /\bActionMenu(Item)?\b/;
+  const withContextMenus = () =>
+    sourceFiles(ROOT).filter(file =>
+      CONTEXT_MENU.test(readFileSync(file, 'utf8'))
+    );
+
+  it('opens no hand-built action list on contextmenu', () => {
+    const offenders = withContextMenus()
+      .filter(file => OWN_ROW_LIST.test(readFileSync(file, 'utf8')))
+      .map(file => path.relative(process.cwd(), file));
+    expect(offenders).toEqual([]);
+  });
+
+  it('still finds the context menus it guards', () => {
+    const rendering = withContextMenus().filter(file =>
+      /\b(CommandMenu|StripContextMenu)\b/.test(readFileSync(file, 'utf8'))
+    );
+    expect(rendering.length).toBeGreaterThanOrEqual(2);
+  });
+});

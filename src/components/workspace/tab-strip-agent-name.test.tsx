@@ -75,7 +75,7 @@ function renderStrip(onRenameTab = vi.fn(async () => null as string | null)) {
         attention={NO_FLEET_ATTENTION}
         onSelectProject={vi.fn()}
         onSelectTab={vi.fn()}
-        onCloseTab={vi.fn()}
+        commands={{ closeTab: vi.fn() }}
         onRenameTab={onRenameTab}
         onRenameProject={vi.fn()}
         onSetProjectColor={vi.fn()}

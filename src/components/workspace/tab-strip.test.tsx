@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -27,7 +33,7 @@ import {
   delegationCopy,
 } from './session-status';
 import type { Project, SessionTab } from './use-workspace-state';
-import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
+import { requestProjectEdit } from './session-jump';
 import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 
 /**
@@ -125,17 +131,20 @@ function strip({
           delegation={nextDelegation}
           feedbackEnabled={feedbackEnabled}
           onRateContext={onRateContext}
-          onTogglePinTab={vi.fn()}
-          onResumeTab={vi.fn()}
+          commands={{
+            closeTab: onCloseTab,
+            togglePinTab: vi.fn(),
+            resumeTab: vi.fn(),
+            cloneTab: onCloneTab,
+            markUnread: onMarkUnread,
+            closeProject: onCloseProject,
+            newAgent: onNewAgent,
+            revealPath: onRevealPath,
+            openCloud: vi.fn(),
+          }}
           cloneTargets={cloneTargets}
-          onCloneTab={onCloneTab}
-          onMarkUnread={onMarkUnread}
-          onCloseProject={onCloseProject}
-          onNewAgent={onNewAgent}
-          onRevealPath={onRevealPath}
           onSelectProject={vi.fn()}
           onSelectTab={onSelectTab}
-          onCloseTab={onCloseTab}
           onRenameTab={vi.fn()}
           onRenameProject={vi.fn()}
           onSetProjectColor={vi.fn()}
@@ -315,11 +324,13 @@ describe('TabStrip turn-state glyphs (D22)', () => {
           attention={NO_FLEET_ATTENTION}
           activity={{}}
           engaged={{}}
-          onTogglePinTab={vi.fn()}
-          onResumeTab={vi.fn()}
+          commands={{
+            closeTab: vi.fn(),
+            togglePinTab: vi.fn(),
+            resumeTab: vi.fn(),
+          }}
           onSelectProject={vi.fn()}
           onSelectTab={vi.fn()}
-          onCloseTab={vi.fn()}
           onRenameTab={vi.fn()}
           onRenameProject={vi.fn()}
           onSetProjectColor={vi.fn()}
@@ -642,12 +653,9 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(shellMenu).not.toHaveTextContent('Cloud');
   });
 
-  it('opens the active Project editor from the shared command event', () => {
+  it('opens the active Project editor from the shared command request', () => {
     strip({ tabs: [] });
-    fireEvent(
-      window,
-      new CustomEvent(EDIT_ACTIVE_PROJECT_EVENT, { bubbles: true })
-    );
+    act(() => requestProjectEdit());
     expect(screen.getByRole('textbox', { name: 'Rename' })).toHaveValue('repo');
   });
 

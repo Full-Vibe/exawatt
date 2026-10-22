@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WORKSPACE_PALETTE_ROW_IDS } from '@/components/shortcuts/command-palette';
+import { TARGET_COMMAND_IDS } from '@/components/workspace/target-commands';
 import { WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS } from '@/components/shortcuts/shortcut-provider';
 import {
   FIXED_SESSION_MENU_COMMANDS,
@@ -173,7 +173,7 @@ describe('fixed shortcut family contract', () => {
       expect(family.paletteRowIds.length).toBeGreaterThan(0);
       expect(family.menuCommandIds.length).toBeGreaterThan(0);
       for (const rowId of family.paletteRowIds) {
-        expect(WORKSPACE_PALETTE_ROW_IDS.has(rowId), rowId).toBe(true);
+        expect(TARGET_COMMAND_IDS.has(rowId), rowId).toBe(true);
       }
       for (const commandId of family.menuCommandIds) {
         expect(

@@ -69,7 +69,7 @@ function view({
         dormantProjectDirs={dormantProjectDirs}
         onSelectProject={vi.fn()}
         onSelectTab={vi.fn()}
-        onCloseTab={vi.fn()}
+        commands={{ closeTab: vi.fn() }}
         onRenameTab={vi.fn()}
         onRenameProject={vi.fn()}
         onSetProjectColor={vi.fn()}

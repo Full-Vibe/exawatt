@@ -12,6 +12,27 @@
  */
 export type TerminalChordVerb = 'find' | 'copy' | 'paste' | 'select-all';
 
+/** The one table of terminal chords: the matcher below reads it, and the
+ *  terminal's command rows print it, so a row can never advertise a chord the
+ *  pane does not answer. */
+export const TERMINAL_CHORD_KEYS: Readonly<
+  Record<TerminalChordVerb, { key: string; modifiers: ['meta'] }>
+> = {
+  find: { key: 'f', modifiers: ['meta'] },
+  copy: { key: 'c', modifiers: ['meta'] },
+  paste: { key: 'v', modifiers: ['meta'] },
+  'select-all': { key: 'a', modifiers: ['meta'] },
+};
+
+const VERB_BY_KEY = new Map(
+  (
+    Object.entries(TERMINAL_CHORD_KEYS) as [
+      TerminalChordVerb,
+      { key: string },
+    ][]
+  ).map(([verb, binding]) => [binding.key, verb])
+);
+
 export function matchTerminalChord(
   event: Pick<
     KeyboardEvent,
@@ -22,16 +43,5 @@ export function matchTerminalChord(
   // exact chords only: a shifted/optioned variant is a DIFFERENT combo and
   // may belong to a workspace verb (⌘⇧F = quick feedback)
   if (event.shiftKey || event.altKey || event.ctrlKey) return null;
-  switch (event.key.toLowerCase()) {
-    case 'f':
-      return 'find';
-    case 'c':
-      return 'copy';
-    case 'v':
-      return 'paste';
-    case 'a':
-      return 'select-all';
-    default:
-      return null;
-  }
+  return VERB_BY_KEY.get(event.key.toLowerCase()) ?? null;
 }

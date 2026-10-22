@@ -133,7 +133,10 @@ describe('the launch environment seam', () => {
       durableSessionId: 'session-x',
     });
     warn.mockRestore();
-    expect(spawned[0].env.EXAWATT_BUS_PORT).toBeUndefined();
+    // Nothing beyond what this process inherited: an agent session running
+    // these tests inside Exawatt carries its own bus port, and that is not
+    // the extension.
+    expect(spawned[0].env.EXAWATT_BUS_PORT).toBe(process.env.EXAWATT_BUS_PORT);
     expect(spawned[0].env.PATH).toBe(process.env.PATH);
   });
 });

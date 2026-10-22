@@ -11,13 +11,7 @@
  * and countable, not to look good.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from '@/components/workspace/tab-strip';
 import { DEFAULT_RIBBON_POLICY } from '@/components/workspace/project-ribbon-layout';
@@ -347,14 +341,11 @@ export function RibbonDogfoodBench() {
     }, 600);
   }, []);
 
-  const onStageResize = useCallback(
-    (size: { cols: number; rows: number }) => {
-      setResizeLog(current =>
-        [...current, { at: Date.now(), ...size }].slice(-200)
-      );
-    },
-    []
-  );
+  const onStageResize = useCallback((size: { cols: number; rows: number }) => {
+    setResizeLog(current =>
+      [...current, { at: Date.now(), ...size }].slice(-200)
+    );
+  }, []);
   const recentResizeBurst = useMemo(() => {
     const now = Date.now();
     return resizeLog.filter(entry => now - entry.at < 1500).length;
@@ -362,9 +353,7 @@ export function RibbonDogfoodBench() {
 
   // ── DOM-truth visibility readout ─────────────────────────────────────
   const recomputeVisibility = useCallback(() => {
-    const strip = benchRef.current?.querySelector(
-      '[data-workspace-tab-strip]'
-    );
+    const strip = benchRef.current?.querySelector('[data-workspace-tab-strip]');
     const allTabs = projects.flatMap(project =>
       project.tabs.map(tab => ({ project, tab }))
     );
@@ -389,8 +378,7 @@ export function RibbonDogfoodBench() {
         project: project.name,
         title: tab.title,
         visibility,
-        active:
-          project.dir === activeDir && tab.id === project.activeTabId,
+        active: project.dir === activeDir && tab.id === project.activeTabId,
       };
     });
     setVisibilityRows(current =>
@@ -532,7 +520,6 @@ export function RibbonDogfoodBench() {
                 engaged={engaged}
                 delegation={BENCH_DELEGATION}
                 cloneTargets={BENCH_CLONE_TARGETS}
-                onCloneTab={() => undefined}
                 feedbackEnabled
                 onRateContext={async () => true}
                 onSelectProject={index => {
@@ -542,22 +529,25 @@ export function RibbonDogfoodBench() {
                   setActiveDir(project.dir);
                 }}
                 onSelectTab={selectTab}
-                onCloseTab={tabId => {
-                  beginGesture();
-                  setProjects(current =>
-                    current.map(project => {
-                      const tabs = project.tabs.filter(
-                        item => item.id !== tabId
-                      );
-                      return tabs.length === project.tabs.length
-                        ? project
-                        : {
-                            ...project,
-                            tabs,
-                            activeTabId: tabs[0]?.id ?? null,
-                          };
-                    })
-                  );
+                commands={{
+                  cloneTab: () => undefined,
+                  closeTab: tabId => {
+                    beginGesture();
+                    setProjects(current =>
+                      current.map(project => {
+                        const tabs = project.tabs.filter(
+                          item => item.id !== tabId
+                        );
+                        return tabs.length === project.tabs.length
+                          ? project
+                          : {
+                              ...project,
+                              tabs,
+                              activeTabId: tabs[0]?.id ?? null,
+                            };
+                      })
+                    );
+                  },
                 }}
                 onRenameTab={() => undefined}
                 onRenameProject={() => undefined}
@@ -736,9 +726,7 @@ export function RibbonDogfoodBench() {
           </thead>
           <tbody data-bench-visibility>
             {visibilityRows.map(row => {
-              const flat = flatTabs.find(
-                entry => entry.tab.id === row.tabId
-              );
+              const flat = flatTabs.find(entry => entry.tab.id === row.tabId);
               const sessionId = flat?.tab.sessionId ?? null;
               return (
                 <tr

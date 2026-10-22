@@ -8,8 +8,10 @@ export type PaletteGroupId =
   | 'recent'
   | 'sessions'
   | 'start'
-  | 'clone'
   | 'projects'
+  | 'subject-tab'
+  | 'subject-project'
+  | 'subject-terminal'
   | 'workspace'
   | 'recently-closed'
   | 'fleet'
@@ -37,15 +39,16 @@ export const PALETTE_GROUPS: readonly PaletteGroup[] = [
   },
   { id: 'start', heading: 'Start', landing: 'eligible' },
   {
-    id: 'clone',
-    heading: 'Clone active Agent to',
-    landing: 'eligible',
-  },
-  {
     id: 'projects',
     heading: 'Projects',
     landing: 'eligible',
   },
+  // The selected Agent, its Project and its terminal: the same commands their
+  // right-click menus offer (`target-commands.ts`). The palette heads each
+  // group with the target's own name; these are the fallbacks.
+  { id: 'subject-tab', heading: 'This Agent', landing: 'eligible' },
+  { id: 'subject-project', heading: 'This Project', landing: 'eligible' },
+  { id: 'subject-terminal', heading: 'Terminal', landing: 'eligible' },
   {
     id: 'workspace',
     heading: 'Workspace',

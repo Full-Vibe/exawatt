@@ -34,6 +34,46 @@ export function rankRecents(
     .map(e => e.id);
 }
 
+/**
+ * Row ids the workspace verbs carried before they became target commands
+ * (`target-commands.ts`). A record written under an old id keeps its weight
+ * under the command that replaced it.
+ */
+const RETIRED_ROW_IDS: Readonly<Record<string, string>> = {
+  'ws-rename': 'session.rename',
+  'ws-color': 'project.rename',
+  'ws-split': 'session.pin',
+  'ws-resume-agent': 'session.resume',
+  'ws-pause-project': 'project.pause',
+  'ws-move-left': 'session.move-left',
+  'ws-move-right': 'session.move-right',
+  'ws-move-project-left': 'project.move-left',
+  'ws-move-project-right': 'project.move-right',
+  'ws-close': 'session.close',
+  'ws-close-project': 'project.close',
+  'ws-reveal': 'session.reveal',
+};
+
+/** Fold retired ids into their successors, merging any duplicates. */
+export function migratePaletteUses(entries: PaletteUse[]): PaletteUse[] {
+  const merged = new Map<string, PaletteUse>();
+  for (const entry of entries) {
+    const id = RETIRED_ROW_IDS[entry.id] ?? entry.id;
+    const prior = merged.get(id);
+    merged.set(
+      id,
+      prior
+        ? {
+            id,
+            at: Math.max(prior.at, entry.at),
+            count: prior.count + entry.count,
+          }
+        : { ...entry, id }
+    );
+  }
+  return [...merged.values()];
+}
+
 /** Tolerant read — a corrupt or missing record is just an empty history. */
 export function readPaletteUses(): PaletteUse[] {
   if (typeof window === 'undefined') return [];
@@ -42,13 +82,15 @@ export function readPaletteUses(): PaletteUse[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (e): e is PaletteUse =>
-        !!e &&
-        typeof e === 'object' &&
-        typeof e.id === 'string' &&
-        typeof e.at === 'number' &&
-        typeof e.count === 'number'
+    return migratePaletteUses(
+      parsed.filter(
+        (e): e is PaletteUse =>
+          !!e &&
+          typeof e === 'object' &&
+          typeof e.id === 'string' &&
+          typeof e.at === 'number' &&
+          typeof e.count === 'number'
+      )
     );
   } catch {
     return [];
@@ -61,7 +103,9 @@ export function recordPaletteUse(id: string, now = Date.now()): void {
     const entries = readPaletteUses();
     const existing = entries.find(e => e.id === id);
     const next = existing
-      ? entries.map(e => (e.id === id ? { ...e, at: now, count: e.count + 1 } : e))
+      ? entries.map(e =>
+          e.id === id ? { ...e, at: now, count: e.count + 1 } : e
+        )
       : [...entries, { id, at: now, count: 1 }];
     next.sort((a, b) => b.at - a.at);
     window.localStorage.setItem(

@@ -3,12 +3,25 @@
  * face (decision `0033`, BUG-052). These drive the real Radix popover the
  * strip mounts, so they hold the contract the tab strip relies on: one
  * highlighted row from the moment it opens, arrows that wrap, a drill-in
- * whose highlight and cursor agree, Escape that reports `trigger`, and the
- * BUG-051 identity rule that two same-labelled rows stay two rows.
+ * whose highlight and cursor agree, the close gesture reported once, and the
+ * BUG-051 identity rule that two same-labelled rows stay two rows. The last
+ * block holds the strip's own focus vocabulary over a real target's menu.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { StripContextMenu, type StripMenuItem } from './project-ribbon-menu';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import { ActionMenu, type ActionMenuItem } from '@/components/ui/option-menu';
+import { StripContextMenu } from './project-ribbon-menu';
+import type { SessionTab } from './use-workspace-state';
+
+type StripMenuItem = ActionMenuItem;
 
 beforeAll(() => {
   vi.stubGlobal(
@@ -45,11 +58,11 @@ const activeLabel = () =>
 
 function renderMenu(items: StripMenuItem[], onClose = vi.fn()) {
   render(
-    <StripContextMenu
-      x={10}
-      y={10}
-      color="#50E6FF"
+    <ActionMenu
+      open
+      anchor={{ x: 10, y: 10 }}
       label="Session actions"
+      accent="#50E6FF"
       items={items}
       onClose={onClose}
     />
@@ -94,7 +107,7 @@ describe('StripContextMenu readiness rows (ENG-026 N3)', () => {
     expect(cloudRow.textContent).toContain('Coming soon');
     fireEvent.click(cloudRow);
     expect(items[2].onSelect).toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalledWith('trigger');
+    expect(onClose).toHaveBeenCalledWith('select', items[2]);
   });
 
   it('the announced row cannot be operated', () => {
@@ -128,9 +141,7 @@ describe('StripContextMenu keyboard standing', () => {
     ).toHaveLength(1);
     // one owner for the keyboard: the menu names its highlight, rows are
     // not tabstops of their own
-    expect(menu().getAttribute('aria-activedescendant')).toBe(
-      activeRow()!.id
-    );
+    expect(menu().getAttribute('aria-activedescendant')).toBe(activeRow()!.id);
   });
 
   it('walks rows with the arrow keys and wraps at both ends', () => {
@@ -162,9 +173,7 @@ describe('StripContextMenu keyboard standing', () => {
     press('ArrowDown');
     press('ArrowRight');
     expect(activeLabel()).toBe('Claude Opus');
-    expect(menu().getAttribute('aria-activedescendant')).toBe(
-      activeRow()!.id
-    );
+    expect(menu().getAttribute('aria-activedescendant')).toBe(activeRow()!.id);
     press('ArrowDown');
     expect(activeLabel()).toBe('Codex');
     press('ArrowLeft');
@@ -174,8 +183,8 @@ describe('StripContextMenu keyboard standing', () => {
   it('selects the highlighted target with Enter, closing before it runs', () => {
     const children = targets();
     const calls: string[] = [];
-    (children[0].onSelect as ReturnType<typeof vi.fn>).mockImplementation(
-      () => calls.push('select')
+    (children[0].onSelect as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      calls.push('select')
     );
     const onClose = renderMenu(
       items(children),
@@ -184,17 +193,17 @@ describe('StripContextMenu keyboard standing', () => {
     press('ArrowDown');
     press('ArrowRight');
     press('Enter');
-    expect(onClose).toHaveBeenCalledWith('trigger');
+    expect(onClose).toHaveBeenCalledWith('select', children[0]);
     expect(calls).toEqual(['close', 'select']);
   });
 
-  it('reports Escape as a return to the trigger, once', () => {
+  it('reports Escape once', () => {
     const onClose = renderMenu(items(targets()));
     fireEvent.keyDown(document.activeElement ?? document.body, {
       key: 'Escape',
     });
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(onClose).toHaveBeenCalledWith('trigger');
+    expect(onClose.mock.calls[0]?.[0]).toBe('escape');
   });
 
   it('backs out of a submenu on Escape instead of closing', () => {
@@ -209,16 +218,14 @@ describe('StripContextMenu keyboard standing', () => {
     expect(activeLabel()).toBe('Rename…');
   });
 
-  it('hands Tab to the strip as next / previous', () => {
+  it('reports Tab and ⇧Tab as leaving forward and back', () => {
     const onClose = renderMenu(items(targets()));
     press('Tab');
-    expect(onClose).toHaveBeenCalledWith('next');
-  });
-
-  it('hands ⇧Tab to the strip as previous', () => {
-    const onClose = renderMenu(items(targets()));
+    expect(onClose.mock.calls[0]?.[0]).toBe('tab-next');
+    cleanup();
+    const back = renderMenu(items(targets()));
     press('Tab', { shiftKey: true });
-    expect(onClose).toHaveBeenCalledWith('previous');
+    expect(back.mock.calls[0]?.[0]).toBe('tab-previous');
   });
 });
 
@@ -285,5 +292,84 @@ describe('StripContextMenu row identity (BUG-051)', () => {
         name: 'Clone to Codex, GPT-5.6 Codex, Medium',
       })
     );
+  });
+});
+
+describe('StripContextMenu focus vocabulary', () => {
+  const tab: SessionTab = {
+    kind: 'session',
+    id: 'tab-1',
+    durableSessionId: 'durable-1',
+    harness: 'claude',
+    title: 'Fix login',
+    titleKind: 'operator',
+    cwd: '/repo',
+    sessionId: 'pty-1',
+    harnessSessionId: null,
+    resumeState: 'live',
+    lifecycle: 'running',
+    exitCode: null,
+    roadmapItemId: null,
+    initialTask: null,
+  };
+  const project = {
+    dir: '/repo',
+    name: 'repo',
+    color: '#50E6FF',
+    tabs: [tab],
+    activeTabId: tab.id,
+  };
+  const renderStrip = (onClose = vi.fn()) => {
+    render(
+      <StripContextMenu
+        x={10}
+        y={10}
+        color={project.color}
+        target={{ kind: 'session', project, tab }}
+        scope={{
+          ops: { closeTab: vi.fn(), markUnread: vi.fn() },
+          facts: {
+            projects: [project],
+            pinnedTabId: null,
+            summaries: {},
+            engaged: {},
+            agentNames: new Map(),
+            cloneTargets: [],
+          },
+        }}
+        onClose={onClose}
+      />
+    );
+    return onClose;
+  };
+  const stripMenu = () =>
+    screen.getByRole('menu', { name: 'Fix login Session actions' });
+
+  it('returns focus to the chip on Escape and on an ordinary row', () => {
+    const onClose = renderStrip();
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+    });
+    expect(onClose).toHaveBeenCalledWith('trigger');
+    cleanup();
+    const select = renderStrip();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark unread' }));
+    expect(select).toHaveBeenCalledWith('trigger');
+  });
+
+  it('leaves focus to a row that hands it to something else', () => {
+    const onClose = renderStrip();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Rename/ }));
+    expect(onClose).toHaveBeenCalledWith('none');
+  });
+
+  it('hands Tab and ⇧Tab to the strip as next and previous', () => {
+    const onClose = renderStrip();
+    fireEvent.keyDown(stripMenu(), { key: 'Tab' });
+    expect(onClose).toHaveBeenCalledWith('next');
+    cleanup();
+    const back = renderStrip();
+    fireEvent.keyDown(stripMenu(), { key: 'Tab', shiftKey: true });
+    expect(back).toHaveBeenCalledWith('previous');
   });
 });

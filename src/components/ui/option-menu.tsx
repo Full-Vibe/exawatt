@@ -473,6 +473,10 @@ export interface ActionMenuItem {
   detail?: string;
   /** Muted right-aligned readiness note, e.g. `Coming soon`. */
   note?: string;
+  /** The chord that runs this row's command, printed last (`Action ⌘K`). */
+  shortcut?: string;
+  /** The same chord in `aria-keyshortcuts` syntax, for assistive tech. */
+  ariaKeyShortcuts?: string;
   /** A destructive verb. Tinted with the menu's accent when it has one. */
   danger?: boolean;
   disabled?: boolean;
@@ -773,6 +777,7 @@ export function ActionMenu({
         role="menuitem"
         aria-label={item.accessibleLabel}
         aria-disabled={item.disabled || undefined}
+        aria-keyshortcuts={item.ariaKeyShortcuts}
         data-active={isActive || undefined}
         {...item.attributes}
         onPointerMove={() => setActiveIndex(index)}
@@ -808,6 +813,15 @@ export function ActionMenu({
             style={{ color: READINESS_NEUTRAL }}
           >
             {item.note}
+          </span>
+        ) : null}
+        {item.shortcut ? (
+          <span
+            aria-hidden
+            data-menu-shortcut
+            className="shrink-0 pl-3 text-chrome-micro tracking-widest text-hud-text-dim"
+          >
+            {item.shortcut}
           </span>
         ) : null}
       </div>

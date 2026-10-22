@@ -54,7 +54,7 @@ import {
 import type { CommandAltitude } from '@/components/nav/command-altitude';
 import {
   requestLaunch,
-  RENAME_ACTIVE_EVENT,
+  requestTabRename,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
@@ -71,9 +71,7 @@ import {
   requestAgentComposer,
   requestReopenLastClosed,
   LAUNCH_CONFIGURATION_CATALOG_EVENT,
-  CLONE_TARGET_CATALOG_EVENT,
 } from '@/components/workspace/session-jump';
-import type { CloneSessionTarget } from '@/components/workspace/session-clone';
 import {
   commandPaletteLaunchConfigurationCatalog,
   type CommandPaletteLaunchConfiguration,
@@ -252,9 +250,6 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const [launchConfigurations, setLaunchConfigurations] = useState<
     readonly CommandPaletteLaunchConfiguration[] | undefined
   >(undefined);
-  const [cloneTargets, setCloneTargets] = useState<
-    readonly CloneSessionTarget[]
-  >([]);
   const workspaceAvailability = useWorkspaceCommandAvailability();
   const onWorkspaceRoute = pathname?.startsWith('/workspace') ?? false;
   const onSpatialRoute = pathname === '/fleet/spatial';
@@ -293,19 +288,6 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       window.removeEventListener(
         LAUNCH_CONFIGURATION_CATALOG_EVENT,
         receiveCatalog
-      );
-  }, []);
-
-  useLayoutEffect(() => {
-    const receiveCloneTargets = (event: Event) => {
-      const detail = (event as CustomEvent<unknown>).detail;
-      setCloneTargets(Array.isArray(detail) ? detail : []);
-    };
-    window.addEventListener(CLONE_TARGET_CATALOG_EVENT, receiveCloneTargets);
-    return () =>
-      window.removeEventListener(
-        CLONE_TARGET_CATALOG_EVENT,
-        receiveCloneTargets
       );
   }, []);
 
@@ -486,7 +468,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             onWorkspaceRoute &&
             workspaceAvailability.commands['rename-tab'].available
           ) {
-            dispatch(RENAME_ACTIVE_EVENT);
+            requestTabRename();
           }
           break;
         case 'toggle-split':
@@ -744,7 +726,6 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             onActionPendingChange={handlePaletteActionPendingChange}
             onOpenHelpModal={handleOpenHelpModal}
             launchConfigurations={launchConfigurations}
-            cloneTargets={cloneTargets}
           />
           <ShortcutHelpModal
             open={helpModalOpen}

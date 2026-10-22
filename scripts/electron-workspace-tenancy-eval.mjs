@@ -435,10 +435,10 @@ try {
       check(
         'palette exposes source-safe Project movement in Demo',
         (await page
-          .locator('[cmdk-item]', { hasText: 'Move Project left' })
+          .locator('[cmdk-item][data-command-id="project.move-left"]')
           .count()) === 1 &&
           (await page
-            .locator('[cmdk-item]', { hasText: 'Move Project right' })
+            .locator('[cmdk-item][data-command-id="project.move-right"]')
             .count()) === 1
       );
       await page.screenshot({

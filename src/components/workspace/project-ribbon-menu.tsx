@@ -7,8 +7,13 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { WORKSPACE_FOUNDATION, WORKSPACE_HUD as HUD } from './workspace-theme';
-import { ActionMenu, type ActionMenuItem } from '@/components/ui/option-menu';
 import { PROJECT_PALETTE } from './project-colors';
+import { CommandMenu } from './command-menu';
+import {
+  describeCommandTarget,
+  type CommandTarget,
+  type TargetCommandScope,
+} from './target-commands';
 
 /** Shortcut hints overlay their anchor so revealing them never shifts
  *  layout. Right-anchored (D42 review round): the status glyph lives at the
@@ -204,19 +209,11 @@ export function keyboardMenuPoint(element: HTMLElement): {
   return { x: rect.left + Math.min(24, rect.width / 2), y: rect.bottom + 2 };
 }
 
-/**
- * Rows for the Project and Session context menus. The type IS the
- * primitive's: identity is required (BUG-051), `announced` rows are inert,
- * `detail` is a value channel and `note` a readiness one, and `children`
- * drill in without leaving the menu.
- */
-export type StripMenuItem = ActionMenuItem;
-
 export type MenuCloseFocus = 'none' | 'trigger' | 'next' | 'previous';
 
 /**
  * One keyboard-complete action surface shared by Project and Session atoms:
- * the one menu primitive's action face (decision `0033`), anchored at the
+ * the target's commands from the registry (`CommandMenu`), anchored at the
  * pointer or under a keyboard-opened chip, tinted with the Project colour.
  *
  * The strip owns focus after close, because only it knows the chip the
@@ -227,23 +224,24 @@ export function StripContextMenu({
   x,
   y,
   color,
-  label,
-  items,
+  target,
+  scope,
   onClose,
 }: {
   x: number;
   y: number;
   color: string;
-  label: string;
-  items: StripMenuItem[];
+  target: CommandTarget;
+  scope: TargetCommandScope;
   onClose: (focus?: MenuCloseFocus) => void;
 }) {
+  const { name } = describeCommandTarget(target, scope.facts);
   return (
-    <ActionMenu
-      open
+    <CommandMenu
+      target={target}
+      scope={scope}
       anchor={{ x, y }}
-      label={label}
-      items={items}
+      label={`${name} ${target.kind === 'project' ? 'Project' : 'Session'} actions`}
       accent={color}
       attributes={{ 'data-strip-menu': '' }}
       onClose={(reason, item) => {

@@ -1242,19 +1242,26 @@ try {
       `Move-tab fixture expectation drifted: ${JSON.stringify(orderBeforeMove)}`
     );
   }
-  await page.keyboard.press('Meta+KeyK');
-  await page.locator('[cmdk-root]').waitFor();
-  await page.locator('[cmdk-input]').fill('move tab right');
-  await page.getByText('Move tab right').waitFor();
-  for (let i = 0; i < 8; i += 1) {
-    const selected = await page.evaluate(
-      () =>
-        document.querySelector('[cmdk-item][aria-selected="true"]')
-          ?.textContent ?? ''
-    );
-    if (selected.includes('Move tab right')) break;
-    await page.keyboard.press('ArrowDown');
-  }
+  // ⌘K lists the selected tab's and its Project's commands (D75), so the
+  // row is addressed by its command id rather than by words two groups share.
+  const selectPaletteCommand = async (query, commandId) => {
+    await page.keyboard.press('Meta+KeyK');
+    await page.locator('[cmdk-root]').waitFor();
+    await page.locator('[cmdk-input]').fill(query);
+    await page.locator(`[cmdk-item][data-command-id="${commandId}"]`).waitFor();
+    for (let i = 0; i < 12; i += 1) {
+      const selected = await page.evaluate(
+        () =>
+          document
+            .querySelector('[cmdk-item][aria-selected="true"]')
+            ?.getAttribute('data-command-id') ?? ''
+      );
+      if (selected === commandId) return;
+      await page.keyboard.press('ArrowDown');
+    }
+    throw new Error(`⌘K never selected ${commandId}`);
+  };
+  await selectPaletteCommand('move right', 'session.move-right');
   await page.keyboard.press('Enter');
   await page.locator('[cmdk-root]').waitFor({ state: 'detached' });
   await page.waitForTimeout(350);
@@ -1291,19 +1298,7 @@ try {
       `Move-Project fixture expectation drifted: ${JSON.stringify(projectOrderBeforeMove)}`
     );
   }
-  await page.keyboard.press('Meta+KeyK');
-  await page.locator('[cmdk-root]').waitFor();
-  await page.locator('[cmdk-input]').fill('move project right');
-  await page.getByText('Move Project right').waitFor();
-  for (let i = 0; i < 8; i += 1) {
-    const selected = await page.evaluate(
-      () =>
-        document.querySelector('[cmdk-item][aria-selected="true"]')
-          ?.textContent ?? ''
-    );
-    if (selected.includes('Move Project right')) break;
-    await page.keyboard.press('ArrowDown');
-  }
+  await selectPaletteCommand('move right', 'project.move-right');
   await page.keyboard.press('Enter');
   await page.locator('[cmdk-root]').waitFor({ state: 'detached' });
   await page.waitForTimeout(350);
@@ -1330,10 +1325,10 @@ try {
   // learning, but is disabled with a concrete reason and cannot close/no-op.
   await page.keyboard.press('Meta+KeyK');
   await page.locator('[cmdk-root]').waitFor();
-  await page.locator('[cmdk-input]').fill('move project right');
-  const rightEdgeRow = page
-    .locator('[cmdk-item]', { hasText: 'Move Project right' })
-    .first();
+  await page.locator('[cmdk-input]').fill('move right');
+  const rightEdgeRow = page.locator(
+    '[cmdk-item][data-command-id="project.move-right"]'
+  );
   await rightEdgeRow.waitFor();
   if ((await rightEdgeRow.getAttribute('data-disabled')) !== 'true') {
     throw new Error('Move Project right stayed enabled at the right edge');

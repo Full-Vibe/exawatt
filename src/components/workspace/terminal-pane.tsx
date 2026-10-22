@@ -20,7 +20,8 @@ import type { ITheme } from '@xterm/xterm';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { useAppearance } from '@/components/appearance/appearance-provider';
-import { ActionMenu, type ActionMenuItem } from '@/components/ui/option-menu';
+import { CommandMenu } from './command-menu';
+import { registerTerminalCommandHandle } from './terminal-command-handles';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
@@ -33,7 +34,6 @@ import {
 } from './terminal-geometry';
 import {
   terminalTargetCopyText,
-  terminalTargetCopyVerb,
   terminalTargetFromUri,
   terminalTargetLabel,
   type TerminalTarget,
@@ -159,57 +159,32 @@ export function TerminalPane({
     return () => clearTimeout(timer);
   }, [notice]);
 
-  // The right-click menu's rows: the target under the pointer first, when
-  // there is one, then the edit verbs. Each row runs AFTER the menu has
-  // closed and handed focus back, so Paste lands in a focused terminal.
-  const contextMenuItems = useMemo<ActionMenuItem[]>(() => {
-    const target = contextMenu?.target ?? null;
-    const targetRows: ActionMenuItem[] = target
-      ? [
-          {
-            id: 'open-target',
-            label: `Open ${terminalTargetLabel(target)}`,
-            section: 'target',
-            attributes: { 'data-terminal-open-target': '' },
-            onSelect: () => openTarget(target),
-          },
-          {
-            id: 'copy-target',
-            label: terminalTargetCopyVerb(target),
-            section: 'target',
-            attributes: { 'data-terminal-copy-target': '' },
-            onSelect: () => {
-              void window.electron?.pty?.copyText(
-                terminalTargetCopyText(target)
-              );
-            },
-          },
-        ]
-      : [];
-    return [
-      ...targetRows,
-      {
-        id: 'copy',
-        label: 'Copy',
-        section: 'edit',
-        onSelect: () => termRef.current?.copySelection(),
-      },
-      {
-        id: 'paste',
-        label: 'Paste',
-        section: 'edit',
-        onSelect: () => {
+  // What the menu and ⌘K run against this terminal: one handle per mounted
+  // pane, addressed by Session (`terminal-command-handles.ts`). The rows
+  // themselves are the target command registry's, so the right-click menu and
+  // ⌘K list the same verbs with the same chords.
+  useEffect(
+    () =>
+      registerTerminalCommandHandle(sessionId, {
+        copySelection: () => termRef.current?.copySelection(),
+        paste: () => {
           void window.electron?.pty?.pasteClipboard(sessionId);
         },
-      },
-      {
-        id: 'select-all',
-        label: 'Select All',
-        section: 'edit',
-        onSelect: () => termRef.current?.selectAll(),
-      },
-    ];
-  }, [contextMenu, openTarget, sessionId]);
+        selectAll: () => termRef.current?.selectAll(),
+        openLink: link => openTargetRef.current(link),
+        copyLink: link => {
+          void window.electron?.pty?.copyText(terminalTargetCopyText(link));
+        },
+      }),
+    [sessionId]
+  );
+  const menuTarget = useMemo(
+    () =>
+      contextMenu
+        ? { kind: 'terminal' as const, sessionId, link: contextMenu.target }
+        : null,
+    [contextMenu, sessionId]
+  );
 
   useEffect(() => {
     const el = container.current;
@@ -668,11 +643,11 @@ export function TerminalPane({
           </button>
         </div>
       )}
-      <ActionMenu
-        open={contextMenu !== null}
+      <CommandMenu
+        target={menuTarget}
+        scope={null}
         anchor={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}
         label="Terminal actions"
-        items={contextMenuItems}
         onClose={reason => {
           setContextMenu(null);
           // Focus returns to the terminal on every keyboard close and every

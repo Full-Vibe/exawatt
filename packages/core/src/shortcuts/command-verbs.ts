@@ -153,6 +153,9 @@ type KeyboardUnsurfaced = {
   keyboardDiscoverability: string;
 };
 
+/** The ⌘K row: one of the palette's own rows, or, for a verb that acts on a
+ *  tab, a Project or a terminal, the target command that renders it there
+ *  and in that target's right-click menu (`target-commands.ts`, D75). */
 type PaletteSurfaced = { palette: { rowId: string } };
 
 type PaletteUnsurfaced = {
@@ -408,7 +411,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
       "Every R combo is already spent: the View menu registers ⌘R and ⌘⇧R natively for Electron's reload roles, and ⌘⌥R and ⌘⌥⇧R are relaunch recovery. A detour out of the app into Finder does not outrank the verbs that would spend the last single-modifier combos.",
     availability: 'reveal-path',
     tenantScope: 'personal-workspace',
-    palette: { rowId: 'ws-reveal' },
+    palette: { rowId: 'session.reveal' },
     menu: {
       commandId: 'reveal-path',
       label: 'Reveal in Finder',
@@ -424,7 +427,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
       "⌘⇧W already answers as ⌘W's alias for closing one Session, so binding the Project close a single shift away would put an irreversible multi-Agent close under the same finger as a single-tab close. The confirmation dialog is a last line, not a licence to sit there.",
     availability: 'close-project',
     tenantScope: 'personal-workspace',
-    palette: { rowId: 'ws-close-project' },
+    palette: { rowId: 'project.close' },
     menu: {
       commandId: 'close-project',
       label: 'Close Project',
@@ -528,9 +531,9 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     category: 'workspace',
     contexts: ['workspace'],
     tenantScope: 'personal-workspace',
-    palette: null,
-    paletteDiscoverability:
-      "The palette's Start group lists every launch configuration by its own name, which is what a reader searching for a new Agent is looking for; one generic row would rank above all of them and say less.",
+    // The Project's own New agent command, which its right-click menu and ⌘K
+    // both list; the Start group still names every launch configuration.
+    palette: { rowId: 'project.new-agent' },
     menu: { commandId: 'new-agent', label: 'New Agent', section: 'session' },
   },
   {
@@ -577,7 +580,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     category: 'workspace',
     contexts: ['workspace'],
     availability: 'rename-tab',
-    palette: { rowId: 'ws-rename' },
+    palette: { rowId: 'session.rename' },
     menu: {
       commandId: 'rename-tab',
       label: 'Rename Session',
@@ -592,7 +595,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     keyboardDiscoverability:
       'Naming and colouring a Project is a rare setup act, not a daily verb; it keeps the palette row and the ribbon menu rather than spending one of the remaining single-modifier chords.',
     availability: 'rename-project',
-    palette: { rowId: 'ws-color' },
+    palette: { rowId: 'project.rename' },
     menu: null,
     menuDiscoverability:
       'The Session menu addresses the active Session and the File menu addresses Projects on disk; a Project appearance editor belongs to the ribbon it edits, where the target is visible while renaming.',
@@ -605,7 +608,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     category: 'workspace',
     contexts: ['workspace'],
     availability: 'toggle-split',
-    palette: { rowId: 'ws-split' },
+    palette: { rowId: 'session.pin' },
     menu: {
       commandId: 'toggle-split',
       label: 'Split: Pin / Unpin',
@@ -620,7 +623,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     category: 'workspace',
     contexts: ['workspace'],
     availability: 'close-tab',
-    palette: { rowId: 'ws-close' },
+    palette: { rowId: 'session.close' },
     menu: {
       commandId: 'close-tab',
       label: 'Close Tab or Empty Project',
@@ -655,7 +658,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     keyboardDiscoverability:
       'Pause affects every local Agent in the selected Project; the searchable palette and native menu provide deliberate access without an easily mistaken global chord.',
     availability: 'pause-project',
-    palette: { rowId: 'ws-pause-project' },
+    palette: { rowId: 'project.pause' },
     menu: {
       commandId: 'pause-project',
       label: 'Pause This Project',
@@ -670,7 +673,7 @@ export const COMMAND_VERBS: readonly CommandVerb[] = [
     category: 'workspace',
     contexts: ['workspace'],
     availability: 'resume-agent',
-    palette: { rowId: 'ws-resume-agent' },
+    palette: { rowId: 'session.resume' },
     menu: {
       commandId: 'resume-agent',
       label: 'Resume This Agent',

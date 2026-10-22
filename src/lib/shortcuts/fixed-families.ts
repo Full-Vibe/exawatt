@@ -207,7 +207,7 @@ export const WORKSPACE_KEY_FAMILIES: readonly FixedKeyFamily[] = [
       modifiers: ['meta', 'alt'],
       actionKind: 'move-tab',
     },
-    paletteRowIds: ['ws-move-left', 'ws-move-right'],
+    paletteRowIds: ['session.move-left', 'session.move-right'],
     menuCommandIds: ['move-tab-left', 'move-tab-right'],
   }),
   defineFixedFamily({
@@ -220,7 +220,7 @@ export const WORKSPACE_KEY_FAMILIES: readonly FixedKeyFamily[] = [
       modifiers: ['meta', 'alt', 'shift'],
       actionKind: 'move-project',
     },
-    paletteRowIds: ['ws-move-project-left', 'ws-move-project-right'],
+    paletteRowIds: ['project.move-left', 'project.move-right'],
     menuCommandIds: ['move-project-left', 'move-project-right'],
   }),
   defineFixedFamily({
@@ -279,13 +279,14 @@ export function getWorkspaceFixedFamily(id: string): FixedKeyFamily {
 /** Fleet board keys are display-only: the focused R3F surface owns behavior.
  *  The entries derive from the board's own keymap so the modal describes the
  *  bindings the board actually answers instead of a copy that can drift. */
-export const BOARD_KEY_FAMILIES: readonly DisplayKeyFamily[] =
-  BOARD_KEYMAP.map(entry => ({
+export const BOARD_KEY_FAMILIES: readonly DisplayKeyFamily[] = BOARD_KEYMAP.map(
+  entry => ({
     id: entry.id,
     label: entry.label,
     keys: entry.keys,
     category: 'view',
-  }));
+  })
+);
 
 export const ALL_FIXED_FAMILIES: readonly DisplayKeyFamily[] = [
   ...WORKSPACE_KEY_FAMILIES,

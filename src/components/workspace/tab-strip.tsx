@@ -28,12 +28,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { useRouter } from 'next/navigation';
-import {
-  SESSION_LIFECYCLE_VERB_LABEL,
-  SESSION_PROJECT_VERB_LABEL,
-  sessionLifecyclePresentation,
-} from '@exawatt/ui-model';
+import { sessionLifecyclePresentation } from '@exawatt/ui-model';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { lifecycleToneColor } from './session-lifecycle-tone';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
@@ -71,8 +66,12 @@ import {
   OrdinalKeycap,
   RenameInput,
   StripContextMenu,
-  type StripMenuItem,
 } from './project-ribbon-menu';
+import {
+  findCommandTarget,
+  type TargetCommandOps,
+  type TargetCommandScope,
+} from './target-commands';
 import {
   CONDENSED_TAB_WIDTH,
   estimateRibbonTokenWidth,
@@ -90,13 +89,12 @@ import {
   ProjectRibbonSignalMark,
 } from './project-ribbon-signal';
 import { sessionDisplayCopy } from './session-display-copy';
-import { tabCanClone, type CloneSessionTarget } from './session-clone';
+import type { CloneSessionTarget } from './session-clone';
 import {
-  EDIT_ACTIVE_PROJECT_EVENT,
+  EDIT_PROJECT_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
-  RENAME_ACTIVE_EVENT,
+  RENAME_TAB_EVENT,
 } from './session-jump';
-import { tabIsPinnable } from './split-layout';
 import { attentionReadLabel, paintsAttention } from './session-status';
 import {
   DelegationDots,
@@ -113,7 +111,6 @@ import {
   isSessionTab,
   projectRootPath,
   tabIsLive,
-  tabCanResumeAsAgent,
   type Project,
   type WorkspaceTab,
 } from './use-workspace-state';
@@ -208,22 +205,13 @@ export function TabStrip({
   activity = EMPTY_ACTIVITY,
   engaged = EMPTY_ACTIVITY,
   delegation = EMPTY_DELEGATION,
-  onTogglePinTab,
-  onResumeTab,
+  commands,
   cloneTargets = EMPTY_CLONE_TARGETS,
-  onCloneTab,
-  onNewAgent,
-  onCloseProject,
-  onPauseProject,
-  onResumeProject,
-  onRevealPath,
   onReorderTab,
   onReorderProject,
   onSelectProject,
   onSelectTab,
-  onCloseTab,
   onRenameTab,
-  onMarkUnread,
   onRenameProject,
   onSetProjectColor,
   feedbackEnabled = false,
@@ -242,22 +230,16 @@ export function TabStrip({
   activity?: Record<string, boolean>;
   engaged?: Record<string, boolean>;
   delegation?: Record<string, SessionDelegation>;
-  onTogglePinTab?: (tabId: string) => void;
-  onResumeTab?: (tabId: string) => void;
+  /** What this shell can do to a tab or Project. The right-click menus, the
+   *  close control and middle-click all run these through the target
+   *  command registry, the same commands ⌘K offers for the same target. */
+  commands: TargetCommandOps;
   cloneTargets?: readonly CloneSessionTarget[];
-  onCloneTab?: (tabId: string, target: CloneSessionTarget) => void;
-  onNewAgent?: (dir: string) => void;
-  onCloseProject?: (dir: string) => void;
-  onPauseProject?: (dir: string) => void;
-  onResumeProject?: (dir: string) => void;
-  onRevealPath?: (cwd: string) => void;
   onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
-  onCloseTab: (tabId: string) => void;
   /** Resolves the reason when the name is refused; the editor then stays
    *  open on what was typed. */
   onRenameTab: (tabId: string, title: string) => Promise<string | null> | void;
-  onMarkUnread?: (tabId: string) => void;
   onRenameProject: (dir: string, name: string) => void;
   onSetProjectColor: (dir: string, color: string) => void;
   feedbackEnabled?: boolean;
@@ -285,7 +267,6 @@ export function TabStrip({
   layoutPolicy?: RibbonLayoutPolicy;
 }) {
   const reducedMotion = usePrefersReducedMotion();
-  const router = useRouter();
   const ordinalHints = useOrdinalHints();
   const [compactProjects, setCompactProjects] = useState<ReadonlySet<string>>(
     new Set()
@@ -294,10 +275,7 @@ export function TabStrip({
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
-    color: string;
-    label: string;
-    items: StripMenuItem[];
-    target: { kind: 'project' | 'tab'; id: string };
+    target: { kind: 'project'; dir: string } | { kind: 'tab'; tabId: string };
   } | null>(null);
   const menuTriggerRef = useRef<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -719,25 +697,13 @@ export function TabStrip({
   );
 
   const openMenu = useCallback(
-    ({
-      trigger,
-      x,
-      y,
-      color,
-      label,
-      items,
-      target,
-    }: {
-      trigger: HTMLElement;
-      x: number;
-      y: number;
-      color: string;
-      label: string;
-      items: StripMenuItem[];
-      target: { kind: 'project' | 'tab'; id: string };
-    }) => {
+    (
+      trigger: HTMLElement,
+      point: { x: number; y: number },
+      target: { kind: 'project'; dir: string } | { kind: 'tab'; tabId: string }
+    ) => {
       menuTriggerRef.current = trigger;
-      setMenu({ x, y, color, label, items, target });
+      setMenu({ ...point, target });
     },
     []
   );
@@ -767,31 +733,58 @@ export function TabStrip({
     });
   }, []);
 
+  // The menu names its target by identity and resolves it from the current
+  // workspace on every render, so its rows follow the target's state (a pin,
+  // a stop) and the menu closes when the target goes away.
+  const menuTarget = useMemo(() => {
+    if (!menu) return null;
+    if (menu.target.kind === 'project' && exiting.has(menu.target.dir)) {
+      return null;
+    }
+    return findCommandTarget(projects, menu.target);
+  }, [exiting, menu, projects]);
   useEffect(() => {
-    if (!menu) return;
-    const exists =
-      menu.target.kind === 'project'
-        ? projects.some(
-            project =>
-              project.dir === menu.target.id && !exiting.has(project.dir)
-          )
-        : projects.some(project =>
-            project.tabs.some(tab => tab.id === menu.target.id)
-          );
-    if (!exists) closeMenu('none');
-  }, [closeMenu, exiting, menu, projects]);
+    if (menu && !menuTarget) closeMenu('none');
+  }, [closeMenu, menu, menuTarget]);
+  const commandScope = useMemo<TargetCommandScope>(
+    () => ({
+      ops: commands,
+      facts: {
+        projects,
+        pinnedTabId,
+        summaries,
+        engaged,
+        agentNames,
+        cloneTargets,
+      },
+    }),
+    [
+      agentNames,
+      cloneTargets,
+      commands,
+      engaged,
+      pinnedTabId,
+      projects,
+      summaries,
+    ]
+  );
 
   const activeRef = useRef({ projects, activeDir });
   activeRef.current = { projects, activeDir };
   const agentNamesRef = useRef(agentNames);
   agentNamesRef.current = agentNames;
   useEffect(() => {
-    const renameActive = () => {
-      const group = activeRef.current.projects.find(
-        project => project.dir === activeRef.current.activeDir
-      );
+    // A named target wins; without one the editor opens on what is active
+    // (the ⌘E chord and the native Session menu).
+    const renameTab = (event: Event) => {
+      const { projects: current, activeDir: active } = activeRef.current;
+      const named = (event as CustomEvent<{ tabId?: string } | null>).detail
+        ?.tabId;
+      const group = named
+        ? current.find(project => project.tabs.some(tab => tab.id === named))
+        : current.find(project => project.dir === active);
       const tab = group?.tabs.find(
-        candidate => candidate.id === group.activeTabId
+        candidate => candidate.id === (named ?? group.activeTabId)
       );
       if (tab)
         setEditing({
@@ -800,18 +793,18 @@ export function TabStrip({
           value: tabEditValue(tab, agentNamesRef.current),
         });
     };
-    const editProject = () => {
-      const group = activeRef.current.projects.find(
-        project => project.dir === activeRef.current.activeDir
-      );
+    const editProject = (event: Event) => {
+      const { projects: current, activeDir: active } = activeRef.current;
+      const named = (event as CustomEvent<{ dir?: string } | null>).detail?.dir;
+      const group = current.find(project => project.dir === (named ?? active));
       if (group)
         setEditing({ kind: 'group', id: group.dir, value: group.name });
     };
-    window.addEventListener(RENAME_ACTIVE_EVENT, renameActive);
-    window.addEventListener(EDIT_ACTIVE_PROJECT_EVENT, editProject);
+    window.addEventListener(RENAME_TAB_EVENT, renameTab);
+    window.addEventListener(EDIT_PROJECT_EVENT, editProject);
     return () => {
-      window.removeEventListener(RENAME_ACTIVE_EVENT, renameActive);
-      window.removeEventListener(EDIT_ACTIVE_PROJECT_EVENT, editProject);
+      window.removeEventListener(RENAME_TAB_EVENT, renameTab);
+      window.removeEventListener(EDIT_PROJECT_EVENT, editProject);
     };
   }, []);
 
@@ -1247,86 +1240,11 @@ export function TabStrip({
               const dormantProject = dormant.has(project.dir);
               const pinned = pinnedDir === project.dir;
               const signal = projectSignals.get(project.dir) ?? 'quiet';
-              const projectMenuItems: StripMenuItem[] = [
-                ...(onNewAgent && rootPath
-                  ? [
-                      {
-                        id: 'new-agent',
-                        label: 'New agent',
-                        focusAfterSelect: 'none' as const,
-                        onSelect: () => onNewAgent(rootPath),
-                      },
-                    ]
-                  : []),
-                {
-                  id: 'rename-project',
-                  label: 'Rename / color…',
-                  focusAfterSelect: 'none',
-                  onSelect: () =>
-                    setEditing({
-                      kind: 'group',
-                      id: project.dir,
-                      value: project.name,
-                    }),
-                },
-                ...(onRevealPath && rootPath
-                  ? [
-                      {
-                        id: 'reveal-project',
-                        label: 'Reveal in Finder',
-                        onSelect: () => onRevealPath(rootPath),
-                      },
-                    ]
-                  : []),
-                ...(onPauseProject &&
-                project.tabs.some(
-                  tab =>
-                    isSessionTab(tab) &&
-                    tab.harness !== 'shell' &&
-                    tab.sessionId !== null
-                )
-                  ? [
-                      {
-                        id: 'pause-project',
-                        label: SESSION_PROJECT_VERB_LABEL.pause,
-                        focusAfterSelect: 'none' as const,
-                        onSelect: () => onPauseProject(project.dir),
-                      },
-                    ]
-                  : []),
-                ...(onResumeProject && project.tabs.some(tabCanResumeAsAgent)
-                  ? [
-                      {
-                        id: 'resume-project',
-                        label: SESSION_PROJECT_VERB_LABEL.resume,
-                        onSelect: () => onResumeProject(project.dir),
-                      },
-                    ]
-                  : []),
-                ...(onCloseProject
-                  ? [
-                      {
-                        id: 'close-project',
-                        label: 'Close project',
-                        danger: true,
-                        focusAfterSelect: 'none' as const,
-                        onSelect: () => onCloseProject(project.dir),
-                      },
-                    ]
-                  : []),
-              ];
               const openProjectMenu = (
                 trigger: HTMLElement,
                 point: { x: number; y: number }
               ) =>
-                openMenu({
-                  trigger,
-                  ...point,
-                  color,
-                  label: `${project.name} Project actions`,
-                  items: projectMenuItems,
-                  target: { kind: 'project', id: project.dir },
-                });
+                openMenu(trigger, point, { kind: 'project', dir: project.dir });
               const sourceOrdinal = token.sourceProjectIndex + 1;
               // A folded Project's tabs have no chip of their own, so while ⌘ is
               // held its container carries their ordinals — the span if it holds
@@ -1666,164 +1584,10 @@ export function TabStrip({
             const lifecycleColor = lifecycle
               ? lifecycleToneColor(lifecycle.tone)
               : HUD.textDim;
-            const tabMenuItems: StripMenuItem[] = remote
-              ? [
-                  ...(tabIsPinnable(tab) && onTogglePinTab
-                    ? [
-                        {
-                          id: 'pin-split',
-                          label:
-                            tab.id === pinnedTabId
-                              ? 'Unpin from split'
-                              : 'Pin in split',
-                          onSelect: () => onTogglePinTab(tab.id),
-                        },
-                      ]
-                    : []),
-                  {
-                    id: 'close-tab',
-                    // Not "Close": what closes is Exawatt's view. The
-                    // coworker keeps working on its own source, so the verb
-                    // says which of the two it ends.
-                    label: 'Close view',
-                    focusAfterSelect: 'none',
-                    onSelect: () => onCloseTab(tab.id),
-                  },
-                ]
-              : session
-                ? isDraft
-                  ? [
-                      {
-                        id: 'discard-draft',
-                        label: 'Discard',
-                        danger: true,
-                        onSelect: () => onCloseTab(tab.id),
-                      },
-                    ]
-                  : [
-                      ...(dead &&
-                      onResumeTab &&
-                      lifecycle &&
-                      (lifecycle.verb === 'resume' ||
-                        lifecycle.verb === 'new-shell')
-                        ? [
-                            {
-                              id: 'resume',
-                              label:
-                                SESSION_LIFECYCLE_VERB_LABEL[lifecycle.verb],
-                              onSelect: () => onResumeTab(tab.id),
-                            },
-                          ]
-                        : []),
-                      ...(onMarkUnread
-                        ? [
-                            {
-                              id: 'mark-unread',
-                              label: 'Mark unread',
-                              onSelect: () => onMarkUnread(tab.id),
-                            },
-                          ]
-                        : []),
-                      {
-                        id: 'rename-tab',
-                        label: 'Rename…',
-                        focusAfterSelect: 'none',
-                        onSelect: () =>
-                          setEditing({
-                            kind: 'tab',
-                            id: tab.id,
-                            value: tabEditValue(session, agentNames),
-                          }),
-                      },
-                      ...(onCloneTab &&
-                      cloneTargets.length > 0 &&
-                      tabCanClone(session, {
-                        engaged: !!(
-                          session.sessionId && engaged[session.sessionId]
-                        ),
-                        contextSummary: summary,
-                      })
-                        ? [
-                            {
-                              id: 'clone-to',
-                              label: 'Clone to…',
-                              // The SAME setups ⌘T offers, under the same names:
-                              // model on the anchor, engine-reported effort on the
-                              // quiet note. Two setups on one model share a label
-                              // by design, so the row's identity is the Launch
-                              // Configuration id and never the words.
-                              children: cloneTargets.map(target => ({
-                                id: target.id,
-                                label: target.label,
-                                detail: target.detail,
-                                accessibleLabel: `Clone to ${target.accessibleLabel}`,
-                                onSelect: () => onCloneTab(tab.id, target),
-                              })),
-                            },
-                          ]
-                        : []),
-                      ...(tabIsPinnable(tab) && onTogglePinTab
-                        ? [
-                            {
-                              id: 'pin-split',
-                              label:
-                                tab.id === pinnedTabId
-                                  ? 'Unpin from split'
-                                  : 'Pin in split',
-                              onSelect: () => onTogglePinTab(tab.id),
-                            },
-                          ]
-                        : []),
-                      ...(onRevealPath
-                        ? [
-                            {
-                              id: 'reveal-tab',
-                              label: 'Reveal in Finder',
-                              onSelect: () => onRevealPath(session.cwd),
-                            },
-                          ]
-                        : []),
-                      // ENG-026 N3 / ENG-033: the per-Agent Push to cloud control,
-                      // announced where it will really live, with the Cloud preview
-                      // surface's contextual entry point beside it (the ⌘K
-                      // preview-row pattern: real navigation, muted Coming soon).
-                      ...(session.harness !== 'shell'
-                        ? [
-                            {
-                              id: 'push-to-cloud',
-                              label: 'Push to cloud',
-                              announcedComing:
-                                'run this Agent on an Exawatt-hosted machine or a Gemini managed environment (Cloud)',
-                            },
-                            {
-                              id: 'cloud',
-                              label: 'Cloud',
-                              note: 'Coming soon',
-                              onSelect: () => router.push('/cloud'),
-                            },
-                          ]
-                        : []),
-                      {
-                        id: 'close-tab',
-                        label: 'Close',
-                        danger: true,
-                        focusAfterSelect: 'none',
-                        onSelect: () => onCloseTab(tab.id),
-                      },
-                    ]
-                : [];
             const openTabMenu = (
               trigger: HTMLElement,
               point: { x: number; y: number }
-            ) =>
-              openMenu({
-                trigger,
-                ...point,
-                color,
-                label: `${display.primary} Session actions`,
-                items: tabMenuItems,
-                target: { kind: 'tab', id: tab.id },
-              });
+            ) => openMenu(trigger, point, { kind: 'tab', tabId: tab.id });
 
             return (
               <div
@@ -1882,7 +1646,7 @@ export function TabStrip({
                   if (event.button !== 1) return;
                   event.preventDefault();
                   event.stopPropagation();
-                  onCloseTab(tab.id);
+                  commands.closeTab(tab.id);
                 }}
                 onContextMenu={event => {
                   event.preventDefault();
@@ -2171,7 +1935,7 @@ export function TabStrip({
                     onPointerDown={event => {
                       if (event.button === 0) armPointerClose(token.key);
                     }}
-                    onClick={() => onCloseTab(tab.id)}
+                    onClick={() => commands.closeTab(tab.id)}
                     aria-label={`Close ${display.primary}`}
                     title={
                       isDraft
@@ -2210,10 +1974,18 @@ export function TabStrip({
         </div>
       </div>
 
-      {menu && (
+      {menu && menuTarget && (
         <StripContextMenu
-          key={`${menu.target.kind}:${menu.target.id}`}
-          {...menu}
+          key={
+            menu.target.kind === 'project'
+              ? `project:${menu.target.dir}`
+              : `tab:${menu.target.tabId}`
+          }
+          x={menu.x}
+          y={menu.y}
+          color={menuTarget.project.color}
+          target={menuTarget}
+          scope={commandScope}
           onClose={closeMenu}
         />
       )}

@@ -410,9 +410,11 @@ try {
         '[cmdk-item][data-launch-configuration="shell"]'
       );
       await availableShell.waitFor();
-      const projectEdit = page.locator('[cmdk-item]').filter({
-        hasText: 'Rename or recolor the active Project',
-      });
+      // The selected Project's own commands (target command registry, D75):
+      // the same rows its right-click menu offers.
+      const projectEdit = page.locator(
+        '[cmdk-item][data-command-id="project.rename"]'
+      );
       check(
         'palette follows empty-Project command availability',
         (await availableShell.getAttribute('data-disabled')) !== 'true' &&
@@ -1249,11 +1251,20 @@ try {
         path: join(output, '06-empty-project-800x600.png'),
       });
 
+      // ⌘K offers the close for each selected target: the draft tab's own
+      // Discard, and the Project's Close project.
       await page.keyboard.press('Meta+KeyK');
-      await page
-        .getByText('Close the active tab or empty Project', { exact: true })
-        .waitFor();
-      check('command palette describes the contextual close target', true);
+      const closeDraft = page.locator(
+        '[cmdk-item][data-command-id="session.close"]'
+      );
+      await closeDraft.waitFor();
+      check(
+        'command palette offers the close for each selected target',
+        (await closeDraft.innerText()).includes('Discard') &&
+          (await page
+            .locator('[cmdk-item][data-command-id="project.close"]')
+            .count()) === 1
+      );
       await page.keyboard.press('Escape');
 
       // The source switch above is authored launch intent, so it promoted a

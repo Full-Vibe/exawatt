@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankRecents } from './palette-recents';
+import { migratePaletteUses, rankRecents } from './palette-recents';
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 
@@ -28,5 +28,19 @@ describe('rankRecents', () => {
       count: 1,
     }));
     expect(rankRecents(many, 10, 5)).toHaveLength(5);
+  });
+});
+
+describe('migratePaletteUses', () => {
+  it('keeps a retired row id’s weight under the command that replaced it', () => {
+    const migrated = migratePaletteUses([
+      { id: 'ws-rename', at: 5, count: 3 },
+      { id: 'session.rename', at: 9, count: 2 },
+      { id: 'nav-fleet', at: 1, count: 1 },
+    ]);
+    expect(migrated).toEqual([
+      { id: 'session.rename', at: 9, count: 5 },
+      { id: 'nav-fleet', at: 1, count: 1 },
+    ]);
   });
 });

@@ -178,13 +178,15 @@ export function useWorkspaceNavigation({
     [setProjects, syncProjectOrder]
   );
 
-  /** ⌘⌥[/⌘⌥]: nudge the ACTIVE tab one slot within its Project */
-  const moveActiveTab = useCallback(
-    (delta: 1 | -1): boolean => {
-      const { projects: gs, activeDir: ad } = stateRef.current;
-      const active = gs.find(g => g.dir === ad);
-      if (!active?.activeTabId) return false;
-      const next = moveTabWithinProject(gs, active.activeTabId, delta);
+  /** Nudge a tab one slot within its Project: the ⌘⌥[/⌘⌥] family on the
+   *  active tab, and Move left/right on any tab's own menu. */
+  const moveTab = useCallback(
+    (tabId: string, delta: 1 | -1): boolean => {
+      const next = moveTabWithinProject(
+        stateRef.current.projects,
+        tabId,
+        delta
+      );
       if (!next) return false;
       setProjects(next);
       return true;
@@ -192,13 +194,13 @@ export function useWorkspaceNavigation({
     [setProjects, stateRef]
   );
 
-  /** ⌘⌥⇧[/⌘⌥⇧]: nudge the ACTIVE Project one slot in the strip */
-  const moveActiveProject = useCallback(
-    (delta: 1 | -1): boolean => {
-      const { projects: gs, activeDir: ad } = stateRef.current;
-      if (!ad) return false;
-      return applyProjectOrder(moveProjectInList(gs, ad, delta));
-    },
+  /** Nudge a Project one slot in the strip: the ⌘⌥⇧[/⌘⌥⇧] family on the
+   *  active Project, and Move left/right on any Project's own menu. */
+  const moveProject = useCallback(
+    (dir: string, delta: 1 | -1): boolean =>
+      applyProjectOrder(
+        moveProjectInList(stateRef.current.projects, dir, delta)
+      ),
     [applyProjectOrder, stateRef]
   );
 
@@ -238,8 +240,8 @@ export function useWorkspaceNavigation({
     cycleTab,
     selectTabByOrdinal,
     selectExistingTab,
-    moveActiveTab,
-    moveActiveProject,
+    moveTab,
+    moveProject,
     reorderTab,
     reorderProject,
     togglePin,

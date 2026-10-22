@@ -31,7 +31,6 @@ import {
 } from '@exawatt/core';
 import {
   resumableAgentsNoun,
-  SESSION_LIFECYCLE_VERB_LABEL,
   SESSION_RESUME_SCOPE_LABEL,
 } from '@exawatt/ui-model';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
@@ -41,13 +40,8 @@ import {
   HelpCircle,
   LayoutPanelTop,
   Milestone,
-  PenLine,
   Palette,
-  Columns2,
   BellRing,
-  XCircle,
-  ArrowLeftToLine,
-  ArrowRightToLine,
   Map as MapIcon,
   FolderOpen,
   LogIn,
@@ -66,12 +60,7 @@ import {
   Waypoints,
   Shapes,
   Trophy,
-  CopyPlus,
-  Play,
-  Pause,
   ListRestart,
-  FolderSearch,
-  FolderX,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -79,22 +68,20 @@ import {
   requestOpenProject,
   requestProjectPicker,
   requestAgentComposer,
-  RENAME_ACTIVE_EVENT,
-  EDIT_ACTIVE_PROJECT_EVENT,
-  TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
-  PAUSE_ACTIVE_PROJECT_EVENT,
-  RESUME_ACTIVE_AGENT_EVENT,
   RESUME_PARKED_SCOPE_EVENT,
-  CLOSE_ACTIVE_EVENT,
-  CLOSE_ACTIVE_PROJECT_EVENT,
-  REVEAL_ACTIVE_PATH_EVENT,
-  MOVE_ACTIVE_PROJECT_EVENT,
-  MOVE_ACTIVE_TAB_EVENT,
   REOPEN_CLOSED_EVENT,
   OPEN_ROADMAP_EVENT,
-  requestCloneActiveAgent,
 } from '@/components/workspace/session-jump';
+import { useCommandSubjects } from '@/components/workspace/command-subjects';
+import {
+  describeCommandTarget,
+  PALETTE_TARGET_COMMAND_IDS,
+  paletteTargetCommands,
+  resolveTargetCommands,
+  type CommandTarget,
+  type ResolvedTargetCommand,
+} from '@/components/workspace/target-commands';
 import {
   useWorkspaceCommandAvailability,
   type CommandAvailability,
@@ -134,12 +121,7 @@ import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { demoSessionRows } from '@/lib/demo-workspace/model';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
-import {
-  fixedFamilyBindings,
-  getWorkspaceFixedFamily,
-} from '@/lib/shortcuts/fixed-families';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
-import type { CloneSessionTarget } from '@/components/workspace/session-clone';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import { useAppearance } from '@/components/appearance/appearance-provider';
@@ -206,7 +188,6 @@ interface CommandPaletteProps {
   onOpenHelpModal: () => void;
   /** Ranked Project selector output. Persistence remains outside the palette. */
   launchConfigurations?: readonly CommandPaletteLaunchConfiguration[];
-  cloneTargets?: readonly CloneSessionTarget[];
 }
 
 interface CommandItem {
@@ -225,15 +206,6 @@ interface CommandItem {
   note?: string;
 }
 
-// fixed arrangement family (D20): displayed beside the palette rows, not
-// rebindable — the workspace key layer resolves the chords, not the registry
-const [MOVE_TAB_LEFT_KEYS, MOVE_TAB_RIGHT_KEYS] = fixedFamilyBindings(
-  getWorkspaceFixedFamily('fixed-move-tab')
-);
-const [MOVE_PROJECT_LEFT_KEYS, MOVE_PROJECT_RIGHT_KEYS] = fixedFamilyBindings(
-  getWorkspaceFixedFamily('fixed-move-project')
-);
-
 /** Row ids for the verbs whose palette coverage the manifest declares: the
  *  row id is read from the declaration, so renaming one here cannot silently
  *  break the join the contract test makes. */
@@ -247,28 +219,14 @@ const verbRow = (verbId: string): string => {
   return verb.palette.rowId;
 };
 
+/** Workspace-wide verbs. A verb that acts on a tab, a Project or a terminal
+ *  is not listed here: it is a target command (`target-commands.ts`), and ⌘K
+ *  renders it in the group for its target, exactly as a right-click does. */
 const WORKSPACE_PALETTE_ROW_ID = {
-  rename: verbRow('workspace-rename'),
-  color: verbRow('rename-project'),
-  split: verbRow('workspace-split'),
   jump: verbRow('workspace-jump-attention'),
-  pauseProject: verbRow('workspace-pause-project'),
-  resumeAgent: verbRow('workspace-resume-agent'),
   resumeScope: verbRow('workspace-resume-scope'),
   roadmap: verbRow('workspace-roadmap'),
-  moveTabLeft: 'ws-move-left',
-  moveTabRight: 'ws-move-right',
-  moveProjectLeft: 'ws-move-project-left',
-  moveProjectRight: 'ws-move-project-right',
-  close: verbRow('workspace-close-tab'),
-  closeProject: verbRow('workspace-close-project'),
-  reveal: verbRow('workspace-reveal-path'),
 } as const;
-
-/** Contract join for the manifests that declare command-palette coverage. */
-export const WORKSPACE_PALETTE_ROW_IDS: ReadonlySet<string> = new Set(
-  Object.values(WORKSPACE_PALETTE_ROW_ID)
-);
 
 const ACTION_PALETTE_ROW_ID = {
   theme: 'action-change-theme',
@@ -278,13 +236,26 @@ const ACTION_PALETTE_ROW_ID = {
   help: verbRow('help-modal'),
 } as const;
 
-/** Every palette row this file declares statically. The command-verb contract
+/** Every row id ⌘K can render: its own workspace and action rows, and every
+ *  target command it lists for a selected target. The command-verb contract
  *  test joins the manifest's declared rows against it, so a verb that claims a
  *  palette row and never renders one fails the build. */
 export const STATIC_PALETTE_ROW_IDS: ReadonlySet<string> = new Set([
   ...Object.values(WORKSPACE_PALETTE_ROW_ID),
   ...Object.values(ACTION_PALETTE_ROW_ID),
+  ...PALETTE_TARGET_COMMAND_IDS,
 ]);
+
+/** The palette group a target's commands render in. */
+const SUBJECT_GROUP: Record<
+  CommandTarget['kind'],
+  'subject-tab' | 'subject-project' | 'subject-terminal'
+> = {
+  session: 'subject-tab',
+  coworker: 'subject-tab',
+  project: 'subject-project',
+  terminal: 'subject-terminal',
+};
 
 /** palette icon per manifest surface — the manifest stays render-free */
 const SURFACE_ICONS: Record<NavigationSurface['id'], LucideIcon> = {
@@ -312,7 +283,6 @@ export function CommandPalette({
   onActionPendingChange,
   onOpenHelpModal,
   launchConfigurations: suppliedLaunchConfigurations,
-  cloneTargets = [],
 }: CommandPaletteProps) {
   const router = useRouter();
   const { navigateCommandSurface, activateCommandAltitude } =
@@ -598,11 +568,6 @@ export function CommandPalette({
       }),
     [handleSelect, navigateCommandSurface]
   );
-  const cloneActiveAgent = useCallback(
-    (target: CloneSessionTarget) =>
-      handleSelect(() => requestCloneActiveAgent(target)),
-    [handleSelect]
-  );
   /** open a known Project (⌘K Projects): if its directory is missing on this
    *  machine (a synced Project from another machine), prompt to locate it and
    *  re-bind the registry; then the workspace activates it without spawning */
@@ -698,37 +663,6 @@ export function CommandPalette({
       'agent',
     ];
     return [
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.pauseProject,
-        label: 'Pause this Project',
-        value: paletteValue(
-          'Pause this Project',
-          WORKSPACE_PALETTE_ROW_ID.pauseProject
-        ),
-        keywords: ['pause', 'project', 'stop', 'agents'],
-        icon: Pause,
-        demoAvailable: true,
-        availability: workspaceAvailability.commands['pause-project'],
-        onSelect: () => dispatch(PAUSE_ACTIVE_PROJECT_EVENT),
-      },
-      ...(workspaceAvailability.commands['resume-agent'].available
-        ? [
-            {
-              id: WORKSPACE_PALETTE_ROW_ID.resumeAgent,
-              label: SESSION_LIFECYCLE_VERB_LABEL.resume,
-              value: paletteValue(
-                SESSION_LIFECYCLE_VERB_LABEL.resume,
-                WORKSPACE_PALETTE_ROW_ID.resumeAgent
-              ),
-              keywords: [...resumeKeywords, 'this', 'selected'],
-              shortcut: shortcutRegistry.getEffectiveKeys(
-                'workspace-resume-agent'
-              ),
-              icon: Play,
-              onSelect: () => dispatch(RESUME_ACTIVE_AGENT_EVENT),
-            },
-          ]
-        : []),
       ...(resumeScopeLabel !== null
         ? [
             {
@@ -753,45 +687,6 @@ export function CommandPalette({
             },
           ]
         : []),
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.rename,
-        label: 'Rename the active tab',
-        value: paletteValue(
-          'Rename the active tab',
-          WORKSPACE_PALETTE_ROW_ID.rename
-        ),
-        keywords: ['rename', 'tab', 'title', 'active'],
-        shortcut: shortcutRegistry.getEffectiveKeys('workspace-rename'),
-        icon: PenLine,
-        availability: workspaceAvailability.commands['rename-tab'],
-        onSelect: () => dispatch(RENAME_ACTIVE_EVENT),
-      },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.color,
-        label: 'Rename or recolor the active Project',
-        value: paletteValue(
-          'Rename or recolor the active Project',
-          WORKSPACE_PALETTE_ROW_ID.color
-        ),
-        keywords: ['rename', 'color', 'project', 'swatch', 'recolor', 'hue'],
-        icon: Palette,
-        availability: workspaceAvailability.commands['rename-project'],
-        // the Project editor owns both its name and identity color
-        onSelect: () => dispatch(EDIT_ACTIVE_PROJECT_EVENT),
-      },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.split,
-        label: 'Split: pin / unpin the active tab',
-        value: paletteValue(
-          'Split: pin / unpin the active tab',
-          WORKSPACE_PALETTE_ROW_ID.split
-        ),
-        keywords: ['split', 'pane', 'pin', 'unpin', 'side by side', 'watch'],
-        shortcut: shortcutRegistry.getEffectiveKeys('workspace-split'),
-        icon: Columns2,
-        availability: workspaceAvailability.commands['toggle-split'],
-        onSelect: () => dispatch(TOGGLE_SPLIT_EVENT),
-      },
       {
         id: WORKSPACE_PALETTE_ROW_ID.jump,
         label: 'Jump to the Session needing you',
@@ -829,195 +724,42 @@ export function CommandPalette({
         availability: workspaceAvailability.commands['open-roadmap'],
         onSelect: () => dispatch(OPEN_ROADMAP_EVENT),
       },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.moveTabLeft,
-        label: 'Move tab left',
-        value: paletteValue(
-          'Move tab left',
-          WORKSPACE_PALETTE_ROW_ID.moveTabLeft
-        ),
-        keywords: [
-          'move',
-          'tab',
-          'left',
-          'reorder',
-          'arrange',
-          'shift',
-          'nudge',
-          'order',
-        ],
-        // fixed arrangement family (D20) — displayed, not rebindable
-        shortcut: MOVE_TAB_LEFT_KEYS,
-        icon: ArrowLeftToLine,
-        availability: workspaceAvailability.commands['move-tab-left'],
-        demoAvailable: true,
-        onSelect: () =>
-          handleSelect(() =>
-            window.dispatchEvent(
-              new CustomEvent(MOVE_ACTIVE_TAB_EVENT, {
-                detail: { delta: -1 },
-              })
-            )
-          ),
-      },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.moveTabRight,
-        label: 'Move tab right',
-        value: paletteValue(
-          'Move tab right',
-          WORKSPACE_PALETTE_ROW_ID.moveTabRight
-        ),
-        keywords: [
-          'move',
-          'tab',
-          'right',
-          'reorder',
-          'arrange',
-          'shift',
-          'nudge',
-          'order',
-        ],
-        shortcut: MOVE_TAB_RIGHT_KEYS,
-        icon: ArrowRightToLine,
-        availability: workspaceAvailability.commands['move-tab-right'],
-        demoAvailable: true,
-        onSelect: () =>
-          handleSelect(() =>
-            window.dispatchEvent(
-              new CustomEvent(MOVE_ACTIVE_TAB_EVENT, {
-                detail: { delta: 1 },
-              })
-            )
-          ),
-      },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.moveProjectLeft,
-        label: 'Move Project left',
-        value: paletteValue(
-          'Move Project left',
-          WORKSPACE_PALETTE_ROW_ID.moveProjectLeft
-        ),
-        keywords: [
-          'move',
-          'project',
-          'left',
-          'reorder',
-          'arrange',
-          'shift',
-          'nudge',
-          'order',
-        ],
-        shortcut: MOVE_PROJECT_LEFT_KEYS,
-        icon: ArrowLeftToLine,
-        availability: workspaceAvailability.commands['move-project-left'],
-        demoAvailable: true,
-        onSelect: () =>
-          handleSelect(() =>
-            window.dispatchEvent(
-              new CustomEvent(MOVE_ACTIVE_PROJECT_EVENT, {
-                detail: { delta: -1 },
-              })
-            )
-          ),
-      },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.moveProjectRight,
-        label: 'Move Project right',
-        value: paletteValue(
-          'Move Project right',
-          WORKSPACE_PALETTE_ROW_ID.moveProjectRight
-        ),
-        keywords: [
-          'move',
-          'project',
-          'right',
-          'reorder',
-          'arrange',
-          'shift',
-          'nudge',
-          'order',
-        ],
-        shortcut: MOVE_PROJECT_RIGHT_KEYS,
-        icon: ArrowRightToLine,
-        availability: workspaceAvailability.commands['move-project-right'],
-        demoAvailable: true,
-        onSelect: () =>
-          handleSelect(() =>
-            window.dispatchEvent(
-              new CustomEvent(MOVE_ACTIVE_PROJECT_EVENT, {
-                detail: { delta: 1 },
-              })
-            )
-          ),
-      },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.close,
-        label: 'Close the active tab or empty Project',
-        value: paletteValue(
-          'Close the active tab or empty Project',
-          WORKSPACE_PALETTE_ROW_ID.close
-        ),
-        keywords: [
-          'close',
-          'tab',
-          'agent',
-          'empty',
-          'project',
-          'kill',
-          'session',
-          'end',
-        ],
-        shortcut: shortcutRegistry.getEffectiveKeys('workspace-close-tab'),
-        icon: XCircle,
-        availability: workspaceAvailability.commands['close-tab'],
-        onSelect: () => dispatch(CLOSE_ACTIVE_EVENT),
-      },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.closeProject,
-        label: 'Close the active Project',
-        value: paletteValue(
-          'Close the active Project',
-          WORKSPACE_PALETTE_ROW_ID.closeProject
-        ),
-        keywords: [
-          'close',
-          'project',
-          'group',
-          'put away',
-          'dismiss',
-          'end',
-          'all sessions',
-        ],
-        icon: FolderX,
-        availability: workspaceAvailability.commands['close-project'],
-        // The workspace decides what closing costs: with Sessions still in it
-        // this raises the same confirmation the strip's entry raises.
-        onSelect: () => dispatch(CLOSE_ACTIVE_PROJECT_EVENT),
-      },
-      {
-        id: WORKSPACE_PALETTE_ROW_ID.reveal,
-        label: 'Reveal in Finder',
-        value: paletteValue(
-          'Reveal in Finder',
-          WORKSPACE_PALETTE_ROW_ID.reveal
-        ),
-        keywords: [
-          'reveal',
-          'finder',
-          'folder',
-          'directory',
-          'path',
-          'show',
-          'open',
-          'disk',
-          'worktree',
-        ],
-        icon: FolderSearch,
-        availability: workspaceAvailability.commands['reveal-path'],
-        onSelect: () => dispatch(REVEAL_ACTIVE_PATH_EVENT),
-      },
     ];
-  }, [dispatch, handleSelect, shortcutVersion, workspaceAvailability]);
+  }, [dispatch, shortcutVersion, workspaceAvailability]);
+  // Target commands (`target-commands.ts`): the same rows a right-click on
+  // the selected Agent, its Project or its terminal shows, resolved for the
+  // subjects the workspace on screen publishes.
+  const commandSubjects = useCommandSubjects();
+  const subjectGroups = useMemo(() => {
+    void shortcutVersion;
+    if (!workspaceVerbs || !onWorkspaceRoute) return [];
+    const facts = commandSubjects.scope?.facts ?? null;
+    return commandSubjects.subjects.flatMap(target => {
+      const rows = paletteTargetCommands(
+        resolveTargetCommands(target, commandSubjects.scope)
+      );
+      if (rows.length === 0) return [];
+      const { kind, name } = describeCommandTarget(target, facts);
+      return [
+        {
+          id: SUBJECT_GROUP[target.kind],
+          heading: target.kind === 'terminal' ? kind : `${kind} · ${name}`,
+          name,
+          rows,
+        },
+      ];
+    });
+  }, [commandSubjects, onWorkspaceRoute, shortcutVersion, workspaceVerbs]);
+  const runTargetCommand = useCallback(
+    (row: ResolvedTargetCommand) => {
+      const run = row.run;
+      if (!run || row.disabledReason !== null) return;
+      recordPaletteUse(row.id);
+      handleSelect(run);
+    },
+    [handleSelect]
+  );
+
   const tenantWorkspaceItems = useMemo(
     () =>
       inDemoTenant
@@ -1263,6 +1005,16 @@ export function CommandPalette({
           });
         }
       }
+      for (const group of subjectGroups) {
+        for (const row of group.rows) {
+          if (row.disabledReason !== null || !row.run) continue;
+          candidates.set(row.id, {
+            label: `${row.label} · ${group.name}`,
+            icon: row.icon,
+            onSelect: () => handleSelect(row.run!),
+          });
+        }
+      }
       if (onSpatialRoute) {
         candidates.set('spatial-projection', {
           label: 'Toggle projection (top-down ↔ angled)',
@@ -1287,6 +1039,8 @@ export function CommandPalette({
     onWorkspaceRoute,
     onSpatialRoute,
     tenantWorkspaceItems,
+    subjectGroups,
+    handleSelect,
     launchConfigurations,
     openLaunchConfiguration,
     openProject,
@@ -1302,13 +1056,58 @@ export function CommandPalette({
    * land on. A group that has nothing to offer right now is `null` and draws
    * neither heading nor separator.
    */
-  const groupProps = (id: PaletteGroupId) => ({
-    heading: paletteGroup(id).heading,
+  const groupProps = (id: PaletteGroupId, heading?: string) => ({
+    heading: heading ?? paletteGroup(id).heading,
     'data-palette-group': id,
     // the opening-highlight effect below reads this: only a landing group's
     // first row may be the cursor's opening position
     'data-palette-landing': paletteGroupMayLand(id) ? '' : undefined,
   });
+  const subjectGroupNode = (
+    id: 'subject-tab' | 'subject-project' | 'subject-terminal'
+  ): ReactNode | null => {
+    const group = subjectGroups.find(candidate => candidate.id === id);
+    return group ? (
+      <CommandGroup
+        key={id}
+        {...groupProps(id, group.heading)}
+        data-palette-subject={id}
+      >
+        {group.rows.map(row => (
+          <CommandItem
+            key={row.id}
+            value={paletteValue(row.label, row.id)}
+            keywords={[
+              ...row.keywords,
+              ...(row.disabledReason ? [row.disabledReason] : []),
+            ]}
+            disabled={row.disabledReason !== null || undefined}
+            title={row.disabledReason ?? undefined}
+            aria-label={row.accessibleLabel}
+            data-command-id={row.id}
+            onSelect={() => runTargetCommand(row)}
+          >
+            <row.icon className="mr-2 h-4 w-4 shrink-0" />
+            <span className="truncate">{row.label}</span>
+            {row.detail ? (
+              <span className="ml-2 shrink-0 text-muted-foreground">
+                {row.detail}
+              </span>
+            ) : null}
+            {row.disabledReason ? (
+              <CommandShortcut>{row.disabledReason}</CommandShortcut>
+            ) : row.shortcut ? (
+              <CommandShortcut>
+                {formatShortcutKeys(row.shortcut)}
+              </CommandShortcut>
+            ) : row.note ? (
+              <CommandShortcut>{row.note}</CommandShortcut>
+            ) : null}
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    ) : null;
+  };
   const groupNodes: Record<PaletteGroupId, ReactNode | null> = {
     recent:
       !search && recentRows.length > 0 ? (
@@ -1458,41 +1257,6 @@ export function CommandPalette({
         })}
       </CommandGroup>
     ) : null,
-    clone:
-      personalVerbs && cloneTargets.length > 0 ? (
-        <CommandGroup {...groupProps('clone')}>
-          {cloneTargets.map(target => (
-            <CommandItem
-              key={`clone-${target.id}`}
-              value={paletteValue(target.label, `clone-${target.id}`)}
-              keywords={[
-                'clone',
-                'active',
-                'agent',
-                'new session',
-                'handoff',
-                target.accessibleLabel,
-                target.source,
-                target.modelId,
-                ...(target.effort ? [target.effort] : []),
-              ]}
-              onSelect={() => cloneActiveAgent(target)}
-            >
-              <CopyPlus className="mr-2 h-3.5 w-3.5 shrink-0" />
-              {/* Two setups on one model share a label by design, so
-                the effort rides beside it exactly as it does on the
-                launcher chip and the Clone to… menu. */}
-              <span>{target.label}</span>
-              {target.detail ? (
-                <span className="ml-2 text-hud-text-dim">{target.detail}</span>
-              ) : null}
-              <CommandShortcut>
-                starts a new Agent with a handoff
-              </CommandShortcut>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      ) : null,
     projects: personalVerbs ? (
       <CommandGroup {...groupProps('projects')}>
         {projects
@@ -1587,6 +1351,9 @@ export function CommandPalette({
         </CommandItem>
       </CommandGroup>
     ) : null,
+    'subject-tab': subjectGroupNode('subject-tab'),
+    'subject-project': subjectGroupNode('subject-project'),
+    'subject-terminal': subjectGroupNode('subject-terminal'),
     workspace:
       workspaceVerbs && onWorkspaceRoute && tenantWorkspaceItems.length > 0 ? (
         <CommandGroup {...groupProps('workspace')}>

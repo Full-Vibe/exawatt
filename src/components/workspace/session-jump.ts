@@ -10,7 +10,6 @@
  */
 import { personalTenantActive } from '@/lib/tenancy/active-tenant';
 import type { AgentSourceId } from './agent-sources';
-import type { CloneSessionTarget } from './session-clone';
 import type { PtyHarness } from '@exawatt/core';
 
 /**
@@ -64,12 +63,12 @@ export const FOCUS_AGENT_COMPOSER_EVENT = 'exawatt:focus-agent-composer';
  * surfaces. Empty detail clears stale rows when the composer unmounts. */
 export const LAUNCH_CONFIGURATION_CATALOG_EVENT =
   'exawatt:launch-configuration-catalog';
-export const CLONE_TARGET_CATALOG_EVENT = 'exawatt:clone-target-catalog';
-export const CLONE_ACTIVE_AGENT_EVENT = 'exawatt:clone-active-agent';
-/** tab-strip listens: open the inline rename editor for the active tab */
-export const RENAME_ACTIVE_EVENT = 'exawatt:rename-active';
-/** Open the active Project's combined rename/color editor. */
-export const EDIT_ACTIVE_PROJECT_EVENT = 'exawatt:edit-active-project';
+/** tab-strip listens: open the inline rename editor for a tab;
+ *  detail = { tabId } names it, no detail means the active tab (⌘E) */
+export const RENAME_TAB_EVENT = 'exawatt:rename-tab';
+/** tab-strip listens: open a Project's combined rename/color editor;
+ *  detail = { dir } names it, no detail means the active Project */
+export const EDIT_PROJECT_EVENT = 'exawatt:edit-project';
 /** the active terminal pane refocuses itself (rename editors steal focus —
  *  the keyboard flow must land back in the terminal) */
 export const FOCUS_ACTIVE_TERMINAL_EVENT = 'exawatt:focus-active-terminal';
@@ -286,10 +285,17 @@ export function requestAgentComposer(
   );
 }
 
-export function requestCloneActiveAgent(target: CloneSessionTarget): void {
-  if (!launchVerbsAvailable()) return;
+/** Open the rename editor on a tab; without an id, on the active tab. */
+export function requestTabRename(tabId?: string): void {
   window.dispatchEvent(
-    new CustomEvent(CLONE_ACTIVE_AGENT_EVENT, { detail: target })
+    new CustomEvent(RENAME_TAB_EVENT, { detail: tabId ? { tabId } : null })
+  );
+}
+
+/** Open a Project's name and colour editor; without a dir, the active one. */
+export function requestProjectEdit(dir?: string): void {
+  window.dispatchEvent(
+    new CustomEvent(EDIT_PROJECT_EVENT, { detail: dir ? { dir } : null })
   );
 }
 

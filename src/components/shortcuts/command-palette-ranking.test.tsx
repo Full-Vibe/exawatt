@@ -37,10 +37,12 @@ import {
   resetWorkspaceCommandAvailability,
   type WorkspaceCommandAvailabilityInput,
 } from '@/components/workspace/workspace-command-availability';
+import { RESUME_PARKED_SCOPE_EVENT } from '@/components/workspace/session-jump';
 import {
-  RESUME_ACTIVE_AGENT_EVENT,
-  RESUME_PARKED_SCOPE_EVENT,
-} from '@/components/workspace/session-jump';
+  publishCommandSubjects,
+  resetCommandSubjects,
+} from '@/components/workspace/command-subjects';
+import type { SessionTab } from '@/components/workspace/use-workspace-state';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { CommandPalette } from './command-palette';
 import { useState, type ComponentProps } from 'react';
@@ -522,8 +524,53 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
     });
   });
 
+  /** The selected Agent, stopped with its conversation kept: what the
+   *  workspace publishes as ⌘K's target after a relaunch. */
+  const stoppedAgent: SessionTab = {
+    kind: 'session',
+    id: 'tab-parked',
+    durableSessionId: 'dur-parked-tab',
+    harness: 'claude',
+    title: 'Rebuild the billing exporter',
+    titleKind: 'operator',
+    cwd: '/Users/example/Code/exawatt',
+    sessionId: null,
+    harnessSessionId: 'provider-parked',
+    resumeState: 'ended-resumable',
+    lifecycle: 'stopped-clean',
+    exitCode: 0,
+    roadmapItemId: null,
+    initialTask: null,
+  };
+  const resumeTab = vi.fn();
+  function selectStoppedAgent() {
+    const project = {
+      dir: '/Users/example/Code/exawatt',
+      name: 'exawatt',
+      color: '#50E6FF',
+      tabs: [stoppedAgent],
+      activeTabId: stoppedAgent.id,
+    };
+    publishCommandSubjects({
+      subjects: [{ kind: 'session', project, tab: stoppedAgent }],
+      scope: {
+        ops: { closeTab: vi.fn(), resumeTab },
+        facts: {
+          projects: [project],
+          pinnedTabId: null,
+          summaries: {},
+          engaged: {},
+          agentNames: new Map(),
+          cloneTargets: [],
+        },
+      },
+    });
+  }
+
   afterEach(() => {
     resetWorkspaceCommandAvailability();
+    resetCommandSubjects();
+    resumeTab.mockReset();
     for (const definition of defaultShortcuts) {
       shortcutRegistry.unregister(definition.id);
     }
@@ -555,6 +602,7 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
   });
 
   it('ranks both recovery verbs above a fuzzy Session for "resume"', async () => {
+    selectStoppedAgent();
     publishWorkspaceCommandAvailability(
       parked({
         resumableAgents: agents(4),
@@ -578,6 +626,7 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
   });
 
   it('shows the rebindable chord beside each row', async () => {
+    selectStoppedAgent();
     publishWorkspaceCommandAvailability(
       parked({
         resumableAgents: agents(4),
@@ -617,7 +666,8 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
     ).toBe(false);
   });
 
-  it('asks the workspace to resume, carrying no identity of its own', async () => {
+  it('resumes the selected Agent through the same command its tab menu runs', async () => {
+    selectStoppedAgent();
     publishWorkspaceCommandAvailability(
       parked({
         resumableAgents: agents(4),
@@ -625,10 +675,8 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
         activeTabCanResume: true,
       })
     );
-    const requests: string[] = [];
-    const onAgent = () => requests.push(RESUME_ACTIVE_AGENT_EVENT);
-    const onScope = () => requests.push(RESUME_PARKED_SCOPE_EVENT);
-    window.addEventListener(RESUME_ACTIVE_AGENT_EVENT, onAgent);
+    const scopeRequests: string[] = [];
+    const onScope = () => scopeRequests.push(RESUME_PARKED_SCOPE_EVENT);
     window.addEventListener(RESUME_PARKED_SCOPE_EVENT, onScope);
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
@@ -638,10 +686,10 @@ describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
 
       fireEvent.keyDown(paletteInput(), { key: 'Enter' });
       await vi.advanceTimersByTimeAsync(100);
-      expect(requests).toEqual([RESUME_ACTIVE_AGENT_EVENT]);
+      expect(resumeTab).toHaveBeenCalledExactlyOnceWith(stoppedAgent.id);
+      expect(scopeRequests).toEqual([]);
     } finally {
       vi.useRealTimers();
-      window.removeEventListener(RESUME_ACTIVE_AGENT_EVENT, onAgent);
       window.removeEventListener(RESUME_PARKED_SCOPE_EVENT, onScope);
     }
   });

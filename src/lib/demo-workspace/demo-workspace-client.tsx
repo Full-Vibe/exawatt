@@ -35,6 +35,16 @@ import {
 import { teamViewProjects } from '@/components/workspace/team-order';
 import { useTeamOrderPreference } from '@/components/workspace/team-order-preference';
 import { TabStrip } from '@/components/workspace/tab-strip';
+import {
+  publishCommandSubjects,
+  resetCommandSubjects,
+} from '@/components/workspace/command-subjects';
+import type {
+  CommandTarget,
+  TargetCommandOps,
+} from '@/components/workspace/target-commands';
+import type { AgentNames } from '@/lib/agent-names/agent-name-store';
+import { isSessionTab } from '@/components/workspace/workspace-state/workspace-model';
 import { useProjectPauseInteraction } from '@/components/workspace/use-project-pause-interaction';
 import {
   CloseConfirm,
@@ -123,6 +133,8 @@ import {
 
 /** The Session a walk-up demo opens first: the hero transcript. */
 const DEFAULT_SESSION_ID = 'vg-home-onboard';
+/** The Demo names no Agents of its own (ENG-029 C4 names are Personal truth). */
+const EMPTY_AGENT_NAMES: AgentNames = new Map();
 
 /** The live shell's discoverability footer, reduced to the verbs the Demo
  *  tenant actually answers — same component, same availability gating. */
@@ -565,12 +577,12 @@ export function DemoWorkspaceClient() {
   );
 
   const moveTab = useCallback(
-    (delta: 1 | -1): boolean => {
+    (tabId: string, delta: 1 | -1): boolean => {
       const project = projects.find(candidate =>
-        candidate.tabs.some(tab => tab.id === activeId)
+        candidate.tabs.some(tab => tab.id === tabId)
       );
-      const from = project?.tabs.findIndex(tab => tab.id === activeId) ?? -1;
-      const next = moveTabWithinProject(projects, activeId, delta);
+      const from = project?.tabs.findIndex(tab => tab.id === tabId) ?? -1;
+      const next = moveTabWithinProject(projects, tabId, delta);
       if (!next) {
         announceReorder(
           `Session cannot move ${delta < 0 ? 'left' : 'right'} from its current position.`
@@ -586,16 +598,15 @@ export function DemoWorkspaceClient() {
       }
       return true;
     },
-    [activeId, announceReorder, projects]
+    [announceReorder, projects]
   );
 
   const moveProject = useCallback(
-    (delta: 1 | -1): boolean => {
-      if (!activeProject) return false;
-      const from = projects.findIndex(
-        project => project.dir === activeProject.dir
-      );
-      const next = moveProjectInList(projects, activeProject.dir, delta);
+    (dir: string | null, delta: 1 | -1): boolean => {
+      const from = projects.findIndex(project => project.dir === dir);
+      const target = projects[from];
+      if (!dir || !target) return false;
+      const next = moveProjectInList(projects, dir, delta);
       if (!next) {
         announceReorder(
           `Project cannot move ${delta < 0 ? 'left' : 'right'} from its current position.`
@@ -604,11 +615,11 @@ export function DemoWorkspaceClient() {
       }
       setProjects(next);
       announceReorder(
-        `Moved Project ${activeProject.name} to position ${from + delta + 1} of ${projects.length}.`
+        `Moved Project ${target.name} to position ${from + delta + 1} of ${projects.length}.`
       );
       return true;
     },
-    [activeProject, announceReorder, projects]
+    [announceReorder, projects]
   );
 
   /* ---------------- demo-local ribbon verbs (fixture state) ------------- */
@@ -821,8 +832,8 @@ export function DemoWorkspaceClient() {
       selectIndex: selectProject,
       selectTabOrdinal,
       cycle: cycleTab,
-      moveTab,
-      moveProject,
+      moveTab: delta => moveTab(activeId, delta),
+      moveProject: delta => moveProject(activeProject?.dir ?? null, delta),
       focusTerminal: focusSession,
       toggleFocus: () => {
         if (sessionPaneRef.current?.contains(document.activeElement)) {
@@ -832,6 +843,8 @@ export function DemoWorkspaceClient() {
       },
     }),
     [
+      activeId,
+      activeProject?.dir,
       cycleTab,
       focusActiveChip,
       focusSession,
@@ -886,16 +899,79 @@ export function DemoWorkspaceClient() {
       publishWorkspaceCommandAvailability(EMPTY_WORKSPACE_COMMAND_AVAILABILITY);
   }, [commandAvailability]);
 
+  // The Demo's verbs over fixture state, through the same target command
+  // registry the live Workspace uses: its right-click menus and ⌘K list the
+  // same rows for the same target. Verbs the Demo cannot perform (Finder,
+  // clone, resume, a new Agent) are absent ops, so they are offered nowhere.
+  const pauseProjectRequest = projectPause.requestPause;
+  const commandOps = useMemo<TargetCommandOps>(
+    () => ({
+      closeTab: requestClose,
+      markUnread: tabId => void attentionSource?.markUnread(tabId),
+      moveTab: (tabId, delta) => void moveTab(tabId, delta),
+      openCloud: () => router.push('/cloud'),
+      pauseProject: dir => void pauseProjectRequest(dir),
+      resumeProject,
+      moveProject: (dir, delta) => void moveProject(dir, delta),
+    }),
+    [
+      attentionSource,
+      moveProject,
+      moveTab,
+      pauseProjectRequest,
+      requestClose,
+      resumeProject,
+      router,
+    ]
+  );
+  const commandSubjects = useMemo<CommandTarget[]>(() => {
+    const tabId = teamSelection?.tabId ?? activeId;
+    const project =
+      ribbonProjects.find(candidate =>
+        candidate.tabs.some(tab => tab.id === tabId)
+      ) ?? null;
+    const tab = project?.tabs.find(candidate => candidate.id === tabId);
+    const subjects: CommandTarget[] = [];
+    if (project && tab) {
+      subjects.push(
+        isSessionTab(tab)
+          ? { kind: 'session', project, tab }
+          : { kind: 'coworker', project, tab }
+      );
+    }
+    if (project) subjects.push({ kind: 'project', project });
+    return subjects;
+  }, [activeId, ribbonProjects, teamSelection]);
+  useEffect(() => {
+    publishCommandSubjects({
+      subjects: commandSubjects,
+      scope: {
+        ops: commandOps,
+        facts: {
+          projects: ribbonProjects,
+          pinnedTabId: null,
+          summaries,
+          engaged,
+          agentNames: EMPTY_AGENT_NAMES,
+          cloneTargets: [],
+        },
+      },
+    });
+  }, [commandOps, commandSubjects, engaged, ribbonProjects, summaries]);
+  useEffect(() => resetCommandSubjects, []);
+
   // Palette / native-menu verbs arrive as events (the registry provider is
   // the Demo shell's command owner): move, close, reopen, jump-attention.
   useEffect(() => {
     const onMoveTab = (event: Event) => {
       const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
-      if (delta === 1 || delta === -1) moveTab(delta);
+      if (delta === 1 || delta === -1) moveTab(activeId, delta);
     };
     const onMoveProject = (event: Event) => {
       const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
-      if (delta === 1 || delta === -1) moveProject(delta);
+      if (delta === 1 || delta === -1) {
+        moveProject(activeProject?.dir ?? null, delta);
+      }
     };
     const onCloseActive = () => {
       if (activeTab) requestClose(activeTab.id);
@@ -919,6 +995,8 @@ export function DemoWorkspaceClient() {
       window.removeEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     };
   }, [
+    activeId,
+    activeProject?.dir,
     activeTab,
     jumpAttention,
     moveProject,
@@ -1010,11 +1088,8 @@ export function DemoWorkspaceClient() {
               onSelectTab={(_dir, tabId) => {
                 if (demoShellFleetAgentById(tabId)) setActiveId(tabId);
               }}
-              onCloseTab={requestClose}
-              onPauseProject={dir => void projectPause.requestPause(dir)}
-              onResumeProject={resumeProject}
+              commands={commandOps}
               onRenameTab={renameTab}
-              onMarkUnread={tabId => void attentionSource?.markUnread(tabId)}
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
               onReorderTab={reorderTabBeside}

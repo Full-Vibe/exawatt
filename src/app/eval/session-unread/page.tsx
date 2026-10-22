@@ -222,11 +222,13 @@ export default function SessionUnreadEval() {
               )}
               onSelectProject={noop}
               onSelectTab={(_, id) => inspect(id)}
-              onCloseTab={noop}
+              commands={{
+                closeTab: noop,
+                markUnread: id => setRead(id, true),
+              }}
               onRenameTab={noop}
               onRenameProject={noop}
               onSetProjectColor={noop}
-              onMarkUnread={id => setRead(id, true)}
             />
           </section>
           <section

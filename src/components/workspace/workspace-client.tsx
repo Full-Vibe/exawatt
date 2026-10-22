@@ -105,7 +105,7 @@ import {
   MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
   OPEN_ROADMAP_EVENT,
-  RENAME_ACTIVE_EVENT,
+  requestTabRename,
   CLOSE_ACTIVE_EVENT,
   CLOSE_ACTIVE_PROJECT_EVENT,
   REVEAL_ACTIVE_PATH_EVENT,
@@ -123,8 +123,6 @@ import {
   REOPEN_CLOSED_EVENT,
   REOPEN_LAST_CLOSED_EVENT,
   consumePendingReopenLastClosed,
-  CLONE_ACTIVE_AGENT_EVENT,
-  CLONE_TARGET_CATALOG_EVENT,
 } from './session-jump';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts';
@@ -155,6 +153,15 @@ import {
   SquareTerminal,
 } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
+import {
+  publishCommandSubjects,
+  resetCommandSubjects,
+} from './command-subjects';
+import type {
+  CommandTarget,
+  TargetCommandOps,
+  TargetCommandScope,
+} from './target-commands';
 import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
 import {
   DEFAULT_AGENT_PERMISSION_MODE,
@@ -430,8 +437,8 @@ export function WorkspaceClient() {
     selectTab,
     cycleTab,
     selectTabByOrdinal,
-    moveActiveTab,
-    moveActiveProject,
+    moveTab,
+    moveProject,
     reorderTab,
     reorderProject,
     togglePin,
@@ -643,47 +650,21 @@ export function WorkspaceClient() {
     };
   }, [ready, rosterOpener]);
 
-  useEffect(() => {
-    const activeCloneable =
-      !!activeSessionTab &&
-      tabCanClone(activeSessionTab, {
-        engaged: !!(
-          activeSessionTab.sessionId && engaged[activeSessionTab.sessionId]
-        ),
-        contextSummary: summaries[activeSessionTab.durableSessionId],
-      });
-    window.dispatchEvent(
-      new CustomEvent(CLONE_TARGET_CATALOG_EVENT, {
-        detail: activeCloneable ? cloneTargets : [],
-      })
-    );
-    return () => {
-      window.dispatchEvent(
-        new CustomEvent(CLONE_TARGET_CATALOG_EVENT, { detail: [] })
-      );
-    };
-  }, [activeTab, activeSessionTab, cloneTargets, engaged, summaries]);
-
-  useEffect(() => {
-    const cloneActive = (event: Event) => {
-      if (!activeTab) return;
-      const target = (event as CustomEvent<CloneSessionTarget>).detail;
-      if (!target) return;
-      void cloneSession(activeTab.id, target);
-    };
-    window.addEventListener(CLONE_ACTIVE_AGENT_EVENT, cloneActive);
-    return () =>
-      window.removeEventListener(CLONE_ACTIVE_AGENT_EVENT, cloneActive);
-  }, [activeTab, cloneSession]);
-
+  /** One move for every entry point: the fixed chords and native menu on the
+   *  active tab, and Move left/right on any tab's menu or ⌘K group. */
   const moveTabWithFeedback = useCallback(
-    (delta: 1 | -1): boolean => {
-      const from =
-        activeProject?.tabs.findIndex(tab => tab.id === activeTab?.id) ?? -1;
-      const moved = moveActiveTab(delta);
-      if (moved && activeProject && activeTab) {
+    (tabId: string | null, delta: 1 | -1): boolean => {
+      const project = tabId
+        ? projects.find(candidate =>
+            candidate.tabs.some(tab => tab.id === tabId)
+          )
+        : undefined;
+      const from = project?.tabs.findIndex(tab => tab.id === tabId) ?? -1;
+      const tab = project?.tabs[from];
+      const moved = !!tabId && moveTab(tabId, delta);
+      if (moved && project && tab) {
         announceWorkspace(
-          `Moved Session ${activeTab.title} to position ${from + delta + 1} of ${activeProject.tabs.length}.`
+          `Moved Session ${tab.title} to position ${from + delta + 1} of ${project.tabs.length}.`
         );
       } else {
         announceWorkspace(
@@ -692,18 +673,17 @@ export function WorkspaceClient() {
       }
       return moved;
     },
-    [activeProject, activeTab, announceWorkspace, moveActiveTab]
+    [announceWorkspace, moveTab, projects]
   );
 
   const moveProjectWithFeedback = useCallback(
-    (delta: 1 | -1): boolean => {
-      const from = projects.findIndex(
-        project => project.dir === activeProject?.dir
-      );
-      const moved = moveActiveProject(delta);
-      if (moved && activeProject) {
+    (dir: string | null, delta: 1 | -1): boolean => {
+      const from = projects.findIndex(project => project.dir === dir);
+      const project = projects[from];
+      const moved = !!dir && moveProject(dir, delta);
+      if (moved && project) {
         announceWorkspace(
-          `Moved Project ${activeProject.name} to position ${from + delta + 1} of ${projects.length}.`
+          `Moved Project ${project.name} to position ${from + delta + 1} of ${projects.length}.`
         );
       } else {
         announceWorkspace(
@@ -712,7 +692,7 @@ export function WorkspaceClient() {
       }
       return moved;
     },
-    [activeProject, announceWorkspace, moveActiveProject, projects]
+    [announceWorkspace, moveProject, projects]
   );
 
   const {
@@ -1171,22 +1151,26 @@ export function WorkspaceClient() {
   useEffect(() => {
     const onMove = (event: Event) => {
       const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
-      if (delta === 1 || delta === -1) moveTabWithFeedback(delta);
+      if (delta === 1 || delta === -1) {
+        moveTabWithFeedback(activeTab?.id ?? null, delta);
+      }
     };
     window.addEventListener(MOVE_ACTIVE_TAB_EVENT, onMove);
     return () => window.removeEventListener(MOVE_ACTIVE_TAB_EVENT, onMove);
-  }, [moveTabWithFeedback]);
+  }, [activeTab?.id, moveTabWithFeedback]);
 
   // Palette and menu rows nudge the active Project through the same pure
   // move the ⌘⌥⇧[/⌘⌥⇧] fixed family uses.
   useEffect(() => {
     const onMove = (event: Event) => {
       const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
-      if (delta === 1 || delta === -1) moveProjectWithFeedback(delta);
+      if (delta === 1 || delta === -1) {
+        moveProjectWithFeedback(activeProject?.dir ?? null, delta);
+      }
     };
     window.addEventListener(MOVE_ACTIVE_PROJECT_EVENT, onMove);
     return () => window.removeEventListener(MOVE_ACTIVE_PROJECT_EVENT, onMove);
-  }, [moveProjectWithFeedback]);
+  }, [activeProject?.dir, moveProjectWithFeedback]);
 
   // agent-first mirror (S9): tabId → what that agent is executing. Declared
   // ids cover every project (machine-local layout truth); the active
@@ -1609,6 +1593,103 @@ export function WorkspaceClient() {
     return false;
   }, [activeProject, activeTab, requestClose, requestProjectClose]);
 
+  // What a right-click, ⌘K and the close control can do to a tab or Project
+  // in this shell: the target command registry runs these
+  // (`target-commands.ts`), so every entry point lands on the same function.
+  const commandOps = useMemo<TargetCommandOps>(
+    () => ({
+      closeTab: id => void requestClose(id),
+      markUnread: tabId => {
+        const tab = projects
+          .flatMap(project => project.tabs)
+          .find(candidate => candidate.id === tabId);
+        if (tab && isSessionTab(tab)) markSessionUnread(tab);
+      },
+      resumeTab: id => void resumeTab(id),
+      cloneTab: (id, target) => void cloneSession(id, target),
+      togglePinTab,
+      moveTab: (id, delta) => void moveTabWithFeedback(id, delta),
+      revealPath,
+      openCloud: () => router.push('/cloud'),
+      newAgent: dir => void createDraftTab(dir),
+      pauseProject: dir => void requestProjectPause(dir),
+      resumeProject,
+      moveProject: (dir, delta) => void moveProjectWithFeedback(dir, delta),
+      closeProject: requestProjectClose,
+    }),
+    [
+      cloneSession,
+      createDraftTab,
+      markSessionUnread,
+      moveProjectWithFeedback,
+      moveTabWithFeedback,
+      projects,
+      requestClose,
+      requestProjectClose,
+      requestProjectPause,
+      resumeProject,
+      resumeTab,
+      revealPath,
+      router,
+      togglePinTab,
+    ]
+  );
+  const commandScope = useMemo<TargetCommandScope>(
+    () => ({
+      ops: commandOps,
+      facts: {
+        projects,
+        pinnedTabId,
+        summaries,
+        engaged,
+        agentNames,
+        cloneTargets,
+      },
+    }),
+    [
+      agentNames,
+      cloneTargets,
+      commandOps,
+      engaged,
+      pinnedTabId,
+      projects,
+      summaries,
+    ]
+  );
+  // ⌘K's targets: the selected Agent (the Team tile while Team is open, the
+  // same subject the recovery verbs use), its Project, and the terminal on
+  // screen. A Project with no tabs is still a target.
+  const commandSubjects = useMemo<CommandTarget[]>(() => {
+    const tab = resumeTargetTab;
+    const project = tab
+      ? (projects.find(candidate =>
+          candidate.tabs.some(item => item.id === tab.id)
+        ) ?? null)
+      : activeProject;
+    const subjects: CommandTarget[] = [];
+    if (tab && project) {
+      subjects.push(
+        isSessionTab(tab)
+          ? { kind: 'session', project, tab }
+          : { kind: 'coworker', project, tab }
+      );
+    }
+    if (project) subjects.push({ kind: 'project', project });
+    if (!teamSelection && tab && isSessionTab(tab) && tab.sessionId) {
+      subjects.push({ kind: 'terminal', sessionId: tab.sessionId, link: null });
+    }
+    return subjects;
+  }, [activeProject, projects, resumeTargetTab, teamSelection]);
+  useEffect(() => {
+    if (ready) {
+      publishCommandSubjects({
+        subjects: commandSubjects,
+        scope: commandScope,
+      });
+    }
+  }, [commandScope, commandSubjects, ready]);
+  useEffect(() => resetCommandSubjects, []);
+
   const commandAvailability = useMemo(() => {
     const activeTabIndex =
       activeProject?.tabs.findIndex(tab => tab.id === activeTab?.id) ?? -1;
@@ -1787,8 +1868,9 @@ export function WorkspaceClient() {
         if (teamAnchor) publishTeamSelection(next);
         return true;
       },
-      moveTab: moveTabWithFeedback,
-      moveProject: moveProjectWithFeedback,
+      moveTab: delta => moveTabWithFeedback(activeTab?.id ?? null, delta),
+      moveProject: delta =>
+        moveProjectWithFeedback(activeProject?.dir ?? null, delta),
       newAgent: () => {
         // same summon the palette uses: expands + focuses the composer, or
         // opens the Project chooser first when nothing is open
@@ -1869,12 +1951,13 @@ export function WorkspaceClient() {
           : false,
       renameActive: () => {
         if (!activeTab) return false;
-        window.dispatchEvent(new CustomEvent(RENAME_ACTIVE_EVENT));
+        requestTabRename();
         return true;
       },
     };
   }, [
     activeTab,
+    activeProject?.dir,
     activeSessionTab?.sessionId,
     announceWorkspace,
     attentionJumpTargets.length,
@@ -2056,27 +2139,11 @@ export function WorkspaceClient() {
               activity={activity}
               engaged={engaged}
               delegation={delegation}
-              onTogglePinTab={togglePinTab}
-              onResumeTab={id => void resumeTab(id)}
-              onPauseProject={dir => void projectPause.requestPause(dir)}
-              onResumeProject={resumeProject}
+              commands={commandOps}
               cloneTargets={cloneTargets}
-              onCloneTab={(id, target) => void cloneSession(id, target)}
-              onNewAgent={dir => createDraftTab(dir)}
-              onCloseProject={requestProjectClose}
-              onRevealPath={revealPath}
               onSelectProject={selectProject}
               onSelectTab={selectTab}
-              onCloseTab={id => void requestClose(id)}
               onRenameTab={renameTab}
-              onMarkUnread={tabId => {
-                const tab = projects
-                  .flatMap(project => project.tabs)
-                  .find(tab => tab.id === tabId);
-                if (tab && isSessionTab(tab)) {
-                  markSessionUnread(tab);
-                }
-              }}
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
               feedbackEnabled={feedbackEnabled}

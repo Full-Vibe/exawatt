@@ -239,20 +239,21 @@ export function ProjectRibbonStudy() {
                 )
               );
             }}
-            onCloseTab={tabId =>
-              setProjects(current =>
-                current.map(project => {
-                  const tabs = project.tabs.filter(item => item.id !== tabId);
-                  return tabs.length === project.tabs.length
-                    ? project
-                    : {
-                        ...project,
-                        tabs,
-                        activeTabId: tabs[0]?.id ?? null,
-                      };
-                })
-              )
-            }
+            commands={{
+              closeTab: tabId =>
+                setProjects(current =>
+                  current.map(project => {
+                    const tabs = project.tabs.filter(item => item.id !== tabId);
+                    return tabs.length === project.tabs.length
+                      ? project
+                      : {
+                          ...project,
+                          tabs,
+                          activeTabId: tabs[0]?.id ?? null,
+                        };
+                  })
+                ),
+            }}
             onRenameTab={async (tabId, name) => {
               const durableSessionId = projects
                 .flatMap(project => project.tabs)

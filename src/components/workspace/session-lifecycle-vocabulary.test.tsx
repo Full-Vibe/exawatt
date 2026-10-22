@@ -114,11 +114,13 @@ describe('one Session, one lifecycle vocabulary', () => {
         engaged={{}}
         delegation={{}}
         feedbackEnabled={false}
-        onTogglePinTab={vi.fn()}
-        onResumeTab={vi.fn()}
+        commands={{
+          closeTab: vi.fn(),
+          togglePinTab: vi.fn(),
+          resumeTab: vi.fn(),
+        }}
         onSelectProject={vi.fn()}
         onSelectTab={vi.fn()}
-        onCloseTab={vi.fn()}
         onRenameTab={vi.fn()}
         onRenameProject={vi.fn()}
         onSetProjectColor={vi.fn()}
