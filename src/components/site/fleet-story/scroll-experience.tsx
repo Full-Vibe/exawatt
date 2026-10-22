@@ -39,7 +39,7 @@ import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import type { StatusLightState } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import { DownloadCta } from '@/components/site/bands/download-cta';
+import { DownloadCta } from '@/components/site/download-cta';
 import { Button } from '@/components/ui/button';
 import { GITHUB_URL } from '@/components/site/site-links';
 import { GitHubMark } from '@/components/site/github-mark';
@@ -1045,7 +1045,6 @@ function PanelBody({
         // two do not fit across, the source goes under the download
         <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-3 pt-1">
           <DownloadCta
-            align="center"
             requirement={false}
             label={copyDocument?.actions.downloadLabel}
           />

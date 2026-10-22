@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import {
   DOWNLOAD_HREF,
   DOWNLOAD_LABEL,
-} from '@/components/site/bands/download';
+} from '@/components/site/download';
 
 /**
  * Persistent conversion, in the sticky header (ENG-031 W6).

@@ -43,8 +43,8 @@
  * and says so in `active`, which is what a stub should look like: visible in
  * the type, honest at runtime, and one resolver branch from real.
  *
- * ADDING A LENS: an id in `BandBoardLens`, a branch here, and the panel picks
- * it up. No band component and no page change.
+ * ADDING A LENS: an id in `HeroLensId` and a branch here. The board's `lens`
+ * prop picks it up.
  */
 import {
   spatialPressureColor,

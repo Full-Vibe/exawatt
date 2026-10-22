@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DOWNLOAD_LABEL } from '@/components/site/bands/download';
+import { DOWNLOAD_LABEL } from '@/components/site/download';
 import { STAGES, type StageId } from '@/components/site/fleet-story/stages';
 
 /** Stable content keys. Scene order and behavior stay in STAGES, not the store. */

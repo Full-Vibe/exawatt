@@ -199,12 +199,6 @@ export const TYPE_SCALE: TypeRung[] = [
     utility: 'text-2xl · text-4xl',
     use: 'Site pages only',
   },
-  {
-    rung: 'site-closing',
-    size: '72',
-    utility: 'text-7xl',
-    use: 'The homepage close, once',
-  },
 ];
 
 export interface ColorChannel {
@@ -814,9 +808,6 @@ export const WORKBENCH_ROUTES: WorkbenchRoute[] = [
   },
   { href: '/hud-gallery/goal-visuals', title: 'Goal visual languages' },
   { href: '/hud-gallery/agent-launcher', title: 'New Agent launcher' },
-  { href: '/hud-gallery/fold-close', title: 'Fold and close copy' },
-  { href: '/hud-gallery/altitude-scroll', title: 'The pinned altitude scroll' },
   { href: '/', title: 'The homepage' },
-  { href: '/old', title: 'The previous homepage' },
   { href: '/architecture', title: 'The architecture map' },
 ];

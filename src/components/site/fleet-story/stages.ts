@@ -9,7 +9,7 @@
  * download scene is folded into the fleet: "Combine the last two slides. We
  * don't need zoom level 6. Instead end at zoom level 5. With the CTA overlay
  * atop.") Her order starts inside one Project and
- * arrives at the Fleet last; the band homepage (now `/old`) ran the other way. Per the
+ * arrives at the Fleet last; the band homepage (deleted in W31) ran the other way. Per the
  * operator (2026-09-13) the order was hers to resolve, so this study follows
  * the deck.
  *

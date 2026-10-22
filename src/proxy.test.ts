@@ -105,8 +105,11 @@ describe('proxy offline authority', () => {
     '/api/goal-visuals',
     '/api/operator-stats',
     '/leaderboard?metric=agent-hours&window=week',
-    // Hard-cut route: middleware must let Next serve its 404, not auth-redirect.
+    // Hard-cut routes: middleware must let Next serve its 404, not
+    // auth-redirect. `/v2` and `/old` were the band homepage (ENG-031 W31).
     '/agentmaxxing',
+    '/v2',
+    '/old',
     '/operator/jakesc',
     '/run/run_0ba96afb076e97c3f76b5384',
     // ENG-031 W26: the guides were a 307 to /sign-in before they had a route.
@@ -123,25 +126,6 @@ describe('proxy offline authority', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
-  });
-
-  it('serves the previous homepage signed out, and never bounces it to sign-in', async () => {
-    // Regression, reported by the operator: `/v2`, the band homepage's review
-    // address before it moved to `/old`, answered 307 to /sign-in
-    // because the route existed nowhere and the gate caught the prefix. A
-    // marketing surface that redirects a reviewer into an account flow fails
-    // twice over: it is not the page they were sent, and public surfaces do
-    // not promote sign-in at all (`marketing.md`, "Current Positioning").
-    const fetchSpy = vi.fn(() => {
-      throw new Error('network call while serving the previous homepage');
-    });
-    vi.stubGlobal('fetch', fetchSpy);
-
-    const response = await proxy(request('/old'));
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(response.status).toBe(200);
-    expect(response.headers.get('location')).toBeNull();
   });
 
   it('lets the analytics ingest proxy through while signed out', async () => {

@@ -5,9 +5,9 @@ import {
   HERO_DIM,
   heroStatusNeedsHuman,
   resolveHeroHighlight,
+  type HeroHighlightId,
 } from './hero-board-highlight';
 import { heroBoardSubjects } from './hero-board-subjects';
-import { pinnedBoardBands } from '@/components/site/bands/manifest';
 
 /**
  * What the board emphasizes, and whether it can lie (ENG-031 W4).
@@ -15,9 +15,15 @@ import { pinnedBoardBands } from '@/components/site/bands/manifest';
 describe('hero board highlight', () => {
   const capture = HERO_BOARD_CAPTURE;
 
-  it('resolves every highlight a band can declare', () => {
-    for (const band of pinnedBoardBands()) {
-      const id = band.boardHighlight!;
+  it('resolves every highlight it offers', () => {
+    const ids: HeroHighlightId[] = [
+      'whole-fleet',
+      'needs-you',
+      'one-project',
+      'one-agent',
+      'delegation',
+    ];
+    for (const id of ids) {
       const highlight = resolveHeroHighlight(capture, id);
       expect(highlight.id, id).toBe(id);
       expect(highlight.zones.length, id).toBe(capture.zones.length);

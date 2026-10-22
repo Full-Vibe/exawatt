@@ -43,9 +43,13 @@ const PUBLIC_PREFIXES = [
   '/auth',
   '/architecture',
   '/leaderboard',
-  // Retired route: keep it outside the auth gate so Next returns the intended
-  // 404 instead of redirecting signed-out visitors to /sign-in.
+  // Retired routes: keep them outside the auth gate so Next returns the
+  // intended 404 instead of redirecting signed-out visitors to /sign-in.
+  // `/v2` and `/old` were the band homepage's addresses (ENG-031 W8, W15m),
+  // deleted with no redirect in W15m and W31.
   '/agentmaxxing',
+  '/v2',
+  '/old',
   '/operator',
   '/run',
   // only /fleet/spatial exists — the broader /fleet prefix died with the
@@ -53,12 +57,6 @@ const PUBLIC_PREFIXES = [
   // the routes it serves
   '/fleet/spatial',
   '/hud-gallery',
-  // ENG-031 W15m. The band homepage, kept at an address after the fleet
-  // story took `/`. Signed-out by definition: it is a marketing surface, and
-  // bouncing a visitor to /sign-in is a thing public surfaces must never do
-  // (the bug that first listed its old address, `/v2`). Noindexed in its own
-  // segment metadata.
-  '/old',
   '/workspace',
   '/settings',
   // ENG-008. Electron-navigable and demo-sourced: it reads nothing but its

@@ -1,15 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import {
-  heroBoardTheme,
-  HERO_DEFAULT_THEME,
-} from '@/components/site/hero-board/hero-board-theme';
 
 // @scans src/app/**
 
 describe('public-home first-paint stability', () => {
   it('keeps public exhibition typography independent from the app theme', () => {
-    const home = readFileSync('src/app/_home-hero.tsx', 'utf8');
+    const home = readFileSync('src/app/page.tsx', 'utf8');
     const architecture = readFileSync('src/app/architecture/page.tsx', 'utf8');
     const loading = readFileSync('src/app/architecture/loading.tsx', 'utf8');
     const globals = readFileSync('src/app/globals.css', 'utf8');
@@ -41,20 +37,6 @@ describe('public-home first-paint stability', () => {
         property
       ).toBe(true);
     }
-  });
-
-  it('paints the proposed homepage ground on the document, not only on main', () => {
-    // macOS rubber-band overscroll showed the app's light `--background`
-    // above and below an all-dark page (W6b). The literal here is the hero
-    // board's own resolved canvas; `SITE_GROUND` derives the same value for
-    // the bands, and this is the assertion that stops the two drifting.
-    const globals = readFileSync('src/app/globals.css', 'utf8');
-    const ground = heroBoardTheme(HERO_DEFAULT_THEME).canvas.toLowerCase();
-
-    expect(globals).toContain(
-      "html:has(main[data-home-arrangement='proposed'])"
-    );
-    expect(globals).toContain(`background: ${ground} !important`);
   });
 
   it('does not inject a route-local style owner', () => {

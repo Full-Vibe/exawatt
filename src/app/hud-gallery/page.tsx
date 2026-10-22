@@ -557,20 +557,6 @@ export default function HudGallery() {
                   Open the hero board study →
                 </a>{' '}
                 <a
-                  href="/hud-gallery/fold-close"
-                  className="underline underline-offset-2"
-                  style={{ color: HUD.cyan }}
-                >
-                  Open the fold and close copy study →
-                </a>{' '}
-                <a
-                  href="/hud-gallery/altitude-scroll"
-                  className="underline underline-offset-2"
-                  style={{ color: HUD.cyan }}
-                >
-                  Open the pinned altitude scroll study →
-                </a>{' '}
-                <a
                   href="/hud-gallery/homepage-study"
                   className="underline underline-offset-2"
                   style={{ color: HUD.cyan }}
@@ -583,13 +569,6 @@ export default function HudGallery() {
                   style={{ color: HUD.cyan }}
                 >
                   Open the agent material study (one cluster, close) →
-                </a>{' '}
-                <a
-                  href="/old"
-                  className="underline underline-offset-2"
-                  style={{ color: HUD.cyan }}
-                >
-                  Open the previous homepage at /old →
                 </a>{' '}
                 <a
                   href="/hud-gallery/usage-scenarios"

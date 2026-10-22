@@ -1500,8 +1500,8 @@ function HeroCameraRig({
   useEffect(() => {
     const rig = controls.current;
     if (!rig) return;
-    // The keyframe pool follows the ladder's length. A page that adds a panel
-    // is a data edit in `manifest.ts`, so the rig must not assume three.
+    // The keyframe pool follows the ladder's length. The caller sets the
+    // ladder, so the rig must not assume three.
     while (keyframes.current.length < framings.length) {
       keyframes.current.push({ target: new THREE.Vector3(), distance: 1 });
     }

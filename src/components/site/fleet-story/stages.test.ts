@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { READER_AS_BOTTLENECK } from '@/components/site/bands/fold-copy';
 import { fleetModel } from './fleet-model';
 import { exemplarFor, leanBlend, STAGES, stageAt, stageBlend } from './stages';
+
+/**
+ * Constructions that make the READER the thing that fails (`marketing.md`:
+ * "The reader is never the bottleneck; the tools are"). Deliberately small
+ * and literal: it catches the exact shapes that once shipped. "Cannot" alone
+ * is fine; "you cannot" is not.
+ */
+const READER_AS_BOTTLENECK = [
+  'you cannot',
+  "you can't",
+  'you fail',
+  'you are the bottleneck',
+  'too many for you',
+  'more than you can',
+  'keep up with',
+];
 
 const prose = (lines: (string | undefined)[]) =>
   lines.filter(Boolean).join(' ');

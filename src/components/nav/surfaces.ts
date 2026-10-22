@@ -359,10 +359,6 @@ const MARKETING_ROUTES = [
   '/architecture',
   '/operator',
   '/run',
-  // ENG-031 W15m: `/old` keeps the band homepage at an address after the
-  // fleet story took `/`. A real marketing route with the real chrome, not
-  // an internal preview.
-  '/old',
   // ENG-031 W25 and W26: the changelog and the guides.
   ...SITE_DOCUMENT_ROOTS,
   ...NAVIGATION_SURFACES.filter(
@@ -383,16 +379,12 @@ export function isMarketingRoute(pathname: string): boolean {
 export function usesDarkPublicChrome(pathname: string): boolean {
   return (
     pathname === '/' ||
-    pathname === '/old' ||
     isSiteDocumentRoute(pathname) ||
     pathname.startsWith('/architecture') ||
-    // The ENG-031 W3 fold study renders the real fold band, which bleeds up
-    // under this header. Judging the copy against a light frame it will never
-    // ship with would be judging the wrong page. It stays footerless, because
-    // internal previews are not marketing routes.
-    pathname === '/hud-gallery/fold-close' ||
-    // The ENG-031 W15 homepage study is the same case: a dark marketing page
-    // judged under the chrome it would ship with.
+    // The ENG-031 W15 homepage study is a dark marketing page judged under
+    // the chrome it would ship with. Judging it against a light frame it will
+    // never ship with would be judging the wrong page. It stays footerless,
+    // because internal previews are not marketing routes.
     pathname === '/hud-gallery/homepage-study' ||
     // W15d: the agent material study, the same renderer judged close.
     pathname === '/hud-gallery/agent-material'
@@ -403,14 +395,11 @@ export function usesDarkPublicChrome(pathname: string): boolean {
  * Surfaces that carry the W6 marketing chrome (ENG-031 W6, W8).
  *
  * W6's nav is Docs, Changelog, GitHub, and `Download for Mac` as the only
- * button, with Architecture dropped to the footer. The homepage carries it,
- * and so does `/old`, the band homepage kept at an address after the fleet
- * story took `/` (W15m).
+ * button, with Architecture dropped to the footer. The homepage and the
+ * site's written pages carry it.
  */
 export function usesProposedSiteChrome(pathname: string): boolean {
-  return (
-    pathname === '/' || pathname === '/old' || isSiteDocumentRoute(pathname)
-  );
+  return pathname === '/' || isSiteDocumentRoute(pathname);
 }
 
 function isSiteDocumentRoute(pathname: string): boolean {

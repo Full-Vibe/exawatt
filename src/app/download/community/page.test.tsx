@@ -3,7 +3,7 @@ import path from 'node:path';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { COMMUNITY_DISTRIBUTION } from '@exawatt/core/distribution';
-import { DOWNLOAD_HREF } from '@/components/site/bands/download';
+import { DOWNLOAD_HREF } from '@/components/site/download';
 import { PUBLIC_DOWNLOAD_REWRITE } from '@/lib/distribution/next-policy';
 import CommunityDownloadPage from './page';
 

@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
  * hundred, the whole fleet, and the download over it. The study at
  * /hud-gallery/homepage-study is the same component under a bar of
  * controls; this page fixes the study's choices (`HOMEPAGE_STORY`). The band
- * homepage it replaced stays at `/old` for a while.
+ * homepage it replaced was deleted in W31 (operator, 2026-10-21).
  *
  * The copy is server-rendered: the canvas is a client-only chunk, and the
  * story's type, its title and its download are in the HTML a crawler and a

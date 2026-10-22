@@ -33,15 +33,3 @@ export const DOWNLOAD_LABEL = 'Download for Mac';
 
 /** Sits directly under the button, in mono, at every size. */
 export const DOWNLOAD_REQUIREMENT = 'macOS 12 or later. Apple silicon.';
-
-/**
- * Marks a subtree as a conversion affordance rather than reading copy.
- *
- * The measured word ceilings (under 26 above the fold, 10 or fewer at the
- * close) are ceilings on READING COPY. The reference cohort was counted that
- * way: Linear measures 19 with two buttons on screen, and the closing
- * constraint is stated as "10 words or fewer, AND repeats the fold's buttons",
- * so the buttons are additive by the constraint's own wording. Marking the
- * affordance keeps that exclusion explicit and testable instead of implicit.
- */
-export const BAND_AFFORDANCE_ATTR = 'data-band-affordance';

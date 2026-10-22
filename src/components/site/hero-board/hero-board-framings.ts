@@ -330,8 +330,7 @@ export interface HeroBoardFraming {
 }
 
 /**
- * The altitudes the board can hold. Spelled locally rather than imported from
- * the band manifest so the scene never depends on the site.
+ * The altitudes the board can hold.
  *
  * `cluster` is the FLEET framing cropped, on the same centre (ENG-031 W6b). It
  * is not a product altitude and it does not pretend to be one: it exists so
@@ -353,14 +352,9 @@ export type HeroAltitude =
   | 'agent';
 
 /**
- * The default ladder, used only when a caller supplies none: the fold's crop,
- * one real Project, one Agent inside it that needs a human.
- *
- * The PAGE overrides it (ENG-031 W5). The pinned run declares its own ordered
- * altitudes in `manifest.ts`, and the property that matters is invisible
- * unless the camera is derived from that list rather than hardcoded here: two
- * consecutive panels may share an altitude, which makes the camera hold while
- * the board itself makes the argument.
+ * The default ladder, used when a caller supplies none: the opening crop, one
+ * real Project, one Agent inside it that needs a human. A caller's own ladder
+ * may repeat an altitude, which makes the camera hold.
  */
 export const HERO_DEFAULT_LADDER: HeroAltitude[] = ['cluster', 'team', 'agent'];
 

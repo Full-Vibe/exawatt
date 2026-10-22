@@ -287,22 +287,12 @@ main[data-fleet-story] {
    Both faces are self-hosted Latin subsets loaded by `next/font/local` from
    the same origin. `eval:typography-stability` remains the gate. */
 
-/* THE PROPOSED HOMEPAGE'S GROUND REACHES THE DOCUMENT (ENG-031 W6b).
-   The board's ground stops at `main`, so macOS rubber-band overscroll pulled
-   the app's light `--background` into frame above and below an all-dark page.
-   `:has()` keeps this route-stable and JS-free; `!important` is required
-   because the root layout paints `<html>` with an inline style, which no
-   stylesheet rule can outrank. The literal is the hero board's own resolved
-   canvas and `home-theme-stability.test.ts` fails if the two ever disagree. */
-html:has(main[data-home-arrangement='proposed']),
-html:has(main[data-home-arrangement='proposed']) body {
-  background: #0e1216 !important;
-}
-
-/* THE FLEET STORY'S NIGHT REACHES THE DOCUMENT (ENG-031 W15m), for the
-   reason the band homepage's ground does above: the homepage is all dark, and
-   overscroll must never pull the app's light `--background` into frame. The
-   literal is the story's own stage ground (`scroll-experience.tsx`).
+/* THE FLEET STORY'S NIGHT REACHES THE DOCUMENT (ENG-031 W15m). The homepage
+   is all dark, and macOS rubber-band overscroll must never pull the app's
+   light `--background` into frame. `:has()` keeps this route-stable and
+   JS-free; `!important` is required because the root layout paints `<html>`
+   with an inline style, which no stylesheet rule can outrank. The literal is
+   the story's own stage ground (`scroll-experience.tsx`).
 
    No bounce at either end (W15o): the story pages a finger itself
    (`touch-pager.ts`) and nothing of the browser's may move the page under it.
@@ -332,22 +322,6 @@ html:has([data-architecture-loading]) body {
 html:has(main[data-site-document]),
 html:has(main[data-site-document]) body {
   background: var(--exa-public-exhibition-canvas) !important;
-}
-
-@media (max-height: 520px) {
-  .home-hero-content {
-    gap: 1rem;
-  }
-
-  .home-hero-title {
-    font-size: 2.25rem;
-    line-height: 2.5rem;
-  }
-
-  .home-hero-copy {
-    font-size: 0.875rem;
-    line-height: 1.4;
-  }
 }
 
 #site-header[data-public-dark-chrome='true'] {
@@ -1222,107 +1196,4 @@ html:has(main[data-site-document]) body {
   .board-control-enter {
     animation: none;
   }
-}
-
-/* ---- The proposed homepage SETTLES on its steps (ENG-031 W9, operator:
-   "could you have it snap slightly more so scroll settles in the steps,
-   instead of being able to get stuck in between").
-
-   Native CSS snap on the document scroller, never a scroll library and never
-   a `scrollTo`: the page must never take the scroll away from the reader, and
-   the 16-site reference study found zero scroll-jacking across the whole
-   cohort. PROXIMITY rather than mandatory is the whole of "slightly more" —
-   the browser nudges a finger that has nearly arrived at a panel and leaves a
-   reader who deliberately stopped between two of them exactly where they are.
-
-   Scoped the same way this file already scopes the proposed homepage's ground:
-   `:has()` on the arrangement, so it is route-stable, JS-free, and follows the
-   page to wherever it renders (`/old` since W15m). The snap TARGETS are one
-   zero-height sentinel per panel in `pinned-board-sequence.tsx`, placed on the
-   camera keyframe rather than on the panel box.
-
-   Desktop only. Below `md` the sequence is unpinned, the copy is in normal
-   document flow under a fixed board card, and there are no camera steps to
-   settle on: snapping a reading column mid-paragraph would be a defect. The
-   sentinels carry no `snap-start` below `md` either, so this is gated twice.
-   ---- */
-@media (min-width: 768px) {
-  html:has(
-    main[data-home-arrangement='proposed'] [data-pinned-board-sequence]
-  ) {
-    scroll-snap-type: y proximity;
-  }
-}
-
-/* Reduced motion unpins the whole sequence, so there is nothing to settle on
-   and an unexpected scroll adjustment is exactly what the preference asks us
-   not to do. Stated explicitly rather than left to the sentinels. */
-@media (prefers-reduced-motion: reduce) {
-  html:has(
-    main[data-home-arrangement='proposed'] [data-pinned-board-sequence]
-  ) {
-    scroll-snap-type: none;
-  }
-}
-
-/* ---- The fold's way down (ENG-031 W12, operator: "put a second CTA next to
-   download like an arrow button to indicate scrollability which scrolls down
-   to the next frame").
-
-   The control is an ordinary in-page link to the next panel's snap sentinel,
-   so the browser performs the scroll and lands on exactly the position a
-   settle parks at. SMOOTHNESS is therefore a property of the scroller rather
-   than of the control, which is what keeps the no-scroll-jacking rule intact:
-   this page still calls no `scrollTo` and binds no wheel handler.
-
-   Scoped like the snap rules above, by `:has()` on the arrangement, so it is
-   route-stable and follows the page to wherever it renders. Stated as a base
-   rule with a REDUCE override, exactly the shape the snap rules above use,
-   rather than as a rule nested inside a
-   `no-preference` query: Lightning CSS dropped the nested form outright in
-   this pipeline (compiled sheet carried the keyframe below and no
-   `scroll-behavior` at all), and the two-rule shape is what the rest of this
-   file already proves works. The override is required rather than assumed,
-   because Chromium does NOT honour the preference for `scroll-behavior:
-   smooth` on its own: without it a reader who asked for stillness would get
-   an animated jump.
-   ---- */
-html:has(main[data-home-arrangement='proposed'] [data-pinned-board-sequence]) {
-  scroll-behavior: smooth;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html:has(
-    main[data-home-arrangement='proposed'] [data-pinned-board-sequence]
-  ) {
-    scroll-behavior: auto;
-  }
-}
-
-/* The nudge on that control's chevron. Three pixels, and it is the affordance
-   rather than decoration on it: a static chevron states a direction, a moving
-   one states that there is somewhere to go. `motion-safe:` in the component is
-   what stops it under the preference. */
-@keyframes fold-cue-nudge {
-  0%,
-  100% {
-    transform: translateY(-1.5px);
-  }
-  50% {
-    transform: translateY(1.5px);
-  }
-}
-
-/* ---- The fold's opening dissolve (ENG-031 W11) -------------------------
-   The gesture image is the pointer gate for the board beneath it. An
-   ancestor's `pointer-events: none` does not stop a descendant that sets
-   `auto`, so the layer that occludes the board visually is the layer that
-   occludes it for a pointer, keyed off the phase the scroll pass writes.
-   While the dissolve runs the image swallows pointer events; once it is
-   complete the board answers them and the image is inert. -------------- */
-[data-fold-crossfade='running'] [data-fold-gesture-layer] {
-  pointer-events: auto;
-}
-[data-fold-crossfade='complete'] [data-fold-gesture-layer] {
-  pointer-events: none;
 }
