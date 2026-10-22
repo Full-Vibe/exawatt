@@ -801,9 +801,10 @@ export class PtySessionManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => {
       // kill() may have already removed the session (process death is
       // asynchronous) — never resurrect a deleted buffer or re-broadcast
-      // exit state for a session the UI already closed
+      // exit state for a session the UI already closed; and `stopAll`
+      // records its own stops before this arrives
       const owner = this.sessions.get(id);
-      if (!owner) return;
+      if (!owner || owner.info.exited) return;
       const pendingOutput = powerLaunch?.flush();
       if (pendingOutput) {
         this.appendBuffer(id, pendingOutput);
@@ -815,49 +816,7 @@ export class PtySessionManager extends EventEmitter {
           durableSessionId
         );
       }
-      info.exited = true;
-      if (owner.stopRequested) {
-        // Exawatt's own stop is a clean stop, whatever the process reported:
-        // zsh and fish die by the SIGHUP we send, a shell that traps it exits
-        // 129, and a straggler is SIGKILLed. Recording that as a signal death
-        // painted every Pause, model change and quit as a fault.
-        info.exitCode = 0;
-        info.exitSignal = null;
-      } else {
-        info.exitCode = exitCode;
-        // node-pty reports a signalled death as exit code 0 PLUS the signal
-        // (`pty.cc`: WIFSIGNALED sets only `signal_code`). Keeping only the
-        // code recorded an OOM kill as a clean exit (BUG-186).
-        info.exitSignal = signal ? exitSignalName(signal) : null;
-      }
-      // the marker goes through the BUFFER (not just live listeners) so a
-      // pane attaching after a fast death still shows what happened
-      const marker = `\r\n\x1b[38;5;244m[session ${
-        owner.stopRequested
-          ? 'stopped'
-          : info.exitSignal
-            ? `ended by ${info.exitSignal}`
-            : `exited ${exitCode}`
-      }]\x1b[0m\r\n`;
-      this.appendBuffer(id, marker);
-      this.emit(
-        'data',
-        id,
-        marker,
-        this.scrollback.cursor(durableSessionId),
-        durableSessionId
-      );
-      // A dead process cannot report anything else, and its token is now
-      // worthless — retire both before anyone can reuse the id.
-      this.cleanupHarnessWiring(id);
-      this.emit(
-        'exit',
-        id,
-        info.exitCode,
-        durableSessionId,
-        info.exitSignal,
-        !!owner.stopRequested
-      );
+      this.recordExit(id, owner, exitCode, signal);
     });
 
     const session = this.sessions.get(id)!;
@@ -883,6 +842,67 @@ export class PtySessionManager extends EventEmitter {
     // later through the existing `identity` event.
     this.emit('session', { ...info });
     return { ...info };
+  }
+
+  /**
+   * The one place a process's end is recorded: the exit record, the marker in
+   * the buffer, its harness wiring retired, and `exit` to every listener.
+   * node-pty's own exit event lands here, and so does `stopAll` for each
+   * process it stopped, before it drops the record: that event arrives on a
+   * later turn, by which time the record is gone, so quit's exits were never
+   * recorded at all.
+   */
+  private recordExit(
+    id: string,
+    owner: Session,
+    exitCode: number,
+    signal: number | undefined
+  ): void {
+    const info = owner.info;
+    const durableSessionId = info.durableSessionId;
+    info.exited = true;
+    if (owner.stopRequested) {
+      // Exawatt's own stop is a clean stop, whatever the process reported:
+      // zsh and fish die by the SIGHUP we send, a shell that traps it exits
+      // 129, and a straggler is SIGKILLed. Recording that as a signal death
+      // painted every Pause, model change and quit as a fault.
+      info.exitCode = 0;
+      info.exitSignal = null;
+    } else {
+      info.exitCode = exitCode;
+      // node-pty reports a signalled death as exit code 0 PLUS the signal
+      // (`pty.cc`: WIFSIGNALED sets only `signal_code`). Keeping only the
+      // code recorded an OOM kill as a clean exit (BUG-186).
+      info.exitSignal = signal ? exitSignalName(signal) : null;
+    }
+    // the marker goes through the BUFFER (not just live listeners) so a
+    // pane attaching after a fast death still shows what happened
+    const marker = `\r\n\x1b[38;5;244m[session ${
+      owner.stopRequested
+        ? 'stopped'
+        : info.exitSignal
+          ? `ended by ${info.exitSignal}`
+          : `exited ${exitCode}`
+    }]\x1b[0m\r\n`;
+    this.appendBuffer(id, marker);
+    this.emit(
+      'data',
+      id,
+      marker,
+      this.scrollback.cursor(durableSessionId),
+      durableSessionId
+    );
+    // A dead process cannot report anything else, and its token is now
+    // worthless — retire both before anyone can reuse the id.
+    this.cleanupHarnessWiring(id);
+    this.emit(
+      'exit',
+      id,
+      info.exitCode,
+      durableSessionId,
+      info.exitSignal,
+      !!owner.stopRequested
+    );
   }
 
   private async rememberIdentity(info: PtySessionRecord): Promise<void> {
@@ -1947,6 +1967,11 @@ export class PtySessionManager extends EventEmitter {
         target?.[1].proc.kill(signal);
       }
     );
+    // Every group is dead. Their exit events come on a later turn, after the
+    // records below are gone, so each end is recorded now.
+    for (const [id, session] of active) {
+      if (!session.info.exited) this.recordExit(id, session, 0, undefined);
+    }
     for (const id of Array.from(this.sessions.keys())) {
       this.cleanupHarnessWiring(id);
       this.sessions.delete(id);

@@ -43,12 +43,15 @@ class FakePty {
     exitCode: 0,
     signal,
   });
+  /** node-pty reports a death from its own exit thread, on a later turn
+   *  than the kill; true delivers it that way. */
+  deferExit = false;
   kill(signal = 'SIGHUP'): void {
-    this.exit(
-      this.onSignal(
-        os.constants.signals[signal as keyof typeof os.constants.signals]
-      )
+    const exit = this.onSignal(
+      os.constants.signals[signal as keyof typeof os.constants.signals]
     );
+    if (this.deferExit) setImmediate(() => this.exit(exit));
+    else this.exit(exit);
   }
 }
 
@@ -161,6 +164,16 @@ describe('a stop Exawatt asked for ends cleanly', () => {
     const { manager, exits, session } = await started();
     await manager.stopAll();
     expect(exits).toEqual([[session.id, 0, 'session-ended', null, true]]);
+  });
+
+  it('records a quit exit that node-pty reports after the record is gone', async () => {
+    const { manager, exits, session, proc } = await started();
+    proc.deferExit = true;
+    await manager.stopAll();
+    expect(exits).toEqual([[session.id, 0, 'session-ended', null, true]]);
+    // node-pty's own report arrives now, and records nothing twice.
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(exits).toHaveLength(1);
   });
 
   it('still names a SIGHUP that Exawatt did not send', async () => {
