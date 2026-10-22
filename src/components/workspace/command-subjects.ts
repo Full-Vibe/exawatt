@@ -10,7 +10,7 @@ import type { CommandTarget, TargetCommandScope } from './target-commands';
  * clears it on unmount; the palette resolves the same target commands a
  * right-click on those targets resolves.
  */
-export interface CommandSubjects {
+interface CommandSubjects {
   subjects: readonly CommandTarget[];
   scope: TargetCommandScope | null;
 }

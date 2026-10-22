@@ -9,7 +9,7 @@
  */
 import type { TerminalTarget } from './terminal-targets';
 
-export interface TerminalCommandHandle {
+interface TerminalCommandHandle {
   copySelection(): void;
   paste(): void;
   selectAll(): void;

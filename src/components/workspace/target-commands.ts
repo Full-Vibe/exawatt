@@ -94,9 +94,9 @@ export type CommandTarget =
   /** `link` is the target under the pointer; null from the keyboard and ⌘K. */
   | { kind: 'terminal'; sessionId: string; link: TerminalTarget | null };
 
-export type CommandTargetKind = CommandTarget['kind'];
+type CommandTargetKind = CommandTarget['kind'];
 /** The targets that live in the workspace's tab and Project model. */
-export type WorkspaceCommandTarget = Exclude<
+type WorkspaceCommandTarget = Exclude<
   CommandTarget,
   { kind: 'terminal' }
 >;
@@ -125,7 +125,7 @@ export interface TargetCommandOps {
 }
 
 /** The workspace facts offers read. */
-export interface TargetCommandFacts {
+interface TargetCommandFacts {
   projects: readonly Project[];
   pinnedTabId: string | null;
   summaries: Readonly<Record<string, string>>;
