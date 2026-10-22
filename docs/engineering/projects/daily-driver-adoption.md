@@ -8227,7 +8227,7 @@ reports' own diagnostics, no repair in this drain.**
 
 **Right-click menus and ⌘K now render one command registry, so they cannot
 diverge.** Implemented and verified 2026-10-22 on `agent/command-parity`,
-`<sha pending>`; not yet integrated.
+landed the same day as `631c76c3` and `a399ac20`.
 
 Operator, 2026-10-22: "Need cmd+k keyboard shortcut for mark unread. For that
 and all such things in the future - should never diverge right-click menu
@@ -8298,7 +8298,8 @@ environment had no bus port, which fails inside any Exawatt agent session
 
 **Escape backs out one level from every focus position; nothing catches it
 on its own element any more.** Back-out packet of the Execution front
-(2026-10-21), branch `agent/back-out`, `<sha pending>`.
+(2026-10-21), branch `agent/back-out`, landed 2026-10-22 as
+`5282f51a`..`ec97d67b`.
 
 - **Cause.** About forty surfaces each caught Escape and decided alone
   whether to swallow it or let it bubble. Since Chatter became the Team
@@ -8354,7 +8355,8 @@ on its own element any more.** Back-out packet of the Execution front
 
 **The app owns its own instance: one copy per profile, an offer to move into
 Applications, no registrations left behind, and the Local Network prompt
-explained.** Instance packet of the Execution front (2026-10-21), `<sha pending>`.
+explained.** Instance packet of the Execution front (2026-10-21), landed
+2026-10-22 as `410c5ff7`..`be8fce44`.
 
 - **One copy per profile.** `main.ts` is now only the entry: it settles the
   build identity and the profile (`launch-identity.ts`), then asks for

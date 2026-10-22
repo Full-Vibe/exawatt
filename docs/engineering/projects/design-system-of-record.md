@@ -946,7 +946,7 @@ after screenshots of all nine destinations in Classic, Air and Night.
 ### 2026-10-22 — The Settings shell owns every page frame (BUG-306)
 
 **One frame per Settings page, drawn by the shell; links land on a marked
-row** (`<sha pending>`, settings-frame packet). The diagnosis above held in
+row** (`3e2580d6`, settings-frame packet). The diagnosis above held in
 the app: Appearance and Fleet showed their title twice under a strip of
 topic links, Notifications, Power and Keyboard shortcuts repeated the title
 in their first card, and Agent Sources, Permissions, Privacy and Safety drew

@@ -176,7 +176,7 @@ and "Module-owned verification".
   dogfood build. Per-packet whole-repo checks, head re-checks, gate runs and
   builds become one of each per front, which is the 480 check-minutes a day
   the audit estimated.
-- **Module-owned checks** (<sha pending>): of the audit's 720 whole-repo
+- **Module-owned checks** (`be9bce39`): of the audit's 720 whole-repo
   minutes a day, lint (187) and type-check (70) ran on every landing. A
   change inside a declared module, off its public surface, now runs its
   module's lint, type-check and tests instead, and the whole checks run in
