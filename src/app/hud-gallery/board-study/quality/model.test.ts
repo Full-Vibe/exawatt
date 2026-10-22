@@ -67,15 +67,28 @@ describe('Fleet territory review keeps source truth on a shared lattice', () => 
       ).toBe(model.ground.length + model.tiles.length);
       expect(layout).toEqual(before);
       // Navigation frames the fixed world; it must not rearrange the Agents.
-      const focused = qualityModel(
-        {
-          ...layout,
-          altitude: 'project',
-          focusedProjectId: layout.zones[0]?.id ?? null,
-        },
-        marks
-      );
-      expect(focused.tiles).toEqual(model.tiles);
+      const focusedLayout = selectSpatialBoardLayout(boardStudyFleet(fixture), {
+        altitude: 'project',
+        focusedProjectId: layout.zones[0]?.id ?? null,
+      });
+      const focused = qualityModel(focusedLayout, marks);
+      // The source selector may expand an aggregate into newly visible
+      // Projects. Every surviving territory must keep its physical addresses.
+      for (const { zone } of model.territories) {
+        if (!focused.territories.some(item => item.zone.id === zone.id))
+          continue;
+        expect(
+          focused.ground.filter(tile => tile.id.startsWith(`land:${zone.id}:`))
+        ).toEqual(
+          model.ground.filter(tile => tile.id.startsWith(`land:${zone.id}:`))
+        );
+        const footprints = (value: typeof model) =>
+          value.tiles
+            .filter(tile => value.tileProjects.get(tile.id) === zone.id)
+            .map(tile => `${tile.x},${tile.y},${tile.radius}`)
+            .sort();
+        expect(footprints(focused)).toEqual(footprints(model));
+      }
     }
   );
 });

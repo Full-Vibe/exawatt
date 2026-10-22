@@ -141,6 +141,14 @@ function QualityScene({
     () => qualityModel(layout, sourceMarks),
     [layout, sourceMarks]
   );
+  const detailedTiles = useMemo(
+    () => model.tiles.filter(tile => !tile.id.startsWith('population:')),
+    [model]
+  );
+  const populationTiles = useMemo(
+    () => model.tiles.filter(tile => tile.id.startsWith('population:')),
+    [model]
+  );
   const groundTheme = useMemo(
     () => ({ ...theme, zone: theme.zoneHover, grid: theme.gridMajor }),
     [theme]
@@ -152,11 +160,16 @@ function QualityScene({
   );
   const frame = useMemo<TileFrame>(
     () => ({
-      focusId: null,
+      focusId: multiSelection?.values().next().value ?? null,
       selection: multiSelection ?? EMPTY,
       tileAgent: id => agentIds.has(id),
+      tileEmphasis: id =>
+        !layout.focusedProjectId ||
+        model.tileProjects.get(id) === layout.focusedProjectId
+          ? 1
+          : 0.12,
     }),
-    [multiSelection, agentIds]
+    [multiSelection, agentIds, layout.focusedProjectId, model.tileProjects]
   );
   const readFrame = useCallback(() => frame, [frame]);
   const onMotionFrame = useCallback(
@@ -247,12 +260,12 @@ function QualityScene({
         />
       </group>
       <TileRenderer
-        tiles={model.tiles}
+        tiles={detailedTiles}
         surface="plane"
         theme={theme}
         material={material}
         shape="rounded"
-        detail={model.tiles.length > 200 ? 'coarse' : 'full'}
+        detail="full"
         mark="relief"
         motion={{ ...DEFAULT_MOTION, lift: 'still' }}
         signal="paint"
@@ -264,8 +277,26 @@ function QualityScene({
         calmAttention
         requestFrame={invalidate}
         onMotionFrame={onMotionFrame}
-        transmission={transmission && model.tiles.length < 700}
+        transmission={transmission && detailedTiles.length < 700}
         onSelect={select}
+      />
+      <TileRenderer
+        tiles={populationTiles}
+        surface="plane"
+        theme={theme}
+        material={material}
+        shape="rounded"
+        detail="coarse"
+        mark="off"
+        motion={STILL}
+        signal="paint"
+        readFrame={readFrame}
+        marks={MARKS}
+        reducedMotion
+        lighting={false}
+        interactive={false}
+        transmission={false}
+        staticInstances
       />
       {model.tethers.length > 0 && (
         <Line
@@ -298,6 +329,10 @@ function QualityScene({
             aria-label={`Open Project ${zone.label}`}
             className="flex w-max items-center gap-2 rounded-md px-2 py-1 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{
+              opacity:
+                layout.focusedProjectId && layout.focusedProjectId !== zone.id
+                  ? 0.4
+                  : 1,
               color: theme.label,
               background: spatialColorWithAlpha(theme.canvas, 0.9),
             }}

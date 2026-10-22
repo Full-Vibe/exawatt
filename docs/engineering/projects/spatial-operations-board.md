@@ -3954,7 +3954,10 @@ quiet text exceptions; names and work readings remain in DOM labels/tooltips.
 Visual iterations rejected the initial narrow strip, under-framing, dark thick
 floor and clipped front rows. Signed-browser captures cover the three camera
 presets, Classic/Air/Night, 10/100/1k, fan-out, stopped, alternative materials and
-narrow width. The 1k overview renders in four draw calls. Review screenshots and
+narrow width. The 1k overview stays instanced. A further drill-in pass exposed coarse
+overview geometry surviving into the close-up; separate detailed Agent and
+coarse population batches now retain harness relief and material detail at
+Project altitude, with distant Projects dimmed as context. Review screenshots and
 interaction evidence live under `/tmp/exawatt-fleet-v2-quality/iteration/`.
 Tests assert immutable source data, preserved population, exclusive occupancy,
 body/socket alignment and navigation stability (5 fixtures); they do not pin

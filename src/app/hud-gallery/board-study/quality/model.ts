@@ -19,6 +19,7 @@ export function qualityModel(
 ) {
   const existing = boardTileModel(layout, marks);
   const tiles: TileInstance[] = [];
+  const tileProjects = new Map<string, string>();
   const ground: TileInstance[] = [];
   const targets: {
     tile: TileInstance;
@@ -131,7 +132,7 @@ export function qualityModel(
       local.push({
         ...source,
         ...point(allocate(populationCells[index]!.axial)),
-        radius: 0.84,
+        radius: 0.9,
         elevation: 0.06,
       });
     }
@@ -168,6 +169,7 @@ export function qualityModel(
     territories.push({ zone, rect: { x: cursorX, y: cursorY, width, height } });
     cursorX += width + 5;
     rowHeight = Math.max(rowHeight, height);
+    for (const tile of local) tileProjects.set(tile.id, zone.id);
     tiles.push(...local);
     ground.push(...floor);
   }
@@ -190,5 +192,5 @@ export function qualityModel(
       Math.max(...frames.map(item => item.rect.y + item.rect.height)) -
       bounds.y;
   }
-  return { tiles, ground, targets, tethers, territories, bounds };
+  return { tiles, ground, targets, tethers, territories, bounds, tileProjects };
 }
