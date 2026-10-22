@@ -30,7 +30,7 @@ import { firstFreePort } from './dev-server-identity.mjs';
 
 const execFileAsync = promisify(execFile);
 
-export const CAR_PATTERN = /^agent\/[a-z0-9][a-z0-9._/-]*$/u;
+const CAR_PATTERN = /^agent\/[a-z0-9][a-z0-9._/-]*$/u;
 
 /** One commit's identity that survives cherry-pick and rebase. */
 const SIGNATURE_FORMAT = '%H%x1f%an%x1f%ad%x1f%s';
@@ -240,7 +240,7 @@ export async function openIntegrationWorktree(root, { base, stamp }) {
 }
 
 /** A conflict found while stacking, with what it collided with. */
-export class TrainConflict extends Error {
+class TrainConflict extends Error {
   constructor(conflict) {
     super(trainConflictMessage(conflict));
     this.conflict = conflict;
@@ -248,7 +248,7 @@ export class TrainConflict extends Error {
 }
 
 /** The refusal a coordinator reads: both cars and every path. */
-export function trainConflictMessage({ car, commit, base, paths }) {
+function trainConflictMessage({ car, commit, base, paths }) {
   const others = [...new Set(paths.flatMap(entry => entry.cars))];
   const against =
     others.length > 0
