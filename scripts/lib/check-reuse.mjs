@@ -72,6 +72,7 @@ export const REUSABLE_CHECKS = new Set([
   'full-suite',
   'copy:check',
   'theme:check',
+  'eval-handles:check',
   'scanning-tests',
   'agent-sources:check',
   'icon:check',

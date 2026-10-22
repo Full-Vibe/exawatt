@@ -1660,6 +1660,29 @@ export function classifyDeliveryPolicy(
       args: ['run', 'theme:check'],
     });
   }
+  // BUG-312: the eval scripts are untyped and drive the product through the
+  // desktop bridge and the DOM, so a renamed bridge member, relabelled copy
+  // or retired data-* attribute broke an eval silently until its gate ran
+  // inside a landing train. `eval-handles:check` holds every eval to the
+  // bridge, the copy and the attributes the product has, whole-tree in a few
+  // seconds, so a change to either side runs it.
+  if (
+    paths.some(
+      file =>
+        (file.startsWith('scripts/') &&
+          file.endsWith('.mjs') &&
+          !file.endsWith('.test.mjs')) ||
+        /^(?:src|electron|contracts|company\/overlay|packages\/(?:core|ui-model)\/src)\/.+\.(?:tsx?|json)$/u.test(
+          file
+        )
+    )
+  ) {
+    checks.push({
+      id: 'eval-handles:check',
+      command: 'pnpm',
+      args: ['run', 'eval-handles:check'],
+    });
+  }
   // BUG-211: two more committed-artifact checks of the same shape, equally
   // unrouted: the generated Agent Source declarations and the app icons must
   // match their one editable source. Seconds each, so the source, the
@@ -1997,6 +2020,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'exports:check': LANDING,
   'copy:check': LANDING,
   'theme:check': LANDING,
+  'eval-handles:check': LANDING,
   'verify:community-build': LANDING,
   'verify:community-runtime': LANDING,
   'test:service-conformance': LANDING,
@@ -2006,6 +2030,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'test:release-publication': LANDING,
   'test:workflows': LANDING,
   'test:screen-copy': LANDING,
+  'test:eval-handles': LANDING,
   'test:theme-literals': LANDING,
   'test:fonts': LANDING,
   'test:export-consumers': LANDING,

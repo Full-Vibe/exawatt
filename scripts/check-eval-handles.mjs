@@ -586,7 +586,7 @@ export function productCopy(sources) {
       strings.set(trimmed, file);
   };
   const files = [...sources.keys()]
-    .filter(file => !isFixture(file))
+    .filter(file => !isFixture(file) && !isTest(file))
     .sort(
       (a, b) => Number(isStudy(a)) - Number(isStudy(b)) || a.localeCompare(b)
     );

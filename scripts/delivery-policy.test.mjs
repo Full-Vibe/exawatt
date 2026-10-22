@@ -100,6 +100,7 @@ test('the cheap changed-file landing checks cannot be weakened by the caller', (
     'vitest-related',
     'copy:check',
     'theme:check',
+    'eval-handles:check',
     'scanning-tests',
     'test:fonts',
   ]);
@@ -152,6 +153,7 @@ test('provider composition changes receive related consumer tests', () => {
       'vitest-related',
       'copy:check',
       'theme:check',
+      'eval-handles:check',
       'scanning-tests',
     ]
   );
@@ -181,6 +183,36 @@ test('renderer changes run the screen-copy guard', () => {
     assert.ok(
       !ids([file]).includes('copy:check'),
       `${file} renders no screen copy`
+    );
+  }
+});
+
+// BUG-312: what an eval binds to is checked from both sides, so a renamed
+// bridge member, relabelled copy or retired attribute fails at landing.
+test('eval scripts, the bridge and the product they drive run the eval-handles check', () => {
+  for (const file of [
+    'scripts/electron-fleet-direct-eval.mjs',
+    'scripts/lib/electron-eval.mjs',
+    'scripts/r3f-eval/spatial.mjs',
+    'scripts/check-eval-handles.mjs',
+    'packages/core/src/desktop-bridge/api.ts',
+    'src/types/electron.d.ts',
+    'src/components/shortcuts/shortcut-help-modal.tsx',
+    'electron/main/application-menu.ts',
+    'contracts/agent-sources.json',
+  ]) {
+    assert.ok(
+      ids([file]).includes('eval-handles:check'),
+      `${file} owes eval-handles:check`
+    );
+  }
+  for (const file of [
+    'docs/engineering/roadmap.md',
+    'scripts/check-eval-handles.test.mjs',
+  ]) {
+    assert.ok(
+      !ids([file]).includes('eval-handles:check'),
+      `${file} binds no eval`
     );
   }
 });
@@ -402,6 +434,7 @@ test('dogfood and Electron orchestration changes receive Electron compilation', 
     'test:agent-delivery',
     'modules:check',
     'exports:check',
+    'eval-handles:check',
     'scanning-tests',
     'electron:compile',
   ]);
@@ -451,6 +484,7 @@ test('routable and distribution-seam changes receive the community build', () =>
     'vitest-related',
     'copy:check',
     'theme:check',
+    'eval-handles:check',
     'scanning-tests',
     'verify:community-build',
     'verify:community-runtime',
@@ -467,6 +501,7 @@ test('routable and distribution-seam changes receive the community build', () =>
     'modules:check',
     'exports:check',
     'vitest-related',
+    'eval-handles:check',
     'scanning-tests',
     'verify:community-build',
   ]);
@@ -554,6 +589,7 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
       'vitest-related',
       'copy:check',
       'theme:check',
+      'eval-handles:check',
       'scanning-tests',
       'electron:compile',
       'qa:browser:doctor',
