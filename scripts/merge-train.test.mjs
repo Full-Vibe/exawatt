@@ -14,7 +14,9 @@ import {
 import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 import { readDeliveryMetrics } from './lib/delivery-state.mjs';
 import { git } from './lib/hermetic-git.mjs';
+import { classifyDeliveryPolicy } from './lib/delivery-policy.mjs';
 import {
+  bisectChecks,
   electronFacingPaths,
   firstRedCar,
   trainOptionsRefusal,
@@ -61,6 +63,30 @@ function runs(log, command) {
     if (error?.code !== 'ENOENT') throw error;
   }
   return text.split('\n').filter(line => line === command).length;
+}
+
+/** How many times each `pnpm run <script>` ran, by script. */
+function scriptRuns(log) {
+  const counts = {};
+  let text = '';
+  try {
+    text = readFileSync(log, 'utf8');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  for (const line of text.split('\n')) {
+    const script = /^run (\S+)/u.exec(line)?.[1];
+    if (script) counts[script] = (counts[script] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** Every script but `except` ran exactly once: on the full stack. */
+function assertRanOnce(counts, except) {
+  for (const [script, count] of Object.entries(counts)) {
+    if (script !== except)
+      assert.equal(count, 1, `${script} ran ${count} times`);
+  }
 }
 
 function assertNothingLanded(fixture, before, landed) {
@@ -123,6 +149,22 @@ test('prefix bisection names the first car that turns the stack red', async () =
     );
     assert.ok(asked.every(prefix => prefix > 0 && prefix < count));
   }
+});
+
+test('a bisect step runs the check that failed and what it needs, in landing order', () => {
+  // A train's own classification: the whole-repository checks.
+  const checks = classifyDeliveryPolicy(['scripts/agent-land.mjs'], [], {
+    wholeRepo: true,
+  });
+  const ids = id => bisectChecks(checks, id).map(check => check.id);
+  // type-check builds the @exawatt/core runtime the delivery suite loads.
+  assert.deepEqual(ids('test:agent-delivery'), [
+    'type-check',
+    'test:agent-delivery',
+  ]);
+  assert.deepEqual(ids('lint'), ['lint']);
+  // A tree that does not owe the check has nothing to run for it.
+  assert.deepEqual(ids('eval:spatial:pointer'), []);
 });
 
 test('what the packaged app contains is Electron-facing; tests and tooling are not', () => {
@@ -235,30 +277,154 @@ test('a car that conflicts with an earlier car is refused, naming both and the p
   }
 });
 
-test('a red train is bisected to the car that broke it, and nothing lands', async () => {
+test('a red train is bisected with only the check that failed, and nothing lands', async () => {
   const fixture = createQueueFixture('exawatt-train-red-');
   try {
     fixture.agentWorktree('agent/a', { 'docs/a.md': '# A\n' });
     fixture.agentWorktree('agent/b', { RED: 'breaks lint\n' });
     fixture.agentWorktree('agent/c', { 'docs/c.md': '# C\n' });
+    const log = fixture.at('pnpm.log');
     const before = fixture.originMaster();
     const landed = await finished(
       fixture.land(fixture.main, ['--train', 'agent/a', 'agent/b', 'agent/c'], {
         ...QUIET,
-        FIXTURE_FAIL_CHECK: 'lint',
+        FIXTURE_FAILS: 'lint=RED',
+        FIXTURE_PNPM_LOG: log,
       })
     );
     assertNothingLanded(fixture, before, landed);
     assert.match(
       landed.output,
-      /TRAIN red: agent\/b broke lint; agent\/a passed without it/u
+      /TRAIN red: agent\/b broke lint; agent\/a passed without it\. The other cars pass lint without it\./u
     );
     assert.match(
       landed.output,
-      /STATUS failed=train guilty=agent\/b check=lint passed=agent\/a/u
+      /STATUS failed=train guilty=agent\/b check=lint passed=agent\/a rest=passed/u
     );
-    assert.match(landed.output, /train bisect: agent\/a passed/u);
+    assert.match(landed.output, /train bisect: agent\/a passed lint/u);
     assert.match(landed.output, /Nothing landed/u);
+    // Twice on the full stack (the failure and its recheck), once on each
+    // prefix the bisection asked about, and once on the stack without
+    // agent/b. Every other check ran once, on the full stack only.
+    const counts = scriptRuns(log);
+    assert.equal(counts.lint, 5, landed.output);
+    assertRanOnce(counts, 'lint');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a check that passes its recheck is a named flake: no bisect, no car convicted, and the checks after it still run', async () => {
+  const fixture = createQueueFixture('exawatt-train-flake-');
+  try {
+    fixture.agentWorktree('agent/a', { 'docs/a.md': '# A\n' });
+    // The last car: a bisection whose every prefix passes would convict it
+    // by elimination.
+    fixture.agentWorktree('agent/b', { RED: 'lint flakes here\n' });
+    const log = fixture.at('pnpm.log');
+    const before = fixture.originMaster();
+    const landed = await finished(
+      fixture.land(fixture.main, ['--train', 'agent/a', 'agent/b'], {
+        ...QUIET,
+        FIXTURE_FAILS: 'lint=RED',
+        FIXTURE_FAIL_ONCE: fixture.at('lint-failed-once'),
+        FIXTURE_PNPM_LOG: log,
+      })
+    );
+    assert.equal(landed.code, 0, landed.output);
+    assert.deepEqual(subjects(fixture, before), [
+      'agent: agent/a',
+      'agent: agent/b',
+    ]);
+    assert.match(landed.output, /SUSPECTED FLAKE . lint/u);
+    assert.match(landed.output, /STATUS .* flaked=lint:recheck/u);
+    assert.match(landed.output, /suspected flake: lint/u);
+    assert.doesNotMatch(landed.output, /TRAIN red|bisect/u);
+    const [ticket] = tickets(fixture.main);
+    assert.deepEqual(ticket.train.bisect, []);
+    // The checks before lint did not run again, and the ones after it ran.
+    const counts = scriptRuns(log);
+    assert.equal(counts.lint, 2, landed.output);
+    assert.equal(counts['type-check'], 1);
+    assertRanOnce(counts, 'lint');
+    const flaked = (await readDeliveryMetrics(fixture.main)).filter(
+      event => event.type === 'landing_check' && event.status === 'flaked'
+    );
+    assert.deepEqual(
+      flaked.map(event => [event.id, event.recheck]),
+      [['lint', 'passed']]
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('the verdict names the check that failed on the guilty prefix', async () => {
+  const fixture = createQueueFixture('exawatt-train-verdict-');
+  try {
+    // agent/a breaks type-check; agent/b, stacked on it, repairs that and
+    // breaks the delivery suite, which needs type-check's build first. So the
+    // full stack fails the delivery suite, and agent/a's prefix fails the
+    // type-check run before it.
+    fixture.agentWorktree('agent/a', { TYPE: 'breaks type-check\n' });
+    const b = fixture.at('agent-b');
+    git(fixture.main, [
+      'worktree',
+      'add',
+      '--quiet',
+      b,
+      '-b',
+      'agent/b',
+      'agent/a',
+    ]);
+    git(b, ['rm', '--quiet', 'TYPE']);
+    write(b, 'DELIVERY', 'breaks the delivery suite\n');
+    commit(b, 'agent: agent/b');
+    const before = fixture.originMaster();
+    const landed = await finished(
+      fixture.land(fixture.main, ['--train', 'agent/a', 'agent/b'], {
+        ...QUIET,
+        FIXTURE_FAILS: 'type-check=TYPE test:agent-delivery=DELIVERY',
+      })
+    );
+    assertNothingLanded(fixture, before, landed);
+    assert.match(
+      landed.output,
+      /train agent\/a,agent\/b failed test:agent-delivery twice/u
+    );
+    assert.match(landed.output, /train bisect: agent\/a failed type-check/u);
+    assert.match(landed.output, /TRAIN red: agent\/a broke type-check\./u);
+    assert.match(
+      landed.output,
+      /STATUS failed=train guilty=agent\/a check=type-check rest=failed:test:agent-delivery/u
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('a second car that breaks the same check is reported in the same run', async () => {
+  const fixture = createQueueFixture('exawatt-train-second-');
+  try {
+    fixture.agentWorktree('agent/a', { RED: 'breaks lint\n' });
+    fixture.agentWorktree('agent/b', { 'docs/b.md': '# B\n' });
+    fixture.agentWorktree('agent/c', { RED2: 'also breaks lint\n' });
+    const before = fixture.originMaster();
+    const landed = await finished(
+      fixture.land(fixture.main, ['--train', 'agent/a', 'agent/b', 'agent/c'], {
+        ...QUIET,
+        FIXTURE_FAILS: 'lint=RED lint=RED2',
+      })
+    );
+    assertNothingLanded(fixture, before, landed);
+    assert.match(
+      landed.output,
+      /TRAIN red: agent\/a broke lint\. Another car also breaks lint\./u
+    );
+    assert.match(
+      landed.output,
+      /STATUS failed=train guilty=agent\/a check=lint rest=failed:lint/u
+    );
   } finally {
     fixture.cleanup();
   }
@@ -275,7 +441,7 @@ test('--land-passing lands the cars that pass and leaves the guilty one out', as
       fixture.land(
         fixture.main,
         ['--train', 'agent/a', 'agent/c', 'agent/b', '--land-passing'],
-        { ...QUIET, FIXTURE_FAIL_CHECK: 'lint' }
+        { ...QUIET, FIXTURE_FAILS: 'lint=RED' }
       )
     );
     assert.equal(landed.code, 0, landed.output);
@@ -288,6 +454,9 @@ test('--land-passing lands the cars that pass and leaves the guilty one out', as
       /train=agent\/a:1,agent\/c:1 excluded=agent\/b/u
     );
     assert.match(landed.output, /train left out agent\/b: broke lint/u);
+    // agent/b is the last car, guilty because both prefixes before it
+    // passed; that elimination stands on the full stack failing lint twice.
+    assert.match(landed.output, /failed lint twice/u);
     // The stack it lands is the bisection's green prefix, checked in the same
     // worktree, so its recorded passes stand in for a re-run.
     assert.match(landed.output, /STATUS .* reused=/u);

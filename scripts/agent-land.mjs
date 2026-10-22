@@ -56,6 +56,7 @@ import {
 import { reinstallWhenStale } from './lib/install-freshness.mjs';
 import { createLandingDevServer } from './lib/landing-dev-server.mjs';
 import {
+  bisectChecks,
   carEvidence,
   electronFacingPaths,
   firstRedCar,
@@ -440,6 +441,24 @@ async function publicLatchSignature(root) {
   ].join('|');
 }
 
+/**
+ * The STATUS line's `flaked=` field. Absent when nothing flaked, so a clean
+ * landing reads exactly as it did before the rerun existed; present, and
+ * naming each check, whenever evidence had to be re-run to be believed:
+ * `<check>:<n>` when n named files passed alone (BUG-090), `<check>:recheck`
+ * when a train's whole check passed when run once more (BUG-311).
+ */
+function flakedField(flakes) {
+  if (flakes.length === 0) return '';
+  return ` flaked=${flakes
+    .map(
+      result =>
+        `${result.id}:${result.flakedFiles ? result.flakedFiles.length : 'recheck'}` +
+        (result.phase === 'rebase' ? '(rebase)' : '')
+    )
+    .join(',')}`;
+}
+
 function minutes(milliseconds) {
   const value = milliseconds / 60_000;
   return `${value < 10 ? value.toFixed(1) : Math.round(value)}m`;
@@ -805,10 +824,13 @@ async function landTrain(invokingRoot, options) {
 
 /**
  * Verifies the stacked cars. Green: the evidence for the stack as it is. Red:
- * bisects by prefix to the first car whose addition turns it red; without
- * `--land-passing` that refuses and nothing lands, with it the guilty car is
- * left out, the rest is restacked (a later car that now conflicts is left out
- * too) and verified again.
+ * the full stack failed one check twice (the second run is the recheck), so
+ * the train bisects by prefix to the first car whose addition makes that
+ * check fail, asking each prefix only that (BUG-311), and then asks the stack
+ * without that car the same question, so a second guilty car shows in the
+ * same run. Without `--land-passing` that refuses and nothing lands; with it
+ * the guilty car is left out, the rest is restacked (a later car that now
+ * conflicts is left out too) and verified again in full.
  */
 async function verifyTrain({
   lane,
@@ -821,6 +843,39 @@ async function verifyTrain({
   const { root } = lane;
   const excluded = [];
   const bisect = [];
+  const names = list => list.map(car => car.branch).join(',');
+  // One bisection question on the stack the worktree holds: does `check`
+  // fail here? Only that check runs, after what it needs.
+  const ask = async (stack, check, record = {}) => {
+    const step = await verifyStack({
+      lane,
+      session,
+      base,
+      cars: stack,
+      phase: 'bisect',
+      only: check,
+      declaredFor,
+    });
+    const answer = {
+      cars: stack.map(car => car.branch),
+      check,
+      ...record,
+      result: step.passed ? 'passed' : 'failed',
+      ...(step.passed
+        ? step.verified.checks.length === 0
+          ? { owed: false }
+          : {}
+        : { failedCheck: step.failedCheck }),
+    };
+    bisect.push(answer);
+    return { answer, message: step.message };
+  };
+  const said = ({ result, owed, check, failedCheck }) =>
+    result === 'failed'
+      ? `failed ${failedCheck}`
+      : owed === false
+        ? `does not owe ${check}`
+        : `passed ${check}`;
   let current = cars;
   let restack = false;
   while (true) {
@@ -850,70 +905,103 @@ async function verifyTrain({
       base,
       cars: current,
       phase: 'candidate',
+      recheck: true,
       declaredFor,
     });
     if (attempt.passed) return { ...attempt, cars: current, excluded, bisect };
-    const names = list => list.map(car => car.branch).join(',');
+    const check = attempt.failedCheck;
     bisect.push({
       cars: current.map(car => car.branch),
+      check,
       result: 'failed',
-      failedCheck: attempt.failedCheck,
+      failedCheck: check,
     });
     console.log(
-      `[agent-land] train ${names(current)} failed ${attempt.failedCheck}; bisecting to the car that broke it`
+      `[agent-land] train ${names(current)} failed ${check} twice on the same tree; asking each prefix only whether it fails ${check}`
     );
+    const prefixes = new Map();
     const guiltyIndex = await firstRedCar(current.length, async count => {
       const prefix = current.slice(0, count);
       // A prefix of a stack that stacked cleanly stacks cleanly.
       await stackCars(root, { base, cars: prefix });
-      const step = await verifyStack({
-        lane,
-        session,
-        base,
-        cars: prefix,
-        phase: 'bisect',
-        first: attempt.failedCheck,
-        declaredFor,
-      });
-      bisect.push({
-        cars: prefix.map(car => car.branch),
-        result: step.passed ? 'passed' : 'failed',
-        ...(step.passed ? {} : { failedCheck: step.failedCheck }),
-      });
+      const step = await ask(prefix, check);
+      prefixes.set(count, step);
       console.log(
-        `[agent-land] train bisect: ${names(prefix)} ${step.passed ? 'passed' : `failed ${step.failedCheck}`}`
+        `[agent-land] train bisect: ${names(prefix)} ${said(step.answer)}`
       );
-      return !step.passed;
+      return step.answer.result === 'failed';
     });
     const guilty = current[guiltyIndex];
     const passed = current.slice(0, guiltyIndex);
-    console.log(
-      `[agent-land] STATUS failed=train guilty=${guilty.branch} check=${attempt.failedCheck}${passed.length > 0 ? ` passed=${names(passed)}` : ''}`
-    );
-    const verdict = `TRAIN red: ${guilty.branch} broke ${attempt.failedCheck}${passed.length > 0 ? `; ${names(passed)} passed without it` : ''}.`;
-    if (!options.landPassing) {
-      throw new Error(
-        `${verdict}\n${attempt.message}\nNothing landed. Fix ${guilty.branch} and run the train again, or add --land-passing to land the other cars without it.`
+    // The last car is convicted by elimination: every shorter prefix passed,
+    // and the only stack with it is the full one. That is sound only because
+    // the full stack failed `check` twice on the same tree; a check that
+    // passes when run again is a suspected flake and never reaches here.
+    const convicted =
+      guiltyIndex === current.length - 1
+        ? { failedCheck: check, message: attempt.message }
+        : {
+            failedCheck: prefixes.get(guiltyIndex + 1).answer.failedCheck,
+            message: prefixes.get(guiltyIndex + 1).message,
+          };
+    const verdict = `TRAIN red: ${guilty.branch} broke ${convicted.failedCheck}${passed.length > 0 ? `; ${names(passed)} passed without it` : ''}.`;
+    if (options.landPassing) {
+      console.warn(
+        `[agent-land] ${verdict} --land-passing leaves it out and checks the rest.\n${convicted.message}`
+      );
+      excluded.push({
+        branch: guilty.branch,
+        reason: `broke ${convicted.failedCheck}`,
+      });
+      current = current.filter(car => car !== guilty);
+      if (current.length === 0) {
+        throw new Error(`${verdict}\nNo car is left to land.`);
+      }
+      continue;
+    }
+
+    // Whether another car breaks it too, so the refusal names every fix the
+    // train is waiting on rather than only the first.
+    let rest = null;
+    const others = current.filter(car => car !== guilty);
+    const restacked =
+      others.length > 0
+        ? await stackCars(root, { base, cars: others, onConflict: 'exclude' })
+        : { cars: [], excluded: [] };
+    if (restacked.cars.length > 0) {
+      ({ answer: rest } = await ask(restacked.cars, check, {
+        without: guilty.branch,
+      }));
+      console.log(
+        `[agent-land] train without ${guilty.branch}: ${names(restacked.cars)} ${said(rest)}`
       );
     }
-    console.warn(
-      `[agent-land] ${verdict} --land-passing leaves it out and checks the rest.\n${attempt.message}`
+    const restSaid =
+      rest === null
+        ? ''
+        : rest.result === 'failed'
+          ? ` Another car also breaks ${rest.failedCheck}.`
+          : rest.owed === false
+            ? ` The other cars do not owe ${check} without it.`
+            : ` The other cars pass ${check} without it.`;
+    const unchecked = restacked.excluded.map(
+      entry =>
+        ` ${entry.branch} ${entry.reason} without it, so it was not checked.`
     );
-    excluded.push({
-      branch: guilty.branch,
-      reason: `broke ${attempt.failedCheck}`,
-    });
-    current = current.filter(car => car !== guilty);
-    if (current.length === 0) {
-      throw new Error(`${verdict}\nNo car is left to land.`);
-    }
+    console.log(
+      `[agent-land] STATUS failed=train guilty=${guilty.branch} check=${convicted.failedCheck}${passed.length > 0 ? ` passed=${names(passed)}` : ''}${rest === null ? '' : ` rest=${rest.result === 'failed' ? `failed:${rest.failedCheck}` : 'passed'}`}${flakedField(session.flakes)}`
+    );
+    throw new Error(
+      `${verdict}${restSaid}${unchecked.join('')}\n${convicted.message}\nNothing landed. Fix ${guilty.branch} and run the train again, or add --land-passing to land the other cars without it.`
+    );
   }
 }
 
 /**
  * One landing-check run on the stack HEAD holds: its own changed paths, the
- * gates they owe and the caller's extras. A failed check is a verdict; any
- * other failure (an install, a dev server) is not the cars' and is thrown.
+ * gates they owe and the caller's extras (or, with `only`, just that check
+ * and what it needs). A failed check is a verdict; any other failure (an
+ * install, a dev server) is not the cars' and is thrown.
  */
 async function verifyStack({
   lane,
@@ -921,7 +1009,8 @@ async function verifyStack({
   base,
   cars,
   phase,
-  first = null,
+  only = null,
+  recheck = false,
   declaredFor,
 }) {
   const sha = await git(lane.root, 'rev-parse', 'HEAD');
@@ -933,7 +1022,8 @@ async function verifyStack({
       files,
       extras,
       candidateSha: sha,
-      first,
+      only,
+      recheck,
       extra: { trainCars: cars.map(car => car.branch) },
     });
     return { passed: true, sha, files, extras, verified };
@@ -1036,9 +1126,11 @@ function createLandingSession(lane) {
   };
 
   /**
-   * One landing-check run on HEAD: the install refreshed first, every check
-   * classified from the tree it runs on, `first` (a check that failed on a
-   * wider stack) run before the rest, and the worktree clean afterwards.
+   * One landing-check run on HEAD: every check classified from the tree it
+   * runs on, the install refreshed first, and the worktree clean afterwards.
+   * `only` (a train's bisection step) runs just that check and what it needs,
+   * and nothing when the tree does not owe it; `recheck` (a train's full
+   * stack) runs a failed check once more before it counts.
    */
   const verify = async ({
     phase,
@@ -1046,25 +1138,23 @@ function createLandingSession(lane) {
     extras,
     candidateSha,
     extra = {},
-    first = null,
+    only = null,
+    recheck = false,
   }) => {
     failedCheck = null;
-    await refreshInstall(phase, { candidateSha, ...extra });
     // Every classification is of the tree it is about to check, read from that
     // tree: the candidate here, the rebased tree at the head.
-    let checks = lane.checksFor(files, extras, deliveryTree(root));
-    if (first) {
-      checks = [
-        ...checks.filter(check => check.id === first),
-        ...checks.filter(check => check.id !== first),
-      ];
-    }
+    const owed = lane.checksFor(files, extras, deliveryTree(root));
+    const checks = only ? bisectChecks(owed, only) : owed;
+    if (checks.length === 0) return { checks, evidence: [] };
+    await refreshInstall(phase, { candidateSha, ...extra });
     const evidence = await lane.runChecks(root, checks, {
       phase,
       onResult: recordLandingCheck({ candidateSha, ...extra }),
       beforeCheck: freshServerBefore(phase, files, { candidateSha, ...extra }),
       reuse: await lane.openReuse(),
       candidateSha,
+      recheck,
     });
     await requireClean(root, 'Agent worktree after verification');
     return { checks, evidence };
@@ -1738,19 +1828,7 @@ async function landThroughQueue({
     publicProjection.state === 'inert' || publicProjection.recorded !== false
       ? ''
       : ' public_recorded=false';
-  // Absent when nothing flaked, so a clean landing reads exactly as it did
-  // before the rerun existed; present, and naming the check and the files,
-  // whenever evidence had to be re-run to be believed.
-  const flakedState =
-    flakes.length === 0
-      ? ''
-      : ` flaked=${flakes
-          .map(
-            result =>
-              `${result.id}:${(result.flakedFiles ?? []).length}` +
-              (result.phase === 'rebase' ? '(rebase)' : '')
-          )
-          .join(',')}`;
+  const flakedState = flakedField(flakes);
   const laneState = lane.kind === 'worktree' ? '' : ` lane=${lane.kind}`;
   // A train names each car that landed with its commit count, and every car
   // it left out; absent for any other landing.
@@ -1795,6 +1873,11 @@ async function landThroughQueue({
     `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${reinstalledState}${serverState}${reusedState}${trainState}${laneState}`
   );
   for (const result of flakes) {
+    if (!result.flakedFiles) {
+      console.log(
+        `[agent-land] suspected flake: ${result.id} (passed when run once more on the same tree)`
+      );
+    }
     for (const entry of result.flakedFiles ?? []) {
       console.log(
         `[agent-land] suspected flake: ${result.id} ${entry.file} (passed alone)`

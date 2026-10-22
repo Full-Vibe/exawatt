@@ -5247,3 +5247,30 @@ Exawatts, and one of them has no window; it was one of the two inputs to
 BUG-083. Exit: the server runs as a helper that macOS does not list as an
 application (Electron's `utilityProcess` or the `LSUIElement` helper
 executable), with the renderer-server lifecycle evals still passing.
+
+### BUG-311 The train's bisect re-ran every landing check per prefix and could convict a car by elimination
+
+Status: fixed 2026-10-22 (`<sha pending>`) · ENG-039 M3 · a five-car coordinator train, 2026-10-22; fixed in agent/train-bisect.
+
+A five-car train failed `eval:spatial:pointer` on one 30-second wait after an
+hour of landing checks. Each bisection step then ran that check first and every
+other landing check and gate after it: the second prefix took another hour, and
+the third passed the check and ran every gate again. Had the fourth passed, the
+fifth car would have been convicted by elimination without its stack running
+the check again, which on a timing eval blames an innocent car. An earlier
+train that night named the full stack's failed check for a car whose prefix
+failed a different one, and reported only the first of two guilty cars. The
+coordinator stopped the run by hand.
+
+Cause: a bisection step was a full landing-check run with the failed check
+moved first, and the verdict always printed the full stack's check.
+
+Fix by system: a red train asks one question per prefix. The failed check runs
+once more on the same stack (`recheck` in `runDeliveryChecks`, the BUG-090
+policy for a whole check): a pass is a counted, named suspected flake and the
+checks continue; a second failure is bisected with only that check, after any
+check it `needs` (`bisectChecks`). The verdict names the check the guilty
+prefix failed, the last car is convicted only because the full stack failed
+twice, and the stack without the guilty car runs the check once, so the
+refusal says whether another car also breaks it. The run-everything-per-prefix
+path is deleted. Fixed in agent/train-bisect, `<sha pending>`.

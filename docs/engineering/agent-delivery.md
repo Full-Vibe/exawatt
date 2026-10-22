@@ -264,16 +264,17 @@ serves a worktree the train just created.
   whole-repository checks (`wholeRepo`): lint, the whole program and the
   whole Vitest suite run once for the front, because a train is where they
   run (see "Module-owned verification").
-- **A red train names its car.** The train bisects by prefix: `origin/master`
-  is green and the whole stack is red, so it rebuilds the stack from the first
-  half of the cars, then the half that decides, in the same integration
-  worktree, running each prefix's own owed checks with the failed one first.
-  The first car whose addition turns it red is the guilty car: `TRAIN red:
-  <car> broke <check>`, with the cars that passed and the failure, and
-  `STATUS failed=train guilty=<car> check=<check> passed=<cars>`. Nothing
-  lands and no ticket is taken. Each step is recorded as a `landing_check`
-  with `phase: "bisect"` and the cars it checked; a tree checked twice in the
-  worktree reuses its recorded passes (`scripts/lib/check-reuse.mjs`).
+- **A red train names its car.** A failed check runs once more on the same
+  stack; a pass is a suspected flake (`flaked=<check>:recheck`) and the checks
+  continue. A second failure is bisected by prefix, and each prefix runs only
+  that check, after any check it `needs`: the first car whose prefix fails is
+  guilty, and the last car only because the full stack failed twice. The stack
+  without that car then runs the check once, so the refusal says whether the
+  other cars pass it or another car also breaks it: `TRAIN red: <car> broke
+  <check>`, naming the check its prefix failed, and `STATUS failed=train
+  guilty=<car> check=<check> passed=<cars> rest=passed|failed:<check>`.
+  Nothing lands and no ticket is taken; each step is a `landing_check` with
+  `phase: "bisect"`.
 - **`--land-passing`** lands the cars that pass: the guilty car is left out,
   the rest are restacked (a later car that conflicts without it is left out
   too), checked, bisected again if red, and landed, every left-out car named
@@ -764,8 +765,9 @@ Success output distinguishes:
 - `installed=not-requested|queued|queue-failed`: post-integration request state,
   not proof that the app is already installed;
 - `flaked=<check>:<n>`: checks that failed and then passed when their named
-  files ran alone. Absent when nothing flaked, so a clean landing reads exactly
-  as it did before the rerun existed;
+  files ran alone, or `<check>:recheck` when a train's check passed when run
+  once more on the same stack. Absent when nothing flaked, so a clean landing
+  reads exactly as it did before the rerun existed;
 - `public=published|pending|refused`: what the public projection did. The field
   is absent entirely when no public remote is configured, which is the default;
 - `held=public-latch:<m>`: how long the head held on a latched publication
@@ -926,7 +928,7 @@ only the new names are written. Current event types are:
 
 | Event                                                                                                         | Important fields                                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `landing_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, the run's `slotMode` and `slotWaitMs`, `reused` (the candidate SHA and time of the pass it stood on) when no run happened, and for a flake the file identities, failing test names, and load average at the failure and the rerun |
+| `landing_check`                                                                                                 | candidate/ticket SHA, check ID, candidate/rebase phase, status (`passed`/`flaked`/`failed`), duration, the run's `slotMode` and `slotWaitMs`, `reused` (the candidate SHA and time of the pass it stood on) when no run happened, and for a flake the file identities, failing test names, and load average at the failure and the rerun; a train's whole-check rerun adds `recheck` (`passed`/`failed`) and the first failure |
 | `queue_admitted`                                                                                              | ticket ID/number and candidate SHA                                                                                                                                                                            |
 | `stale_owner`                                                                                                 | ticket, live PID, heartbeat age; no takeover occurred                                                                                                                                                         |
 | `stale_stop`                                                                                                  | prior and current bases before an automatic rebase                                                                                                                                                            |

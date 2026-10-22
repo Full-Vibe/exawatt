@@ -1326,6 +1326,68 @@ test('a passing check and a non-vitest failure behave exactly as before', async 
   });
 });
 
+// BUG-311: a merge train blames a car only for a failure that happens twice.
+test('a recheck runs a failed check once more: a pass is a reported flake and the checks continue, a second failure fails', async () => {
+  const check = (stub, id) => ({ id, command: stub, args: ['run', id] });
+  await scenario([{ exit: 1 }, { exit: 0 }], async (directory, stub) => {
+    const recorded = [];
+    const prepared = [];
+    const evidence = await runDeliveryChecks(
+      directory,
+      [check(stub, 'eval:gate'), check(stub, 'lint')],
+      {
+        recheck: true,
+        onResult: result => recorded.push(result),
+        beforeCheck: entry => prepared.push(entry.id),
+      }
+    );
+    assert.deepEqual(
+      evidence.map(result => [result.id, result.status]),
+      [
+        ['eval:gate', 'flaked'],
+        ['lint', 'passed'],
+      ]
+    );
+    assert.equal(recorded[0].recheck, 'passed');
+    assert.equal(typeof recorded[0].loadAverageAtRerun, 'number');
+    // The recheck prepares its check again (a gate gets a server proven to
+    // serve the tree), and the run continues after it.
+    assert.deepEqual(prepared, ['eval:gate', 'eval:gate', 'lint']);
+    assert.equal((await invocationsOf(directory)).length, 3);
+  });
+
+  await scenario([{ exit: 1 }], async (directory, stub) => {
+    const recorded = [];
+    await assert.rejects(
+      () =>
+        runDeliveryChecks(
+          directory,
+          [check(stub, 'eval:gate'), check(stub, 'lint')],
+          { recheck: true, onResult: result => recorded.push(result) }
+        ),
+      /eval:gate failed again/
+    );
+    assert.deepEqual(
+      recorded.map(result => [result.id, result.status, result.recheck]),
+      [['eval:gate', 'failed', 'failed']]
+    );
+    assert.equal((await invocationsOf(directory)).length, 2);
+  });
+
+  // Files that already failed again alone have failed twice.
+  await scenario(
+    [{ exit: 1, failed: [['src/broken.test.tsx', ['broken > asserts']]] }],
+    async (directory, stub) => {
+      await assert.rejects(
+        () =>
+          runDeliveryChecks(directory, [vitestCheck(stub)], { recheck: true }),
+        /failed AGAIN when re-run alone/
+      );
+      assert.equal((await invocationsOf(directory)).length, 2);
+    }
+  );
+});
+
 // BUG-136. The two guard classes were each blind on one side: every
 // `scripts/*.test.mjs` pin ran only through `test:agent-delivery` on landing,
 // never in CI, so a Dependabot bump could break a release guard with CI

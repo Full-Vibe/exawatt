@@ -1522,6 +1522,12 @@ export function classifyDeliveryPolicy(
           id: 'test:agent-delivery',
           command: 'pnpm',
           args: ['run', 'test:agent-delivery'],
+          // Its release, custody and packaging pins load the @exawatt/core
+          // runtime (`CORE_DELIVERY_ENTRIES`), which whichever of these this
+          // landing has builds, so a run of this check alone, a train's
+          // bisection step, runs it first (`bisectChecks` in
+          // scripts/lib/merge-train.mjs).
+          needs: ['type-check', 'type-check:modules', 'core-runtime'],
         }
       : {
           id: 'delivery-pins',
@@ -2233,6 +2239,18 @@ export function suspectedFlakeReport({ checkId, flaked, load }) {
   ].join('\n');
 }
 
+/** A merge train's whole check that failed once and passed when run again
+ *  (BUG-311): the same report, at the granularity of the check. */
+function recheckedFlakeReport({ checkId, firstFailure, load }) {
+  return [
+    `[agent-land] SUSPECTED FLAKE — ${checkId} failed, and passed when run once more on the same tree.`,
+    `      first failure: ${firstFailure}`,
+    loadLine(load),
+    '      A break is deterministic, so no car is blamed for this one.',
+    '      Recorded as a landing_check flake; the landing checks continue.',
+  ].join('\n');
+}
+
 /** What the author reads when the rerun failed too. This is the right reason
  *  to fail: it failed twice, the second time with the machine to itself. */
 export function reproducedFailureReport({ checkId, reproduced, flaked, load }) {
@@ -2413,6 +2431,60 @@ async function runOneCheck(root, check) {
     : { status: 'failed', message: exitMessage(check, code) };
 }
 
+async function attemptCheck(root, check) {
+  try {
+    return await runOneCheck(root, check);
+  } catch (error) {
+    return { status: 'failed', message: error.message };
+  }
+}
+
+/**
+ * The BUG-090 policy for a whole check, on a merge train's full stack
+ * (BUG-311). The train bisects a failure to the car that caused it, and the
+ * last car is convicted by elimination, so a failure is believed only when it
+ * happens twice: the check runs once more on the same tree, prepared again by
+ * `beforeCheck` (a gate gets a dev server proven to serve the tree).
+ *
+ * - it passes → `flaked`, reported and recorded like a vitest flake, and the
+ *   landing checks continue from the next check;
+ * - it fails again → `failed`, a verdict the bisection can act on.
+ *
+ * Files that already failed again alone (the vitest rerun) have failed twice,
+ * so that failure is not run a third time.
+ */
+async function recheckFailure(root, check, first, beforeCheck) {
+  if (first.detail?.reproducedFiles?.length > 0) return first;
+  const atFailure = loadavg()[0];
+  console.log(
+    `[agent-land] ${check.id} failed; running it once more on the same tree before any car is blamed (BUG-311).`
+  );
+  await beforeCheck(check);
+  const second = await attemptCheck(root, check);
+  const load = { atFailure, atRerun: loadavg()[0] };
+  const measured = {
+    loadAverageAtFailure: load.atFailure,
+    loadAverageAtRerun: load.atRerun,
+  };
+  if (second.status === 'failed') {
+    return {
+      status: 'failed',
+      message: [
+        first.message,
+        `${check.id} failed again when run once more on the same tree, so the failure is the tree's:`,
+        second.message,
+      ].join('\n'),
+      detail: { ...second.detail, recheck: 'failed', ...measured },
+    };
+  }
+  const firstFailure = first.message.split('\n')[0];
+  console.warn(recheckedFlakeReport({ checkId: check.id, firstFailure, load }));
+  return {
+    status: 'flaked',
+    detail: { ...second.detail, recheck: 'passed', firstFailure, ...measured },
+  };
+}
+
 export async function runDeliveryChecks(
   root,
   checks,
@@ -2429,6 +2501,9 @@ export async function runDeliveryChecks(
     // instead of run again. Absent, every check runs.
     reuse = null,
     candidateSha = null,
+    // A merge train's full stack (BUG-311): a failed check runs once more
+    // on the same tree before the train blames any car for it.
+    recheck = false,
   } = {}
 ) {
   const evidence = [];
@@ -2473,11 +2548,9 @@ export async function runDeliveryChecks(
       console.log(
         `[agent-land] ${phase} landing checks: ${check.command} ${check.args.join(' ')}`
       );
-      let outcome;
-      try {
-        outcome = await runOneCheck(root, check);
-      } catch (error) {
-        outcome = { status: 'failed', message: error.message };
+      let outcome = await attemptCheck(root, check);
+      if (recheck && outcome.status === 'failed') {
+        outcome = await recheckFailure(root, check, outcome, beforeCheck);
       }
       const result = {
         id: check.id,

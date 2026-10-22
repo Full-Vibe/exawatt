@@ -344,6 +344,28 @@ export async function stackCars(
 }
 
 /**
+ * The checks one bisection step runs (BUG-311). A red train's bisection asks
+ * each prefix one question, "does the check that failed fail here?", so it
+ * runs that check from the prefix's own landing checks, after every check it
+ * `needs` (declared on the check, in `classifyDeliveryPolicy`), in landing
+ * order. The install refresh and the dev server a gate reads are not checks:
+ * every landing-check run refreshes the install, and each gate's
+ * `beforeCheck` makes the server serve the tree (recompiling the Electron
+ * main when its sources moved). Empty when the prefix does not owe the check.
+ */
+export function bisectChecks(checks, id) {
+  const wanted = new Set();
+  const want = target => {
+    const check = checks.find(entry => entry.id === target);
+    if (!check || wanted.has(target)) return;
+    wanted.add(target);
+    for (const need of check.needs ?? []) want(need);
+  };
+  want(id);
+  return checks.filter(check => wanted.has(check.id));
+}
+
+/**
  * The first car whose addition turns the stack red. `isRed(n)` checks the
  * stack of the first `n` cars; master (n = 0) is green and the whole stack
  * (n = count) is red, so log2(count) checks find it. Returns the 0-based
