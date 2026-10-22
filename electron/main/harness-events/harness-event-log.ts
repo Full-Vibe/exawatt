@@ -12,16 +12,18 @@
  * Content-free like `main.jsonl`: identities, kinds, counts and reasons,
  * never a prompt, a reply, a spawn label or a path. Bounded like the other
  * logs under `logs/`: one rotated generation of `MAX_BYTES` each and a
- * per-minute cap per family (`session`, `harness`), so a fleet fanning out
- * children cannot silence its own process lifecycle. There is no per-run cap:
- * rotation already bounds the disk, and a run cap falls silent on exactly the
- * long-lived day a wedge appears.
+ * per-minute cap per budget (`BUDGETS`). Process lifecycle, turn boundaries
+ * and team traffic each spend their own, so ten Sessions fanning out
+ * subagents can fill the team budget without costing one turn-start,
+ * turn-end or gate, the lines a wedge is diagnosed from. There is no per-run
+ * cap: rotation already bounds the disk, and a run cap falls silent on
+ * exactly the long-lived day a wedge appears.
  */
 import path from 'path';
 import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 import type { SessionDelegation } from '@exawatt/core/desktop-bridge';
 import {
-  boundDiagnosticRecorderPerFamily,
+  boundDiagnosticRecorder,
   createDiagnosticsLog,
   type DiagnosticFields,
   type DiagnosticRecorder,
@@ -30,7 +32,28 @@ import type { HarnessEvent } from './delegation-state';
 
 /** Bytes per generation; the log keeps this and one rotated generation. */
 const MAX_BYTES = 1_000_000;
-const PER_MINUTE_PER_FAMILY = 120;
+
+/** Lines a minute per budget. Turns get the most: they are the evidence. */
+const BUDGETS = {
+  session: 120,
+  'harness.turn': 240,
+  'harness.team': 120,
+} as const;
+
+/** Delegated-child and census traffic: the volume a team fan-out makes. */
+const TEAM_KINDS: ReadonlySet<string> = new Set<HarnessEvent['kind']>([
+  'child-label',
+  'child-start',
+  'child-end',
+  'census',
+]);
+
+function budgetOf(event: string): keyof typeof BUDGETS {
+  if (event.startsWith('session.')) return 'session';
+  return TEAM_KINDS.has(event.slice('harness.'.length))
+    ? 'harness.team'
+    : 'harness.turn';
+}
 
 /** The Session owner as the log reads it: `PtySessionManager`'s events. */
 interface SessionEvents {
@@ -88,10 +111,17 @@ export function openHarnessEventLog(
   } catch {
     return () => {};
   }
-  return boundDiagnosticRecorderPerFamily(file, {
-    perMinute: PER_MINUTE_PER_FAMILY,
-    perRun: Number.POSITIVE_INFINITY,
-  });
+  const bounded = new Map(
+    Object.entries(BUDGETS).map(([label, perMinute]) => [
+      label,
+      boundDiagnosticRecorder(file, {
+        perMinute,
+        perRun: Number.POSITIVE_INFINITY,
+        label,
+      }),
+    ])
+  );
+  return (event, fields) => bounded.get(budgetOf(event))!(event, fields);
 }
 
 /** What an event adds beyond its kind. Content never: a child's spawn label

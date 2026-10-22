@@ -186,6 +186,70 @@ describe('the harness-event log', () => {
     processes.at(-1)!.exit();
   });
 
+  it('a team fan-out cannot crowd out one turn boundary', async () => {
+    const root = userData();
+    const { sessions, delegation } = launch(root);
+    const { session } = await sessions.ensureRunning({
+      harness: 'claude',
+      cwd: process.cwd(),
+    });
+    const boundaries: string[] = [];
+    for (let turn = 0; turn < 40; turn += 1) {
+      delegation.report(session.id, { kind: 'turn-start' });
+      boundaries.push('harness.turn-start');
+      for (let child = 0; child < 10; child += 1) {
+        const childId = `child-${turn}-${child}`;
+        delegation.report(session.id, {
+          kind: 'child-start',
+          childId,
+          agentType: 'Explore',
+          at: turn,
+        });
+        delegation.report(session.id, { kind: 'child-end', childId });
+      }
+      delegation.report(session.id, { kind: 'blocked', reason: 'permission' });
+      delegation.report(session.id, {
+        kind: 'unblocked',
+        reason: 'permission',
+      });
+      delegation.report(session.id, { kind: 'turn-end' });
+      boundaries.push(
+        'harness.blocked',
+        'harness.unblocked',
+        'harness.turn-end'
+      );
+    }
+    const events = lines(root).map(line => String(line.event));
+    expect(events.filter(event => !event.startsWith('harness.child-'))).toEqual(
+      ['session.start', ...boundaries]
+    );
+    // 800 child lines arrived; the team budget kept its own 120.
+    expect(
+      events.filter(event => event.startsWith('harness.child-'))
+    ).toHaveLength(120);
+    processes.at(-1)!.exit();
+  });
+
+  it('records every Session a quit stops, though node-pty reports none', async () => {
+    const root = userData();
+    const { sessions } = launch(root);
+    for (const durableSessionId of ['quit-a', 'quit-b'])
+      await sessions.ensureRunning({
+        harness: 'claude',
+        cwd: process.cwd(),
+        durableSessionId,
+      });
+    await sessions.stopAll();
+    expect(
+      lines(root)
+        .filter(line => line.event === 'session.exit')
+        .map(line => [line.durableSessionId, line.stopRequested])
+    ).toEqual([
+      ['quit-a', true],
+      ['quit-b', true],
+    ]);
+  });
+
   it('a harness storm cannot silence the process lifecycle', async () => {
     const root = userData();
     const { sessions, delegation } = launch(root);
@@ -193,12 +257,12 @@ describe('the harness-event log', () => {
       harness: 'claude',
       cwd: process.cwd(),
     });
-    for (let index = 0; index < 200; index += 1)
+    for (let index = 0; index < 300; index += 1)
       delegation.report(session.id, { kind: 'turn-start' });
     processes.at(-1)!.exit(1);
     const events = lines(root).map(line => line.event);
     expect(events.filter(event => event === 'harness.turn-start')).toHaveLength(
-      120
+      240
     );
     expect(events.at(-1)).toBe('session.exit');
   });
