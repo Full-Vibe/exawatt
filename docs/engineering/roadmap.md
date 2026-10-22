@@ -5288,6 +5288,50 @@ Sleep half (2026-10-22): from about 02:00 this Mac drops into maintenance sleep 
 window". Every `agent:land` run now holds the Mac awake until it exits (`caffeinate -i -s -w <pid>`), so an overnight train
 cannot meet it; agent/train-bisect, `<sha pending>`.
 
+2026-10-21, cause measured (frame-demand packet): nothing in the board
+changed; the Mac did. The eval inherits the real host's lock state, and the
+trains run while this Mac's screen is locked. Main reads `screenLock: locked`
+at launch, so the Fleet canvas sits at `frameloop="never"` by contract (a
+locked host renders zero frames): `__EVAL_GL__` counted 0 frames, the pan never
+moved the camera, and the board's save, which reports the painted camera, never
+changed. The 2026-10-19 repair ran with the screen unlocked. With the host
+declared unlocked after the first window (one
+`powerMonitor.emit('unlock-screen')`, as `eval:electron:host-power` already
+does), clean master passed 3 runs of 3. The fix is the harness's, not the
+board's: `withElectronApp` declares an unlocked, awake host unless an eval
+drives host power itself, which covers every Electron eval that needs Fleet
+frames on a locked Mac. Owner: the eval harness (ENG-022).
+
+Resolved 2026-10-22, two causes, both measured. Section 3: `withElectronApp`
+now declares the screen unlocked once the first window exists, through the
+same `powerMonitor` event the evals emit; the app is untouched (its next
+native read still answers for the real host, and unknown is still not
+unlocked), and `eval:electron:host-power` and `eval:electron:device-power` opt
+out with `drivesHostPower: true`. A harness test proves it on the app's own
+compiled host observer reading a locked Mac. Section 4 (the What's new step,
+about one run in four): main navigated each new window to the launch screen
+and, with a warm engine, to `/workspace` about 20 ms later while the launch
+screen was still loading; with Playwright attaching, Chromium sometimes
+reported neither commit, so Playwright kept `/workspace` pending forever and
+every locator waited over a page that showed the notice (incident `0041`).
+Main now enters the workspace only once the launch screen has committed
+(the window controller's `navigate`), or after 5 s, a failed load, a lost
+renderer or a closed window, each recorded in `main.jsonl` as
+`launch-screen.not-committed`. Waiting for its full load first fixed
+the lifecycle eval (10 of 10) but deadlocked `eval:electron:device-power`'s
+relaunch, which exposed a second defect: main opened the window before it
+answered the preload's synchronous first-paint read, and an unanswered
+`sendSync` hangs the renderer, so on a cold start the launch screen never
+painted until the workspace replaced it. The appearance read now registers
+before any window (`registerAppearanceIpc`). Final tree, Mac locked:
+`app-lifecycle` 3 of 3, `device-power` 2 of 2, `host-power` and
+`project-agent` green. The train waiver is no longer needed. One more environmental factor
+for night runs: after about 02:00 this Mac idles into system sleep and
+maintenance wakes, which suspends a launch mid-flight ("no window" at
+`firstWindow`); runs held awake (`caffeinate -s`) were clean, and the sleep
+half above now holds every landing awake.
+[Incident](incidents/0041-eval-waits-on-a-navigation-the-window-finished.md).
+
 ### BUG-310 The packaged renderer server registers with macOS as a second Exawatt
 
 Status: bug · ENG-016 · found 2026-10-22 by the instance packet.
@@ -5476,51 +5520,6 @@ eval-handles), each needing a hand rebase. Exit: the suite's membership lives
 where adding a test cannot conflict (a glob over a declared directory, or a
 list file with one path per line that the append driver merges), and
 `test:agent-delivery` reads it.
-
-2026-10-21, cause measured (frame-demand packet): nothing in the board
-changed; the Mac did. The eval inherits the real host's lock state, and the
-trains run while this Mac's screen is locked. Main reads `screenLock: locked`
-at launch, so the Fleet canvas sits at `frameloop="never"` by contract (a
-locked host renders zero frames): `__EVAL_GL__` counted 0 frames, the pan never
-moved the camera, and the board's save, which reports the painted camera, never
-changed. The 2026-10-19 repair ran with the screen unlocked. With the host
-declared unlocked after the first window (one
-`powerMonitor.emit('unlock-screen')`, as `eval:electron:host-power` already
-does), clean master passed 3 runs of 3. The fix is the harness's, not the
-board's: `withElectronApp` declares an unlocked, awake host unless an eval
-drives host power itself, which covers every Electron eval that needs Fleet
-frames on a locked Mac. Owner: the eval harness (ENG-022).
-
-Resolved 2026-10-22, two causes, both measured. Section 3: `withElectronApp`
-now declares the screen unlocked once the first window exists, through the
-same `powerMonitor` event the evals emit; the app is untouched (its next
-native read still answers for the real host, and unknown is still not
-unlocked), and `eval:electron:host-power` and `eval:electron:device-power` opt
-out with `drivesHostPower: true`. A harness test proves it on the app's own
-compiled host observer reading a locked Mac. Section 4 (the What's new step,
-about one run in four): main navigated each new window to the launch screen
-and, with a warm engine, to `/workspace` about 20 ms later while the launch
-screen was still loading; with Playwright attaching, Chromium sometimes
-reported neither commit, so Playwright kept `/workspace` pending forever and
-every locator waited over a page that showed the notice (incident `0041`).
-Main now enters the workspace only once the launch screen has committed
-(the window controller's `navigate`), or after 5 s, a failed load, a lost
-renderer or a closed window, each recorded in `main.jsonl` as
-`launch-screen.not-committed`. Waiting for its full load first fixed
-the lifecycle eval (10 of 10) but deadlocked `eval:electron:device-power`'s
-relaunch, which exposed a second defect: main opened the window before it
-answered the preload's synchronous first-paint read, and an unanswered
-`sendSync` hangs the renderer, so on a cold start the launch screen never
-painted until the workspace replaced it. The appearance read now registers
-before any window (`registerAppearanceIpc`). Final tree, Mac locked:
-`app-lifecycle` 3 of 3, `device-power` 2 of 2, `host-power` and
-`project-agent` green. The train waiver is no longer needed. One more environmental factor
-for night runs, not fixed here: after about 02:00 this Mac idles into system
-sleep and maintenance wakes, which suspends a launch mid-flight ("no window"
-at `firstWindow`); runs held awake (`caffeinate -s`) were clean. Whether the
-harness should hold a sleep assertion for a launch is an operator call on
-this Mac's power policy.
-[Incident](incidents/0041-eval-waits-on-a-navigation-the-window-finished.md).
 
 ### BUG-314 An Electron eval that hits its watchdog dies with ENOTEMPTY instead of naming the step
 
