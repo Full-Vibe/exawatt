@@ -164,7 +164,7 @@ export function qualityModel(
       tile.y += dy;
     }
     for (const [parent, child] of localTethers)
-      tethers.push([parent.x, -0.015, parent.y], [child.x, -0.015, child.y]);
+      tethers.push([parent.x, 0.03, parent.y], [child.x, 0.03, child.y]);
     territories.push({ zone, rect: { x: cursorX, y: cursorY, width, height } });
     cursorX += width + 5;
     rowHeight = Math.max(rowHeight, height);
