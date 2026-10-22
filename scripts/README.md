@@ -96,6 +96,11 @@ such without first revalidating their fixture and owner:
   harness comes from `writeFakeHarness` (`lib/harness-probe-fixture.mjs`), and
   an async page condition is polled with `waitForPageCondition`;
   `eval-boundaries.test.mjs` refuses a script that goes around any of them.
+- An eval finds elements by a handle the product renders (a registry id, a
+  `data-*` attribute the component's own test asserts, or a role), never by
+  copy, and reaches only bridge members `window.electron` declares.
+  `pnpm eval-handles:check` holds every script to that at landing; a text
+  binding that is itself the contract carries `// binds-text: <reason>`.
 - Put reusable logic in `lib/`; keep entrypoints focused on orchestration and
   reporting.
 - Give a genuinely multi-file family its own directory and README. Do not

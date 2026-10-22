@@ -5562,3 +5562,28 @@ reaped it) and no group member runs. Under the same hog the old test failed
 4 of 4 and the new one passed 4 of 4, with the probe at 6 of 6 reaped; a test
 puts a real child in the zombie state before the wait and fails without the
 fix.
+
+### BUG-312 Evals bound to unchecked handles broke silently on renames
+
+Status: fixed 2026-10-22 in `agent/eval-handles` (`<sha pending>`) · ENG-022 · found at the BUG-302 train, 2026-10-22.
+
+Two renames broke evals that nothing checked, and each surfaced only when its
+gate ran inside an hour-long landing train. `electron-fleet-direct-eval.mjs`
+still called `settings.setPresentation`, replaced by `updatePresentation` on
+2026-10-15; type-check and lint passed because the eval scripts are untyped
+and reach the bridge inside `page.evaluate`. The chrome and tenancy evals
+found shortcut-help rows by a label a packet then changed. Cause: what an eval
+binds to (bridge members, copy, `data-*` attributes) was discovered by the
+gate, never checked.
+
+Fixed by system: `pnpm eval-handles:check` reads every script with the
+TypeScript checker against the bridge the renderer gets and fails a missing
+member with the closest real one; fails a locator or assertion bound to text
+the product writes unless the line says `// binds-text: <reason>`; and fails a
+`data-*` selector no product source renders. It runs at landing whenever an
+eval, the bridge or the product source changes. The sweep it forced
+converted 431 copy-bound locators across 57 eval scripts to registry ids and
+`data-*` handles (asserted by the component's own test where it has one), kept
+9 where the text is the contract (shell commands the operator pastes, release
+builds that predate a handle), and removed 15 assertions that could never
+fail, 6 of them reading attributes the product had retired.
