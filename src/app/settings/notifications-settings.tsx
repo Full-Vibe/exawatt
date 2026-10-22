@@ -1,7 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
+import {
+  DesktopOnlyNote,
+  SettingsGroup,
+  SettingRow,
+  SettingSwitch,
+} from './settings-controls';
 import type { ExawattSettings } from '@exawatt/core/desktop-bridge';
 import { Button } from '@/components/ui/button';
 import { usePermissions } from '@/components/permissions/permissions-provider';
@@ -28,26 +33,34 @@ const LEAD_OPTIONS = USAGE_ALERT_POLICY.leadMinuteChoices.map(minutes => ({
  */
 
 /**
- * Notification preferences (ENG-016 D6 + D18). Everything here defaults OFF:
+ * Notification preferences (ENG-016 D6 + D18). Agent signals default OFF:
  * OS-level signals (native notifications, the dock badge count) are opt-in —
- * an unexplained badge with no in-app way to clear it reads as noise. Only
- * rendered in the Electron app; the settings live in local settings.json.
+ * an unexplained badge with no in-app way to clear it reads as noise. Usage
+ * alerts default on. Only the Electron app has these controls; the settings
+ * live in local settings.json.
  */
 export function NotificationsSettings() {
   const [settings, setSettings] = useState<ExawattSettings | null>(null);
-  const [available, setAvailable] = useState(false);
+  // null until mounted, so a browser and the app agree on the first paint.
+  const [available, setAvailable] = useState<boolean | null>(null);
   const permissions = usePermissions();
 
   useEffect(() => {
     const api = window.electron?.settings;
+    setAvailable(Boolean(api));
     if (!api) return;
-    setAvailable(true);
     void api.get().then(setSettings);
     const off = api.onChanged?.(next => setSettings(next));
     return () => off?.();
   }, []);
 
-  if (!available) return null;
+  if (available === null) return null;
+  if (!available)
+    return (
+      <DesktopOnlyNote>
+        Notifications are available in the desktop app.
+      </DesktopOnlyNote>
+    );
 
   const attention = settings?.notifications?.attention ?? false;
   const dockBadge = settings?.notifications?.dockBadge ?? false;
@@ -64,14 +77,10 @@ export function NotificationsSettings() {
     attention && (allowed === 'denied' || allowed === 'not-determined');
 
   return (
-    <SettingsGroup
-      title="Notifications"
-      description="How Exawatt signals outside its own window. Agent signals start off; usage alerts start on. Inside the app, tab pulses and the ⌘J attention queue always work."
-      dataAttribute="data-notifications-settings"
-    >
+    <SettingsGroup dataAttribute="data-notifications-settings">
       <SettingRow
         title="Native macOS notifications"
-        description="Post a notification when an agent stops, errors, or asks for input while Exawatt is in the background. Clicking it jumps to the exact Session."
+        description="Notify you when an Agent stops, errors or asks for input while Exawatt is in the background. Click one to open that Session."
       >
         <SettingSwitch
           checked={attention}
@@ -132,7 +141,7 @@ export function NotificationsSettings() {
       )}
       <SettingRow
         title="Dock badge count"
-        description="Show the number of Sessions waiting for you on the Dock icon, with a bounce when the app is unfocused. It clears as soon as you look at each Session."
+        description="Show how many Sessions are waiting on the Dock icon, and bounce it while Exawatt is in the background."
       >
         <SettingSwitch
           checked={dockBadge}
@@ -142,7 +151,7 @@ export function NotificationsSettings() {
       </SettingRow>
       <SettingRow
         title="Usage alerts"
-        description="Post a notification when a plan limit is on course to run out before it resets. Each limit alerts once per reset period."
+        description="Notify you once when a plan limit is on course to run out before it resets."
       >
         <SettingSwitch
           checked={usageAlerts}
@@ -180,33 +189,6 @@ export function NotificationsSettings() {
           }
         />
       </SettingRow>
-    </SettingsGroup>
-  );
-}
-
-/**
- * Why macOS asks for folder access (ENG-016 D18). Agent processes run as
- * children of Exawatt, so their file access is attributed to Exawatt by
- * macOS privacy protection. This card makes the system prompts explicable
- * instead of mysterious. Electron-only, static copy.
- */
-export function PermissionsExplainer() {
-  const [available, setAvailable] = useState(false);
-  useEffect(() => {
-    setAvailable(!!window.electron?.isElectron);
-  }, []);
-  if (!available) return null;
-
-  return (
-    <SettingsGroup
-      title="macOS permission prompts"
-      description="What the system dialogs mean and why they name Exawatt."
-      dataAttribute="data-permissions-explainer"
-    >
-      <SettingRow
-        title="Files and folders"
-        description="Agents run as part of Exawatt, so macOS names Exawatt when work enters Desktop, Documents, Downloads, or an external drive. Allowing access lets Agents work there; denying it produces permission errors. Grants stay with the app’s signed identity across updates. Review them in System Settings → Privacy & Security → Files and Folders."
-      />
     </SettingsGroup>
   );
 }

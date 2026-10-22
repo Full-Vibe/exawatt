@@ -1,15 +1,89 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
+import type {
+  SETTINGS_DESTINATIONS,
+  SettingsTopicId,
+} from './settings-registry';
 
+/** The row a link has just landed on, if any. The page frame provides it. */
+const LandedTopic = createContext<SettingsTopicId | null>(null);
+
+/**
+ * The frame of every Settings destination (BUG-306). The header comes from
+ * the registry entry, so a feature module fills the page and never titles
+ * it. `wide` gives a module with its own panes the full width below the
+ * header instead of the reading column.
+ */
+export function SettingsPage({
+  destination,
+  landed,
+  wide = false,
+  children,
+}: {
+  destination: (typeof SETTINGS_DESTINATIONS)[number];
+  landed: SettingsTopicId | null;
+  wide?: boolean;
+  children: ReactNode;
+}) {
+  const headingId = `settings-page-${destination.id}`;
+  const header = (
+    <header
+      className={
+        wide
+          ? 'border-b border-[var(--settings-line)] px-5 py-6 sm:px-8'
+          : 'mb-6 border-b border-[var(--settings-line)] pb-5'
+      }
+    >
+      <p className="mb-1 font-ui text-chrome-label text-[var(--settings-faint)]">
+        {destination.group}
+      </p>
+      <h2
+        id={headingId}
+        className="font-ui text-surface-title font-semibold text-[var(--settings-text)]"
+      >
+        {destination.label}
+      </h2>
+      <p className="mt-1 max-w-[72ch] font-ui text-sm text-[var(--settings-dim)]">
+        {destination.description}
+      </p>
+    </header>
+  );
+  return (
+    <LandedTopic.Provider value={landed}>
+      <section
+        aria-labelledby={headingId}
+        data-settings-page={destination.id}
+        className={wide ? 'flex min-w-0 flex-col' : 'min-w-0 px-4 py-6 sm:px-8'}
+      >
+        {wide ? (
+          <>
+            {header}
+            {children}
+          </>
+        ) : (
+          <div className="mx-auto max-w-4xl">
+            {header}
+            {children}
+          </div>
+        )}
+      </section>
+    </LandedTopic.Provider>
+  );
+}
+
+/**
+ * A card of rows. A destination with one group leaves `title` out: the page
+ * header already names it.
+ */
 export function SettingsGroup({
   title,
   description,
   children,
   dataAttribute,
 }: {
-  title: string;
-  description: string;
+  title?: string;
+  description?: string;
   children: ReactNode;
   dataAttribute: string;
 }) {
@@ -18,14 +92,18 @@ export function SettingsGroup({
       className="mb-6 overflow-hidden rounded-lg border border-[var(--settings-line)] bg-[var(--settings-panel)]"
       {...{ [dataAttribute]: '' }}
     >
-      <header className="border-b border-[var(--settings-line)] px-5 py-4">
-        <h3 className="font-display text-reading font-semibold text-[var(--settings-text)]">
-          {title}
-        </h3>
-        <p className="mt-1 max-w-[72ch] font-ui text-chrome-label leading-5 text-[var(--settings-dim)]">
-          {description}
-        </p>
-      </header>
+      {title && (
+        <header className="border-b border-[var(--settings-line)] px-5 py-4">
+          <h3 className="font-display text-reading font-semibold text-[var(--settings-text)]">
+            {title}
+          </h3>
+          {description && (
+            <p className="mt-1 max-w-[72ch] font-ui text-chrome-label leading-5 text-[var(--settings-dim)]">
+              {description}
+            </p>
+          )}
+        </header>
+      )}
       <div className="divide-y divide-[var(--settings-line)] px-5">
         {children}
       </div>
@@ -33,33 +111,55 @@ export function SettingsGroup({
   );
 }
 
+/**
+ * One setting: its title and what it decides, the control at the end, and
+ * any wider content (`body`) below. A row with a `topic` is where that
+ * topic's links land: it carries the topic as its id and shows a brief wash
+ * across the card when one does.
+ */
 export function SettingRow({
-  id,
+  topic,
   title,
   description,
   children,
+  body,
 }: {
+  topic?: SettingsTopicId;
   title: string;
-  description: string;
+  description?: string;
   children?: ReactNode;
-  id?: string;
+  body?: ReactNode;
 }) {
+  const landed = useContext(LandedTopic);
   return (
     <div
-      id={id}
-      tabIndex={id ? -1 : undefined}
-      className="scroll-mt-6 focus:outline-none flex min-h-[76px] items-center justify-between gap-5 py-3 max-[520px]:flex-col max-[520px]:items-stretch"
+      id={topic}
+      tabIndex={topic ? -1 : undefined}
+      data-settings-landed={topic && landed === topic ? '' : undefined}
+      className="relative isolate scroll-mt-6 py-3 outline-none before:pointer-events-none before:absolute before:inset-y-0 before:-inset-x-5 before:-z-10 before:border-l-2 before:border-[var(--settings-teal)] before:bg-[var(--settings-teal-wash)] before:opacity-0 before:transition-opacity before:duration-700 data-[settings-landed]:before:opacity-100 data-[settings-landed]:before:duration-150 motion-reduce:before:transition-none"
     >
-      <div>
-        <p className="font-ui text-chrome-title font-medium text-[var(--settings-soft)]">
-          {title}
-        </p>
-        <p className="mt-0.5 max-w-[68ch] font-ui text-chrome-label leading-5 text-[var(--settings-dim)]">
-          {description}
-        </p>
+      <div className="flex min-h-13 items-center justify-between gap-5 max-[520px]:flex-col max-[520px]:items-stretch">
+        <div>
+          <p className="font-ui text-chrome-title font-medium text-[var(--settings-soft)]">
+            {title}
+          </p>
+          {description && (
+            <p className="mt-0.5 max-w-[68ch] font-ui text-chrome-label leading-5 text-[var(--settings-dim)]">
+              {description}
+            </p>
+          )}
+        </div>
+        {children}
       </div>
-      {children}
+      {body && <div className="mt-3">{body}</div>}
     </div>
+  );
+}
+
+/** A destination whose controls live only in the desktop app, in a browser. */
+export function DesktopOnlyNote({ children }: { children: ReactNode }) {
+  return (
+    <p className="font-ui text-sm text-[var(--settings-dim)]">{children}</p>
   );
 }
 

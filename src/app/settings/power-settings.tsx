@@ -14,7 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SettingsGroup, SettingRow } from './settings-controls';
+import {
+  DesktopOnlyNote,
+  SettingsGroup,
+  SettingRow,
+} from './settings-controls';
 
 /** This control reports Exawatt's own assertion. It never paints a global
  * “safe to sleep” success state: sources and other apps retain their authority. */
@@ -22,14 +26,15 @@ export function PowerSettings() {
   const reads = useLatestRequest();
   const writes = useLatestRequest();
   const [status, setStatus] = useState<DevicePowerStatus | null>(null);
-  const [available, setAvailable] = useState(false);
+  // null until mounted, so a browser and the app agree on the first paint.
+  const [available, setAvailable] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const api = window.electron?.app;
+    setAvailable(Boolean(api?.devicePower));
     if (!api?.devicePower) return;
-    setAvailable(true);
     const ticket = reads.begin();
     let revision = -1;
     const receive = (next: DevicePowerStatus) => {
@@ -51,7 +56,13 @@ export function PowerSettings() {
       off();
     };
   }, [reads]);
-  if (!available) return null;
+  if (available === null) return null;
+  if (!available)
+    return (
+      <DesktopOnlyNote>
+        Sleep prevention is available in the desktop app.
+      </DesktopOnlyNote>
+    );
   const save = async (value: string) => {
     if (value !== 'never' && value !== 'ac-only' && value !== 'ac-and-battery')
       return;
@@ -72,14 +83,10 @@ export function PowerSettings() {
     }
   };
   return (
-    <SettingsGroup
-      title="Power"
-      description="Keep this Mac awake while supported local Agents work. The display can turn off, and locking never pauses an Agent. This preference belongs to this device."
-      dataAttribute="data-power-settings"
-    >
+    <SettingsGroup dataAttribute="data-power-settings">
       <SettingRow
         title="Exawatt sleep prevention"
-        description="On AC only releases Exawatt’s sleep prevention when you unplug. On AC and battery can use substantial battery power during unattended work."
+        description="On AC only lets this Mac sleep when you unplug. On AC and battery can drain the battery during long unattended work."
       >
         <Select
           value={status?.policy ?? 'ac-only'}
@@ -109,15 +116,8 @@ export function PowerSettings() {
                 : 'Exawatt is not keeping this Mac awake.'))}
         </p>
         <p>
-          Applies to supported Codex launches started by this app. Existing
-          Sessions and other sources manage their own sleep behavior; Claude
-          Code can still keep this Mac awake on battery.
-        </p>
-        <p>
-          Agent settings changed inside a source, and other apps, can override
-          sleep independently. Never disables Exawatt’s sleep prevention; it
-          does not pause or stop work. When macOS sleeps, local work depends on
-          the source’s recovery behavior.
+          Covers Codex Agents started in Exawatt. Other sources decide for
+          themselves; Claude Code can keep this Mac awake even on battery.
         </p>
         {status?.independentSources.length ? (
           <p>

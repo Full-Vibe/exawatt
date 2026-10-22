@@ -128,97 +128,79 @@ export function SafetySettings() {
   const { available, state, saveFailed, setControl, retry } =
     useSafetySettings();
   return (
-    <section
-      aria-labelledby="safety-heading"
-      className="min-w-0 bg-[var(--settings-page)] px-4 py-6 sm:px-7 lg:px-9"
-    >
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-7 border-b border-[var(--settings-line)] pb-5">
-          <h2
-            id="safety-heading"
-            className="font-display text-display font-semibold tracking-[-0.02em]"
-          >
-            Safety
-          </h2>
-          <p className="mt-1 font-ui text-chrome-title text-[var(--settings-dim)]">
-            Limits on what the agents you start in Exawatt may do. Each one is
-            off until you turn it on.
-          </p>
-        </div>
-
-        <SettingsGroup
-          title="Agent actions"
-          description="Checked before an agent's command runs. A blocked agent is told what it would have hit and what to do instead."
-          dataAttribute="data-safety-controls"
-        >
-          {SAFETY_CONTROLS.map(control => (
-            <div key={control.id} data-safety-control={control.id}>
-              <SettingRow title={control.label} description={control.purpose}>
-                {available && state.status === 'unreadable' ? (
-                  <div className="flex shrink-0 items-center gap-3">
-                    <p
-                      role="status"
-                      className="font-ui text-chrome-meta text-[var(--settings-dim)]"
-                    >
-                      Couldn&apos;t load
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={retry}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                ) : available ? (
-                  <SettingSwitch
-                    checked={
-                      state.status === 'ready' &&
-                      isSafetyControlEnabled(state.controls, control.id)
-                    }
-                    disabled={state.status !== 'ready'}
-                    label={control.label}
-                    onChange={next => void setControl(control.id, next)}
-                  />
-                ) : (
-                  <p className="shrink-0 font-ui text-chrome-meta text-[var(--settings-faint)]">
-                    In the desktop app
+    <>
+      <SettingsGroup
+        title="Agent actions"
+        description="Checked before an agent's command runs. A blocked agent is told what it would have hit and what to do instead."
+        dataAttribute="data-safety-controls"
+      >
+        {SAFETY_CONTROLS.map(control => (
+          <div key={control.id} data-safety-control={control.id}>
+            <SettingRow title={control.label} description={control.purpose}>
+              {available && state.status === 'unreadable' ? (
+                <div className="flex shrink-0 items-center gap-3">
+                  <p
+                    role="status"
+                    className="font-ui text-chrome-meta text-[var(--settings-dim)]"
+                  >
+                    Couldn&apos;t load
                   </p>
-                )}
-              </SettingRow>
-              <ControlFacts control={control} />
-            </div>
-          ))}
-          {saveFailed && (
-            <p
-              role="alert"
-              className="py-3 font-ui text-chrome-label text-[var(--settings-red)]"
-            >
-              That change didn&apos;t save. Try again.
-            </p>
-          )}
-        </SettingsGroup>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={retry}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : available ? (
+                <SettingSwitch
+                  checked={
+                    state.status === 'ready' &&
+                    isSafetyControlEnabled(state.controls, control.id)
+                  }
+                  disabled={state.status !== 'ready'}
+                  label={control.label}
+                  onChange={next => void setControl(control.id, next)}
+                />
+              ) : (
+                <p className="shrink-0 font-ui text-chrome-meta text-[var(--settings-faint)]">
+                  In the desktop app
+                </p>
+              )}
+            </SettingRow>
+            <ControlFacts control={control} />
+          </div>
+        ))}
+        {saveFailed && (
+          <p
+            role="alert"
+            className="py-3 font-ui text-chrome-label text-[var(--settings-red)]"
+          >
+            That change didn&apos;t save. Try again.
+          </p>
+        )}
+      </SettingsGroup>
 
-        <SettingsGroup
-          title="Policy preview"
-          description="Not enforced yet. Each one will be off until you turn it on."
-          dataAttribute="data-safety-policy-preview"
-        >
-          {SAFETY_POLICY_PREVIEWS.map(preview => (
-            <div key={preview.id} data-safety-preview={preview.id}>
-              <SettingRow title={preview.label} description={preview.purpose}>
-                <AnnouncedChip
-                  coming="enforcement of this control"
-                  className="shrink-0"
-                >
-                  Off
-                </AnnouncedChip>
-              </SettingRow>
-            </div>
-          ))}
-        </SettingsGroup>
-      </div>
-    </section>
+      <SettingsGroup
+        title="Policy preview"
+        description="Not enforced yet. Each one will be off until you turn it on."
+        dataAttribute="data-safety-policy-preview"
+      >
+        {SAFETY_POLICY_PREVIEWS.map(preview => (
+          <div key={preview.id} data-safety-preview={preview.id}>
+            <SettingRow title={preview.label} description={preview.purpose}>
+              <AnnouncedChip
+                coming="enforcement of this control"
+                className="shrink-0"
+              >
+                Off
+              </AnnouncedChip>
+            </SettingRow>
+          </div>
+        ))}
+      </SettingsGroup>
+    </>
   );
 }

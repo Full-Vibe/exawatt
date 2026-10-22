@@ -2,13 +2,7 @@
 
 import { useState, useCallback, useEffect, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { SettingRow, SettingsGroup } from './settings-controls';
 import {
   Dialog,
   DialogContent,
@@ -293,87 +287,75 @@ export function KeyboardSettings() {
 
   return (
     <>
-      <Card className="border-[var(--settings-line)] bg-[var(--settings-panel)] shadow-none">
-        <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-[var(--settings-line)] px-5 py-4">
-          <div>
-            <CardTitle className="font-display text-reading text-[var(--settings-text)]">
-              Keyboard shortcuts
-            </CardTitle>
-            <CardDescription className="mt-1 font-ui text-chrome-label leading-5 text-[var(--settings-dim)]">
-              Click a shortcut to customize it. Press one or two keys to set a
-              new binding.
-            </CardDescription>
+      <SettingsGroup dataAttribute="data-keyboard-settings">
+        {categories.map(category => (
+          <div key={category} className="py-4">
+            <h3 className="mb-2 font-mono text-chrome-meta font-semibold uppercase tracking-[0.1em] text-[var(--settings-faint)]">
+              {CATEGORY_LABELS[category]}
+            </h3>
+            <div className="divide-y divide-[var(--settings-line)]">
+              {shortcuts[category].map(shortcut => {
+                const effectiveKeys = shortcutRegistry.getEffectiveKeys(
+                  shortcut.id
+                );
+                const hasOverride = shortcutRegistry.hasOverride(shortcut.id);
+
+                if (!effectiveKeys) return null;
+
+                return (
+                  <div
+                    key={shortcut.id}
+                    className="group flex min-h-11 items-center justify-between px-2 py-2 transition-colors hover:bg-[var(--settings-hover)]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-ui text-chrome-title text-[var(--settings-soft)]">
+                        {shortcut.label}
+                      </span>
+                      {hasOverride && (
+                        <span className="font-ui text-chrome-label text-[var(--settings-faint)]">
+                          Customized
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {hasOverride && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                          onClick={() => resetToDefault(shortcut.id)}
+                        >
+                          Reset
+                        </Button>
+                      )}
+                      <button
+                        onClick={() => startEditing(shortcut.id)}
+                        className="cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      >
+                        <ShortcutBadge keys={effectiveKeys} size="md" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
+        ))}
+        <SettingRow
+          title="Reset all shortcuts"
+          description="Every shortcut goes back to its default keys."
+        >
           <Button
             variant="outline"
             size="sm"
             onClick={resetAllToDefaults}
             disabled={saving}
           >
-            <RotateCcw className="mr-1.5 h-4 w-4" />
-            Reset All
+            <RotateCcw aria-hidden className="mr-1.5 h-4 w-4" />
+            Reset all
           </Button>
-        </CardHeader>
-        <CardContent className="px-5 py-5">
-          <div className="space-y-6">
-            {categories.map(category => (
-              <div key={category}>
-                <h3 className="mb-2 font-mono text-chrome-meta font-semibold uppercase tracking-[0.1em] text-[var(--settings-faint)]">
-                  {CATEGORY_LABELS[category]}
-                </h3>
-                <div className="divide-y divide-[var(--settings-line)] border-y border-[var(--settings-line)]">
-                  {shortcuts[category].map(shortcut => {
-                    const effectiveKeys = shortcutRegistry.getEffectiveKeys(
-                      shortcut.id
-                    );
-                    const hasOverride = shortcutRegistry.hasOverride(
-                      shortcut.id
-                    );
-
-                    if (!effectiveKeys) return null;
-
-                    return (
-                      <div
-                        key={shortcut.id}
-                        className="group flex min-h-11 items-center justify-between px-2 py-2 transition-colors hover:bg-[var(--settings-hover)]"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="font-ui text-chrome-title text-[var(--settings-soft)]">
-                            {shortcut.label}
-                          </span>
-                          {hasOverride && (
-                            <span className="text-xs text-muted-foreground">
-                              (customized)
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {hasOverride && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity h-7 px-2"
-                              onClick={() => resetToDefault(shortcut.id)}
-                            >
-                              Reset
-                            </Button>
-                          )}
-                          <button
-                            onClick={() => startEditing(shortcut.id)}
-                            className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-                          >
-                            <ShortcutBadge keys={effectiveKeys} size="md" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+        </SettingRow>
+      </SettingsGroup>
       {/* Edit Shortcut Dialog */}
       <Dialog open={!!editingId} onOpenChange={() => setEditingId(null)}>
         <DialogContent

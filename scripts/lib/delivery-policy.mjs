@@ -142,11 +142,9 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:settings:navigation',
-    why: 'Settings remains searchable, deep-linkable and responsive as Fleet preferences grow',
+    why: 'Settings remains searchable and deep-linkable, and its shell draws every page frame (BUG-306)',
     match: file =>
-      /^src\/app\/settings\/(settings-client|settings-registry|fleet-settings|keyboard-settings|settings-controls)\.tsx?$/.test(
-        file
-      ) ||
+      (file.startsWith('src/app/settings/') && !/\.test\.tsx?$/.test(file)) ||
       (file.startsWith('src/components/presentation/') &&
         !/\.test\.tsx?$/.test(file)) ||
       (file.startsWith('src/lib/presentation/') &&

@@ -42,8 +42,8 @@ import type {
 
 /** Context labels and conversation summaries only run in the desktop app, so
  *  their switches follow the settled convention for desktop-only rows: absent
- *  in a browser rather than present and dead (`NotificationsSettings`,
- *  `PermissionsExplainer`). Goal visuals and analytics run in both. */
+ *  in a browser rather than present and dead (the Permissions page's Files
+ *  and folders row). Goal visuals and analytics run in both. */
 const DESKTOP_ONLY: Record<HostedFeatureId, boolean> = {
   contextLabels: true,
   conversationSummaries: true,
@@ -178,136 +178,118 @@ export function PrivacySettings() {
   const preferences: HostedFeaturePreferences | null = settings;
 
   return (
-    <section
-      aria-labelledby="privacy-heading"
-      className="min-w-0 bg-[var(--settings-page)] px-4 py-6 sm:px-7 lg:px-9"
-    >
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-7 border-b border-[var(--settings-line)] pb-5">
-          <h2
-            id="privacy-heading"
-            className="font-display text-display font-semibold tracking-[-0.02em]"
-          >
-            Privacy
-          </h2>
-          <p className="mt-1 font-ui text-chrome-title text-[var(--settings-dim)]">
-            Everything Exawatt sends from this device, and the switch for each
-            one.
-          </p>
-        </div>
+    <>
+      <SettingsGroup
+        title="Hosted features"
+        description="Work Exawatt does for you off this device. Each one is on by default and switches on its own."
+        dataAttribute="data-hosted-feature-settings"
+      >
+        {HOSTED_FEATURE_IDS.filter(id => available || !DESKTOP_ONLY[id]).map(
+          id =>
+            id === 'goalVisuals' ? (
+              <OutboundControlRow
+                key={id}
+                control={OUTBOUND_CONTROLS[id]}
+                checked={goalVisuals.enabled}
+                disabled={!goalVisuals.ready}
+                onChange={next => void goalVisuals.setEnabled(next)}
+              />
+            ) : (
+              <OutboundControlRow
+                key={id}
+                control={OUTBOUND_CONTROLS[id]}
+                checked={isHostedFeatureEnabled(preferences, id)}
+                onChange={next => void setFeature(id, next)}
+              />
+            )
+        )}
+      </SettingsGroup>
 
-        <SettingsGroup
-          title="Hosted features"
-          description="Work Exawatt does for you off this device. Each one is on by default and switches on its own."
-          dataAttribute="data-hosted-feature-settings"
-        >
-          {HOSTED_FEATURE_IDS.filter(id => available || !DESKTOP_ONLY[id]).map(
-            id =>
-              id === 'goalVisuals' ? (
-                <OutboundControlRow
-                  key={id}
-                  control={OUTBOUND_CONTROLS[id]}
-                  checked={goalVisuals.enabled}
-                  disabled={!goalVisuals.ready}
-                  onChange={next => void goalVisuals.setEnabled(next)}
-                />
-              ) : (
-                <OutboundControlRow
-                  key={id}
-                  control={OUTBOUND_CONTROLS[id]}
-                  checked={isHostedFeatureEnabled(preferences, id)}
-                  onChange={next => void setFeature(id, next)}
-                />
-              )
-          )}
-        </SettingsGroup>
-
-        {/* A third category, structurally separate on purpose: outbound under
+      {/* A third category, structurally separate on purpose: outbound under
             the operator's OWN sign-ins. Nothing here is hosted by Exawatt, so
             it borrows neither the hosted group nor the analytics one — the
             same separation reasoning decision `0031` applied to analytics.
             Desktop-only, like the other terminal-fed features. */}
-        {available ? (
-          <SettingsGroup
-            title="Your own accounts"
-            description="Features that run through tools you signed in to yourself. These requests are your own traffic and never touch Exawatt."
-            dataAttribute="data-own-account-settings"
-          >
-            <OutboundControlRow
-              control={OUTBOUND_CONTROLS.reentryRecap}
-              checked={isReentryRecapEnabled(preferences)}
-              onChange={next => void setFeature('reentryRecap', next)}
-            />
-            <OutboundControlRow
-              control={OUTBOUND_CONTROLS.claudePlanWindows}
-              checked={isClaudePlanWindowsEnabled(preferences)}
-              onChange={next => void setFeature('claudePlanWindows', next)}
-            />
-            <OutboundControlRow
-              control={OUTBOUND_CONTROLS.codexPlanWindows}
-              checked={isCodexPlanWindowsEnabled(preferences)}
-              onChange={next => void setFeature('codexPlanWindows', next)}
-            />
-            <OutboundControlRow
-              control={OUTBOUND_CONTROLS.googlePlanWindows}
-              checked={isGooglePlanWindowsEnabled(preferences)}
-              onChange={next => void setFeature('googlePlanWindows', next)}
-            />
-          </SettingsGroup>
-        ) : null}
+      {available ? (
+        <SettingsGroup
+          title="Your own accounts"
+          description="Features that run through tools you signed in to yourself. These requests are your own traffic and never touch Exawatt."
+          dataAttribute="data-own-account-settings"
+        >
+          <OutboundControlRow
+            control={OUTBOUND_CONTROLS.reentryRecap}
+            checked={isReentryRecapEnabled(preferences)}
+            onChange={next => void setFeature('reentryRecap', next)}
+          />
+          <OutboundControlRow
+            control={OUTBOUND_CONTROLS.claudePlanWindows}
+            checked={isClaudePlanWindowsEnabled(preferences)}
+            onChange={next => void setFeature('claudePlanWindows', next)}
+          />
+          <OutboundControlRow
+            control={OUTBOUND_CONTROLS.codexPlanWindows}
+            checked={isCodexPlanWindowsEnabled(preferences)}
+            onChange={next => void setFeature('codexPlanWindows', next)}
+          />
+          <OutboundControlRow
+            control={OUTBOUND_CONTROLS.googlePlanWindows}
+            checked={isGooglePlanWindowsEnabled(preferences)}
+            onChange={next => void setFeature('googlePlanWindows', next)}
+          />
+        </SettingsGroup>
+      ) : null}
 
-        {/* The FOURTH category (ENG-035): public sharing. The one control on
+      {/* The FOURTH category (ENG-035): public sharing. The one control on
             this surface that makes data PUBLIC, and the one that defaults
             off — turning it on is decision `0029`'s consent act. Structurally
             separate from hosted features (private, for you), own-account
             traffic, and analytics. Desktop-only: the local source that feeds
             it exists only in the app. */}
-        {available ? (
-          <SettingsGroup
-            title="Public sharing"
-            description="Data published for anyone to read. Off until you turn it on."
-            dataAttribute="data-public-sharing-settings"
-          >
-            <OutboundControlRow
-              control={OUTBOUND_CONTROLS.operatorProfile}
-              checked={isOperatorAutoPublishEnabled(preferences)}
-              onChange={next => void setFeature('operatorProfile', next)}
-            />
-          </SettingsGroup>
-        ) : null}
-
+      {available ? (
         <SettingsGroup
-          title="Analytics"
-          description="Kept separate from your account and from hosted features. Turning it back on takes effect the next time Exawatt starts."
-          dataAttribute="data-analytics-settings"
+          title="Public sharing"
+          description="Data published for anyone to read. Off until you turn it on."
+          dataAttribute="data-public-sharing-settings"
         >
           <OutboundControlRow
-            control={OUTBOUND_CONTROLS.productAnalytics}
-            checked={analyticsEnabled}
-            onChange={next => {
-              // Show the choice at once; settle on what was kept.
-              setAnalyticsEnabled(next);
-              const ticket = analyticsChoice.begin();
-              void setAnalyticsOptOut(!next).then(optedOut => {
-                if (ticket.current) setAnalyticsEnabled(!optedOut);
-              });
-            }}
+            control={OUTBOUND_CONTROLS.operatorProfile}
+            checked={isOperatorAutoPublishEnabled(preferences)}
+            onChange={next => void setFeature('operatorProfile', next)}
           />
         </SettingsGroup>
+      ) : null}
 
-        <DiagnosticsSettings />
+      <SettingsGroup
+        title="Analytics"
+        description="Kept separate from your account and from hosted features. Turning it back on takes effect the next time Exawatt starts."
+        dataAttribute="data-analytics-settings"
+      >
+        <OutboundControlRow
+          control={OUTBOUND_CONTROLS.productAnalytics}
+          checked={analyticsEnabled}
+          onChange={next => {
+            // Show the choice at once; settle on what was kept.
+            setAnalyticsEnabled(next);
+            const ticket = analyticsChoice.begin();
+            void setAnalyticsOptOut(!next).then(optedOut => {
+              if (ticket.current) setAnalyticsEnabled(!optedOut);
+            });
+          }}
+        />
+      </SettingsGroup>
 
-        {servesOwnLegalPages() ? (
-          <p className="font-ui text-chrome-label text-[var(--settings-dim)]">
-            <Link
-              href="/privacy"
-              className="rounded underline underline-offset-2 outline-none transition-colors hover:text-[var(--settings-text)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
-            >
-              Privacy policy
-            </Link>
-          </p>
-        ) : null}
-      </div>
-    </section>
+      <DiagnosticsSettings />
+
+      {servesOwnLegalPages() ? (
+        <p className="font-ui text-chrome-label text-[var(--settings-dim)]">
+          <Link
+            href="/privacy"
+            className="rounded underline underline-offset-2 outline-none transition-colors hover:text-[var(--settings-text)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
+          >
+            Privacy policy
+          </Link>
+        </p>
+      ) : null}
+    </>
   );
 }

@@ -16,8 +16,7 @@ import { SettingsGroup, SettingRow } from './settings-controls';
  * ENG-045: every grant Exawatt asks for, in one place. Rows are rendered from
  * `PERMISSIONS`, the same declaration main reads statuses and raises prompts
  * from, so a grant cannot appear here without main owning it or be asked for
- * without appearing here. Where this page lives in Settings is one entry in
- * `SettingsNavigation`; the component stands on its own.
+ * without appearing here. The Settings shell draws the page's header.
  */
 
 const GROUPS: Array<{
@@ -30,13 +29,13 @@ const GROUPS: Array<{
     kind: 'os',
     title: 'On this Mac',
     description:
-      'What macOS lets Exawatt do. Exawatt asks at the moment it needs one, and you can allow it here first.',
+      'Exawatt asks when it first needs each one, or you can allow it here.',
     dataAttribute: 'data-permissions-os',
   },
   {
     kind: 'in-app',
     title: 'In Exawatt',
-    description: 'What you have let your agents and teammates do.',
+    description: 'What you have let your Agents and teammates do.',
     dataAttribute: 'data-permissions-in-app',
   },
 ];
@@ -105,59 +104,61 @@ function PermissionControls({
   );
 }
 
+/**
+ * Why macOS names Exawatt when an Agent touches a protected folder (ENG-016
+ * D18): Agent processes run as children of Exawatt, so macOS privacy
+ * protection attributes their file access to the app. Desktop only.
+ */
+function FilesAndFoldersRow() {
+  return (
+    <div data-permissions-explainer>
+      <SettingRow
+        title="Files and folders"
+        description="macOS asks on Exawatt's behalf when an Agent works in Desktop, Documents, Downloads or an external drive. Allow it, or the Agent hits permission errors there. Change it in System Settings → Privacy & Security → Files and Folders."
+      />
+    </div>
+  );
+}
+
 export function PermissionsSettings() {
   const { available, stateOf } = usePermissions();
+  const groups = GROUPS.map(group => ({
+    ...group,
+    rows: PERMISSIONS.filter(item => item.kind === group.kind),
+  })).filter(group => group.rows.length > 0 || group.kind === 'os');
+  // A page with one group lets the page header name it.
+  const titled = groups.length > 1;
   return (
-    <section
-      aria-labelledby="permissions-heading"
-      className="min-w-0 bg-[var(--settings-page)] px-4 py-6 sm:px-7 lg:px-9"
-    >
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-7 border-b border-[var(--settings-line)] pb-5">
-          <h2
-            id="permissions-heading"
-            className="font-display text-display font-semibold tracking-[-0.02em]"
-          >
-            Permissions
-          </h2>
-          <p className="mt-1 font-ui text-chrome-title text-[var(--settings-dim)]">
-            What Exawatt has been allowed to do, and where you change it.
-          </p>
-        </div>
-
-        {GROUPS.map(group => {
-          const rows = PERMISSIONS.filter(item => item.kind === group.kind);
-          if (rows.length === 0) return null;
-          return (
-            <SettingsGroup
-              key={group.kind}
-              title={group.title}
-              description={group.description}
-              dataAttribute={group.dataAttribute}
-            >
-              {rows.map(declaration => (
-                <div key={declaration.id} data-permission={declaration.id}>
-                  <SettingRow
-                    title={declaration.label}
-                    description={declaration.why}
-                  >
-                    {available ? (
-                      <PermissionControls
-                        declaration={declaration}
-                        state={stateOf(declaration.id)}
-                      />
-                    ) : (
-                      <p className="shrink-0 font-ui text-chrome-meta text-[var(--settings-faint)]">
-                        In the desktop app
-                      </p>
-                    )}
-                  </SettingRow>
-                </div>
-              ))}
-            </SettingsGroup>
-          );
-        })}
-      </div>
-    </section>
+    <>
+      {groups.map(group => (
+        <SettingsGroup
+          key={group.kind}
+          title={titled ? group.title : undefined}
+          description={titled ? group.description : undefined}
+          dataAttribute={group.dataAttribute}
+        >
+          {group.rows.map(declaration => (
+            <div key={declaration.id} data-permission={declaration.id}>
+              <SettingRow
+                title={declaration.label}
+                description={declaration.why}
+              >
+                {available ? (
+                  <PermissionControls
+                    declaration={declaration}
+                    state={stateOf(declaration.id)}
+                  />
+                ) : (
+                  <p className="shrink-0 font-ui text-chrome-meta text-[var(--settings-faint)]">
+                    In the desktop app
+                  </p>
+                )}
+              </SettingRow>
+            </div>
+          ))}
+          {group.kind === 'os' && available && <FilesAndFoldersRow />}
+        </SettingsGroup>
+      ))}
+    </>
   );
 }

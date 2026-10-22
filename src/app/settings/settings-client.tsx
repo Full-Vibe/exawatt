@@ -18,18 +18,21 @@ import { PermissionsSettings } from './permissions-settings';
 import { SafetySettings } from './safety-settings';
 import { PowerSettings } from './power-settings';
 import { KeyboardSettings } from './keyboard-settings';
-import {
-  NotificationsSettings,
-  PermissionsExplainer,
-} from './notifications-settings';
+import { NotificationsSettings } from './notifications-settings';
+import { SettingsPage } from './settings-controls';
 import {
   SETTINGS_DESTINATIONS,
   SETTINGS_GROUPS,
+  isSettingsTopic,
   resolveSettingsSection,
   settingsHref,
   searchSettings,
   type SettingsSection,
+  type SettingsTopicId,
 } from './settings-registry';
+
+/** How long a landed row keeps its wash. */
+const LANDED_MS = 2000;
 
 function ConnectionFromLink({ onOpen }: { onOpen: (id: string) => void }) {
   const source = useSearchParams()?.get('source') ?? null;
@@ -39,7 +42,10 @@ function ConnectionFromLink({ onOpen }: { onOpen: (id: string) => void }) {
   return null;
 }
 
-/** Feature bodies keep their own controls and persistence. The shell owns finding them. */
+/**
+ * Feature bodies keep their own controls and persistence. The shell owns
+ * finding them and the frame around them.
+ */
 const SECTION_COMPONENTS = {
   appearance: AppearanceSettings,
   fleet: FleetSettings,
@@ -50,28 +56,26 @@ const SECTION_COMPONENTS = {
   privacy: PrivacySettings,
   safety: SafetySettings,
 } satisfies Record<Exclude<SettingsSection, 'agent-sources'>, ComponentType>;
-const SELF_HEADED = new Set<SettingsSection>([
-  'agent-sources',
-  'permissions',
-  'privacy',
-  'safety',
-]);
 
 export function SettingsClient() {
   const [activeSection, setActiveSection] =
     useState<SettingsSection>('agent-sources');
   const [query, setQuery] = useState('');
+  const [landed, setLanded] = useState<SettingsTopicId | null>(null);
   const [locationRevision, setLocationRevision] = useState(0);
   const [connectOpen, setConnectOpen] = useState(false);
   const [openConnection, setOpenConnection] = useState<{ id: string } | null>(
     null
   );
-  const navigate = useCallback((section: SettingsSection, topic?: string) => {
-    setActiveSection(section);
-    setQuery('');
-    window.history.pushState(null, '', settingsHref(section, topic));
-    setLocationRevision(value => value + 1);
-  }, []);
+  const navigate = useCallback(
+    (section: SettingsSection, topic?: SettingsTopicId) => {
+      setActiveSection(section);
+      setQuery('');
+      window.history.pushState(null, '', settingsHref(section, topic));
+      setLocationRevision(value => value + 1);
+    },
+    []
+  );
   useEffect(() => {
     const readLocation = () => {
       setActiveSection(
@@ -94,9 +98,17 @@ export function SettingsClient() {
     } catch {
       return;
     }
+    if (!isSettingsTopic(id)) return;
     const target = document.getElementById(id);
-    target?.scrollIntoView?.({ block: 'center' });
-    target?.focus({ preventScroll: true });
+    if (!target) return;
+    target.scrollIntoView?.({ block: 'center' });
+    target.focus({ preventScroll: true });
+    setLanded(id);
+    const timer = window.setTimeout(() => setLanded(null), LANDED_MS);
+    return () => {
+      window.clearTimeout(timer);
+      setLanded(null);
+    };
   }, [activeSection, query, locationRevision]);
   const openConnectionById = useCallback((id: string) => {
     setActiveSection('agent-sources');
@@ -112,7 +124,7 @@ export function SettingsClient() {
       : SECTION_COMPONENTS[activeSection];
   const results = searchSettings(query);
   const link =
-    (section: SettingsSection, topic?: string) =>
+    (section: SettingsSection, topic?: SettingsTopicId) =>
     (event: React.MouseEvent<HTMLAnchorElement>) => {
       if (
         event.metaKey ||
@@ -245,67 +257,21 @@ export function SettingsClient() {
               </div>
             </div>
           </section>
-        ) : activeSection === 'agent-sources' ? (
-          <AgentSourcesSettings
-            onConnectExistingAgent={() => setConnectOpen(true)}
-            openConnection={openConnection}
-          />
-        ) : SELF_HEADED.has(activeSection) ? (
-          <div className="min-w-0">
-            {Section && <Section />}
-            {activeSection === 'permissions' && (
-              <div className="mx-auto max-w-4xl px-4 pb-6">
-                <PermissionsExplainer />
-              </div>
-            )}
-          </div>
         ) : (
-          <section
-            aria-labelledby="settings-section-heading"
-            className="min-w-0 px-4 py-6 sm:px-8"
+          <SettingsPage
+            destination={destination}
+            landed={landed}
+            wide={activeSection === 'agent-sources'}
           >
-            <div className="mx-auto max-w-4xl">
-              <header className="mb-6 border-b border-[var(--settings-line)] pb-5">
-                <p className="mb-1 text-chrome-label text-[var(--settings-faint)]">
-                  {destination.group}
-                </p>
-                <h2
-                  id="settings-section-heading"
-                  className="text-surface-title font-semibold"
-                >
-                  {destination.label}
-                </h2>
-                <p className="mt-1 text-sm text-[var(--settings-dim)]">
-                  {destination.description}
-                </p>
-              </header>
-              {!!destination.topics.length && (
-                <nav
-                  aria-label={`${destination.label} topics`}
-                  className="mb-4 flex flex-wrap gap-3"
-                >
-                  {destination.topics.map(topic => (
-                    <a
-                      key={topic.id}
-                      href={settingsHref(activeSection, topic.id)}
-                      onClick={link(activeSection, topic.id)}
-                      className="text-chrome-label text-[var(--settings-teal)] underline-offset-4 hover:underline"
-                    >
-                      {topic.label}
-                    </a>
-                  ))}
-                </nav>
-              )}
-              {Section && <Section />}
-              {activeSection === 'power' &&
-                typeof window !== 'undefined' &&
-                !window.electron && (
-                  <p className="text-sm text-[var(--settings-dim)]">
-                    Sleep prevention is available in the desktop app.
-                  </p>
-                )}
-            </div>
-          </section>
+            {Section ? (
+              <Section />
+            ) : (
+              <AgentSourcesSettings
+                onConnectExistingAgent={() => setConnectOpen(true)}
+                openConnection={openConnection}
+              />
+            )}
+          </SettingsPage>
         )}
       </div>
       <ConnectSourceDialog

@@ -94,32 +94,41 @@ function ThemeCard({
   );
 }
 
+/** The theme Auto uses while the Mac is in one mode. */
 function ThemeSelect({
   value,
   themes,
-  label,
+  mode,
   disabled,
   onChange,
 }: {
   value: string;
   themes: ThemeDefinitionV1[];
-  label: string;
+  mode: 'Light' | 'Dark';
   disabled: boolean;
   onChange: (themeId: AppearanceAutoPairV1[keyof AppearanceAutoPairV1]) => void;
 }) {
   return (
-    <Select value={value} disabled={disabled} onValueChange={onChange}>
-      <SelectTrigger className="w-44 max-[520px]:w-full" aria-label={label}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {themes.map(theme => (
-          <SelectItem key={theme.id} value={theme.id}>
-            {theme.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex items-center gap-2 font-ui text-chrome-label text-[var(--settings-dim)] max-[520px]:w-full">
+      <span aria-hidden className="w-9">
+        {mode}
+      </span>
+      <Select value={value} disabled={disabled} onValueChange={onChange}>
+        <SelectTrigger
+          className="w-44 max-[520px]:flex-1"
+          aria-label={`${mode} appearance`}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {themes.map(theme => (
+            <SelectItem key={theme.id} value={theme.id}>
+              {theme.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -193,15 +202,53 @@ export function AppearanceSettings() {
       : undefined;
 
   return (
-    <SettingsGroup
-      title="Appearance"
-      description="Choose the app theme and interface typography for this device."
-      dataAttribute="data-appearance-settings"
-    >
+    <SettingsGroup dataAttribute="data-appearance-settings">
       <SettingRow
-        id="theme-mode"
-        title="Theme mode"
-        description="Follow the system appearance or keep one theme selected."
+        topic="theme-mode"
+        title="Theme"
+        description="Auto switches with your Mac between light and dark."
+        body={
+          preferences.selection.mode === 'manual' ? (
+            <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-3">
+              {themes.map(theme => (
+                <ThemeCard
+                  key={theme.id}
+                  theme={theme}
+                  selected={manualThemeId === theme.id}
+                  disabled={disabled}
+                  onSelect={() =>
+                    commit(current => selectManualTheme(current, theme.id))
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-x-6 gap-y-3">
+              <ThemeSelect
+                value={autoPair.lightThemeId}
+                themes={lightThemes}
+                mode="Light"
+                disabled={disabled}
+                onChange={lightThemeId =>
+                  commit(current =>
+                    selectAutoThemes(current, { ...autoPair, lightThemeId })
+                  )
+                }
+              />
+              <ThemeSelect
+                value={autoPair.darkThemeId}
+                themes={darkThemes}
+                mode="Dark"
+                disabled={disabled}
+                onChange={darkThemeId =>
+                  commit(current =>
+                    selectAutoThemes(current, { ...autoPair, darkThemeId })
+                  )
+                }
+              />
+            </div>
+          )
+        }
       >
         <SettingsSegmentedControl
           label="Theme mode"
@@ -226,66 +273,10 @@ export function AppearanceSettings() {
         />
       </SettingRow>
 
-      {preferences.selection.mode === 'manual' ? (
-        <SettingRow
-          title="Theme"
-          description="Choose Classic Dark, Air, or Night."
-        >
-          <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-3">
-            {themes.map(theme => (
-              <ThemeCard
-                key={theme.id}
-                theme={theme}
-                selected={manualThemeId === theme.id}
-                disabled={disabled}
-                onSelect={() =>
-                  commit(current => selectManualTheme(current, theme.id))
-                }
-              />
-            ))}
-          </div>
-        </SettingRow>
-      ) : (
-        <>
-          <SettingRow
-            title="Light appearance"
-            description="Theme used while the system is in light mode."
-          >
-            <ThemeSelect
-              value={autoPair.lightThemeId}
-              themes={lightThemes}
-              label="Light appearance"
-              disabled={disabled}
-              onChange={lightThemeId =>
-                commit(current =>
-                  selectAutoThemes(current, { ...autoPair, lightThemeId })
-                )
-              }
-            />
-          </SettingRow>
-          <SettingRow
-            title="Dark appearance"
-            description="Theme used while the system is in dark mode."
-          >
-            <ThemeSelect
-              value={autoPair.darkThemeId}
-              themes={darkThemes}
-              label="Dark appearance"
-              disabled={disabled}
-              onChange={darkThemeId =>
-                commit(current =>
-                  selectAutoThemes(current, { ...autoPair, darkThemeId })
-                )
-              }
-            />
-          </SettingRow>
-        </>
-      )}
-
       <SettingRow
-        id="system-accent"
+        topic="system-accent"
         title="System accent"
-        description="Use the operating system accent for primary actions."
+        description="Color primary buttons with your Mac's accent."
       >
         <SettingSwitch
           checked={preferences.accentSource === 'system'}
@@ -301,9 +292,9 @@ export function AppearanceSettings() {
       </SettingRow>
 
       <SettingRow
-        id="interface-font"
+        topic="interface-font"
         title="Interface font"
-        description="Use the theme default, the system UI font, or bundled Geist."
+        description="Each theme has its own default."
       >
         <Select
           value={preferences.interfaceFont}
@@ -331,9 +322,9 @@ export function AppearanceSettings() {
       </SettingRow>
 
       <SettingRow
-        id="interface-text-size"
+        topic="interface-text-size"
         title="Interface text size"
-        description="Scale app labels and reading text without changing layout density or Terminal text."
+        description="Terminal text keeps its own size."
       >
         <Select
           value={String(preferences.interfaceScale)}

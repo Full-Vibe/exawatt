@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createOptionalClient } from '@/lib/supabase/client';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
+import { Button } from '@/components/ui/button';
 import { SettingRow, SettingsGroup } from './settings-controls';
 
 /**
@@ -66,17 +67,18 @@ export function DiagnosticsSettings() {
     >
       <SettingRow
         title="Save a diagnostic report"
-        description="Writes your build, update state, and recent app logs to a file in Downloads. It carries no Session text, prompts, Project names, or file contents, and paths are shortened to ~. Works signed out."
+        description="Writes your build, update state and recent app logs to a file in Downloads. It holds no Session text, prompts, Project names or file contents. Works signed out."
       >
         <div className="flex flex-col items-end gap-1.5">
-          <button
+          <Button
             type="button"
+            size="sm"
+            variant="outline"
             onClick={() => void save()}
             disabled={saving}
-            className="rounded border border-[var(--settings-line)] px-3 py-1.5 font-ui text-chrome-label text-[var(--settings-soft)] outline-none transition-colors hover:text-[var(--settings-text)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save report'}
-          </button>
+          </Button>
           <p
             aria-live="polite"
             className="font-ui text-chrome-meta text-[var(--settings-faint)]"

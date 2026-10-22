@@ -14,6 +14,7 @@ import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-vis
 import { PERMISSIONS } from '@exawatt/core';
 import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 import { SettingsClient } from './settings-client';
+import { SETTINGS_DESTINATIONS, settingsHref } from './settings-registry';
 import {
   installBridgeDouble,
   removeBridgeDouble,
@@ -365,6 +366,73 @@ describe('Settings navigation contract', () => {
     expect(screen.getByRole('link', { name: 'Appearance' })).toHaveAttribute(
       'aria-current',
       'page'
+    );
+  });
+});
+
+/*
+ * BUG-306: the shell owns every page's frame. A page's header is drawn once,
+ * from the registry, whichever module fills it; the page body never carries
+ * a strip of links to its own rows; and a link that lands on a row marks it.
+ */
+describe('Settings page frame', () => {
+  beforeEach(() => {
+    installBridgeDouble({ platform: 'darwin' });
+  });
+  afterEach(() => {
+    cleanup();
+    removeBridgeDouble();
+    vi.useRealTimers();
+    window.history.replaceState(null, '', '/settings');
+  });
+
+  it('heads every destination once, from the registry, with no links to its own rows', async () => {
+    for (const destination of SETTINGS_DESTINATIONS) {
+      window.history.replaceState(null, '', settingsHref(destination.id));
+      await renderSettings();
+      const page = screen.getByRole('region', { name: destination.label });
+      expect(
+        screen.getAllByRole('heading', { name: destination.label })
+      ).toHaveLength(1);
+      expect(within(page).getByText(destination.description)).toBeVisible();
+      expect(within(page).getByText(destination.group)).toBeVisible();
+      expect(page.querySelector('a[href^="/settings"]')).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('marks the row a link lands on, one row at a time, then lets it go', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      settingsHref('fleet', 'fleet-material')
+    );
+    await renderSettings();
+    const material = document.getElementById('fleet-material');
+    expect(material).toHaveAttribute('data-settings-landed');
+    expect(document.activeElement).toBe(material);
+
+    fireEvent.change(
+      screen.getByRole('searchbox', { name: 'Search Settings' }),
+      { target: { value: 'fleet view' } }
+    );
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fireEvent.click(
+      within(
+        screen.getByRole('region', { name: 'Settings search results' })
+      ).getByRole('link', { name: 'Fleet view' })
+    );
+    const view = document.getElementById('fleet-view');
+    expect(view).toHaveAttribute('data-settings-landed');
+    expect(document.getElementById('fleet-material')).not.toHaveAttribute(
+      'data-settings-landed'
+    );
+
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(document.getElementById('fleet-view')).not.toHaveAttribute(
+      'data-settings-landed'
     );
   });
 });

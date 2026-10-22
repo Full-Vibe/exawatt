@@ -2,7 +2,11 @@
  * Settings information architecture. A feature contributes a destination with
  * an owner, user-facing description and search vocabulary, then mounts its own
  * component in SettingsClient. This is navigation metadata, not a form engine.
- * IDs and topic IDs are public deep links; keep them stable when copy changes.
+ * The shell draws every destination's header from this entry, so a feature
+ * module never titles its own page. IDs and topic IDs are public deep links;
+ * keep them stable when copy changes. A topic names the row it lands on: its
+ * label is that row's title, and the row takes the topic through
+ * `SettingRow`'s `topic`.
  */
 export const SETTINGS_GROUPS = [
   'Workspace',
@@ -30,8 +34,7 @@ export const SETTINGS_DESTINATIONS = [
     id: 'agent-sources',
     group: 'Workspace',
     label: 'Agent Sources',
-    description:
-      'Connect and manage the sources that bring Agents into your Workspace.',
+    description: 'Connect and check the tools your Agents run on.',
     owner: 'agent-sources',
     keywords: [
       'connect',
@@ -84,7 +87,16 @@ export const SETTINGS_DESTINATIONS = [
       {
         id: 'theme-mode',
         label: 'Theme',
-        keywords: ['automatic', 'manual', 'dark', 'light'],
+        keywords: [
+          'automatic',
+          'manual',
+          'mode',
+          'dark',
+          'light',
+          'classic',
+          'air',
+          'night',
+        ],
       },
       { id: 'system-accent', label: 'System accent', keywords: ['color'] },
       {
@@ -103,7 +115,7 @@ export const SETTINGS_DESTINATIONS = [
     id: 'notifications',
     group: 'Personalization',
     label: 'Notifications',
-    description: 'Control desktop notifications, Dock badges and usage alerts.',
+    description: 'Choose how Exawatt reaches you while you work in other apps.',
     owner: 'notifications',
     keywords: ['alert', 'notification', 'dock', 'badge', 'usage', 'sound'],
     topics: [],
@@ -112,7 +124,7 @@ export const SETTINGS_DESTINATIONS = [
     id: 'keyboard',
     group: 'Personalization',
     label: 'Keyboard shortcuts',
-    description: 'Find commands and customize their keyboard bindings.',
+    description: 'Click a shortcut to change its keys.',
     owner: 'shortcuts',
     keywords: ['keyboard', 'shortcut', 'hotkey', 'command', 'binding', 'keys'],
     topics: [],
@@ -121,7 +133,8 @@ export const SETTINGS_DESTINATIONS = [
     id: 'power',
     group: 'Device & trust',
     label: 'Power',
-    description: 'Manage sleep prevention while local Agents work.',
+    description:
+      'Keep this Mac awake while local Agents work, even with the screen locked.',
     owner: 'device-power',
     keywords: ['battery', 'sleep', 'awake', 'energy', 'power', 'AC'],
     topics: [],
@@ -130,7 +143,7 @@ export const SETTINGS_DESTINATIONS = [
     id: 'permissions',
     group: 'Device & trust',
     label: 'Permissions',
-    description: 'Review access granted by macOS and within Exawatt.',
+    description: 'See what Exawatt is allowed to do and change it.',
     owner: 'permissions',
     keywords: [
       'macOS',
@@ -148,8 +161,7 @@ export const SETTINGS_DESTINATIONS = [
     id: 'privacy',
     group: 'Device & trust',
     label: 'Privacy',
-    description:
-      'Choose what data leaves this device and which hosted features can use it.',
+    description: 'Choose what Exawatt sends from this device.',
     owner: 'hosted-features',
     keywords: [
       'data',
@@ -160,6 +172,10 @@ export const SETTINGS_DESTINATIONS = [
       'visuals',
       'analytics',
       'privacy',
+      'diagnostics',
+      'report',
+      'logs',
+      'support',
     ],
     topics: [],
   },
@@ -167,7 +183,8 @@ export const SETTINGS_DESTINATIONS = [
     id: 'safety',
     group: 'Device & trust',
     label: 'Safety',
-    description: 'Manage agent guardrails and recovery controls.',
+    description:
+      'Limit what the Agents you start here may do. Each limit is off until you turn it on.',
     owner: 'safety-controls',
     keywords: ['guardrail', 'approval', 'safety', 'stop', 'recover', 'reset'],
     topics: [],
@@ -175,6 +192,9 @@ export const SETTINGS_DESTINATIONS = [
 ] as const satisfies readonly SettingsDestination[];
 
 export type SettingsSection = (typeof SETTINGS_DESTINATIONS)[number]['id'];
+/** Every row a link can land on. `SettingRow` takes one as its `topic`. */
+export type SettingsTopicId =
+  (typeof SETTINGS_DESTINATIONS)[number]['topics'][number]['id'];
 
 export function resolveSettingsSection(id: string | null): SettingsSection {
   // The old catch-all destination remains a useful inbound link.
@@ -184,7 +204,18 @@ export function resolveSettingsSection(id: string | null): SettingsSection {
   );
 }
 
-export function settingsHref(section: SettingsSection, topic?: string): string {
+const TOPIC_IDS: ReadonlySet<string> = new Set(
+  SETTINGS_DESTINATIONS.flatMap(item => item.topics.map(topic => topic.id))
+);
+
+export function isSettingsTopic(id: string): id is SettingsTopicId {
+  return TOPIC_IDS.has(id);
+}
+
+export function settingsHref(
+  section: SettingsSection,
+  topic?: SettingsTopicId
+): string {
   return `/settings?section=${section}${topic ? `#${encodeURIComponent(topic)}` : ''}`;
 }
 

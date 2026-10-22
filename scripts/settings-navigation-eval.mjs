@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-/** Settings destinations, discoverability and device-local presentation choices. */
+/**
+ * Settings destinations, discoverability and device-local presentation
+ * choices. BUG-306: the shell draws each destination's frame once, from the
+ * registry, with no strip of links to its own rows, and every topic link
+ * lands on its row and marks it.
+ */
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -160,6 +165,7 @@ try {
     await page.waitForFunction(
       () => document.activeElement?.id === 'fleet-material'
     );
+    const frames = [];
     for (const destination of SETTINGS_DESTINATIONS) {
       const nav = page.getByRole('navigation', {
         name: 'Settings',
@@ -178,7 +184,72 @@ try {
           .getAttribute('aria-current'),
         'page'
       );
+      // One frame, drawn from the registry: one heading named for the page,
+      // and the page body never links to its own rows.
+      const frame = page.getByRole('region', {
+        name: destination.label,
+        exact: true,
+      });
+      await frame.waitFor();
+      const headings = await page
+        .getByRole('heading', { name: destination.label, exact: true })
+        .count();
+      assert.equal(headings, 1, `${destination.id}: one page heading`);
+      assert.equal(
+        await frame.getByText(destination.description, { exact: true }).count(),
+        1,
+        `${destination.id}: the registry description heads the page`
+      );
+      const ownLinks = await frame.locator('a[href^="/settings"]').count();
+      assert.equal(ownLinks, 0, `${destination.id}: no topic strip`);
+      await page.waitForLoadState('networkidle').catch(() => undefined);
+      await page.screenshot({
+        path: join(output, `settings-${theme}-${destination.id}.png`),
+        fullPage: true,
+      });
+      frames.push({ id: destination.id, headings, ownLinks });
     }
+    // Every topic link lands on the row with its id, in view and focused,
+    // marks it visibly, and lets the mark go.
+    const landings = [];
+    for (const destination of SETTINGS_DESTINATIONS) {
+      for (const topic of destination.topics) {
+        await page.goto(`${base}${settingsHref(destination.id, topic.id)}`, {
+          waitUntil: 'domcontentloaded',
+        });
+        await page.waitForFunction(
+          id =>
+            document.getElementById(id)?.hasAttribute('data-settings-landed'),
+          topic.id
+        );
+        const landed = await page.evaluate(id => {
+          const row = document.getElementById(id);
+          const box = row.getBoundingClientRect();
+          return {
+            focused: document.activeElement === row,
+            inView: box.top >= 0 && box.bottom <= window.innerHeight,
+            mark: getComputedStyle(row, '::before').opacity,
+            title: row.textContent,
+          };
+        }, topic.id);
+        assert.ok(landed.focused, `${topic.id}: the landed row takes focus`);
+        assert.ok(landed.inView, `${topic.id}: the landed row is in view`);
+        assert.equal(landed.mark, '1', `${topic.id}: the landed row is marked`);
+        assert.ok(
+          landed.title.startsWith(topic.label),
+          `${topic.id}: the link names the row it lands on`
+        );
+        await page.waitForFunction(
+          id =>
+            !document.getElementById(id)?.hasAttribute('data-settings-landed'),
+          topic.id
+        );
+        landings.push(topic.id);
+      }
+    }
+    await page.goto(`${base}${settingsHref('fleet')}`, {
+      waitUntil: 'domcontentloaded',
+    });
     await page
       .getByRole('navigation', { name: 'Settings', exact: true })
       .getByRole('link', { name: 'Fleet', exact: true })
@@ -214,6 +285,8 @@ try {
       theme,
       materials: FLEET_MATERIALS.map(item => item.id),
       sections: SETTINGS_DESTINATIONS.map(item => item.id),
+      frames,
+      landings,
       overflow,
       errors,
     });
@@ -221,7 +294,7 @@ try {
   }
   writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(
-    `PASS Settings: search, deep links, history, material persistence/reset, all themes and narrow layout. Evidence: ${output}`
+    `PASS Settings: one frame per destination, every topic link lands and marks its row, search, history, material persistence/reset, all themes and narrow layout. Evidence: ${output}`
   );
 } finally {
   await browser.close();

@@ -144,14 +144,9 @@ function RegistryRail({
       className="border-b border-[var(--settings-line)] bg-[var(--settings-panel)] lg:border-r lg:border-b-0"
     >
       <div className="flex min-h-[72px] items-center justify-between border-b border-[var(--settings-line)] px-5">
-        <div>
-          <h2 className="font-display text-base font-semibold tracking-[-0.01em] text-[var(--settings-text)]">
-            Agent Sources
-          </h2>
-          <p className="mt-0.5 font-ui text-chrome-label text-[var(--settings-dim)]">
-            {sources.length} {sources.length === 1 ? 'adapter' : 'adapters'}
-          </p>
-        </div>
+        <h3 className="font-display text-base font-semibold tracking-[-0.01em] text-[var(--settings-text)]">
+          Built-in sources
+        </h3>
         <button
           type="button"
           aria-label="Browse Agent Sources"
