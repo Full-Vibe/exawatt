@@ -147,6 +147,8 @@ test('parses repeated verification and delivery options', () => {
       dogfood: true,
       help: false,
       keepBranch: false,
+      landPassing: false,
+      train: [],
       verify: ['type-check', 'test:run'],
       waiveGate: [],
     }

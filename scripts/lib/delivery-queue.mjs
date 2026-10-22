@@ -112,6 +112,9 @@ export async function allocateTicket(
       changedPaths: candidate.changedPaths ?? [],
       checks: candidate.checks ?? [],
       dogfood: candidate.dogfood === true,
+      // A merge train's cars, their commits, what it left out and how it
+      // bisected (`agent:land --train`); absent for any other landing.
+      ...(candidate.train ? { train: candidate.train } : {}),
       owner: {
         pid: ownerPid,
         token: ownerToken,

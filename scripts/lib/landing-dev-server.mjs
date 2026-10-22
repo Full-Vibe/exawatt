@@ -444,6 +444,25 @@ export function createLandingDevServer({
   }
 
   return {
+    /**
+     * Stops the server on `EXA_BASE`'s port when its listeners run from this
+     * worktree, before a merge train removes the worktree it serves. A
+     * server anyone else owns is never touched. Returns the stopped targets.
+     */
+    async stopOwned() {
+      if (!base) return [];
+      let url;
+      try {
+        url = new URL(base);
+      } catch {
+        return [];
+      }
+      if (!LOCAL_HOSTS.has(url.hostname)) return [];
+      const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+      const owner = await ownership(port);
+      if (!owner.owned || owner.pids.length === 0) return [];
+      return stop(port, owner.pids);
+    },
     async ensureFresh({ phase, gate, ownPaths }) {
       // No base: the gate chooses its own target, exactly as before.
       if (!base) return null;

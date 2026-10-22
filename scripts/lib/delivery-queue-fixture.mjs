@@ -144,6 +144,17 @@ export function createQueueFixture(
       '  echo "ERR_MODULE_NOT_FOUND stand-in: node_modules is not the installed form of pnpm-lock.yaml" >&2',
       '  exit 1',
       'fi',
+      // FIXTURE_FAIL_CHECK fails that one check while the file
+      // FIXTURE_FAIL_MARKER (default RED) is in the tree being checked, which
+      // is how a merge-train test makes one car red.
+      'if [ -n "$FIXTURE_FAIL_CHECK" ] && [ -f "${FIXTURE_FAIL_MARKER:-RED}" ]; then',
+      '  case "$*" in',
+      '    "run $FIXTURE_FAIL_CHECK"|"run $FIXTURE_FAIL_CHECK "*)',
+      '      echo "fixture: $FIXTURE_FAIL_CHECK fails while ${FIXTURE_FAIL_MARKER:-RED} is in the tree" >&2',
+      '      exit 1',
+      '      ;;',
+      '  esac',
+      'fi',
       'case "$*" in',
       '  "run eval:"*)',
       '    if [ -n "$FIXTURE_DEV_SERVER" ] && [ ! -f "$FIXTURE_DEV_SERVER" ]; then',

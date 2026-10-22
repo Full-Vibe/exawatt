@@ -5,6 +5,31 @@ this doc holds the narrative of each seam as it is adopted.
 
 ## Roadmap milestone log
 
+### 2026-10-21 — the merge train is first-class
+
+**`pnpm agent:land -- --train <agent/branch...>` lands a front's packets as
+one train: one stack, one run of the landing checks and gates, one push, one
+dogfood build.** It replaces the coordinator's manual train of 2026-10-15.
+
+- The cars are stacked in order with cherry-pick onto the latest
+  `origin/master` in a fresh integration worktree. A textual conflict refuses
+  before any check, naming both cars and the paths; a car whose local and
+  pushed tips differ is refused.
+- Every gate the stack's paths owe is declared for it, and the landing checks
+  run once on the stacked tree, asking for the whole-repository checks
+  (`wholeRepo`), which is where M3 keeps them.
+- A red train is bisected by prefix in the same worktree, so a tree checked
+  twice reuses its passes, and the first car whose addition turns it red is
+  named. Nothing lands unless `--land-passing` is given, which lands the rest
+  without it.
+- One ticket records each car's commits, what was left out, every bisection
+  step, and which integrated commit carries each car commit. One dogfood
+  request follows when any car is Electron-facing.
+
+Code: `scripts/lib/merge-train.mjs`, `scripts/agent-land.mjs`; contract:
+`scripts/merge-train.test.mjs` (real local queue). Operations: "Merge trains"
+in `docs/engineering/agent-delivery.md`. Landed <sha pending>.
+
 ### 2026-10-15 — M3 shaped: module-owned verification is the delivery architecture
 
 From ENG-022's [delivery efficiency audit](agent-development-loop.md#delivery-efficiency-audit--2026-10-15)

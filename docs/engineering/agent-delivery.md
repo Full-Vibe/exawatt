@@ -229,6 +229,72 @@ shell before node starts. `git push --no-verify` is for the recovery path
 only, such as a repair while the queue itself is broken; the ordinary answer
 to a refusal is the docs lane or a worktree.
 
+## Merge trains
+
+**A front's packets land as one train: one stack, one run of the landing
+checks and gates, one push, one dogfood build.** Packets push linear
+`agent/*` branches and report ready; the coordinator lands them from any
+checkout:
+
+```sh
+pnpm agent:land -- --train agent/a agent/b agent/c
+```
+
+When the stack owes a gate that reads a dev server, the train picks a free
+local port and the landing starts the integration worktree's own server there.
+An `EXA_BASE` given instead must name a free local port: no running server
+serves a worktree the train just created.
+
+- **Cars.** Each named branch is a car, landed in the order given. A car's
+  tip is its local branch or its pushed branch; when both exist and differ the
+  train refuses, naming both SHAs. A car's commits are the ones reachable from
+  its tip and from neither `origin/master` nor an earlier car, so a branch
+  stacked on another never repeats a shared commit. A merge commit is refused.
+- **Stack.** The cars are cherry-picked in order onto the latest
+  `origin/master` in a fresh integration worktree beside the main checkout,
+  `exawatt-train-<stamp>` on branch `agent/train-<stamp>`, with the same
+  append-only docs driver the queue head uses (BUG-203). A commit already on
+  `origin/master` is dropped. A textual conflict refuses before any check and
+  without a ticket, naming the car and commit being applied, each path, and
+  the earlier car that also changed it (or `origin/master` when none did).
+  `pnpm worktree:setup` then bootstraps the integration worktree.
+- **Checks, once.** The landing checks run once on the stacked tree, with
+  every gate the stack's paths owe declared automatically (`--waive-gate`
+  still waives one on purpose) plus any `--verify`. The train asks for the
+  whole-repository checks (`wholeRepo`), because a train is where they run.
+- **A red train names its car.** The train bisects by prefix: `origin/master`
+  is green and the whole stack is red, so it rebuilds the stack from the first
+  half of the cars, then the half that decides, in the same integration
+  worktree, running each prefix's own owed checks with the failed one first.
+  The first car whose addition turns it red is the guilty car: `TRAIN red:
+  <car> broke <check>`, with the cars that passed and the failure, and
+  `STATUS failed=train guilty=<car> check=<check> passed=<cars>`. Nothing
+  lands and no ticket is taken. Each step is recorded as a `landing_check`
+  with `phase: "bisect"` and the cars it checked; a tree checked twice in the
+  worktree reuses its recorded passes (`scripts/lib/check-reuse.mjs`).
+- **`--land-passing`** lands the cars that pass: the guilty car is left out,
+  the rest are restacked (a later car that conflicts without it is left out
+  too), checked, bisected again if red, and landed, every left-out car named
+  in the output and on `STATUS` as `excluded=<cars>`.
+- **One ticket.** The green stack takes one ticket (`lane: "train"`) and
+  then waits, probes, rebases at the head and pushes like any other landing.
+  A head re-check that fails after a rebase fails the ticket; run the same
+  train again and it restacks on the new `origin/master`. Bisection happens
+  only before admission, so a red train never holds the queue.
+- **Evidence.** The ticket's `train` names each car's branch, tip, source
+  and commits, the cars left out and why, and every bisection step; its
+  integrated result maps each car commit to the integrated commit that
+  carries it. `STATUS` adds `train=<car>:<commits>,...` and `lane=train`.
+- **One dogfood build** after integration when any car is Electron-facing
+  (a non-test path under `electron/`, `packages/*/src/`, `src/`, `themes/` or
+  `public/`, or `next.config.ts`, the Electron builder configuration,
+  `package.json` or `pnpm-lock.yaml`), or when `--dogfood` is given. Never one
+  per car.
+- **Cleanup.** The integration worktree and its branch are removed at the
+  end, landed or not, after the dev server the landing started there is
+  stopped; `--keep-branch` keeps them, with the attempt refs. Each car's
+  worktree and branch belong to its owner, and the train never deletes them.
+
 ## Three-stage flow
 
 | Stage     | Parallel or serialized               | Durable identity                                                        | Completion boundary                                                                                                   |
@@ -655,6 +721,9 @@ Success output distinguishes:
   stood. Absent when the head did not rebase or declared no gate.
 - `reused=<check>,<check>(rebase)`: checks whose recorded pass on identical
   inputs stood in for a run. Absent when every check ran.
+- `train=<car>:<commits>,...` and `excluded=<car>,...`: a merge train's cars
+  that landed, with their commit counts, and the cars it left out. Absent for
+  any other landing; `lane=train` ends the line.
 
 ## Batched hosted CI
 
@@ -735,12 +804,13 @@ worker.
 **One build per front.** The worker starts as soon as the queue drains, and
 with several agents landing the queue drains between almost every pair of
 landings, so per-landing `--dogfood` produced one build per landing on
-2026-10-15 (11 requests, 11 builds). A coordinator landing N Electron-facing
-subworkstreams lands each without `--dogfood` and, once the last one has
-integrated, runs `pnpm dogfood:request` (or `pnpm dogfood:request -- --sha
-<integrated-sha>`). It writes the same superseding request and starts the same
-worker, so the front costs one build of the `master` that composes all of it.
-The installation evidence rule below is unchanged.
+2026-10-15 (11 requests, 11 builds). A merge train (above) requests one build
+for the whole front. A front landed outside a train lands each change without
+`--dogfood` and, once the last one has integrated, runs `pnpm dogfood:request`
+(or `pnpm dogfood:request -- --sha <integrated-sha>`). It writes the same
+superseding request and starts the same worker, so the front costs one build
+of the `master` that composes all of it. The installation evidence rule below
+is unchanged.
 
 For closeout requiring installation proof, check either the metric stream or
 the machine-local update state and compare its `installedSha` to the requested
@@ -859,6 +929,8 @@ during a burst; the completed run on the latest queue-drain SHA must be green.
 | Dogfood request remains after a failure                          | Inspect the `dogfood_failed` event and existing incident records. A later eligible request starts another worker. Do not delete the request to make the warning disappear.                                                                                        |
 | A remote/multi-machine writer bypasses this common Git directory | Stop treating local FIFO order as global authority and evaluate decision `0030`'s sequencer contingency.                                                                                                                                                          |
 | A landing reports `flaked=<check>:<n>`                           | Nothing blocking. The named files failed in a large selection and passed alone, which is contention. Read the file names: if `summarizeDeliveryMetrics`' per-file tally shows the SAME file flaking across landings, that is a defect to chase, not machine load. |
+| A train refuses: `train refused: <car> conflicts with <car>` | The cars overlap textually. Rebase the later car onto the earlier one (or put it first), push it, and run the train again. Nothing landed and no ticket was taken. |
+| A train reports `TRAIN red: <car> broke <check>` | Bisection named the car. Fix it in its own worktree and run the train again, or add `--land-passing` to land the other cars now without it. Nothing landed. |
 | A landing reports `public=pending`                               | Nothing. The private landing is integrated; the next landing's projection fast-forwards past both. Investigate only if it repeats, and read the reason in the source lock.                                                                                        |
 | A landing reports `public=refused`                               | The projection no longer descends from public `master`. Diagnose classification/rendering first; use reviewed catch-up for a stale unrenderable backlog. Reserve reseed for separately reviewed historical erasure. Never force the public remote by hand.                                                         |
 | The queue head prints `HOLD` / `STATUS held=public-latch` and waiters say it is holding | Nothing is failing; do not resubmit or cancel. A `transient` latch clears when the head's retry publishes. A `deterministic` latch is the operator's: start the reviewed recovery below; enabling its maintenance hold releases the queue at once, and the catch-up then publishes what is owed. The hold ends by itself after `EXAWATT_PUBLIC_LATCH_HOLD_MINUTES`. |
@@ -917,6 +989,9 @@ verification, or a live owner's ticket.
   atomic install.
 - `scripts/lib/check-reuse.mjs`: the content-hash key and records behind
   reused landing-check passes.
+- `scripts/lib/merge-train.mjs`: a train's cars, its stack and conflict
+  refusal, prefix bisection, and the car-to-integrated-commit map;
+  `agent-land.mjs` runs its checks and queue.
 - `scripts/lib/public-delivery.mjs`, `scripts/lib/public-projection.mjs`,
   `scripts/lib/public-source-lock.mjs`, and `scripts/open-source-reseed.mjs`:
   the outbound projection, its fast-forward refusal, the recorded SHA pairs,
@@ -935,7 +1010,8 @@ verification, or a live owner's ticket.
   `scripts/docs-check.test.mjs`, `scripts/docs-lane.test.mjs`,
   `scripts/queue-hold.test.mjs`, `scripts/conflict-probe.test.mjs`, and
   `scripts/append-merge.test.mjs`, `scripts/queue-head-slot.test.mjs`,
-  `scripts/gate-recheck.test.mjs`, and `scripts/landing-reinstall.test.mjs` (with
+  `scripts/gate-recheck.test.mjs`, `scripts/landing-reinstall.test.mjs`, and
+  `scripts/merge-train.test.mjs` (with
   `scripts/lib/delivery-queue-fixture.mjs`, a real local queue):
   the regression and stress contract, collected by
   `pnpm test:agent-delivery`.

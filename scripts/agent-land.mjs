@@ -56,6 +56,18 @@ import {
 import { reinstallWhenStale } from './lib/install-freshness.mjs';
 import { createLandingDevServer } from './lib/landing-dev-server.mjs';
 import {
+  carEvidence,
+  electronFacingPaths,
+  firstRedCar,
+  integratedCars,
+  openIntegrationWorktree,
+  resolveCars,
+  stackCars,
+  trainOptionsRefusal,
+  trainServerBase,
+  trainStamp,
+} from './lib/merge-train.mjs';
+import {
   describePublicLatch,
   holdWhilePublicLatched,
   publicLatchHoldPolicy,
@@ -88,6 +100,8 @@ export function parseArgs(argv) {
     dogfood: false,
     help: false,
     keepBranch: false,
+    landPassing: false,
+    train: [],
     verify: [],
     waiveGate: [],
   };
@@ -99,6 +113,7 @@ export function parseArgs(argv) {
     else if (argument === '--docs') options.docs = true;
     else if (argument === '--dogfood') options.dogfood = true;
     else if (argument === '--keep-branch') options.keepBranch = true;
+    else if (argument === '--land-passing') options.landPassing = true;
     else if (argument === '--help' || argument === '-h') options.help = true;
     else if (argument === '--verify') {
       const script = argv[index + 1];
@@ -107,6 +122,20 @@ export function parseArgs(argv) {
       }
       options.verify.push(script);
       index += 1;
+    } else if (argument === '--train') {
+      const cars = [];
+      while (
+        index + 1 < argv.length &&
+        argv[index + 1] !== '--' &&
+        !argv[index + 1].startsWith('--')
+      ) {
+        cars.push(argv[index + 1]);
+        index += 1;
+      }
+      if (cars.length === 0) {
+        throw new Error('--train requires at least one agent/<slug> branch.');
+      }
+      options.train.push(...cars);
     } else if (argument === '--waive-gate') {
       const gate = argv[index + 1];
       if (!gate || gate.startsWith('--')) {
@@ -141,6 +170,7 @@ export function parseWorktrees(output) {
 function usage() {
   return `Usage: pnpm agent:land -- [--verify <package-script> ...] [--dogfood] [--keep-branch]
        pnpm agent:land -- --docs
+       pnpm agent:land -- --train <agent/branch> ... [--land-passing] [--verify <script> ...]
 
 Runs the repository-owned landing checks, admits the committed agent branch
 to the local FIFO queue, and lands it without a pull request. This is the only
@@ -153,6 +183,13 @@ path that moves origin's master; the pre-push hook refuses any other push.
   --docs             Land committed documentation (*.md, docs/**) from this
                      checkout: no worktree or setup, the docs checks only, and
                      a queue ticket like any other landing.
+  --train <branch>...  Land several pushed agent branches as one train, from any
+                     checkout: stack them in order on origin/master, run the
+                     landing checks and every gate they owe once, land them in
+                     one push, and request one dogfood build when any is
+                     Electron-facing. A red train names the car that broke it.
+  --land-passing     With --train: land the cars that pass without the one
+                     that broke the train.
   --direct           Operator-only guarded recovery path (requires explicit env opt-in).
 `;
 }
@@ -488,6 +525,9 @@ async function main() {
     process.stdout.write(usage());
     return;
   }
+  const trainRefusal = trainOptionsRefusal(options);
+  if (trainRefusal) throw new Error(trainRefusal);
+  const train = options.train.length > 0;
 
   // The checkout the command was run from. The worktree lane does all of its
   // work here; the docs lane only reads it and works in a temporary checkout.
@@ -495,7 +535,7 @@ async function main() {
   const invokingBranch = await git(invokingRoot, 'branch', '--show-current');
   if (options.docs) {
     refuseDocsLaneOptions(options);
-  } else {
+  } else if (!train) {
     if (!/^agent\/[a-z0-9][a-z0-9._/-]*$/.test(invokingBranch)) {
       throw new Error(
         `agent:land must run from an agent/<slug> branch; current branch is ${invokingBranch || '(detached)'}. Documentation lands from any checkout with \`pnpm agent:land -- --docs\`.`
@@ -519,6 +559,10 @@ async function main() {
   await run('git', ['fetch', 'origin', 'master'], invokingRoot);
   if (options.direct) {
     await directLand(invokingRoot, invokingBranch, options);
+    return;
+  }
+  if (train) {
+    await landTrain(invokingRoot, options);
     return;
   }
 
@@ -617,23 +661,310 @@ async function main() {
   }
 }
 
-async function landThroughQueue({
-  options,
-  lane,
-  invokingRoot,
-  candidateBase,
-  candidateSha,
-  files,
-}) {
-  const { root, branch } = lane;
+/**
+ * `--train <branches...>` (ENG-039 M3): a front's packets land as one train.
+ * The cars are stacked in order onto the latest origin/master in a fresh
+ * integration worktree, the landing checks and every gate the stack owes run
+ * once on it, and the stack lands as one ticket through the ordinary queue.
+ * A red stack is bisected to the car that broke it.
+ */
+async function landTrain(invokingRoot, options) {
+  const base = await git(invokingRoot, 'rev-parse', 'origin/master');
+  const cars = await resolveCars(invokingRoot, options.train, { base });
+  for (const car of cars) {
+    console.log(
+      `[agent-land] train car ${car.branch} at ${car.tip.slice(0, 12)} (${car.source}): ${car.commits.length} commit(s)`
+    );
+  }
+  const integration = await openIntegrationWorktree(invokingRoot, {
+    base,
+    stamp: trainStamp(),
+  });
+  console.log(
+    `[agent-land] train: stacking ${cars.length} car(s) onto origin/master ${base.slice(0, 12)} in ${integration.root}`
+  );
+  const root = integration.root;
+  let lane = null;
+  try {
+    const stacked = await stackCars(root, { base, cars });
+    for (const car of stacked.cars) {
+      for (const commit of car.commits.filter(entry => entry.dropped)) {
+        console.log(
+          `[agent-land] train: ${car.branch} ${commit.sha.slice(0, 12)} is already on origin/master; dropped`
+        );
+      }
+    }
+    await run('pnpm', ['worktree:setup'], root);
 
+    // Every gate a stack owes is declared for it: the train runs the gates,
+    // where a single landing would refuse until they were named.
+    const declaredFor = paths => [
+      ...new Set([
+        ...options.verify,
+        ...missingSurfaceGates(paths, [
+          ...options.verify,
+          ...options.waiveGate,
+        ]).map(entry => entry.gate),
+      ]),
+    ];
+    const files = await changedPaths(root, base);
+    const extras = declaredFor(files);
+    const gates = extras.filter(id => !options.verify.includes(id));
+    if (gates.length > 0) {
+      console.log(
+        `[agent-land] train declares the gates it owes: ${gates.join(', ')}`
+      );
+    }
+    for (const entry of quarantinedSurfaceGates(files)) {
+      console.warn(
+        `[agent-land] ${entry.gate} is quarantined (${entry.backlogId}) — this train would otherwise owe it: ${entry.why}`
+      );
+    }
+    if (options.waiveGate.length > 0) {
+      await appendDeliveryMetric(root, 'surface_gate_waived', {
+        candidateSha: await git(root, 'rev-parse', 'HEAD'),
+        gates: options.waiveGate,
+      });
+    }
+    const checksFor = (changed, extra, tree) =>
+      classifyDeliveryPolicy(changed, extra, { tree, wholeRepo: true });
+    if (
+      !process.env.EXA_BASE &&
+      checksFor(files, extras, deliveryTree(root)).some(check =>
+        gateNeedsDevServer(check.id)
+      )
+    ) {
+      process.env.EXA_BASE = await trainServerBase();
+      console.log(
+        `[agent-land] train: its gates read a dev server; the landing starts its own at ${process.env.EXA_BASE}`
+      );
+    }
+    lane = {
+      kind: 'train',
+      root,
+      branch: integration.branch,
+      close: async () => {},
+      checksFor,
+      runChecks: runDeliveryChecks,
+      refreshInstall: () => reinstallWhenStale(root, { run }),
+      devServer: createLandingDevServer({
+        root,
+        base: process.env.EXA_BASE,
+        run,
+      }),
+      openReuse: () => openCheckReuse(root),
+      postRoot: invokingRoot,
+    };
+    const session = createLandingSession(lane);
+    const outcome = await verifyTrain({
+      lane,
+      session,
+      base,
+      cars: stacked.cars,
+      options,
+      declaredFor,
+    });
+    lane.trainCars = outcome.cars;
+    lane.train = {
+      cars: outcome.cars.map(carEvidence),
+      excluded: outcome.excluded,
+      bisect: outcome.bisect,
+    };
+    const electronFacing = electronFacingPaths(outcome.files);
+    const dogfood = options.dogfood || electronFacing.length > 0;
+    console.log(
+      dogfood
+        ? `[agent-land] train: one dogfood build after integration${electronFacing.length > 0 ? ` (Electron-facing: ${electronFacing.slice(0, 3).join(', ')}${electronFacing.length > 3 ? ', ...' : ''})` : ''}`
+        : '[agent-land] train: nothing Electron-facing, so no dogfood build'
+    );
+    await landThroughQueue({
+      options: { ...options, verify: outcome.extras, dogfood },
+      lane,
+      session,
+      invokingRoot,
+      candidateBase: base,
+      candidateSha: outcome.sha,
+      files: outcome.files,
+      verified: outcome.verified,
+    });
+  } finally {
+    if (options.keepBranch) {
+      console.log(
+        `[agent-land] train: kept the integration worktree ${root} (${integration.branch}).`
+      );
+    } else {
+      await lane?.devServer?.stopOwned().catch(error => {
+        console.warn(
+          `[agent-land] could not stop the train's dev server: ${error.message.split('\n')[0]}`
+        );
+      });
+      await integration.remove();
+    }
+  }
+}
+
+/**
+ * Verifies the stacked cars. Green: the evidence for the stack as it is. Red:
+ * bisects by prefix to the first car whose addition turns it red; without
+ * `--land-passing` that refuses and nothing lands, with it the guilty car is
+ * left out, the rest is restacked (a later car that now conflicts is left out
+ * too) and verified again.
+ */
+async function verifyTrain({
+  lane,
+  session,
+  base,
+  cars,
+  options,
+  declaredFor,
+}) {
+  const { root } = lane;
+  const excluded = [];
+  const bisect = [];
+  let current = cars;
+  let restack = false;
+  while (true) {
+    if (restack) {
+      const restacked = await stackCars(root, {
+        base,
+        cars: current,
+        onConflict: 'exclude',
+      });
+      for (const entry of restacked.excluded) {
+        console.warn(
+          `[agent-land] train left out ${entry.branch}: without the cars before it removed, it ${entry.reason}`
+        );
+        excluded.push(entry);
+      }
+      current = restacked.cars;
+      if (current.length === 0) {
+        throw new Error(
+          `train: no car is left to land. Left out: ${excluded.map(entry => `${entry.branch} (${entry.reason})`).join('; ')}.`
+        );
+      }
+    }
+    restack = true;
+    const attempt = await verifyStack({
+      lane,
+      session,
+      base,
+      cars: current,
+      phase: 'candidate',
+      declaredFor,
+    });
+    if (attempt.passed) return { ...attempt, cars: current, excluded, bisect };
+    const names = list => list.map(car => car.branch).join(',');
+    bisect.push({
+      cars: current.map(car => car.branch),
+      result: 'failed',
+      failedCheck: attempt.failedCheck,
+    });
+    console.log(
+      `[agent-land] train ${names(current)} failed ${attempt.failedCheck}; bisecting to the car that broke it`
+    );
+    const guiltyIndex = await firstRedCar(current.length, async count => {
+      const prefix = current.slice(0, count);
+      // A prefix of a stack that stacked cleanly stacks cleanly.
+      await stackCars(root, { base, cars: prefix });
+      const step = await verifyStack({
+        lane,
+        session,
+        base,
+        cars: prefix,
+        phase: 'bisect',
+        first: attempt.failedCheck,
+        declaredFor,
+      });
+      bisect.push({
+        cars: prefix.map(car => car.branch),
+        result: step.passed ? 'passed' : 'failed',
+        ...(step.passed ? {} : { failedCheck: step.failedCheck }),
+      });
+      console.log(
+        `[agent-land] train bisect: ${names(prefix)} ${step.passed ? 'passed' : `failed ${step.failedCheck}`}`
+      );
+      return !step.passed;
+    });
+    const guilty = current[guiltyIndex];
+    const passed = current.slice(0, guiltyIndex);
+    console.log(
+      `[agent-land] STATUS failed=train guilty=${guilty.branch} check=${attempt.failedCheck}${passed.length > 0 ? ` passed=${names(passed)}` : ''}`
+    );
+    const verdict = `TRAIN red: ${guilty.branch} broke ${attempt.failedCheck}${passed.length > 0 ? `; ${names(passed)} passed without it` : ''}.`;
+    if (!options.landPassing) {
+      throw new Error(
+        `${verdict}\n${attempt.message}\nNothing landed. Fix ${guilty.branch} and run the train again, or add --land-passing to land the other cars without it.`
+      );
+    }
+    console.warn(
+      `[agent-land] ${verdict} --land-passing leaves it out and checks the rest.\n${attempt.message}`
+    );
+    excluded.push({
+      branch: guilty.branch,
+      reason: `broke ${attempt.failedCheck}`,
+    });
+    current = current.filter(car => car !== guilty);
+    if (current.length === 0) {
+      throw new Error(`${verdict}\nNo car is left to land.`);
+    }
+  }
+}
+
+/**
+ * One landing-check run on the stack HEAD holds: its own changed paths, the
+ * gates they owe and the caller's extras. A failed check is a verdict; any
+ * other failure (an install, a dev server) is not the cars' and is thrown.
+ */
+async function verifyStack({
+  lane,
+  session,
+  base,
+  cars,
+  phase,
+  first = null,
+  declaredFor,
+}) {
+  const sha = await git(lane.root, 'rev-parse', 'HEAD');
+  const files = await changedPaths(lane.root, base);
+  const extras = declaredFor(files);
+  try {
+    const verified = await session.verify({
+      phase,
+      files,
+      extras,
+      candidateSha: sha,
+      first,
+      extra: { trainCars: cars.map(car => car.branch) },
+    });
+    return { passed: true, sha, files, extras, verified };
+  } catch (error) {
+    if (!session.failedCheck) throw error;
+    return {
+      passed: false,
+      failedCheck: session.failedCheck,
+      message: error.message,
+    };
+  }
+}
+
+/**
+ * The bookkeeping every landing-check run of one landing shares: what
+ * flaked, what was reused, which phases reinstalled or restarted the dev
+ * server, and the last check that failed. `verify` is one landing-check run
+ * on the tree checked out at the lane's root; a merge train calls it once per
+ * stack it checks.
+ */
+function createLandingSession(lane) {
+  const { root } = lane;
   // A check that failed and then passed with the machine to itself is
   // reported, never swallowed (BUG-090). The status line carries the count so
   // a landing cannot look unconditionally clean when a landing check had to re-run.
   const flakes = [];
   const reusedChecks = [];
+  let failedCheck = null;
   const recordLandingCheck = extra => async result => {
     if (result.status === 'flaked') flakes.push(result);
+    if (result.status === 'failed') failedCheck = result.id;
     if (result.reused)
       reusedChecks.push(
         result.phase === 'rebase' ? `${result.id}(rebase)` : result.id
@@ -704,57 +1035,131 @@ async function landThroughQueue({
     });
   };
 
-  // BUG-202: the head's rebase verdict, asked before the landing checks. In September
-  // 10 of the 20 tickets that died on a rebase conflict already conflicted
-  // with origin/master when their candidate landing checks started.
-  const masterNow = await git(root, 'rev-parse', 'origin/master');
-  if (
-    probeIntervalMs() > 0 &&
-    !(await isAncestor(root, masterNow, candidateSha))
-  ) {
-    const upfront = await probeRebase(root, {
-      sha: candidateSha,
-      onto: masterNow,
-      gitArgs: probeGitArgs(masterNow),
-    }).catch(error => {
-      console.warn(
-        `[agent-land] conflict probe failed (${error.message.split('\n')[0]}); the head's rebase still decides.`
-      );
-      return { clean: true };
+  /**
+   * One landing-check run on HEAD: the install refreshed first, every check
+   * classified from the tree it runs on, `first` (a check that failed on a
+   * wider stack) run before the rest, and the worktree clean afterwards.
+   */
+  const verify = async ({
+    phase,
+    files,
+    extras,
+    candidateSha,
+    extra = {},
+    first = null,
+  }) => {
+    failedCheck = null;
+    await refreshInstall(phase, { candidateSha, ...extra });
+    // Every classification is of the tree it is about to check, read from that
+    // tree: the candidate here, the rebased tree at the head.
+    let checks = lane.checksFor(files, extras, deliveryTree(root));
+    if (first) {
+      checks = [
+        ...checks.filter(check => check.id === first),
+        ...checks.filter(check => check.id !== first),
+      ];
+    }
+    const evidence = await lane.runChecks(root, checks, {
+      phase,
+      onResult: recordLandingCheck({ candidateSha, ...extra }),
+      beforeCheck: freshServerBefore(phase, files, { candidateSha, ...extra }),
+      reuse: await lane.openReuse(),
+      candidateSha,
     });
-    if (!upfront.clean) {
-      await appendDeliveryMetric(root, 'probe_conflict', {
-        phase: 'candidate',
-        candidateSha,
-        baseSha: masterNow,
-        commit: upfront.commit,
-        paths: upfront.paths,
+    await requireClean(root, 'Agent worktree after verification');
+    return { checks, evidence };
+  };
+
+  return {
+    flakes,
+    reusedChecks,
+    reinstalls,
+    serverRefreshes,
+    recordLandingCheck,
+    refreshInstall,
+    freshServerBefore,
+    verify,
+    /** The check whose failure ended the last `verify`, or null. */
+    get failedCheck() {
+      return failedCheck;
+    },
+  };
+}
+
+async function landThroughQueue({
+  options,
+  lane,
+  session = createLandingSession(lane),
+  invokingRoot,
+  candidateBase,
+  candidateSha,
+  files,
+  // A merge train verifies its stack before it calls this (bisecting a red
+  // one), so it hands over the evidence for exactly `candidateSha`.
+  verified = null,
+}) {
+  const { root, branch } = lane;
+  const {
+    flakes,
+    reusedChecks,
+    reinstalls,
+    serverRefreshes,
+    recordLandingCheck,
+    refreshInstall,
+    freshServerBefore,
+  } = session;
+
+  let checks;
+  let evidence;
+  if (verified) {
+    ({ checks, evidence } = verified);
+  } else {
+    // BUG-202: the head's rebase verdict, asked before the landing checks. In September
+    // 10 of the 20 tickets that died on a rebase conflict already conflicted
+    // with origin/master when their candidate landing checks started.
+    const masterNow = await git(root, 'rev-parse', 'origin/master');
+    if (
+      probeIntervalMs() > 0 &&
+      !(await isAncestor(root, masterNow, candidateSha))
+    ) {
+      const upfront = await probeRebase(root, {
+        sha: candidateSha,
+        onto: masterNow,
+        gitArgs: probeGitArgs(masterNow),
+      }).catch(error => {
+        console.warn(
+          `[agent-land] conflict probe failed (${error.message.split('\n')[0]}); the head's rebase still decides.`
+        );
+        return { clean: true };
       });
-      throw new Error(
-        probeConflictMessage({
-          onto: masterNow,
+      if (!upfront.clean) {
+        await appendDeliveryMetric(root, 'probe_conflict', {
+          phase: 'candidate',
+          candidateSha,
+          baseSha: masterNow,
           commit: upfront.commit,
           paths: upfront.paths,
-        })
-      );
+        });
+        throw new Error(
+          probeConflictMessage({
+            onto: masterNow,
+            commit: upfront.commit,
+            paths: upfront.paths,
+          })
+        );
+      }
     }
-  }
 
-  // Before admission: a stale install of the submitter's own lockfile is
-  // repaired here, or refused with its remedy, rather than failing a check
-  // minutes into the landing checks.
-  await refreshInstall('candidate', { candidateSha });
-  // Every classification is of the tree it is about to check, read from that
-  // tree: the candidate here, the rebased tree at the head.
-  const checks = lane.checksFor(files, options.verify, deliveryTree(root));
-  const evidence = await lane.runChecks(root, checks, {
-    phase: 'candidate',
-    onResult: recordLandingCheck({ candidateSha }),
-    beforeCheck: freshServerBefore('candidate', files, { candidateSha }),
-    reuse: await lane.openReuse(),
-    candidateSha,
-  });
-  await requireClean(root, 'Agent worktree after verification');
+    // Before admission: a stale install of the submitter's own lockfile is
+    // repaired here, or refused with its remedy, rather than failing a check
+    // minutes into the landing checks.
+    ({ checks, evidence } = await session.verify({
+      phase: 'candidate',
+      files,
+      extras: options.verify,
+      candidateSha,
+    }));
+  }
 
   let attemptNumber = 1;
   let ref = attemptRef(branch, attemptNumber);
@@ -770,6 +1175,7 @@ async function landThroughQueue({
     changedPaths: files,
     checks: evidence,
     dogfood: options.dogfood,
+    ...(lane.train ? { train: lane.train } : {}),
   });
   console.log(`[agent-land] admitted ticket ${ticket.number} (${ticket.id})`);
 
@@ -1188,6 +1594,19 @@ async function landThroughQueue({
           }
         );
         preparedPublic = null;
+        // A train records which integrated commit carries each car's commit.
+        const trainResult = lane.trainCars
+          ? await integratedCars(root, {
+              cars: lane.trainCars,
+              base: ticket.baseSha,
+              integrated: integrationSha,
+            }).catch(error => {
+              console.warn(
+                `[agent-land] integrated; could not map the train's commits: ${error.message.split('\n')[0]}`
+              );
+              return null;
+            })
+          : null;
         ticket = await finishTicket(
           root,
           await readTicket(root, ticket.id),
@@ -1200,6 +1619,7 @@ async function landThroughQueue({
               new Date(ticket.headAt).getTime() -
               new Date(ticket.admittedAt).getTime(),
             ...(publicHeldMs > 0 ? { publicLatchHeldMs: publicHeldMs } : {}),
+            ...(trainResult ? { train: trainResult } : {}),
             ...(publicProjection.state === 'inert'
               ? {}
               : {
@@ -1239,6 +1659,10 @@ async function landThroughQueue({
         ...(error.probeConflict ? { probeConflict: error.probeConflict } : {}),
       }).catch(() => current);
     }
+    if (lane.kind === 'train') {
+      error.message +=
+        '\nThe train was admitted and then failed, so nothing landed. Run the same `pnpm agent:land -- --train ...` again: it restacks the cars on the new origin/master.';
+    }
     throw error;
   } finally {
     clearInterval(heartbeat);
@@ -1267,9 +1691,12 @@ async function landThroughQueue({
   const masterWorktree = await bestEffortMasterSync(
     lane.kind === 'docs' ? invokingRoot : root
   );
+  // The detached CI and dogfood workers outlive this landing; a train's
+  // integration worktree does not, so they start from a checkout that stays.
+  const postRoot = lane.postRoot ?? root;
   let ciState = 'not-requested';
   try {
-    const ciRequest = await requestCi(root, integratedSha);
+    const ciRequest = await requestCi(postRoot, integratedSha);
     ciState = ciRequest.status;
   } catch (error) {
     ciState = 'queue-failed';
@@ -1280,7 +1707,7 @@ async function landThroughQueue({
   let installationState = 'not-requested';
   if (options.dogfood) {
     try {
-      await requestDogfood(root, integratedSha);
+      await requestDogfood(postRoot, integratedSha);
       installationState = 'queued';
     } catch (error) {
       installationState = 'queue-failed';
@@ -1324,7 +1751,20 @@ async function landThroughQueue({
               (result.phase === 'rebase' ? '(rebase)' : '')
           )
           .join(',')}`;
-  const laneState = lane.kind === 'docs' ? ' lane=docs' : '';
+  const laneState = lane.kind === 'worktree' ? '' : ` lane=${lane.kind}`;
+  // A train names each car that landed with its commit count, and every car
+  // it left out; absent for any other landing.
+  const trainState = lane.train
+    ? ` train=${lane.train.cars
+        .map(
+          car =>
+            `${car.branch}:${car.commits.filter(commit => !commit.dropped).length}`
+        )
+        .join(',')}` +
+      (lane.train.excluded.length > 0
+        ? ` excluded=${lane.train.excluded.map(entry => entry.branch).join(',')}`
+        : '')
+    : '';
   const heldState =
     publicHeldMs > 0 ? ` held=public-latch:${minutes(publicHeldMs)}` : '';
   // Absent when the head did not rebase or declared no gate; otherwise which
@@ -1352,7 +1792,7 @@ async function landThroughQueue({
   const reusedState =
     reusedChecks.length === 0 ? '' : ` reused=${reusedChecks.join(',')}`;
   console.log(
-    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${reinstalledState}${serverState}${reusedState}${laneState}`
+    `[agent-land] STATUS implemented=${candidateSha.slice(0, 12)} verified=${checks.map(check => check.id).join(',')} pushed=${ticket.attemptRef} integrated=${integratedSha.slice(0, 12)} ci=${ciState} installed=${installationState}${flakedState}${publicState}${publicRecordedState}${heldState}${gateState}${reinstalledState}${serverState}${reusedState}${trainState}${laneState}`
   );
   for (const result of flakes) {
     for (const entry of result.flakedFiles ?? []) {
@@ -1364,6 +1804,16 @@ async function landThroughQueue({
   if (masterWorktree && lane.kind === 'worktree') {
     console.log(
       `[agent-land] remove this worktree from ${masterWorktree}, then delete local branch ${branch}.`
+    );
+  }
+  if (lane.train) {
+    for (const entry of lane.train.excluded) {
+      console.log(
+        `[agent-land] train left out ${entry.branch}: ${entry.reason}. It did not land.`
+      );
+    }
+    console.log(
+      `[agent-land] train integrated ${lane.train.cars.map(car => car.branch).join(', ')}. Each car's worktree and branch belong to its owner; the train never deletes them.`
     );
   }
 }
