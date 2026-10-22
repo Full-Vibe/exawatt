@@ -5579,10 +5579,11 @@ gate, never checked.
 Fixed by system: `pnpm eval-handles:check` reads every script with the
 TypeScript checker against the bridge the renderer gets and fails a missing
 member with the closest real one; fails a locator or assertion bound to text
-the product writes unless the line says `// binds-text: <reason>`; and fails a
-`data-*` selector no product source renders. It runs at landing whenever an
+the product writes unless the line says `// binds-text: <reason>`; fails a
+`data-*` selector no product source renders; and fails page code that reads a
+script variable it was not handed. It runs at landing whenever an
 eval, the bridge or the product source changes. The sweep it forced
-converted 431 copy-bound locators across 57 eval scripts to registry ids and
+converted 433 copy-bound locators across 58 eval scripts to registry ids and
 `data-*` handles (asserted by the component's own test where it has one), kept
 9 where the text is the contract (shell commands the operator pastes, release
 builds that predate a handle), and removed 15 assertions that could never
