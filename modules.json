@@ -237,7 +237,6 @@
       "entrypoints": [
         "src/components/fleet/spatial/direct/direct-model.ts",
         "src/components/fleet/spatial/operations-board/board-keymap.ts",
-        "src/components/fleet/spatial/operations-board/operations-board-ambient.ts",
         "src/components/fleet/spatial/operations-board/operations-board-camera-rig.tsx",
         "src/components/fleet/spatial/operations-board/operations-board-canvas.tsx",
         "src/components/fleet/spatial/operations-board/operations-board-env.ts",
