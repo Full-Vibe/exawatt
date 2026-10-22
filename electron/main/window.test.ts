@@ -1,11 +1,12 @@
 import { EventEmitter } from 'events';
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { NativeAppearanceResolution } from './appearance';
 import {
   createMainWindowController,
   createStartupScreen,
   createWorkspaceTarget,
+  LAUNCH_SCREEN_COMMIT_MS,
   testWindowPosition,
   type MainWindowDependencies,
 } from './window';
@@ -86,6 +87,7 @@ function harness(overrides: Partial<MainWindowDependencies> = {}) {
   const windows: FakeWindow[] = [];
   const log: string[] = [];
   const external: string[] = [];
+  const records: Array<Record<string, unknown>> = [];
   const deps: MainWindowDependencies = {
     createBrowserWindow: options => {
       const win = new FakeWindow(options);
@@ -109,10 +111,11 @@ function harness(overrides: Partial<MainWindowDependencies> = {}) {
       log.push(`renderer-gone:${details.reason}`),
     onRenderUnresponsive: () => log.push('renderer-unresponsive'),
     onRenderResponsive: () => log.push('renderer-responsive'),
+    record: (event, fields) => records.push({ event, ...fields }),
     ...overrides,
   };
   const controller = createMainWindowController(deps);
-  return { controller, windows, log, external };
+  return { controller, windows, log, external, records };
 }
 
 describe('createMainWindowController', () => {
@@ -318,46 +321,121 @@ describe('createMainWindowController', () => {
     expect(log).toEqual(['launch-screen', `workspace:${WORKSPACE}`]);
   });
 
-  it('enters the workspace only once the launch screen has committed, failed, or lost its renderer (BUG-308)', async () => {
+  /** A window whose launch screen load stays pending until the test ends
+   *  it, with navigate(WORKSPACE) already waiting on it. */
+  function launching() {
+    const win = new FakeWindow({});
+    const loads: Array<{ resolve: () => void; reject: (e: Error) => void }> =
+      [];
+    win.loadURL = (url: string) =>
+      new Promise<void>((resolve, reject) => {
+        win.loaded.push(url);
+        loads.push({ resolve, reject });
+      });
+    const { controller, records } = harness({
+      createBrowserWindow: () => win as unknown as BrowserWindow,
+    });
+    controller.open(LAUNCH, appearance);
+    let entered = false;
+    const entering = controller.navigate(WORKSPACE).then(() => {
+      entered = true;
+    });
+    return { win, loads, records, entering, entered: () => entered };
+  }
+  const LAUNCH = 'data:text/html,launch';
+  const turn = () => new Promise(resolve => setImmediate(resolve));
+
+  it('enters the workspace once the launch screen commits, fails, loses its renderer or runs out of time, recording any end but the commit (BUG-308)', async () => {
     // Two navigations in flight at a new window's first frames is the one
     // moment an attaching debugger can miss both commits. The wait ends at
-    // the launch screen's commit, not its load: a launch screen whose renderer
-    // hangs after committing must never keep a window out of the workspace.
-    for (const end of ['committed', 'failed', 'renderer-gone'] as const) {
-      const win = new FakeWindow({});
-      const loads: Array<{ url: string; settle: (ok: boolean) => void }> = [];
-      win.loadURL = (url: string) =>
-        new Promise<void>((resolve, reject) => {
-          win.loaded.push(url);
-          loads.push({
-            url,
-            settle: ok => (ok ? resolve() : reject(new Error('ERR_FAILED'))),
-          });
-        });
-      const { controller } = harness({
-        createBrowserWindow: () => win as unknown as BrowserWindow,
-      });
-      controller.open('data:text/html,launch', appearance);
-      let entered = false;
-      const entering = controller.navigate(WORKSPACE).then(() => {
-        entered = true;
-      });
-      await new Promise(resolve => setImmediate(resolve));
-      expect(win.loaded, end).toEqual(['data:text/html,launch']);
-      if (end === 'committed') {
+    // the launch screen's commit, not its load: a launch screen whose
+    // renderer hangs after committing must never keep a window out of the
+    // workspace, and neither may one that never commits at all.
+    const ends = {
+      committed: {
         // Committed, and its renderer then hangs: the load never settles.
-        win.webContents.emit('did-navigate', {}, 'data:text/html,launch', 200);
-      } else if (end === 'failed') {
-        loads[0]!.settle(false);
-      } else {
-        win.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+        end: (win: FakeWindow) =>
+          win.webContents.emit('did-navigate', {}, LAUNCH, -1, ''),
+        recorded: [],
+      },
+      failed: {
+        end: (_win: FakeWindow, loads: ReturnType<typeof launching>['loads']) =>
+          loads[0]!.reject(
+            Object.assign(new Error(`ERR_FAILED (-2) loading '${LAUNCH}'`), {
+              errno: -2,
+              code: 'ERR_FAILED',
+              url: LAUNCH,
+            })
+          ),
+        recorded: [
+          {
+            event: 'launch-screen.not-committed',
+            reason: 'failed',
+            error: 'ERR_FAILED',
+          },
+        ],
+      },
+      'renderer-gone': {
+        end: (win: FakeWindow) =>
+          win.webContents.emit(
+            'render-process-gone',
+            {},
+            { reason: 'crashed', exitCode: 11 }
+          ),
+        recorded: [
+          {
+            event: 'launch-screen.not-committed',
+            reason: 'renderer-gone',
+            cause: 'crashed',
+          },
+        ],
+      },
+      'timed-out': {
+        end: () => vi.advanceTimersByTime(1),
+        recorded: [
+          {
+            event: 'launch-screen.not-committed',
+            reason: 'timed-out',
+            waitedMs: LAUNCH_SCREEN_COMMIT_MS,
+          },
+        ],
+      },
+    };
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      for (const [name, { end, recorded }] of Object.entries(ends)) {
+        const { win, loads, records, entering, entered } = launching();
+        await turn();
+        vi.advanceTimersByTime(LAUNCH_SCREEN_COMMIT_MS - 1);
+        await turn();
+        expect(win.loaded, name).toEqual([LAUNCH]);
+        end(win, loads);
+        await turn();
+        expect(win.loaded, name).toEqual([LAUNCH, WORKSPACE]);
+        loads[1]!.resolve();
+        await entering;
+        expect(entered(), name).toBe(true);
+        // One end, one record: a later deadline or event adds nothing.
+        vi.advanceTimersByTime(LAUNCH_SCREEN_COMMIT_MS);
+        win.webContents.emit('did-navigate', {}, WORKSPACE, 200, 'OK');
+        expect(records, name).toEqual(recorded);
       }
-      await new Promise(resolve => setImmediate(resolve));
-      expect(win.loaded, end).toEqual(['data:text/html,launch', WORKSPACE]);
-      loads[1]!.settle(true);
-      await entering;
-      expect(entered, end).toBe(true);
+    } finally {
+      vi.useRealTimers();
     }
+  });
+
+  it('leaves a window closed during its launch screen alone, and records why', async () => {
+    const { win, records, entering, entered } = launching();
+    await turn();
+    win.destroyed = true;
+    win.emit('closed');
+    await entering;
+    expect(entered()).toBe(true);
+    expect(win.loaded).toEqual([LAUNCH]);
+    expect(records).toEqual([
+      { event: 'launch-screen.not-committed', reason: 'closed' },
+    ]);
   });
 
   it('offers a window as a dialog parent only while it is alive', () => {

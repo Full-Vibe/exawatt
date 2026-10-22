@@ -3,6 +3,7 @@ import type {
   BrowserWindowConstructorOptions,
   Display,
 } from 'electron';
+import type { DiagnosticRecorder } from './diagnostics-log';
 import type { StartupStage } from './launch-screen';
 import type { NativeAppearanceResolution } from './appearance';
 import type { WindowLaunchMode } from './window-launch-mode';
@@ -113,6 +114,18 @@ export function testWindowPosition(
   }
 }
 
+/** How long a new window's launch screen has to commit before the workspace
+ *  loads over it anyway. A local page commits in milliseconds; one that has
+ *  not by now is not coming, and waiting on it only keeps the operator out. */
+export const LAUNCH_SCREEN_COMMIT_MS = 5_000;
+
+/** Electron's load rejection names its net error in `code`; its message
+ *  carries the whole URL, which for the launch screen is the entire page. */
+function loadFailure(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? code : String(error);
+}
+
 export interface MainWindowDependencies {
   createBrowserWindow: (
     options: BrowserWindowConstructorOptions
@@ -143,6 +156,8 @@ export interface MainWindowDependencies {
   /** The renderer stopped answering input, and started again (BUG-129). */
   onRenderUnresponsive: (win: BrowserWindow) => void;
   onRenderResponsive: () => void;
+  /** main.jsonl: why a launch screen's wait ended without its commit. */
+  record: DiagnosticRecorder;
 }
 
 interface MainWindowController {
@@ -155,8 +170,9 @@ interface MainWindowController {
    *  focus, and a hidden automated launch changes nothing on screen. */
   present(): 'focused' | 'shown' | 'hidden';
   /** Loads `url` into the main window once the navigation it opened with
-   *  has committed, failed, or lost its renderer. Rejects as `loadURL` does
-   *  when the load itself fails. */
+   *  has committed, failed, lost its renderer, or had
+   *  `LAUNCH_SCREEN_COMMIT_MS` to commit; a window closed meanwhile is left
+   *  alone. Rejects as `loadURL` does when the load itself fails. */
   navigate(url: string): Promise<void>;
   /** Reloads `focused` when it is a web window, else the main window. It
    *  never depends on the renderer being alive to receive focus (BUG-223). */
@@ -263,12 +279,32 @@ export function createMainWindowController(
     // (`navigate`): at a new window's first frames an attaching debugger can
     // miss both commits (BUG-308). The wait ends at the commit, not the load,
     // so a launch screen whose renderer hangs after committing never keeps
-    // the window out of the workspace.
+    // the window out of the workspace, and it is bounded, so neither does
+    // one that never commits. Any end but the commit is recorded with why.
     opening = new Promise<void>(settle => {
-      win.loadURL(initialUrl).then(settle, () => settle());
-      win.webContents.once('did-navigate', () => settle());
-      win.webContents.once('render-process-gone', () => settle());
-      win.once('closed', () => settle());
+      let over = false;
+      const end = (reason: string, fields: Record<string, unknown> = {}) => {
+        if (over) return;
+        over = true;
+        clearTimeout(deadline);
+        if (reason !== 'committed') {
+          deps.record('launch-screen.not-committed', { reason, ...fields });
+        }
+        settle();
+      };
+      const deadline = setTimeout(
+        () => end('timed-out', { waitedMs: LAUNCH_SCREEN_COMMIT_MS }),
+        LAUNCH_SCREEN_COMMIT_MS
+      );
+      win.loadURL(initialUrl).then(
+        () => end('committed'),
+        (error: unknown) => end('failed', { error: loadFailure(error) })
+      );
+      win.webContents.once('did-navigate', () => end('committed'));
+      win.webContents.once('render-process-gone', (_event, details) =>
+        end('renderer-gone', { cause: details.reason })
+      );
+      win.once('closed', () => end('closed'));
     });
 
     win.webContents.on('will-navigate', (event, target) => {

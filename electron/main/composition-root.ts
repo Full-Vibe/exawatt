@@ -225,6 +225,7 @@ const mainWindow = createMainWindowController({
     rendererRecovery.rendererGone(win, details),
   onRenderUnresponsive: win => rendererRecovery.rendererUnresponsive(win),
   onRenderResponsive: () => rendererRecovery.rendererResponsive(),
+  record: mainDiagnostics,
 });
 const rendererServerSupervisor = createRendererServerSupervisor({
   record: processDiagnostics,
