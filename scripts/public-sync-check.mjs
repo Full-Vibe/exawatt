@@ -26,7 +26,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOUR = 3600;
 const PATHS_SHOWN = 8;
 export const DEFAULT_MAX_HOURS = 24;
-export const RECOVERY =
+const RECOVERY =
   'docs/engineering/agent-delivery.md#reviewed-public-catch-up';
 
 export function parsePublicSyncArgs(argv) {
