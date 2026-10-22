@@ -324,13 +324,22 @@ service absent from this distribution are omitted across keyboard, palette and
 native menu; temporarily unavailable commands keep a disabled row with a reason.
 
 **A right-click menu and ⌘K never diverge** (operator, 2026-10-22: "should
-never diverge right-click menu items and cmd+k availability"). Every action a
-context menu offers is a palette command with the same label, the same target
-and the same availability, and the reverse holds for any palette command that
-acts on a target a menu belongs to. Both read one command registry, so a menu
-row is never authored inline at its call site; a new action lands on both
-surfaces in the same change, and a check fails when one surface offers what
-the other does not. BUG-307 (Mark unread, menu only) is the first case.
+never diverge right-click menu items and cmd+k availability"; ENG-016 D75). A
+context menu names its target and renders that target's commands from the one
+registry, `src/components/workspace/target-commands.ts`, through
+`CommandMenu`; a menu row is never authored at its call site. ⌘K renders the
+same commands for the selected Agent, its Project and its terminal, in groups
+headed by the target's name, with the same labels, disabled reasons and
+handlers, so a new verb on a tab, a Project or a terminal is one declaration
+that lands on both surfaces. Menu rows print their chord last (`Action ⌘K`),
+from the manifest verb the command names. A command that applies but cannot
+run now is a disabled row with its reason on both surfaces; one that does not
+apply to the target is absent from both. Only two kinds of row live in one
+surface: an announced row, which is not a command and never enters ⌘K, and a
+command declared menu-only with a written reason (today the terminal's
+link-under-pointer rows, since ⌘K has no pointer). `command-parity.test.tsx`
+renders both surfaces for every target kind and fails on any difference;
+BUG-307 (Mark unread, menu only) was the first case.
 
 ## Dialogs
 

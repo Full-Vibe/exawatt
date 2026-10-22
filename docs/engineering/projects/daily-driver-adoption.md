@@ -8222,3 +8222,74 @@ reports' own diagnostics, no repair in this drain.**
   `design-system.md` (Menus). The command-parity packet owns the repair: one
   command registry feeds every context menu and ⌘K, and a check fails when
   they disagree.
+
+### 2026-10-22 — D75 Command parity: one registry for right-click and ⌘K (BUG-307)
+
+**Right-click menus and ⌘K now render one command registry, so they cannot
+diverge.** Implemented and verified 2026-10-22 on `agent/command-parity`,
+`<sha pending>`; not yet integrated.
+
+Operator, 2026-10-22: "Need cmd+k keyboard shortcut for mark unread. For that
+and all such things in the future - should never diverge right-click menu
+items and cmd+k availability." Mark unread (BUG-259) lived in the tab menu
+alone. The cause was structural: the tab strip built a Project row list and a
+Session row list, the terminal built a third, and ⌘K built its own rows for
+the active tab, with nothing joining any of them. D44/D57 closed the same
+class for chords, palette rows and the native menu; context menus were
+outside that manifest.
+
+The system change.
+
+1. **One registry of target commands.** `src/components/workspace/target-commands.ts`
+   declares every verb that acts on a thing on screen, once: its target kind
+   (`session`, `coworker`, `project`, `terminal`), label, the offer
+   predicate on the target (absent, disabled with a reason, or available),
+   the handler, and the chord, named as the manifest verb that owns the
+   binding and the native menu row. `resolveTargetCommands(target, scope)`
+   is the one projection every surface renders. The scope is the shell's
+   operations plus the facts offers read; an operation the shell lacks (the
+   Demo has no Finder) means the command is offered nowhere there.
+2. **Context menus name a target, never a list.** `CommandMenu` renders a
+   target's commands through the one menu primitive; the strip's
+   `StripContextMenu` and the terminal pane both use it. The per-menu item
+   lists and `StripMenuItem` are deleted. Menu rows print their chord last.
+3. **⌘K resolves the same commands for the selected subjects.** The live and
+   Demo shells publish the selected Agent (the Team tile while Team is open),
+   its Project and its terminal (`command-subjects.ts`); the palette renders
+   each as a group headed by the target's name. The hand-built target rows
+   (`ws-rename`, `ws-split`, `ws-close`, `ws-reveal`, `ws-pause-project`,
+   `ws-resume-agent`, the four moves, `ws-color`, `ws-close-project`), the
+   Clone group and the clone catalog and clone-active events are deleted;
+   palette recents written under the old ids migrate to the new ones.
+   Workspace-wide verbs (jump to attention, roadmap, resume scope) keep
+   their rows.
+4. **Targeted, not active-only.** Rename and the Project editor take a target
+   (`requestTabRename`, `requestProjectEdit`); tab and Project moves take an
+   id in both shells; the terminal registers a handle per Session
+   (`terminal-command-handles.ts`) that its menu and ⌘K both run.
+
+Reach that fell out: in ⌘K, Mark unread, Clone to each setup, Cloud, Reveal
+in Finder for the Project root, New agent, Close view for a coworker, and
+the terminal's Copy, Paste and Select All; in the menus, Move left and Move
+right for tabs, coworker views and Projects. Pause Agents now reads disabled
+with its reason in both when nothing runs. The one declared exception is the
+terminal's link-under-pointer rows (Open, Copy link): ⌘K has no pointer, so
+it has no link to name. An announced row (Push to cloud) is not a command
+and is never in ⌘K, per ENG-026 N0.
+
+Evidence. `command-parity.test.tsx` renders the real tab strip menu, Project
+menu and terminal menu and the real palette for each target in a workspace
+with a live Agent, a stopped Agent, a shell, a draft, a coworker view, a
+second Project and a folderless Project, with every operation and with the
+Demo's subset, and asserts the same commands, disabled states and labels in
+both directions; mutation checks (dropping Mark unread from ⌘K, dropping
+Pause from the menu) fail it. `one-menu-primitive.test.ts` refuses a file
+that opens a hand-built action list on `contextmenu`. The command-verb
+contract and fixed-family tests join the manifest's palette rows to
+registry commands. Related suites: 269 files, 3,616 tests passed. Menus and
+⌘K were screenshot before and after in Air (light) and Night (dark) against
+this worktree's dev server.
+
+Boy Scout: `session-launch-environment.test.ts` asserted the spawned
+environment had no bus port, which fails inside any Exawatt agent session
+(the host carries one); it now asserts nothing beyond what was inherited.
