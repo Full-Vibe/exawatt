@@ -5336,3 +5336,41 @@ ranks groups, by (score, enabled), re-recorded in the lockfile. A row is found b
 it is disabled: the target-command and Workspace groups stop adding the reason to `keywords`. Every cmdk list (⌘K, the
 theme picker) inherits the sort; a right-click menu's type-ahead already matches enabled labels only. Pinned by
 `command-group-order.test.tsx` (cmdk) and "⌘K disabled rows" in `command-palette-ranking.test.tsx`.
+
+### BUG-317 A landing classified its checks with the invoking checkout's code
+
+Status: fixed 2026-10-22 (`<sha pending>`) · ENG-022 · found 2026-10-22 by a five-car coordinator train; fixed in agent/candidate-policy.
+
+A five-car train carried ENG-039's new `modules:check` and `modules.json`
+with a car that deleted `src/components/site/bands/*`. The train ran from a
+master older than the check, so the check never ran on the stack: master
+landed red with `modules.json` naming ten deleted files, and the next landing
+was refused by `modules:check`. The same gap let a car add a gate for its own
+surface, as the single-instance car did with `eval:electron:instance`, without
+owing it in its own landing.
+
+Cause: `agent-land.mjs` imported `classifyDeliveryPolicy` and the surface gate
+map statically, so a landing classified every tree with the code of the
+checkout that ran it. Only the tree's facts (`deliveryTree`) were the tree's.
+
+Fix by system: every classification loads the tree's own
+`scripts/lib/delivery-policy.mjs` from the checkout that holds it
+(`scripts/lib/tree-policy.mjs`): the candidate, the queue head after its
+rebase, each stack and bisection prefix of a train, and the docs lane's
+checkout. Each load is a fresh module instance down to every file the policy
+imports, so two stacks in one process never share one. The checks, the gates
+owed, the gate re-runs after a rebase and which checks read the dev server
+all come from that instance; the invoking checkout keeps the queue, tickets,
+push, bisection, reporting and the check runner. A policy that does not load,
+lacks an export or throws fails its tree as the landing check
+`delivery-policy`, and a train bisects it to the car that broke it. The
+static classification imports are deleted.
+
+The landing that brings this runs the invoking checkout's older code, so its
+own stack is classified the old way. Its evidence is the delivery suite on
+the stack, whose fixtures run the stack's own `agent-land.mjs` against trees
+that add a check, add a gate, gain a check by rebase and fail to load their
+policy. The first landing classified by its own tree is the next one run from
+a checkout that carries this change; a landing run from an older checkout
+still uses that checkout's code. Fixed in agent/candidate-policy,
+`<sha pending>`.

@@ -317,8 +317,14 @@ cannot turn a successful remote integration into a failure.
 ## Candidate and repository-owned landing checks
 
 `scripts/lib/delivery-policy.mjs` classifies paths changed from the candidate's
-merge base. Checks run before admission and their result, duration, phase, and
-candidate SHA enter both the ticket evidence and the JSONL metric stream.
+merge base. Each landing loads it, with what it imports, from the tree it is
+checking (`scripts/lib/tree-policy.mjs`, BUG-317): the candidate, the rebased
+queue head, each stack a train checks and the docs lane's checkout answer with
+their own policy, so a change that adds a check or a gate owes it in its own
+landing, and a policy that does not load or throws fails that tree as
+`delivery-policy`. Checks run before admission and their result, duration,
+phase, and candidate SHA enter both the ticket evidence and the JSONL metric
+stream.
 
 | Condition                                                                               | Required check                                                                                                |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
