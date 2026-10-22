@@ -692,21 +692,32 @@ function failingPs(t) {
   };
 }
 
-/** The launched tree, verified by the test itself, so it can prove the tree
- *  is gone once the real `ps` is back, whatever teardown could verify. */
+/** The launched trees, verified by the test itself, so it can prove each is
+ *  gone once the real `ps` is back, whatever teardown could verify. `gone()`
+ *  also waits for each main's `close`, the event on which Playwright drops
+ *  the signal handlers it added for that launch. */
 function launchedTrees(t) {
-  const groups = [];
-  t.after(async () => {
-    for (const group of groups) {
+  const launches = [];
+  const gone = async () => {
+    for (const { group, closed } of launches.splice(0)) {
       group?.forceKill();
       const deadline = Date.now() + 10_000;
       while (group && group.members().length > 0) {
         assert.ok(Date.now() < deadline, 'the launched tree must exit');
         await new Promise(resolve => setTimeout(resolve, 50));
       }
+      await closed;
     }
-  });
-  return app => groups.push(captureElectronProcessGroup(app.process().pid));
+  };
+  t.after(gone);
+  return {
+    track: app =>
+      launches.push({
+        group: captureElectronProcessGroup(app.process().pid),
+        closed: once(app.process(), 'close'),
+      }),
+    gone,
+  };
 }
 
 test(
@@ -774,9 +785,9 @@ test(
     const dir = windowFixture();
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     const ps = failingPs(t);
-    const track = launchedTrees(t);
-    // Playwright adds and drops its own signal handlers as its launches
-    // come and go; what must not remain is one this run added.
+    const trees = launchedTrees(t);
+    // Playwright adds its own signal handlers per launch and drops them once
+    // that launch has closed; past that, none this run added may remain.
     const before = new Set([
       ...process.listeners('SIGINT'),
       ...process.listeners('SIGTERM'),
@@ -793,7 +804,7 @@ test(
           args: [dir],
         },
         body: async app => {
-          track(app);
+          trees.track(app);
           ps.install();
           return step();
         },
@@ -822,6 +833,7 @@ test(
       assert.equal(exit.exited, false);
       assert.match(exit.detail, /^ps failed: /);
     }
+    await trees.gone();
     assert.deepEqual(added(), []);
   }
 );
@@ -833,7 +845,7 @@ test(
     const dir = windowFixture();
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     const ps = failingPs(t);
-    const track = launchedTrees(t);
+    const { track } = launchedTrees(t);
     const killedMidStep = async (gracefulMs, install = () => {}) => {
       let exit = null;
       const error = await attemptOf(
