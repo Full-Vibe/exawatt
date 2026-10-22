@@ -81,6 +81,7 @@ test('the cheap changed-file landing checks cannot be weakened by the caller', (
   assert.deepEqual(ids(['docs/product/concepts.md']), [
     'open-source:paths:check',
     'content:scan',
+    'security:secrets:landing',
     'delivery-pins',
     // The outbound-disclosure test reads every public document.
     'scanning-tests',
@@ -88,6 +89,7 @@ test('the cheap changed-file landing checks cannot be weakened by the caller', (
   assert.deepEqual(ids(['src/lib/raw-tokens.ts'], ['test:fonts']), [
     'open-source:paths:check',
     'content:scan',
+    'security:secrets:landing',
     'lint',
     'type-check',
     'delivery-pins',
@@ -138,6 +140,7 @@ test('provider composition changes receive related consumer tests', () => {
     [
       'open-source:paths:check',
       'content:scan',
+      'security:secrets:landing',
       'lint',
       'type-check',
       'delivery-pins',
@@ -389,6 +392,7 @@ test('dogfood and Electron orchestration changes receive Electron compilation', 
   assert.deepEqual(ids(['scripts/install-dogfood.mjs']), [
     'open-source:paths:check',
     'content:scan',
+    'security:secrets:landing',
     'lint:modules',
     'type-check:modules',
     'test:agent-delivery',
@@ -433,6 +437,7 @@ test('routable and distribution-seam changes receive the community build', () =>
   assert.deepEqual(ids(['src/app/admin/invites/page.tsx']), [
     'open-source:paths:check',
     'content:scan',
+    'security:secrets:landing',
     'lint',
     'type-check',
     'delivery-pins',
@@ -449,6 +454,7 @@ test('routable and distribution-seam changes receive the community build', () =>
   assert.deepEqual(ids(['scripts/lib/distribution-build.mjs']), [
     'open-source:paths:check',
     'content:scan',
+    'security:secrets:landing',
     'lint',
     'type-check',
     'test:agent-delivery',
@@ -513,6 +519,7 @@ test('roadmap corpus changes receive the canonical parser contract', () => {
   assert.deepEqual(ids(['docs/engineering/roadmap.md']), [
     'open-source:paths:check',
     'content:scan',
+    'security:secrets:landing',
     'delivery-pins',
     'scanning-tests',
   ]);
@@ -530,6 +537,7 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
     [
       'open-source:paths:check',
       'content:scan',
+      'security:secrets:landing',
       'lint',
       'type-check',
       'test:agent-delivery',

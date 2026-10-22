@@ -1469,6 +1469,14 @@ export function classifyDeliveryPolicy(
       command: 'pnpm',
       args: ['run', 'content:scan', '--', ...paths],
     },
+    // BUG-316: nothing private ran gitleaks before a commit reached the
+    // public history, where the public scan then stayed red for 17 days.
+    // Seconds: only the commits this landing adds.
+    {
+      id: 'security:secrets:landing',
+      command: 'pnpm',
+      args: ['run', 'security:secrets:landing'],
+    },
   ];
   if (whole) {
     // BUG-136: the BUG-057 rule (assert the invariant, not the duration) is
@@ -1873,6 +1881,7 @@ export function classifyDeliveryPolicy(
 const DOCS_LANDING_CHECK_IDS = new Set([
   'open-source:paths:check',
   'content:scan',
+  'security:secrets:landing',
   'scanning-tests',
 ]);
 
@@ -1959,6 +1968,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'test:related': LANDING,
   'open-source:paths:check': LANDING,
   'content:scan': LANDING,
+  'security:secrets:landing': LANDING,
   'docs:check': LANDING,
   'exports:check': LANDING,
   'copy:check': LANDING,

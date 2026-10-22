@@ -198,7 +198,8 @@ from the checkout where the docs were committed, including the shared
   and never has to be clean; other sessions' uncommitted edits in it are safe.
 - It runs the docs checks from `classifyDocsChecks` (the recipe renderers, the
   roadmap contract when `docs/engineering/**` changed, path classification,
-  and the public content scan of the changed paths), in parallel and without
+  the public content scan of the changed paths, and the secret scan of the
+  commits it adds), in parallel and without
   a machine slot, in about five to twenty seconds. They are recorded as
   `landing_check` events with `lane: "docs"`.
 - It takes a queue ticket (`lane: "docs"`) and from then on is an ordinary
@@ -321,7 +322,7 @@ candidate SHA enter both the ticket evidence and the JSONL metric stream.
 
 | Condition                                                                               | Required check                                                                                                |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Every candidate                                                                         | fail-closed path classification, public-bound content scan, and the delivery pins: the whole `pnpm test:agent-delivery` when a changed path can reach what it reads (`deliveryAffectingPath`), otherwise `pnpm test:delivery-pins` (`PRODUCT_TREE_PINS`, the five suite files that read the product tree) |
+| Every candidate                                                                         | fail-closed path classification, public-bound content scan, a gitleaks scan of only the commits the candidate adds (`pnpm security:secrets:landing`, the pinned binary and `scripts/gitleaks.toml`; a scanner it cannot obtain fails the check, BUG-316), and the delivery pins: the whole `pnpm test:agent-delivery` when a changed path can reach what it reads (`deliveryAffectingPath`), otherwise `pnpm test:delivery-pins` (`PRODUCT_TREE_PINS`, the five suite files that read the product tree) |
 | Any change the module topology cannot scope (below): an undeclared path, a module's public surface, `modules.json`, shared configuration, a train | `pnpm lint` and `pnpm type-check` |
 | A change inside declared modules, off their public surface                               | `lint:modules` (ESLint over those modules' paths) and `pnpm type-check:modules` (the program the change can reach) |
 | Changed JavaScript or TypeScript                                                        | the consumer-less export check (`pnpm exports:check`: a NEW export must have a consumer; existing ones are not counted) and `pnpm modules:check` (every import keeps `modules.json`), then the tests: the module closure as `module-tests`, the repository-wide related Vitest selection for what the topology cannot scope, or the whole suite as `full-suite` for shared test infrastructure and a train; each bounded to 25% workers, with one isolated rerun of any file it names failing |

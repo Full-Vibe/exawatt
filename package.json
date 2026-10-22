@@ -34,6 +34,7 @@
     "contribution:pull": "node scripts/contribution-pull.mjs",
     "security:audit:prod": "node scripts/production-dependency-audit.mjs",
     "security:secrets": "node scripts/secret-scan.mjs",
+    "security:secrets:landing": "node scripts/secret-scan.mjs --landing",
     "community:check": "node --test scripts/community-policy.test.mjs",
     "licenses:generate": "node scripts/check-dependency-licenses.mjs --write",
     "licenses:check": "node scripts/check-dependency-licenses.mjs",

@@ -52,6 +52,7 @@ test('docs:check runs the landing checks’ own check definitions', () => {
     'open-source:paths:check',
     'recipe-renderers',
     'scanning-tests',
+    'security:secrets:landing',
   ]);
   for (const check of docs) {
     if (check === RECIPE_RENDERERS_CHECK) continue;

@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { parse } from 'yaml';
 
+import { git } from './lib/hermetic-git.mjs';
 import {
   GITLEAKS_ARCHIVE_SHA256,
   GITLEAKS_VERSION,
   releaseTarget,
+  resolveGitleaks,
+  scanLandingCommits,
 } from './secret-scan.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -142,4 +147,138 @@ test('reviewed findings are addressed by fingerprint, never by path', () => {
     'PRIVATE',
     'a checkout holding fingerprints must classify them private'
   );
+});
+
+// BUG-316. The landing check scans only the commits a landing adds, from
+// where HEAD leaves origin/master, which is the landing's own candidate base.
+async function landingRepository(t) {
+  const root = await mkdtemp(path.join(tmpdir(), 'exawatt-secret-landing-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  git(root, ['init', '--quiet', '--initial-branch=master', '.']);
+  const commit = name => {
+    writeFileSync(path.join(root, name), `${name}\n`);
+    git(root, ['add', name]);
+    git(root, ['commit', '--quiet', '-m', name]);
+    return git(root, ['rev-parse', 'HEAD']);
+  };
+  const base = commit('base.txt');
+  git(root, ['update-ref', 'refs/remotes/origin/master', base]);
+  commit('first.txt');
+  commit('second.txt');
+  return { root, base };
+}
+
+function recordingScan() {
+  const calls = [];
+  return {
+    calls,
+    resolve: async () => ({ binary: '/pinned/gitleaks', source: 'test' }),
+    scan: async (binary, args, options) => {
+      calls.push({ binary, args, options });
+      return 0;
+    },
+  };
+}
+
+test('the landing scan reads only the commits HEAD adds to origin/master', async t => {
+  const { root, base } = await landingRepository(t);
+  const scanner = recordingScan();
+  const lines = [];
+  const code = await scanLandingCommits({
+    root,
+    log: line => lines.push(line),
+    ...scanner,
+  });
+  assert.equal(code, 0);
+  const [{ binary, args, options }] = scanner.calls;
+  assert.equal(binary, '/pinned/gitleaks');
+  assert.equal(options.cwd, root);
+  assert.ok(args.includes(`--log-opts=${base}..HEAD`), args.join(' '));
+  assert.ok(args.includes('--redact'));
+  assert.deepEqual(
+    args.slice(args.indexOf('--exit-code'), args.indexOf('--exit-code') + 2),
+    ['--exit-code', '1']
+  );
+  assert.equal(
+    args[args.indexOf('--config') + 1],
+    path.join(root, 'scripts/gitleaks.toml')
+  );
+  assert.match(lines.join('\n'), / 2 commit\(s\) /u);
+
+  const explicit = recordingScan();
+  await scanLandingCommits({
+    root,
+    base: 'HEAD~1',
+    log: () => {},
+    ...explicit,
+  });
+  const first = git(root, ['rev-parse', 'HEAD~1']);
+  assert.ok(explicit.calls[0].args.includes(`--log-opts=${first}..HEAD`));
+});
+
+test('a landing scan that cannot run fails before it can report nothing found', async t => {
+  const { root } = await landingRepository(t);
+  const unobtainable = recordingScan();
+  await assert.rejects(
+    scanLandingCommits({
+      root,
+      log: () => {},
+      resolve: async () => {
+        throw new Error('[secret-scan] no pinned gitleaks build for win32/x64');
+      },
+      scan: unobtainable.scan,
+    }),
+    /no pinned gitleaks build/u
+  );
+  git(root, ['update-ref', '-d', 'refs/remotes/origin/master']);
+  const baseless = recordingScan();
+  await assert.rejects(
+    scanLandingCommits({ root, log: () => {}, ...baseless })
+  );
+  assert.equal(unobtainable.calls.length + baseless.calls.length, 0);
+});
+
+test('the pinned scanner is never cached unless its archive matches the pin', async t => {
+  const previous = process.env.EXAWATT_GITLEAKS_BIN;
+  delete process.env.EXAWATT_GITLEAKS_BIN;
+  t.after(() => {
+    if (previous !== undefined) process.env.EXAWATT_GITLEAKS_BIN = previous;
+  });
+  const { root } = await landingRepository(t);
+  const target = releaseTarget();
+  const cached = path.join(
+    root,
+    '.git',
+    'exawatt-tools',
+    `gitleaks-${GITLEAKS_VERSION}-${target.key}`,
+    'gitleaks'
+  );
+  for (const [label, request, refusal] of [
+    [
+      'offline',
+      async () => {
+        throw new TypeError('fetch failed', {
+          cause: new Error('getaddrinfo ENOTFOUND github.com'),
+        });
+      },
+      /could not download .*ENOTFOUND/u,
+    ],
+    [
+      'missing',
+      async () => new Response('Not Found', { status: 404 }),
+      /responded 404/u,
+    ],
+    [
+      'tampered',
+      async () => new Response('not the pinned archive'),
+      /Refusing to run an unverified scanner/u,
+    ],
+  ]) {
+    await assert.rejects(
+      resolveGitleaks({ root, log: () => {}, request }),
+      refusal,
+      label
+    );
+    assert.equal(existsSync(cached), false, label);
+  }
 });

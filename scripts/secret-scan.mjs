@@ -107,7 +107,11 @@ function sha256(buffer) {
  * download is checksum-verified before it is ever executed; a mismatch removes
  * the bytes rather than caching them.
  */
-export async function resolveGitleaks({ root = ROOT, log = console.log } = {}) {
+export async function resolveGitleaks({
+  root = ROOT,
+  log = console.log,
+  request = globalThis.fetch,
+} = {}) {
   const override = process.env.EXAWATT_GITLEAKS_BIN;
   if (override) {
     if (!existsSync(override)) {
@@ -129,7 +133,13 @@ export async function resolveGitleaks({ root = ROOT, log = console.log } = {}) {
   log(
     `[secret-scan] downloading checksum-pinned gitleaks ${GITLEAKS_VERSION} (${target.key})`
   );
-  const response = await fetch(target.url, { redirect: 'follow' });
+  const response = await request(target.url, { redirect: 'follow' }).catch(
+    error => {
+      throw new Error(
+        `[secret-scan] could not download ${target.url}: ${error.cause?.message ?? error.message}`
+      );
+    }
+  );
   if (!response.ok) {
     throw new Error(`[secret-scan] ${target.url} responded ${response.status}`);
   }
@@ -168,6 +178,25 @@ function run(command, args, { cwd }) {
   });
 }
 
+/**
+ * The scan both modes run: the repository's configuration over the commits
+ * `logOpts` selects. `--redact` keeps a finding's value out of the terminal
+ * and out of any log an agent pastes into a session.
+ */
+export function gitleaksArgs(root, logOpts) {
+  return [
+    'git',
+    '--config',
+    path.join(root, 'scripts/gitleaks.toml'),
+    '--redact',
+    '--no-banner',
+    '--exit-code',
+    '1',
+    `--log-opts=${logOpts}`,
+    '.',
+  ];
+}
+
 export async function scanRepositoryHistory({
   root = ROOT,
   log = console.log,
@@ -178,24 +207,42 @@ export async function scanRepositoryHistory({
   );
   // `--log-opts=--all` widens the scan past the checked-out branch to every
   // ref this checkout can see, so an unlanded `agent/*` branch that committed a
-  // credential is covered too. `--redact` keeps a finding's value out of the
-  // terminal and out of any log an agent pastes into a session.
-  const code = await run(
-    binary,
-    [
-      'git',
-      '--config',
-      path.join(root, 'scripts/gitleaks.toml'),
-      '--redact',
-      '--no-banner',
-      '--exit-code',
-      '1',
-      '--log-opts=--all',
-      '.',
-    ],
-    { cwd: root }
+  // credential is covered too.
+  return run(binary, gitleaksArgs(root, '--all'), { cwd: root });
+}
+
+async function revParse(root, args) {
+  const { stdout } = await execFileAsync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  return stdout.trim();
+}
+
+/**
+ * BUG-316. The landing check: only the commits this landing adds, from
+ * where HEAD leaves `origin/master` (the landing's own candidate base), so
+ * a key is refused before it reaches `master` and the public projection
+ * rather than found days later by the public repository's scan.
+ */
+export async function scanLandingCommits({
+  root = ROOT,
+  base,
+  log = console.log,
+  resolve = resolveGitleaks,
+  scan = run,
+} = {}) {
+  const from = await revParse(root, [
+    'rev-parse',
+    '--verify',
+    `${base ?? (await revParse(root, ['merge-base', 'origin/master', 'HEAD']))}^{commit}`,
+  ]);
+  const count = await revParse(root, ['rev-list', '--count', `${from}..HEAD`]);
+  const { binary, source } = await resolve({ root, log });
+  log(
+    `[secret-scan] gitleaks ${GITLEAKS_VERSION} (${source}) over the ${count} commit(s) ${from.slice(0, 12)}..HEAD adds`
   );
-  return code;
+  return scan(binary, gitleaksArgs(root, `${from}..HEAD`), { cwd: root });
 }
 
 async function main() {
@@ -203,10 +250,13 @@ async function main() {
     process.stdout.write(
       [
         'Usage: pnpm security:secrets',
+        '       pnpm security:secrets:landing [-- --base <rev>]',
         '',
         'Scans every ref of this repository with the pinned gitleaks the public',
-        'repository CI runs. Set EXAWATT_GITLEAKS_BIN to use a gitleaks you',
-        'already trust instead of downloading the pinned release.',
+        'repository CI runs. The landing form scans only the commits HEAD adds',
+        'to <rev>, by default where HEAD leaves origin/master. Set',
+        'EXAWATT_GITLEAKS_BIN to use a gitleaks you already trust instead of',
+        'downloading the pinned release.',
         '',
         'Record a reviewed finding by its exact secret value in',
         'scripts/gitleaks.toml, or by commit fingerprint in .gitleaksignore.',
@@ -216,7 +266,16 @@ async function main() {
     );
     return;
   }
-  const code = await scanRepositoryHistory();
+  const args = process.argv.slice(2).filter(arg => arg !== '--');
+  const landing = args.includes('--landing');
+  const baseAt = args.indexOf('--base');
+  const base = baseAt === -1 ? undefined : args[baseAt + 1];
+  if (baseAt !== -1 && (!base || base.startsWith('--'))) {
+    throw new Error('[secret-scan] --base needs a revision');
+  }
+  const code = landing
+    ? await scanLandingCommits({ base })
+    : await scanRepositoryHistory();
   if (code !== 0) {
     process.stderr.write(
       '[secret-scan] gitleaks reported findings. Classify each one before ' +
@@ -226,12 +285,21 @@ async function main() {
     process.exitCode = code;
     return;
   }
-  process.stdout.write('[secret-scan] no findings across every ref\n');
+  process.stdout.write(
+    landing
+      ? '[secret-scan] no findings in the commits this landing adds\n'
+      : '[secret-scan] no findings across every ref\n'
+  );
 }
 
 if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+  // A scan that could not run fails and says why: a scanner that was never
+  // obtained is not a scan that found nothing.
   main().catch(error => {
-    process.stderr.write(`${error.message}\n`);
+    const message = error.message.startsWith('[secret-scan]')
+      ? error.message
+      : `[secret-scan] could not scan: ${error.message}`;
+    process.stderr.write(`${message}\n`);
     process.exitCode = 1;
   });
 }
