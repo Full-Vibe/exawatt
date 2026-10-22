@@ -22,9 +22,10 @@
  *   portrait viewport CROPS instead of fitting, which is the same rule the
  *   brief already states for conveying scale honestly (density and crop carry
  *   scale, a counter does not).
- * - **Offscreen and hidden tabs park.** An IntersectionObserver and
- *   `visibilitychange` clear `animating`, and every animating `useFrame` in the
- *   scene stops calling `invalidate()`, so a parked board renders no frames.
+ * - **Offscreen and hidden tabs park.** The IntersectionObserver and the
+ *   shared frame policy (page visibility, host lock and sleep) set the canvas
+ *   to `frameloop="never"`, so a parked board renders no frames, and a frozen
+ *   one paints only when its picture changes.
  * - **The stamp is inside the frame.** Demo data stays labelled demo data and
  *   the synthetic tier stays labelled synthetic, in the asset, so a cropped
  *   screenshot of the hero is still honest.
@@ -42,6 +43,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { RootState } from '@react-three/fiber';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
+import {
+  useCanvasFrames,
+  useFramePolicy,
+} from '@/lib/frame-demand/frame-demand';
 import { HERO_BOARD_CAPTURE } from './capture';
 import {
   heroBoardTheme,
@@ -121,7 +126,6 @@ export function HeroBoard({
   const frame = useRef<HTMLDivElement>(null);
   const fallbackProgress = useRef(0);
   const [visible, setVisible] = useState(false);
-  const [pageVisible, setPageVisible] = useState(true);
   const [painted, setPainted] = useState(false);
   // Semantic selection only. Hover identity lives inside the overlay; neither
   // renders React at pointer or frame rate.
@@ -166,19 +170,20 @@ export function HeroBoard({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    const sync = () => setPageVisible(document.visibilityState === 'visible');
-    sync();
-    document.addEventListener('visibilitychange', sync);
-    return () => document.removeEventListener('visibilitychange', sync);
-  }, []);
-
   // Reduced motion is the ONLY automatic poster path now. A phone gets the
   // real board; see the note at the top of this file.
   const posterOnly = force === 'poster' || (force === 'auto' && reducedMotion);
   const mode: HeroBoardMode = posterOnly ? 'poster' : 'live';
-  const animating =
-    mode === 'live' && force !== 'frozen' && visible && pageVisible;
+  // The shared frame policy: page visibility and the host come from the same
+  // inputs every canvas reads; on screen and frozen are this frame's own.
+  const policy = useFramePolicy({
+    reduced: false,
+    lowPower: false,
+    frozen: force === 'frozen',
+    onscreen: visible,
+  });
+  const frames = useCanvasFrames(policy);
+  const animating = mode === 'live' && policy.ambient !== 'parked';
 
   useEffect(() => {
     onModeChange?.(mode);
@@ -260,6 +265,7 @@ export function HeroBoard({
             theme={theme}
             capture={HERO_BOARD_CAPTURE}
             animating={animating}
+            frames={frames}
             statusProtocolMotion={statusProtocolMotion}
             statusChanges={statusChanges}
             // REDUCED MOTION GETS THE CROSSFADE AND NOTHING ELSE (guide rule

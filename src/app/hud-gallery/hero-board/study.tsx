@@ -247,10 +247,9 @@ export function HeroBoardStudy() {
       progress.current = Math.min(1, Math.max(0, value));
       if (rail.current)
         rail.current.style.transform = `scaleX(${progress.current})`;
-      // Demand frameloop: a programmatic change has to ask for a frame.
-      root?.invalidate();
+      // A live board paints every refresh; the camera follows on the next.
     });
-  }, [root]);
+  }, []);
 
   useEffect(() => {
     window.addEventListener('scroll', onScroll, { passive: true });

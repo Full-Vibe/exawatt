@@ -25,10 +25,13 @@
  *   single `uTime` uniform: no per-frame JavaScript touches the 173 units.
  *   The status scheduler writes a handful of floats a second, on state change
  *   only.
- * - `frameloop="demand"`. Every animating `useFrame` calls `invalidate()` while
- *   it animates and stops when it settles, so a parked board renders zero
- *   frames. The owner passes `animating={false}` when the hero leaves the
- *   viewport or the tab is hidden, and the loop stops there too.
+ * - `frameloop="demand"` under the canvas's frame scheduler, the only caller
+ *   of `invalidate()`. The units hold its ambient demand, so a live board
+ *   paints every refresh and every transition rides those frames; a change
+ *   to the picture asks for one frame. The owner's frame policy parks the
+ *   ambient demand when frozen and sets `frameloop="never"` when the hero
+ *   leaves the viewport or the tab is hidden, so a parked board renders zero
+ *   frames.
  * - No postprocessing. Bloom is the heaviest import in the stack and the board
  *   is complete without it.
  *
@@ -37,12 +40,24 @@
  * only input that moves this camera is the page's own scroll position.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import type { RefObject } from 'react';
 import * as THREE from 'three';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import type { RootState } from '@react-three/fiber';
 import { CameraControls } from '@react-three/drei';
+import {
+  FrameDemandRoot,
+  useFrameDemand,
+  useFrameScheduler,
+} from '@/lib/frame-demand/frame-demand';
+import type { FrameScheduler } from '@/lib/frame-demand/frame-scheduler';
 import CameraControlsImpl from 'camera-controls';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import {
@@ -338,7 +353,7 @@ function HeroZones({
     elapsed.current = 0;
   }, [geometry, highlight, count]);
 
-  useFrame((state: RootState, delta: number) => {
+  useFrame((_: RootState, delta: number) => {
     if (!animating || elapsed.current >= FOCUS_TRANSITION_SECONDS) return;
     elapsed.current = Math.min(
       FOCUS_TRANSITION_SECONDS,
@@ -359,7 +374,6 @@ function HeroZones({
       bridge.zoneFocus[index] = value;
     }
     attribute.needsUpdate = true;
-    state.invalidate();
   });
 
   return (
@@ -656,9 +670,13 @@ function HeroUnits({
   );
 
   // A panel change moves every unit at once, on ONE clock, so every mark and
-  // every label arrives together (guide rule 4b).
-  const invalidate = useThree(state => state.invalidate);
-  useEffect(() => {
+  // every label arrives together (guide rule 4b). The units hold the canvas's
+  // ambient demand: a live board paints every refresh, a parked one none.
+  // Their writes are layout effects so they land before the first frame
+  // rather than asking for a late one (BUG-280).
+  const frames = useFrameScheduler();
+  useFrameDemand('ambient', 'hero-units', { initial: true });
+  useLayoutEffect(() => {
     const statuses = getBridge().statuses;
     for (let index = 0; index < count; index += 1) {
       retargetFocus(
@@ -666,13 +684,13 @@ function HeroUnits({
         focusTargetFor(index, statuses[index] ?? capture.units[index]!.status)
       );
     }
-    invalidate();
+    frames.request();
   }, [
     capture,
     count,
     focusTargetFor,
     getBridge,
-    invalidate,
+    frames,
     retargetFocus,
     highlight,
   ]);
@@ -695,7 +713,7 @@ function HeroUnits({
   lensRef.current = lens;
   const burstRef = useRef(transitionBurst);
   burstRef.current = transitionBurst;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const material_ = material.current;
     if (!material_) return;
     const palette = material_.uniforms.uStatusColor!.value as THREE.Color[];
@@ -741,8 +759,8 @@ function HeroUnits({
     statusTo.needsUpdate = true;
     changeAt.needsUpdate = true;
     pop.needsUpdate = true;
-    invalidate();
-  }, [capture, count, geometry, getBridge, invalidate, lens]);
+    frames.request();
+  }, [capture, count, geometry, getBridge, frames, lens]);
 
   function changeOneUnit(): void {
     const bridge = getBridge();
@@ -801,7 +819,7 @@ function HeroUnits({
     bridge.onStatusChange?.(index);
   }
 
-  useFrame((state: RootState, delta: number) => {
+  useFrame((_: RootState, delta: number) => {
     if (!animating || !material.current) return;
     const step = Math.min(delta, 0.05);
     elapsed.current += step;
@@ -817,7 +835,6 @@ function HeroUnits({
         changeOneUnit();
       }
     }
-    state.invalidate();
   });
 
   return (
@@ -1166,7 +1183,7 @@ function HeroDelegations({
     if (mesh.current && to.current > 0) mesh.current.visible = true;
   }, [highlight]);
 
-  useFrame((state: RootState, delta: number) => {
+  useFrame((_: RootState, delta: number) => {
     if (!animating || !material.current) return;
     if (elapsed.current >= DELEGATION_BLOOM_SECONDS) return;
     elapsed.current = Math.min(
@@ -1178,7 +1195,6 @@ function HeroDelegations({
     const value = from.current + (to.current - from.current) * eased;
     material.current.uniforms.uBloom!.value = value;
     if (mesh.current) mesh.current.visible = value > 0.01;
-    state.invalidate();
   });
 
   if (count === 0) return null;
@@ -1299,7 +1315,7 @@ function HeroCameraRig({
   const controls = useRef<CameraControlsImpl>(null);
   const camera = useThree(state => state.camera);
   const size = useThree(state => state.size);
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
   const narrowFrame = size.width > 0 && size.width < NARROW_FRAME_PX;
   const framings = useMemo(
     () => heroBoardFramings(capture, ladder, narrowFrame),
@@ -1535,7 +1551,7 @@ function HeroCameraRig({
     ready.current = true;
     progress.current = 0;
     getBridge().progress = 0;
-    invalidate();
+    frames.request();
   }, [
     applyProgress,
     camera,
@@ -1544,10 +1560,10 @@ function HeroCameraRig({
     markWorldSize,
     size.width,
     size.height,
-    invalidate,
+    frames,
   ]);
 
-  useFrame((state: RootState, delta: number) => {
+  useFrame((_: RootState, delta: number) => {
     const rig = controls.current;
     if (!rig || !ready.current) return;
     if (animating) {
@@ -1597,16 +1613,8 @@ function HeroCameraRig({
       // which is next frame. Flush it now so the marks and their labels are
       // one composition rather than two a frame apart.
       rig.update(0);
-      // Park when the camera has caught up with the scroll position AND the
-      // lean has finished unwinding. Either one still moving is a reason to
-      // keep painting; both settled is a reason to stop.
-      if (
-        Math.abs(progress.current - target) > 0.0004 ||
-        current.azimuth !== wantAzimuth ||
-        current.polar !== wantPolar
-      ) {
-        state.invalidate();
-      }
+      // The units' ambient demand paints every refresh while the board is
+      // live, so the camera catches up with the scroll on those frames.
     }
     projectAll();
   });
@@ -1654,6 +1662,8 @@ export interface HeroBoardSceneProps {
    *  independent of it: a lens says what a mark means, a highlight says which
    *  marks lead. */
   lens: HeroLens;
+  /** The frame owner's scheduler and the `frameloop` its policy allows. */
+  frames: { scheduler: FrameScheduler; frameloop: 'demand' | 'never' };
   /** Measurement and poster capture only: lets the study read pixels back. */
   preserveDrawingBuffer?: boolean;
   /** The seam to the DOM annotation layer: the scene writes projected anchors
@@ -1674,6 +1684,7 @@ export function HeroBoardScene({
   ladder = HERO_DEFAULT_LADDER,
   highlight,
   lens,
+  frames,
   preserveDrawingBuffer = false,
   getBridge,
   onReady,
@@ -1682,7 +1693,7 @@ export function HeroBoardScene({
   return (
     <Canvas
       aria-hidden
-      frameloop="demand"
+      frameloop={frames.frameloop}
       dpr={[1, IDLE_BUDGET.maxDpr]}
       gl={{
         antialias: false,
@@ -1693,40 +1704,42 @@ export function HeroBoardScene({
       onCreated={onCreated}
       style={{ width: '100%', height: '100%' }}
     >
-      <color attach="background" args={[theme.canvas]} />
-      <HeroGround theme={theme} capture={capture} />
-      <HeroZones
-        theme={theme}
-        capture={capture}
-        highlight={highlight}
-        animating={animating}
-        getBridge={getBridge}
-      />
-      <HeroUnits
-        theme={theme}
-        capture={capture}
-        animating={animating}
-        statusProtocolMotion={statusProtocolMotion}
-        statusChanges={statusChanges}
-        transitionBurst={transitionBurst}
-        highlight={highlight}
-        lens={lens}
-        getBridge={getBridge}
-      />
-      <HeroDelegations
-        theme={theme}
-        capture={capture}
-        highlight={highlight}
-        animating={animating}
-      />
-      <HeroCameraRig
-        capture={capture}
-        animating={animating}
-        progressRef={progressRef}
-        ladder={ladder}
-        getBridge={getBridge}
-      />
-      {onReady ? <FirstFrame onReady={onReady} /> : null}
+      <FrameDemandRoot scheduler={frames.scheduler}>
+        <color attach="background" args={[theme.canvas]} />
+        <HeroGround theme={theme} capture={capture} />
+        <HeroZones
+          theme={theme}
+          capture={capture}
+          highlight={highlight}
+          animating={animating}
+          getBridge={getBridge}
+        />
+        <HeroUnits
+          theme={theme}
+          capture={capture}
+          animating={animating}
+          statusProtocolMotion={statusProtocolMotion}
+          statusChanges={statusChanges}
+          transitionBurst={transitionBurst}
+          highlight={highlight}
+          lens={lens}
+          getBridge={getBridge}
+        />
+        <HeroDelegations
+          theme={theme}
+          capture={capture}
+          highlight={highlight}
+          animating={animating}
+        />
+        <HeroCameraRig
+          capture={capture}
+          animating={animating}
+          progressRef={progressRef}
+          ladder={ladder}
+          getBridge={getBridge}
+        />
+        {onReady ? <FirstFrame onReady={onReady} /> : null}
+      </FrameDemandRoot>
     </Canvas>
   );
 }

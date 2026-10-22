@@ -56,8 +56,8 @@ function Rig() {
     (
       window as unknown as { __HERO_PROGRESS__?: (value: number) => void }
     ).__HERO_PROGRESS__ = (value: number) => {
+      // A live board paints every refresh; the camera follows on the next.
       progress.current = value;
-      state.invalidate();
     };
     const scratch = document.createElement('canvas');
     let previous: Uint8ClampedArray | null = null;
