@@ -80,7 +80,7 @@ export type { AgentHarness, AgentPermissionMode, PtyHarness };
 
 /** How `ensureRunning` answered: it started the process, joined the start
  *  already under way, or found the process running. */
-export interface EnsuredSession {
+interface EnsuredSession {
   session: PtySessionRecord;
   answer: 'started' | 'joined' | 'running';
 }
