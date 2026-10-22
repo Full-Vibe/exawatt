@@ -3,8 +3,9 @@ import type { KeyBinding } from '@/types/shortcuts';
 /**
  * The board's keyboard surface, as one piece of data.
  *
- * Three window listeners answer these keys today -- the surface's hotkey
- * handler, the shared WASD camera glide, and the client's Escape -- and the
+ * Three owners answer these keys today -- the surface's hotkey handler, the
+ * shared WASD camera glide, and the client's rungs of the back-out ladder
+ * for Escape -- and the
  * keyboard help modal describes them. Each used to describe the bindings
  * independently, and the modal drifted into fiction: it claimed the arrow
  * keys pan when they walk Agent selection. The help modal's board entries now

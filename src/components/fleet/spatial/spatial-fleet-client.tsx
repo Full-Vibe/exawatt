@@ -19,6 +19,7 @@ import {
   type BoardRoute,
 } from './board-route';
 import { Crosshair, Keyboard, Search } from 'lucide-react';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import {
   useCron,
   useFleet,
@@ -561,29 +562,39 @@ export function SpatialFleetClient() {
     [agentProjectOwners, navigate, scene.altitude]
   );
 
-  // Escape releases the multi-selection first, then ascends one altitude —
-  // but not while typing (there it clears search) and not inside a select
-  // (there it closes the dropdown). Described in the board's `board-keymap.ts`.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
-      if (event.key === 'Escape') {
-        if (ghostNotice) clearNotice();
-        else if (multiSelection.size > 0) clearMultiSelect();
-        else ascend();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ascend, clearMultiSelect, clearNotice, ghostNotice, multiSelection.size]);
+  // The board's rungs of the back-out ladder, in V4.2's order: a field's
+  // own text first (Direct, search), then the selection (a ghost notice, then
+  // the working set), then one altitude up. Described in `board-keymap.ts`.
+  useBackOut({
+    rung: 'grid',
+    ambient: true,
+    back: () => {
+      if (ghostNotice) clearNotice();
+      else if (multiSelection.size > 0) clearMultiSelect();
+      else return false;
+      return true;
+    },
+  });
+  useBackOut({
+    rung: 'altitude',
+    ambient: true,
+    back: () => {
+      if (scene.altitude === 'fleet') return false;
+      ascend();
+      return true;
+    },
+  });
+  // Search clears on Escape; an empty search lets the board take it.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useBackOut({
+    rung: 'field',
+    element: searchRef,
+    back: () => {
+      if (!query) return false;
+      updateFilters({ query: '', statuses: statusFilter });
+      return true;
+    },
+  });
 
   // Direct (ENG-004 V4.2): the working set's Agents as bus recipients. The
   // Demo board reads the Demo bus, which answers honestly that it cannot
@@ -927,6 +938,7 @@ export function SpatialFleetClient() {
             <div className="flex items-center gap-1 rounded border border-input bg-background px-2 py-1">
               <Search className="h-3 w-3 text-muted-foreground" />
               <input
+                ref={searchRef}
                 value={query}
                 onChange={event =>
                   updateFilters({
@@ -934,12 +946,6 @@ export function SpatialFleetClient() {
                     statuses: statusFilter,
                   })
                 }
-                onKeyDown={event => {
-                  if (event.key === 'Escape') {
-                    event.stopPropagation();
-                    updateFilters({ query: '', statuses: statusFilter });
-                  }
-                }}
                 placeholder="Search agents…"
                 aria-label="Search agents"
                 className="w-24 rounded-sm bg-transparent text-chrome-meta text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-40"

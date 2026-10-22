@@ -235,6 +235,35 @@ try {
     )),
     'Tab reached obscured workspace controls'
   );
+  // BUG-302: Tab from the grid lands on the dock's tab, and Escape climbs
+  // the back-out ladder one rung at a time: the dock hands focus back to the
+  // tile (Team stays open), and only the next Escape leaves Team.
+  requireState(
+    await page.evaluate(
+      () => !!document.activeElement?.matches('[data-team-dock-tab]')
+    ),
+    'Tab from the Team grid did not reach the dock tabs'
+  );
+  await page.keyboard.press('Escape');
+  await page
+    .locator('[data-expose-tile][data-selected="true"]')
+    .evaluate(
+      element =>
+        new Promise((resolve, reject) => {
+          const deadline = Date.now() + 2000;
+          const check = () => {
+            if (element === document.activeElement) resolve(true);
+            else if (Date.now() > deadline)
+              reject(new Error('Escape on a dock tab did not return to the tile'));
+            else requestAnimationFrame(check);
+          };
+          check();
+        })
+    );
+  requireState(
+    new URL(page.url()).searchParams.get('view') === 'sessions',
+    'Escape on a dock tab left Team instead of returning to the tiles'
+  );
   await page.keyboard.press('Escape');
   await page.waitForURL(url => !url.searchParams.has('view'));
   await page.keyboard.press('Control+Meta+2');

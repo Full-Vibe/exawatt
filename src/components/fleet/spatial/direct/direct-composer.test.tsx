@@ -17,6 +17,7 @@ import { BusClientProvider } from '@/lib/bus/use-bus';
 import { SpatialSelectionPanel } from '../spatial-selection-panel';
 import type { DirectRecipient } from './direct-model';
 import { useDirect, type RecipientAddress } from './use-direct';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 
 vi.mock('next/link', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -107,6 +108,15 @@ function Harness({
     client,
     recipients: RECIPIENTS,
     resolveAddresses: addresses,
+  });
+  // The board's selection rung, as the Fleet client joins the ladder.
+  useBackOut({
+    rung: 'grid',
+    ambient: true,
+    back: () => {
+      onClear();
+      return true;
+    },
   });
   return (
     <BusClientProvider client={client}>
@@ -256,7 +266,7 @@ describe('Direct N Agents', () => {
     expect(list).toHaveBeenCalledWith(PROJECT);
   });
 
-  it('clears the text on Escape first, then hands Escape to the board', async () => {
+  it('clears the text on Escape first, then lets the board release the selection', async () => {
     const onClear = vi.fn();
     const { double } = bridge({});
     render(

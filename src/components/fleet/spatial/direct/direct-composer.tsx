@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, type Ref } from 'react';
+import { useRef, useState, type Ref } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useBackOut } from '@/lib/shortcuts/back-out';
 import { agentSourceIdentity } from '@/components/workspace/agent-source-identity';
 import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
 import type { DirectAvailability, RecipientNote } from './direct-model';
@@ -13,15 +14,14 @@ import type { DirectAvailability, RecipientNote } from './direct-model';
  * command. No persistent broadcast mode, no hidden recipients: the recipient
  * list beside it is the selection itself.
  *
- * Escape clears the text first; on an empty field it hands Escape back to the
- * board, which releases the selection.
+ * Escape clears the text first: the field's rung of the back-out ladder. On
+ * an empty field it falls to the board's rung, which releases the selection.
  */
 export function DirectComposer({
   count,
   availability,
   sending,
   onSend,
-  onEscapeEmpty,
   inputRef,
   shortcutLabel,
 }: {
@@ -30,12 +30,21 @@ export function DirectComposer({
   sending: boolean;
   /** resolves true when the message went out, so the field can clear */
   onSend: (text: string) => Promise<boolean>;
-  onEscapeEmpty: () => void;
   inputRef?: Ref<HTMLTextAreaElement>;
   /** the chord that focuses this field, shown as its hint */
   shortcutLabel?: string | null;
 }) {
   const [text, setText] = useState('');
+  const formRef = useRef<HTMLFormElement>(null);
+  useBackOut({
+    rung: 'field',
+    element: formRef,
+    back: () => {
+      if (text === '') return false;
+      setText('');
+      return true;
+    },
+  });
   const canSend =
     availability.kind === 'ready' && text.trim() !== '' && !sending;
   const submit = async () => {
@@ -45,6 +54,7 @@ export function DirectComposer({
   const label = `Direct ${count} ${count === 1 ? 'Agent' : 'Agents'}`;
   return (
     <form
+      ref={formRef}
       data-direct-composer
       className="flex flex-col gap-2"
       onSubmit={event => {
@@ -73,14 +83,6 @@ export function DirectComposer({
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             void submit();
-          } else if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            if (text !== '') setText('');
-            else {
-              event.currentTarget.blur();
-              onEscapeEmpty();
-            }
           }
         }}
       />

@@ -247,7 +247,6 @@ function MultiSelectionCommand({
             availability={direct.availability}
             sending={direct.sending}
             onSend={direct.onSend}
-            onEscapeEmpty={onClear}
             inputRef={direct.inputRef}
             shortcutLabel={direct.shortcutLabel}
           />
