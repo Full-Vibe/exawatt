@@ -113,7 +113,9 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    parse sites in `packages/ui-model/src/` and `packages/core/src/`, and the
    dependency workflows; parser output must not change (golden over real
    roadmaps); the Electron bump runs the packaged evals, the Next bump the
-   site gates.
+   site gates. Landed 2026-10-21 (`<sha pending>`): Electron 43.7.11, Next
+   16.3.8, vitest 4.1.12, production audit 11 to 0; the bot pull requests
+   close after the projection publishes.
 2. **back-out: one Escape ladder** (ENG-015, ENG-016, ENG-025; M, about 4 h).
    About 39 Escape handlers each swallow or yield the key, and the gaps are
    dead keys: since Chatter became the Team dock's second tab, Escape on a
