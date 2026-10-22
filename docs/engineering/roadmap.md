@@ -5424,3 +5424,16 @@ the hold in a probe. The eval's close step had matched no
 tab since `2c0f2e1b` renamed tabs to their Agent, which is why this stayed
 hidden. Exit: nothing right of the closed tab moves during the hold, and
 `eval:workspace:ribbon` asserts it.
+
+### BUG-319 Parallel packets collide on the one-line delivery test list
+
+Status: open · ENG-039 · found 2026-10-22 landing the Execution front's trains.
+
+`test:agent-delivery` in `package.json` is one 2,700-character line naming
+every delivery test file, so any two packets that each add a delivery test
+conflict on it, and a train refuses before any check. It happened three times
+on 2026-10-22 (deps-lane with eng-039; secret-scan, candidate-policy and
+eval-handles), each needing a hand rebase. Exit: the suite's membership lives
+where adding a test cannot conflict (a glob over a declared directory, or a
+list file with one path per line that the append driver merges), and
+`test:agent-delivery` reads it.
