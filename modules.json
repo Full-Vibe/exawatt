@@ -303,11 +303,6 @@
   ],
   "integrationTests": [
     {
-      "test": "src/components/workspace/session-custody.dom.test.ts",
-      "modules": ["workspace", "pty"],
-      "why": "drives the workspace against the real Session owner behind an IPC double no more capable than ipcRenderer"
-    },
-    {
       "test": "electron/main/harness-events/harness-event-log.test.ts",
       "modules": ["harness-events", "pty"],
       "why": "relaunches the real Session owner over one profile and reads its starts, exits and harness events back from the log"

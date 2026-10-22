@@ -2,53 +2,32 @@
  * BUG-305: a window learns which Sessions are live from main's events, never
  * only from the list it read at mount.
  *
- * The renderer runs against the real Session owner (`PtySessionManager`, its
- * process boundary mocked) behind a double of the IPC between them that is no
- * more capable than `ipcRenderer`: every answer and every push crosses as a
+ * The renderer runs against main as the IPC boundary presents it, and no
+ * more capably than `ipcRenderer`: every answer and every push crosses as a
  * structured clone on a later task, in the order main sent them, and a window
- * that reloaded receives nothing addressed to the page it replaced.
+ * that reloaded receives nothing addressed to the page it replaced. Main's
+ * side answers `pty:create` the way `ensureRunning` does (the live record, the
+ * start already under way, or a new start) and pushes each start before its
+ * answer; `session-ensure-running.test.ts` holds the real owner to that
+ * contract in Node. No main-process module loads here: this is a DOM bundle.
  */
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   DesktopBridgePush,
   DesktopBridgePushChannel,
   PtyCreateOptions,
   PtyCreateResult,
   PtySessionInfo,
+  PtySessionRecord,
 } from '@exawatt/core/desktop-bridge';
 import {
   installBridgeDouble,
+  ptySessionRecord,
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
 import type { PersistedV7 } from './workspace-state/persisted-layout';
 
-const processes = vi.hoisted(() => [] as Array<{ exit: () => void }>);
-vi.mock('node-pty', () => ({
-  spawn: () => {
-    let onExit: (event: { exitCode: number }) => void = () => {};
-    const process = {
-      pid: 9000 + processes.length,
-      onData: () => ({ dispose() {} }),
-      onExit: (fn: typeof onExit) => {
-        onExit = fn;
-        return { dispose() {} };
-      },
-      write() {},
-      resize() {},
-      kill() {},
-      exit: () => onExit({ exitCode: 0 }),
-    };
-    processes.push(process);
-    return process;
-  },
-}));
-vi.mock('../../../electron/main/pty/process-groups', () => ({
-  stopProcessGroups: vi.fn(async () => {}),
-}));
 vi.mock('@/lib/projects/registry', () => ({
   openRepositoryProject: vi.fn(() => Promise.reject(new Error('offline'))),
   listProjects: vi.fn(() => Promise.resolve([])),
@@ -57,18 +36,11 @@ vi.mock('@/lib/projects/registry', () => ({
   setProjectColor: vi.fn(() => Promise.resolve()),
 }));
 
-const { PtySessionManager } =
-  await import('../../../electron/main/pty/session-manager');
 const { useWorkspaceState } = await import('./use-workspace-state');
 
-let project: string;
-beforeEach(() => {
-  project = mkdtempSync(path.join(tmpdir(), 'exawatt-custody-'));
-});
+const project = '/workspace/project';
 afterEach(() => {
-  for (const process of processes.splice(0)) process.exit();
   removeBridgeDouble();
-  rmSync(project, { recursive: true, force: true });
 });
 
 /** The layout a reload reads back: one paused Claude Code Agent. */
@@ -105,11 +77,86 @@ function savedLayout(): PersistedV7 {
 }
 
 /**
- * Main: the real Session owner, and `pty-ipc`'s door to it. `hold` stands in
+ * Main's Session owner as `pty:create` answers for it: one process per
+ * durable Session, a start registered before its first await so a second
+ * ask joins it, a start pushed to every window before its answer, and an
+ * exit pushed when the process ends.
+ */
+function sessionOwner(broadcast: {
+  start(session: PtySessionRecord): void;
+  exit(session: PtySessionRecord): void;
+}) {
+  const records = new Map<string, PtySessionRecord>();
+  const starts = new Map<string, Promise<PtySessionRecord>>();
+  const created = new Set<() => void>();
+  let next = 1;
+  const live = (durableSessionId: string) =>
+    [...records.values()].find(
+      record => record.durableSessionId === durableSessionId && !record.exited
+    );
+  return {
+    list: () => [...records.values()],
+    ensureRunning(
+      options: PtyCreateOptions,
+      prepare: () => Promise<void> = async () => {}
+    ): Promise<PtySessionRecord> {
+      const durableSessionId =
+        options.durableSessionId ?? `session-${next}-fresh`;
+      const running = live(durableSessionId);
+      if (running) return Promise.resolve({ ...running });
+      const starting = starts.get(durableSessionId);
+      if (starting) return starting;
+      const started = (async () => {
+        await prepare();
+        for (const [id, record] of records)
+          if (record.durableSessionId === durableSessionId) records.delete(id);
+        const id = `pty-${next++}`;
+        const record = ptySessionRecord({
+          id,
+          durableSessionId,
+          harness: options.harness,
+          title: options.title ?? options.harness,
+          cwd: options.cwd ?? project,
+          projectDir: options.cwd ?? project,
+          projectName: 'project',
+          harnessSessionId:
+            options.harness === 'shell'
+              ? null
+              : (options.resumeSessionId ?? `conversation-${id}`),
+          startedAt: Date.now(),
+        });
+        records.set(id, record);
+        broadcast.start({ ...record });
+        for (const resolve of [...created]) resolve();
+        created.clear();
+        return { ...record };
+      })().finally(() => starts.delete(durableSessionId));
+      starts.set(durableSessionId, started);
+      return started;
+    },
+    /** The process ends by itself. */
+    exit(id: string) {
+      const record = records.get(id);
+      if (!record || record.exited) return;
+      Object.assign(record, { exited: true, exitCode: 0, exitSignal: null });
+      broadcast.exit({ ...record });
+    },
+    /** Stop, await the exit, forget the record (`closeSession`). */
+    close(durableSessionId: string) {
+      const running = live(durableSessionId);
+      if (running) this.exit(running.id);
+      for (const [id, record] of records)
+        if (record.durableSessionId === durableSessionId) records.delete(id);
+    },
+    nextStart: () => new Promise<void>(resolve => created.add(resolve)),
+  };
+}
+
+/**
+ * Main: the Session owner above, and `pty-ipc`'s door to it. `hold` stands in
  * for a slow readiness probe, which `ensureRunning` runs inside the start.
  */
 function fakeMain() {
-  const manager = new PtySessionManager();
   let layout: unknown = savedLayout();
   let hold: { asked(): void; until: Promise<void> } | null = null;
   const windows = new Set<{
@@ -129,16 +176,16 @@ function fakeMain() {
           );
       });
   };
-  manager.on('created', session => broadcast('pty:start', session));
-  manager.on(
-    'exit',
-    (
-      id: string,
-      exitCode: number,
-      durableSessionId: string,
-      exitSignal: string | null
-    ) => broadcast('pty:exit', { id, durableSessionId, exitCode, exitSignal })
-  );
+  const manager = sessionOwner({
+    start: session => broadcast('pty:start', session),
+    exit: ({ id, durableSessionId, exitCode, exitSignal }) =>
+      broadcast('pty:exit', {
+        id,
+        durableSessionId,
+        exitCode: exitCode ?? 0,
+        exitSignal,
+      }),
+  });
 
   const listed = (): PtySessionInfo[] =>
     manager.list().map(record => ({
@@ -188,7 +235,7 @@ function fakeMain() {
         create: (options: PtyCreateOptions) =>
           invoke(async (): Promise<PtyCreateResult> => {
             try {
-              const { session } = await manager.ensureRunning(
+              const session = await manager.ensureRunning(
                 structuredClone(options),
                 async () => {
                   hold?.asked();
@@ -202,8 +249,9 @@ function fakeMain() {
           }),
         list: () => invoke(listed),
         closeSession: (durableSessionId: string, discard = false) =>
-          invoke(async () => {
-            await manager.closeSession(durableSessionId, discard);
+          invoke(() => {
+            void discard;
+            manager.close(durableSessionId);
             return true;
           }),
         closedSessions: () => invoke(() => []),
@@ -235,8 +283,7 @@ function fakeMain() {
     manager,
     openWindow,
     /** Resolves once main has started the next process. */
-    nextStart: () =>
-      new Promise<void>(resolve => manager.once('created', () => resolve())),
+    nextStart: manager.nextStart,
     /** Hold the next start where the readiness probe runs: `asked` once
      *  main has the ask, and nothing starts until `release`. */
     holdStarts() {
@@ -345,7 +392,7 @@ describe('Session custody (BUG-305)', () => {
         })
       );
 
-    await act(async () => processes.at(-1)!.exit());
+    await act(async () => main.manager.exit(live.id));
     for (const window of [watching, acting])
       await waitFor(() =>
         expect(agentTab(window.view)).toMatchObject({

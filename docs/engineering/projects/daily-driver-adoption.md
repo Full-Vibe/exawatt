@@ -8464,9 +8464,11 @@ Session-custody packet of the Execution front (2026-10-21), `<sha pending>`.
 Evidence, reproduced before each fix: the manager test failed with both
 refusals ("already has a running process", "already starting") before
 `ensureRunning`; `session-custody.dom.test.ts` drives `useWorkspaceState`
-against the real `PtySessionManager` behind an IPC double that answers and
-pushes only structured clones, in order, on later tasks, and drops what is
-owed a reloaded page. With the start subscription removed, its reload,
+through an IPC double that answers `pty:create` as `ensureRunning` does and
+pushes only structured clones, in order, on later tasks, dropping what is
+owed a reloaded page (it loaded the real manager until CI's Node 22 refused
+to bundle `node:sqlite` into the DOM project: a DOM test loads no
+main-process module, and the manager's own test holds it to that contract). With the start subscription removed, its reload,
 second-window and other-window cases fail; with the launch guard removed,
 its one-tab case fails. `eval:electron:resume` gains two BUG-305 steps on
 the packaged app, both holding a start inside `ensureRunning`'s readiness
