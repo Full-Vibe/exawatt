@@ -28,12 +28,15 @@ import {
 export type { OperationsBoardViewport } from './operations-board-camera';
 import { useLowPowerMode, useReducedMotion } from './operations-board-env';
 import {
-  createAmbientFrameScheduler,
-  resolveAmbientCadence,
-  type AmbientCadence,
-  type AmbientMotion,
-} from './operations-board-ambient';
-import { useHostRenderPolicy } from '@/lib/host-power/use-host-render-policy';
+  FrameDemandRoot,
+  useCanvasFrames,
+  useFramePolicy,
+  usePaintOnChange,
+} from '@/lib/frame-demand/frame-demand';
+import type {
+  FrameDemandSnapshot,
+  FrameScheduler,
+} from '@/lib/frame-demand/frame-scheduler';
 import { BoardCameraRig } from './operations-board-camera-rig';
 import {
   BoardGrid,
@@ -59,23 +62,29 @@ export type { OperationsBoardHandle } from './operations-board-camera-rig';
 
 const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 
-/** Demand-loop bridge: material/DOM props update in place, then the existing
- * scene gets exactly one requested paint for the new resolved snapshot. */
-function InvalidateOnSpatialTheme({ theme }: { theme: SpatialThemeSnapshot }) {
-  const invalidate = useThree(state => state.invalidate);
-  useEffect(() => invalidate(), [invalidate, theme]);
+/** Material/DOM props update in place for a new resolved theme snapshot;
+ * the existing scene then gets exactly one paint for it. */
+export function PaintOnTheme({ theme }: { theme: SpatialThemeSnapshot }) {
+  usePaintOnChange(theme);
   return null;
 }
 
-/** A cadence change requests one frame; from there the rotors keep the loop
- * alive themselves. Without this, leaving `parked` (plugging in, unlocking,
- * returning to the tab) would wait for an unrelated paint. */
-function ResumeAmbientMotion({ ambient }: { ambient: AmbientMotion }) {
-  const invalidate = useThree(state => state.invalidate);
-  useEffect(() => {
-    if (ambient.cadence !== 'parked') invalidate();
-  }, [ambient, invalidate]);
-  return null;
+/** Evals read the canvas's demand (what holds frames, and whether it is
+ * parked) beside its renderer. Development builds only. */
+export function exposeFrameDemand(
+  canvas: HTMLCanvasElement,
+  scheduler: FrameScheduler
+): void {
+  if (process.env.NODE_ENV === 'production') return;
+  const snapshot = () => scheduler.snapshot();
+  (
+    canvas as HTMLCanvasElement & { frameDemand?: () => FrameDemandSnapshot }
+  ).frameDemand = snapshot;
+  (
+    window as typeof window & {
+      __EVAL_FRAME_DEMAND__?: () => FrameDemandSnapshot;
+    }
+  ).__EVAL_FRAME_DEMAND__ = snapshot;
 }
 
 /** Display changes can alter DPR without changing the canvas's CSS size.
@@ -165,24 +174,9 @@ export function OperationsBoardCanvas({
 }) {
   const reduced = useReducedMotion();
   // Weak hardware alone trades resolution and bloom. Battery is a cadence
-  // input below and never reaches `dpr` (BUG-263).
+  // input of the frame policy and never reaches `dpr` (BUG-263).
   const lowPower = useLowPowerMode();
-  const { onBattery, renderAllowed, ambientAllowed } = useHostRenderPolicy();
-  const cadence: AmbientCadence = resolveAmbientCadence({
-    reduced,
-    visible: ambientAllowed,
-    lowPower,
-    onBattery,
-  });
-  const [ambientScheduler] = useState(() => createAmbientFrameScheduler());
-  useEffect(() => () => ambientScheduler.dispose(), [ambientScheduler]);
-  const ambient = useMemo<AmbientMotion>(
-    () => ({
-      cadence,
-      requestFrame: invalidate => ambientScheduler.request(cadence, invalidate),
-    }),
-    [ambientScheduler, cadence]
-  );
+  const frames = useCanvasFrames(useFramePolicy({ reduced, lowPower }));
   // During a Team→Fleet handoff the lazy postprocessing chunk's shader
   // compile is the single biggest main-thread stall — landing it mid
   // crossfade cuts the flight short. Defer the bloom mount until the entry
@@ -228,7 +222,7 @@ export function OperationsBoardCanvas({
   return (
     <Canvas
       orthographic
-      frameloop={renderAllowed ? 'demand' : 'never'}
+      frameloop={frames.frameloop}
       dpr={lowPower ? [1, 1.25] : [1, 2]}
       camera={{ position: [0, 0, 100], zoom: 1, near: 0.1, far: 200 }}
       gl={{ antialias: true, preserveDrawingBuffer }}
@@ -250,148 +244,149 @@ export function OperationsBoardCanvas({
           target.__EVAL_SCENE__ = scene;
           target.__EVAL_CAM__ = camera;
         }
+        exposeFrameDemand(gl.domElement, frames.scheduler);
       }}
       aria-hidden="true"
       data-board-canvas-theme={theme.themeId}
     >
-      {/* The flat board ground is the scene clear itself: identical authored
+      <FrameDemandRoot scheduler={frames.scheduler}>
+        {/* The flat board ground is the scene clear itself: identical authored
           theme color without spending a draw call on a full-screen plane. */}
-      <color attach="background" args={[theme.zone]} />
-      <InvalidateOnSpatialTheme theme={theme} />
-      <ResumeAmbientMotion ambient={ambient} />
-      <BoardDisplayResolution lowPower={lowPower} />
-      {/* Soft key + fill: gives zone plates and piece bodies a readable
+        <color attach="background" args={[theme.zone]} />
+        <PaintOnTheme theme={theme} />
+        <BoardDisplayResolution lowPower={lowPower} />
+        {/* Soft key + fill: gives zone plates and piece bodies a readable
           top/side split in the fixed-angle projection. */}
-      <ambientLight intensity={1.15} />
-      <directionalLight position={[26, 42, 80]} intensity={0.65} />
-      <BoardTransitionProvider>
-        <BoardCameraRig
-          layout={layout}
-          projection={projection}
-          reduced={reduced}
-          controllerRef={controllerRef}
-          onControllerReady={onControllerReady}
-          onViewportChange={onViewportChange}
-          onZoomChange={handleZoomChange}
-          onBandSelect={onBandSelect}
-          bandOverlayRef={bandOverlayRef}
-          suppressMissRef={suppressMissRef}
-          followSelection={followSelection}
-          touchSelectionMode={touchSelectionMode}
-          onManualCameraInput={onManualCameraInput}
-          onClampEdges={onClampEdges}
-        />
-        <BoardField
-          pieces={layout.pieces}
-          altitude={layout.altitude}
-          focusedProjectId={layout.focusedProjectId}
-          reduced={reduced}
-        >
-          <BoardGrid bounds={layout.bounds} theme={theme} />
-          <ZoneLayer
-            zones={visibleZones}
-            altitude={layout.altitude}
-            focusedProjectId={layout.focusedProjectId}
+        <ambientLight intensity={1.15} />
+        <directionalLight position={[26, 42, 80]} intensity={0.65} />
+        <BoardTransitionProvider>
+          <BoardCameraRig
+            layout={layout}
+            projection={projection}
             reduced={reduced}
-            onDrillProject={onDrillProject}
-            onToggleZoneSelect={onToggleZoneSelect}
-            hover={hover}
-            theme={theme}
+            controllerRef={controllerRef}
+            onControllerReady={onControllerReady}
+            onViewportChange={onViewportChange}
+            onZoomChange={handleZoomChange}
+            onBandSelect={onBandSelect}
+            bandOverlayRef={bandOverlayRef}
+            suppressMissRef={suppressMissRef}
+            followSelection={followSelection}
+            touchSelectionMode={touchSelectionMode}
+            onManualCameraInput={onManualCameraInput}
+            onClampEdges={onClampEdges}
           />
-          {ghostSlots && onActivateGhost && (
-            <GhostSlotLayer
-              ghosts={ghostSlots}
-              onActivate={onActivateGhost}
-              theme={theme}
-            />
-          )}
-          {layout.altitude === 'fleet' && onToggleAgentSelect && (
-            <FleetAgentHitTargets
-              pieces={layout.pieces}
-              onToggleAgentSelect={onToggleAgentSelect}
-            />
-          )}
-          <AgentPieceLayer
-            pieces={layout.pieces}
-            delegationUnits={delegationUnits}
-            hover={hover}
-            selectedDelegationUnitId={selectedDelegationUnitId}
-            altitude={layout.altitude}
-            focusedProjectId={layout.focusedProjectId}
-            reduced={reduced}
-            ambient={ambient}
-            lens={lens}
-            onSelectAgent={onSelectAgent}
-            onToggleAgentSelect={onToggleAgentSelect}
-            theme={theme}
-          />
-          <PopulationDotLayer
-            zones={layout.zones}
-            pieces={layout.pieces}
-            altitude={layout.altitude}
-            reduced={reduced}
-            lens={lens}
-            theme={theme}
-          />
-          {multiSelection && multiSelection.size > 0 && (
-            <MultiSelectionLayer
-              layout={layout}
-              selection={multiSelection}
-              theme={theme}
-            />
-          )}
-          <ProjectControls
-            zones={visibleZones}
-            altitude={layout.altitude}
-            focusedProjectId={layout.focusedProjectId}
-            labelTierStore={labelTierStore}
-            reduced={reduced}
-            lens={lens}
-            onDrillProject={onDrillProject}
-            onToggleZoneSelect={onToggleZoneSelect}
-            theme={theme}
-          />
-          <AgentControls
+          <BoardField
             pieces={layout.pieces}
             altitude={layout.altitude}
             focusedProjectId={layout.focusedProjectId}
-            onSelectAgent={onSelectAgent}
-            onToggleAgentSelect={onToggleAgentSelect}
-            onHoverChange={hover.setAgent}
-            onPressedChange={hover.setPressed}
-            multiSelection={multiSelection}
             reduced={reduced}
-            theme={theme}
-          />
-          {ghostSlots && onActivateGhost && (
-            <GhostControls
-              ghosts={ghostSlots}
+          >
+            <BoardGrid bounds={layout.bounds} theme={theme} />
+            <ZoneLayer
               zones={visibleZones}
               altitude={layout.altitude}
               focusedProjectId={layout.focusedProjectId}
-              onActivate={onActivateGhost}
+              reduced={reduced}
+              onDrillProject={onDrillProject}
+              onToggleZoneSelect={onToggleZoneSelect}
+              hover={hover}
+              theme={theme}
+            />
+            {ghostSlots && onActivateGhost && (
+              <GhostSlotLayer
+                ghosts={ghostSlots}
+                onActivate={onActivateGhost}
+                theme={theme}
+              />
+            )}
+            {layout.altitude === 'fleet' && onToggleAgentSelect && (
+              <FleetAgentHitTargets
+                pieces={layout.pieces}
+                onToggleAgentSelect={onToggleAgentSelect}
+              />
+            )}
+            <AgentPieceLayer
+              pieces={layout.pieces}
+              delegationUnits={delegationUnits}
+              hover={hover}
+              selectedDelegationUnitId={selectedDelegationUnitId}
+              altitude={layout.altitude}
+              focusedProjectId={layout.focusedProjectId}
+              reduced={reduced}
+              lens={lens}
+              onSelectAgent={onSelectAgent}
+              onToggleAgentSelect={onToggleAgentSelect}
+              theme={theme}
+            />
+            <PopulationDotLayer
+              zones={layout.zones}
+              pieces={layout.pieces}
+              altitude={layout.altitude}
+              reduced={reduced}
+              lens={lens}
+              theme={theme}
+            />
+            {multiSelection && multiSelection.size > 0 && (
+              <MultiSelectionLayer
+                layout={layout}
+                selection={multiSelection}
+                theme={theme}
+              />
+            )}
+            <ProjectControls
+              zones={visibleZones}
+              altitude={layout.altitude}
+              focusedProjectId={layout.focusedProjectId}
+              labelTierStore={labelTierStore}
+              reduced={reduced}
+              lens={lens}
+              onDrillProject={onDrillProject}
+              onToggleZoneSelect={onToggleZoneSelect}
+              theme={theme}
+            />
+            <AgentControls
+              pieces={layout.pieces}
+              altitude={layout.altitude}
+              focusedProjectId={layout.focusedProjectId}
+              onSelectAgent={onSelectAgent}
+              onToggleAgentSelect={onToggleAgentSelect}
+              onHoverChange={hover.setAgent}
+              onPressedChange={hover.setPressed}
+              multiSelection={multiSelection}
               reduced={reduced}
               theme={theme}
             />
-          )}
-          <DelegationControls
-            units={delegationUnits}
-            pieces={layout.pieces}
-            altitude={layout.altitude}
-            focusedProjectId={layout.focusedProjectId}
-            onSelectAgent={onSelectAgent}
-            onSelectDelegationChild={onSelectDelegationChild}
-            onHoverChange={hover.setDelegation}
-            reduced={reduced}
-            theme={theme}
-          />
-        </BoardField>
-      </BoardTransitionProvider>
-      {!lowPower && effectsReady && theme.bloom.enabled && (
-        <Suspense fallback={null}>
-          <OperationsBoardEffects bloom={theme.bloom} />
-        </Suspense>
-      )}
+            {ghostSlots && onActivateGhost && (
+              <GhostControls
+                ghosts={ghostSlots}
+                zones={visibleZones}
+                altitude={layout.altitude}
+                focusedProjectId={layout.focusedProjectId}
+                onActivate={onActivateGhost}
+                reduced={reduced}
+                theme={theme}
+              />
+            )}
+            <DelegationControls
+              units={delegationUnits}
+              pieces={layout.pieces}
+              altitude={layout.altitude}
+              focusedProjectId={layout.focusedProjectId}
+              onSelectAgent={onSelectAgent}
+              onSelectDelegationChild={onSelectDelegationChild}
+              onHoverChange={hover.setDelegation}
+              reduced={reduced}
+              theme={theme}
+            />
+          </BoardField>
+        </BoardTransitionProvider>
+        {!lowPower && effectsReady && theme.bloom.enabled && (
+          <Suspense fallback={null}>
+            <OperationsBoardEffects bloom={theme.bloom} />
+          </Suspense>
+        )}
+      </FrameDemandRoot>
     </Canvas>
   );
 }

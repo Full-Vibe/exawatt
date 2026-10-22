@@ -1,12 +1,12 @@
 'use client';
 
-import { useThree } from '@react-three/fiber';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { SpatialBoardPiece } from '@exawatt/ui-model';
 import {
   createEmergenceTracker,
   type EmergenceTracker,
 } from '../operations-board-emergence';
+import { useFrameScheduler } from '@/lib/frame-demand/frame-demand';
 
 /** Shared lifecycle policy, with React retaining departing tile records until
  * the same transition clock has taken their instance scale to zero. */
@@ -32,7 +32,7 @@ export function useTileEmergence(
   for (const piece of solid) records.current.set(piece.id, piece);
   const [retiring, setRetiring] = useState<string[]>([]);
   const previousReduced = useRef(reduced);
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
   useLayoutEffect(() => {
     if (previousReduced.current !== reduced) {
       tracker.current = createEmergenceTracker(
@@ -56,13 +56,15 @@ export function useTileEmergence(
           ? previous
           : next
       );
-      invalidate();
+      // Arrivals and departures have a known end: paint through it.
       const remaining = current.remainingMs(now);
+      frames.request();
+      frames.until(now + remaining);
       if (remaining > 0) timer = setTimeout(settle, remaining);
     };
     settle();
     return () => clearTimeout(timer);
-  }, [solid, reduced, invalidate]);
+  }, [solid, reduced, frames]);
   useLayoutEffect(() => {
     tracker.current!.prune(performance.now(), retiring);
     const retained = new Set([

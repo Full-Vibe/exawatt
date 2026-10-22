@@ -6,7 +6,7 @@
  * from the shared materials module so aggregation never invents a color.
  */
 
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import {
@@ -15,7 +15,6 @@ import {
   type SpatialBoardPiece,
   type SpatialBoardProjectZone,
 } from '@exawatt/ui-model';
-import { STATUS_LIGHT_ACTIVE_ROTATION_SECONDS } from '@/components/status-light/protocol';
 import {
   computePopulationDotField,
   POPULATION_STATUS_ORDER,
@@ -32,6 +31,10 @@ import {
   type StatusMarkDepthPolicy,
 } from './status-mark-rendering';
 import { boardWorldY } from './operations-board-camera';
+import {
+  useFrameDemand,
+  useFrameScheduler,
+} from '@/lib/frame-demand/frame-demand';
 
 /**
  * Quad size for a population status mark, as a multiple of the unit it marks.
@@ -46,42 +49,31 @@ import { boardWorldY } from './operations-board-camera';
  */
 const POPULATION_MARK_SCALE = 1.2;
 
+/** Static at every aggregate tier: very-far agglomeration keeps D40 shape and
+ * exact mass without per-agent motion; individual Active hexes own work. */
 export function PopulationStatusMarks({
   field,
   lens,
-  ambient,
   theme,
   backing = false,
   depthPolicy = 'scene',
 }: {
   field: ReturnType<typeof computePopulationDotField>;
   lens: SpatialBoardLens;
-  ambient: boolean;
   /** Product tiles need the same contrast plate as individual D40 marks. */
   backing?: boolean;
   depthPolicy?: StatusMarkDepthPolicy;
   theme: SpatialThemeSnapshot;
 }) {
   const rendering = statusMarkRendering(depthPolicy);
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
   const capacity = useMemo(() => {
     let size = 64;
     while (size < field.count) size *= 2;
     return size;
   }, [field.count]);
   const mesh = useRef<THREE.InstancedMesh>(null);
-  const material = useRef<THREE.ShaderMaterial>(null);
   const scratch = useMemo(() => new THREE.Object3D(), []);
-  const activeCount = useMemo(() => {
-    const reviewing = POPULATION_STATUS_ORDER.indexOf('reviewing');
-    const working = POPULATION_STATUS_ORDER.indexOf('working');
-    let count = 0;
-    for (let index = 0; index < field.count; index += 1) {
-      if (field.status[index] === reviewing || field.status[index] === working)
-        count += 1;
-    }
-    return count;
-  }, [field]);
   const geometry = useMemo(() => {
     const next = new THREE.PlaneGeometry(1, 1);
     next.setAttribute(
@@ -177,8 +169,8 @@ export function PopulationStatusMarks({
   useEffect(() => {
     shader.uniforms.uBacking.value = backing ? 1 : 0;
     shader.uniforms.uBackingColor.value.set(theme.markBacking);
-    invalidate();
-  }, [backing, theme.markBacking, shader, invalidate]);
+    frames.request();
+  }, [backing, theme.markBacking, shader, frames]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   useLayoutEffect(() => {
     if (!mesh.current) return;
@@ -214,18 +206,8 @@ export function PopulationStatusMarks({
     mesh.current.instanceMatrix.needsUpdate = true;
     states.needsUpdate = true;
     colors.needsUpdate = true;
-    invalidate();
-  }, [field, geometry, invalidate, lens, scratch, theme]);
-
-  useFrame((frame, delta) => {
-    if (!ambient || activeCount === 0 || !material.current) return;
-    material.current.uniforms.uPhase!.value =
-      (material.current.uniforms.uPhase!.value -
-        (Math.min(delta, 0.05) * Math.PI * 2) /
-          STATUS_LIGHT_ACTIVE_ROTATION_SECONDS) %
-      (Math.PI * 2);
-    frame.invalidate();
-  });
+    frames.request();
+  }, [field, geometry, frames, lens, scratch, theme]);
 
   if (field.count === 0) return null;
   return (
@@ -238,7 +220,6 @@ export function PopulationStatusMarks({
       renderOrder={rendering.glyph}
     >
       <shaderMaterial
-        ref={material}
         args={[shader]}
         transparent
         depthTest={rendering.depthTest}
@@ -269,7 +250,11 @@ export const PopulationDotLayer = memo(function PopulationDotLayer({
   lens: SpatialBoardLens;
   theme: SpatialThemeSnapshot;
 }) {
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
+  // The entrance fade and an altitude morph are this layer's own motion.
+  const animating = useFrameDemand('transition', 'population', {
+    initial: !reduced,
+  });
   const field = useMemo(
     () => computePopulationDotField(zones, pieces),
     [pieces, zones]
@@ -395,13 +380,15 @@ export const PopulationDotLayer = memo(function PopulationDotLayer({
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     previousField.current = field;
     previousAltitude.current = altitude;
-    invalidate();
+    if (morph.current) animating.set(true);
+    else frames.request();
   }, [
     altitude,
+    animating,
     burnColors,
     burnUnknown,
     field,
-    invalidate,
+    frames,
     lens,
     reduced,
     scratch,
@@ -409,10 +396,14 @@ export const PopulationDotLayer = memo(function PopulationDotLayer({
     zones,
   ]);
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const material = materialRef.current;
-    if (!material) return;
-    let animating = false;
+    // An empty field mounts no mesh, so there is nothing to move.
+    if (!material) {
+      animating.set(false);
+      return;
+    }
+    let moving = false;
     const activeMorph = morph.current;
     const mesh = meshRef.current;
     if (activeMorph && mesh) {
@@ -446,8 +437,8 @@ export const PopulationDotLayer = memo(function PopulationDotLayer({
         mesh.setMatrixAt(index, scratch.matrix);
       }
       mesh.instanceMatrix.needsUpdate = true;
-      animating = activeMorph.progress < 1;
-      if (!animating) morph.current = null;
+      moving = activeMorph.progress < 1;
+      if (!moving) morph.current = null;
     }
     if (entrance.current < 1) {
       entrance.current = Math.min(
@@ -455,11 +446,11 @@ export const PopulationDotLayer = memo(function PopulationDotLayer({
         entrance.current + Math.min(delta, 0.05) * 3.5
       );
       material.opacity = 0.92 * entrance.current;
-      animating = true;
+      moving = true;
     } else {
       material.opacity = 0.92;
     }
-    if (animating) state.invalidate();
+    animating.set(moving);
   });
 
   if (field.count === 0) return null;
@@ -483,12 +474,7 @@ export const PopulationDotLayer = memo(function PopulationDotLayer({
       </instancedMesh>
       {/* Very-far agglomeration preserves D40 shape and exact mass without
           per-agent ambient motion; individual Active hexes own visible work. */}
-      <PopulationStatusMarks
-        field={field}
-        lens={lens}
-        ambient={false}
-        theme={theme}
-      />
+      <PopulationStatusMarks field={field} lens={lens} theme={theme} />
     </>
   );
 });

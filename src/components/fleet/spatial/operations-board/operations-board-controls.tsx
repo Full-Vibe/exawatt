@@ -37,6 +37,10 @@ import { type ZoneLabelTierStore } from './operations-board-label-tier';
 import { useBoardTransitionClock } from './operations-board-field';
 import { isBoardTransitionActive } from './operations-board-transition';
 import {
+  useFrameDemand,
+  useFrameScheduler,
+} from '@/lib/frame-demand/frame-demand';
+import {
   spatialColorWithAlpha,
   spatialPressureColor,
   spatialProjectIdentityColor,
@@ -119,23 +123,30 @@ function DampedHtmlAnchor({
   const initial = useRef(position);
   const target = useRef(position);
   target.current = position;
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
+  // A moved anchor damps to its new spot; the frame that arrives ends it.
+  const settling = useFrameDemand('transition', 'anchor');
   const attachHitBox = useCallback(
     (node: HTMLDivElement | null) => {
       hitBox.current = node;
       if (node) {
         previousHitPixels.current = Number.NaN;
-        invalidate();
+        frames.request();
       }
     },
-    [invalidate]
+    [frames]
   );
   const transitionClock = useBoardTransitionClock();
+  const [x, y, z] = position;
   useLayoutEffect(() => {
-    if (!reduced || !group.current) return;
-    group.current.position.set(...position);
-    invalidate();
-  }, [invalidate, position, reduced]);
+    if (!reduced) {
+      settling.set(true);
+      return;
+    }
+    if (!group.current) return;
+    group.current.position.set(x, y, z);
+    frames.request();
+  }, [frames, settling, reduced, x, y, z]);
   useFrame((state, delta) => {
     const node = group.current;
     if (!node) return;
@@ -160,7 +171,10 @@ function DampedHtmlAnchor({
         hitBox.current.style.setProperty('--board-hit-size', `${diameter}px`);
       }
     }
-    if (reduced) return;
+    if (reduced) {
+      settling.set(false);
+      return;
+    }
     // During a semantic transition the whole field is being carried, so an
     // anchor that also damped its own local position would ease twice and lag
     // behind the piece it labels. It takes the new local spot immediately and
@@ -170,6 +184,7 @@ function DampedHtmlAnchor({
       isBoardTransitionActive(transitionClock.current, performance.now())
     ) {
       node.position.set(...target.current);
+      settling.set(false);
       return;
     }
     const nextX = THREE.MathUtils.damp(
@@ -199,7 +214,7 @@ function DampedHtmlAnchor({
       moving ? nextY : target.current[1],
       moving ? nextZ : target.current[2]
     );
-    if (moving) state.invalidate();
+    settling.set(moving);
   });
   return (
     <group ref={group} position={initial.current}>

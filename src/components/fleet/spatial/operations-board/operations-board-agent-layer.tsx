@@ -8,10 +8,11 @@
  */
 
 import { Instances, Instance, Line, useCursor } from '@react-three/drei';
-import { type ThreeEvent, useFrame, useThree } from '@react-three/fiber';
+import { type ThreeEvent, useFrame } from '@react-three/fiber';
 import {
   memo,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -26,10 +27,11 @@ import {
   type SpatialBoardLens,
   type SpatialBoardPiece,
 } from '@exawatt/ui-model';
+import { AMBIENT_FRAME_DELTA_CAP_S } from '@/lib/frame-demand/frame-scheduler';
 import {
-  AMBIENT_FRAME_DELTA_CAP_S,
-  type AmbientMotion,
-} from './operations-board-ambient';
+  useFrameDemand,
+  useFrameScheduler,
+} from '@/lib/frame-demand/frame-demand';
 import {
   createEmergenceTracker,
   type EmergenceTracker,
@@ -62,7 +64,7 @@ import { StatusMarkLayer } from './operations-board-status-marks';
 /**
  * Batched spatial sibling of the DOM StatusLight. Project identity stays on
  * zone edges; every Agent piece carries one exact protocol color and shape.
- * Only Active rotors invalidate the demand loop, at the shared DOM cadence.
+ * Only Active rotors hold ambient demand, at the canvas's ambient cadence.
  */
 
 /** Animated selection: an accent reticle that eases in on selection and
@@ -70,17 +72,22 @@ import { StatusMarkLayer } from './operations-board-status-marks';
  *  piece so a selection change replays the ease-in. */
 export function SelectionRing({
   piece,
-  ambient,
   reduced,
   theme,
 }: {
   piece: SpatialBoardPiece;
-  ambient: AmbientMotion;
   reduced: boolean;
   theme: SpatialThemeSnapshot;
 }) {
   const group = useRef<THREE.Group>(null);
   const entrance = useRef(reduced ? 1 : 0);
+  const frames = useFrameScheduler();
+  // The ease-in is a transition and paints every refresh; the slow turn
+  // after it is ambient and follows the canvas's cadence.
+  const entering = useFrameDemand('transition', 'selection-ring', {
+    initial: !reduced,
+  });
+  useFrameDemand('ambient', 'selection-ring', { initial: true });
   const points = useMemo(() => {
     const result: Array<[number, number, number]> = [];
     const SEGMENTS = 48;
@@ -90,22 +97,19 @@ export function SelectionRing({
     }
     return result;
   }, []);
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const target = group.current;
     if (!target) return;
     const clamped = Math.min(delta, AMBIENT_FRAME_DELTA_CAP_S);
-    const entering = entrance.current < 1;
-    if (entering) {
+    if (entrance.current < 1) {
       entrance.current = Math.min(1, entrance.current + clamped * 5);
     }
+    entering.set(entrance.current < 1);
     const scale = piece.size * (1.25 - 0.25 * entrance.current);
     target.scale.setScalar(scale);
-    const rotating = ambient.cadence !== 'parked';
-    if (rotating) target.rotation.z += clamped * 0.5;
-    // The ease-in is a transition and paints every refresh; the slow turn
-    // after it is ambient and follows the shared power cadence.
-    if (entering) state.invalidate();
-    else if (rotating) ambient.requestFrame(state.invalidate);
+    if (frames.policy.ambient !== 'parked') {
+      target.rotation.z += clamped * 0.5;
+    }
   });
   return (
     <group ref={group} position={boardWorldPosition(piece, 0.78)}>
@@ -156,7 +160,12 @@ export function AgentCandidateReticle({
   }, []);
   const restingScale = piece.size * (pressed ? 0.75 : 1);
   const restingOpacity = pressed ? 1 : 0.78;
-  useFrame((state, delta) => {
+  const settling = useFrameDemand('transition', 'candidate-reticle');
+  // Mount and every press start a damped move; the frame that arrives ends it.
+  useEffect(() => {
+    settling.set(true);
+  }, [settling, restingScale, restingOpacity]);
+  useFrame((_, delta) => {
     const target = group.current;
     const material = line.current?.material;
     if (!target || !material) return;
@@ -169,12 +178,10 @@ export function AgentCandidateReticle({
       : THREE.MathUtils.damp(material.opacity, restingOpacity, 14, clamped);
     target.scale.setScalar(nextScale);
     material.opacity = nextOpacity;
-    if (
+    settling.set(
       Math.abs(nextScale - restingScale) > 0.001 ||
-      Math.abs(nextOpacity - restingOpacity) > 0.002
-    ) {
-      state.invalidate();
-    }
+        Math.abs(nextOpacity - restingOpacity) > 0.002
+    );
   });
   return (
     <group
@@ -205,7 +212,6 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   altitude,
   focusedProjectId,
   reduced,
-  ambient,
   lens,
   onSelectAgent,
   onToggleAgentSelect,
@@ -219,7 +225,6 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   altitude: SpatialBoardLayout['altitude'];
   focusedProjectId: string | null;
   reduced: boolean;
-  ambient: AmbientMotion;
   lens: SpatialBoardLens;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
@@ -254,7 +259,7 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   const lastPieceById = useRef(new Map<string, SpatialBoardPiece>());
   for (const piece of solid) lastPieceById.current.set(piece.id, piece);
   const [retiringIds, setRetiringIds] = useState<string[]>([]);
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
   const previousReduced = useRef(reduced);
   useLayoutEffect(() => {
     // A changed motion preference snaps existing transitions, including a
@@ -281,16 +286,18 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
           ? previous
           : next
       );
-      invalidate();
+      // Arrivals and departures have a known end: paint through it.
+      const remaining = tracker.remainingMs(now);
+      frames.request();
+      frames.until(now + remaining);
       // Cleanup belongs to the React lifecycle, not the frame loop. Even if
       // rendering was suspended past the deadline, the final commit retires
       // the pieces. An early timer re-arms for the actual remaining interval.
-      const remaining = tracker.remainingMs(now);
       if (remaining > 0) timer = setTimeout(settle, remaining);
     };
     settle();
     return () => clearTimeout(timer);
-  }, [solid, reduced, invalidate]);
+  }, [solid, reduced, frames]);
   useLayoutEffect(() => {
     // A completed departure stays at zero until React has detached its refs;
     // pruning it earlier would briefly restore its default scale of one.
@@ -343,6 +350,9 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   );
   const lastBodyRecession = useRef(new Map<string, number>());
   const entranceClock = useRef<number | null>(reduced ? null : 0);
+  const entering = useFrameDemand('transition', 'piece-entrance', {
+    initial: !reduced,
+  });
   // The cursor follows the mesh this layer hit. Candidate state (hover and
   // press) goes to the hover store instead, so the WebGL and DOM hit paths
   // converge on one candidate and only its subscribers rerender.
@@ -382,23 +392,23 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
   // while the material fades up. Because the layer now survives altitude
   // changes, this remains a board/data arrival signature and never replays on
   // Fleet → Project → Agent navigation.
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     {
       const now = performance.now();
       const tracker = emergence.current!;
       // Always sample the final frame too: active() is already false at
       // the endpoint, while bodies may still hold the preceding frame's size.
+      // The tracker's deadline paints every frame of the scale.
       for (const piece of rendered) {
         const body = bodyRefs.current.get(piece.id);
         if (!body) continue;
         const scale = piece.size * tracker.scaleOf(piece.id, now);
         body.scale.set(scale, scale, 1);
       }
-      if (tracker.active(now)) state.invalidate();
     }
     {
+      // Sampled from the shared clock, whose deadline paints it.
       const now = performance.now();
-      let receding = false;
       for (const piece of visible) {
         const body = bodyRefs.current.get(piece.id) as
           | (THREE.Object3D & { color?: THREE.Color })
@@ -417,12 +427,11 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
             amount * FOCUS_RECESSION_MIX
           )
         );
-        if (amount > 0.001 && amount < 0.999) receding = true;
       }
-      if (receding) state.invalidate();
     }
     if (entranceClock.current === null) {
       if (bodyMat.current) bodyMat.current.opacity = 1;
+      entering.set(false);
       return;
     }
     entranceClock.current += Math.min(delta, 0.05);
@@ -443,9 +452,8 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
     if (bodyMat.current) bodyMat.current.opacity = fade;
     if (settled && fade >= 1) {
       entranceClock.current = null;
-      return;
+      entering.set(false);
     }
-    state.invalidate();
   });
 
   // Selection is looked up over the same set the status marks draw, so a
@@ -472,7 +480,6 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
       />
       <StatusMarkLayer
         pieces={statusSubjects}
-        ambient={ambient}
         lens={lens}
         theme={theme}
         emergenceScale={emergenceScale}
@@ -488,7 +495,6 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
         <SelectionRing
           key={selected.id}
           piece={selected}
-          ambient={ambient}
           reduced={reduced}
           theme={theme}
         />

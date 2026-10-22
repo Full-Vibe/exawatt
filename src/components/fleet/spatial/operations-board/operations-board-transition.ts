@@ -39,10 +39,15 @@ export interface BoardTransitionClock {
   /** `performance.now()` when the current transition began; null when idle. */
   startedAt: number | null;
   durationMs: number;
+  /** Told when each transition will end, so the canvas paints until then:
+   * every layer sampling the clock moves without asking for frames. */
+  onBegin?: (endsAtMs: number) => void;
 }
 
-export function createBoardTransitionClock(): BoardTransitionClock {
-  return { startedAt: null, durationMs: BOARD_TRANSITION_MS };
+export function createBoardTransitionClock(
+  onBegin?: (endsAtMs: number) => void
+): BoardTransitionClock {
+  return { startedAt: null, durationMs: BOARD_TRANSITION_MS, onBegin };
 }
 
 export function beginBoardTransition(
@@ -52,6 +57,7 @@ export function beginBoardTransition(
 ): void {
   clock.startedAt = nowMs;
   clock.durationMs = Math.max(1, durationMs);
+  clock.onBegin?.(nowMs + clock.durationMs);
 }
 
 /**

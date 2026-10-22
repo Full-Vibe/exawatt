@@ -1,6 +1,6 @@
 'use client';
 
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import {
   createContext,
   useContext,
@@ -11,7 +11,10 @@ import {
   type ReactNode,
 } from 'react';
 import type * as THREE from 'three';
-import type { SpatialBoardAltitude, SpatialBoardPiece } from '@exawatt/ui-model';
+import type {
+  SpatialBoardAltitude,
+  SpatialBoardPiece,
+} from '@exawatt/ui-model';
 import {
   BOARD_FIELD_IDENTITY,
   beginBoardTransition,
@@ -28,18 +31,22 @@ import {
   type BoardTransitionClock,
 } from './operations-board-transition';
 import { boardWorldPoint } from './operations-board-camera';
+import { useFrameScheduler } from '@/lib/frame-demand/frame-demand';
 
 /**
  * The board's single transition clock.
  *
  * Held in a ref rather than state on purpose: layers sample it inside
- * `useFrame`, and a transition must not cost a React render per frame.
+ * `useFrame`, and a transition must not cost a React render per frame. Each
+ * transition tells the canvas's frame scheduler when it ends, so every layer
+ * that samples the clock is painted through it without asking.
  */
 const BoardTransitionContext =
   createContext<RefObject<BoardTransitionClock> | null>(null);
 
 export function BoardTransitionProvider({ children }: { children: ReactNode }) {
-  const clock = useRef(createBoardTransitionClock());
+  const frames = useFrameScheduler();
+  const clock = useRef(createBoardTransitionClock(end => frames.until(end)));
   return (
     <BoardTransitionContext.Provider value={clock}>
       {children}
@@ -88,7 +95,7 @@ export function BoardField({
 }) {
   const group = useRef<THREE.Group>(null);
   const clock = useBoardTransitionClock();
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
   const carry = useRef<BoardFieldPose>(BOARD_FIELD_IDENTITY);
   /** Clock progress when `carry` was taken; the pose eases from there. */
   const carryJoin = useRef(0);
@@ -140,10 +147,12 @@ export function BoardField({
     if (!isBoardTransitionActive(clock.current, performance.now())) {
       beginBoardTransition(clock.current, performance.now());
     }
-    carryJoin.current = boardTransitionProgress(clock.current, performance.now());
+    carryJoin.current = boardTransitionProgress(
+      clock.current,
+      performance.now()
+    );
     seenStart.current = clock.current.startedAt;
-    invalidate();
-  }, [address, clock, invalidate, pieces, reduced]);
+  }, [address, clock, pieces, reduced]);
 
   // Reduced motion can be switched on mid-flight. A field left frozen partway
   // through a carry would keep the whole board at the wrong size in the wrong
@@ -157,10 +166,10 @@ export function BoardField({
     node.position.set(0, 0, 0);
     node.scale.set(1, 1, 1);
     if (clock) cancelBoardTransition(clock.current);
-    invalidate();
-  }, [clock, invalidate, reduced]);
+    frames.request();
+  }, [clock, frames, reduced]);
 
-  useFrame(state => {
+  useFrame(() => {
     const node = group.current;
     if (!node || reduced || !clock) return;
     const now = performance.now();
@@ -183,10 +192,8 @@ export function BoardField({
     const pose = boardFieldPoseAt(carry.current, progress, carryJoin.current);
     node.position.set(pose.x, pose.y, 0);
     node.scale.set(pose.scale, pose.scale, 1);
-    if (progress < 1) {
-      state.invalidate();
-      return;
-    }
+    // The clock's deadline paints every frame of the carry.
+    if (progress < 1) return;
     settleBoardTransition(clock.current, now);
     if (boardFieldPoseMoved(carry.current)) {
       carry.current = BOARD_FIELD_IDENTITY;
@@ -237,7 +244,9 @@ export function useBoardFocusRecession(
   );
   const seenStart = useRef<number | null>(null);
   const targetFor = (zoneId: string) =>
-    altitude !== 'fleet' && focusedProjectId !== null && zoneId !== focusedProjectId
+    altitude !== 'fleet' &&
+    focusedProjectId !== null &&
+    zoneId !== focusedProjectId
       ? 1
       : 0;
   const sample = useMemo(() => {

@@ -15,7 +15,12 @@ import { CameraControls, Environment, Lightformer } from '@react-three/drei';
 import * as THREE from 'three';
 import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
-import { createAmbientFrameScheduler } from '@/components/fleet/spatial/operations-board/operations-board-ambient';
+import {
+  FrameDemandRoot,
+  useCanvasFrames,
+  useFrameDemand,
+  useFramePolicy,
+} from '@/lib/frame-demand/frame-demand';
 import {
   SITES,
   RADIUS,
@@ -254,15 +259,9 @@ const Agents = memo(function Agents({
     emphasis: 0,
     teamEmphasis: 0,
   });
-  const scheduler = useMemo(() => createAmbientFrameScheduler(), []);
-  useEffect(() => () => scheduler.dispose(), [scheduler]);
-  useEffect(() => {
-    const resume = () => {
-      if (!document.hidden) invalidate();
-    };
-    document.addEventListener('visibilitychange', resume);
-    return () => document.removeEventListener('visibilitychange', resume);
-  }, [invalidate]);
+  // The agents' life is ambient: the canvas's cadence paints it, and a
+  // hidden page or reduced motion parks it.
+  useFrameDemand('ambient', 'terrain-agents', { initial: true });
   useEffect(() => () => geometry.dispose(), [geometry]);
   useEffect(() => () => material.dispose(), [material]);
   useEffect(() => {
@@ -384,10 +383,6 @@ const Agents = memo(function Agents({
     if (sockets.current.instanceColor)
       sockets.current.instanceColor.needsUpdate = true;
     if (moving) state.invalidate();
-    scheduler.request(
-      reduced || document.hidden ? 'parked' : 'economy',
-      state.invalidate
-    );
   });
   return (
     <>
@@ -797,6 +792,10 @@ export default function World(props: WorldProps) {
   });
   const getLife = useCallback(() => lifeFrame.current, []);
   const [ready, setReady] = useState(false);
+  // The study's ambient life always runs at the economy cadence.
+  const frames = useCanvasFrames(
+    useFramePolicy({ reduced: usePrefersReducedMotion(), lowPower: true })
+  );
   const drag = useRef({
     active: false,
     x: 0,
@@ -860,90 +859,92 @@ export default function World(props: WorldProps) {
         <Canvas
           aria-hidden="true"
           className={styles.canvasHost}
-          frameloop="demand"
+          frameloop={frames.frameloop}
           dpr={[1, 1.5]}
           camera={{ position: [5, 12, 14], fov: 35 }}
           gl={{ antialias: true, alpha: true }}
           onCreated={() => setReady(true)}
         >
-          <ambientLight intensity={0.6} />
-          <directionalLight
-            position={[-5, 10, 5]}
-            intensity={3}
-            color="#eef5ff"
-          />
-          <directionalLight
-            position={[5, 4, -6]}
-            intensity={2}
-            color="#a7b8e6"
-          />
-          <Environment resolution={256} frames={1}>
-            <mesh>
-              <sphereGeometry args={[40, 32, 16]} />
-              <meshBasicMaterial color="#728098" side={THREE.BackSide} />
-            </mesh>
-            <Lightformer
-              position={[-5, 5, 3]}
-              rotation={[0, Math.PI / 3, 0]}
-              scale={[7, 10, 1]}
-              intensity={2.5}
-              color="#f4f6ff"
+          <FrameDemandRoot scheduler={frames.scheduler}>
+            <ambientLight intensity={0.6} />
+            <directionalLight
+              position={[-5, 10, 5]}
+              intensity={3}
+              color="#eef5ff"
             />
-            <Lightformer
-              position={[5, 3, 1]}
-              rotation={[0, -Math.PI / 3, 0]}
-              scale={[1, 8, 1]}
+            <directionalLight
+              position={[5, 4, -6]}
               intensity={2}
-              color="#bfd9ff"
+              color="#a7b8e6"
             />
-            <Lightformer
-              position={[0, 6, -3]}
-              rotation={[Math.PI / 2, 0, 0]}
-              scale={[8, 3, 1]}
-              intensity={2.5}
-            />
-            <Lightformer
-              position={[0, 1, 6]}
-              rotation={[0, Math.PI, 0]}
-              scale={[7, 1, 1]}
-              intensity={2}
-            />
-          </Environment>
-          {props.kind === 'survey' ? (
-            <Survey count={props.count} scan={props.scan} />
-          ) : props.kind === 'contour' ? (
-            <ContinuousSurface count={props.count} wire={props.wire} />
-          ) : (
-            <Territory
+            <Environment resolution={256} frames={1}>
+              <mesh>
+                <sphereGeometry args={[40, 32, 16]} />
+                <meshBasicMaterial color="#728098" side={THREE.BackSide} />
+              </mesh>
+              <Lightformer
+                position={[-5, 5, 3]}
+                rotation={[0, Math.PI / 3, 0]}
+                scale={[7, 10, 1]}
+                intensity={2.5}
+                color="#f4f6ff"
+              />
+              <Lightformer
+                position={[5, 3, 1]}
+                rotation={[0, -Math.PI / 3, 0]}
+                scale={[1, 8, 1]}
+                intensity={2}
+                color="#bfd9ff"
+              />
+              <Lightformer
+                position={[0, 6, -3]}
+                rotation={[Math.PI / 2, 0, 0]}
+                scale={[8, 3, 1]}
+                intensity={2.5}
+              />
+              <Lightformer
+                position={[0, 1, 6]}
+                rotation={[0, Math.PI, 0]}
+                scale={[7, 1, 1]}
+                intensity={2}
+              />
+            </Environment>
+            {props.kind === 'survey' ? (
+              <Survey count={props.count} scan={props.scan} />
+            ) : props.kind === 'contour' ? (
+              <ContinuousSurface count={props.count} wire={props.wire} />
+            ) : (
+              <Territory
+                kind={props.kind}
+                count={props.count}
+                wire={props.wire}
+              />
+            )}
+            {(props.kind === 'survey' || props.kind === 'contour') && (
+              <Contours count={props.count} kind={props.kind} />
+            )}
+            <ExpansionOutlines kind={props.kind} count={props.count} />
+            <Agents
               kind={props.kind}
               count={props.count}
+              selected={props.selected}
+              approved={props.approved}
               wire={props.wire}
+              motion={props.motion}
+              life={getLife}
             />
-          )}
-          {(props.kind === 'survey' || props.kind === 'contour') && (
-            <Contours count={props.count} kind={props.kind} />
-          )}
-          <ExpansionOutlines kind={props.kind} count={props.count} />
-          <Agents
-            kind={props.kind}
-            count={props.count}
-            selected={props.selected}
-            approved={props.approved}
-            wire={props.wire}
-            motion={props.motion}
-            life={getLife}
-          />
-          {props.links && (
-            <Connections count={props.count} selected={props.selected} />
-          )}
-          <CameraRig
-            count={props.count}
-            selected={props.selected}
-            motion={props.motion}
-            overlay={getOverlay}
-            life={getLife}
-            onProgress={props.onProgress}
-          />
+            {props.links && (
+              <Connections count={props.count} selected={props.selected} />
+            )}
+            <CameraRig
+              count={props.count}
+              selected={props.selected}
+              motion={props.motion}
+              overlay={getOverlay}
+              life={getLife}
+              onProgress={props.onProgress}
+            />
+          </FrameDemandRoot>
         </Canvas>
       </WorldBoundary>
       <div className={styles.anchors}>

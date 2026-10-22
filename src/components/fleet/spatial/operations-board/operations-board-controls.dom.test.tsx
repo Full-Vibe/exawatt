@@ -23,6 +23,9 @@ vi.mock('@react-three/drei', () => ({
 }));
 
 const { DelegationControls } = await import('./operations-board-controls');
+const { FrameDemandRoot } = await import('@/lib/frame-demand/frame-demand');
+const { createFrameScheduler } =
+  await import('@/lib/frame-demand/frame-scheduler');
 
 const consoleError = console.error;
 vi.spyOn(console, 'error').mockImplementation((message, ...rest) => {
@@ -78,16 +81,20 @@ function renderAt(altitude: 'fleet' | 'project') {
   });
   const lobe = layout.delegationUnits.find(unit => unit.kind === 'overflow')!;
   const view = render(
-    <DelegationControls
-      units={layout.delegationUnits}
-      pieces={layout.pieces}
-      altitude={layout.altitude}
-      focusedProjectId={layout.focusedProjectId}
-      onSelectAgent={() => undefined}
-      onHoverChange={() => undefined}
-      reduced={false}
-      theme={{ label: '#ffffff' } as SpatialThemeSnapshot}
-    />
+    <FrameDemandRoot
+      scheduler={createFrameScheduler({ render: true, ambient: 'parked' })}
+    >
+      <DelegationControls
+        units={layout.delegationUnits}
+        pieces={layout.pieces}
+        altitude={layout.altitude}
+        focusedProjectId={layout.focusedProjectId}
+        onSelectAgent={() => undefined}
+        onHoverChange={() => undefined}
+        reduced={false}
+        theme={{ label: '#ffffff' } as SpatialThemeSnapshot}
+      />
+    </FrameDemandRoot>
   );
   return { ...view, layout, lobe };
 }

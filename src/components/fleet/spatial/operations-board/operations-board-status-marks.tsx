@@ -2,7 +2,7 @@
 
 import { Instances, Instance } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { SpatialBoardLens, SpatialBoardPiece } from '@exawatt/ui-model';
 import {
@@ -20,20 +20,23 @@ import {
 } from './status-mark-rendering';
 import type { SpatialThemeSnapshot } from '../spatial-theme';
 import { boardWorldPosition } from './operations-board-camera';
+import { AMBIENT_FRAME_DELTA_CAP_S } from '@/lib/frame-demand/frame-scheduler';
 import {
-  AMBIENT_FRAME_DELTA_CAP_S,
-  type AmbientMotion,
-} from './operations-board-ambient';
+  useAmbientDemand,
+  useFrameScheduler,
+} from '@/lib/frame-demand/frame-demand';
 import {
   STATUS_MARK_GEOMETRY,
   pieceLensColor,
 } from './operations-board-materials';
 
 /** The production batched D40 marks. Neutral inspection is an independent
- * static layer on the same anchors, scales, and emergence clock. */
+ * static layer on the same anchors, scales, and emergence clock. Working
+ * Agents hold the canvas's ambient demand while they exist; the canvas's
+ * cadence says how often their rotors paint, and `parked` rests them at
+ * zero. */
 export function StatusMarkLayer({
   pieces,
-  ambient,
   lens,
   theme,
   emergenceScale,
@@ -41,8 +44,6 @@ export function StatusMarkLayer({
 }: {
   pieces: SpatialBoardPiece[];
   depthPolicy?: StatusMarkDepthPolicy;
-  /** How often the Active rotors may paint; `parked` rests them at zero. */
-  ambient: AmbientMotion;
   lens: SpatialBoardLens;
   theme: SpatialThemeSnapshot;
   /** Per-frame scale for a piece's marks (V3.7 emergence); 1 when settled. */
@@ -77,33 +78,49 @@ export function StatusMarkLayer({
     () => new Map(pieces.map(piece => [piece.id, piece.size])),
     [pieces]
   );
-  useFrame((state, delta) => {
+  // The claim follows the data, not the frames: a Working Agent keeps the
+  // canvas painting even through a frame in which its rotor is re-mounting
+  // (BUG-300). Its readout says how many Working Agents the marks were
+  // given and how many rotors are attached (BUG-113).
+  const working = useMemo(
+    () =>
+      pieces.filter(
+        piece =>
+          piece.kind === 'agent' && workStateReading(piece.status) === 'active'
+      ).length,
+    [pieces]
+  );
+  const workingRef = useRef(working);
+  workingRef.current = working;
+  const [readout] = useState(() => () => ({
+    working: workingRef.current,
+    rotors: rotorRefs.current.size,
+  }));
+  useAmbientDemand('rotors', working > 0, readout);
+  const frames = useFrameScheduler();
+  useFrame((_, delta) => {
     if (emergenceScale) {
+      // The emergence owner's deadline paints every in-flight scale.
       const now = performance.now();
-      let emerging = false;
       for (const [pieceId, set] of markRefs.current) {
-        const factor = emergenceScale(pieceId, now);
-        // Apply both endpoints, but only in-flight scales need another frame.
-        if (factor > 0 && factor < 1) emerging = true;
-        const size = (sizeById.get(pieceId) ?? 1) * factor;
+        const size =
+          (sizeById.get(pieceId) ?? 1) * emergenceScale(pieceId, now);
         for (const mark of set) mark.scale.set(size, size, 1);
       }
-      if (emerging) state.invalidate();
     }
     if (rotorRefs.current.size === 0) return;
-    if (ambient.cadence === 'parked') {
+    if (frames.policy.ambient === 'parked') {
       for (const rotor of rotorRefs.current.values()) rotor.rotation.z = 0;
       return;
     }
     const step =
       (Math.min(delta, AMBIENT_FRAME_DELTA_CAP_S) * Math.PI * 2) /
       STATUS_LIGHT_ACTIVE_ROTATION_SECONDS;
+    // Power is a cadence, never a freeze: the scheduler paints every
+    // refresh on AC and on a bounded timer on battery or weak hardware.
     for (const rotor of rotorRefs.current.values()) {
       rotor.rotation.z = (rotor.rotation.z - step) % (Math.PI * 2);
     }
-    // Power is a cadence, never a freeze: the shared scheduler paints every
-    // refresh on AC and on a bounded timer on battery or weak hardware.
-    ambient.requestFrame(state.invalidate);
   });
 
   return (

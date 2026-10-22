@@ -5,7 +5,11 @@ import { Html, Line } from '@react-three/drei';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type WebGLRenderer, type Scene, type Camera } from 'three';
 import type { OperationsBoardTilesProps } from '@/components/fleet/spatial/operations-board/tiles/operations-board-tiles-canvas';
-import { BoardDisplayResolution } from '@/components/fleet/spatial/operations-board/operations-board-canvas';
+import {
+  BoardDisplayResolution,
+  PaintOnTheme,
+  exposeFrameDemand,
+} from '@/components/fleet/spatial/operations-board/operations-board-canvas';
 import {
   spatialProjectIdentityColor,
   spatialColorWithAlpha,
@@ -15,10 +19,13 @@ import {
   useReducedMotion,
 } from '@/components/fleet/spatial/operations-board/operations-board-env';
 import {
-  createAmbientFrameScheduler,
-  resolveAmbientCadence,
-  type AmbientMotion,
-} from '@/components/fleet/spatial/operations-board/operations-board-ambient';
+  FrameDemandRoot,
+  useAmbientCadence,
+  useCanvasFrames,
+  useFrameDemand,
+  useFramePolicy,
+  useFrameScheduler,
+} from '@/lib/frame-demand/frame-demand';
 import { useHostRenderPolicy } from '@/lib/host-power/use-host-render-policy';
 import { TileRenderer } from '@/components/tiles/tile-renderer';
 import type { TileFrame } from '@/components/tiles/tile-contract';
@@ -55,25 +62,12 @@ type LatticeProps = OperationsBoardTilesProps;
 export function LatticeCanvas(props: LatticeProps) {
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
+  // Battery also withholds transmission below; it never lowers resolution.
   const host = useHostRenderPolicy();
-  const cadence = resolveAmbientCadence({
-    reduced,
-    lowPower,
-    visible: host.ambientAllowed,
-    onBattery: host.onBattery,
-  });
-  const [scheduler] = useState(createAmbientFrameScheduler);
-  useEffect(() => () => scheduler.dispose(), [scheduler]);
-  const ambient = useMemo<AmbientMotion>(
-    () => ({
-      cadence,
-      requestFrame: invalidate => scheduler.request(cadence, invalidate),
-    }),
-    [cadence, scheduler]
-  );
+  const frames = useCanvasFrames(useFramePolicy({ reduced, lowPower }));
   return (
     <Canvas
-      frameloop={host.renderAllowed ? 'demand' : 'never'}
+      frameloop={frames.frameloop}
       dpr={[1, 2]}
       camera={{ position: [0, 30, 30], fov: 38, near: 0.1, far: 2000 }}
       gl={{
@@ -91,6 +85,7 @@ export function LatticeCanvas(props: LatticeProps) {
             boardEvidence: { gl: WebGLRenderer; scene: Scene; camera: Camera };
           }
         ).boardEvidence = { gl, scene, camera };
+        exposeFrameDemand(gl.domElement, frames.scheduler);
         if (process.env.NODE_ENV !== 'production') {
           Object.assign(window, {
             __EVAL_GL__: gl,
@@ -100,16 +95,18 @@ export function LatticeCanvas(props: LatticeProps) {
         }
       }}
     >
-      <color attach="background" args={[props.theme.canvas]} />
-      <BoardDisplayResolution lowPower={lowPower} />
-      <LatticeScene
-        {...props}
-        reduced={reduced}
-        ambient={ambient}
-        transmission={
-          !lowPower && !host.onBattery && !props.theme.reducedTransparency
-        }
-      />
+      <FrameDemandRoot scheduler={frames.scheduler}>
+        <color attach="background" args={[props.theme.canvas]} />
+        <PaintOnTheme theme={props.theme} />
+        <BoardDisplayResolution lowPower={lowPower} />
+        <LatticeScene
+          {...props}
+          reduced={reduced}
+          transmission={
+            !lowPower && !host.onBattery && !props.theme.reducedTransparency
+          }
+        />
+      </FrameDemandRoot>
     </Canvas>
   );
 }
@@ -125,16 +122,15 @@ function LatticeScene({
   onSelectDelegationChild,
   multiSelection,
   reduced,
-  ambient,
   transmission,
   ...commands
 }: LatticeProps & {
   reduced: boolean;
-  ambient: AmbientMotion;
   transmission: boolean;
 }) {
   const material = greybox ? 'matte' : chosenMaterial;
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
+  const cadence = useAmbientCadence();
   const narrow = useThree(state => state.size.width < 600);
 
   const { rendered, getTracker } = useTileEmergence(layout.pieces, reduced);
@@ -248,7 +244,7 @@ function LatticeScene({
     },
     [hover, play]
   );
-  useEffect(() => hover.subscribe(invalidate), [hover, invalidate]);
+  useEffect(() => hover.subscribe(() => frames.request()), [hover, frames]);
   const paintedFrame = useRef<TileFrame>({ focusId: null, selection: EMPTY });
   const readFrame = useCallback(() => {
     const result = paintedFrame.current;
@@ -267,14 +263,16 @@ function LatticeScene({
     frame.pressedId = hover.get().pressedAgentId;
     return frame;
   }, [hover]);
+  // Status churn and working motion are ambient: they follow the canvas's
+  // cadence. Emergence paints through the tracker's own deadline.
+  const tileMotion = useFrameDemand('ambient', 'tiles');
   const onMotionFrame = useCallback(
-    (settling: boolean, working: boolean) => {
-      if (getTracker().active(performance.now())) invalidate();
-      else if (settling || working) ambient.requestFrame(invalidate);
-    },
-    [ambient, invalidate, getTracker]
+    (settling: boolean, working: boolean) =>
+      tileMotion.set(settling || working),
+    [tileMotion]
   );
-  useEffect(() => invalidate(), [invalidate, theme, ambient, frame, model]);
+  const requestFrame = frames.request;
+  useEffect(() => frames.request(), [frames, frame, model]);
   return (
     <>
       <LatticeCamera
@@ -321,9 +319,9 @@ function LatticeScene({
         readFrame={readFrame}
         readClock={readClock}
         marks={MARKS}
-        reducedMotion={reduced || ambient.cadence === 'parked'}
+        reducedMotion={reduced || cadence === 'parked'}
         calmAttention
-        requestFrame={invalidate}
+        requestFrame={requestFrame}
         onMotionFrame={onMotionFrame}
         transmission={transmission && detailedTiles.length < 700}
         interactive={false}

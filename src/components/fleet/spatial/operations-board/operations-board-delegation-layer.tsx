@@ -8,10 +8,7 @@
  */
 
 import { Instances, Instance } from '@react-three/drei';
-import {
-  useFrame,
-  useThree,
-} from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import {
   memo,
   useEffect,
@@ -21,14 +18,13 @@ import {
   useState,
 } from 'react';
 import * as THREE from 'three';
-import {
-  type SpatialBoardDelegationUnit,
-} from '@exawatt/ui-model';
+import { type SpatialBoardDelegationUnit } from '@exawatt/ui-model';
 import {
   spatialProjectIdentityColor,
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
 import { mixHexColors } from '@/lib/appearance/color';
+import { useFrameDemand } from '@/lib/frame-demand/frame-demand';
 import {
   DELEGATION_EXIT_SWEEP_MS,
   DELEGATION_MOTION,
@@ -205,14 +201,14 @@ export const DelegationUnitLayer = memo(function DelegationUnitLayer({
   theme: SpatialThemeSnapshot;
 }) {
   const hoveredId = useBoardHoverSlice(hover, state => state.delegationId);
-  const invalidate = useThree(state => state.invalidate);
-  // The lift is read inside useFrame; with ambient motion parked nothing
-  // else would request the frame that starts it.
-  useEffect(() => invalidate(), [hoveredId, invalidate]);
+  // Spawns, exits and the hover lift are this layer's own motion; a hover
+  // change or a new roster starts it and the frame that settles ends it.
+  const motion = useFrameDemand('transition', 'delegation');
+  useEffect(() => motion.set(true), [hoveredId, motion]);
   const exits = useDelegationExits(units, reduced);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
   const tetherRefs = useRef(new Map<string, THREE.Object3D>());
-  const motion = useRef(new Map<string, DelegationMotionRecord>());
+  const records = useRef(new Map<string, DelegationMotionRecord>());
   const pieceGeometry = AGENT_HEX_GEOMETRY;
   const tetherGeometry = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
   useEffect(() => () => tetherGeometry.dispose(), [tetherGeometry]);
@@ -229,10 +225,10 @@ export const DelegationUnitLayer = memo(function DelegationUnitLayer({
     const perParent = new Map<string, number>();
     for (const { unit, exiting } of rendered) {
       seen.add(unit.id);
-      if (motion.current.has(unit.id)) continue;
+      if (records.current.has(unit.id)) continue;
       const index = perParent.get(unit.parentPieceId) ?? 0;
       perParent.set(unit.parentPieceId, index + 1);
-      motion.current.set(unit.id, {
+      records.current.set(unit.id, {
         progress: reduced || exiting ? 1 : 0,
         delay: reduced ? 0 : delegationSpawnDelaySeconds(index),
         originX: unit.tether.x1,
@@ -240,18 +236,21 @@ export const DelegationUnitLayer = memo(function DelegationUnitLayer({
         lift: 1,
       });
     }
-    for (const id of [...motion.current.keys()]) {
-      if (!seen.has(id)) motion.current.delete(id);
+    for (const id of [...records.current.keys()]) {
+      if (!seen.has(id)) records.current.delete(id);
     }
-    invalidate();
-  }, [invalidate, reduced, rendered]);
+    motion.set(true);
+  }, [motion, reduced, rendered]);
 
-  useFrame((state, delta) => {
-    if (rendered.length === 0) return;
+  useFrame((_, delta) => {
+    if (rendered.length === 0) {
+      motion.set(false);
+      return;
+    }
     const dt = Math.min(delta, 0.05);
     let animating = false;
     for (const { unit, exiting } of rendered) {
-      const record = motion.current.get(unit.id);
+      const record = records.current.get(unit.id);
       const body = bodyRefs.current.get(unit.id);
       if (!record || !body) continue;
       if (reduced) record.progress = exiting ? 0 : 1;
@@ -312,7 +311,7 @@ export const DelegationUnitLayer = memo(function DelegationUnitLayer({
         );
       }
     }
-    if (animating) state.invalidate();
+    motion.set(animating);
   });
 
   if (rendered.length === 0) return null;

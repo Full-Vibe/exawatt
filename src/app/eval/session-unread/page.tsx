@@ -20,7 +20,11 @@ import {
   mergeFleetAttention,
 } from '@/components/workspace/session-status';
 import { StatusMarkLayer } from '@/components/fleet/spatial/operations-board/operations-board-status-marks';
-import { PARKED_AMBIENT } from '@/components/fleet/spatial/operations-board/operations-board-ambient';
+import {
+  FrameDemandRoot,
+  useCanvasFrames,
+} from '@/lib/frame-demand/frame-demand';
+import type { FramePolicy } from '@/lib/frame-demand/frame-scheduler';
 import { spatialThemeFromResolvedAppearance } from '@/components/fleet/spatial/spatial-theme';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 
@@ -99,7 +103,11 @@ declare global {
 
 /** Permanent behavioral/render rig for the accepted same-slot read detail.
  * Both renderers use their production owner; no lookalike glyphs live here. */
+/** The marks are a still specimen: painted on change, rotors at rest. */
+const STILL_MARKS: FramePolicy = { render: true, ambient: 'parked' };
+
 export default function SessionUnreadEval() {
+  const frames = useCanvasFrames(STILL_MARKS);
   const [signals, setSignals] = useState(original);
   const [active, setActive] = useState('read-result');
   const { resolved, previewTheme } = useAppearance();
@@ -275,20 +283,21 @@ export default function SessionUnreadEval() {
                 aria-hidden
                 orthographic
                 camera={{ position: [0, 0, 100], zoom: 1 }}
-                frameloop="demand"
+                frameloop={frames.frameloop}
                 dpr={[1, 1.5]}
                 gl={{ preserveDrawingBuffer: true }}
                 onCreated={({ gl }) => {
                   window.__UNREAD_EVAL_GL__ = gl;
                 }}
               >
-                <color attach="background" args={[theme.canvas]} />
-                <StatusMarkLayer
-                  pieces={pieces}
-                  ambient={PARKED_AMBIENT}
-                  lens="status"
-                  theme={theme}
-                />
+                <FrameDemandRoot scheduler={frames.scheduler}>
+                  <color attach="background" args={[theme.canvas]} />
+                  <StatusMarkLayer
+                    pieces={pieces}
+                    lens="status"
+                    theme={theme}
+                  />
+                </FrameDemandRoot>
               </Canvas>
             </div>
             <p className="p-3 text-chrome-meta text-muted-foreground">

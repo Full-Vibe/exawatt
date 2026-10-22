@@ -1,10 +1,11 @@
 'use client';
 
-import { useThree, type ThreeEvent } from '@react-three/fiber';
+import { type ThreeEvent } from '@react-three/fiber';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { SpatialBoardPiece } from '@exawatt/ui-model';
 import { boardWorldY } from './operations-board-camera';
+import { useFrameScheduler } from '@/lib/frame-demand/frame-demand';
 import {
   createFleetAgentHitSelector,
   fleetAgentHitId,
@@ -43,7 +44,7 @@ const FleetHitInstances = memo(function FleetHitInstances({
     return value;
   }, []);
   useEffect(() => () => geometry.dispose(), [geometry]);
-  const invalidate = useThree(state => state.invalidate);
+  const frames = useFrameScheduler();
   useLayoutEffect(() => {
     const node = mesh.current;
     if (!node) return;
@@ -56,8 +57,8 @@ const FleetHitInstances = memo(function FleetHitInstances({
     node.count = targets.length;
     node.instanceMatrix.needsUpdate = true;
     node.computeBoundingSphere();
-    invalidate();
-  }, [targets, invalidate]);
+    frames.request();
+  }, [targets, frames]);
   const activate = (event: ThreeEvent<MouseEvent>) => {
     const agentId = fleetAgentHitId(targets, event);
     if (!agentId) return;

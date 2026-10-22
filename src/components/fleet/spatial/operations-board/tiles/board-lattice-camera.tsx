@@ -9,6 +9,10 @@ import type { SpatialBoardRect } from '@exawatt/ui-model';
 import type { OperationsBoardTilesProps } from './operations-board-tiles-canvas';
 import type { TileInstance } from '@/components/tiles/tile-contract';
 import type { BoardHoverStore } from '../operations-board-hover';
+import {
+  useFrameDemand,
+  useFrameScheduler,
+} from '@/lib/frame-demand/frame-demand';
 import type { OperationsBoardHandle } from '../operations-board-camera-rig';
 import {
   BOARD_TRANSITION_MS,
@@ -82,7 +86,11 @@ export function LatticeCamera({
   onDrillProject: (id: string) => void;
   tileProjects: ReadonlyMap<string, string>;
 }) {
-  const { camera, gl, size, invalidate } = useThree();
+  const { camera, gl, size } = useThree();
+  // The semantic flight holds a claim until it lands; camera-controls' own
+  // damped moves are painted by its update events (drei).
+  const frames = useFrameScheduler();
+  const flying = useFrameDemand('transition', 'lattice-camera');
   const rig = useRef<CameraControlsImpl>(null);
   const current = useRef({
     layout,
@@ -176,9 +184,10 @@ export function LatticeCamera({
         };
       }
       mounted.current = true;
-      invalidate();
+      if (flight.current) flying.set(true);
+      else frames.request();
     },
-    [camera, invalidate, reduced]
+    [camera, flying, frames, reduced]
   );
   const report = useCallback(() => {
     const control = rig.current;
@@ -226,12 +235,16 @@ export function LatticeCamera({
   }, [camera, cameraPreset, gl, scratch]);
   useEffect(() => {
     report();
-    invalidate();
-  }, [size.width, size.height, report, invalidate]);
+    frames.request();
+  }, [size.width, size.height, report, frames]);
   useFrame(() => {
     const f = flight.current,
       control = rig.current;
-    if (!f || !control) return;
+    if (!f) {
+      flying.set(false);
+      return;
+    }
+    if (!control) return;
     const t = reduced
       ? 1
       : Math.min(1, (performance.now() - f.start) / BOARD_TRANSITION_MS);
@@ -254,15 +267,17 @@ export function LatticeCamera({
     );
     control.update(0);
     report();
-    if (t === 1) flight.current = null;
-    else invalidate();
+    if (t === 1) {
+      flight.current = null;
+      flying.set(false);
+    }
   }, -1);
   const manual = useCallback(() => {
     flight.current = null;
     arrival.current = '';
     current.current.onManualCameraInput?.();
-    invalidate();
-  }, [invalidate]);
+    frames.request();
+  }, [frames]);
   useEffect(() => {
     const control = rig.current;
     if (!control) return;
@@ -367,12 +382,12 @@ export function LatticeCamera({
       });
     });
     arrival.current = 'entry';
-    invalidate();
+    frames.request();
     return () => {
       cancelAnimationFrame(frame);
       clearTimeout(timer);
     };
-  }, [camera, fit, gl, invalidate, reduced, report]);
+  }, [camera, fit, gl, frames, reduced, report]);
   useEffect(() => {
     const handle: OperationsBoardHandle = {
       recenter: () => fit(current.current.layout.cameraBounds),
@@ -385,7 +400,7 @@ export function LatticeCamera({
         void control.rotateTo(pose.azimuth, pose.polar, false);
         void control.moveTo(...pose.target, false);
         void control.dollyTo(pose.distance, false);
-        invalidate();
+        frames.request();
       },
       focusProject: id => {
         const zone = current.current.layout.zones.find(item => item.id === id);
@@ -414,7 +429,8 @@ export function LatticeCamera({
               theta: control.azimuthAngle,
               phi: control.polarAngle,
             };
-          invalidate();
+          if (flight.current) flying.set(true);
+          else frames.request();
         } else
           fit(
             { x: piece.x - 4, y: piece.y - 4, width: 8, height: 8 },
@@ -449,7 +465,7 @@ export function LatticeCamera({
     return () => {
       if (controllerRef.current === handle) controllerRef.current = null;
     };
-  }, [controllerRef, fit, manual, onControllerReady, reduced, invalidate]);
+  }, [controllerRef, fit, manual, onControllerReady, reduced, flying, frames]);
   useEffect(() => {
     const key = `${layout.altitude}:${layout.focusedProjectId}:${layout.selectedAgentId}`;
     if (semantic.current === key || entry.current) {
@@ -639,7 +655,7 @@ export function LatticeCamera({
           !reduced
         );
       }
-      invalidate();
+      frames.request();
     };
     const leave = () => {
       if (!down) populationInput.current.hover.setAgent(null);
@@ -662,7 +678,7 @@ export function LatticeCamera({
     bandOverlayRef,
     camera,
     gl,
-    invalidate,
+    frames,
     manual,
     reduced,
     scratch,
@@ -681,10 +697,7 @@ export function LatticeCamera({
       touches={touchSelectionMode ? { ...touches, one: ACTION.NONE } : touches}
       dollyToCursor
       onControlStart={manual}
-      onUpdate={() => {
-        report();
-        invalidate();
-      }}
+      onUpdate={report}
     />
   );
 }

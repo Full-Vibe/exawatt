@@ -7,10 +7,7 @@
  */
 
 import { Instances, Instance, Line, useCursor } from '@react-three/drei';
-import {
-  type ThreeEvent,
-  useFrame,
-} from '@react-three/fiber';
+import { type ThreeEvent, useFrame } from '@react-three/fiber';
 import {
   memo,
   useEffect,
@@ -26,9 +23,8 @@ import {
   type SpatialBoardProjectZone,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
-import {
-  useBoardFocusRecession,
-} from './operations-board-field';
+import { useBoardFocusRecession } from './operations-board-field';
+import { useFrameDemand } from '@/lib/frame-demand/frame-demand';
 import {
   spatialProjectIdentityColor,
   spatialProjectZoneFill,
@@ -236,7 +232,10 @@ function ProjectSelectionRing({
   }, []);
   const center = rectCenter(zone.rect);
   const radius = zone.radius * 1.03;
-  useFrame((state, delta) => {
+  const settling = useFrameDemand('transition', 'project-selection', {
+    initial: !reduced,
+  });
+  useFrame((_, delta) => {
     const target = group.current;
     const material = line.current?.material;
     if (!target || !material) return;
@@ -254,12 +253,10 @@ function ProjectSelectionRing({
         );
     target.scale.setScalar(nextScale);
     material.opacity = nextOpacity;
-    if (
+    settling.set(
       Math.abs(nextScale - 1) > 0.001 ||
-      Math.abs(nextOpacity - SELECTION_RING_OPACITY) > 0.002
-    ) {
-      state.invalidate();
-    }
+        Math.abs(nextOpacity - SELECTION_RING_OPACITY) > 0.002
+    );
   });
   return (
     <group
@@ -330,7 +327,10 @@ export const ZoneLayer = memo(function ZoneLayer({
   }, []);
   useEffect(() => () => geometry.dispose(), [geometry]);
   useCursor(hoveredId != null);
-  useFrame((state, delta) => {
+  const entering = useFrameDemand('transition', 'zone-entrance', {
+    initial: !reduced,
+  });
+  useFrame((_, delta) => {
     const material = materialRef.current;
     if (!material) return;
     // Focus recession: a neighbour's plate mixes toward the board, fully
@@ -338,7 +338,6 @@ export const ZoneLayer = memo(function ZoneLayer({
     // is merely selected. Sampled from the shared clock so it arrives with the
     // camera; written only when it changed so a resting board costs nothing.
     const now = performance.now();
-    let receding = false;
     for (const zone of zones) {
       const plate = plateRefs.current.get(zone.id);
       if (!plate?.color) continue;
@@ -362,11 +361,12 @@ export const ZoneLayer = memo(function ZoneLayer({
           amount * FOCUS_RECESSION_MIX
         )
       );
-      if (semanticAmount > 0.001 && semanticAmount < 0.999) receding = true;
     }
-    if (receding) state.invalidate();
+    // The shared clock's deadline paints the recession; only the entrance
+    // fade is this layer's own claim.
     if (entrance.current >= 1) {
       material.opacity = 1;
+      entering.set(false);
       return;
     }
     entrance.current = Math.min(
@@ -374,7 +374,7 @@ export const ZoneLayer = memo(function ZoneLayer({
       entrance.current + Math.min(delta, 0.05) * 4
     );
     material.opacity = entrance.current;
-    state.invalidate();
+    entering.set(entrance.current < 1);
   });
   return (
     <>

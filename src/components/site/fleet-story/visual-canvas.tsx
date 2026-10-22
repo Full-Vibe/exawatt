@@ -24,6 +24,7 @@ import type { CrustShapeId } from '@/components/tiles/crust-shape';
 import type { CrustSignalId } from '@/components/tiles/crust-signal';
 import type { EnvironmentKind } from '@/components/tiles/environment';
 import { CrustVisual } from './visuals/crust-visual';
+import { useHostRenderPolicy } from '@/lib/host-power/use-host-render-policy';
 
 export function VisualCanvas({
   Visual = CrustVisual,
@@ -72,11 +73,14 @@ export function VisualCanvas({
   onSelect: (agent: number) => void;
 }) {
   const shownRef = useRef(1);
+  // The story keeps its own continuous loop; it reads the same visibility,
+  // lock and sleep facts as every other canvas to decide whether to run it.
+  const { renderAllowed } = useHostRenderPolicy();
   return (
     <Canvas
       className="absolute inset-0"
       style={{ position: 'absolute' }}
-      frameloop={visible ? 'always' : 'never'}
+      frameloop={visible && renderAllowed ? 'always' : 'never'}
       dpr={[1, 1.5]}
       camera={{ fov: 42, near: 0.5, far: 400, position: [0, 30, 40] }}
       gl={{

@@ -70,6 +70,10 @@ import {
   createBoardGestureState,
   endBoardGesture,
 } from './operations-board-gestures';
+import {
+  useFrameDemand,
+  useFrameScheduler,
+} from '@/lib/frame-demand/frame-demand';
 
 export interface OperationsBoardHandle {
   recenter(): void;
@@ -135,8 +139,18 @@ export const BoardCameraRig = memo(function BoardCameraRig({
    *  DOM indicator is semantic state and never a pointer-frequency render. */
   onClampEdges?: (edges: BoardClampEdges | null) => void;
 }) {
-  const { size, invalidate, gl } = useThree();
+  const { size, gl } = useThree();
   const get = useThree(state => state.get);
+  // The camera holds one claim while it travels and drops it on arrival.
+  // Reduced motion snaps, so a move there is one frame.
+  const frames = useFrameScheduler();
+  const motion = useFrameDemand('transition', 'camera');
+  const move = useCallback(() => {
+    if (reduced) frames.request();
+    else motion.set(true);
+  }, [frames, motion, reduced]);
+  const moveRef = useRef(move);
+  moveRef.current = move;
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
@@ -343,8 +357,8 @@ export const BoardCameraRig = memo(function BoardCameraRig({
       beginFlightRef.current();
     }
     if (reduced) snapToTargetRef.current();
-    invalidate();
-  }, [invalidate, projection, reduced, targetForRect]);
+    move();
+  }, [move, projection, reduced, targetForRect]);
 
   /** Claims a pending Team→Fleet snapshot and applies the entry pose. Every
    *  decline dispatches the fallback event so the transition owner cuts —
@@ -474,7 +488,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         }
       }
       previousSemanticAddress.current = semanticAddress;
-      invalidate();
+      move();
       return;
     }
     if (previousSemanticAddress.current !== semanticAddress) {
@@ -502,13 +516,13 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         fitZoom.current = next.zoom;
         beginFlightRef.current();
         if (reduced) snapToTargetRef.current();
-        invalidate();
+        move();
       }
     }
     previousSemanticAddress.current = semanticAddress;
   }, [
     applyCamera,
-    invalidate,
+    move,
     cameraBoundsHeight,
     cameraBoundsWidth,
     cameraBoundsX,
@@ -533,8 +547,8 @@ export const BoardCameraRig = memo(function BoardCameraRig({
     }
     announceTargetViewport();
     if (reduced) snapToTarget();
-    invalidate();
-  }, [announceTargetViewport, invalidate, projection, reduced, snapToTarget]);
+    move();
+  }, [announceTargetViewport, move, projection, reduced, snapToTarget]);
 
   // Pointer-specific RTS grammar: mouse/pen primary drag band-selects; touch
   // directly pans unless the explicit touch-select mode is armed. Middle drag,
@@ -654,7 +668,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
           constrainTargetRef.current();
           beginDriftRef.current(NUDGE_LAMBDA);
           if (handlers.current.reduced) snapToTargetRef.current();
-          invalidate();
+          moveRef.current();
           return;
         }
       }
@@ -674,7 +688,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
       handlers.current.onManualCameraInput?.();
       announceTargetViewportRef.current();
       if (handlers.current.reduced) snapToTargetRef.current();
-      invalidate();
+      moveRef.current();
     };
     const releaseCapture = (pointerId: number) => {
       if (element.hasPointerCapture(pointerId)) {
@@ -731,7 +745,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
       handlers.current.onManualCameraInput?.();
       announceTargetViewportRef.current();
       if (handlers.current.reduced) snapToTargetRef.current();
-      invalidate();
+      moveRef.current();
     };
     element.addEventListener('pointerdown', onPointerDown);
     element.addEventListener('pointermove', onPointerMove);
@@ -754,21 +768,21 @@ export const BoardCameraRig = memo(function BoardCameraRig({
       state.touches.clear();
       endBoardGesture(state);
     };
-  }, [bandOverlayRef, gl, invalidate, projectionScratch, suppressMissRef]);
+  }, [bandOverlayRef, gl, projectionScratch, suppressMissRef]);
 
   useEffect(() => {
     const span = () => Math.max(layout.bounds.width, layout.bounds.height, 24);
     const focusRect = (rect: SpatialBoardRect) => {
       targetForRect(rect);
       if (reduced) snapToTarget();
-      invalidate();
+      move();
     };
     const cameraChanged = (manual = true) => {
       beginDriftRef.current(NUDGE_LAMBDA);
       if (manual) onManualCameraInput?.();
       announceTargetViewport();
       if (reduced) snapToTarget();
-      invalidate();
+      move();
     };
     controllerRef.current = {
       recenter() {
@@ -808,7 +822,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         fitZoom.current = next.zoom;
         beginFlightRef.current();
         if (reduced) snapToTarget();
-        invalidate();
+        move();
       },
       focusFleet() {
         // `layout.bounds` is exactly what the model returns as the fleet
@@ -825,7 +839,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         fitZoom.current = next.zoom;
         beginFlightRef.current();
         if (reduced) snapToTarget();
-        invalidate();
+        move();
       },
       focusAgent(agentId, force = false) {
         const piece = layout.pieces.find(entry => entry.agentId === agentId);
@@ -837,7 +851,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         if (!followSelection && !force) {
           beginDriftRef.current(FOLLOW_LAMBDA);
           if (reduced) snapToTarget();
-          invalidate();
+          move();
           return;
         }
         const next = softFollowBoardPoint(
@@ -849,7 +863,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         target.current.y = next.y;
         beginDriftRef.current(FOLLOW_LAMBDA);
         if (reduced) snapToTarget();
-        invalidate();
+        move();
       },
       enterSession(agentId) {
         const piece = layout.pieces.find(entry => entry.agentId === agentId);
@@ -866,7 +880,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
         target.current.y = next.y;
         beginFlightRef.current();
         if (reduced) snapToTarget();
-        invalidate();
+        move();
       },
       zoom(steps) {
         target.current.zoom *= Math.exp(steps * 0.18);
@@ -903,7 +917,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
     constrainTarget,
     controllerRef,
     onControllerReady,
-    invalidate,
+    move,
     layout.bounds,
     layout.bounds.height,
     layout.bounds.width,
@@ -920,7 +934,10 @@ export const BoardCameraRig = memo(function BoardCameraRig({
   ]);
 
   useFrame((state, delta) => {
-    if (reduced) return;
+    if (reduced) {
+      motion.set(false);
+      return;
+    }
     const ortho =
       cameraRef.current ?? (state.camera as THREE.OrthographicCamera);
     cameraRef.current = ortho;
@@ -1002,7 +1019,7 @@ export const BoardCameraRig = memo(function BoardCameraRig({
     }
     applyCamera(current.current);
     notifyViewport();
-    if (moving || relaxing) state.invalidate();
+    motion.set(moving || relaxing);
   });
 
   return null;
