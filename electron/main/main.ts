@@ -406,6 +406,13 @@ function startCommandSurface(): Promise<void> {
           {
             'app:installed-build': () =>
               runtime.installedBuildWatch?.current() ?? null,
+            // Registered after the run record is read, so this always knows.
+            'app:previous-version': () => {
+              if (!runtime.previousRun) {
+                throw new Error('The run record has not been read yet');
+              }
+              return runtime.previousRun.previousVersion;
+            },
           },
         ],
       }),

@@ -1,8 +1,14 @@
 import type {
   NoticeDismissals,
+  PreviousVersion,
   ProductUpdateStatus,
   UpdateReadyNotice,
 } from '@exawatt/core/desktop-bridge';
+import {
+  compareVersions,
+  isReleaseVersion,
+  isUnreleasedVersion,
+} from '@/lib/changelog/versions.mjs';
 
 /**
  * What a notice is about, as an id and a version. Main keeps one record of
@@ -49,6 +55,34 @@ export function productUpdateNotice(
     return { id: 'product-update:ready', version };
   }
   return { id: 'product-update:progress', version };
+}
+
+/**
+ * "What's new in <version>" (ENG-031 W28): once, after the app starts on a
+ * newer version than the one this installation ran before, and only when
+ * that version's changelog page is live.
+ *
+ * The page is live when the update feed publishes this version or a later
+ * one: the site applies the same rule to the same feed
+ * (`isUnreleasedVersion`, decision 0009). Only the feed's own answer counts,
+ * so a build with no update channel (a dogfood or community build, a dev
+ * run) never shows it, and neither does a launch whose check has not
+ * answered. A first install has nothing to compare with and shows nothing.
+ */
+export function whatsNewNotice(
+  previous: PreviousVersion | null,
+  status: ProductUpdateStatus | null
+): NoticeIdentity | null {
+  if (!previous || previous.kind === 'none' || !status) return null;
+  const { currentVersion, availableVersion } = status;
+  if (!isReleaseVersion(currentVersion) || !isReleaseVersion(availableVersion))
+    return null;
+  if (previous.kind === 'recorded') {
+    if (!isReleaseVersion(previous.version)) return null;
+    if (compareVersions(currentVersion, previous.version) <= 0) return null;
+  }
+  if (isUnreleasedVersion(currentVersion, availableVersion)) return null;
+  return { id: 'whats-new', version: currentVersion };
 }
 
 export function isDismissed(

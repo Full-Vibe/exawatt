@@ -226,6 +226,19 @@ export interface HeldStateRequest {
  */
 export type NoticeDismissals = Record<string, string>;
 
+/**
+ * The version this installation ran before this launch, from the run record
+ * (ENG-031 W28). It is how the app knows it started on a new version, from
+ * Restart to Update or from installing a newer build over an older one.
+ */
+export type PreviousVersion =
+  /** Nothing ran here before: a first install. */
+  | { kind: 'none' }
+  /** Something ran, but its record names no version: a build from before
+   *  the record kept one, or a record that could not be read. */
+  | { kind: 'unrecorded' }
+  | { kind: 'recorded'; version: string };
+
 /** A newer build is installed on disk than the one running. */
 export interface UpdateReadyNotice {
   currentSha: string;

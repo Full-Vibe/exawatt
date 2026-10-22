@@ -373,6 +373,7 @@ const bridge = {
     noticeDismissals: () => invoke('app:notice-dismissals'),
     dismissNotice: (id, version) => invoke('app:dismiss-notice', id, version),
     onNoticeDismissalsChanged: subscribe('app:notice-dismissals-changed'),
+    previousVersion: () => invoke('app:previous-version'),
   },
   auth: {
     startGoogle: config => invoke('auth:start-google', config),

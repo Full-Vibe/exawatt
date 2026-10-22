@@ -16,6 +16,11 @@
  *   3. BUG-260  Restart to Update keeps what lived only for the run (the
  *               Fleet camera and return, in session storage) and comes back
  *               to the Fleet altitude; a plain quit keeps none of it
+ *   4. W28      "What's new" shows once after the app starts on a newer
+ *               version the feed publishes, and never on a first install,
+ *               on the same version, without a feed answer (a dogfood
+ *               build) or for a version the feed has not published; its
+ *               dismissal holds across a reload and a relaunch
  *
  * EXA_BASE=http://localhost:<port> pnpm eval:electron:app-lifecycle
  */
@@ -46,7 +51,7 @@ const projectDir = join(root, 'project');
 mkdirSync(userData, { recursive: true });
 mkdirSync(projectDir, { recursive: true });
 
-function launch(extra = {}) {
+function launch(extra = {}, data = userData) {
   return {
     args: ['.'],
     cwd: process.cwd(),
@@ -54,7 +59,7 @@ function launch(extra = {}) {
       ...process.env,
       NODE_ENV: 'development',
       EXAWATT_TEST: '1',
-      EXAWATT_USER_DATA: userData,
+      EXAWATT_USER_DATA: data,
       EXAWATT_DEV_URL: `${base}/workspace`,
       EXAWATT_TEST_QUIT_RESPONSES: 'confirm,confirm,confirm,confirm',
       ...extra,
@@ -354,8 +359,99 @@ try {
     limits
   );
 
+  // ---- 4. ENG-031 W28 -----------------------------------------------------
+  const newsData = join(root, 'news-userData');
+  mkdirSync(newsData, { recursive: true });
+  const { version: running } = JSON.parse(
+    readFileSync(join(process.cwd(), 'package.json'), 'utf8')
+  );
+  const runRecord = join(newsData, 'run-state.json');
+  const ranBefore = version => {
+    const previous = JSON.parse(readFileSync(runRecord, 'utf8'));
+    writeFileSync(runRecord, JSON.stringify({ ...previous, version }));
+  };
+  const feedPublishes = version => ({
+    EXAWATT_TEST_PRODUCT_UPDATE: `${version}:latest`,
+  });
+  const news = page => page.locator('[data-whats-new]');
+  /** How many news notices show once every fact it reads has answered. */
+  const newsShown = async page => {
+    await waitForWorkspaceReady(page);
+    await waitForPageCondition(page, async () => {
+      await window.electron.app.previousVersion();
+      const updates = window.electron.app.updates;
+      // Only a launch with an update channel waits for the feed's answer.
+      return !updates || (await updates.getStatus()).availableVersion !== null;
+    });
+    await page.evaluate(
+      () =>
+        new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        )
+    );
+    return await news(page).count();
+  };
+  const quit = app =>
+    app.evaluate(async ({ app: electronApp }) => electronApp.quit());
+  const expectNoNews = async (env, message) =>
+    await withElectronApp(
+      launch(env, newsData),
+      async (app, page) => {
+        page.setDefaultTimeout(30_000);
+        assert.equal(await newsShown(page), 0, message);
+        await quit(app);
+      },
+      limits
+    );
+
+  await expectNoNews(
+    feedPublishes(running),
+    "W28: a first install showed What's new"
+  );
+  ranBefore('0.0.1');
+  await withElectronApp(
+    launch(feedPublishes(running), newsData),
+    async (app, page) => {
+      page.setDefaultTimeout(30_000);
+      await news(page).waitFor();
+      assert.match(
+        await news(page).getAttribute('href'),
+        new RegExp(`/changelog/${running.replaceAll('.', '\\.')}$`),
+        "W28: What's new does not lead to this version's changelog page"
+      );
+      await page.getByRole('button', { name: 'Dismiss update notice' }).click();
+      await news(page).waitFor({ state: 'detached' });
+      await page.reload();
+      assert.equal(
+        await newsShown(page),
+        0,
+        "W28: a reload brought back a dismissed What's new"
+      );
+      await quit(app);
+    },
+    limits
+  );
+  ranBefore('0.0.1');
+  await expectNoNews(
+    feedPublishes(running),
+    "W28: a relaunch brought back a dismissed What's new"
+  );
+  rmSync(join(newsData, 'notice-dismissals.json'), { force: true });
+  await expectNoNews(
+    feedPublishes(running),
+    "W28: a relaunch of the same version showed What's new"
+  );
+  ranBefore('0.0.1');
+  await expectNoNews({}, "W28: a build with no feed answer showed What's new");
+  ranBefore('0.0.1');
+  await expectNoNews(
+    feedPublishes('0.0.2'),
+    "W28: What's new showed for a version the feed has not published"
+  );
+  console.log(`[app-lifecycle] W28 What's new holds for ${running}`);
+
   console.log(
-    'PASS app lifecycle: dismissed notice holds (BUG-285); stalled and refused updates leave Sessions running (BUG-286); update restart keeps the run’s held state (BUG-260)'
+    'PASS app lifecycle: dismissed notice holds (BUG-285); stalled and refused updates leave Sessions running (BUG-286); update restart keeps the run’s held state (BUG-260); What’s new shows once per new published version (W28)'
   );
 } finally {
   if (process.env.EXAWATT_KEEP_EVAL && existsSync(root)) {

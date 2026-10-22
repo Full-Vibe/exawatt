@@ -338,7 +338,8 @@ export async function bootstrapCommandSurface(
     recordDiagnostic: recordAuthDiagnostic,
   });
   const runStateStore = new modules.runState.RunStateStore(
-    path.join(userDataPath(), 'run-state.json')
+    path.join(userDataPath(), 'run-state.json'),
+    app.getVersion()
   );
   runtime.runStateStore = runStateStore;
   const [, recovery] = await Promise.all([

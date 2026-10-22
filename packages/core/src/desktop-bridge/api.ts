@@ -343,6 +343,8 @@ interface DesktopAppApi {
   noticeDismissals: BridgeInvoke<'app:notice-dismissals'>;
   dismissNotice: BridgeInvoke<'app:dismiss-notice'>;
   onNoticeDismissalsChanged: BridgeSubscribe<'app:notice-dismissals-changed'>;
+  /** ENG-031 W28: the version this installation ran before this launch. */
+  previousVersion: BridgeInvoke<'app:previous-version'>;
 }
 
 export interface DesktopAuthApi {

@@ -1,3 +1,5 @@
+export { changelogEntryUrl, isUnreleasedVersion } from './versions.mjs';
+
 import type { InlineRun } from '../site-docs/site-docs.mjs';
 
 type ChangelogSection = 'New' | 'Improvements' | 'Fixes';
@@ -20,10 +22,6 @@ export declare function parseChangelogEntry(
   source?: string
 ): ChangelogEntry;
 export declare function readChangelog(directory: string): ChangelogEntry[];
-export declare function isUnreleasedVersion(
-  version: string,
-  publishedVersion: string
-): boolean;
 export declare function releasedEntries(
   entries: readonly ChangelogEntry[],
   publishedVersion: string
@@ -33,10 +31,6 @@ export declare function requireChangelogEntry(
   version: string
 ): ChangelogEntry;
 export declare function inlineRuns(text: string): InlineRun[];
-export declare function changelogEntryUrl(
-  origin: string,
-  version: string
-): string;
 export declare function releaseNotesMarkdown(
   entry: ChangelogEntry,
   options?: { origin?: string }

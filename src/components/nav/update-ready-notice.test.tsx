@@ -7,10 +7,13 @@ import {
 } from '@exawatt/core/distribution';
 import { UpdateReadyNotice } from './update-ready-notice';
 import type {
+  PreviousVersion,
   ProductUpdateStatus,
   ShutdownStatus,
   UpdateReadyNotice as InstalledBuild,
 } from '@exawatt/core/desktop-bridge';
+import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
+import { changelogEntryUrl } from '@/lib/changelog/versions.mjs';
 import {
   installBridgeDouble,
   removeBridgeDouble,
@@ -37,7 +40,9 @@ const main: {
   dismissals: Record<string, string>;
   installed: InstalledBuild | null;
   cancelled: number;
-} = { dismissals: {}, installed: null, cancelled: 0 };
+  /** The run record's answer; absent from a bridge that predates it. */
+  previous: PreviousVersion | null;
+} = { dismissals: {}, installed: null, cancelled: 0, previous: null };
 
 const idle: ShutdownStatus = {
   phase: 'idle',
@@ -58,6 +63,7 @@ afterEach(() => {
   main.dismissals = {};
   main.installed = null;
   main.cancelled = 0;
+  main.previous = null;
   emitStatus = undefined;
   emitShutdown = undefined;
   emitInstalled = undefined;
@@ -146,6 +152,9 @@ function installApi(productUpdates = true) {
         return { ...main.dismissals };
       },
       onNoticeDismissalsChanged: () => () => undefined,
+      ...(main.previous
+        ? { previousVersion: async () => main.previous as PreviousVersion }
+        : {}),
       shutdownStatus: async () => idle,
       cancelShutdown: async () => {
         main.cancelled += 1;
@@ -498,5 +507,133 @@ describe('UpdateReadyNotice', () => {
       );
       expect(screen.getByText(/ready to install/)).toBeInTheDocument();
     });
+  });
+});
+
+// ENG-031 W28: one quiet line after the app starts on a new version, leading
+// to that version's changelog page, only while the site serves that page.
+describe("What's new", () => {
+  const RUNNING = '1.0.0';
+  const feedSays = (
+    availableVersion: string | null,
+    patch: Partial<ProductUpdateStatus> = {}
+  ): ProductUpdateStatus => ({
+    phase: 'idle',
+    currentVersion: RUNNING,
+    availableVersion,
+    percent: null,
+    liveSessions: 0,
+    error: null,
+    enabled: true,
+    disabledReason: null,
+    logPath: null,
+    ...patch,
+  });
+  const newsLink = () =>
+    document.querySelector<HTMLAnchorElement>('[data-whats-new]');
+
+  async function launch(
+    previous: PreviousVersion,
+    status: ProductUpdateStatus
+  ) {
+    main.previous = previous;
+    installApi();
+    const view = render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() => emitStatus?.(status));
+    return view;
+  }
+
+  it('leads to the changelog page of a newer published version, once', async () => {
+    const first = await launch(
+      { kind: 'recorded', version: '0.9.0' },
+      feedSays(RUNNING)
+    );
+    const link = newsLink();
+    expect(link?.href).toBe(changelogEntryUrl(EXAWATT_HOSTED_ORIGIN, RUNNING));
+    expect(link?.target).toBe('_blank');
+
+    // Opening it is reading it: main records the version as seen.
+    fireEvent.click(link!);
+    expect(main.dismissals).toEqual({ 'whats-new': RUNNING });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await act(async () => undefined);
+    first.unmount();
+
+    // A reload, another window, or the next launch of the same build.
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() => emitStatus?.(feedSays(RUNNING)));
+    expect(newsLink()).toBeNull();
+  });
+
+  it('stays dismissed once closed, and comes back for the next version', async () => {
+    const first = await launch(
+      { kind: 'recorded', version: '0.9.0' },
+      feedSays(RUNNING)
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Dismiss update notice' })
+    );
+    await act(async () => undefined);
+    expect(main.dismissals).toEqual({ 'whats-new': RUNNING });
+    first.unmount();
+
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() => emitStatus?.(feedSays(RUNNING)));
+    expect(newsLink()).toBeNull();
+
+    act(() => emitStatus?.(feedSays('1.1.0', { currentVersion: '1.1.0' })));
+    expect(newsLink()?.href).toBe(
+      changelogEntryUrl(EXAWATT_HOSTED_ORIGIN, '1.1.0')
+    );
+  });
+
+  it('treats a run recorded before versions were kept as an older version', async () => {
+    await launch({ kind: 'unrecorded' }, feedSays(RUNNING));
+    expect(newsLink()).not.toBeNull();
+  });
+
+  it('shows nothing on a first install, the same version, or a downgrade', async () => {
+    for (const previous of [
+      { kind: 'none' },
+      { kind: 'recorded', version: RUNNING },
+      { kind: 'recorded', version: '1.2.0' },
+    ] as PreviousVersion[]) {
+      const view = await launch(previous, feedSays(RUNNING));
+      expect(view.container).toBeEmptyDOMElement();
+      view.unmount();
+      removeBridgeDouble();
+    }
+  });
+
+  it('shows nothing until the update feed publishes the version', async () => {
+    const after = { kind: 'recorded', version: '0.9.0' } as const;
+    for (const status of [
+      // a dogfood, community or dev build: no update channel, so no answer
+      feedSays(null, { enabled: false, disabledReason: 'unsigned-delivery' }),
+      // a build ahead of the release: its page is still a draft
+      feedSays('0.9.5'),
+      // the feed has not answered yet, or could not be read
+      feedSays(null, { phase: 'checking' }),
+      feedSays(null, { phase: 'error', error: 'offline' }),
+    ]) {
+      const view = await launch(after, status);
+      expect(newsLink()).toBeNull();
+      view.unmount();
+      removeBridgeDouble();
+    }
+  });
+
+  it('waits behind an update the operator can act on', async () => {
+    await launch(
+      { kind: 'recorded', version: '0.9.0' },
+      feedSays('1.1.0', { phase: 'downloaded', percent: 100 })
+    );
+    expect(
+      screen.getByRole('button', { name: /Restart to Update/ })
+    ).toBeInTheDocument();
+    expect(newsLink()).toBeNull();
   });
 });

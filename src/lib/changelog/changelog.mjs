@@ -38,6 +38,16 @@ import {
   refuseEmDash,
   SiteDocError,
 } from '../site-docs/site-docs.mjs';
+import {
+  changelogEntryUrl,
+  compareVersions,
+  isReleaseVersion,
+  isUnreleasedVersion,
+} from './versions.mjs';
+
+// The version rules live in `versions.mjs`, which a browser bundle can load;
+// this module stays the one door for Node callers.
+export { changelogEntryUrl, isUnreleasedVersion };
 
 export const CHANGELOG_SECTIONS = Object.freeze([
   'New',
@@ -48,7 +58,6 @@ export const CHANGELOG_SECTIONS = Object.freeze([
 /** **Bold** is the only markup an entry renders. */
 const CHANGELOG_MARKS = Object.freeze(['strong']);
 const LABEL = 'changelog';
-const VERSION = /^(\d+)\.(\d+)\.(\d+)$/u;
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const FRONT_KEYS = Object.freeze(['version', 'date', 'title', 'media']);
 
@@ -57,15 +66,6 @@ class ChangelogError extends SiteDocError {
     super(LABEL, source, message);
     this.name = 'ChangelogError';
   }
-}
-
-function compareVersions(left, right) {
-  const a = VERSION.exec(left).slice(1).map(Number);
-  const b = VERSION.exec(right).slice(1).map(Number);
-  for (let index = 0; index < 3; index += 1) {
-    if (a[index] !== b[index]) return a[index] - b[index];
-  }
-  return 0;
 }
 
 /**
@@ -77,7 +77,7 @@ export function parseChangelogEntry(text, source = 'entry') {
   const { front, body } = readFrontMatter(text, { ...where, keys: FRONT_KEYS });
   refuseEmDash(text, where);
   const { version, date, title } = front;
-  if (!version || !VERSION.test(version))
+  if (!isReleaseVersion(version))
     throw new ChangelogError(source, 'version must be X.Y.Z');
   const fileVersion = /^(\d+\.\d+\.\d+)\.md$/u.exec(path.basename(source));
   if (fileVersion && fileVersion[1] !== version)
@@ -161,23 +161,6 @@ export function readChangelog(directory) {
   return entries;
 }
 
-/**
- * Whether `version` is above the published one: a draft for a release that
- * has not shipped. The one rule every changelog surface and the proxy apply,
- * so the site never announces a version users cannot install.
- */
-export function isUnreleasedVersion(version, publishedVersion) {
-  for (const [label, value] of [
-    ['version', version],
-    ['published version', publishedVersion],
-  ]) {
-    if (!VERSION.test(value)) {
-      throw new ChangelogError(label, `"${value}" is not a version`);
-    }
-  }
-  return compareVersions(version, publishedVersion) > 0;
-}
-
 /** The entries a reader may see: every version at or below the published one. */
 export function releasedEntries(entries, publishedVersion) {
   return entries.filter(
@@ -203,11 +186,6 @@ export function requireChangelogEntry(directory, version) {
 /** An entry's text as inline runs: only `**bold**` is markup. */
 export function inlineRuns(text) {
   return siteDocInlineRuns(text, { marks: CHANGELOG_MARKS, label: LABEL });
-}
-
-/** The entry's page on a site origin, e.g. https://www.exawatt.ai. */
-export function changelogEntryUrl(origin, version) {
-  return `${origin.replace(/\/$/u, '')}/changelog/${version}`;
 }
 
 /** The GitHub Release body for an entry, before the checksum line. */

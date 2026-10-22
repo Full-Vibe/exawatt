@@ -16,14 +16,18 @@ import type { ProductUpdaterBoundary } from './updater';
  * - `refuse`  Squirrel rejects the bundle, as it did for 0.1.10 (incident
  *             0026)
  * - `stall`   Squirrel never answers
+ * - `latest`  nothing downloads: the feed answers that `<version>` is the
+ *             newest it publishes (ENG-031 W28's "What's new" reads that)
  */
 
-type Staging = 'accept' | 'refuse' | 'stall';
+type Staging = 'accept' | 'refuse' | 'stall' | 'latest';
 
 export function testProductUpdate(
   value: string | undefined
 ): { version: string; staging: Staging } | null {
-  const match = /^(\d+\.\d+\.\d+):(accept|refuse|stall)$/.exec(value ?? '');
+  const match = /^(\d+\.\d+\.\d+):(accept|refuse|stall|latest)$/.exec(
+    value ?? ''
+  );
   return match ? { version: match[1], staging: match[2] as Staging } : null;
 }
 
@@ -41,10 +45,15 @@ export function createTestUpdaterBoundary(
     checkForUpdates: async () => null,
     quitAndInstall: () => quit(),
   });
-  // The download finishes as soon as the updater is listening, as a cached
-  // one does at launch.
+  // The feed answers as soon as the updater is listening; a download
+  // finishes at once, as a cached one does at launch.
   setImmediate(() =>
-    updater.emit('update-downloaded', { version: scenario.version })
+    updater.emit(
+      scenario.staging === 'latest'
+        ? 'update-not-available'
+        : 'update-downloaded',
+      { version: scenario.version }
+    )
   );
   return {
     updater: updater as unknown as ProductUpdaterBoundary['updater'],

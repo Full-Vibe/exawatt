@@ -59,6 +59,7 @@ import type {
   HeldOperatorState,
   HeldStateRequest,
   NoticeDismissals,
+  PreviousVersion,
   ShutdownStatus,
   UpdateReadyNotice,
   WorkspaceRecoveryState,
@@ -217,6 +218,8 @@ interface RequestTable {
   'app:installed-build': Call<[], UpdateReadyNotice | null>;
   'app:notice-dismissals': Call<[], NoticeDismissals>;
   'app:dismiss-notice': Call<[id: string, version: string], NoticeDismissals>;
+  /** What the run record knew of the version that ran before this launch. */
+  'app:previous-version': Call<[], PreviousVersion>;
 
   'auth:start-google': Call<[config: ElectronAuthStartConfig], void>;
   'auth:link-github': Call<[config: ElectronAuthLinkConfig], void>;
