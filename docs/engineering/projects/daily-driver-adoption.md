@@ -8173,3 +8173,52 @@ won the race. It now pans the camera with a wheel gesture on the board and
 waits for the board's own save to settle. Proof: two consecutive headless
 passes on this branch; `pnpm test:related` over every changed file.
 
+### 2026-10-22 — A resume refused by a stale copy, and Mark unread missing from the palette (BUG-305, BUG-307)
+
+**Two operator reports, triaged 2026-10-21; diagnosis from code and the
+reports' own diagnostics, no repair in this drain.**
+
+- **BUG-305 — "This Session already has a running process".** Row
+  `7900248b-c180-4ebc-86f9-8eb7f2cbab49` shows a paused Claude Code tab whose
+  Resume failed with that banner, under a 21-agent "Resume project" strip.
+  The report's diagnostics name version 0.1.10, build `b35366b6`
+  (2026-08-21), running from the checkout's own `release/mac-arm64` build
+  directory, where that bundle is still on disk; the installed 0.1.22 started
+  a minute later. The stale bundle's own renderer archive contains every
+  string in the screenshot, so this was August code end to end, not a skewed
+  pair. macOS had 243 Exawatt bundles registered with Launch Services on the
+  operator's Mac, 239 of them in worktrees that no longer exist.
+  Current code keeps the defect's shape. Main refuses a second create for a
+  live durable Session (`session-manager.ts`; a concurrent create is already
+  refused earlier by `creatingDurableIds`), but a window learns which
+  Sessions are live only from one `pty:list` read at mount
+  (`use-workspace-hydration.ts`, matched in `layout-restore.ts`): main's
+  start of a Session reaches no window, and `pty:list` misses a create still
+  in flight. A renderer reload during a long Resume project can therefore
+  strand a live process behind a tab that reads paused, and the next Resume
+  is refused. Separately, nothing stops two copies of Exawatt running over
+  one profile: there is no single-instance lock, no check that the running
+  bundle is the installed one (the local-build notice compares only build
+  shas), and no packaged test build is ever unregistered from Launch
+  Services; every launched bundle re-claims `exawatt://`. BUG-083's empty
+  Finder alert on activation is plausibly a deleted registration answering
+  for Exawatt; unconfirmed.
+  Upgrade, in two owners: main owns durable Session to live process (create
+  becomes "ensure running" and returns the live record or the in-flight
+  start; starts and exits push to every window, so a tab's state follows
+  main's events, not one snapshot), and the app owns its own instance (one
+  running copy per profile, a notice when an official build runs from outside
+  Applications, packaged test builds unregister on teardown and worktree
+  cleanup). Exit: a reload in the middle of a 20-Agent resume leaves every
+  tab attached to its live process; a second copy launched from another
+  path hands focus to the running one; a removed worktree leaves no Launch
+  Services registration behind.
+- **BUG-307 — Mark unread is not in ⌘K.** Row
+  `2264aa5f-cc9a-43be-96d3-4558e2d445cf` (idea): "Need cmd+k keyboard
+  shortcut for mark unread. For that and all such things in the future -
+  should never diverge right-click menu items and cmd+k availability." Mark
+  unread (BUG-259) is an inline item in `tab-strip.tsx`'s context menu, so
+  the palette cannot offer it. The second sentence is a standing rule, now in
+  `design-system.md` (Menus). The command-parity packet owns the repair: one
+  command registry feeds every context menu and ⌘K, and a check fails when
+  they disagree.

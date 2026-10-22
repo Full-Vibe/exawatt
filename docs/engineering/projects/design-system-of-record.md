@@ -902,3 +902,43 @@ receipt in that run. The gate now waits for native window focus and names the
 locked/foreground precondition explicitly; the product guard is unchanged.
 The operator unlock request remains pending. Continue independent checks, then
 rerun the unchanged full landing checks after real foreground proof is possible.
+
+### 2026-10-22 — Queued: the Settings page frame (BUG-306)
+
+**Settings has two owners for a page's header, so titles repeat and a strip of
+links sits above rows it duplicates.** Operator feedback `3cb932c9`
+(2026-10-22, Appearance): "These text label links are a poor implementation of
+something I can't figure out". Diagnosis from code, not yet reproduced in the
+app:
+
+- The strip is the shell's topic nav (`settings-client.tsx`), built from each
+  destination's `topics` in `settings-registry.ts`. It exists so search
+  results and deep links have a row to land on; shown as a strip it repeats
+  the rows directly beneath it. Appearance (four links) and Fleet (two) show
+  it. Its "Theme" link lands on the row titled "Theme mode", and the real
+  Theme row has no id.
+- A deep link scrolls to its row and shows nothing: `SettingRow` and Fleet's
+  material block set `focus:outline-none`.
+- The shell renders the header unless a destination is in `SELF_HEADED`.
+  Appearance, Fleet, Notifications, Power and Keyboard shortcuts then repeat
+  the title in their first card, each with a second description; Agent
+  Sources, Permissions, Privacy and Safety draw their own header in a
+  different style.
+- Smaller drift on the same pages: Fleet's material block is hand-built
+  instead of a `SettingRow`, Keyboard uses `Card` instead of
+  `SettingsGroup`, Diagnostics uses a plain button, the shell carries Power's
+  web-only message and `PermissionsExplainer`, and search cannot find
+  Diagnostics.
+
+The upgrade: the shell owns the page frame. One `SettingsPage` part renders
+the group label, title and description from the registry once for every
+destination; `SELF_HEADED` and the topic strip are deleted; a single-group
+destination's card drops its title; `SettingRow` takes a typed `topic` that
+sets its id and shows a brief visible highlight when a link lands on it.
+Feature modules keep their controls and persistence; destination and topic ids
+stay stable because they are public links.
+
+Exit: `eval:settings:navigation` proves, for every destination, exactly one
+heading named after it, no topic strip, and that every `settingsHref(id,
+topic)` lands on an element with that id that shows the highlight; before and
+after screenshots of all nine destinations in Classic, Air and Night.

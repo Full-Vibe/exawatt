@@ -63,6 +63,143 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | planned      | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
 
+## Execution front (2026-10-21): bug clusters by system
+
+Operator direction (2026-10-21): the bug work "should be clusters of fixes,
+not just fixes". Every open record was grouped by the system it lives in, and
+each packet below upgrades that system so its records fall out; a packet that
+finds a record outside its system hands it back instead of patching it. The
+inbox drained the same night into BUG-305 to BUG-307, and its third row set a
+standing rule: a right-click menu and ⌘K never diverge (`design-system.md`,
+Menus).
+
+Already owned (records in these systems go to them, not to new packets):
+
+- **command-parity**: one command registry feeding every right-click menu
+  and ⌘K. Takes BUG-307 (Mark unread is menu-only) and the parity check the
+  standing rule asks for.
+- **funnel-verify**: `download_requested` and `project_opened` record zero
+  (ENG-047 F4). Every packaged build re-claims `exawatt://` and deleted builds
+  stay registered with macOS (BUG-305), so a local deep-link test can open the
+  wrong copy.
+- **eng-039**: modular checks and the first-class landing train. Takes the
+  landing's own records: BUG-224 (the idempotency eval's final relaunch),
+  BUG-271 (community builds overwrite the owned server's icon custody),
+  BUG-048's open half (local builds resolve the community distribution), and
+  the code-scanning alert in `scripts/delivery-policy.test.mjs`.
+- **guides** and **in-app-moments**: marketing guides and in-app What's new.
+  guides owns `src/app/sitemap.ts` this front and takes BUG-304 (the sitemap
+  misses a new release until a deploy); in-app-moments takes BUG-267 (a new
+  personal record as a moment) only if its moment fits without a design pass.
+- **agent/delegation-build** (in flight): BUG-133 half 1 and BUG-134.
+
+New packets, ranked by what the friend cohort meets first, then by records
+closed. Estimates are single agent; each packet is one worktree in train mode.
+
+1. **deps-lane: patched dependencies and a public repository that reads
+   clean** (ENG-030, ENG-022; M, about 4 h). The downloaded app runs Electron
+   43.1.0, which has four high advisories fixed in 43.5.0; the site runs Next
+   16.3.3 (fixed in 16.3.8); the public repository carries eight bot pull
+   requests that cannot merge into a projection and 16 high code-scanning
+   alerts. Cause: nothing owns dependencies between one-off sweeps. Change:
+   one private-side dependency landing takes every patch and minor security
+   update (overrides for transitive ones) and closes the bot pull requests it
+   supersedes; the pull-request audit gate passes a change that reduces
+   advisories while `master` keeps the zero baseline; the roadmap parser's
+   regexes become a line tokenizer with a long-line regression per alert; a
+   scheduled check reports a public projection stalled for a day. Closes
+   BUG-127, BUG-128, BUG-131; FIX-013's four majors follow one per change.
+   Owns the manifest and lockfile, `packages/core/src/roadmap/`, the flagged
+   parse sites in `packages/ui-model/src/` and `packages/core/src/`, and the
+   dependency workflows; parser output must not change (golden over real
+   roadmaps); the Electron bump runs the packaged evals, the Next bump the
+   site gates.
+2. **back-out: one Escape ladder** (ENG-015, ENG-016, ENG-025; M, about 4 h).
+   About 39 Escape handlers each swallow or yield the key, and the gaps are
+   dead keys: since Chatter became the Team dock's second tab, Escape on a
+   dock tab does nothing while the dock says "esc · back to tiles". Nothing
+   returns focus, caret and selection when a layer closes or steps aside.
+   Change: one back-out owner in the keymap layer resolves dialog, menu or
+   ⌘K, text field, dock panel, dock, Team grid, then altitude, with
+   fall-through so no position leaves Escape dead, and restores the
+   invoker's focus, caret and selection. Team, its dock and the feedback
+   composer's screenshot capture migrate first. Closes BUG-302 and BUG-284;
+   finishes S6's "one keyboard owner for Team". Owns a new module in
+   `src/lib/shortcuts/`, the Escape entry in `fixed-families.ts`, the key
+   handling in `expose-overlay.tsx` and `team-dock.tsx`, the composer's
+   capture path and the eval's Escape step; must not touch the command
+   registry, menus or palette (command-parity).
+3. **settings-frame: the shell owns every Settings page's frame** (ENG-036;
+   M, about 3 h). The page header has two owners, so five destinations repeat
+   their title and four draw their own; the topic strip repeats the rows
+   beneath it and a deep link lands with no visible mark. Change: one
+   `SettingsPage` frame from the registry for every destination, no topic
+   strip, a typed `topic` on `SettingRow` that highlights where a link lands.
+   Closes BUG-306 and the drift recorded with it. Owns `src/app/settings/`'s
+   shell, controls, registry and each destination's header lines; feature
+   hooks, saving, destination and topic ids, and search stay as they are.
+4. **instance: one running Exawatt** (ENG-016, ENG-045; S to M, about 3 h).
+   Nothing stops two copies over one profile (no single-instance lock), an
+   official build does not know it runs from outside Applications, packaged
+   test builds stay registered with macOS after their worktree goes, and the
+   app never explains the Local Network prompt its agents trigger. Change:
+   Electron's single-instance lock (a second launch focuses the first and
+   forwards its link through the existing deep-link entry), an offer to move
+   into Applications, unregistering packaged builds at teardown plus a sweep
+   of registrations whose bundle is gone, and `NSLocalNetworkUsageDescription`
+   in Exawatt's voice. Closes BUG-305's instance half, BUG-274, and BUG-083 if
+   the alert stops with the sweep. Owns main's startup lines,
+   `installed-build.ts` and its notice, `scripts/lib/packaged-app.mjs` and the
+   plist keys in `electron-builder.yml`; must not touch deep-link parsing
+   (funnel-verify), the shutdown owner, the updater or the landing scripts
+   (eng-039).
+5. **frame-demand: one owner decides when a board renders** (ENG-004,
+   ENG-031; M, about 5 h). Fleet v1, Fleet v2 and the hero board each mix
+   render policy with self-sustaining `invalidate()` chains from about ten
+   layers; a chain that paints a frame with no requester ends silently, and
+   `on-ac` never re-reads an unknown lock state. Change: a per-canvas
+   scheduler takes policy (visible, host lock, sleep and power, reduced
+   motion, frozen) and registered demand (Working rotors, transitions until
+   settled), is the only caller of `invalidate()`, parks with
+   `frameloop='never'` and re-arms on every policy change; the fleet story
+   adopts only the policy inputs. Closes BUG-280, most likely BUG-300, and
+   gives BUG-113 a rotors-versus-Working readout. Owns the board canvases and
+   layers, the hero board and `use-host-render-policy.ts`; must not touch the
+   status mapping, BUG-263's resolution and bloom rules, "unknown is not
+   unlocked", the hero's draw-call budget or the fleet story's loop; the
+   `eval:hero-board` trigger line goes to eng-039 as a data edit.
+6. **session-custody: main owns each Session's process** (ENG-016; M, about
+   5 h). A window learns which Sessions are live from one read at mount, so a
+   reload during a long resume strands a live process behind a paused tab and
+   the next Resume is refused; nothing records harness events across a
+   relaunch. Change: create becomes ensure-running (the live record or the
+   start in flight, never a refusal), starts and exits push to every window,
+   and a bounded harness-event log under `logs/` survives relaunch. Closes
+   BUG-305's code half and BUG-102's evidence half. Owns
+   `session-manager.ts`, `pty-ipc.ts`, the pty channels of the desktop bridge,
+   preload's pty lines and the renderer's session runtime, hydration and
+   layout restore; must not touch identity baselines, history seeding, the
+   shutdown owner's counters or the hook-token sweep.
+
+Run 1 to 4 now beside the owned packets; 5 and 6 follow as the first of them
+land (both need long Electron eval runs). Collisions: deps-lane holds the
+lockfile, so no other packet adds a dependency; back-out and command-parity
+meet only at `fixed-families.ts`, where back-out edits the Escape entry
+alone; settings-frame owns the Settings shell, and any packet adding a
+Settings row uses `SettingRow` in its own module; the preload is append-only.
+
+Not packets: BUG-301 closed 2026-10-21 (0.1.24 ran the stapler helper and
+published). BUG-286 is verified by the next signed release updating from
+0.1.24 through Restart to Update. Evidence-gated, the harness already keeping
+evidence: BUG-278. Operator recheck: BUG-117's all-Claude-missing report (its
+names were repaired 2026-10-18). Operator decisions: BUG-198 (which backlog
+records are public), BUG-112 (public history disposition), and the retired
+band stack at `/old` (decision `0047`) where BUG-054, BUG-055 and BUG-056
+live: delete `/old` and its studies and the three close with it, or keep it as
+history and close them as won't fix. Design work: FIX-004, FIX-005.
+Provider-limited: BUG-227's Claude half and its physical sleep and unplug
+acceptance.
+
 ## Execution front (2026-10-14): the friend cohort
 
 This week the operator is talking to a cohort of friends and prospects and
@@ -4068,6 +4205,15 @@ Exit: name the invalidation that fires on a frozen board and stop it, then
 `eval:hero-board` green on `origin/master`. Until then landings that touch the
 hero board waive the gate naming this id (G2.1 did, 2026-10-05).
 
+2026-10-21, read from code (not run): both suspects are probably wrong; the
+hero imports neither `inspection.ts` nor any file `2f661eb2` changed. Three
+`invalidate()` calls ignore `animating` (two scene effects and the camera
+rig's keyframe effect, which re-runs on a size change), and R3F turns an
+`invalidate()` made inside a frame into one extra frame, so one late rig
+re-run yields exactly two parked frames. The gate's trigger matches only hero
+files, which is why no other landing ran it. Owner: the frame-demand packet
+of the Execution front (2026-10-21).
+
 ### BUG-279 Sent feedback looks editable and waits for Done
 
 Status: done · ENG-025 · operator report 2026-10-05.
@@ -4695,6 +4841,29 @@ the wrong store. Project suggestions already resolve it through
 `loginModelEnvironment`; the catalog should do the same, per read rather
 than at load.
 
+**Fixed 2026-10-18 with one owner for "where a harness keeps its state".**
+`electron/main/pty/harness-homes.ts` holds `loginModelEnvironment`, the
+shared `harnessEnvironment()` (the login shell's answer in the operator's
+home, re-asked once a minute, over this process's environment read at each
+call) and each harness's path rule (`claudeConfigDir`,
+`claudeProjectsRoot`, `codexHome`, `codexStateDatabase`,
+`grokSessionsRoot`). `defaultShell` moved to `login-shell.ts`, the login
+shell's one owner, so a store reader can reach it without a cycle through
+the session manager. The catalog's Claude, Codex, Grok and Qwen adapters
+resolve their roots per list; the project suggestions, Clone's Claude
+context, the Qwen model catalog and the Claude socket door read the same
+rules. Other readers of the same shape, fixed: resume candidates and Codex
+identity capture hard-coded `~/.codex/sessions` (any `CODEX_HOME`, even
+Exawatt's own, was ignored); Grok's catalog fixed `GROK_HOME` at
+construction; Qwen's catalog and model catalog read `QWEN_HOME` and
+`QWEN_RUNTIME_DIR` from `process.env`; Clone read `CLAUDE_CONFIG_DIR` from
+`process.env`. Duplicates deleted: two inline home rules in
+`agent-models.ts`, the Claude socket's `configDirOf`, the catalog's
+`openCodeShell` option and two `process.env.SHELL || '/bin/zsh'` defaults.
+`harness-homes.test.ts` lists Codex conversations from a login-shell
+`CODEX_HOME` over Exawatt's own, follows a changed home without a
+relaunch, and asks the shell once a minute.
+
 **Review fix 2026-10-19** (`209f6369`). The 0.1.22 fix probed
 the login shell with POSIX `"${KEY-}"`, which fish (the operator's shell),
 csh and PowerShell reject at parse time: the probe printed nothing (fish exit
@@ -4776,28 +4945,12 @@ now carries `document.visibilityState` and main's host snapshot so the next
 failure names which input parked it. Owner: the Fleet board
 (`src/components/fleet/spatial/operations-board/`), not the eval.
 
-**Fixed 2026-10-18 with one owner for "where a harness keeps its state".**
-`electron/main/pty/harness-homes.ts` holds `loginModelEnvironment`, the
-shared `harnessEnvironment()` (the login shell's answer in the operator's
-home, re-asked once a minute, over this process's environment read at each
-call) and each harness's path rule (`claudeConfigDir`,
-`claudeProjectsRoot`, `codexHome`, `codexStateDatabase`,
-`grokSessionsRoot`). `defaultShell` moved to `login-shell.ts`, the login
-shell's one owner, so a store reader can reach it without a cycle through
-the session manager. The catalog's Claude, Codex, Grok and Qwen adapters
-resolve their roots per list; the project suggestions, Clone's Claude
-context, the Qwen model catalog and the Claude socket door read the same
-rules. Other readers of the same shape, fixed: resume candidates and Codex
-identity capture hard-coded `~/.codex/sessions` (any `CODEX_HOME`, even
-Exawatt's own, was ignored); Grok's catalog fixed `GROK_HOME` at
-construction; Qwen's catalog and model catalog read `QWEN_HOME` and
-`QWEN_RUNTIME_DIR` from `process.env`; Clone read `CLAUDE_CONFIG_DIR` from
-`process.env`. Duplicates deleted: two inline home rules in
-`agent-models.ts`, the Claude socket's `configDirOf`, the catalog's
-`openCodeShell` option and two `process.env.SHELL || '/bin/zsh'` defaults.
-`harness-homes.test.ts` lists Codex conversations from a login-shell
-`CODEX_HOME` over Exawatt's own, follows a changed home without a
-relaunch, and asks the shell once a minute.
+2026-10-21, read from code (not run): two quiet ends for the ambient chain.
+Rotors request their next frame from inside a painted frame, so a frame with
+no rotor registered, or one that reads a parked cadence, ends the chain, and
+only a cadence change re-arms it. And an unknown lock state parks ambient
+motion by design; `resume` re-reads the lock, `on-ac` does not. Owner: the
+frame-demand packet of the Execution front (2026-10-21).
 
 ### BUG-299 Extending a Fleet selection with Shift+arrows moved focus to another Project
 
@@ -4832,11 +4985,21 @@ cause predates W25, which waived the gate with this id. Next: run it on a
 clean `origin/master` worktree, then find whether Escape stopped leaving
 Team or the eval's premise moved.
 
+2026-10-21, diagnosed from code (not yet run): a product regression from
+ENG-029 B3 (`7ee5711d`, Chatter as the dock's second tab). The dock's tab
+strip is now a Tab stop; Escape on a dock tab is handled by nobody (the tab
+ignores it, Team's grid yields keys born in the dock, the window fallback
+yields keys born in Team), so the key is dead while the dock shows "esc ·
+back to tiles". The eval's premise moved too: the dock's ladder is panel,
+then tiles, then leave Team. Owner: the back-out packet of the Execution
+front (2026-10-21).
+
 ### BUG-301 v0.1.21's release run refused its DMG and the release log could not say why
 
-Status: open · ENG-030 · found 2026-10-19 on the first v0.1.21 dispatch
+Status: done · ENG-030 · found 2026-10-19 on the first v0.1.21 dispatch
 (run 39233626801); fixed 2026-10-19 by a bounded retry of the dropped
-ticket lookup (`e4f05255`); open until a release run shows it.
+ticket lookup (`e4f05255`); closed 2026-10-21: 0.1.24's run asked stapler
+only through the helper and published.
 
 The run notarized and stapled the app (Apple accepted it in 62 s), the
 release path's `spctl` and `xcrun stapler validate` both passed, and the ZIP
@@ -4892,6 +5055,12 @@ are unpublished private tags: neither run reached publication, so neither has
 a public tag, Release or feed entry, and their contents ship as 0.1.22 and
 0.1.24.
 
+2026-10-21: 0.1.24 (run 39338298087) went through `validateStapledTicket` at
+all three checks (the notarize script, the workflow's verify step and the
+release-artifact check); each read Apple's ticket on the first attempt and the
+release published. The retry branch is pinned by `stapled-ticket.test.mjs`
+and names each attempt in the log when a lookup drops.
+
 ### BUG-294 A fresh Electron process reports an already locked Mac as unlocked
 
 Status: done · ENG-004 · found 2026-10-15; integrated and installed 2026-10-19 as `35d0db93f922` (ticket 688).
@@ -4937,3 +5106,45 @@ Route Handler; why its `revalidate` export is not honoured on Vercel is not
 yet known. Next step: read the deployment's route config for
 `/sitemap.xml`, then either make the export take effect or list releases
 from a route that does revalidate.
+
+### BUG-305 A resume refused with "This Session already has a running process"
+
+Status: bug · ENG-016 · operator feedback 7900248b, 2026-10-22.
+
+The report came from a stale August copy of the app (0.1.10, `b35366b6`)
+still on disk in the checkout's build directory, launched beside the
+installed 0.1.22. Current code keeps the defect's shape: a window learns which
+Sessions are live from one read at mount and is never told when one starts,
+so a reload during a long resume can leave a live process behind a tab that
+reads paused, and the next Resume is refused. Nothing stops two copies of
+Exawatt running over one profile, and packaged test builds stay registered
+with macOS after their worktree is gone (239 of 243 registrations on the
+operator's Mac). Fix by system: main owns durable Session to live process,
+and the app owns its own instance.
+[Diagnosis and exit](projects/daily-driver-adoption.md#2026-10-22--a-resume-refused-by-a-stale-copy-and-mark-unread-missing-from-the-palette-bug-305-bug-307).
+
+### BUG-306 Settings repeats its page titles above a strip of links that repeats the rows
+
+Status: bug · ENG-036 · operator feedback 3cb932c9, 2026-10-22.
+
+On Appearance the operator met the title twice and a row of plain links
+("Theme", "System accent", ...) he could not place: "These text label links
+are a poor implementation of something I can't figure out". The links are the
+shell's topic nav, there for search and deep links; five destinations repeat
+their title in their first card because the page header has two owners. Fix
+by system, not by deleting one strip: the Settings shell owns the page frame
+for every destination and a deep link highlights the row it lands on.
+[Diagnosis and acceptance](projects/design-system-of-record.md#2026-10-22--queued-the-settings-page-frame-bug-306).
+
+### BUG-307 Mark unread is in a tab's right-click menu but not in ⌘K
+
+Status: bug · ENG-016 · operator feedback 2264aa5f, 2026-10-22; command-parity packet, Execution front (2026-10-21).
+
+"Need cmd+k keyboard shortcut for mark unread. For that and all such things in
+the future - should never diverge right-click menu items and cmd+k
+availability." Mark unread (BUG-259) is authored inline in the tab strip's
+context menu, so the palette never learns it exists. The second sentence is a
+standing rule, recorded in `design-system.md` (Menus). Exit: ⌘K offers Mark
+unread for the active tab with the menu's label and availability, and a parity
+check fails whenever a context menu and ⌘K disagree.
+[Queued note](projects/daily-driver-adoption.md#2026-10-22--a-resume-refused-by-a-stale-copy-and-mark-unread-missing-from-the-palette-bug-305-bug-307).

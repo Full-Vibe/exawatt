@@ -323,6 +323,15 @@ refine the opening selection only until the operator moves it. Commands for a
 service absent from this distribution are omitted across keyboard, palette and
 native menu; temporarily unavailable commands keep a disabled row with a reason.
 
+**A right-click menu and ⌘K never diverge** (operator, 2026-10-22: "should
+never diverge right-click menu items and cmd+k availability"). Every action a
+context menu offers is a palette command with the same label, the same target
+and the same availability, and the reverse holds for any palette command that
+acts on a target a menu belongs to. Both read one command registry, so a menu
+row is never authored inline at its call site; a new action lands on both
+surfaces in the same change, and a check fails when one surface offers what
+the other does not. BUG-307 (Mark unread, menu only) is the first case.
+
 ## Dialogs
 
 A dialog's primary action states the chord that presses it, on the button's own
@@ -643,6 +652,10 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-10-22 — Menus: a right-click menu and ⌘K never diverge (operator
+  standing rule, feedback `2264aa5f`). Both surfaces read one command
+  registry; BUG-307 records the first divergence, Mark unread.
 
 - 2026-10-18 — BUG-292/BUG-293: one mark path. `AgentSourceMark` replaces
   `SourceIdentityMark`, the launcher's `EngineGlyph`, Settings' `SourceMark`
