@@ -5163,7 +5163,7 @@ the feed advancing.
 
 ### BUG-305 A resume refused with "This Session already has a running process"
 
-Status: instance half fixed 2026-10-22 (`<sha pending>`); code half open (session-custody) · ENG-016 · operator feedback 7900248b, 2026-10-22.
+Status: fixed 2026-10-22: instance half (`<sha pending>`), code half (`<sha pending>`, session-custody) · ENG-016 · operator feedback 7900248b, 2026-10-22.
 
 The report came from a stale August copy of the app (0.1.10, `b35366b6`)
 still on disk in the checkout's build directory, launched beside the
