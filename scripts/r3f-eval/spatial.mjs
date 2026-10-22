@@ -78,7 +78,11 @@ function checkEconomyCadence({ painted, ticks, tickMs, rotors }, label) {
 /** Working rotors in the live scene: the half-disc geometry marks them. */
 
 /** Every working rotor turns while its Agent works, at any power (BUG-263);
- * only reduced motion rests them. Vacuous when nothing on the board works. */
+ * only reduced motion rests them. Vacuous when nothing on the board works.
+ *
+ * The readout walks the chain a static Working Agent can break at (BUG-113):
+ * Working Agents the marks were given, rotors attached for them (both from
+ * the canvas's frame demand), rotors in the scene, rotors that turned. */
 async function checkWorkingMotion(page, { expectMotion }) {
   const sample = await page.evaluate(async source => {
     const sampleRotors = new Function(`return (${source})()`);
@@ -88,8 +92,20 @@ async function checkWorkingMotion(page, { expectMotion }) {
     let moving = 0;
     for (const [node, angle] of before)
       if (node.rotation.z !== angle) moving += 1;
-    return { rotors: before.size, moving };
+    const claims = (window.__EVAL_FRAME_DEMAND__?.().ambient ?? []).filter(
+      claim => claim.label === 'rotors'
+    );
+    return {
+      working: claims.reduce((sum, claim) => sum + claim.working, 0),
+      attached: claims.reduce((sum, claim) => sum + claim.rotors, 0),
+      rotors: before.size,
+      moving,
+    };
   }, sampleRotorsInPage.toString());
+  check(
+    sample.attached === sample.working && sample.rotors === sample.working,
+    `Working ${sample.working}, rotors attached ${sample.attached}, in the scene ${sample.rotors}: a Working Agent has no rotor`
+  );
   if (sample.rotors === 0) return sample;
   check(
     expectMotion ? sample.moving === sample.rotors : sample.moving === 0,

@@ -91,11 +91,14 @@ async function ambientSample(page, count) {
 }
 
 /** What the board's render policy reads, for a failure message: a parked
- * board is either hidden or told the host is locked or asleep. */
+ * board is either hidden or told the host is locked or asleep. The frame
+ * demand says what the canvas's scheduler made of it: its policy, the claims
+ * it holds (with Working versus attached rotors) and whether it parked. */
 async function renderPolicyInputs(page) {
   return page.evaluate(async () => ({
     visibility: document.visibilityState,
     host: await window.electron.app.hostPower(),
+    frameDemand: window.__EVAL_FRAME_DEMAND__?.() ?? null,
   }));
 }
 
@@ -226,6 +229,11 @@ try {
           errors.push(message.text());
         }
       });
+      // The window opens on the launch screen and main then loads the dev
+      // URL; navigating before main has done so is interrupted by it.
+      await page.waitForURL(
+        url => url.pathname === '/eval/t5-operations-board'
+      );
       await prepareFleetViewPage(page);
       await page.goto(fleetViewUrl(`${base}/eval/t5-operations-board`), {
         waitUntil: 'load',
