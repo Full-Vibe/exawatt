@@ -87,6 +87,46 @@ function waitForPersistedIdentities(page, ids) {
   );
 }
 
+/**
+ * Hold the next `pty:create` in main where its readiness probe runs, so a
+ * start is provably in flight (BUG-305). Wraps the registered handler in
+ * Electron's own invoke table; a table this build does not have fails the
+ * eval rather than holding nothing.
+ */
+async function holdNextStart(app) {
+  const installed = await app.evaluate(({ ipcMain }) => {
+    const handlers = ipcMain._invokeHandlers;
+    const original = handlers?.get?.('pty:create');
+    if (typeof original !== 'function') return false;
+    let release;
+    const gate = new Promise(resolve => (release = resolve));
+    globalThis.__exawattStartHold = { asked: 0, release };
+    handlers.set('pty:create', async (event, ...args) => {
+      globalThis.__exawattStartHold.asked += 1;
+      await gate;
+      handlers.set('pty:create', original);
+      return original(event, ...args);
+    });
+    return true;
+  });
+  if (!installed)
+    throw new Error('Could not hold pty:create: no invoke handler table');
+  return {
+    async asked() {
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        const asked = await app.evaluate(
+          () => globalThis.__exawattStartHold?.asked ?? 0
+        );
+        if (asked > 0) return;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      throw new Error('TIMED OUT after 20s waiting for the held start');
+    },
+    release: () => app.evaluate(() => globalThis.__exawattStartHold.release()),
+  };
+}
+
 let originalIds = [];
 let otherIds = [];
 try {
@@ -173,7 +213,7 @@ try {
 
   await withElectronApp(
     launchOptions,
-    async (_app, page) => {
+    async (app, page) => {
       page.setDefaultTimeout(20_000);
       const resumeBanner = page.getByRole('region', {
         name: 'Saved Agent recovery',
@@ -224,10 +264,65 @@ try {
         );
       }
 
+      // BUG-305: the window reloads while main is still starting a Session.
+      // The reloaded window reads the list before that start exists, so it
+      // must learn of it from main's push and show the tab attached; the
+      // Resume that follows must not be refused for a process already
+      // running.
+      const before305 = new Set(
+        (
+          await page.evaluate(
+            async () => (await window.electron?.pty?.list()) ?? []
+          )
+        ).map(session => session.durableSessionId)
+      );
+      const hold = await holdNextStart(app);
+      await resumeBanner.getByRole('button').first().click();
+      await hold.asked();
+      await page.reload();
+      await waitForWorkspaceReady(page);
+      await hold.release();
+      const [stranded] = (await waitForSessionCount(page, 3)).filter(
+        session => !before305.has(session.durableSessionId)
+      );
+      await waitForPageCondition(
+        page,
+        async ({ durableSessionId, id }) => {
+          const layout = await window.electron?.workspace?.load();
+          const tab = layout?.projects
+            ?.flatMap(project => project.tabs)
+            .find(candidate => candidate.durableSessionId === durableSessionId);
+          return tab?.sessionId === id && tab.lifecycle === 'running';
+        },
+        stranded,
+        { label: 'the reloaded window attaching the Session main started' }
+      );
+      console.log(
+        `[exact-resume] BUG-305: ${stranded.id} started behind a reload and its tab is attached`
+      );
+
       // After explicit Project recovery, the primary action resumes only the
       // remaining restart set; exact identities below prove that boundary.
       await resumeBanner.getByRole('button').first().click();
       await waitForSessionCount(page, 6);
+      await waitForPageCondition(
+        page,
+        async () => {
+          const layout = await window.electron?.workspace?.load();
+          const tabs = layout?.projects?.flatMap(project => project.tabs) ?? [];
+          return (
+            tabs.length === 6 &&
+            tabs.every(tab => tab.lifecycle === 'running' && tab.sessionId)
+          );
+        },
+        undefined,
+        { label: 'all six tabs attached, none refused' }
+      );
+      const refused = await page
+        .getByText('already has a running process')
+        .count();
+      if (refused > 0)
+        throw new Error('A Resume was refused for a process already running');
 
       const resumed = await page.evaluate(async () => {
         const pty = window.electron?.pty;
@@ -258,7 +353,7 @@ try {
     launchLimits
   );
   console.log(
-    'PASS exact resume: Project scope resumed two exact IDs while four stayed paused, then all six resumed'
+    'PASS exact resume: Project scope resumed two exact IDs while four stayed paused, a reload during the next start left it attached, then all six resumed'
   );
 } finally {
   for (let attempt = 0; attempt < 5; attempt++) {

@@ -120,7 +120,7 @@ describe('the exit record keeps how the process ended', () => {
       exitCode: 0,
       exitSignal: 'SIGKILL',
     });
-    expect(exits).toEqual([[info.id, 0, 'session-ended', 'SIGKILL']]);
+    expect(exits).toEqual([[info.id, 0, 'session-ended', 'SIGKILL', false]]);
     // The terminal's own marker no longer says a code nobody exited with.
     expect(buffer).toContain('ended by SIGKILL');
   });
@@ -145,7 +145,7 @@ describe('a stop Exawatt asked for ends cleanly', () => {
     await manager.stop(session.id);
     const info = manager.list().find(item => item.id === session.id)!;
     expect(info).toMatchObject({ exited: true, exitCode: 0, exitSignal: null });
-    expect(exits).toEqual([[session.id, 0, 'session-ended', null]]);
+    expect(exits).toEqual([[session.id, 0, 'session-ended', null, true]]);
     expect(manager.buffer(session.id)).toContain('[session stopped]');
     expect(manager.buffer(session.id)).not.toContain('ended by');
   });
@@ -154,13 +154,13 @@ describe('a stop Exawatt asked for ends cleanly', () => {
     const { manager, exits, session, proc } = await started();
     proc.onSignal = () => ({ exitCode: 129, signal: 0 });
     await manager.stopAndConfirmExit(session.id);
-    expect(exits).toEqual([[session.id, 0, 'session-ended', null]]);
+    expect(exits).toEqual([[session.id, 0, 'session-ended', null, true]]);
   });
 
   it('records the processes stopped at quit as clean stops', async () => {
     const { manager, exits, session } = await started();
     await manager.stopAll();
-    expect(exits).toEqual([[session.id, 0, 'session-ended', null]]);
+    expect(exits).toEqual([[session.id, 0, 'session-ended', null, true]]);
   });
 
   it('still names a SIGHUP that Exawatt did not send', async () => {
