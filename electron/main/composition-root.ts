@@ -255,7 +255,8 @@ const deepLinks = createDeepLinkRouter({
 // Before app.whenReady(), so a link that launches the app is not lost.
 registerDeepLinkProtocol(app, identity.protocolScheme, deepLinks, process);
 // A later launch over this profile is the operator asking for Exawatt: it
-// brings this window forward, and its links take the deep-link entry.
+// brings this window forward. A link reaches this process through
+// `open-url` above, from macOS, whichever copy it launched.
 routeSecondLaunches(app, {
   bringForward: () => {
     if (isShuttingDown()) return 'quitting';
@@ -263,7 +264,6 @@ routeSecondLaunches(app, {
     openMainWindow(runtime.startupComplete);
     return 'opened';
   },
-  openLink: url => deepLinks.handle(url),
   record: (event, fields) => mainDiagnostics(event, fields),
 });
 

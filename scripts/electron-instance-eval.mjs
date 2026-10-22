@@ -153,7 +153,7 @@ try {
         () => mainEvents(profile, 'instance.second-launch'),
         'the running app to answer the second launch'
       );
-      if (answered.presented !== 'hidden' || answered.links !== 0) {
+      if (answered.presented !== 'hidden') {
         throw new Error(
           `A hidden automated launch answered ${JSON.stringify(answered)}`
         );

@@ -11,7 +11,6 @@ import { launchBuildIdentity } from './launch-identity';
  */
 const { identity } = launchBuildIdentity();
 const isInstance = claimAppInstance(app, {
-  platform: process.platform,
   report: line => console.error(line),
   productName: identity.productName,
   userData: app.getPath('userData'),
