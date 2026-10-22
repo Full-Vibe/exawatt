@@ -261,5 +261,3 @@ export function boardLatticeModel(
     presentation,
   };
 }
-
-export type BoardLatticeModel = ReturnType<typeof boardLatticeModel>;
