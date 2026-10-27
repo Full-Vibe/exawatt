@@ -1735,7 +1735,7 @@ Project doc:
 
 ### ENG-028 Agent Types
 
-Status: planned — created 2026-08-02 from the operator brief and design pass C. T1 (the preview affordance) landed 2026-08-02 under ENG-026 N5; the mechanism (T2 onward) follows.
+Status: planned — created 2026-08-02 from the operator brief and design pass C. T1 (the preview affordance) landed 2026-08-02 under ENG-026 N5; the mechanism (T2 onward) follows. AMENDED 2026-10-27 (operator): the first hosted Type instance now exists outside Exawatt, as a shared `fullvibe-cmo` skill plus per-Agent workspace files (identity, procedure, property config, model) on the dogfood OpenClaw Gateway, one Agent per web property. T2's portable format should be able to express that bundle so Exawatt can say "StockResearch CMO, running on OpenClaw" rather than the harness name; T4's disclosed self-improvement constraint is already the fleet's rule (journal and dated proposals, rule changes only as reviewable diffs).
 
 Direction (operator framing): "Perhaps our UI should convey which _type_ of
 agent is running a given project, not just which harness happens to be
@@ -2294,6 +2294,14 @@ Milestones:
   the remote surface's work stack; never derive work state from a context
   count. Exit: each dogfood coworker opens showing current work and automations
   from its source, stale and unavailable dim both, Demo passes the same contract.
+  AMENDED 2026-10-27 (operator): the first live workload is the operator's
+  hosted marketing fleet, one `cmo-<property>` Agent per web property on the
+  dogfood Gateway, each driven by a daily isolated cron and a weekly review.
+  Their cron list and seven-day run history are exactly the work and
+  automations this surface must show, and the weekly review's "needs the
+  owner" paragraph is the first real H2.3 needs-you state; until H2.3 lands it
+  announces to the operator's chat channel instead. Visibility in Exawatt is
+  the operator's stated hard requirement for the fleet over time.
 - H2.2 Grant a coworker a voice in one gesture — DECIDED 2026-09-24 and
   folded into H2.4's per-server setup step (see H2.4 and the amendment chain);
   the shaping below is the history of that decision. Today Exawatt asks for
