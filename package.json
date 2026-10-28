@@ -213,7 +213,7 @@
     "cmdk": "^1.1.1",
     "electron-updater": "^6.8.9",
     "lucide-react": "^0.555.0",
-    "next": "16.3.8",
+    "next": "16.4.2",
     "node-pty": "^1.1.0",
     "posthog-js": "^1.413.2",
     "react": "19.2.0",
@@ -221,7 +221,7 @@
     "smol-toml": "^1.9.0",
     "tailwind-merge": "^3.4.0",
     "three": "^0.184.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
@@ -235,7 +235,7 @@
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^5.1.1",
     "ajv": "^8.20.0",
-    "electron": "^43.7.11",
+    "electron": "^43.8.3",
     "electron-builder": "^26.15.3",
     "electron-builder-squirrel-windows": "^26.15.3",
     "eslint": "^9.39.1",

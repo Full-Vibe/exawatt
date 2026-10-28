@@ -5,7 +5,7 @@
 This inventory records the declared distribution basis for 815 third-party
 package versions in the current macOS pnpm dependency graph. Platform binary
 families use a `<platform>` placeholder so the same policy is checkable on Linux.
-Lockfile SHA-256: `86802462a561adff1f4d1bfee978b9be60167ab94df50abdcc58aef62ce5e54e`.
+Lockfile SHA-256: `798fe01485e5c7cbe7e5a86ae7bc2f73e6076e7f774f8e2f2e948230bca5ab2a`.
 
 Regenerate it on macOS
 with `pnpm licenses:generate`; `pnpm licenses:check` fails when the graph,
@@ -132,9 +132,9 @@ license texts that need special handling are preserved under
 | @malept/flatpak-bundler                  | 0.4.0         | MIT                     |
 | @mediapipe/tasks-vision                  | 0.10.17       | Apache-2.0              |
 | @monogrid/gainmap-js                     | 3.4.0         | MIT                     |
-| @next/env                                | 16.3.8        | MIT                     |
+| @next/env                                | 16.4.2        | MIT                     |
 | @next/eslint-plugin-next                 | 16.3.8        | MIT                     |
-| @next/swc-<platform>                     | 16.3.8        | MIT                     |
+| @next/swc-<platform>                     | 16.4.2        | MIT                     |
 | @noble/ed25519                           | 3.0.1         | MIT                     |
 | @noble/hashes                            | 1.4.0         | MIT                     |
 | @noble/hashes                            | 2.2.0         | MIT                     |
@@ -392,7 +392,7 @@ license texts that need special handling are preserved under
 | dunder-proto                             | 1.0.1         | MIT                     |
 | duplexer2                                | 0.1.4         | BSD-3-Clause            |
 | ejs                                      | 3.1.10        | Apache-2.0              |
-| electron                                 | 43.7.11       | MIT                     |
+| electron                                 | 43.8.3        | MIT                     |
 | electron-builder                         | 26.15.3       | MIT                     |
 | electron-builder-squirrel-windows        | 26.15.3       | MIT                     |
 | electron-publish                         | 26.15.3       | MIT                     |
@@ -445,7 +445,7 @@ license texts that need special handling are preserved under
 | fast-glob                                | 3.3.1         | MIT                     |
 | fast-json-stable-stringify               | 2.1.0         | MIT                     |
 | fast-levenshtein                         | 2.0.6         | MIT                     |
-| fast-uri                                 | 3.1.8         | BSD-3-Clause            |
+| fast-uri                                 | 3.1.9         | BSD-3-Clause            |
 | fastq                                    | 1.19.1        | ISC                     |
 | fdir                                     | 6.5.0         | MIT                     |
 | fflate                                   | 0.4.9         | MIT                     |
@@ -621,7 +621,7 @@ license texts that need special handling are preserved under
 | nanoid                                   | 3.3.20        | MIT                     |
 | napi-postinstall                         | 0.3.4         | MIT                     |
 | natural-compare                          | 1.4.0         | MIT                     |
-| next                                     | 16.3.8        | MIT                     |
+| next                                     | 16.4.2        | MIT                     |
 | node-abi                                 | 4.33.0        | MIT                     |
 | node-addon-api                           | 7.1.1         | MIT                     |
 | node-api-headers                         | 1.9.0         | MIT                     |
@@ -811,8 +811,8 @@ license texts that need special handling are preserved under
 | typescript                               | 5.9.3         | Apache-2.0              |
 | typescript-eslint                        | 8.48.0        | MIT                     |
 | unbox-primitive                          | 1.1.0         | MIT                     |
-| undici                                   | 6.29.0        | MIT                     |
-| undici                                   | 7.30.0        | MIT                     |
+| undici                                   | 6.29.1        | MIT                     |
+| undici                                   | 7.30.1        | MIT                     |
 | undici-types                             | 7.16.0        | MIT                     |
 | universalify                             | 0.1.2         | MIT                     |
 | universalify                             | 2.0.1         | MIT                     |
@@ -861,7 +861,7 @@ license texts that need special handling are preserved under
 | yargs                                    | 17.7.2        | MIT                     |
 | yargs-parser                             | 21.1.1        | ISC                     |
 | yocto-queue                              | 0.1.0         | MIT                     |
-| zod                                      | 4.4.3         | MIT                     |
+| zod                                      | 4.6.7         | MIT                     |
 | zod-validation-error                     | 4.0.2         | MIT                     |
 | zustand                                  | 4.5.7         | MIT                     |
 | zustand                                  | 5.0.14        | MIT                     |

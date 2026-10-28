@@ -228,6 +228,8 @@ clusters the landings exposed:
 - **board-keys** (ENG-004): every board key handler reads the state that is
   committed when the key arrives. Takes BUG-323 (`0` after a drill only
   re-centers) and any handler in the board with the same closure.
+- **compiler-rules** (ENG-039): the nine React Compiler findings that keep
+  eslint-config-next behind Next (BUG-324).
 
 ## Execution front (2026-10-14): the friend cohort
 
@@ -5662,3 +5664,17 @@ yet reproduced on demand. Exit: a test that presses 0 in that window fails
 first; the board's key handlers read the committed state when the key
 arrives (`useEffectEvent`, as `command-palette.tsx` does), so the eval
 passes without a recheck.
+
+### BUG-324 Nine components break React Compiler rules that eslint-config-next 16.4 enforces
+
+Status: open · ENG-039 · found 2026-10-28 by the dependency refresh.
+
+eslint-config-next 16.4.2 brings eslint-plugin-react-hooks 7.1.1, whose
+React Compiler rules fail nine places: a value the compiler treats as
+immutable is modified (`operations-board-population-layer.tsx`,
+`launch-controls.tsx`), and manual memoization the compiler cannot keep
+(`board-lattice-canvas.tsx`, `command-palette.tsx` twice,
+`launch-controls.tsx` twice, `workspace-client.tsx` twice). The refresh
+kept the config at 16.3.8 so a security landing changed no app code. Exit:
+each finding fixed at its cause, eslint-config-next on the version that
+matches Next, lint clean.
