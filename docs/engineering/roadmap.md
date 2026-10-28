@@ -5428,6 +5428,12 @@ Fix, one system:
   `GITHUB_TOKEN`, so the read is not held to the anonymous per-IP limit; the
   workflow keeps `contents: read`.
 
+2026-10-28: public CI's history scan had never run. `pnpm security:secrets`
+staged the gitleaks download in `tmpdir()` and renamed it into the Git
+directory, which crosses devices on GitHub's Linux runners (EXDEV); every
+landing ran on one macOS volume and passed. The download now stages beside
+its cache. The same gap between this Mac and CI is BUG-320.
+
 ### BUG-313 A disabled ⌘K row sits above an enabled row that matches better
 
 Status: fixed 2026-10-22 (`1dd9f5eb`) · ENG-016 · found 2026-10-22 by the command-parity packet (BUG-307, D75); palette-rank packet, Execution front (2026-10-21).

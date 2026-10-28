@@ -36,7 +36,6 @@ import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { promisify } from 'node:util';
@@ -151,13 +150,19 @@ export async function resolveGitleaks({
         `${target.sha256}. Refusing to run an unverified scanner.`
     );
   }
-  const staging = await mkdtemp(path.join(tmpdir(), 'exawatt-gitleaks-'));
+  // Stage beside the cache, so the rename that publishes it is one atomic
+  // move on one filesystem. Staged in tmpdir() it crossed devices on
+  // GitHub's Linux runners (EXDEV) and the history scan never ran.
+  await mkdir(path.dirname(cache), { recursive: true });
+  const staging = await mkdtemp(
+    path.join(path.dirname(cache), '.gitleaks-staging-')
+  );
   try {
     const archive = path.join(staging, target.archive);
     await writeFile(archive, bytes);
     await execFileAsync('tar', ['-xzf', archive, '-C', staging, 'gitleaks']);
+    await rm(archive);
     await chmod(path.join(staging, 'gitleaks'), 0o755);
-    await mkdir(path.dirname(cache), { recursive: true });
     await rm(cache, { recursive: true, force: true });
     await rename(staging, cache);
   } catch (error) {
