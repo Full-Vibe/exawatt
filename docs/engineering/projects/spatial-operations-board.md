@@ -4029,7 +4029,7 @@ passed the same parent/child hover, press, audio and camera interaction probe.
 ### 2026-10-21 — Frame demand: one owner decides when a board renders
 
 **Each demand canvas has one frame scheduler, the only caller of `invalidate()`; BUG-280 and BUG-300 close with it.**
-Execution front (2026-10-21) packet 5, `agent/frame-demand` (<sha pending>).
+Execution front (2026-10-21) packet 5, `agent/frame-demand`, landed 2026-10-28 as `f6a343b9`..`efa16f5d`.
 
 Before: Fleet v1, Fleet v2 and the hero board mixed render policy into about
 ten layers that each kept the demand loop alive by calling `invalidate()` from

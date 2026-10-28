@@ -176,8 +176,8 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    layers, the hero board and `use-host-render-policy.ts`; must not touch the
    status mapping, BUG-263's resolution and bloom rules, "unknown is not
    unlocked", the hero's draw-call budget or the fleet story's loop; the
-   `eval:hero-board` trigger line goes to eng-039 as a data edit. READY
-   2026-10-21 on `agent/frame-demand` (<sha pending>): one scheduler per
+   `eval:hero-board` trigger line goes to eng-039 as a data edit. Landed
+   2026-10-28 (`f6a343b9`..`efa16f5d`): one scheduler per
    canvas in `src/lib/frame-demand/`; BUG-280 and BUG-300 close with it,
    BUG-113 has its readout, BUG-308 closes (the harness declares an unlocked
    Mac; a new window's launch screen always loads and the workspace waits for
@@ -193,7 +193,7 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    `session-manager.ts`, `pty-ipc.ts`, the pty channels of the desktop bridge,
    preload's pty lines and the renderer's session runtime, hydration and
    layout restore; must not touch identity baselines, history seeding, the
-   shutdown owner's counters or the hook-token sweep. Built 2026-10-22
+   shutdown owner's counters or the hook-token sweep. Landed 2026-10-22
    (`52d6f0a4`..`989efd2f`): an exit during the hydration read was lost under the
    restore too, and now ends its tab; `main.jsonl` no longer carries harness
    boundaries, which moved to the new log.
@@ -216,6 +216,18 @@ ENG-031 W31, which closes BUG-054, BUG-055 and BUG-056. Design work: FIX-004,
 FIX-005.
 Provider-limited: BUG-227's Claude half and its physical sleep and unplug
 acceptance.
+
+All six packets landed by 2026-10-28; 0.1.25 ships them. Next, two
+clusters the landings exposed:
+
+- **delivery-truth** (ENG-039, ENG-022): a green landing is green on public
+  CI and in the public copy, and its verdicts never blame a car for a flake.
+  Takes BUG-319 (the one-line delivery test list), BUG-320 (landings test on
+  this Mac's Node, CI on 22), BUG-321 (path classification per commit, as
+  the projection asks it) and BUG-322 (one tree, two answers, a conviction).
+- **board-keys** (ENG-004): every board key handler reads the state that is
+  committed when the key arrives. Takes BUG-323 (`0` after a drill only
+  re-centers) and any handler in the board with the same closure.
 
 ## Execution front (2026-10-14): the friend cohort
 
@@ -4220,7 +4232,7 @@ reviewed material cross-surface visuals, and exact deployed/installed evidence.
 
 ### BUG-280 The hero board renders frames while parked
 
-Status: fixed (frame-demand train, <sha pending>) · ENG-031 · found by the G2.1 landing checks, 2026-10-05 21:04.
+Status: fixed 2026-10-28 (`f6a343b9`..`efa16f5d`) · ENG-031 · found by the G2.1 landing checks, 2026-10-05 21:04.
 
 `pnpm eval:hero-board`'s `frozen` check (`?force=frozen` must render zero
 frames after its first paint) reads `parkedFrames: 2` on `origin/master` at
@@ -4987,7 +4999,7 @@ cleared.
 
 ### BUG-300 The live Demo board parked after a Project drill while AC and unlocked
 
-Status: fixed by construction (frame-demand train, <sha pending>) · ENG-004 · found 2026-10-18 reproducing BUG-295.
+Status: fixed by construction 2026-10-28 (`f6a343b9`..`efa16f5d`) · ENG-004 · found 2026-10-18 reproducing BUG-295.
 
 One `eval:electron:host-power` v1 run (`--js-flags=--gc-interval=2000`, on
 the BUG-175 harness) failed `live Demo must render working Agents`: right
@@ -5277,7 +5289,7 @@ reached ⌘K; Move left and Move right reached the tab and Project menus.
 
 ### BUG-308 `eval:electron:app-lifecycle` times out at its Fleet-camera step on master
 
-Status: fixed (frame-demand train, <sha pending>) · ENG-022 · found 2026-10-21 by the in-app moments packet; waived at the 2026-10-22 train landing (`00f1fcb1`).
+Status: fixed 2026-10-28 (`f6a343b9`..`efa16f5d`) · ENG-022 · found 2026-10-21 by the in-app moments packet; waived at the 2026-10-22 train landing (`00f1fcb1`).
 
 Section 3 ("Restart to Update keeps your place") waits for "the panned Fleet camera, settled" and times out on a clean
 `origin/master` checkout as well as on the branch, so it predates the What's new notice (section 4, which passed run alone).
@@ -5522,7 +5534,7 @@ list file with one path per line that the append driver merges), and
 
 ### BUG-314 An Electron eval that hits its watchdog dies with ENOTEMPTY instead of naming the step
 
-Status: fixed (frame-demand train, <sha pending>) · ENG-022 · found 2026-10-22 in the train on the new master (Mac locked), `eval:roadmap:rail`.
+Status: fixed 2026-10-28 (`f6a343b9`..`efa16f5d`) · ENG-022 · found 2026-10-22 in the train on the new master (Mac locked), `eval:roadmap:rail`.
 
 `eval:roadmap:rail` ran past its 180 s budget after shot `9-exawatt-real`.
 The watchdog closed the app under a body still mid call; the body threw
@@ -5564,7 +5576,7 @@ fix.
 
 ### BUG-312 Evals bound to unchecked handles broke silently on renames
 
-Status: fixed 2026-10-22 in `agent/eval-handles` (`<sha pending>`) · ENG-022 · found at the BUG-302 train, 2026-10-22.
+Status: fixed 2026-10-28 (`de74c5a2`..`0b74a907`) · ENG-022 · found at the BUG-302 train, 2026-10-22.
 
 Two renames broke evals that nothing checked, and each surfaced only when its
 gate ran inside an hour-long landing train. `electron-fleet-direct-eval.mjs`
@@ -5631,3 +5643,22 @@ is a flake, and the refusal named a car anyway. The flake was the eval
 reading before the first painted frame, which frame-demand fixes. Exit: when
 two answers for one tree disagree, the bisect reports a suspected flake in
 that check on that tree and convicts no car.
+
+### BUG-323 Pressing 0 right after a Fleet drill only re-centers
+
+Status: open · ENG-004 · found 2026-10-28, `eval:spatial:pointer` failed once and passed on the same tree in a landing train.
+
+In Fleet v1 the eval clicked an Agent, waited for the address to reach the
+Project, pressed 0, and waited 30 seconds for Fleet, which never came; run
+again on the same tree it passed. The board answers 0 from a window
+`keydown` listener that an effect re-subscribes on every render, and it
+chooses between re-centering (already at Fleet) and going up to Fleet from
+`layout.altitude` as of the render that subscribed it
+(`operations-board-surface.tsx`). The drill commits the route in a
+transition (`commitRoute` in `spatial-fleet-client.tsx`), so until the
+board re-renders and its effect runs again, the listener still reads Fleet,
+and a 0 in that window re-centers the Project and goes nowhere. Likely, not
+yet reproduced on demand. Exit: a test that presses 0 in that window fails
+first; the board's key handlers read the committed state when the key
+arrives (`useEffectEvent`, as `command-palette.tsx` does), so the eval
+passes without a recheck.
