@@ -217,8 +217,11 @@ FIX-005.
 Provider-limited: BUG-227's Claude half and its physical sleep and unplug
 acceptance.
 
-All six packets landed by 2026-10-28; 0.1.25 ships them. Next, two
-clusters the landings exposed:
+All six packets landed by 2026-10-28 and shipped the same day in 0.1.25
+(release run 40760598216: immutable public Release, feed advanced), with
+Next, Electron and zod on patched releases (BUG-127). Public CI is green
+on `eba394f5`. BUG-286 still waits on a 0.1.24 install updating through
+Restart to Update. Next, the clusters the landings exposed:
 
 - **delivery-truth** (ENG-039, ENG-022): a green landing is green on public
   CI and in the public copy, and its verdicts never blame a car for a flake.
@@ -5432,7 +5435,7 @@ Fix, one system:
 staged the gitleaks download in `tmpdir()` and renamed it into the Git
 directory, which crosses devices on GitHub's Linux runners (EXDEV); every
 landing ran on one macOS volume and passed. The download now stages beside
-its cache. The same gap between this Mac and CI is BUG-320.
+its cache (`6773740a`). The same gap between this Mac and CI is BUG-320.
 
 ### BUG-313 A disabled ⌘K row sits above an enabled row that matches better
 
@@ -5620,7 +5623,7 @@ app-dom bundle, which Vite refuses on 22 (fixed `0c3eb4a3`), and the
 keep-awake test let its event loop empty while it waited, which Node 22
 cancels (fixed `bc240a12`). A third followed on 2026-10-28: BUG-314's
 relaunch-reset test failed four runs in five on Node 22, whose `rmSync`
-retries only the rmdir that failed, never the walk. Exit: landings run the suites under the Node
+retries only the rmdir that failed, never the walk (fixed `20bd90ab`). Exit: landings run the suites under the Node
 version CI runs, pinned and cached once the way `security:secrets:landing`
 pins gitleaks, so a landing that is green here is green on public CI.
 
@@ -5686,3 +5689,15 @@ immutable is modified (`operations-board-population-layer.tsx`,
 kept the config at 16.3.8 so a security landing changed no app code. Exit:
 each finding fixed at its cause, eslint-config-next on the version that
 matches Next, lint clean.
+
+### BUG-325 Type check and build fail once a packaged renderer has been prepared
+
+Status: fixed 2026-10-28 (`4cd13e24`) · ENG-022 · found 2026-10-28 building the 0.1.25 dependency refresh under Node 22.
+
+`pnpm electron:prepare-renderer` writes `dist-renderer/`, a copy of the
+renderer sources for packaging. `tsconfig.json` excluded `dist-electron` but
+not `dist-renderer`, so in any checkout that had prepared a packaged build
+(a landing's packaged eval, the main checkout) `pnpm type-check` and
+`pnpm build` failed with 127 errors from the copy. Release and dogfood builds
+start from clean sources and never met it. Fix: `dist-renderer` is excluded;
+both pass with the directory present.
