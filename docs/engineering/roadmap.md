@@ -194,7 +194,7 @@ closed. Estimates are single agent; each packet is one worktree in train mode.
    preload's pty lines and the renderer's session runtime, hydration and
    layout restore; must not touch identity baselines, history seeding, the
    shutdown owner's counters or the hook-token sweep. Built 2026-10-22
-   (`<sha pending>`): an exit during the hydration read was lost under the
+   (`52d6f0a4`..`989efd2f`): an exit during the hydration read was lost under the
    restore too, and now ends its tab; `main.jsonl` no longer carries harness
    boundaries, which moved to the new log.
 
@@ -5202,7 +5202,7 @@ the feed advancing.
 
 ### BUG-305 A resume refused with "This Session already has a running process"
 
-Status: fixed 2026-10-22: instance half (`<sha pending>`), code half (`<sha pending>`, session-custody) · ENG-016 · operator feedback 7900248b, 2026-10-22.
+Status: fixed 2026-10-22: instance half (`410c5ff7`..`be8fce44`), code half (`52d6f0a4`..`989efd2f`, `0c3eb4a3`) · ENG-016 · operator feedback 7900248b, 2026-10-22.
 
 The report came from a stale August copy of the app (0.1.10, `b35366b6`)
 still on disk in the checkout's build directory, launched beside the
@@ -5226,7 +5226,7 @@ main checkout's `release/mac-arm64/Exawatt.app` (0.1.10, `ai.exawatt.desktop`)
 for the operator to delete.
 [Milestone](projects/daily-driver-adoption.md#2026-10-22--one-running-exawatt-per-profile-bug-305-bug-274-bug-083).
 
-Code half (2026-10-22, `<sha pending>`): main owns each Session's process.
+Code half (2026-10-22, `52d6f0a4`..`989efd2f`): main owns each Session's process.
 An ask for a Session main already runs, or is starting, is answered with that
 process or that start, never refused, and every start reaches every window on
 `pty:start`. A window reloaded during a resume now shows the started Session
@@ -5286,7 +5286,7 @@ find what changed since. Exit: the eval passes three runs in a row on master and
 
 Sleep half (2026-10-22): from about 02:00 this Mac drops into maintenance sleep and Electron launches then fail with "no
 window". Every `agent:land` run now holds the Mac awake until it exits (`caffeinate -i -s -w <pid>`), so an overnight train
-cannot meet it; agent/train-bisect, `<sha pending>`.
+cannot meet it (`5b6c1d48`; its test holds its own event loop, `bc240a12`).
 
 2026-10-21, cause measured (frame-demand packet): nothing in the board
 changed; the Mac did. The eval inherits the real host's lock state, and the
@@ -5348,7 +5348,7 @@ executable), with the renderer-server lifecycle evals still passing.
 
 ### BUG-311 The train's bisect re-ran every landing check per prefix and could convict a car by elimination
 
-Status: fixed 2026-10-22 (`<sha pending>`) · ENG-039 M3 · a five-car coordinator train, 2026-10-22; fixed in agent/train-bisect.
+Status: fixed 2026-10-22 (`b25a2a51`) · ENG-039 M3 · a five-car coordinator train, 2026-10-22.
 
 A five-car train failed `eval:spatial:pointer` on one 30-second wait after an
 hour of landing checks. Each bisection step then ran that check first and every
@@ -5371,11 +5371,11 @@ check it `needs` (`bisectChecks`). The verdict names the check the guilty
 prefix failed, the last car is convicted only because the full stack failed
 twice, and the stack without the guilty car runs the check once, so the
 refusal says whether another car also breaks it. The run-everything-per-prefix
-path is deleted. Fixed in agent/train-bisect, `<sha pending>`.
+path is deleted. Fixed in `b25a2a51`.
 
 ### BUG-316 Public Secret Scan and CI stayed red for weeks and nothing private said so
 
-Status: done · ENG-030 · found 2026-10-22 by the secret-scan packet; fixed the same day (`<sha pending>`).
+Status: done · ENG-030 · found 2026-10-22 by the secret-scan packet; fixed the same day (`703bfc3a`..`cd79fff8`).
 
 Public Secret Scan (gitleaks over the complete public history) failed every
 push from run 199 on 2026-10-05 (`fe5fecf6`, the projection of `a7b0ee03`):
@@ -5416,7 +5416,7 @@ Fix, one system:
 
 ### BUG-313 A disabled ⌘K row sits above an enabled row that matches better
 
-Status: fixed 2026-10-22 (`<sha pending>`) · ENG-016 · found 2026-10-22 by the command-parity packet (BUG-307, D75); palette-rank packet, Execution front (2026-10-21).
+Status: fixed 2026-10-22 (`1dd9f5eb`) · ENG-016 · found 2026-10-22 by the command-parity packet (BUG-307, D75); palette-rank packet, Execution front (2026-10-21).
 
 In a Session tab's ⌘K, "unread" listed the disabled "Move left" above "Mark unread", though ⏎ ran Mark unread. It
 predates D75. Two causes stacked. cmdk's sort ordered only the rows the cursor can land on and appended each to the end
@@ -5433,7 +5433,7 @@ theme picker) inherits the sort; a right-click menu's type-ahead already matches
 
 ### BUG-317 A landing classified its checks with the invoking checkout's code
 
-Status: fixed 2026-10-22 (`<sha pending>`) · ENG-022 · found 2026-10-22 by a five-car coordinator train; fixed in agent/candidate-policy.
+Status: fixed 2026-10-22 (`7a25d65b`) · ENG-022 · found 2026-10-22 by a five-car coordinator train.
 
 A five-car train carried ENG-039's new `modules:check` and `modules.json`
 with a car that deleted `src/components/site/bands/*`. The train ran from a
@@ -5466,12 +5466,11 @@ the stack, whose fixtures run the stack's own `agent-land.mjs` against trees
 that add a check, add a gate, gain a check by rebase and fail to load their
 policy. The first landing classified by its own tree is the next one run from
 a checkout that carries this change; a landing run from an older checkout
-still uses that checkout's code. Fixed in agent/candidate-policy,
-`<sha pending>`.
+still uses that checkout's code. Fixed in `7a25d65b`.
 
 ### BUG-315 Electron evals read the operator's whole harness history
 
-Status: fixed 2026-10-22 (`<sha pending>`) · ENG-022 · found 2026-10-22 diagnosing a landing train.
+Status: fixed 2026-10-22 (`72502e01`) · ENG-022 · found 2026-10-22 diagnosing a landing train.
 
 Every Electron eval launches a throwaway profile, and a fresh profile's first
 usage scan reads all the history under its HOME. Evals that keep this Mac's
@@ -5588,3 +5587,47 @@ converted 433 copy-bound locators across 58 eval scripts to registry ids and
 9 where the text is the contract (shell commands the operator pastes, release
 builds that predate a handle), and removed 15 assertions that could never
 fail, 6 of them reading attributes the product had retired.
+
+### BUG-320 Landings test on this Mac's Node while public CI and releases run Node 22
+
+Status: open · ENG-022 · found 2026-10-22 when public CI failed on two commits that passed every landing check.
+
+Landings run the test suites with this Mac's Node (26). Public CI and the
+release builds run Node 22, the oldest `engines` allows (`>=22.18`). On
+2026-10-22 two commits passed every landing check and failed public CI on
+Node 22 alone: `session-custody.dom.test.ts` pulled `node:sqlite` into the
+app-dom bundle, which Vite refuses on 22 (fixed `0c3eb4a3`), and the
+keep-awake test let its event loop empty while it waited, which Node 22
+cancels (fixed `bc240a12`). Exit: landings run the suites under the Node
+version CI runs, pinned and cached once the way `security:secrets:landing`
+pins gitleaks, so a landing that is green here is green on public CI.
+
+### BUG-321 A landing checks path classification on its final tree; the public copy checks every commit
+
+Status: open · ENG-030 · found 2026-10-22 when a train passed every check and gate and the public copy refused it.
+
+`open-source:paths:check` classifies the tree a landing ends with. The public
+projection replays private commits one at a time, each against the manifest
+as of that commit, so a commit that adds a file a later commit classifies
+passes every landing check and is refused only when the projection runs. A
+two-car train (frame-demand, eval-handles) ran an hour of checks and gates,
+then refused and landed nothing: `0ff48b49` added
+`scripts/check-eval-handles.mjs` and the next commit, `e4132da2`, classified
+it. The branch was rebuilt so the adding commit classifies the file
+(`a6205a4f`). Exit: the landing's path check asks the projection's question,
+every path each commit adds classified by that commit's own manifest, before
+any other check, so the train refuses in seconds.
+
+### BUG-322 A train's bisect convicted a docs car for a check the same tree had passed
+
+Status: open · ENG-039 M3 · found 2026-10-22 in a four-car coordinator train.
+
+A four-car train (session-custody, frame-demand, eval-handles and a docs car
+last) failed `eval:spatial` twice on the full stack. The three-car
+prefix passed it, so the bisect convicted the docs car, which changes no file
+the eval reads. The stack without the docs car, the same tree as that
+passing prefix, then failed it. One tree passed and failed one check, which
+is a flake, and the refusal named a car anyway. The flake was the eval
+reading before the first painted frame, which frame-demand fixes. Exit: when
+two answers for one tree disagree, the bisect reports a suspected flake in
+that check on that tree and convicts no car.

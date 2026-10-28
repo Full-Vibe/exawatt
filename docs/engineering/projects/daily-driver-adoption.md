@@ -8422,7 +8422,8 @@ Left for the operator: delete the August copy at
 
 **An ask for a Session main runs is answered with it, every window follows
 main's starts and exits, and what a Session did survives a relaunch.**
-Session-custody packet of the Execution front (2026-10-21), `<sha pending>`.
+Session-custody packet of the Execution front (2026-10-21), landed 2026-10-22
+as `52d6f0a4`..`989efd2f`, with its public CI split `0c3eb4a3`.
 
 - **Ensure-running.** `PtySessionManager.create` is gone; `ensureRunning` is
   the one way a process starts. An ask for a durable Session that runs is
