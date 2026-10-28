@@ -5612,7 +5612,9 @@ release builds run Node 22, the oldest `engines` allows (`>=22.18`). On
 Node 22 alone: `session-custody.dom.test.ts` pulled `node:sqlite` into the
 app-dom bundle, which Vite refuses on 22 (fixed `0c3eb4a3`), and the
 keep-awake test let its event loop empty while it waited, which Node 22
-cancels (fixed `bc240a12`). Exit: landings run the suites under the Node
+cancels (fixed `bc240a12`). A third followed on 2026-10-28: BUG-314's
+relaunch-reset test failed four runs in five on Node 22, whose `rmSync`
+retries only the rmdir that failed, never the walk. Exit: landings run the suites under the Node
 version CI runs, pinned and cached once the way `security:secrets:landing`
 pins gitleaks, so a landing that is green here is green on public CI.
 

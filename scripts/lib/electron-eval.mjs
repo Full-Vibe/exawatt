@@ -549,20 +549,24 @@ export function resetThrowawayUserData(userData) {
   if (!userData) return;
   const temp = realpathOrSelf(tmpdir());
   if (!realpathOrSelf(userData).startsWith(`${temp}/`)) return;
-  try {
-    // A helper that outlived its group's kill can still be flushing a write;
-    // retry through ENOTEMPTY and EBUSY rather than failing on the first.
-    rmSync(userData, {
-      recursive: true,
-      force: true,
-      maxRetries: 10,
-      retryDelay: 100,
-    });
-  } catch (error) {
-    throw new Error(
-      `[harness] could not reset the throwaway profile ${userData} for a relaunch: ${error.message}`,
-      { cause: error }
-    );
+  // A helper that outlived its group's kill can still be flushing writes, so
+  // every attempt walks the whole tree again. `rmSync`'s own `maxRetries`
+  // does not: on Node 22 it retries only the rmdir that failed, so a file
+  // written after the walk listed its directory fails every retry.
+  const deadline = Date.now() + RESET_DEADLINE_MS;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      rmSync(userData, { recursive: true, force: true });
+      break;
+    } catch (error) {
+      if (!RESET_RETRY_CODES.has(error.code) || Date.now() >= deadline) {
+        throw new Error(
+          `[harness] could not reset the throwaway profile ${userData} for a relaunch after ${attempt} attempt(s): ${error.message}`,
+          { cause: error }
+        );
+      }
+      sleepSync(Math.min(25 * attempt, 250));
+    }
   }
   // A seeded layout is part of the state the first attempt started from.
   const seeded = seededLayouts.get(realpathOrSelf(userData));
@@ -1187,6 +1191,18 @@ export function seedWorkspaceLayout(userData, layout) {
 
 /** Seeded layouts by profile, for `resetThrowawayUserData`. */
 const seededLayouts = new Map();
+
+/** How long a relaunch reset keeps removing a profile that a dying helper is
+ *  still writing into before it fails by name, and the errors that mean a
+ *  writer is still there. */
+const RESET_DEADLINE_MS = 10_000;
+const RESET_RETRY_CODES = new Set(['ENOTEMPTY', 'EBUSY']);
+
+/** Blocks the thread for `ms`. The reset is synchronous by contract: callers
+ *  relaunch on the next line. */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
 function writeWorkspaceLayout(userData, layout) {
   mkdirSync(userData, { recursive: true });
