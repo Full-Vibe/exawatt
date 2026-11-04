@@ -5758,3 +5758,18 @@ problem… Codex 4 should know that he should be talking to Claw 4." Exit: a
 directed message names its other recipients by address. That is delivery
 metadata, not a coordination pattern, so decision `0052` (no productized
 debate, no policing) is unchanged.
+
+### BUG-330 A Claude Agent's working timer froze for a minute or two
+
+Status: bug · ENG-002 · partner conversation 2026-11-04
+
+An external user reported that a Claude Code Agent's working line ("clauding"
+and its elapsed counter) "was stuck on three minutes twenty seconds for about a
+minute or two… it made me think like something is broken with the the
+terminal." The operator's first guess was the terminal connection. Claude Code
+draws that counter itself and advances it every second while it works, so a
+frozen counter means one of two things: the pane stopped receiving or painting
+output, or the Claude process itself stalled. Nothing in the report tells
+which, and the Exawatt version was not stated. Exit: a reproduction or a
+diagnostics record that names the side that stopped; if it was Exawatt's, a
+working Agent's pane keeps painting while the harness writes.
