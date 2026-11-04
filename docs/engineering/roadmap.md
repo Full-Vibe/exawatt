@@ -5773,3 +5773,20 @@ output, or the Claude process itself stalled. Nothing in the report tells
 which, and the Exawatt version was not stated. Exit: a reproduction or a
 diagnostics record that names the side that stopped; if it was Exawatt's, a
 working Agent's pane keeps painting while the harness writes.
+
+### BUG-331 The default unrestricted mode reads as an outdated harness to a new user
+
+Status: small-fix · ENG-016 · partner conversation 2026-11-04
+
+Exawatt's default launch mode is `unrestricted`
+(`DEFAULT_LAUNCH_PERMISSION_MODE` in `electron/main/pty/harness-command.ts`),
+which starts Claude Code with `--dangerously-skip-permissions`, so its status
+line says "bypass permissions on". An external technical user read that as
+running an old Claude Code: "I noticed that Claude totally got rid of that and
+made it auto mode. So it makes me think like there's like I'm using a Old
+version of Cloud Code." The operator keeps the default ("keep that as the
+default. However it was clear that it wasn't understandable to the user so we
+need to fix that at least."). Exit: a new user can tell from Exawatt which
+permission mode an Agent was started in and that it is Exawatt's default, so
+the harness's own status line does not read as staleness. The default itself
+does not change.
