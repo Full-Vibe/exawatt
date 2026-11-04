@@ -810,6 +810,11 @@ Exit criteria:
 - a blocked item or an empty queue reaches the operator through the same attention system as terminal bells
 - linked-session context (item id + milestone fraction) is visible on the agent-first surfaces
 
+OPERATOR ANSWER 2026-11-04: the roadmap view needs a dramatic improvement.
+On a 2026-10-29 partner call he said it "isn't really that good yet", and
+confirmed afterwards: "I do want to dramatically improve these screens."
+Deliberately unshaped pending a design pass.
+
 Milestones:
 
 - S0 Canon (landed 2026-07-11): roadmap entry updated from the shaped design pass; project doc created.
@@ -1172,6 +1177,11 @@ Milestones:
 - E17 Usage facts, alerts and resets (active-build 2026-10-05; operator answers to the E15 review questions). (1) The one-sentence headline above the cards RETIRES: "We don't need copy like that. Should just be systematic cards / sections that show the facts." Each meter keeps its own forecast line; nothing summarizes across accounts in prose. (2) Usage alerts: a macOS notification when a live plan window first goes on course to run out before its reset, and a second one a configurable lead time before the projected run-out, never repeated for the same window cycle. "Configurable both to us as developers and architects and also to the user": the thresholds live in one core policy (`USAGE_ALERT_POLICY`), and Settings, Notifications carries the switch and the lead time. The decision runs in Electron main, so the forecast math moves into `@exawatt/core` (`plan-forecast.ts`), one derivation for main, the page and the meter. (3) "Use reset" on an account card that reports banked resets and can spend them (Codex: `account/rateLimitResetCredit/consume` through its own app-server, the soonest-expiring credit, an idempotency key per attempt), behind an in-app confirm that states the effect. Exit criteria: no prose summary renders on `/usage`; an alert fires once per stage per window cycle across restarts and never for a stale or expired window; spending a reset refreshes the card from a fresh account read and reports each vendor outcome (reset, nothing to reset, no credit) in place.
 - E16 Live burn and the Google account (LANDED 2026-10-05; planned 2026-10-02 as demo arc G4; ENG-038 slice 4, renumbered 2026-10-04 when the Claude `/usage` read took slice 3): a burn line above the account cards reads raw tokens per minute and modelled dollars per hour over the trailing ten minutes (stated on screen), per account with a local ledger, as a projection of the same samples the cards count; dollars are the existing one-rate list model and say so; a live view whose pull is pending or whose engine stopped prints "not read" rather than a zero. The Google account card reads `agy -p "/usage" --output-format json` through the shared account service (ENG-038 slice 4): weekly limits per model group, remaining fraction inverted to percent used, ISO resets, no plan tier (the payload states none, so none is shown; the "five-hour buckets per model, plan tier" this line expected do not exist in the report). E12/E15 honesty rules stand (absent never zero, losing information never makes a card calmer; E17 retired the prose headline the same day, so a spent Google group says "Out until reset" on its own row). The Claude-window prerequisite (custody upgrade and a release, BUG-060) was retired 2026-10-04 by ENG-038 slice 3. Narrative in `projects/consumption-spine.md` §E16.
 - First-launch scan cost (open, measured 2026-10-22 under BUG-315): a fresh profile's first pass over a 10.2 GB history takes 73% of Electron main for about 35 s, in stretches of at most 0.31 s, so every IPC reply shares main with JSON parsing. Candidate fix on `agent/cold-scan` (each pass on a worker thread of its own; main's share 0.6 s), pending its own review.
+
+OPERATOR ANSWER 2026-11-04: the Usage screen needs a dramatic improvement.
+Showing it on a 2026-10-29 partner call he called it "a really confusing
+screen", and confirmed afterwards: "I do want to dramatically improve these
+screens." Deliberately unshaped pending a design pass.
 
 Project doc:
 
