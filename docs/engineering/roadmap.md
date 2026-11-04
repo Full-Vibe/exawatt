@@ -5701,3 +5701,50 @@ not `dist-renderer`, so in any checkout that had prepared a packaged build
 `pnpm build` failed with 127 errors from the copy. Release and dogfood builds
 start from clean sources and never met it. Fix: `dist-renderer` is excluded;
 both pass with the directory present.
+
+### BUG-326 The Fleet v2 choice in Settings does not read as selected
+
+Status: bug · ENG-004 · partner conversation 2026-10-29
+
+Settings ▸ Fleet, choosing v2 (Preview): the chosen option only turns its
+label white, so an external user on `0.1.25` could not tell it was selected,
+in Dark and only slightly better in his green theme. The operator: "it should
+at least match the other highlighted buttons." Exit: the selected Fleet
+version uses the same selected treatment as the other choice controls in
+Settings, in every theme.
+
+### BUG-327 New Project's Browse folder goes grey and stays unclickable
+
+Status: bug · ENG-016 · partner conversation 2026-10-29
+
+The operator, live on the call: ⌘N, Project, Browse folder; the picker did not
+come up ("Did it work?") and Browse then stayed greyed out. A refresh and a
+second try opened the Project. This is the symptom `ef24cfade` (2026-07-24)
+fixed and still describes in `src/components/workspace/project-opener.tsx`:
+Browse is disabled while `nativePicker` is set, and if the native sheet never
+appears the control is "permanently disabled". Start there: find the path that
+leaves `nativePicker` set without a sheet on screen.
+
+### BUG-328 The New Agent window opens the engine panel and the model defaults list at once
+
+Status: bug · ENG-016 · partner conversation 2026-10-29
+
+The operator, starting an Agent live: "I expanded the engine model adjustment
+panel, but the other scroll list of model default configurations were made
+open, and it looks very confusing with both those things open." Exit: opening
+one of the two closes the other. The window's wider redesign stays with D54.
+
+### BUG-329 Directed Agents are not told who else received the message
+
+Status: bug · ENG-029 · partner conversation 2026-10-29
+
+Direct to two Agents (Fleet drag-select, ⌘D) delivers two independent
+messages. The stamp line each recipient reads (`busStampLine` in
+`packages/core/src/bus/envelope.ts`) names the sender and the Project but no
+co-recipients, so an instruction like "take opposing viewpoints… communicate
+freely" reached a Codex Agent that spawned its own sub-agents to debate itself.
+The operator: "they don't know that they were both selected. I think that's a
+problem… Codex 4 should know that he should be talking to Claw 4." Exit: a
+directed message names its other recipients by address. That is delivery
+metadata, not a coordination pattern, so decision `0052` (no productized
+debate, no policing) is unchanged.
