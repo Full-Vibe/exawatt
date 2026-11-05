@@ -91,6 +91,7 @@ await page.addInitScript(() => {
       write: async () => undefined,
       engage: async () => undefined,
       resize: async () => undefined,
+      reportPaint: async () => undefined,
       kill: async () => undefined,
       rename: async () => undefined,
       focus: async () => undefined,
