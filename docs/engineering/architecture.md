@@ -373,6 +373,15 @@ dead. Radix dialogs and menus answer first; a dialog asks the rungs inside it
 before it closes; a Session's terminal keeps Escape for its program. The same
 module remembers and restores focus, caret and selection when a layer closes
 or steps aside.
+Window key listeners read the state committed when the key arrives: their
+handlers are Effect Events (`useEffectEvent`) and they subscribe once, so a
+re-render neither leaves a handler from an older render live nor moves a
+layer in the keydown order its `defaultPrevented` checks rely on. A verb that
+depends on an address a transition has not rendered yet asks that address's
+owner: the Fleet board's is `useBoardRoute`, whose verbs answer from the latest
+address asked for (BUG-323). A held transition holds a whole snapshot: the
+Project ribbon's pointer-close hold paints the row as it stood, positions and
+widths together, until it releases (BUG-318).
 
 ### Render-path performance contract
 

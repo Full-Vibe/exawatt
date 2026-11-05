@@ -5605,7 +5605,7 @@ first-launch cost is tracked under ENG-008.
 
 ### BUG-318 Closing a tab moves the tabs to its right before the strip settles
 
-Status: open · ENG-016 · found 2026-10-22 by the eval-handles packet, when
+Status: fixed 2026-11-04 (Execution front 2026-11-04, packet 3) · ENG-016 · found 2026-10-22 by the eval-handles packet, when
 `eval:workspace:ribbon` reached its stabilization step for the first time.
 
 Closing a tab holds the strip for 600 ms. The hold keeps the closing tab's
@@ -5614,6 +5614,16 @@ the hold in a probe. The eval's close step had matched no
 tab since `2c0f2e1b` renamed tabs to their Agent, which is why this stayed
 hidden. Exit: nothing right of the closed tab moves during the hold, and
 `eval:workspace:ribbon` asserts it.
+
+Fix: the hold kept the closing tab's slot by re-laying the row out with that
+tab still in it, so anything the close changed still moved: one fewer tab
+changed the fold budget, a folded Project unfolded, and everything right of it
+slid 60 px. A pointer close now holds a whole snapshot: `tab-strip.tsx` paints
+the row exactly as it stood when the first close was pressed (positions,
+widths and presentations) until the hold releases, and a close pressed inside
+the hold joins it. A new tab in a Project the snapshot shows open ends the
+hold, since it needs a real slot. `eval:workspace:ribbon` now checks every
+item right of the closed tab, and fails on the old strip.
 
 ### BUG-319 Parallel packets collide on the one-line delivery test list
 
@@ -5792,7 +5802,7 @@ that fails every time is still convicted by elimination.
 
 ### BUG-323 Pressing 0 right after a Fleet drill only re-centers
 
-Status: open · ENG-004 · found 2026-10-28, `eval:spatial:pointer` failed once and passed on the same tree in a landing train.
+Status: fixed 2026-11-04 (Execution front 2026-11-04, packet 3) · ENG-004 · found 2026-10-28, `eval:spatial:pointer` failed once and passed on the same tree in a landing train.
 
 In Fleet v1 the eval clicked an Agent, waited for the address to reach the
 Project, pressed 0, and waited 30 seconds for Fleet, which never came; run
@@ -5809,9 +5819,29 @@ first; the board's key handlers read the committed state when the key
 arrives (`useEffectEvent`, as `command-palette.tsx` does), so the eval
 passes without a recheck.
 
+Fix: reading the committed state was not enough on its own, because while the
+drill's transition is pending the committed board is still at Fleet. The
+board's address now has one owner, `useBoardRoute`, whose verbs answer from
+the latest address asked for, and `onOverview` returns whether the address
+moved, so the board re-centers only when the host says it is already at Fleet.
+The Overview button and `0` share that one path. Window key listeners that
+decided from render state (the board, ⌘D Direct, attention jump, the shortcut
+provider, the workspace shortcut layer, the re-entry recap, the back-out
+ladder) are Effect Events that subscribe once, so none answers from an older
+render or changes its place in the keydown order on re-render. The same class
+reopened the Project chooser on its own: the workspace re-ran its New Agent
+check on every re-render for as long as a request stayed pending (five
+minutes), a plausible live trigger for BUG-327 (found by packet 7).
+`useAgentComposerRequests` now acts on each request once, from its event or
+once the layout has loaded (`use-agent-composer-requests.dom.test.tsx`, which
+failed on the old effect). The test
+(`operations-board-surface.dom.test.tsx`, "board keys inside a pending move")
+holds the drill's render with Suspense, presses 0, and failed on the old
+board with the address left at the Project.
+
 ### BUG-324 Nine components break React Compiler rules that eslint-config-next 16.4 enforces
 
-Status: open · ENG-039 · found 2026-10-28 by the dependency refresh.
+Status: fixed 2026-11-04, six of nine (Execution front 2026-11-04, packet 3; the three in `launch-controls.tsx` close with packet 2) · ENG-039 · found 2026-10-28 by the dependency refresh.
 
 eslint-config-next 16.4.2 brings eslint-plugin-react-hooks 7.1.1, whose
 React Compiler rules fail nine places: a value the compiler treats as
@@ -5828,6 +5858,16 @@ their cause. The requested-source ref written during render became an Effect
 Event, and the click-only `refreshModels` lost a memo over a render-derived
 source the compiler could not keep. eslint-plugin-react-hooks 7.1.1 reports
 nothing in that file; the other six findings stay with packet 3.
+
+Fix: eslint-config-next is on 16.4.2, matching Next. The population marks
+wrote the backing uniforms into a memoized shader object; they are now props
+on the material, which R3F writes in place. The lattice and the emergence hook
+remembered departing records in refs written during render, which a discarded
+render could corrupt; one `useRetainedRecords` hook learns departures at
+commit and keeps them in React state.
+The palette's theme search and the close-Project dialog's cancel each wrote
+state through a second inline path the compiler could not keep memoized; each
+now has one writer. No eslint-disable was added.
 
 ### BUG-325 Type check and build fail once a packaged renderer has been prepared
 
