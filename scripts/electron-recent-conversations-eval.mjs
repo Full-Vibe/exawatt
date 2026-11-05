@@ -180,6 +180,11 @@ try {
         .locator('[data-project-opener] [data-project-route="browse"]')
         .click();
       await page.locator('[data-agent-composer]').waitFor();
+      // The chooser stays open under the folder sheet and closes after the
+      // pick (BUG-327), so the composer arrives while it animates out. Until
+      // it unmounts, the dialog keeps the workspace hidden from the
+      // accessibility tree, where the role checks below look.
+      await page.locator('[data-project-opener]').waitFor({ state: 'detached' });
       const target = page.locator(`[data-conversation-id="${targetId}"]`);
       await target.waitFor();
 
