@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import {
   assertFastForward,
   buildProjectionPlan,
+  checkCommitClassification,
   comparePublicSnapshot,
   parseFilterRepoCommitMap,
   PROJECTOR_MODULES,
@@ -696,6 +697,118 @@ test('manifest reclassification is forward-only after the public epoch', async (
       ]),
       '3',
       'already-public history stays reachable after the tip removes the path'
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// BUG-321: a landing asks the projection's question of each commit it adds,
+// and gets the projection's answer. On 2026-10-22 a train passed every check
+// on its final tree and the replay refused it: one commit added a file and
+// the next classified it.
+test('a landing classifies each commit as the replay does, and is refused where the replay is', async () => {
+  const fixture = sourceFixture();
+  try {
+    const epochProjection = await projectPublicHistory({
+      sourceRepo: fixture.source,
+      sourceSha: fixture.head,
+      destination: fixture.at('classification-epoch'),
+      epoch: null,
+    });
+    const epoch = {
+      schemaVersion: 1,
+      sourceSha: fixture.head,
+      publicSha: epochProjection.publicSha,
+      metadataPolicyId: epochProjection.metadataAudit.policyId,
+      projectionContractId: epochProjection.projectionContractId,
+      reason: 'fixture boundary for per-commit classification',
+    };
+    const classifiesDocs = structuredClone(MANIFEST);
+    classifiesDocs.rules.push({
+      id: 'public-docs',
+      classification: 'PUBLIC',
+      include: ['docs/**'],
+    });
+    const commitFiles = (files, message) => {
+      for (const [file, contents] of Object.entries(files)) {
+        write(fixture.source, file, contents);
+      }
+      git(fixture.source, ['add', '--', ...Object.keys(files)]);
+      git(fixture.source, ['commit', '--quiet', '-m', message]);
+      return git(fixture.source, ['rev-parse', 'HEAD']);
+    };
+    const manifest = value => JSON.stringify(value, null, 2) + '\n';
+    const bothAnswer = async (sourceSha, destination) => {
+      const landing = await checkCommitClassification({
+        sourceRepo: fixture.source,
+        baseSha: fixture.head,
+        sourceSha,
+      }).then(
+        () => null,
+        error => error
+      );
+      const projection = await projectPublicHistory({
+        sourceRepo: fixture.source,
+        sourceSha,
+        destination: fixture.at(destination),
+        epoch,
+      }).then(
+        () => null,
+        error => error
+      );
+      return { landing, projection };
+    };
+
+    // A commit adds a path only the next commit classifies.
+    const adds = commitFiles({ 'docs/new.md': '# new\n' }, 'add a document');
+    const late = commitFiles(
+      { [MANIFEST_PATH]: manifest(classifiesDocs) },
+      'classify it one commit later'
+    );
+    const split = await bothAnswer(late, 'split');
+    assert.match(
+      split.projection?.message ?? '',
+      /no classification: docs\/new\.md/u
+    );
+    assert.equal(
+      split.landing?.commit,
+      adds,
+      'the refusal names the adding commit'
+    );
+    assert.match(
+      split.landing.message,
+      /add a document.*no classification: docs\/new\.md/u
+    );
+
+    // The same final tree, with the classification in the adding commit.
+    git(fixture.source, ['reset', '--quiet', '--hard', fixture.head]);
+    const together = commitFiles(
+      { 'docs/new.md': '# new\n', [MANIFEST_PATH]: manifest(classifiesDocs) },
+      'add and classify a document'
+    );
+    assert.deepEqual(await bothAnswer(together, 'together'), {
+      landing: null,
+      projection: null,
+    });
+
+    // A manifest that names a path only a later commit adds is stale where
+    // it lands: Gate A answers that commit over its whole tree.
+    git(fixture.source, ['reset', '--quiet', '--hard', fixture.head]);
+    const early = commitFiles(
+      { [MANIFEST_PATH]: manifest(classifiesDocs) },
+      'classify a document before it exists'
+    );
+    const filled = commitFiles({ 'docs/new.md': '# new\n' }, 'add it');
+    const stale = await bothAnswer(filled, 'stale');
+    assert.match(
+      stale.projection?.message ?? '',
+      /stale rule matches no tracked path: public-docs/u
+    );
+    assert.equal(stale.landing?.commit, early);
+    assert.match(
+      stale.landing.message,
+      /stale rule matches no tracked path: public-docs/u
     );
   } finally {
     fixture.cleanup();

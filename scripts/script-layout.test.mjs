@@ -5,6 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { git } from './lib/hermetic-git.mjs';
+import { globExpression } from './lib/module-graph.mjs';
 import {
   OPEN_SOURCE_PATH_MANIFEST,
   createPathClassifier,
@@ -36,17 +37,25 @@ async function documentedNonPackageFiles() {
   );
 }
 
-function scriptPaths(command) {
+// A glob (`node --test scripts/*.test.mjs`, BUG-319) names exactly the
+// top-level files the shell expands it to.
+function scriptPaths(command, fileNames) {
   return [
-    ...command.matchAll(/scripts\/[A-Za-z0-9_.\/-]+\.(?:c|cjs|json|mjs)/g),
-  ].map(match => match[0]);
+    ...command.matchAll(/scripts\/[A-Za-z0-9_.*\/-]+\.(?:c|cjs|json|mjs)/g),
+  ].flatMap(([reference]) => {
+    if (!reference.includes('*')) return [reference];
+    const pattern = globExpression(reference);
+    return fileNames
+      .map(file => `scripts/${file}`)
+      .filter(file => pattern.test(file));
+  });
 }
 
 // The two layout rules below, as functions of their inputs, so the private
 // tree can hold its public projection to them as well (BUG-233).
 function unregisteredTests(scripts, fileNames) {
   const registered = new Set(
-    Object.values(scripts).flatMap(command => scriptPaths(command))
+    Object.values(scripts).flatMap(command => scriptPaths(command, fileNames))
   );
   return fileNames
     .filter(file => file.endsWith('.test.mjs'))
@@ -59,7 +68,7 @@ function undeclaredInvocations(scripts, fileNames, documented) {
   const intentionalNonPackageFiles = new Set(['README.md', ...documented]);
   const packageBacked = new Set(
     Object.values(scripts)
-      .flatMap(scriptPaths)
+      .flatMap(command => scriptPaths(command, fileNames))
       .filter(scriptPath => path.dirname(scriptPath) === 'scripts')
       .map(scriptPath => path.basename(scriptPath))
   );
@@ -78,9 +87,13 @@ function undeclaredInvocations(scripts, fileNames, documented) {
 
 test('package commands only name script paths that exist', async () => {
   const packageFile = await packageJson();
+  const fileNames = await readdir(scriptsDirectory);
   const references = Object.entries(packageFile.scripts).flatMap(
     ([commandName, command]) =>
-      scriptPaths(command).map(scriptPath => ({ commandName, scriptPath }))
+      scriptPaths(command, fileNames).map(scriptPath => ({
+        commandName,
+        scriptPath,
+      }))
   );
 
   assert.ok(
@@ -178,7 +191,7 @@ test('the public projection keeps the same script layout', async t => {
   const deliveredSet = new Set(delivered);
   assert.deepEqual(
     Object.entries(scripts).flatMap(([name, command]) =>
-      scriptPaths(command)
+      scriptPaths(command, topLevel)
         .filter(scriptPath => !deliveredSet.has(scriptPath))
         .map(scriptPath => `${name} -> ${scriptPath}`)
     ),

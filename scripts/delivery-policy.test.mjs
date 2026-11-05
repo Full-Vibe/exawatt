@@ -26,9 +26,13 @@ import { parse as parseYaml } from 'yaml';
 
 import { openCheckReuse, REUSABLE_CHECKS } from './lib/check-reuse.mjs';
 import {
+  CI_NODE_VERSION_FILE,
+  checkEnvironment,
   classifyDeliveryPolicy,
   CORE_DELIVERY_ENTRIES,
   deliveryAffectingPath,
+  DELIVERY_SUITE,
+  deliverySuiteFiles,
   deliveryTree,
   failedVitestFiles,
   globExpression,
@@ -55,6 +59,7 @@ import { moduleOwner, treeTopology } from './lib/module-graph.mjs';
 import {
   isProjectedPublicManifest,
   OPEN_SOURCE_PATH_MANIFEST,
+  createPathClassifier,
   publishesPath,
 } from './lib/open-source-paths.mjs';
 import { PARTNER_CONVERSATIONS_DIRECTORY } from './lib/recipe-renderers.mjs';
@@ -118,17 +123,21 @@ test('the cheap changed-file landing checks cannot be weakened by the caller', (
   ]);
 });
 
-test('path classification runs before content scanning on sorted candidate paths', () => {
+test('path classification runs first, per commit and then over the tree, before content scanning on sorted candidate paths', () => {
   const [classification, scan] = classifyDeliveryPolicy([
     'src/z.ts',
     'docs/a.md',
     'src/z.ts',
   ]);
+  // BUG-321: the landing form classifies each commit the landing adds by
+  // its own manifest before the tree, as the public projection does. It
+  // reads history, which a tree-keyed reuse cannot vouch for.
   assert.deepEqual(classification, {
     id: 'open-source:paths:check',
     command: 'pnpm',
-    args: ['run', 'open-source:paths:check'],
+    args: ['run', 'open-source:paths:check', '--', '--landing'],
   });
+  assert.ok(!REUSABLE_CHECKS.has('open-source:paths:check'));
   assert.deepEqual(scan, {
     id: 'content:scan',
     command: 'pnpm',
@@ -1469,12 +1478,19 @@ test('lint runs whole wherever the topology cannot scope a change, a module land
     ['modules.json'],
     ['src/lib/x.ts', 'electron/main/y.ts'],
   ]) {
-    assert.ok(ids(paths).includes('lint'), `lint owed by ${JSON.stringify(paths)}`);
+    assert.ok(
+      ids(paths).includes('lint'),
+      `lint owed by ${JSON.stringify(paths)}`
+    );
   }
   const lint = classifyDeliveryPolicy(['src/lib/x.ts']).find(
     check => check.id === 'lint'
   );
-  assert.deepEqual(lint, { id: 'lint', command: 'pnpm', args: ['run', 'lint'] });
+  assert.deepEqual(lint, {
+    id: 'lint',
+    command: 'pnpm',
+    args: ['run', 'lint'],
+  });
   // Inside one module, off its public surface: that module's files.
   const scoped = classifyDeliveryPolicy(['electron/main/bus/ledger.ts']);
   assert.ok(!scoped.some(check => check.id === 'lint'));
@@ -1536,6 +1552,12 @@ test('changed source files owe the consumer-less export check', () => {
 // tests hold it to the truth by deriving, from the landing checks, the gate
 // map, the pre-push hook and `ci.yml`, what actually runs each one.
 
+let tracked = null;
+function trackedFiles() {
+  tracked ??= git(root, ['ls-files']).split('\n').filter(Boolean);
+  return tracked;
+}
+
 function packageScripts() {
   return JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
     .scripts;
@@ -1574,7 +1596,15 @@ function stepKind(tokens, scripts) {
     if (name in scripts) return { kind: 'call', name };
   }
   if (tokens[0] === 'node' && tokens[1] === '--test') {
-    return { kind: 'node-test', files: tokens.slice(2) };
+    // A glob names the tracked files the shell expands it to (BUG-319).
+    return {
+      kind: 'node-test',
+      files: tokens.slice(2).flatMap(token => {
+        if (!token.includes('*')) return [token];
+        const pattern = globExpression(token);
+        return trackedFiles().filter(file => pattern.test(file));
+      }),
+    };
   }
   if (tokens[0] === 'vitest') {
     const config = tokens.find(token => token.startsWith('--config'));
@@ -1909,6 +1939,190 @@ test('a surface gate owns its script and every source file the script names', ()
 // ENG-022, 2026-10-15: `test:agent-delivery` was 48% of the day's landing
 // compute and ran on every landing whatever changed. It now runs whole when a
 // change can reach what it reads, and the product-tree pins run otherwise.
+// BUG-320: three commits passed every landing on this Mac's Node 26 and
+// failed public CI on Node 22. The suites now run on the release CI runs,
+// read from the one file every workflow reads.
+test('the test suites run on the Node release CI runs, read from the tree being checked', async () => {
+  const pinned = readFileSync(
+    path.join(root, CI_NODE_VERSION_FILE),
+    'utf8'
+  ).trim();
+  assert.match(pinned, /^\d+\.\d+\.\d+$/u, 'an exact release, never a range');
+  const engines = JSON.parse(
+    readFileSync(path.join(root, 'package.json'), 'utf8')
+  ).engines.node;
+  const [, minimum] = /^>=(\d+)\./u.exec(engines);
+  assert.equal(
+    pinned.split('.')[0],
+    minimum,
+    `CI runs the oldest major engines allows (${engines})`
+  );
+
+  // Every workflow that sets up Node reads that file, so there is no second copy.
+  const workflows = readdirSync(path.join(root, '.github/workflows')).filter(
+    file => file.endsWith('.yml')
+  );
+  let setups = 0;
+  for (const file of workflows) {
+    const workflow = parseYaml(
+      readFileSync(path.join(root, '.github/workflows', file), 'utf8')
+    );
+    for (const step of Object.values(workflow.jobs).flatMap(
+      job => job.steps ?? []
+    )) {
+      if (!String(step.uses ?? '').startsWith('actions/setup-node@')) continue;
+      setups += 1;
+      assert.equal(
+        step.with?.['node-version-file'],
+        CI_NODE_VERSION_FILE,
+        `${file}: ${step.name ?? step.uses}`
+      );
+      assert.equal(
+        step.with?.['node-version'],
+        undefined,
+        `${file} names no second version`
+      );
+    }
+  }
+  assert.ok(setups >= 1, 'CI sets up Node');
+  // The public tree's CI reads it too.
+  const manifest = JSON.parse(
+    readFileSync(path.join(root, OPEN_SOURCE_PATH_MANIFEST), 'utf8')
+  );
+  assert.equal(
+    createPathClassifier(manifest)(CI_NODE_VERSION_FILE).classification,
+    'PUBLIC'
+  );
+
+  const suites = new Set([
+    'test:agent-delivery',
+    'delivery-pins',
+    'vitest-related',
+    'module-tests',
+    'full-suite',
+    'scanning-tests',
+    'test:service-conformance',
+  ]);
+  const checks = [
+    ...classifyDeliveryPolicy([
+      'scripts/lib/delivery-policy.mjs',
+      'src/lib/utils.ts',
+      'contracts/conformance/x.test.ts',
+    ]),
+    ...classifyDeliveryPolicy(['docs/product/concepts.md']),
+    ...classifyDeliveryPolicy(['electron/main/bus/ledger.ts']),
+    ...classifyDeliveryPolicy(['src/lib/utils.ts'], [], { wholeRepo: true }),
+  ];
+  const seen = new Set();
+  for (const check of checks) {
+    seen.add(check.id);
+    if (suites.has(check.id)) {
+      assert.equal(check.node, pinned, `${check.id} runs on CI's Node`);
+      assert.equal(path.basename(check.command), 'pnpm');
+    } else {
+      assert.equal(
+        check.node,
+        undefined,
+        `${check.id} keeps the landing's Node`
+      );
+    }
+  }
+  for (const id of suites) assert.ok(seen.has(id), `${id} was classified`);
+
+  // A tree without the file runs every suite on the landing's Node, and one
+  // that names a range is refused rather than resolved two ways.
+  const directory = await realpath(
+    await mkdtemp(path.join(tmpdir(), 'exawatt-ci-node-'))
+  );
+  try {
+    git(directory, ['init', '--quiet', '--initial-branch=master']);
+    await writeFile(path.join(directory, 'README.md'), '# fixture\n');
+    git(directory, ['add', 'README.md']);
+    git(directory, ['commit', '--quiet', '-m', 'root']);
+    const unpinned = classifyDeliveryPolicy(['scripts/x.mjs'], [], {
+      tree: deliveryTree(directory),
+    });
+    assert.ok(unpinned.some(check => check.id === 'test:agent-delivery'));
+    assert.ok(unpinned.every(check => check.node === undefined));
+    await writeFile(path.join(directory, CI_NODE_VERSION_FILE), '22\n');
+    git(directory, ['add', CI_NODE_VERSION_FILE]);
+    git(directory, ['commit', '--quiet', '-m', 'a range']);
+    assert.throws(
+      () =>
+        classifyDeliveryPolicy(['scripts/x.mjs'], [], {
+          tree: deliveryTree(directory),
+        }),
+      /must name one exact Node release/u
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a pinned suite runs, and re-runs its failures, with pnpm pinned to that Node', async () => {
+  assert.equal(
+    checkEnvironment({ id: 'lint', command: 'pnpm', args: [] }, { A: '1' }).A,
+    '1'
+  );
+  assert.equal(
+    checkEnvironment(
+      { id: 'x', command: 'pnpm', args: [], node: '22.23.4' },
+      {}
+    ).npm_config_use_node_version,
+    '22.23.4'
+  );
+  assert.throws(
+    () =>
+      checkEnvironment({ id: 'x', command: 'node', args: [], node: '22.23.4' }),
+    /only a pnpm command can honour/u
+  );
+  const directory = await realpath(
+    await mkdtemp(path.join(tmpdir(), 'exawatt-ci-node-run-'))
+  );
+  try {
+    // A pnpm that records the Node pin it was given, then fails its first
+    // run naming a file, so the isolated rerun runs too.
+    const stub = path.join(directory, 'pnpm');
+    await writeFile(
+      stub,
+      `#!${process.execPath}
+const fs = require('node:fs');
+const log = ${JSON.stringify(path.join(directory, 'pins.json'))};
+const pins = fs.existsSync(log) ? JSON.parse(fs.readFileSync(log, 'utf8')) : [];
+pins.push(process.env.npm_config_use_node_version ?? null);
+fs.writeFileSync(log, JSON.stringify(pins));
+const flag = process.argv.find(arg => arg.startsWith('--outputFile.json='));
+const failed = pins.length === 1;
+if (flag) fs.writeFileSync(flag.slice('--outputFile.json='.length), JSON.stringify({
+  success: !failed,
+  testResults: [{ name: ${JSON.stringify(path.join(directory, 'src/a.test.ts'))}, status: failed ? 'failed' : 'passed', assertionResults: failed ? [{ status: 'failed', fullName: 'a' }] : [] }],
+}));
+process.exit(failed ? 1 : 0);
+`
+    );
+    await chmod(stub, 0o755);
+    const evidence = await runDeliveryChecks(directory, [
+      {
+        id: 'vitest-related',
+        command: stub,
+        args: ['run', 'test:related', 'src/a.ts'],
+        rerun: { kind: 'vitest', script: 'test:alone' },
+        node: '22.23.4',
+      },
+      { id: 'lint', command: stub, args: ['run', 'lint'] },
+    ]);
+    assert.deepEqual(
+      JSON.parse(await readFile(path.join(directory, 'pins.json'), 'utf8')),
+      ['22.23.4', '22.23.4', process.env.npm_config_use_node_version ?? null],
+      "the suite and its rerun ran pinned; lint kept the landing's Node"
+    );
+    assert.equal(evidence[0].node, '22.23.4');
+    assert.equal(evidence[1].node, undefined);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('a product-only change runs the product-tree pins, a delivery change the whole suite', () => {
   for (const paths of [
     ['src/components/workspace/tab-strip.tsx'],
@@ -1923,12 +2137,18 @@ test('a product-only change runs the product-tree pins, a delivery change the wh
       !checks.some(check => check.id === 'test:agent-delivery'),
       `${JSON.stringify(paths)} cannot reach the delivery system`
     );
-    const pins = checks.find(check => check.id === 'delivery-pins');
+    const { node, ...pins } = checks.find(
+      check => check.id === 'delivery-pins'
+    );
     assert.deepEqual(pins, {
       id: 'delivery-pins',
       command: 'pnpm',
       args: ['run', 'test:delivery-pins'],
     });
+    assert.equal(
+      node,
+      readFileSync(path.join(root, '.node-version'), 'utf8').trim()
+    );
   }
   for (const paths of [
     ['scripts/lib/delivery-policy.mjs'],
@@ -1957,9 +2177,16 @@ test('a product-only change runs the product-tree pins, a delivery change the wh
 });
 
 test('the product-tree pins are delivery tests, and the boundary is not a glob of the product', async () => {
-  const suite = JSON.parse(
+  const scripts = JSON.parse(
     readFileSync(path.join(root, 'package.json'), 'utf8')
-  ).scripts['test:agent-delivery'];
+  ).scripts;
+  // BUG-319: membership is the directory, so adding a test never edits a
+  // shared line two packets could both change.
+  assert.equal(scripts['test:agent-delivery'], `node --test ${DELIVERY_SUITE}`);
+  const suite = deliverySuiteFiles(
+    git(root, ['ls-files']).split('\n').filter(Boolean)
+  );
+  assert.ok(suite.length > 0, 'the delivery suite runs some test');
   assert.equal(
     JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).scripts[
       'test:delivery-pins'
@@ -2096,12 +2323,10 @@ test('a recorded pass is reused only on identical inputs, and never for a gate',
 // not run the whole suite, so no script the suite loads or launches may
 // reach core any other way.
 test('the delivery suite reaches @exawatt/core only through its declared entry points', () => {
-  const suite = JSON.parse(
-    readFileSync(path.join(root, 'package.json'), 'utf8')
-  ).scripts['test:agent-delivery'];
-  const tests = [...suite.matchAll(/scripts\/[\w./-]+\.test\.mjs/gu)].map(
-    match => match[0]
+  const tests = deliverySuiteFiles(
+    git(root, ['ls-files']).split('\n').filter(Boolean)
   );
+  assert.ok(tests.length > 0, 'the delivery suite runs some test');
   const testSources = tests
     .map(file => readFileSync(path.join(root, file), 'utf8'))
     .join('\n');
@@ -2252,12 +2477,10 @@ test('a change inside one module, off its public surface, owes that module and i
     '--no-error-on-unmatched-pattern',
     ...[...declared.paths].sort(),
   ]);
-  assert.deepEqual(checks.find(check => check.id === 'type-check:modules').args, [
-    'run',
-    'type-check:modules',
-    '--',
-    file,
-  ]);
+  assert.deepEqual(
+    checks.find(check => check.id === 'type-check:modules').args,
+    ['run', 'type-check:modules', '--', file]
+  );
   const tests = checks.find(check => check.id === 'module-tests');
   assert.ok(tests.files.includes(file.replace(/\.tsx?$/u, '.test.ts')));
   assert.deepEqual(tests.files, tests.args.slice(3, -1));
@@ -2275,7 +2498,9 @@ test('a public surface change keeps the whole checks and the repository-wide rel
   for (const id of ['lint', 'type-check', 'modules:check', 'vitest-related']) {
     assert.ok(names.includes(id), `${entrypoint} owes ${id}`);
   }
-  assert.ok(!names.includes('lint:modules') && !names.includes('type-check:modules'));
+  assert.ok(
+    !names.includes('lint:modules') && !names.includes('type-check:modules')
+  );
   assert.deepEqual(checks.find(check => check.id === 'vitest-related').args, [
     'run',
     'test:related',

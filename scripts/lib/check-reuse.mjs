@@ -24,7 +24,8 @@ const execFileAsync = promisify(execFile);
  *
  * - the key is a SHA-256 over content hashes, never timestamps: the git tree
  *   of the exact committed HEAD, the exact command and arguments, the
- *   installed dependency lock, the Node version and platform, the worktree's
+ *   installed dependency lock, the Node version (and the CI release a pinned
+ *   suite runs under) and platform, the worktree's
  *   real path, and the environment variables that change what a check
  *   proves;
  * - only checks listed in `REUSABLE_CHECKS` are eligible. Surface gates and
@@ -55,7 +56,9 @@ const KEY_ENVIRONMENT =
  * follows the import graph, and several delivery pins read the whole tree).
  */
 export const REUSABLE_CHECKS = new Set([
-  'open-source:paths:check',
+  // Not `open-source:paths:check`: it also classifies each commit the
+  // landing adds (BUG-321), and one tree can be reached by histories the
+  // projection answers differently.
   'content:scan',
   'lint',
   // Not `type-check`: it also builds @exawatt/core's runtime, which the
@@ -165,6 +168,8 @@ export async function openCheckReuse(root, { env = process.env } = {}) {
         platform: `${process.platform}-${process.arch}`,
         worktree: context.worktree,
         environment: context.environment,
+        // The Node a pinned suite runs under (BUG-320), not the landing's.
+        ...(check.node ? { checkNode: check.node } : {}),
       })
     );
   };

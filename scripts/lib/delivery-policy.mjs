@@ -1323,6 +1323,68 @@ export function deliveryAffectingPath(file, tree = deliveryTree()) {
  * renderers over the documents, and the runbook links. About 40 seconds
  * together; they run on every landing the whole suite does not.
  */
+/**
+ * The Node release public CI and the release builds run, read from the tree
+ * being checked (BUG-320). `.node-version` is the one copy: every workflow's
+ * `setup-node` reads it (`node-version-file`), and the landing runs its test
+ * suites under it through pnpm's own runtime pin (`use-node-version`), which
+ * fetches that exact release once per machine and puts it first on every
+ * script's PATH. Landings had run the suites on this Mac's Node 26 while CI
+ * ran 22, and three commits passed every landing and failed CI on 22 alone.
+ * Null for a tree without the file, whose suites run on the landing's Node.
+ */
+export const CI_NODE_VERSION_FILE = '.node-version';
+const CI_NODE_VERSION = /^\d+\.\d+\.\d+$/u;
+const ciNodeVersion = perTree(tree => {
+  let source;
+  try {
+    source = treeGit(tree, ['show', `${tree.hash}:${CI_NODE_VERSION_FILE}`]);
+  } catch {
+    return null;
+  }
+  const version = source.trim().replace(/^v/u, '');
+  // A range or alias would let CI and the landing resolve different
+  // releases, so only an exact one is a pin.
+  if (!CI_NODE_VERSION.test(version)) {
+    throw new Error(
+      `${CI_NODE_VERSION_FILE} must name one exact Node release (like 22.23.4), not ${JSON.stringify(source.trim())}`
+    );
+  }
+  return version;
+});
+
+/**
+ * The checks that run a test suite, which run under CI's Node. The other
+ * landing checks keep the landing's Node: surface gates and evals drive a
+ * dev server and Electron, which CI does not run.
+ */
+const CI_NODE_CHECKS = new Set([
+  'test:agent-delivery',
+  'delivery-pins',
+  'vitest-related',
+  'module-tests',
+  'full-suite',
+  'scanning-tests',
+  'test:service-conformance',
+]);
+
+/**
+ * The whole delivery suite: every top-level test in `scripts/` (BUG-319).
+ * Its membership was one 2,700-character `package.json` line naming every
+ * file, so any two packets that each added a delivery test conflicted on it
+ * and a train refused before any check, three times on 2026-10-22. A test
+ * joins by existing; `pnpm test:agent-delivery` is `node --test` over this
+ * glob, which the shell expands, and the public tree's glob matches only the
+ * tests it was given, so its package.json needs no list of private ones.
+ */
+export const DELIVERY_SUITE = 'scripts/*.test.mjs';
+
+/** The files of `files` (repository-relative) the delivery suite runs. */
+export function deliverySuiteFiles(files) {
+  const suite = globExpression(DELIVERY_SUITE);
+  return files.filter(file => suite.test(file)).sort();
+}
+
 // `pnpm test:delivery-pins` runs exactly these; `delivery-policy.test.mjs`
 // holds the package script to this list.
 export const PRODUCT_TREE_PINS = Object.freeze([
@@ -1484,10 +1546,14 @@ export function classifyDeliveryPolicy(
   // infrastructure, the whole Vitest suite.
   const whole = wholeRepo || !scope || scope.wholeRepo;
   const checks = [
+    // BUG-321: first, and in seconds, the public projection's own question:
+    // every path each commit adds, classified by that commit's manifest. A
+    // train that passed an hour of checks was refused there on 2026-10-22.
+    // Then every tracked path of the tree.
     {
       id: 'open-source:paths:check',
       command: 'pnpm',
-      args: ['run', 'open-source:paths:check'],
+      args: ['run', 'open-source:paths:check', '--', '--landing'],
     },
     {
       id: 'content:scan',
@@ -1918,9 +1984,14 @@ export function classifyDeliveryPolicy(
     checks.push({ id: script, command: 'pnpm', args: ['run', script] });
   }
 
+  const node = ciNodeVersion(tree);
   const repositoryOwned = new Map();
   for (const check of checks) {
-    if (!repositoryOwned.has(check.id)) repositoryOwned.set(check.id, check);
+    if (repositoryOwned.has(check.id)) continue;
+    repositoryOwned.set(
+      check.id,
+      node && CI_NODE_CHECKS.has(check.id) ? { ...check, node } : check
+    );
   }
   return [...repositoryOwned.values()];
 }
@@ -2044,6 +2115,11 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'test:worktree-setup': LANDING,
   'test:scripts-layout': LANDING,
   'test:github-security': LANDING,
+  // BUG-319: their tests are top-level `scripts/` tests, so the delivery
+  // suite runs them.
+  'community:check': LANDING,
+  'test:publication': LANDING,
+  'test:asset-provenance': LANDING,
   'agent-sources:check': LANDING,
   'icon:check': LANDING,
   'company:proof': LANDING,
@@ -2120,9 +2196,6 @@ export const VERIFICATION_ROUTES = Object.freeze({
   'publication:check': CI,
   'security:audit:prod': CI,
   'licenses:check': CI,
-  'community:check': CI,
-  'test:publication': CI,
-  'test:asset-provenance': CI,
   'test:contracts': CI,
   'test:distribution': CI,
   'test:enrichment-distribution': CI,
@@ -2363,12 +2436,28 @@ export function rerunTooWideReport(checkId, failures) {
   ].join('\n');
 }
 
-async function spawnCheck(root, command, args) {
+/**
+ * The environment a check runs in. A check pinned to CI's Node (`node`, from
+ * `.node-version`, BUG-320) runs its pnpm command with pnpm's
+ * `use-node-version` set to it, so pnpm, every script it runs and every
+ * binary those call resolve `node` to that release.
+ */
+export function checkEnvironment(check, env = process.env) {
+  if (!check.node) return env;
+  if (path.basename(check.command) !== 'pnpm') {
+    throw new Error(
+      `${check.id} is pinned to Node ${check.node}, which only a pnpm command can honour`
+    );
+  }
+  return { ...env, npm_config_use_node_version: check.node };
+}
+
+async function spawnCheck(root, check, args = check.args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(check.command, args, {
       cwd: root,
       stdio: 'inherit',
-      env: process.env,
+      env: checkEnvironment(check),
     });
     child.once('error', reject);
     child.once('exit', code => resolve(code ?? 1));
@@ -2395,7 +2484,7 @@ async function runVitestCheck(root, check) {
   );
   try {
     const firstReport = path.join(workspace, 'selection.json');
-    const code = await spawnCheck(root, check.command, [
+    const code = await spawnCheck(root, check, [
       ...check.args,
       ...vitestReportArgs(firstReport),
     ]);
@@ -2420,7 +2509,7 @@ async function runVitestCheck(root, check) {
       `[agent-land] ${check.id} named ${failures.length} failing file(s); re-running them alone once (BUG-090).`
     );
     const rerunReport = path.join(workspace, 'isolated.json');
-    await spawnCheck(root, check.command, [
+    await spawnCheck(root, check, [
       'run',
       check.rerun.script,
       ...failures.map(entry => entry.file),
@@ -2489,7 +2578,7 @@ async function runOneCheck(root, check) {
       message: missingCheckFilesMessage(check, missing),
     };
   if (check.rerun?.kind === 'vitest') return runVitestCheck(root, check);
-  const code = await spawnCheck(root, check.command, check.args);
+  const code = await spawnCheck(root, check);
   return code === 0
     ? { status: 'passed' }
     : { status: 'failed', message: exitMessage(check, code) };
@@ -2610,7 +2699,7 @@ export async function runDeliveryChecks(
       await beforeCheck(check);
       const startedAt = Date.now();
       console.log(
-        `[agent-land] ${phase} landing checks: ${check.command} ${check.args.join(' ')}`
+        `[agent-land] ${phase} landing checks: ${check.command} ${check.args.join(' ')}${check.node ? ` (Node ${check.node}, as CI runs it)` : ''}`
       );
       let outcome = await attemptCheck(root, check);
       if (recheck && outcome.status === 'failed') {
@@ -2626,6 +2715,7 @@ export async function runDeliveryChecks(
         // got, so a slot queue is measurable rather than inferred.
         slotMode: slot.mode,
         slotWaitMs: slot.waitedMs,
+        ...(check.node ? { node: check.node } : {}),
         ...(outcome.detail ?? {}),
       };
       if (outcome.status === 'failed') {

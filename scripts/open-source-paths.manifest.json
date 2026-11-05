@@ -8,6 +8,7 @@
         ".gitattributes",
         ".gitignore",
         ".impeccable.md",
+        ".node-version",
         ".npmrc",
         ".prettierrc",
         "ASSET_PROVENANCE.json",

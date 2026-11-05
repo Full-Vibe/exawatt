@@ -165,7 +165,55 @@ function option(args, name) {
   return value;
 }
 
-async function check() {
+/**
+ * BUG-321. The landing form asks the public projection's own question first:
+ * every commit HEAD adds, each path it changes classified by the manifest
+ * that commit carries (`checkCommitClassification`, the replay's own steps
+ * and classifier). The tree check below cannot see a commit that adds a file
+ * only a later commit classifies; the projection refuses that commit.
+ */
+async function checkLandingCommits(args) {
+  const { checkCommitClassification } =
+    await import('./lib/public-projection.mjs');
+  const base = (
+    await git([
+      'rev-parse',
+      '--verify',
+      (option(args, '--base') ??
+        (await git(['merge-base', 'origin/master', 'HEAD'])).trim()) +
+        '^{commit}',
+    ])
+  ).trim();
+  const head = (await git(['rev-parse', '--verify', 'HEAD^{commit}'])).trim();
+  let asked;
+  try {
+    asked = await checkCommitClassification({
+      sourceRepo: ROOT,
+      baseSha: base,
+      sourceSha: head,
+    });
+  } catch (error) {
+    throw new Error(
+      [
+        '[open-source-paths] the public projection would refuse this history: ' +
+          error.message,
+        'It replays each commit against the manifest that commit carries, so the',
+        'commit that adds a path must classify it. Move the manifest entry into',
+        'that commit (git rebase -i), then land again.',
+      ].join('\n')
+    );
+  }
+  process.stdout.write(
+    '[open-source-paths] each of the ' +
+      asked.commits +
+      ' commit(s) ' +
+      base.slice(0, 12) +
+      '..HEAD adds classifies every path it changes by its own manifest\n'
+  );
+}
+
+async function check(args = []) {
+  if (args.includes('--landing')) await checkLandingCommits(args);
   const manifest = await readPathManifest(
     path.join(ROOT, OPEN_SOURCE_PATH_MANIFEST)
   );
@@ -237,11 +285,14 @@ async function main() {
     process.stdout.write(
       [
         'Usage:',
-        '  pnpm open-source:paths:check',
+        '  pnpm open-source:paths:check [-- --landing [--base <rev>]]',
         '  pnpm open-source:paths:plan -- --source <commit> [--reviewed-tree <dir>]',
         '  pnpm open-source:paths:project -- --source <commit>',
         '',
-        'The check fails closed on every unclassified tracked path. A plan',
+        'The check fails closed on every unclassified tracked path. With',
+        '--landing it first classifies every path each commit HEAD adds to',
+        '<rev> (default: where HEAD leaves origin/master) changes, by that',
+        "commit's own manifest, as the public projection does. A plan",
         'records the exact source commit, tree, manifest blob, Git blobs and',
         'modes. --reviewed-tree additionally locks every reviewed output hash.',
         '',
@@ -249,7 +300,8 @@ async function main() {
     );
     return;
   }
-  if (command === 'check') return check();
+  if (command === 'check')
+    return check(args.slice(1).filter(arg => arg !== '--'));
   if (command === 'plan') return plan(args.slice(1));
   if (command === 'project') return project(args.slice(1));
   throw new Error('[open-source-paths] unknown command ' + command);

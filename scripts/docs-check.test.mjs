@@ -17,9 +17,11 @@ import { after, before, describe, it, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  DELIVERY_SUITE,
   RECIPE_RENDERERS_CHECK,
   classifyDeliveryPolicy,
   classifyDocsChecks,
+  deliverySuiteFiles,
 } from './lib/delivery-policy.mjs';
 import { LANDING_CHECKS_VERIFIED_ENV } from './lib/docs-check.mjs';
 import { git, gitOutcome, hermeticGitEnv } from './lib/hermetic-git.mjs';
@@ -63,11 +65,10 @@ test('docs:check runs the landing checks’ own check definitions', () => {
     readFileSync(path.join(ROOT, 'package.json'), 'utf8')
   ).scripts;
   assert.ok(landing.has('test:agent-delivery'));
-  assert.ok(
-    scripts['test:agent-delivery']
-      .split(' ')
-      .includes(RECIPE_RENDERERS_CHECK.args.at(-1))
-  );
+  assert.equal(scripts['test:agent-delivery'], `node --test ${DELIVERY_SUITE}`);
+  assert.deepEqual(deliverySuiteFiles([RECIPE_RENDERERS_CHECK.args.at(-1)]), [
+    RECIPE_RENDERERS_CHECK.args.at(-1),
+  ]);
   // A documentation-only change runs it as one of the product-tree pins.
   assert.ok(
     classifyDeliveryPolicy(['docs/engineering/roadmap.md']).some(

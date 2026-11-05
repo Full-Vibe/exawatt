@@ -1303,6 +1303,123 @@ async function readManifestState(sourceRepo, commit, manifestPath) {
   return { blob, manifest, classify: createPathClassifier(manifest) };
 }
 
+/**
+ * Every path one commit changes, classified by that commit's own manifest:
+ * the question the replay asks of a commit that leaves the manifest alone. A
+ * path the manifest does not classify throws here, which is how a commit
+ * that adds a file a LATER commit classifies is refused (BUG-321).
+ */
+function classifyChangedPaths(manifestState, changedPaths) {
+  return changedPaths.map(file => [file, manifestState.classify(file)]);
+}
+
+/**
+ * What the replay reads of one source commit before it projects it: the
+ * paths it changes from the commit before it, and the manifest it carries,
+ * re-read only when its blob moved. A commit that moves the manifest is
+ * answered by Gate A over its whole tree (`buildProjectionPlan`); any other
+ * by `classifyChangedPaths`.
+ */
+async function sourceCommitStep({
+  sourceRepo,
+  previousSource,
+  commit,
+  manifestPath,
+  manifestState,
+}) {
+  const sourcePaths = nullSeparatedPaths(
+    await git(
+      [
+        'diff-tree',
+        '--no-commit-id',
+        '--name-only',
+        '-r',
+        '-z',
+        previousSource,
+        commit,
+      ],
+      { cwd: sourceRepo, encoding: 'buffer' }
+    )
+  );
+  const manifestBlob = (
+    await git(['rev-parse', `${commit}:${manifestPath}`], {
+      cwd: sourceRepo,
+    })
+  ).trim();
+  if (manifestBlob === manifestState.blob) {
+    return { sourcePaths, manifestState, manifestChanged: false };
+  }
+  return {
+    sourcePaths,
+    manifestState: await readManifestState(sourceRepo, commit, manifestPath),
+    manifestChanged: true,
+  };
+}
+
+/**
+ * The projection's classification question, asked of every commit
+ * `baseSha..sourceSha` adds, before any of them reaches master (BUG-321).
+ *
+ * The replay projects private history one commit at a time, each against
+ * the manifest as of that commit, so a commit that adds a file only a later
+ * commit classifies is refused by the projection even though the final tree
+ * classifies every path. A landing's tree check could not see that: on
+ * 2026-10-22 a train ran an hour of checks and gates and then the projection
+ * refused it. This walks the same commits with the replay's own steps and
+ * classifier (a manifest change answered by Gate A over the whole tree, any
+ * other commit by its changed paths), so a landing asks the same question in
+ * seconds. The history must be linear, as the replay requires. Throws naming
+ * the commit; returns how many commits it asked about.
+ */
+export async function checkCommitClassification({
+  sourceRepo,
+  baseSha,
+  sourceSha,
+  manifestPath = OPEN_SOURCE_PATH_MANIFEST,
+}) {
+  const commits = await sourceCommitsAfter(sourceRepo, baseSha, sourceSha);
+  let manifestState = await readManifestState(
+    sourceRepo,
+    baseSha,
+    manifestPath
+  );
+  let previousSource = baseSha;
+  const blobCache = new Map();
+  for (const commit of commits) {
+    try {
+      const step = await sourceCommitStep({
+        sourceRepo,
+        previousSource,
+        commit,
+        manifestPath,
+        manifestState,
+      });
+      manifestState = step.manifestState;
+      if (step.manifestChanged) {
+        await buildProjectionPlan({
+          sourceRepo,
+          sourceSha: commit,
+          manifestPath,
+          blobCache,
+        });
+      } else {
+        classifyChangedPaths(manifestState, step.sourcePaths);
+      }
+    } catch (error) {
+      const subject = (
+        await git(['log', '-1', '--format=%s', commit], { cwd: sourceRepo })
+      ).trim();
+      const refusal = new Error(
+        `${commit.slice(0, 12)} (${subject}): ${error.message.replace(/^\[[\w-]+\] /u, '')}`
+      );
+      refusal.commit = commit;
+      throw refusal;
+    }
+    previousSource = commit;
+  }
+  return { commits: commits.length };
+}
+
 async function applyPublicCommitChanges({
   sourceRepo,
   commit,
@@ -1322,8 +1439,10 @@ async function applyPublicCommitChanges({
   const tracked = new Map(entries.map(entry => [entry.path, entry]));
   const affectedRecipes = new Set();
 
-  for (const file of changedPaths) {
-    const classification = manifestState.classify(file);
+  for (const [file, classification] of classifyChangedPaths(
+    manifestState,
+    changedPaths
+  )) {
     if (classification.classification === 'PUBLIC') {
       const entry = tracked.get(file);
       if (entry) {
@@ -1487,28 +1606,17 @@ async function replayAfterEpoch({
   );
 
   for (const commit of commits) {
-    const sourcePaths = nullSeparatedPaths(
-      await git(
-        [
-          'diff-tree',
-          '--no-commit-id',
-          '--name-only',
-          '-r',
-          '-z',
-          previousSource,
-          commit,
-        ],
-        { cwd: sourceRepo, encoding: 'buffer' }
-      )
-    );
-    const manifestBlob = (
-      await git(['rev-parse', `${commit}:${manifestPath}`], {
-        cwd: sourceRepo,
-      })
-    ).trim();
+    const step = await sourceCommitStep({
+      sourceRepo,
+      previousSource,
+      commit,
+      manifestPath,
+      manifestState,
+    });
+    const { sourcePaths } = step;
+    manifestState = step.manifestState;
     let nextTree;
-    if (manifestBlob !== manifestState.blob) {
-      manifestState = await readManifestState(sourceRepo, commit, manifestPath);
+    if (step.manifestChanged) {
       tipSnapshot = await materializePublicSnapshot({
         sourceRepo,
         sourceSha: commit,
