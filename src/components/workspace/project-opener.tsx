@@ -30,6 +30,10 @@ import {
 import type { ProjectImportCandidate } from '@exawatt/core/desktop-bridge';
 import { ProjectCard, ProjectRoutes } from './project-routes';
 import {
+  nativeDialogFailureMessage,
+  useNativeDialog,
+} from '@/lib/native-dialog/native-dialog';
+import {
   YourProjects,
   type SuggestionOpen,
 } from './start-screen/your-projects';
@@ -55,12 +59,12 @@ const REGISTRY_LABEL: Record<RegistryPosition, string | null> = {
  * route it is on.
  *
  * The route is not standing state beside `open`. The chooser closes itself
- * to hand the screen to Connect and reopens itself when Connect is cancelled
- * or the native folder picker is dismissed; a route that survived that round
- * trip re-entered Connect on every reopen, so File → Connect a server…
- * could never be cancelled (BUG-147). With closed as a member of the same
- * value, the chooser reopening itself lands on the Project routes, and only
- * a fresh summons can put it on Connect.
+ * to hand the screen to Connect and reopens itself when Connect is
+ * cancelled; a route that survived that round trip re-entered Connect on
+ * every reopen, so File → Connect a server… could never be cancelled
+ * (BUG-147). With closed as a member of the same value, the chooser
+ * reopening itself lands on the Project routes, and only a fresh summons can
+ * put it on Connect.
  */
 export function useProjectOpenerState(): {
   open: boolean;
@@ -160,23 +164,21 @@ export function ProjectOpener({
     null
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [nativePicker, setNativePicker] = useState<
-    'browse' | 'import' | 'locate' | null
-  >(null);
+  // The native folder picker is a sheet over this chooser, not a step out of
+  // it: the chooser stays open underneath, so cancelling is simply the sheet
+  // going away (BUG-327).
+  const picker = useNativeDialog<'browse' | 'import' | 'locate'>();
   const [connectOpen, setConnectOpen] = useState(false);
   const [suggestionsListed, setSuggestionsListed] = useState(0);
   // Connecting runs a tunnel and a Gateway handshake from the main process,
   // so outside the desktop app the route says so instead of failing later.
   const [connectSupported, setConnectSupported] = useState(true);
-  const nativePickerActive = useRef(false);
-  const releaseNativePicker = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!open) {
-      // A native picker temporarily replaces this modal. Preserve its state
-      // while control belongs to the OS so cancel/error can return the user to
-      // exactly the chooser they left.
-      if (!nativePicker && !connectOpen) {
+      // Connect temporarily replaces this modal; keep its state so cancelling
+      // returns the operator to exactly the chooser they left.
+      if (!connectOpen) {
         setQuery('');
         setCandidates(null);
         setError(null);
@@ -209,7 +211,7 @@ export function ProjectOpener({
     return () => {
       cancelled = true;
     };
-  }, [open, nativePicker, connectOpen]);
+  }, [open, connectOpen]);
 
   const library = useMemo(
     () => mergeProjectLibrary(synced, workspaceProjects, recents),
@@ -257,46 +259,17 @@ export function ProjectOpener({
     [library]
   );
 
+  /** Ask for a folder; the path, or null after saying why there is none. */
   const pickDirectory = async (
-    kind: NonNullable<typeof nativePicker>,
+    kind: 'browse' | 'import' | 'locate',
     title: string
-  ): Promise<{ started: boolean; path: string | null }> => {
-    if (nativePickerActive.current) return { started: false, path: null };
-    nativePickerActive.current = true;
-    setNativePicker(kind);
+  ): Promise<string | null> => {
     setError(null);
-
-    const dialogReleased = new Promise<void>(resolve => {
-      releaseNativePicker.current = resolve;
-    });
-    onOpenChange(false);
-
-    // Radix keeps its FocusScope mounted through the close animation. A frame
-    // is not a lifecycle boundary: AppKit can receive the sheet request while
-    // the web modal still owns focus, leaving the native picker invisible and
-    // this control permanently disabled. Wait for Radix's close-auto-focus
-    // phase, which runs only after the modal focus scope has been released.
-    await dialogReleased;
-    try {
-      return {
-        started: true,
-        path: (await window.electron?.dialog?.openDirectory(title)) ?? null,
-      };
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'The folder picker could not be opened.'
-      );
-      return { started: true, path: null };
-    }
-  };
-
-  const finishDirectoryPick = (reopen: boolean) => {
-    nativePickerActive.current = false;
-    releaseNativePicker.current = null;
-    if (reopen) onOpenChange(true);
-    setNativePicker(null);
+    const outcome = await picker.pickDirectory(kind, title);
+    if (outcome.status === 'picked') return outcome.path;
+    const message = nativeDialogFailureMessage(outcome);
+    if (message) setError(message);
+    return null;
   };
 
   // Connecting is a route out of this chooser, so it takes the screen the way
@@ -334,15 +307,10 @@ export function ProjectOpener({
     let dir = project.rootPath;
     const exists = await window.electron?.dialog?.pathExists(dir);
     if (exists === false) {
-      const pick = await pickDirectory('locate', `Locate ${project.name}`);
-      if (!pick.started) return;
-      if (!pick.path) {
-        finishDirectoryPick(true);
-        return;
-      }
-      let opened = false;
+      const located = await pickDirectory('locate', `Locate ${project.name}`);
+      if (!located) return;
       try {
-        const resolved = await window.electron?.projects?.resolve(pick.path);
+        const resolved = await window.electron?.projects?.resolve(located);
         if (!resolved) return;
         if (!resolved.ok) {
           setError(resolved.error);
@@ -352,17 +320,14 @@ export function ProjectOpener({
         if (project.registryId) {
           await rebindProjectPath(project.registryId, dir).catch(() => {});
         }
-        opened = await onOpenProject(dir, { source: 'recent' });
       } catch (cause) {
         setError(
           cause instanceof Error
             ? cause.message
             : 'The selected Project could not be opened.'
         );
-      } finally {
-        finishDirectoryPick(!opened);
+        return;
       }
-      return;
     }
     try {
       if (await onOpenProject(dir, { source: 'recent' })) onOpenChange(false);
@@ -376,38 +341,25 @@ export function ProjectOpener({
   };
 
   const browse = async () => {
-    const pick = await pickDirectory('browse', 'Open Project');
-    if (!pick.started) return;
-    if (!pick.path) {
-      finishDirectoryPick(true);
-      return;
-    }
-    let opened = false;
+    const dir = await pickDirectory('browse', 'Open Project');
+    if (!dir) return;
     try {
-      opened = await onOpenProject(pick.path, { source: 'browse' });
+      if (await onOpenProject(dir, { source: 'browse' })) onOpenChange(false);
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
           : 'The selected Project could not be opened.'
       );
-    } finally {
-      finishDirectoryPick(!opened);
     }
   };
 
   const beginImport = async () => {
-    const pick = await pickDirectory(
+    const dir = await pickDirectory(
       'import',
       'Choose a folder containing Projects'
     );
-    if (!pick.started) return;
-    if (!pick.path) {
-      finishDirectoryPick(true);
-      return;
-    }
-    await reviewImport(pick.path);
-    finishDirectoryPick(true);
+    if (dir) await reviewImport(dir);
   };
 
   /** Scan a picked folder and put its Projects up for review. */
@@ -473,13 +425,6 @@ export function ProjectOpener({
                   none: 'Browsing is a chooser rather than a form: every row is its own action, and a default button over a list of Projects would have to pick one of them arbitrarily.',
                 }
           }
-          onCloseAutoFocus={event => {
-            if (!nativePickerActive.current) return;
-            event.preventDefault();
-            const release = releaseNativePicker.current;
-            releaseNativePicker.current = null;
-            release?.();
-          }}
           className="flex max-h-[min(760px,calc(100vh-3rem))] w-[min(820px,calc(100vw-2rem))] max-w-none flex-col overflow-hidden rounded-md border p-0 sm:max-w-none"
           style={{
             background: HUD.bg.deep,
@@ -704,7 +649,7 @@ export function ProjectOpener({
                 style={{ borderColor: HUD.strokeFaint }}
               >
                 <ProjectRoutes
-                  disabled={nativePicker !== null}
+                  disabled={picker.pending !== null}
                   connectSupported={connectSupported}
                   onBrowse={() => void browse()}
                   onImport={() => void beginImport()}

@@ -116,6 +116,7 @@ import {
 } from '@/components/feedback/quick-feedback-events';
 import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
 import type { Project } from '@/lib/projects/registry';
+import { requestDirectory } from '@/lib/native-dialog/native-dialog';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { demoSessionRows } from '@/lib/demo-workspace/model';
@@ -578,10 +579,11 @@ export function CommandPalette({
         if (!dir) return;
         const exists = await window.electron?.dialog?.pathExists?.(dir);
         if (exists === false) {
-          const picked = await window.electron?.dialog?.openDirectory();
-          if (!picked) return; // cancelled — leave it unavailable this time
-          await rebindProjectPath(p.id, picked).catch(() => {});
-          dir = picked;
+          const pick = await requestDirectory(`Locate ${p.name}`);
+          // cancelled — leave it unavailable this time
+          if (pick.status !== 'picked') return;
+          await rebindProjectPath(p.id, pick.path).catch(() => {});
+          dir = pick.path;
         }
         requestOpenProject(dir);
         if (!inWorkspace()) navigateCommandSurface('/workspace');

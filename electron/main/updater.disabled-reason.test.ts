@@ -12,7 +12,6 @@ const { autoUpdater, handleTrusted, showMessageBox } = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   app: { name: 'Orbit', getVersion: () => '0.1.9', getPath: () => '/tmp' },
   BrowserWindow: { getAllWindows: () => [] },
-  dialog: { showMessageBox },
 }));
 vi.mock('electron-updater', () => ({ autoUpdater }));
 vi.mock('./ipc-security', () => ({ handleTrusted }));
@@ -91,7 +90,9 @@ describe('registerProductUpdater', () => {
   it('uses the resolved application name in native update copy', async () => {
     showMessageBox.mockClear();
 
-    await checkForUpdatesFromMenu();
+    await checkForUpdatesFromMenu({
+      messageBox: (_parent, options) => showMessageBox(options),
+    });
 
     expect(showMessageBox).toHaveBeenCalledWith(
       expect.objectContaining({

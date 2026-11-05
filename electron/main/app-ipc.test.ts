@@ -121,9 +121,9 @@ describe('dialogChannels', () => {
   function dialogs(env: NodeJS.ProcessEnv = {}) {
     const opened: unknown[][] = [];
     const table = dialogChannels({
-      openDirectoryPicker: async (...args) => {
+      openDirectory: async (...args) => {
         opened.push(args);
-        return '/Users/operator/project';
+        return { status: 'picked', path: '/Users/operator/project' };
       },
       windowFor: given => (given === sender ? parent : null),
       env,
@@ -134,15 +134,19 @@ describe('dialogChannels', () => {
 
   it('opens the native picker over the asking window', async () => {
     const { table, opened } = dialogs();
-    expect(await call(table, 'dialog:openDirectory', 'Open Project')).toBe(
-      '/Users/operator/project'
-    );
+    expect(await call(table, 'dialog:openDirectory', 'Open Project')).toEqual({
+      status: 'picked',
+      path: '/Users/operator/project',
+    });
     expect(opened).toEqual([[parent, 'Open Project']]);
   });
 
   it('answers the fixed test directory only when both test gates are set', async () => {
     const gated = dialogs({ EXAWATT_TEST: '1', EXAWATT_TEST_DIR: '/tmp/x' });
-    expect(await call(gated.table, 'dialog:openDirectory')).toBe('/tmp/x');
+    expect(await call(gated.table, 'dialog:openDirectory')).toEqual({
+      status: 'picked',
+      path: '/tmp/x',
+    });
     expect(gated.opened).toEqual([]);
 
     const stray = dialogs({ EXAWATT_TEST_DIR: '/tmp/x' });
@@ -402,9 +406,6 @@ describe('registerMainChannels', () => {
           fromWebContents: () => null,
           getAllWindows: () => [],
         },
-        dialog: {
-          showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
-        },
         shell: { showItemInFolder: () => {} },
         nativeTheme: {
           shouldUseDarkColors: false,
@@ -435,6 +436,10 @@ describe('registerMainChannels', () => {
       },
       env: {},
       appearance: { 'app:appearance': () => ({}) },
+      nativeDialogs: {
+        openDirectory: async () => ({ status: 'cancelled' }),
+        messageBox: async () => ({ response: 0, checkboxChecked: false }),
+      },
       record: () => {},
       tables,
     });

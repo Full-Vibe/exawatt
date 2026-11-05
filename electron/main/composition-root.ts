@@ -85,6 +85,7 @@ import {
   testWindowPosition,
 } from './window';
 import { resolveWindowLaunchMode } from './window-launch-mode';
+import { createNativeDialogBroker } from './native-dialogs';
 import {
   loadWorkspace,
   mergeHarnessIdentities,
@@ -132,6 +133,19 @@ if (!isDev) assertPackagedRendererComposition(process.resourcesPath, buildInfo);
 
 const runtime = new CommandRuntime();
 const mainDiagnostics = openMainDiagnostics(userDataPath());
+/** Every native dialog, the renderer's and main's own, takes turns here. */
+const nativeDialogs = createNativeDialogBroker<BrowserWindow>({
+  platform: process.platform,
+  showOpenDialog: (parent, options) =>
+    parent
+      ? dialog.showOpenDialog(parent, options)
+      : dialog.showOpenDialog(options),
+  showMessageBox: (parent, options) =>
+    parent
+      ? dialog.showMessageBox(parent, options)
+      : dialog.showMessageBox(options),
+  record: mainDiagnostics,
+});
 // Process deaths are bounded so a helper stuck in a crash loop cannot fill
 // the diagnostics log (BUG-223), and bounded per family (`child`, `renderer`,
 // `renderer-server`) so that loop cannot silence the renderer's own record.
@@ -182,10 +196,10 @@ const checkpoints = createCheckpointBroker({ randomUUID });
 /** Reload Window or Quit, once automatic recovery is spent. */
 const askToRecover = sharedRecoveryPrompt(async () => {
   const prompt = rendererRecoveryPrompt(identity.productName);
-  const parent = mainWindow.live();
-  const { response } = parent
-    ? await dialog.showMessageBox(parent, prompt.options)
-    : await dialog.showMessageBox(prompt.options);
+  const { response } = await nativeDialogs.messageBox(
+    mainWindow.live(),
+    prompt.options
+  );
   return prompt.choice(response);
 });
 const rendererRecovery = createRendererRecovery({
@@ -196,7 +210,7 @@ const rendererRecovery = createRendererRecovery({
     // A hidden automation window has no one to ask; the run says the answer.
     if (isTest) return testHangChoice(env);
     const prompt = rendererHangPrompt(identity.productName);
-    const { response } = await dialog.showMessageBox(win as BrowserWindow, {
+    const { response } = await nativeDialogs.messageBox(win as BrowserWindow, {
       ...prompt.options,
       signal,
     });
@@ -271,12 +285,8 @@ routeSecondLaunches(app, {
 const shutdownSequence = createShutdownSequence({
   productName: identity.productName,
   env,
-  showMessageBox: options => {
-    const parent = mainWindow.live();
-    return parent
-      ? dialog.showMessageBox(parent, options)
-      : dialog.showMessageBox(options);
-  },
+  showMessageBox: options =>
+    nativeDialogs.messageBox(mainWindow.live(), options),
   window: () => mainWindow.current(),
   allWindows: () => BrowserWindow.getAllWindows(),
   // A cancelled quit hands the processes back: whatever died while shutdown
@@ -367,7 +377,7 @@ const menu = createMenuController({
         ? () => {
             // Asking is the operator taking back a dismissal.
             notices.forget('product-update:');
-            void runtime.checkForUpdatesFromMenu();
+            void runtime.checkForUpdatesFromMenu(nativeDialogs);
           }
         : undefined,
     onWindowManagementHelp: () =>
@@ -430,7 +440,6 @@ function startCommandSurface(): Promise<void> {
         electron: {
           app,
           BrowserWindow,
-          dialog,
           ipcMain,
           nativeTheme,
           shell,
@@ -442,6 +451,7 @@ function startCommandSurface(): Promise<void> {
         runtime,
         env,
         appearance: appearanceChannels(),
+        nativeDialogs,
         record: mainDiagnostics,
         syncRegistrations: [onSync => shutdownSequence.registerSync(onSync)],
         tables: [

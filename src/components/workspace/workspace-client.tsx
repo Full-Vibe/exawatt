@@ -57,6 +57,7 @@ import {
 import { navHistory, type NavLocation } from '@/components/nav/nav-history';
 import { operatorPosition } from '@/components/nav/operator-position';
 import { ProjectOpener, useProjectOpenerState } from './project-opener';
+import { requestDirectory } from '@/lib/native-dialog/native-dialog';
 import { StartScreen } from './start-screen/start-screen';
 import type { SuggestionOpen } from './start-screen/your-projects';
 import { suggestionOpenedContext } from './start-screen/project-suggestions';
@@ -511,16 +512,14 @@ export function WorkspaceClient() {
   // native picker opens directly; Import hands its picked folder to the
   // chooser's review, and Connect is the chooser's own route.
   const browseFromStart = useCallback(async () => {
-    const dir = await window.electron?.dialog
-      ?.openDirectory('Open Project')
-      .catch(() => null);
-    if (dir) await openProject(dir, { source: 'browse' });
+    const pick = await requestDirectory('Open Project');
+    if (pick.status === 'picked') {
+      await openProject(pick.path, { source: 'browse' });
+    }
   }, [openProject]);
   const importFromStart = useCallback(async () => {
-    const dir = await window.electron?.dialog
-      ?.openDirectory('Choose a folder containing Projects')
-      .catch(() => null);
-    if (dir) summonProjectOpener('import', dir);
+    const pick = await requestDirectory('Choose a folder containing Projects');
+    if (pick.status === 'picked') summonProjectOpener('import', pick.path);
   }, [summonProjectOpener]);
   /**
    * The active tab, told apart by kind.

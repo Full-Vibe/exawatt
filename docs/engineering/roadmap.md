@@ -5903,7 +5903,8 @@ Settings ▸ Fleet screenshots in Classic, Air and Night.
 
 ### BUG-327 New Project's Browse folder goes grey and stays unclickable
 
-Status: bug · ENG-016 · partner conversation 2026-10-29
+Status: fixed · ENG-016 · partner conversation 2026-10-29 · fixed 2026-11-04
+(execution front packet 7)
 
 The operator, live on the call: ⌘N, Project, Browse folder; the picker did not
 come up ("Did it work?") and Browse then stayed greyed out. A refresh and a
@@ -5912,6 +5913,28 @@ fixed and still describes in `src/components/workspace/project-opener.tsx`:
 Browse is disabled while `nativePicker` is set, and if the native sheet never
 appears the control is "permanently disabled". Start there: find the path that
 leaves `nativePicker` set without a sheet on screen.
+
+Cause: the chooser closed itself before asking for the picker and released
+Browse only from Radix's close-auto-focus phase. Anything that summoned the
+chooser again before its exit finished (a second summoner, an interrupted
+exit) cancelled that phase: no picker was requested, the chooser came back,
+and Browse stayed disabled until a reload. Main had no settle guarantee either:
+its single-flight picker handed every overlapping request, from any window,
+the first request's promise, so a sheet that never began held all of them.
+System change: one owner for native dialogs. `src/lib/native-dialog` is the
+renderer's only door (`requestDirectory`, `useNativeDialog`) and
+`electron/main/native-dialogs.ts` the only caller of `dialog.*` in main. Every
+folder request settles as picked, cancelled, or failed with a reason (`busy`,
+`not-presented` when AppKit begins no sheet within 2 s, `unavailable`,
+`error`), dialogs take turns per window, failures are recorded in
+`main.jsonl`, and the chooser stays open under the sheet, so cancel needs no
+reopen. Browse, Import, Locate, the Start screen, the ⌘K locate, and main's
+message boxes (quit, recovery, updater) all go through it; the per-call-site
+close-and-wait state machine and `directory-picker.ts` are deleted. Proof:
+`project-opener.test.tsx` reproduces the re-summon case (failed before the
+change), `native-dialogs.test.ts` and `native-dialog.test.tsx` hold the settle
+guarantee, and `eval:electron:project-agent` drives a sheet that never begins,
+a cancel, and a pick in the real app.
 
 ### BUG-328 The New Agent window opens the engine panel and the model defaults list at once
 

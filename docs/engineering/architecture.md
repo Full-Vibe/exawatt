@@ -85,7 +85,12 @@ server and its port policy, deep links, the window, the menu's runtime state,
 main's IPC channel tables, the shutdown sequence, and the command-surface
 bootstrap are separate modules. IPC registration is data: module registrars
 are rows in one ordered table and main's own channels are records keyed by
-channel name, all registered through `handleTrusted`.
+channel name, all registered through `handleTrusted`. Native dialogs have one
+owner on each side: `native-dialogs.ts` is main's only caller of `dialog.*`,
+lines up every dialog per window, and settles every folder request as picked,
+cancelled or failed with a reason (a macOS sheet that never begins is
+`not-presented`); the renderer asks only through `src/lib/native-dialog`,
+whose requests never reject and whose hook releases the control that asked.
 
 The source tree's module boundaries are declared in `modules.json`
 (ENG-039): 13 modules today (`core`, `ui-model`, the main-process `shell`,

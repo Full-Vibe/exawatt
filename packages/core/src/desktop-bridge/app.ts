@@ -276,6 +276,34 @@ export interface WorkspaceStorageRecovery {
   originalFile?: string;
 }
 
+/* ---- Native dialogs (ENG-016, BUG-327) ----------------------------------- */
+
+/**
+ * Why a native dialog request ended without an answer from the operator.
+ *
+ * - `busy`: this window already has a native dialog up; a second one would
+ *   stack behind it, so the request is refused instead of queued.
+ * - `not-presented`: the request reached AppKit and no sheet began on the
+ *   window. Nothing is on screen for the operator to answer.
+ * - `unavailable`: there is no desktop process to ask (the web build).
+ * - `error`: the native call threw; `detail` carries its message.
+ */
+export type NativeDialogFailure =
+  | 'busy'
+  | 'not-presented'
+  | 'unavailable'
+  | 'error';
+
+/**
+ * How a native folder request ended. Every request ends as exactly one of
+ * these and none of them is a rejection: a caller that awaits it always gets
+ * its control back.
+ */
+export type DirectoryPickOutcome =
+  | { status: 'picked'; path: string }
+  | { status: 'cancelled' }
+  | { status: 'failed'; reason: NativeDialogFailure; detail?: string };
+
 export type ProjectResolveResult =
   | { ok: true; projectDir: string; projectName: string }
   | { ok: false; error: string };

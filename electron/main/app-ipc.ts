@@ -20,7 +20,7 @@ import {
   buildDiagnosticsReport,
   type DiagnosticsReportInput,
 } from './diagnostics-report';
-import { createDirectoryPicker } from './directory-picker';
+import type { NativeDialogBroker } from './native-dialogs';
 import {
   distributionIpcCapabilities,
   type ResolvedDistribution,
@@ -32,6 +32,7 @@ import type {
   DesktopBridgeSyncChannel,
   DesktopBridgeSyncRequests,
   DiagnosticsReport,
+  DirectoryPickOutcome,
   ElectronAuthError,
   ElectronAuthLinkConfig,
   ElectronAuthStartConfig,
@@ -104,31 +105,28 @@ export function authChannels(deps: {
 }
 
 /** Native "Open project directory" picker (ENG-015 S5 P4) — lets the operator
- *  browse to a project instead of typing a path. Returns the chosen absolute
- *  path, or null if cancelled. */
+ *  browse to a project instead of typing a path. Answers through the native
+ *  dialog broker, so it always settles: picked, cancelled, or failed. */
 export function dialogChannels(deps: {
-  openDirectoryPicker: (
-    parent: BrowserWindow | null,
-    requestedTitle?: string
-  ) => Promise<string | null>;
+  openDirectory: NativeDialogBroker<BrowserWindow>['openDirectory'];
   windowFor: (sender: WebContents) => BrowserWindow | null;
   env: NodeJS.ProcessEnv;
   pathExists?: (candidate: string) => boolean;
 }): TrustedChannels {
   const pathExists = deps.pathExists ?? fs.existsSync;
   return {
-    'dialog:openDirectory': async (event, requestedTitle?: string) => {
+    'dialog:openDirectory': async (
+      event,
+      requestedTitle?: string
+    ): Promise<DirectoryPickOutcome> => {
       // test hook: skip the native modal (which automation can't drive) and
       // return a fixed directory, so ⌘N / Browse can be exercised end-to-end.
       // Double-gated (like the userData redirect) so a stray env var in a normal
       // launch can never silently replace the real folder picker.
       if (deps.env.EXAWATT_TEST && deps.env.EXAWATT_TEST_DIR) {
-        return deps.env.EXAWATT_TEST_DIR;
+        return { status: 'picked', path: deps.env.EXAWATT_TEST_DIR };
       }
-      return deps.openDirectoryPicker(
-        deps.windowFor(event.sender),
-        requestedTitle
-      );
+      return deps.openDirectory(deps.windowFor(event.sender), requestedTitle);
     },
     // does a path exist on THIS machine? — detects a synced Project whose
     // directory is absent here (ENG-015 S5 P5 "locate on this machine")
@@ -398,7 +396,6 @@ interface MainChannelsElectron {
     fromWebContents(sender: WebContents): BrowserWindow | null;
     getAllWindows(): BrowserWindow[];
   };
-  dialog: Pick<Electron.Dialog, 'showOpenDialog'>;
   shell: { showItemInFolder(fullPath: string): void };
   nativeTheme: Parameters<typeof createAppearanceIpc>[0]['nativeTheme'];
   systemPreferences: { getAccentColor?: () => string };
@@ -470,6 +467,8 @@ export function registerMainChannels(deps: {
   env: NodeJS.ProcessEnv;
   /** The OS appearance's trusted reads (`registerAppearanceIpc`). */
   appearance: TrustedChannels;
+  /** The one owner of native dialogs (`native-dialogs.ts`). */
+  nativeDialogs: NativeDialogBroker<BrowserWindow>;
   record: DiagnosticRecorder;
   tables: readonly TrustedChannels[];
   /** Other owners' synchronous reads. */
@@ -494,12 +493,8 @@ export function registerMainChannels(deps: {
         env: deps.env,
       }),
       dialogChannels({
-        openDirectoryPicker: createDirectoryPicker({
-          showOpenDialog: (parent, options) =>
-            parent
-              ? electron.dialog.showOpenDialog(parent, options)
-              : electron.dialog.showOpenDialog(options),
-        }),
+        openDirectory: (parent, title) =>
+          deps.nativeDialogs.openDirectory(parent, title),
         windowFor,
         env: deps.env,
       }),

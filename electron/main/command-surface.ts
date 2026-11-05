@@ -1,5 +1,6 @@
 import type { HostPowerObserver } from './host-power';
-import type { Cookies } from 'electron';
+import type { BrowserWindow, Cookies } from 'electron';
+import type { NativeDialogBroker } from './native-dialogs';
 import path from 'path';
 import type { DistributionContractV2 } from '@exawatt/core/distribution';
 import { registerAnalyticsIPC } from './analytics-ipc';
@@ -92,7 +93,9 @@ export class CommandRuntime {
     toVersion: string | null;
     reason: string;
   } = reason => ({ fromVersion: '', toVersion: null, reason });
-  checkForUpdatesFromMenu: () => Promise<void> = async () => {};
+  checkForUpdatesFromMenu: (
+    dialogs: Pick<NativeDialogBroker<BrowserWindow>, 'messageBox'>
+  ) => Promise<void> = async () => {};
   /** Null until the updater runtime loads; the report says so rather than
    *  inventing an idle status (ENG-025 F5). */
   currentUpdateStatus: () => Record<string, unknown> | null = () => null;

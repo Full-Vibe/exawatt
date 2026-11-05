@@ -1,17 +1,13 @@
 import { existsSync } from 'fs';
 import path from 'path';
-import {
-  app,
-  autoUpdater as nativeUpdater,
-  BrowserWindow,
-  dialog,
-} from 'electron';
+import { app, autoUpdater as nativeUpdater, BrowserWindow } from 'electron';
 import {
   autoUpdater as electronUpdater,
   type Logger,
   type UpdateInfo,
 } from 'electron-updater';
 import { handleTrusted } from './ipc-security';
+import type { NativeDialogBroker } from './native-dialogs';
 import {
   createDiagnosticsLog,
   type DiagnosticRecorder,
@@ -348,7 +344,9 @@ export function installFailure(reason: string): InstallFailure {
  * turn any of the three silent states into a sentence the user can read
  * back: no update channel, an update in flight, or the actual failure.
  */
-export async function checkForUpdatesFromMenu(): Promise<void> {
+export async function checkForUpdatesFromMenu(
+  dialogs: Pick<NativeDialogBroker<BrowserWindow>, 'messageBox'>
+): Promise<void> {
   await runCheck('menu');
   const productName = app.name;
   const detailSuffix = status.logPath
@@ -363,7 +361,7 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
       status.disabledReason === 'no-feed-config'
         ? `${productName} ${status.currentVersion} was packaged without an update channel, so it cannot check for new versions. Download the current release from your distributor and replace this copy.${detailSuffix}`
         : `This copy of ${productName} ${status.currentVersion} was installed directly rather than from a signed release, so it has no update channel. Install the latest signed release to turn automatic updates on.`;
-    await dialog.showMessageBox({
+    await dialogs.messageBox(null, {
       type: status.disabledReason === 'no-feed-config' ? 'warning' : 'info',
       message: 'Automatic updates are off for this build.',
       detail,
@@ -372,7 +370,7 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
     return;
   }
   if (status.phase === 'error') {
-    await dialog.showMessageBox({
+    await dialogs.messageBox(null, {
       type: 'warning',
       message: `${productName} ${status.currentVersion} could not update.`,
       detail: `${status.error ?? 'No reason was reported.'}${detailSuffix}`,
@@ -381,7 +379,7 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
     return;
   }
   if (status.phase === 'downloaded') {
-    await dialog.showMessageBox({
+    await dialogs.messageBox(null, {
       type: 'info',
       message: `${productName} ${status.availableVersion} is ready to install.`,
       detail: 'Restart to finish updating.',
@@ -390,7 +388,7 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
     return;
   }
   if (status.phase === 'available' || status.phase === 'downloading') {
-    await dialog.showMessageBox({
+    await dialogs.messageBox(null, {
       type: 'info',
       message: `Downloading ${productName} ${status.availableVersion}.`,
       detail: `${productName} will offer to restart when the download finishes.`,
@@ -398,7 +396,7 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
     });
     return;
   }
-  await dialog.showMessageBox({
+  await dialogs.messageBox(null, {
     type: 'info',
     message: `${productName} ${status.currentVersion} is up to date.`,
     detail: `Latest available version: ${status.availableVersion ?? status.currentVersion}.`,

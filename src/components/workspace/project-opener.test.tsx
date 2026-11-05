@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectOpener, useProjectOpenerState } from './project-opener';
 import { REMOTE_HOME_KIND } from '@/lib/projects/contract';
 import { installBridgeDouble } from '@/test-support/desktop-bridge-double';
+import type { DirectoryPickOutcome } from '@exawatt/core/desktop-bridge';
 
 const { listProjects, projectRegistryScope, rebindProjectPath } = vi.hoisted(
   () => ({
@@ -106,7 +107,7 @@ describe('Project opener', () => {
         load: vi.fn().mockResolvedValue(null),
       },
       dialog: {
-        openDirectory: vi.fn().mockResolvedValue(null),
+        openDirectory: vi.fn().mockResolvedValue({ status: 'cancelled' }),
         pathExists: vi.fn().mockResolvedValue(true),
       },
       connectedSources: {
@@ -186,14 +187,11 @@ describe('Project opener', () => {
     expect(window.electron!.dialog!.pathExists).not.toHaveBeenCalled();
   });
 
-  it('releases the in-app modal before opening the native folder picker', async () => {
+  it('keeps the chooser under the native picker and returns to it on cancel', async () => {
     const onOpenChange = vi.fn();
+    let finish!: (outcome: DirectoryPickOutcome) => void;
     vi.mocked(window.electron!.dialog!.openDirectory).mockImplementation(
-      async () => {
-        expect(onOpenChange).toHaveBeenCalledWith(false);
-        expect(document.querySelector('[data-project-opener]')).toBeNull();
-        return null;
-      }
+      () => new Promise(resolve => (finish = resolve))
     );
     renderControlledProjectOpener({
       onOpenChange,
@@ -202,20 +200,119 @@ describe('Project opener', () => {
       onImportProjects: vi.fn(async () => true),
     });
 
+    const browse = screen.getByRole('button', { name: 'Browse Folder' });
+    browse.focus();
+    fireEvent.click(browse);
+    await waitFor(() =>
+      expect(window.electron!.dialog!.openDirectory).toHaveBeenCalledWith(
+        'Open Project'
+      )
+    );
+    // The sheet owns the keyboard; the chooser waits, its routes held.
+    expect(document.querySelector('[data-project-opener]')).not.toBeNull();
+    expect(browse).toBeDisabled();
+    expect(document.activeElement).not.toBe(browse);
+
+    await act(async () => finish({ status: 'cancelled' }));
+    await waitFor(() => expect(browse).toBeEnabled());
+    expect(document.activeElement).toBe(browse);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  // BUG-327: the chooser used to close itself and wait for Radix's
+  // close-auto-focus before asking for the picker. Summoned again before
+  // that close finished (any summoner: ⌘N, a pending New Agent), the
+  // phase never ran: no picker, and Browse greyed out until a reload.
+  it('asks for the picker and releases Browse when the chooser is summoned again mid-request', async () => {
+    function Resummoned() {
+      const [open, setOpen] = useState(true);
+      return (
+        <ProjectOpener
+          open={open}
+          onOpenChange={next => {
+            setOpen(next);
+            if (!next) setOpen(true);
+          }}
+          workspaceProjects={[]}
+          onOpenProject={vi.fn(async () => true)}
+          onImportProjects={vi.fn(async () => true)}
+        />
+      );
+    }
+    render(<Resummoned />);
     fireEvent.click(screen.getByRole('button', { name: 'Browse Folder' }));
+
     await waitFor(() =>
       expect(window.electron!.dialog!.openDirectory).toHaveBeenCalledOnce()
     );
     await waitFor(() =>
-      expect(onOpenChange.mock.calls.map(([value]) => value)).toEqual([
-        false,
-        true,
-      ])
+      expect(
+        screen.getByRole('button', { name: 'Browse Folder' })
+      ).toBeEnabled()
     );
   });
 
+  it('releases Browse and says why when the picker never came up', async () => {
+    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue({
+      status: 'failed',
+      reason: 'not-presented',
+    });
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browse Folder' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('did not open');
+    expect(screen.getByRole('button', { name: 'Browse Folder' })).toBeEnabled();
+  });
+
+  it('releases Browse when the bridge call itself throws', async () => {
+    vi.mocked(window.electron!.dialog!.openDirectory).mockRejectedValue(
+      new Error('An object could not be cloned.')
+    );
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import Folder' }));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import Folder' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Browse Folder' })).toBeEnabled();
+  });
+
+  it('opens a browsed Project and closes the chooser', async () => {
+    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue({
+      status: 'picked',
+      path: '/browsed',
+    });
+    const onOpenChange = vi.fn();
+    const onOpenProject = vi.fn(async () => true);
+    renderControlledProjectOpener({
+      onOpenChange,
+      workspaceProjects: [],
+      onOpenProject,
+      onImportProjects: vi.fn(async () => true),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browse Folder' }));
+
+    await waitFor(() =>
+      expect(onOpenProject).toHaveBeenCalledWith('/browsed', {
+        source: 'browse',
+      })
+    );
+    expect(onOpenChange.mock.calls).toEqual([[false]]);
+  });
+
   it('does not stack native pickers when Browse is clicked repeatedly', async () => {
-    let finish!: (path: string | null) => void;
+    let finish!: (outcome: DirectoryPickOutcome) => void;
     vi.mocked(window.electron!.dialog!.openDirectory).mockImplementation(
       () =>
         new Promise(resolve => {
@@ -234,13 +331,14 @@ describe('Project opener', () => {
     await waitFor(() =>
       expect(window.electron!.dialog!.openDirectory).toHaveBeenCalledOnce()
     );
-    await act(async () => finish(null));
+    await act(async () => finish({ status: 'cancelled' }));
   });
 
   it('scans a parent folder and imports the reviewed selection', async () => {
-    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue(
-      '/parent'
-    );
+    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue({
+      status: 'picked',
+      path: '/parent',
+    });
     vi.mocked(window.electron!.projects!.scanDirectory).mockResolvedValue({
       ok: true,
       candidates: [
@@ -264,9 +362,10 @@ describe('Project opener', () => {
   });
 
   it('names its search, Project cards and import review by handle', async () => {
-    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue(
-      '/parent'
-    );
+    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue({
+      status: 'picked',
+      path: '/parent',
+    });
     vi.mocked(window.electron!.projects!.scanDirectory).mockResolvedValue({
       ok: true,
       candidates: [
@@ -318,9 +417,10 @@ describe('Project opener', () => {
       },
     ]);
     vi.mocked(window.electron!.dialog!.pathExists).mockResolvedValue(false);
-    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue(
-      '/new/project'
-    );
+    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue({
+      status: 'picked',
+      path: '/new/project',
+    });
     vi.mocked(window.electron!.projects!.resolve).mockResolvedValue({
       ok: true,
       projectDir: '/new/project-root',

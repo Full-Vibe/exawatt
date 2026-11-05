@@ -364,7 +364,8 @@ export interface DesktopAuthApi {
 }
 
 interface DesktopDialogApi {
-  /** Native folder picker; the chosen path, or null when cancelled. */
+  /** Native folder picker. Settles as picked, cancelled or failed; renderer
+   *  code asks through `src/lib/native-dialog`, never this member directly. */
   openDirectory: BridgeInvoke<'dialog:openDirectory'>;
   /** Does this path exist on this machine? (S5 "locate" flow) */
   pathExists: BridgeInvoke<'dialog:pathExists'>;

@@ -90,30 +90,47 @@ const launch = () => ({
   },
 });
 
-async function stubDirectoryPicker(app, selectedDirectory) {
-  await app.evaluate(({ dialog }, directory) => {
+/**
+ * Stands in for AppKit's folder panel. `answers` are consumed in order (the
+ * last repeats): a folder path is picked, 'cancel' is the operator dismissing
+ * the sheet, and 'never' is a sheet AppKit never begins, whose request never
+ * returns (BUG-327). A sheet that begins announces itself the way AppKit
+ * does, with the window's `sheet-begin`.
+ */
+async function stubDirectoryPicker(app, ...answers) {
+  await app.evaluate(({ dialog }, queued) => {
     globalThis.__EXAWATT_DIRECTORY_PICKER_CALLS = [];
+    globalThis.__EXAWATT_DIRECTORY_PICKER_ANSWERS = queued;
     dialog.showOpenDialog = async (...args) => {
       const attached = args.length === 2;
       const parent = attached ? args[0] : null;
       const options = attached ? args[1] : args[0];
-      const webModalMounted = parent
-        ? await parent.webContents.executeJavaScript(
-            "document.querySelector('[data-project-opener]') !== null"
-          )
+      const pending = globalThis.__EXAWATT_DIRECTORY_PICKER_ANSWERS;
+      const answer = pending.length > 1 ? pending.shift() : pending[0];
+      const renderer = parent
+        ? await parent.webContents.executeJavaScript(`(() => {
+            const focused = document.activeElement;
+            return {
+              chooserOpen:
+                document.querySelector('[data-project-opener]') !== null,
+              controlFocused:
+                focused instanceof Element &&
+                focused.matches('button, input, textarea, select'),
+            };
+          })()`)
         : null;
       globalThis.__EXAWATT_DIRECTORY_PICKER_CALLS.push({
         attached,
         options,
-        webModalMounted,
+        renderer,
       });
-      return {
-        canceled: false,
-        filePaths: [directory],
-        bookmarks: [],
-      };
+      if (answer === 'never') return await new Promise(() => {});
+      parent?.emit('sheet-begin');
+      return answer === 'cancel'
+        ? { canceled: true, filePaths: [], bookmarks: [] }
+        : { canceled: false, filePaths: [answer], bookmarks: [] };
     };
-  }, selectedDirectory);
+  }, answers);
 }
 
 async function directoryPickerCalls(app) {
@@ -306,7 +323,7 @@ try {
         console.log(`[project-launcher] pageerror: ${error.message}`)
       );
       await page.locator('[data-command-altitude]').waitFor();
-      await stubDirectoryPicker(app, projectA);
+      await stubDirectoryPicker(app, 'never', 'cancel', projectA);
       await page.waitForTimeout(250);
 
       const fileMenu = await app.evaluate(({ Menu }) =>
@@ -404,20 +421,72 @@ try {
       await page.keyboard.press('Shift+Tab');
       await page.screenshot({ path: join(output, '01-project-chooser.png') });
 
-      await page
-        .locator('[data-project-opener] [data-project-route="browse"]')
-        .click();
+      const browseRoute = page.locator(
+        '[data-project-opener] [data-project-route="browse"]'
+      );
+      // BUG-327: a sheet AppKit never begins. The request settles, Browse
+      // comes back, and the chooser says why, with no reload.
+      await browseRoute.click();
+      await page.waitForFunction(
+        () =>
+          document.querySelector(
+            '[data-project-opener] [data-project-route="browse"]'
+          )?.disabled === true
+      );
+      await page.screenshot({ path: join(output, '01a-picker-waiting.png') });
+      await page.waitForFunction(() => {
+        const browse = document.querySelector(
+          '[data-project-opener] [data-project-route="browse"]'
+        );
+        return (
+          browse instanceof HTMLButtonElement &&
+          !browse.disabled &&
+          document.querySelector('[data-project-opener] [role="alert"]') !==
+            null
+        );
+      });
+      check('a picker that never appears releases Browse and says so', true);
+      await page.screenshot({
+        path: join(output, '01b-picker-not-presented.png'),
+      });
+      // The operator dismisses the sheet: the chooser never left, and Browse
+      // has the keyboard again.
+      await browseRoute.click();
+      await page.waitForFunction(() => {
+        const browse = document.querySelector(
+          '[data-project-opener] [data-project-route="browse"]'
+        );
+        return (
+          browse instanceof HTMLButtonElement &&
+          !browse.disabled &&
+          document.activeElement === browse
+        );
+      });
+      check('cancelling the picker returns to the chooser on Browse', true);
+      // And the next try opens the Project, as a refresh used to be needed for.
+      await browseRoute.click();
       await page.locator('[data-agent-composer]').waitFor();
-      const [pickerCall] = await directoryPickerCalls(app);
+      const pickerCalls = await directoryPickerCalls(app);
       check(
-        'Browse releases the web modal before requesting the native picker',
-        pickerCall?.webModalMounted === false
+        'each Browse asks for exactly one picker',
+        pickerCalls.length === 3
+      );
+      check(
+        'the chooser waits under the picker with no control holding the keyboard',
+        pickerCalls.every(
+          call =>
+            call.renderer?.chooserOpen === true &&
+            call.renderer?.controlFocused === false
+        )
       );
       check(
         'Browse invokes a window-owned native directory picker',
-        pickerCall?.attached === true &&
-          pickerCall?.options?.title === 'Open Project' &&
-          pickerCall?.options?.properties?.includes('openDirectory')
+        pickerCalls.every(
+          call =>
+            call.attached === true &&
+            call.options?.title === 'Open Project' &&
+            call.options?.properties?.includes('openDirectory')
+        )
       );
       check(
         'Browse opens an inert Project',

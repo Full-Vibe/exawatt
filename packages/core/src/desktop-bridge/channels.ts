@@ -39,6 +39,7 @@ import type {
   CheckpointRequest,
   CommandEnginePhase,
   DiagnosticsReport,
+  DirectoryPickOutcome,
   ElectronAuthError,
   ElectronAuthLinkConfig,
   ElectronAuthSessionTokens,
@@ -286,7 +287,7 @@ interface RequestTable {
   'consumption:rescan': Call<[], void>;
   'consumption:cancel-scan': Call<[], void>;
 
-  'dialog:openDirectory': Call<[title?: string], string | null>;
+  'dialog:openDirectory': Call<[title?: string], DirectoryPickOutcome>;
   'dialog:pathExists': Call<[path: string], boolean>;
 
   'feedback:set-authenticated': Call<[authenticated: boolean], void>;
