@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SpatialBoardPiece } from '@exawatt/ui-model';
 
@@ -38,8 +38,8 @@ function Emerging({
   pieces: SpatialBoardPiece[];
   reduced: boolean;
 }) {
-  useTileEmergence(pieces, reduced);
-  return null;
+  const { rendered } = useTileEmergence(pieces, reduced);
+  return <output data-rendered={rendered.map(piece => piece.id).join(',')} />;
 }
 
 afterEach(cleanup);
@@ -67,4 +67,33 @@ describe('useTileEmergence', () => {
       expect(scheduler.snapshot().deadlineMs > 0).toBe(!reduced);
     });
   }
+
+  it('keeps drawing a departing Agent until its exit has played', () => {
+    vi.useFakeTimers();
+    try {
+      const scheduler = createFrameScheduler({
+        render: true,
+        ambient: 'display',
+      });
+      const board = (pieces: SpatialBoardPiece[]) => (
+        <FrameDemandRoot scheduler={scheduler}>
+          <Emerging pieces={pieces} reduced={false} />
+        </FrameDemandRoot>
+      );
+      const view = render(board([agent('a1'), agent('a2')]));
+      const rendered = () =>
+        view.container.querySelector('output')?.getAttribute('data-rendered');
+      act(() => vi.advanceTimersByTime(5_000));
+      expect(rendered()).toBe('a1,a2');
+
+      view.rerender(board([agent('a1')]));
+      // Departing: still drawn, after the survivors.
+      expect(rendered()).toBe('a1,a2');
+
+      act(() => vi.advanceTimersByTime(5_000));
+      expect(rendered()).toBe('a1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

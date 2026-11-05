@@ -1611,7 +1611,7 @@ export function CommandPalette({
           currentThemeId={committedThemeId}
           busy={themeSaving}
           error={themeError}
-          onSearchChange={setSearch}
+          onSearchChange={searchAndRescroll}
           onSelect={themeId => void commitTheme(themeId)}
         />
       ) : (

@@ -7,9 +7,11 @@ import {
   type EmergenceTracker,
 } from '../operations-board-emergence';
 import { useFrameScheduler } from '@/lib/frame-demand/frame-demand';
+import { useRetainedRecords } from './use-retained-records';
 
-/** Shared lifecycle policy, with React retaining departing tile records until
- * the same transition clock has taken their instance scale to zero. */
+/** Shared lifecycle policy, with React retaining departing pieces (in state,
+ * `useRetainedRecords`) until the same transition clock has taken their
+ * instance scale to zero. */
 export function useTileEmergence(
   pieces: SpatialBoardPiece[],
   reduced: boolean
@@ -28,8 +30,6 @@ export function useTileEmergence(
       solid.map(piece => piece.id),
       reduced ? 0 : undefined
     );
-  const records = useRef(new Map<string, SpatialBoardPiece>());
-  for (const piece of solid) records.current.set(piece.id, piece);
   const [retiring, setRetiring] = useState<string[]>([]);
   const previousReduced = useRef(reduced);
   const frames = useFrameScheduler();
@@ -67,26 +67,8 @@ export function useTileEmergence(
   }, [solid, reduced, frames]);
   useLayoutEffect(() => {
     tracker.current!.prune(performance.now(), retiring);
-    const retained = new Set([
-      ...solid.map(piece => piece.id),
-      ...retiring,
-      ...tracker.current!.retiring(performance.now()),
-    ]);
-    for (const id of records.current.keys())
-      if (!retained.has(id)) records.current.delete(id);
   }, [solid, retiring]);
-  const rendered = useMemo(() => {
-    const ids = new Set(solid.map(piece => piece.id));
-    return [
-      ...solid,
-      ...retiring
-        .filter(id => !ids.has(id))
-        .flatMap(id => {
-          const piece = records.current.get(id);
-          return piece ? [piece] : [];
-        }),
-    ];
-  }, [solid, retiring]);
+  const rendered = useRetainedRecords(solid, retiring);
   const getTracker = useCallback(() => tracker.current!, []);
   return { visible, rendered, getTracker };
 }

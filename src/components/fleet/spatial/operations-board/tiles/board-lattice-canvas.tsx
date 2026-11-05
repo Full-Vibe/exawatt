@@ -37,10 +37,14 @@ import { LatticeCamera } from './board-lattice-camera';
 import { createBoardHoverStore } from '../operations-board-hover';
 import { usePressSound } from '@/components/tiles/use-press-sound';
 import { useTileEmergence } from './use-tile-emergence';
+import { useRetainedRecords } from './use-retained-records';
 import { MATERIAL_SOUND } from '@/components/tiles/press-sounds';
 
 const MARKS = { paths: HARNESS_MARK_PATHS, tone: harnessMarkTone };
 const EMPTY = new Set<string>();
+/** One object, so a board without source marks keeps its lattice model (and
+ * the tiles retained from it) across renders instead of rebuilding both. */
+const NO_SOURCE_MARKS: Readonly<Record<string, string>> = {};
 const STILL = {
   sheen: false,
   breathe: false,
@@ -116,7 +120,7 @@ function LatticeScene({
   theme,
   material: chosenMaterial = 'gummy',
   greybox = false,
-  sourceMarks = {},
+  sourceMarks = NO_SOURCE_MARKS,
   onDrillProject,
   onSelectAgent,
   onSelectDelegationChild,
@@ -151,30 +155,17 @@ function LatticeScene({
       ),
     [layout, sourceMarks, rendered]
   );
-  const records = useRef(new Map<string, (typeof model.tiles)[number]>());
-  for (const tile of model.tiles)
-    if (!tile.id.startsWith('population:')) records.current.set(tile.id, tile);
-  const detailedTiles = useMemo(() => {
-    const live = model.tiles.filter(tile => !tile.id.startsWith('population:'));
-    const ids = new Set(live.map(tile => tile.id));
-    return [
-      ...live,
-      ...rendered
-        .filter(piece => !ids.has(piece.id))
-        .flatMap(piece => {
-          const tile = records.current.get(piece.id);
-          return tile ? [tile] : [];
-        }),
-    ];
-  }, [model, rendered]);
-  useEffect(() => {
-    const retained = new Set([
-      ...detailedTiles.map(tile => tile.id),
-      ...getTracker().retiring(performance.now()),
-    ]);
-    for (const id of records.current.keys())
-      if (!retained.has(id)) records.current.delete(id);
-  }, [detailedTiles, getTracker]);
+  // A departing piece whose zone has gone keeps its last tile until its exit
+  // has played.
+  const liveTiles = useMemo(
+    () => model.tiles.filter(tile => !tile.id.startsWith('population:')),
+    [model]
+  );
+  const renderedIds = useMemo(
+    () => rendered.map(piece => piece.id),
+    [rendered]
+  );
+  const detailedTiles = useRetainedRecords(liveTiles, renderedIds);
   const populationTiles = useMemo(
     () => model.tiles.filter(tile => tile.id.startsWith('population:')),
     [model]

@@ -90,8 +90,9 @@ export function PopulationStatusMarks({
     () => ({
       uniforms: {
         uPhase: { value: 0 },
-        uBacking: { value: backing ? 1 : 0 },
-        uBackingColor: { value: new THREE.Color(theme.markBacking) },
+        // Values come from the material's props below; these are the slots.
+        uBacking: { value: 0 },
+        uBackingColor: { value: new THREE.Color() },
       },
       vertexShader: `
         attribute float instanceState;
@@ -161,16 +162,15 @@ export function PopulationStatusMarks({
         }
       `,
     }),
-    // Uniforms update in place below; shader source is presentation-invariant.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Shader source and uniform slots are presentation-invariant; the
+    // backing uniforms are props on the material, which R3F writes in place.
     []
   );
 
+  // A new backing repaints a parked canvas.
   useEffect(() => {
-    shader.uniforms.uBacking.value = backing ? 1 : 0;
-    shader.uniforms.uBackingColor.value.set(theme.markBacking);
     frames.request();
-  }, [backing, theme.markBacking, shader, frames]);
+  }, [backing, theme.markBacking, frames]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   useLayoutEffect(() => {
     if (!mesh.current) return;
@@ -221,6 +221,8 @@ export function PopulationStatusMarks({
     >
       <shaderMaterial
         args={[shader]}
+        uniforms-uBacking-value={backing ? 1 : 0}
+        uniforms-uBackingColor-value={theme.markBacking}
         transparent
         depthTest={rendering.depthTest}
         depthWrite={rendering.depthWrite}
