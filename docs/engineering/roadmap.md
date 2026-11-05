@@ -5616,7 +5616,7 @@ hidden. Exit: nothing right of the closed tab moves during the hold, and
 
 ### BUG-319 Parallel packets collide on the one-line delivery test list
 
-Status: open · ENG-039 · found 2026-10-22 landing the Execution front's trains.
+Status: fixed 2026-11-04 · ENG-039 · found 2026-10-22 landing the Execution front's trains; landing-parity packet, Execution front (2026-11-04).
 
 `test:agent-delivery` in `package.json` is one 2,700-character line naming
 every delivery test file, so any two packets that each add a delivery test
@@ -5626,6 +5626,19 @@ eval-handles), each needing a hand rebase. Exit: the suite's membership lives
 where adding a test cannot conflict (a glob over a declared directory, or a
 list file with one path per line that the append driver merges), and
 `test:agent-delivery` reads it.
+
+Resolved 2026-11-04: membership is the directory. The suite is every
+top-level `scripts/*.test.mjs` (`DELIVERY_SUITE` in `delivery-policy.mjs`),
+and `test:agent-delivery` is `node --test scripts/*.test.mjs`, so a test joins
+by existing and there is no shared line to conflict on. The public tree's
+glob matches only its own tests, which retired the `without` directive that
+listed the private ones. Three scripts tests that ran only outside the suite
+(asset provenance, community policy, secret scan) now run in it, and their
+commands route to the landing. `test:delivery-pins` and the path-conditional
+choice between it and the whole suite are unchanged. `delivery-policy.test.mjs`,
+`docs-check.test.mjs` and `script-layout.test.mjs` read the membership through
+the glob, so the route derivation, the core-entry closure and the public
+layout rules see the same files the suite runs.
 
 ### BUG-314 An Electron eval that hits its watchdog dies with ENOTEMPTY instead of naming the step
 
@@ -5697,7 +5710,7 @@ fail, 6 of them reading attributes the product had retired.
 
 ### BUG-320 Landings test on this Mac's Node while public CI and releases run Node 22
 
-Status: open · ENG-022 · found 2026-10-22 when public CI failed on two commits that passed every landing check.
+Status: fixed 2026-11-04 · ENG-022 · found 2026-10-22 when public CI failed on two commits that passed every landing check; landing-parity packet, Execution front (2026-11-04).
 
 Landings run the test suites with this Mac's Node (26). Public CI and the
 release builds run Node 22, the oldest `engines` allows (`>=22.18`). On
@@ -5711,9 +5724,23 @@ retries only the rmdir that failed, never the walk (fixed `20bd90ab`). Exit: lan
 version CI runs, pinned and cached once the way `security:secrets:landing`
 pins gitleaks, so a landing that is green here is green on public CI.
 
+Resolved 2026-11-04: `.node-version` names the one exact release (22.23.4,
+what public CI resolved `'22'` to on 2026-11-04), and every workflow's
+`setup-node` reads it through `node-version-file`, so there is no second
+copy. The landing's policy reads it from the tree being checked and pins
+each suite check (the delivery suite and pins, the related, module, scanning
+and whole Vitest selections, service conformance) to it through pnpm's own
+runtime pin, `use-node-version`, which fetches the release once per machine
+and puts it first on PATH for the check and everything it runs, the isolated
+rerun included. The check line, evidence and metric name the release, and
+check reuse keys on it. Gates and the other checks keep the landing's Node.
+`delivery-policy.test.mjs` holds every workflow to the file, the file to
+`engines`' major, and the runner to passing the pin to a suite and its rerun
+and not to lint.
+
 ### BUG-321 A landing checks path classification on its final tree; the public copy checks every commit
 
-Status: open · ENG-030 · found 2026-10-22 when a train passed every check and gate and the public copy refused it.
+Status: fixed 2026-11-04 · ENG-030 · found 2026-10-22 when a train passed every check and gate and the public copy refused it; landing-parity packet, Execution front (2026-11-04).
 
 `open-source:paths:check` classifies the tree a landing ends with. The public
 projection replays private commits one at a time, each against the manifest
@@ -5727,9 +5754,21 @@ it. The branch was rebuilt so the adding commit classifies the file
 every path each commit adds classified by that commit's own manifest, before
 any other check, so the train refuses in seconds.
 
+Resolved 2026-11-04: the landing's first check is now `open-source:paths:check
+-- --landing`, which walks every commit HEAD adds since `origin/master` with
+the replay's own steps, now shared code in `public-projection.mjs`
+(`checkCommitClassification`): a commit that moves the manifest is answered by
+Gate A over its whole tree, any other by classifying each changed path, then
+the tree check runs as before. Replayed on the incident's own commits it
+refuses `0ff48b49` by name in 0.3 s. Its passes are no longer reused, since
+one tree can sit on histories the projection answers differently.
+`public-projection.test.mjs` runs the landing check and the real replay on the
+same histories (added late, added and classified together, classified before
+the file exists) and asserts they refuse the same commit or both pass.
+
 ### BUG-322 A train's bisect convicted a docs car for a check the same tree had passed
 
-Status: open · ENG-039 M3 · found 2026-10-22 in a four-car coordinator train.
+Status: fixed 2026-11-04 · ENG-039 M3 · found 2026-10-22 in a four-car coordinator train; landing-parity packet, Execution front (2026-11-04).
 
 A four-car train (session-custody, frame-demand, eval-handles and a docs car
 last) failed `eval:spatial` twice on the full stack. The three-car
@@ -5740,6 +5779,15 @@ is a flake, and the refusal named a car anyway. The flake was the eval
 reading before the first painted frame, which frame-demand fixes. Exit: when
 two answers for one tree disagree, the bisect reports a suspected flake in
 that check on that tree and convicts no car.
+
+Resolved 2026-11-04: the train keeps every answer it gets by tree and check,
+from the full stack, each prefix and the stack without the convicted car. When
+one tree has both passed and failed a check it refuses with `TRAIN flake:
+<check> passed and failed on the same tree`, convicts no car, prints `STATUS
+failed=train flake=<check> tree=<tree> cars=<cars>` and records a
+`train_flake` metric. `merge-train.test.mjs` replays the incident (four cars,
+the check failing on runs 1, 2 and 5) and fails without the change; a last car
+that fails every time is still convicted by elimination.
 
 ### BUG-323 Pressing 0 right after a Fleet drill only re-centers
 
