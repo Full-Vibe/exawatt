@@ -16,7 +16,7 @@ export const envelope: MessageEnvelope = {
     harness: 'codex',
     kind: 'agent',
   },
-  to: { sessionId: 'session-b', name: 'claude-1', harness: 'claude' },
+  to: [{ sessionId: 'session-b', name: 'claude-1', harness: 'claude' }],
   at: 1,
   text: 'hello',
 };
