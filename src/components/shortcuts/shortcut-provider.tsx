@@ -4,6 +4,7 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useState,
   useCallback,
@@ -646,24 +647,27 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     shortcutRegistry.setContexts(contexts);
   }, [commandPaletteOpen, dialogPrimaryActions, helpModalOpen]);
 
-  // Global keyboard listener
+  // Global keyboard listener. An Effect Event: it reads the palette and help
+  // state committed when the key arrives, and subscribes once, so opening a
+  // modal neither leaves a stale listener live until the next effect nor
+  // moves this layer behind the window listeners registered after it.
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    // Let command palette handle its own input
+    if (commandPaletteOpen) return;
+
+    // The help modal owns the keyboard while open (D9): `g d` behind the
+    // cheat-sheet must not navigate. Radix handles Escape itself.
+    if (helpModalOpen) return;
+
+    // Event ownership prevents double execution; closing a dialog must not
+    // suppress the operator's next independent command.
+    chordEngine.processKeyEvent(event);
+  });
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Let command palette handle its own input
-      if (commandPaletteOpen) return;
-
-      // The help modal owns the keyboard while open (D9): `g d` behind the
-      // cheat-sheet must not navigate. Radix handles Escape itself.
-      if (helpModalOpen) return;
-
-      // Event ownership prevents double execution; closing a dialog must not
-      // suppress the operator's next independent command.
-      chordEngine.processKeyEvent(event);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandPaletteOpen, helpModalOpen]);
+    const listener = (event: KeyboardEvent) => handleKeyDown(event);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
 
   // An accepted command holds the palette closed until Radix releases focus.
   const handleCommandPaletteChange = useCallback((open: boolean) => {

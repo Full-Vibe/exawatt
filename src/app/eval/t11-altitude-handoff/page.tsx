@@ -274,7 +274,7 @@ function HandoffFixture() {
                   evalState().drilled = projectId;
                 }}
                 onSelectAgent={() => undefined}
-                onOverview={() => undefined}
+                onOverview={() => false}
                 onProjectionChange={() => undefined}
                 viewportStorageKey="exawatt:spatial-viewport:t11"
                 preserveDrawingBuffer

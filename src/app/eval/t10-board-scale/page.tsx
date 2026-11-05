@@ -260,11 +260,13 @@ function BoardScaleFixture() {
             )
           }
           onSelectAgent={() => undefined}
-          onOverview={() =>
+          onOverview={() => {
+            if (altitude === 'fleet') return false;
             startTransition(() =>
               setAddress({ altitude: 'fleet', focusedProjectId: null })
-            )
-          }
+            );
+            return true;
+          }}
           onProjectionChange={() => undefined}
           viewportStorageKey={`exawatt:spatial-viewport:t10:${agentCount}:${altitude}`}
           preserveDrawingBuffer

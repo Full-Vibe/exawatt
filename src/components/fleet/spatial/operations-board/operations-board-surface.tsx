@@ -6,6 +6,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -360,7 +361,13 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   onDrillProject: (projectId: string) => void;
   onSelectAgent: (agentId: string | null) => void;
   onMoveAgentSelection?: (agentId: string) => void;
-  onOverview: () => void;
+  /**
+   * Go up to the Fleet overview. Returns false when the address is already at
+   * Fleet altitude; the board then re-centers. The host answers from the
+   * latest address asked for, which can be ahead of `layout` while a move's
+   * render is still pending (BUG-323).
+   */
+  onOverview: () => boolean;
   onProjectionChange: (projection: SpatialBoardProjection) => void;
   /** Multi-selection (V3.2): real, ephemeral, client-owned. Direct (V4.2)
    *  addresses it from the selection panel. */
@@ -646,116 +653,104 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
     [attentionIds, layout.selectedAgentId, onSelectAgent]
   );
 
+  /** Overview (the button, and 0): up to Fleet, or re-center when already
+   * there. Which one is the host's answer, not this render's `layout`. */
+  const overview = (fitAtFleet: 'recenter' | 'fleet') => {
+    if (onOverview()) controller.current?.focusFleet();
+    else if (fitAtFleet === 'recenter') controller.current?.recenter();
+    else controller.current?.focusFleet();
+  };
+
   // The bindings this handler answers are described in `board-keymap.ts`,
   // which also feeds the keyboard help modal; a key added here without a
-  // keymap entry fails that module's contract test.
+  // keymap entry fails that module's contract test. It reads the props of
+  // the render committed when the key arrives (an Effect Event), so the
+  // listener subscribes once instead of on every render.
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      target?.isContentEditable
+    )
+      return;
+    // Shift+1–9 toggles the zone in the multi-selection (V3.2): the
+    // keyboard equivalent of shift-clicking its plate. `code` because
+    // shifted digits produce symbol `key`s.
+    if (
+      event.shiftKey &&
+      onToggleZoneSelect &&
+      /^Digit[1-9]$/.test(event.code)
+    ) {
+      const zone = visibleZones[Number(event.code.slice(5)) - 1];
+      if (zone && !zone.isAggregate) {
+        onToggleZoneSelect(zone.id);
+        event.preventDefault();
+      }
+      return;
+    }
+    if (event.key >= '1' && event.key <= '9') {
+      const zone = visibleZones[Number(event.key) - 1];
+      if (zone && !zone.isAggregate) {
+        // The camera moves on THIS frame; the route follows. Under one
+        // geometry the flight target is knowable from the current layout,
+        // so a hotkey answers like a game's instead of after a render.
+        controller.current?.focusProject(zone.id);
+        onDrillProject(zone.id);
+        event.preventDefault();
+      }
+      return;
+    }
+    if (event.key === '0') {
+      overview(view.id === 'v1' ? 'recenter' : 'fleet');
+      event.preventDefault();
+    } else if (event.key.toLowerCase() === 'n') {
+      triage(1);
+      event.preventDefault();
+    } else if (event.key.toLowerCase() === 'p') {
+      triage(-1);
+      event.preventDefault();
+    } else if (event.key.toLowerCase() === 'v' && view.projections.length > 1) {
+      onProjectionChange(
+        projection === 'top-down' ? 'fixed-angle' : 'top-down'
+      );
+      event.preventDefault();
+    } else if (event.key.startsWith('Arrow')) {
+      const direction = event.key
+        .slice('Arrow'.length)
+        .toLowerCase() as SpatialSelectionDirection;
+      // Shift extends the working set and never moves focus between
+      // Projects (`boardArrowStep`).
+      const extend = event.shiftKey && Boolean(onExtendAgentSelection);
+      const { target, extend: joined } = boardArrowStep({
+        layout,
+        units,
+        selectedTarget,
+        direction,
+        extend,
+      });
+      if (joined) onExtendAgentSelection?.(joined);
+      if (target?.kind === 'agent') {
+        controller.current?.focusAgent(target.agentId);
+        onMoveAgentSelection?.(target.agentId);
+      } else if (target?.kind === 'child') {
+        // A child has no address of its own yet (ENG-023 D2), so walking
+        // onto one selects its parent and names the worker reached — the
+        // same destination a click on it produces.
+        controller.current?.focusAgent(target.parentAgentId);
+        onSelectDelegationChild?.(target.parentAgentId, target.childId);
+        onMoveAgentSelection?.(target.parentAgentId);
+      }
+      event.preventDefault();
+    }
+  });
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        target?.isContentEditable
-      )
-        return;
-      // Shift+1–9 toggles the zone in the multi-selection (V3.2): the
-      // keyboard equivalent of shift-clicking its plate. `code` because
-      // shifted digits produce symbol `key`s.
-      if (
-        event.shiftKey &&
-        onToggleZoneSelect &&
-        /^Digit[1-9]$/.test(event.code)
-      ) {
-        const zone = visibleZones[Number(event.code.slice(5)) - 1];
-        if (zone && !zone.isAggregate) {
-          onToggleZoneSelect(zone.id);
-          event.preventDefault();
-        }
-        return;
-      }
-      if (event.key >= '1' && event.key <= '9') {
-        const zone = visibleZones[Number(event.key) - 1];
-        if (zone && !zone.isAggregate) {
-          // The camera moves on THIS frame; the route follows. Under one
-          // geometry the flight target is knowable from the current layout,
-          // so a hotkey answers like a game's instead of after a render.
-          controller.current?.focusProject(zone.id);
-          onDrillProject(zone.id);
-          event.preventDefault();
-        }
-        return;
-      }
-      if (event.key === '0') {
-        if (view.id === 'v1' && layout.altitude === 'fleet')
-          controller.current?.recenter();
-        else {
-          controller.current?.focusFleet();
-          onOverview();
-        }
-        event.preventDefault();
-      } else if (event.key.toLowerCase() === 'n') {
-        triage(1);
-        event.preventDefault();
-      } else if (event.key.toLowerCase() === 'p') {
-        triage(-1);
-        event.preventDefault();
-      } else if (
-        event.key.toLowerCase() === 'v' &&
-        view.projections.length > 1
-      ) {
-        onProjectionChange(
-          projection === 'top-down' ? 'fixed-angle' : 'top-down'
-        );
-        event.preventDefault();
-      } else if (event.key.startsWith('Arrow')) {
-        const direction = event.key
-          .slice('Arrow'.length)
-          .toLowerCase() as SpatialSelectionDirection;
-        // Shift extends the working set and never moves focus between
-        // Projects (`boardArrowStep`).
-        const extend = event.shiftKey && Boolean(onExtendAgentSelection);
-        const { target, extend: joined } = boardArrowStep({
-          layout,
-          units,
-          selectedTarget,
-          direction,
-          extend,
-        });
-        if (joined) onExtendAgentSelection?.(joined);
-        if (target?.kind === 'agent') {
-          controller.current?.focusAgent(target.agentId);
-          onMoveAgentSelection?.(target.agentId);
-        } else if (target?.kind === 'child') {
-          // A child has no address of its own yet (ENG-023 D2), so walking
-          // onto one selects its parent and names the worker reached — the
-          // same destination a click on it produces.
-          controller.current?.focusAgent(target.parentAgentId);
-          onSelectDelegationChild?.(target.parentAgentId, target.childId);
-          onMoveAgentSelection?.(target.parentAgentId);
-        }
-        event.preventDefault();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    layout,
-    onDrillProject,
-    onExtendAgentSelection,
-    onMoveAgentSelection,
-    onSelectDelegationChild,
-    selectedTarget,
-    units,
-    onOverview,
-    onProjectionChange,
-    onToggleZoneSelect,
-    projection,
-    triage,
-    visibleZones,
-    view,
-  ]);
+    const listener = (event: KeyboardEvent) => onKeyDown(event);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
 
   return (
     <div
@@ -1065,14 +1060,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
                   ? 'Fit Fleet overview'
                   : 'Return to Fleet overview'
               }
-              onClick={() => {
-                if (layout.altitude === 'fleet') {
-                  controller.current?.recenter();
-                  return;
-                }
-                controller.current?.focusFleet();
-                onOverview();
-              }}
+              onClick={() => overview('recenter')}
               className="grid h-11 min-w-11 place-items-center border-x px-3 text-chrome-label font-medium outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring"
               style={{ borderColor: theme.unitMuted, color: theme.selection }}
             >

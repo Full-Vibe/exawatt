@@ -30,7 +30,7 @@
  * `rememberFocus` keeps the invoker's focus, caret and selection, and
  * `restore` puts them back, onto a remounted element if the original is gone.
  */
-import { useLayoutEffect, useRef, type RefObject } from 'react';
+import { useEffectEvent, useLayoutEffect, type RefObject } from 'react';
 import { isOpenModalShortcutTarget } from './chord-engine';
 import {
   getWorkspaceFixedFamily,
@@ -322,12 +322,9 @@ export function useBackOut({
   enabled = true,
   returnFocus = false,
 }: UseBackOutOptions): void {
-  const backRef = useRef(back);
-  const elementRef = useRef(element);
-  useLayoutEffect(() => {
-    backRef.current = back;
-    elementRef.current = element;
-  });
+  // Effect Events: the ladder asks the rung committed when Escape arrives.
+  const answer = useEffectEvent((event: KeyboardEvent) => back(event));
+  const target = useEffectEvent(() => element?.current ?? null);
   // Layout phase: joins before any passive effect moves focus, so a layer
   // that returns focus remembers its real invoker, not its own first button.
   useLayoutEffect(() => {
@@ -336,8 +333,8 @@ export function useBackOut({
     const leave = registerBackOut({
       rung,
       ambient,
-      element: () => elementRef.current?.current ?? null,
-      back: event => backRef.current(event),
+      element: () => target(),
+      back: event => answer(event),
     });
     return () => {
       leave();

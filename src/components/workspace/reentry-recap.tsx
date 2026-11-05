@@ -1,11 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { History } from 'lucide-react';
-import {
-  WORKSPACE_HUD as HUD,
-  withThemeAlpha,
-} from './workspace-theme';
+import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import type { PtyReentryRecap } from '@exawatt/core/desktop-bridge';
 
 /** How long the ambient recap line stays before yielding back to the
@@ -28,17 +25,20 @@ export function ReentryRecapLine({
   recap: PtyReentryRecap;
   onExpire: () => void;
 }) {
+  // Each recap gets one timer: a parent re-render (a new `onExpire`) must not
+  // restart it.
+  const expire = useEffectEvent(() => onExpire());
   useEffect(() => {
-    const timer = setTimeout(onExpire, RECAP_LINE_MS);
+    const timer = setTimeout(() => expire(), RECAP_LINE_MS);
     // typing means the operator re-engaged — the "what changed" answer is
     // consumed; never swallow the keystroke itself
-    const expireOnInput = () => onExpire();
+    const expireOnInput = () => expire();
     window.addEventListener('keydown', expireOnInput, { capture: true });
     return () => {
       clearTimeout(timer);
       window.removeEventListener('keydown', expireOnInput, { capture: true });
     };
-  }, [onExpire, recap.generatedAt]);
+  }, [recap.generatedAt]);
 
   return (
     <span

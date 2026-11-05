@@ -385,11 +385,13 @@ function BoardStudyBench() {
               onSelectAgent={id => {
                 if (id) toggleAgent(id);
               }}
-              onOverview={() =>
+              onOverview={() => {
+                if (state.altitude === 'fleet') return false;
                 router.replace(href(state, { altitude: 'fleet' }), {
                   scroll: false,
-                })
-              }
+                });
+                return true;
+              }}
               onProjectionChange={() => undefined}
               multiSelection={selected}
               onToggleAgentSelect={toggleAgent}

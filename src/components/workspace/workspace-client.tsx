@@ -117,9 +117,6 @@ import {
   consumePendingRemoteAgentOpen,
   consumePendingProjectPicker,
   FOCUS_AGENT_COMPOSER_EVENT,
-  hasPendingAgentComposer,
-  pendingAgentComposerProjectDir,
-  type AgentComposerRequest,
   REOPEN_CLOSED_EVENT,
   REOPEN_LAST_CLOSED_EVENT,
   consumePendingReopenLastClosed,
@@ -163,6 +160,7 @@ import type {
   TargetCommandScope,
 } from './target-commands';
 import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
+import { useAgentComposerRequests } from './use-agent-composer-requests';
 import {
   DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
@@ -729,69 +727,16 @@ export function WorkspaceClient() {
     };
   }, [inElectron, summonProjectOpener]);
 
-  // A composer request bound to a Project (the Fleet board's ghost slot,
-  // ENG-004 V4.2) opens its draft THERE: the same draft tab and composer ⌘T
-  // opens, in the Project the operator pointed at rather than the active one.
-  const openBoundDraft = useCallback(
-    (dir: string) => {
-      const project = projects.find(candidate => candidate.dir === dir);
-      if (!project || projectRootPath(project) === null) {
-        summonProjectOpener();
-        return;
-      }
-      if (!createDraftTab(project.dir)) summonProjectOpener();
-    },
-    [createDraftTab, projects, summonProjectOpener]
-  );
-  // The request usually arrives from another route, before this workspace
-  // has mounted: it waits in the pending slot until the layout is loaded.
-  const boundDraftRequested = useRef(false);
-  useEffect(() => {
-    if (!inElectron || !ready || boundDraftRequested.current) return;
-    boundDraftRequested.current = true;
-    const dir = pendingAgentComposerProjectDir();
-    if (dir) openBoundDraft(dir);
-  }, [inElectron, openBoundDraft, ready]);
-
-  useEffect(() => {
-    if (!inElectron) return;
-    const ensureProject = (event: Event) => {
-      const detail = (event as CustomEvent<AgentComposerRequest>).detail;
-      if (detail && typeof detail === 'object' && detail.projectDir) {
-        openBoundDraft(detail.projectDir);
-        return;
-      }
-      if (!activeProject || projectRootPath(activeProject) === null) {
-        summonProjectOpener();
-        return;
-      }
-      // the summon IS a new tab now (D24): the draft pane hosts the
-      // composer, and a palette source override rides ON the draft
-      const requested = (event as CustomEvent<string | null>).detail ?? null;
-      createDraftTab(
-        undefined,
-        requested && isAgentSourceId(requested)
-          ? { draftSource: requested, draftTouched: true }
-          : undefined
-      );
-    };
-    window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
-    if (
-      !activeProject &&
-      hasPendingAgentComposer() &&
-      pendingAgentComposerProjectDir() === null
-    ) {
-      summonProjectOpener();
-    }
-    return () =>
-      window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
-  }, [
-    inElectron,
+  // New Agent requests (⌘N, the palette, the Fleet board's ghost slot):
+  // each acted on once, from the state it arrives in.
+  useAgentComposerRequests({
+    enabled: inElectron,
+    ready,
+    projects,
     activeProject,
     createDraftTab,
-    openBoundDraft,
     summonProjectOpener,
-  ]);
+  });
 
   // One derivation for every resume count (BUG-185): the members are the
   // tabs `tabCanResumeAsAgent` admits, which reads the same lifecycle owner
@@ -1764,6 +1709,10 @@ export function WorkspaceClient() {
     requestProjectExit(project.dir);
     for (const tab of project.tabs) void requestClose(tab.id, true);
   }, [projectCloseConfirm, projects, requestClose, requestProjectExit]);
+  const cancelProjectClose = useCallback(
+    () => setProjectCloseConfirm(null),
+    []
+  );
   const settleCloseConfirm = useCallback(() => {
     setCloseConfirm(null);
     requestAnimationFrame(() =>
@@ -2764,7 +2713,7 @@ export function WorkspaceClient() {
           waitingCount={projectCloseConfirm.waitingCount}
           color={projectCloseConfirm.color}
           onClose={confirmProjectClose}
-          onCancel={() => setProjectCloseConfirm(null)}
+          onCancel={cancelProjectClose}
         />
       )}
       {closeToast && (

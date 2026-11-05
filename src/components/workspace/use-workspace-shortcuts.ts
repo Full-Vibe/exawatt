@@ -34,7 +34,7 @@
  * reports whether it actually applied — default behavior is prevented ONLY
  * then, so impossible chords (no tabs, web fallback) keep browser behavior.
  */
-import { useEffect } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { shortcutRegistry } from '@/lib/shortcuts';
 import { eventToBinding } from '@/lib/shortcuts/format';
 import { isOpenModalShortcutTarget } from '@/lib/shortcuts/chord-engine';
@@ -165,124 +165,130 @@ function useWorkspaceShortcutLayer(
     back: () => fixedActions.focusTerminal(),
     enabled,
   });
+  // Effect Events: both phases read the actions committed when the key
+  // arrives and subscribe once per `enabled`, so the layer keeps its place
+  // among the window's keydown listeners (`defaultPrevented` ordering) and
+  // never answers from the render before last.
+  const onCaptureKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.defaultPrevented || isOpenModalShortcutTarget(e.target)) return;
+    for (const family of WORKSPACE_KEY_FAMILIES) {
+      if (family.phase !== 'capture' || !family.outranksAltitudes) continue;
+      const action = matchFixedFamily(family, e);
+      if (!action || action.kind === 'back-out') continue;
+      if (applyFixedFamilyAction(action, fixedActions)) e.preventDefault();
+      return;
+    }
+    // Absolute command altitudes own capture phase so they work from xterm.
+    // Require Command/Control here: a plain or Option-only rebind must never
+    // eat terminal text or macOS character entry.
+    if (e.metaKey || e.ctrlKey) {
+      const altitudes: Array<[string, CommandAltitude]> = [
+        ['command-terminal', 'terminal'],
+        ['command-sessions', 'sessions'],
+        ['command-spatial', 'spatial'],
+      ];
+      for (const [id, target] of altitudes) {
+        if (matchesRegistry(e, id)) {
+          if (registryActions?.activateCommandAltitude(target)) {
+            e.preventDefault();
+          }
+          return;
+        }
+      }
+    }
+
+    // Fixed workspace navigation owns capture phase so xterm and the
+    // global ⌘[/⌘] history layer cannot consume overlapping key families.
+    // Altitude destinations intentionally ran first, so an altitude rebound
+    // onto a bare ⌘digit still wins over tab ordinals (D19).
+    for (const family of WORKSPACE_KEY_FAMILIES) {
+      if (family.phase !== 'capture' || family.outranksAltitudes) continue;
+      const action = matchFixedFamily(family, e);
+      if (!action || action.kind === 'back-out') continue;
+      if (applyFixedFamilyAction(action, fixedActions)) e.preventDefault();
+      return;
+    }
+  });
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    // another window-level layer already handled this keystroke — never
+    // double-apply a verb
+    if (e.defaultPrevented) return;
+    // a modal surface (⌘K palette, help modal) owns the keyboard while
+    // open — ⌘W there must not close a terminal tab behind it
+    if (isOpenModalShortcutTarget(e.target)) return;
+    // Demo and future source adapters mount only the source-agnostic fixed
+    // layer. The global registry provider remains their command owner.
+    if (!registryActions) return;
+    // a modifier-less keystroke in a text surface is TYPING — never let a
+    // workspace verb consume it (guards against a verb mis-rebound to a
+    // plain key eating terminal/input characters; every default verb uses
+    // ⌘, so this only affects bad rebinds — review P1-3)
+    const bareKey = !e.metaKey && !e.ctrlKey && !e.altKey;
+    if (bareKey && isEditableTarget(e.target)) return;
+
+    // palette + cheat-sheet: registry-resolved (rebindable), reachable
+    // from inside terminals where the chord engine is blind
+    if (matchesRegistry(e, 'command-palette')) {
+      if (registryActions.openPalette()) e.preventDefault();
+      return;
+    }
+    if (matchesRegistry(e, 'help-modal-slash')) {
+      if (registryActions.openHelp()) e.preventDefault();
+      return;
+    }
+    // quick feedback capture (ENG-025 F1): same reach as the palette; the
+    // feedback provider owns the bar, so this layer only fires the event
+    if (matchesRegistry(e, 'quick-feedback')) {
+      requestQuickFeedback();
+      e.preventDefault();
+      return;
+    }
+
+    // every workspace verb resolves its combo from the registry (D9):
+    // rebinding it in Settings changes what the workspace responds to.
+    // `shiftAlias` verbs (currently ⌘W) also answer the shifted combo —
+    // but ONLY after
+    // every explicit binding is checked, so an alias never shadows a verb
+    // the user bound to that exact combo (review P1-2).
+    const verbs: Array<
+      [id: string, apply: () => boolean, shiftAlias?: boolean]
+    > = [
+      ['workspace-new-agent', registryActions.newAgent],
+      ['workspace-new-shell', registryActions.launchShell],
+      ['workspace-new-project', registryActions.newProject],
+      ['workspace-close-tab', registryActions.closeActive, true],
+      ['workspace-reopen-closed-tab', registryActions.reopenClosed],
+      ['workspace-jump-attention', registryActions.jumpAttention],
+      ['workspace-resume-agent', registryActions.resumeActiveAgent],
+      ['workspace-resume-scope', registryActions.resumeParkedScope],
+      ['workspace-split', registryActions.togglePin],
+      ['workspace-roadmap', registryActions.toggleRoadmap],
+      ['workspace-rename', registryActions.renameActive],
+    ];
+    for (const [id, apply] of verbs) {
+      if (matchesRegistry(e, id)) {
+        if (apply()) e.preventDefault();
+        return;
+      }
+    }
+    for (const [id, apply, shiftAlias] of verbs) {
+      if (shiftAlias && matchesShiftAliasOnly(e, id)) {
+        if (apply()) e.preventDefault();
+        return;
+      }
+    }
+  });
   useEffect(() => {
     if (!enabled) return;
-    const onCaptureKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || isOpenModalShortcutTarget(e.target)) return;
-      for (const family of WORKSPACE_KEY_FAMILIES) {
-        if (family.phase !== 'capture' || !family.outranksAltitudes) continue;
-        const action = matchFixedFamily(family, e);
-        if (!action || action.kind === 'back-out') continue;
-        if (applyFixedFamilyAction(action, fixedActions)) e.preventDefault();
-        return;
-      }
-      // Absolute command altitudes own capture phase so they work from xterm.
-      // Require Command/Control here: a plain or Option-only rebind must never
-      // eat terminal text or macOS character entry.
-      if (e.metaKey || e.ctrlKey) {
-        const altitudes: Array<[string, CommandAltitude]> = [
-          ['command-terminal', 'terminal'],
-          ['command-sessions', 'sessions'],
-          ['command-spatial', 'spatial'],
-        ];
-        for (const [id, target] of altitudes) {
-          if (matchesRegistry(e, id)) {
-            if (registryActions?.activateCommandAltitude(target)) {
-              e.preventDefault();
-            }
-            return;
-          }
-        }
-      }
-
-      // Fixed workspace navigation owns capture phase so xterm and the
-      // global ⌘[/⌘] history layer cannot consume overlapping key families.
-      // Altitude destinations intentionally ran first, so an altitude rebound
-      // onto a bare ⌘digit still wins over tab ordinals (D19).
-      for (const family of WORKSPACE_KEY_FAMILIES) {
-        if (family.phase !== 'capture' || family.outranksAltitudes) continue;
-        const action = matchFixedFamily(family, e);
-        if (!action || action.kind === 'back-out') continue;
-        if (applyFixedFamilyAction(action, fixedActions)) e.preventDefault();
-        return;
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      // another window-level layer already handled this keystroke — never
-      // double-apply a verb
-      if (e.defaultPrevented) return;
-      // a modal surface (⌘K palette, help modal) owns the keyboard while
-      // open — ⌘W there must not close a terminal tab behind it
-      if (isOpenModalShortcutTarget(e.target)) return;
-      // Demo and future source adapters mount only the source-agnostic fixed
-      // layer. The global registry provider remains their command owner.
-      if (!registryActions) return;
-      // a modifier-less keystroke in a text surface is TYPING — never let a
-      // workspace verb consume it (guards against a verb mis-rebound to a
-      // plain key eating terminal/input characters; every default verb uses
-      // ⌘, so this only affects bad rebinds — review P1-3)
-      const bareKey = !e.metaKey && !e.ctrlKey && !e.altKey;
-      if (bareKey && isEditableTarget(e.target)) return;
-
-      // palette + cheat-sheet: registry-resolved (rebindable), reachable
-      // from inside terminals where the chord engine is blind
-      if (matchesRegistry(e, 'command-palette')) {
-        if (registryActions.openPalette()) e.preventDefault();
-        return;
-      }
-      if (matchesRegistry(e, 'help-modal-slash')) {
-        if (registryActions.openHelp()) e.preventDefault();
-        return;
-      }
-      // quick feedback capture (ENG-025 F1): same reach as the palette; the
-      // feedback provider owns the bar, so this layer only fires the event
-      if (matchesRegistry(e, 'quick-feedback')) {
-        requestQuickFeedback();
-        e.preventDefault();
-        return;
-      }
-
-      // every workspace verb resolves its combo from the registry (D9):
-      // rebinding it in Settings changes what the workspace responds to.
-      // `shiftAlias` verbs (currently ⌘W) also answer the shifted combo —
-      // but ONLY after
-      // every explicit binding is checked, so an alias never shadows a verb
-      // the user bound to that exact combo (review P1-2).
-      const verbs: Array<
-        [id: string, apply: () => boolean, shiftAlias?: boolean]
-      > = [
-        ['workspace-new-agent', registryActions.newAgent],
-        ['workspace-new-shell', registryActions.launchShell],
-        ['workspace-new-project', registryActions.newProject],
-        ['workspace-close-tab', registryActions.closeActive, true],
-        ['workspace-reopen-closed-tab', registryActions.reopenClosed],
-        ['workspace-jump-attention', registryActions.jumpAttention],
-        ['workspace-resume-agent', registryActions.resumeActiveAgent],
-        ['workspace-resume-scope', registryActions.resumeParkedScope],
-        ['workspace-split', registryActions.togglePin],
-        ['workspace-roadmap', registryActions.toggleRoadmap],
-        ['workspace-rename', registryActions.renameActive],
-      ];
-      for (const [id, apply] of verbs) {
-        if (matchesRegistry(e, id)) {
-          if (apply()) e.preventDefault();
-          return;
-        }
-      }
-      for (const [id, apply, shiftAlias] of verbs) {
-        if (shiftAlias && matchesShiftAliasOnly(e, id)) {
-          if (apply()) e.preventDefault();
-          return;
-        }
-      }
-    };
-    window.addEventListener('keydown', onCaptureKey, true);
-    window.addEventListener('keydown', onKey);
+    const capture = (e: KeyboardEvent) => onCaptureKey(e);
+    const bubble = (e: KeyboardEvent) => onKey(e);
+    window.addEventListener('keydown', capture, true);
+    window.addEventListener('keydown', bubble);
     return () => {
-      window.removeEventListener('keydown', onCaptureKey, true);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', capture, true);
+      window.removeEventListener('keydown', bubble);
     };
-  }, [enabled, fixedActions, registryActions]);
+  }, [enabled]);
 }
 
 /** Source-agnostic fixed families for Demo and compatible future sources. */

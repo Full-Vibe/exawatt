@@ -3,21 +3,15 @@
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  startTransition,
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
-import {
-  moveBoardRoute,
-  readBoardRoute,
-  sameBoardRoute,
-  writeBoardRoute,
-  type BoardRoute,
-} from './board-route';
+import { useBoardRoute } from './use-board-route';
 import { Crosshair, Keyboard, Search } from 'lucide-react';
 import { useBackOut } from '@/lib/shortcuts/back-out';
 import {
@@ -129,15 +123,12 @@ export function SpatialFleetClient() {
   // The semantic address is STATE here and the URL mirrors it (see
   // `board-route.ts`): a hotkey moves the camera on its own frame instead of
   // after a router round-trip. A URL arriving from outside re-syncs it.
-  const [route, setRoute] = useState<BoardRoute>(() =>
-    readBoardRoute(searchParams)
+  const replaceUrl = useCallback(
+    (href: string) => router.replace(href, { scroll: false }),
+    [router]
   );
-  useEffect(() => {
-    const fromUrl = readBoardRoute(searchParams);
-    setRoute(previous =>
-      sameBoardRoute(previous, fromUrl) ? previous : fromUrl
-    );
-  }, [searchParams]);
+  const { route, navigate, drillToProject, overview, changeProjection } =
+    useBoardRoute({ searchParams, replace: replaceUrl });
   const altitude: Altitude = route.altitude;
   const focusedProjectId = route.projectId;
   const selectedAgentId = route.agentId;
@@ -441,44 +432,6 @@ export function SpatialFleetClient() {
     );
   }, [searchParams]);
 
-  // Drive zoom-resolution + selection through the URL (deep-linkable). The
-  // selector resolves the effective altitude (ascends if a focus is stale).
-  // Latest-route ref, written in a layout effect and never during render.
-  // The URL writers below read the CURRENT address bar at call time rather
-  // than closing over `searchParams`: rebuilt on every URL change, they made
-  // every consumer re-render each time the URL caught up with a move.
-  const routeRef = useRef(route);
-  useLayoutEffect(() => {
-    routeRef.current = route;
-  }, [route]);
-  const commitRoute = useCallback(
-    (next: BoardRoute) => {
-      if (sameBoardRoute(routeRef.current, next)) return;
-      routeRef.current = next;
-      // Non-urgent on purpose. A keydown is a discrete event, so React would
-      // flush this render synchronously -- before the browser paints -- and
-      // the camera the hotkey just started would wait behind an 80ms commit.
-      // As a transition, the camera frame paints first and the board's
-      // re-render follows.
-      startTransition(() => setRoute(next));
-      const params = writeBoardRoute(
-        new URLSearchParams(window.location.search),
-        next
-      );
-      const q = params.toString();
-      router.replace(`/fleet/spatial${q ? `?${q}` : ''}`, { scroll: false });
-    },
-    [router]
-  );
-  const navigate = useCallback(
-    (next: {
-      altitude?: Altitude;
-      project?: string | null;
-      agent?: string | null;
-    }) => commitRoute(moveBoardRoute(routeRef.current, next)),
-    [commitRoute]
-  );
-
   const ascend = useCallback(() => {
     if (scene.altitude === 'agent') {
       navigate({
@@ -490,23 +443,6 @@ export function SpatialFleetClient() {
       navigate({ altitude: 'fleet', project: null, agent: null });
     }
   }, [scene.altitude, scene.focusedProjectId, navigate]);
-
-  const drillToProject = useCallback(
-    (clusterId: string) =>
-      navigate({ altitude: 'project', project: clusterId, agent: null }),
-    [navigate]
-  );
-
-  const overview = useCallback(
-    () => navigate({ altitude: 'fleet', project: null, agent: null }),
-    [navigate]
-  );
-
-  const changeProjection = useCallback(
-    (next: SpatialBoardProjection) =>
-      commitRoute(moveBoardRoute(routeRef.current, { projection: next })),
-    [commitRoute]
-  );
 
   // Clicking an agent drills to the agent (with its owning Project as the
   // focused context); clicking empty space releases the working set first,
@@ -658,24 +594,25 @@ export function SpatialFleetClient() {
   )?.keys;
   // ⌘D focuses Direct while a working set exists (`board-keymap.ts`). It is
   // the board's own binding: Split owns ⌘D only on the Agent altitude.
+  const onDirectKey = useEffectEvent((event: KeyboardEvent) => {
+    if (
+      event.key.toLowerCase() !== 'd' ||
+      !event.metaKey ||
+      event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      recipients.length === 0
+    ) {
+      return;
+    }
+    event.preventDefault();
+    directInput.current?.focus();
+  });
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() !== 'd' ||
-        !event.metaKey ||
-        event.shiftKey ||
-        event.altKey ||
-        event.ctrlKey ||
-        recipients.length === 0
-      ) {
-        return;
-      }
-      event.preventDefault();
-      directInput.current?.focus();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [recipients.length]);
+    const listener = (event: KeyboardEvent) => onDirectKey(event);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
 
   const focusedZoneLabel = scene.groups[0]?.label ?? null;
   const inspectedAgent =

@@ -168,7 +168,7 @@ export default function DirectAgentsSpecimenPage() {
             projection="top-down"
             onDrillProject={() => undefined}
             onSelectAgent={() => undefined}
-            onOverview={() => undefined}
+            onOverview={() => false}
             onProjectionChange={() => undefined}
             ghostSlots={ghosts}
             onActivateGhost={() => undefined}

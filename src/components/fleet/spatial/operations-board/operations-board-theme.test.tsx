@@ -123,7 +123,7 @@ function surface(
       projection="top-down"
       onDrillProject={() => undefined}
       onSelectAgent={() => undefined}
-      onOverview={() => undefined}
+      onOverview={() => false}
       onProjectionChange={() => undefined}
       resolvedAppearance={appearance}
     />

@@ -249,7 +249,7 @@ export default function OperationsBoardEvalPage() {
           projection="top-down"
           onDrillProject={() => undefined}
           onSelectAgent={() => undefined}
-          onOverview={() => undefined}
+          onOverview={() => false}
           onProjectionChange={() => undefined}
           preserveDrawingBuffer
           resolvedAppearance={resolvedAppearance}

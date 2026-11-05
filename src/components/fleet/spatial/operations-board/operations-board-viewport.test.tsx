@@ -102,7 +102,7 @@ function surface(fleetView: FleetView) {
       viewportStorageKey={storageKey}
       onDrillProject={() => undefined}
       onSelectAgent={() => undefined}
-      onOverview={() => undefined}
+      onOverview={() => false}
       onProjectionChange={() => undefined}
     />
   );
@@ -231,7 +231,7 @@ describe('board renderer readiness', () => {
         viewportStorageKey={storageKey}
         onDrillProject={() => undefined}
         onSelectAgent={() => undefined}
-        onOverview={() => undefined}
+        onOverview={() => false}
         onProjectionChange={() => undefined}
       />
     );

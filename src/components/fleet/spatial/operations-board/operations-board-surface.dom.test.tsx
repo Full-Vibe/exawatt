@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { Suspense, use } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import { selectSpatialBoardLayout } from '@exawatt/ui-model';
@@ -24,6 +25,7 @@ vi.mock('./tiles/operations-board-tiles-canvas', () => ({
 
 import { OperationsBoardSurface } from './operations-board-surface';
 import { boardViewFor } from './operations-board-views';
+import { useBoardRoute } from '../use-board-route';
 
 function resolveClassicDark() {
   const theme = THEME_REGISTRY['exawatt-classic-dark'];
@@ -102,7 +104,7 @@ function renderSurface(
       projection="top-down"
       onDrillProject={onDrillProject}
       onSelectAgent={() => undefined}
-      onOverview={() => undefined}
+      onOverview={() => false}
       onProjectionChange={() => undefined}
       resolvedAppearance={resolveClassicDark()}
     />
@@ -131,6 +133,76 @@ describe('board hotkey guard', () => {
     fireEvent.keyDown(navigator, { key: '1' });
     fireEvent.keyDown(navigator, { key: 'v' });
     expect(onDrillProject).not.toHaveBeenCalled();
+  });
+});
+
+describe('board keys inside a pending move (BUG-323)', () => {
+  // The Fleet client commits each move as a transition, so the board keeps
+  // rendering the previous address until the move's render commits. A key
+  // pressed in that window must mean what it means a moment later.
+  function Board({ hold }: { hold: Promise<void> }) {
+    const board = useBoardRoute({
+      searchParams: new URLSearchParams(),
+      replace,
+    });
+    const { route } = board;
+    // Rendering away from Fleet waits on `hold`: React keeps the committed
+    // Fleet snapshot on screen for as long as the move stays pending.
+    if (route.altitude !== 'fleet') use(hold);
+    return (
+      <div data-rendered-altitude={route.altitude}>
+        <OperationsBoardSurface
+          layout={selectSpatialBoardLayout(populated, {
+            altitude: route.altitude,
+            focusedProjectId: route.projectId,
+          })}
+          projection="top-down"
+          onDrillProject={board.drillToProject}
+          onSelectAgent={() => undefined}
+          onOverview={board.overview}
+          onProjectionChange={() => undefined}
+          resolvedAppearance={resolveClassicDark()}
+        />
+      </div>
+    );
+  }
+  const replace = vi.fn<(href: string) => void>();
+
+  it('goes up to Fleet on 0 pressed before the drill has rendered', async () => {
+    replace.mockClear();
+    let release!: () => void;
+    const hold = new Promise<void>(resolve => (release = resolve));
+    const view = render(
+      <Suspense fallback={null}>
+        <Board hold={hold} />
+      </Suspense>
+    );
+    const rendered = () =>
+      view.container
+        .querySelector('[data-rendered-altitude]')
+        ?.getAttribute('data-rendered-altitude');
+
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: '1' });
+    });
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.stringContaining('altitude=project')
+    );
+    // The drill is asked for and still pending: the board shows Fleet.
+    expect(rendered()).toBe('fleet');
+
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: '0' });
+    });
+    await act(async () => release());
+
+    expect(replace).toHaveBeenLastCalledWith('/fleet/spatial');
+    await waitFor(() => expect(rendered()).toBe('fleet'));
+    expect(
+      view.container
+        .querySelector('[data-board-overview]')
+        ?.getAttribute('data-board-overview')
+    ).toBe('fit');
   });
 });
 
@@ -196,7 +268,7 @@ describe('board tool handles', () => {
         projection="fixed-angle"
         onDrillProject={() => undefined}
         onSelectAgent={() => undefined}
-        onOverview={() => undefined}
+        onOverview={() => false}
         onProjectionChange={() => undefined}
         resolvedAppearance={resolveClassicDark()}
       />

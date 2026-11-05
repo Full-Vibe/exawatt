@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -98,40 +99,42 @@ export function useFleetAttention({
   }, [available]);
   useEffect(() => resetWorkspaceCommandAvailability, []);
 
+  // Effect Events: the key and the command read the targets committed when
+  // they arrive, and the listeners subscribe once.
+  const onKey = useEffectEvent((event: KeyboardEvent) => {
+    if (
+      event.defaultPrevented ||
+      shortcutRegistry.getActiveContexts().includes('modal-open') ||
+      isOpenModalShortcutTarget(event.target)
+    )
+      return;
+    const element = event.target instanceof Element ? event.target : null;
+    if (
+      element?.closest(
+        'input, textarea, select, [contenteditable="true"], [cmdk-input]'
+      )
+    )
+      return;
+    const keys = shortcutRegistry.getEffectiveKeys('workspace-jump-attention');
+    if (!keys || isChord(keys) || !bindingsMatch(keys, eventToBinding(event)))
+      return;
+    if (jump()) event.preventDefault();
+  });
+  const onCommand = useEffectEvent(() => {
+    if (
+      !shortcutRegistry.getActiveContexts().includes('modal-open') &&
+      !isOpenModalShortcutTarget(document.activeElement)
+    )
+      jump();
+  });
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        shortcutRegistry.getActiveContexts().includes('modal-open') ||
-        isOpenModalShortcutTarget(event.target)
-      )
-        return;
-      const element = event.target instanceof Element ? event.target : null;
-      if (
-        element?.closest(
-          'input, textarea, select, [contenteditable="true"], [cmdk-input]'
-        )
-      )
-        return;
-      const keys = shortcutRegistry.getEffectiveKeys(
-        'workspace-jump-attention'
-      );
-      if (!keys || isChord(keys) || !bindingsMatch(keys, eventToBinding(event)))
-        return;
-      if (jump()) event.preventDefault();
-    };
-    const onCommand = () => {
-      if (
-        !shortcutRegistry.getActiveContexts().includes('modal-open') &&
-        !isOpenModalShortcutTarget(document.activeElement)
-      )
-        jump();
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener(JUMP_ATTENTION_EVENT, onCommand);
+    const key = (event: KeyboardEvent) => onKey(event);
+    const command = () => onCommand();
+    window.addEventListener('keydown', key);
+    window.addEventListener(JUMP_ATTENTION_EVENT, command);
     return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener(JUMP_ATTENTION_EVENT, onCommand);
+      window.removeEventListener('keydown', key);
+      window.removeEventListener(JUMP_ATTENTION_EVENT, command);
     };
-  }, [jump]);
+  }, []);
 }
