@@ -895,6 +895,45 @@ async function verifyTrain({ lane, session, base, cars, options }) {
   const excluded = [];
   const bisect = [];
   const names = list => list.map(car => car.branch).join(',');
+  // BUG-322: every answer this train has had, by tree and check. A bisection
+  // convicts a car only by comparing answers for different trees, so one
+  // tree that both passed and failed one check makes every comparison
+  // through that check unsound: it is a suspected flake in that check on
+  // that tree, and no car is convicted. On 2026-10-22 a four-car train
+  // failed eval:spatial twice, the three-car prefix passed it, the docs car
+  // was convicted by elimination, and the stack without it (the same tree
+  // as that prefix) then failed it.
+  const answers = new Map();
+  const answered = async ({ tree, check, result, stack, message = '' }) => {
+    const key = `${tree}\0${check}`;
+    const earlier = answers.get(key);
+    if (!earlier) {
+      answers.set(key, { result, cars: names(stack), message });
+      return;
+    }
+    if (earlier.result === result) return;
+    const failed =
+      result === 'failed' ? { cars: names(stack), message } : earlier;
+    const passed = result === 'passed' ? names(stack) : earlier.cars;
+    bisect.push({
+      cars: stack.map(car => car.branch),
+      check,
+      tree,
+      result: 'flake',
+    });
+    await appendDeliveryMetric(root, 'train_flake', {
+      check,
+      tree,
+      passed,
+      failed: failed.cars,
+    });
+    console.log(
+      `[agent-land] STATUS failed=train flake=${check} tree=${tree.slice(0, 12)} cars=${failed.cars}${flakedField(session.flakes)}`
+    );
+    throw new Error(
+      `TRAIN flake: ${check} passed and failed on the same tree ${tree.slice(0, 12)} (${passed === failed.cars ? passed : `as ${passed} and as ${failed.cars}`}), so it is a suspected flake in ${check} on that tree and no car is convicted.\n${failed.message}\nNothing landed. Chase the flake in ${check}, then run the train again.`
+    );
+  };
   // One bisection question on the stack the worktree holds: does `check`
   // fail here? Only that check runs, after what it needs.
   const ask = async (stack, check, record = {}) => {
@@ -910,6 +949,15 @@ async function verifyTrain({ lane, session, base, cars, options }) {
     // only when the prefix's policy names it.
     const owed =
       check === TREE_POLICY_CHECK || step.verified?.checks.length > 0;
+    if (!step.passed || owed) {
+      await answered({
+        tree: step.tree,
+        check: step.passed ? check : step.failedCheck,
+        result: step.passed ? 'passed' : 'failed',
+        stack,
+        message: step.message,
+      });
+    }
     const answer = {
       cars: stack.map(car => car.branch),
       check,
@@ -963,6 +1011,13 @@ async function verifyTrain({ lane, session, base, cars, options }) {
     });
     if (attempt.passed) return { ...attempt, cars: current, excluded, bisect };
     const check = attempt.failedCheck;
+    await answered({
+      tree: attempt.tree,
+      check,
+      result: 'failed',
+      stack: current,
+      message: attempt.message,
+    });
     bisect.push({
       cars: current.map(car => car.branch),
       check,
@@ -1071,6 +1126,7 @@ async function verifyStack({
   recheck = false,
 }) {
   const sha = await git(lane.root, 'rev-parse', 'HEAD');
+  const tree = await git(lane.root, 'rev-parse', 'HEAD^{tree}');
   const files = await changedPaths(lane.root, base);
   try {
     const verified = await session.verify({
@@ -1081,11 +1137,19 @@ async function verifyStack({
       recheck,
       extra: { trainCars: cars.map(car => car.branch) },
     });
-    return { passed: true, sha, files, extras: verified.extras, verified };
+    return {
+      passed: true,
+      sha,
+      tree,
+      files,
+      extras: verified.extras,
+      verified,
+    };
   } catch (error) {
     if (!session.failedCheck) throw error;
     return {
       passed: false,
+      tree,
       failedCheck: session.failedCheck,
       message: error.message,
     };

@@ -361,6 +361,88 @@ test('a check that passes its recheck is a named flake: no bisect, no car convic
   }
 });
 
+// BUG-322: on 2026-10-22 a four-car train failed eval:spatial twice, the
+// three-car prefix passed it, the bisection convicted the docs car last by
+// elimination, and the stack without that car, the same tree as the passing
+// prefix, then failed it. One tree, two answers: a flake, and no car's fault.
+test('one tree that passes and fails a check is a suspected flake in that check, and no car is convicted', async () => {
+  const fixture = createQueueFixture('exawatt-train-same-tree-');
+  try {
+    fixture.agentWorktree('agent/a', { 'a.txt': 'a\n' });
+    fixture.agentWorktree('agent/b', { 'b.txt': 'b\n' });
+    fixture.agentWorktree('agent/c', { 'c.txt': 'c\n' });
+    fixture.agentWorktree('agent/docs', { 'docs/d.md': '# D\n' });
+    const log = fixture.at('pnpm.log');
+    const before = fixture.originMaster();
+    // lint fails on the full stack and its recheck (runs 1, 2), passes on
+    // the prefixes a,b and a,b,c (runs 3, 4), and fails on a,b,c again
+    // when it is asked as the stack without agent/docs (run 5).
+    const landed = await finished(
+      fixture.land(
+        fixture.main,
+        ['--train', 'agent/a', 'agent/b', 'agent/c', 'agent/docs'],
+        {
+          ...QUIET,
+          FIXTURE_FAIL_RUNS: 'lint=1,2,5',
+          FIXTURE_RUN_COUNT: fixture.at('runs'),
+          // A reused pass would answer for the tree without running lint:
+          // the real check was a gate, which is never reused.
+          EXAWATT_CHECK_REUSE: '0',
+          FIXTURE_PNPM_LOG: log,
+        }
+      )
+    );
+    assertNothingLanded(fixture, before, landed);
+    assert.match(
+      landed.output,
+      /train bisect: agent\/a,agent\/b,agent\/c passed lint/u
+    );
+    assert.match(
+      landed.output,
+      /TRAIN flake: lint passed and failed on the same tree [0-9a-f]{12} \(agent\/a,agent\/b,agent\/c\), so it is a suspected flake in lint on that tree/u
+    );
+    assert.match(landed.output, /no car is convicted/u);
+    assert.match(
+      landed.output,
+      /STATUS failed=train flake=lint tree=[0-9a-f]{12} cars=agent\/a,agent\/b,agent\/c/u
+    );
+    assert.doesNotMatch(landed.output, /TRAIN red|guilty=/u);
+    assert.equal(scriptRuns(log).lint, 5, landed.output);
+    const [flake] = (await readDeliveryMetrics(fixture.main)).filter(
+      event => event.type === 'train_flake'
+    );
+    assert.equal(flake.check, 'lint');
+    assert.equal(flake.passed, 'agent/a,agent/b,agent/c');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// The same knob, answering the same way on every tree: a real break by the
+// last car is still convicted by elimination.
+test('a last car whose stack fails every time it is asked is still the car the train names', async () => {
+  const fixture = createQueueFixture('exawatt-train-last-car-');
+  try {
+    fixture.agentWorktree('agent/a', { 'a.txt': 'a\n' });
+    fixture.agentWorktree('agent/b', { RED: 'breaks lint\n' });
+    const before = fixture.originMaster();
+    const landed = await finished(
+      fixture.land(fixture.main, ['--train', 'agent/a', 'agent/b'], {
+        ...QUIET,
+        FIXTURE_FAILS: 'lint=RED',
+      })
+    );
+    assertNothingLanded(fixture, before, landed);
+    assert.match(
+      landed.output,
+      /TRAIN red: agent\/b broke lint; agent\/a passed without it\./u
+    );
+    assert.doesNotMatch(landed.output, /TRAIN flake/u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test('the verdict names the check that failed on the guilty prefix', async () => {
   const fixture = createQueueFixture('exawatt-train-verdict-');
   try {
