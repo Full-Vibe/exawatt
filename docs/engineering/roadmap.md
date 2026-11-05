@@ -5436,7 +5436,7 @@ half above now holds every landing awake.
 
 ### BUG-310 The packaged renderer server registers with macOS as a second Exawatt
 
-Status: bug · ENG-016 · found 2026-10-22 by the instance packet.
+Status: fixed 2026-11-04 · ENG-016 · found 2026-10-22 by the instance packet; execution front (2026-11-04) packet 6.
 
 The packaged app starts its Next server with its own executable
 (`process.execPath` with `ELECTRON_RUN_AS_NODE`, `renderer-server.ts`), so
@@ -5447,6 +5447,28 @@ Exawatts, and one of them has no window; it was one of the two inputs to
 BUG-083. Exit: the server runs as a helper that macOS does not list as an
 application (Electron's `utilityProcess` or the `LSUIElement` helper
 executable), with the renderer-server lifecycle evals still passing.
+
+Cause: Next names its process (`process.title`), and on macOS Node's process
+title checks the process in with LaunchServices using the executable's own
+bundle. Run as the app's executable, the server checked in as a Foreground
+application with the app's bundle id; the same server run from the helper
+bundle checks in as that helper (`UIElement`, accessory, parented to the app),
+and without the title it does not check in at all (measured 2026-11-04).
+Fix by system: the one renderer-server owner now starts the server with
+`utilityProcess.fork` from the helper bundle, and the `ELECTRON_RUN_AS_NODE`
+spawn and its stdin lifeline are deleted: Chromium ends a utility process
+with main (22 ms after a SIGKILL, measured), and records its death as a
+`child.gone` named `Renderer Server` beside the supervisor's
+`renderer-server.*` records. A stop that arrives before the spawn now waits
+for it, since `kill()` does nothing earlier. The warm server starts at the
+ready event instead of before it, at no measurable cost: server boot 415 ms
+against 418 ms, warm usable workspace median 1.39 s both ways. Proof:
+`eval:electron:packaged` now asserts the server is not registered as an
+application under the app's bundle id (red on the old build: `Foreground`,
+`ai.exawatt.community`), that a server killed from outside restarts on its
+origin with both records, and still that it ends with a SIGKILLed main;
+`renderer-server.test.ts` holds the lifecycle against a double of
+`UtilityProcess`.
 
 ### BUG-311 The train's bisect re-ran every landing check per prefix and could convict a car by elimination
 

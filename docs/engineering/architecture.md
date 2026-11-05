@@ -57,13 +57,16 @@ with a self-contained, CSP-restricted launch document as soon as Chromium is
 ready; that document has no trusted IPC origin and reports only main-owned boot
 milestones. The packaged Next renderer, PTY/session services, auth, updater, and
 other command modules initialize behind it. A cached renderer server starts
-before Electron's ready event; archive extraction on a version cache miss waits
-until the launch frame exists so disk work cannot delay visible acknowledgement.
-The same window then navigates to the trusted loopback renderer. Shutdown owns
-that renderer child process as part of the verified lifecycle: it waits for the
-server to close (with bounded force-stop escalation) before declaring cleanup
-complete. The child also ends with main however main ends, through a stdin
-lifeline main never closes (BUG-070), and an install keeps one loopback port,
+the moment Electron is ready, alongside the launch frame; archive extraction on
+a version cache miss waits until the launch frame exists so disk work cannot
+delay visible acknowledgement. The same window then navigates to the trusted
+loopback renderer. The server runs as an Electron utility process
+(`utilityProcess.fork`, `electron/main/renderer-server.ts`), from the app's
+helper bundle, so macOS lists one application rather than a second one named
+`next-server` (BUG-310). Shutdown owns that process as part of the verified
+lifecycle: it waits for the server to exit (Chromium ends one that ignores the
+request after two seconds) before declaring cleanup complete. Chromium also
+ends it with main however main ends (BUG-070), and an install keeps one loopback port,
 so the renderer origin and everything Chromium stores per origin survive a
 relaunch; a launch that finds the port taken serves one launch from another
 (BUG-022). The reverse ending is supervised: a renderer server that dies while

@@ -66,8 +66,8 @@ async function respondsOk(url) {
 }
 
 /**
- * Extract `archive`, start its standalone server the way the app does, and
- * resolve once it answers `/workspace`. Throws with the server's own output —
+ * Extract `archive`, start its standalone server on the Node build the app
+ * runs it on, and resolve once it answers `/workspace`. Throws with the server's own output —
  * a module-resolution failure names the file it wanted, which is the whole
  * diagnosis.
  *
