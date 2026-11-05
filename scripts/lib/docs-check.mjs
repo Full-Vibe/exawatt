@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import {
+  checkEnvironment,
   classifyDocsChecks,
   indexTree,
   missingCheckFiles,
@@ -139,7 +140,8 @@ function runCheck(root, check, env) {
     const chunks = [];
     const child = spawn(check.command, check.args, {
       cwd: root,
-      env: childEnv(env),
+      // A suite pinned to CI's Node runs on it here too (BUG-320).
+      env: checkEnvironment(check, childEnv(env)),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout.on('data', chunk => chunks.push(chunk));
