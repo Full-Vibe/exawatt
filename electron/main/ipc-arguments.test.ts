@@ -47,6 +47,9 @@ const WELL_FORMED: { [C in Channel]: unknown[] } = {
   'pty:correct-context': ['session-1', 'Fix the build'],
   'pty:clone-context': ['session-1'],
   'pty:copy-text': ['hello'],
+  'pty:report-paint': [
+    { visible: true, panes: [{ id: 'pty-3', painted: 4096 }] },
+  ],
   'pty:open-path': ['docs/plan.md', '/work/repo', { contain: true }],
   'pty:worktree': ['/work/repo', 'agent/fix-build'],
   'pty:reconcile-resume-identities': [
@@ -232,6 +235,25 @@ describe('argument boundaries', () => {
     ]) {
       expect(() => read('bus:send', { ...request, to })).toThrow(
         'Invalid bus message'
+      );
+    }
+  });
+
+  it('refuses a paint report it cannot read instead of reading it as caught up', () => {
+    for (const report of [
+      null,
+      { visible: 'yes', panes: [] },
+      { visible: true },
+      { visible: true, panes: [{ id: 'pty-1', painted: -1 }] },
+      { visible: true, panes: [{ id: 'pty-1', painted: 1.5 }] },
+      { visible: true, panes: [{ id: '../x', painted: 1 }] },
+      {
+        visible: true,
+        panes: Array.from({ length: 257 }, () => ({ id: 'p', painted: 0 })),
+      },
+    ]) {
+      expect(() => read('pty:report-paint', report)).toThrow(
+        'Invalid paint report'
       );
     }
   });

@@ -172,6 +172,7 @@
     "worktree:roster": "node scripts/worktree-roster.mjs",
     "eval:electron:delegation": "node scripts/electron-delegation-eval.mjs",
     "eval:electron:turn-truth": "node scripts/electron-turn-truth-eval.mjs",
+    "eval:electron:session-liveness": "node scripts/electron-session-liveness-eval.mjs",
     "eval:electron:tenancy": "node scripts/electron-workspace-tenancy-eval.mjs",
     "eval:electron:operator-stats": "node scripts/electron-operator-stats-eval.mjs",
     "eval:roadmap:rail": "node scripts/roadmap-rail-eval.mjs",

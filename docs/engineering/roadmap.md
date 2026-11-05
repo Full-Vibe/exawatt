@@ -5984,7 +5984,7 @@ Project; `exawatt send @a,@b` and the MCP send tool take several. Proof:
 
 ### BUG-330 A Claude Agent's working timer froze for a minute or two
 
-Status: bug · ENG-002 · partner conversation 2026-11-04
+Status: done · ENG-002 · partner conversation 2026-11-04; session-liveness packet, Execution front (2026-11-04)
 
 An external user reported that a Claude Code Agent's working line ("clauding"
 and its elapsed counter) "was stuck on three minutes twenty seconds for about a
@@ -5996,6 +5996,27 @@ output, or the Claude process itself stalled. Nothing in the report tells
 which, and the Exawatt version was not stated. Exit: a reproduction or a
 diagnostics record that names the side that stopped; if it was Exawatt's, a
 working Agent's pane keeps painting while the harness writes.
+
+2026-11-04: nothing could say which side stopped because nothing watched
+either. Session liveness now does, with no timers: main knows each Session's
+delivered output cursor, and each window reports, at most every two seconds
+while it paints, the cursor each shown pane has actually rendered
+(`pty:report-paint`, `pane-paint-reporter.ts`). Output main keeps delivering
+that a visible pane leaves unpainted for 15 s writes `liveness.stall` with
+`side: pane`; a reported turn whose harness goes silent past the stale bound
+writes `side: harness`, with whether the operator typed before or into the
+silence. Each episode ends in one `liveness.stall-cleared` with its length.
+Both land in `logs/harness-events.jsonl` (`pty/session-liveness.ts`). Exawatt's
+own pipeline showed no cause: per-chunk delivery, scrollback trimming and
+replay are bounded, and a measured Claude Code 2.1.318 keeps its counter
+running when the terminal reports focus-out, so pane focus does not freeze
+it. `eval:electron:session-liveness` drives the real app: a counting harness
+with a painting pane records nothing and the pane keeps up; a renderer frozen
+while the harness counts is recorded as the pane; a harness that stops inside
+its turn is recorded as the harness; and each recovery is recorded. Unit
+tests (`session-liveness.test.ts`, `pane-paint-reporter.test.ts`) and an IPC
+test through preload and the argument boundary pin it. A recurrence now
+names its side in the log.
 
 ### BUG-331 The default unrestricted mode reads as an outdated harness to a new user
 

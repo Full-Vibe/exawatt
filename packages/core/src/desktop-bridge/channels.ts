@@ -100,6 +100,7 @@ import type {
   PtyDataEvent,
   PtyExitEvent,
   PtyIdentityEvent,
+  PtyPaintReport,
   PtyReentryRecap,
   PtySessionInfo,
   PtySessionRecord,
@@ -331,6 +332,7 @@ interface RequestTable {
   'pty:write': Call<[id: string, data: string, operatorEngaged: boolean], void>;
   'pty:engage': Call<[id: string], void>;
   'pty:resize': Call<[id: string, cols: number, rows: number], void>;
+  'pty:report-paint': Call<[report: PtyPaintReport], void>;
   'pty:kill': Call<[id: string], void>;
   'pty:close-session': Call<
     [durableSessionId: string, discard: boolean],

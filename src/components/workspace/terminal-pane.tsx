@@ -46,6 +46,7 @@ import {
 import { WORKSPACE_HUD } from './workspace-theme';
 import { useBackOut } from '@/lib/shortcuts/back-out';
 import { LAYOUT_CLASS, type PaneLayout } from './pane-layout';
+import { paneLiveness, type PaneLiveness } from './pane-paint-reporter';
 
 export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
 export type { EffectiveTerminalFont } from './terminal-font';
@@ -128,6 +129,9 @@ export function TerminalPane({
   // effect refits on reveal.
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  // What this pane has painted, for Session liveness (BUG-330): main compares
+  // it with what it delivered to tell a stalled pane from a stalled harness.
+  const livenessRef = useRef<PaneLiveness | null>(null);
 
   // ONE act of opening, whatever recognised the target: hovered plain text,
   // an OSC 8 hyperlink an Agent emitted, or the context menu.
@@ -402,6 +406,32 @@ export function TerminalPane({
         termRef.current = null;
       });
 
+      // Painted, not parsed: a cursor counts once xterm has RENDERED the
+      // frame after parsing it. A render paints the whole buffer as it stands,
+      // so everything parsed by then is on screen. A viewport scrolled back
+      // into history is not expected to show new output, so there parsing is
+      // all that is owed.
+      const liveness = paneLiveness().register(sessionId);
+      livenessRef.current = liveness;
+      cleanup.push(() => {
+        liveness.dispose();
+        if (livenessRef.current === liveness) livenessRef.current = null;
+      });
+      liveness.shown(layoutRef.current !== 'hidden');
+      let parsedCursor = 0;
+      const writeAt = (data: string, cursor: number) => {
+        term.write(data, () => {
+          parsedCursor = Math.max(parsedCursor, cursor);
+          const viewport = term.buffer.active;
+          if (viewport.viewportY < viewport.baseY) liveness.painted(cursor);
+        });
+      };
+      const rendered = term.onRender(() => {
+        // a render before the replay has parsed paints nothing of main's
+        if (parsedCursor > 0) liveness.painted(parsedCursor);
+      });
+      cleanup.push(() => rendered.dispose());
+
       // Subscribe before taking the replay snapshot. Absolute cursors make the
       // handoff lossless without replaying bytes emitted during the IPC call.
       let snapshotCursor = Number.POSITIVE_INFINITY;
@@ -411,7 +441,7 @@ export function TerminalPane({
         if (snapshotCursor === Number.POSITIVE_INFINITY) {
           pendingData.push({ data, cursor });
         } else if (cursor > snapshotCursor) {
-          term.write(data);
+          writeAt(data, cursor);
           snapshotCursor = cursor;
         }
       });
@@ -428,12 +458,16 @@ export function TerminalPane({
         dispose();
         return;
       }
-      if (snapshot.text) term.write(snapshot.text);
-      if (catchup.text) term.write(catchup.text);
+      // the replay's last write carries its cursor; an empty replay has
+      // nothing to paint up to it
+      if (snapshot.text && catchup.text) term.write(snapshot.text);
+      const replayTail = catchup.text || snapshot.text;
+      if (replayTail) writeAt(replayTail, catchup.cursor);
+      else liveness.painted(catchup.cursor);
       snapshotCursor = catchup.cursor;
       for (const item of pendingData) {
         if (item.cursor <= snapshotCursor) continue;
-        term.write(item.data);
+        writeAt(item.data, item.cursor);
         snapshotCursor = item.cursor;
       }
       pendingData.length = 0;
@@ -548,6 +582,7 @@ export function TerminalPane({
   // it may have been hidden during a container resize); focus follows the
   // ACTIVE tab only, so in a split the driven pane keeps the keyboard
   useEffect(() => {
+    livenessRef.current?.shown(layout !== 'hidden');
     if (!termRef.current) return;
     if (layout !== 'hidden') termRef.current.fit();
     if (active) termRef.current.focus();

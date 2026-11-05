@@ -935,6 +935,16 @@ export const SURFACE_GATES = [
       file === 'scripts/electron-turn-truth-eval.mjs',
   },
   {
+    gate: 'eval:electron:session-liveness',
+    why: 'a working Session whose output or pane paint stops leaves one record naming the side that stopped (BUG-330)',
+    match: file =>
+      file === 'electron/main/pty/session-liveness.ts' ||
+      file === 'src/components/workspace/pane-paint-reporter.ts' ||
+      file === 'src/components/workspace/terminal-pane.tsx' ||
+      file === 'scripts/lib/harness-event-fixture.mjs' ||
+      file === 'scripts/electron-session-liveness-eval.mjs',
+  },
+  {
     gate: 'eval:electron:tenancy',
     why: "a Workspace never shows another tenant's data, and Demo Mode stays its own tenant",
     match: file =>
@@ -2173,6 +2183,7 @@ export const VERIFICATION_ROUTES = Object.freeze({
   ),
   'eval:electron:delegation': GATE,
   'eval:electron:turn-truth': GATE,
+  'eval:electron:session-liveness': GATE,
   'eval:electron:tenancy': GATE,
   'eval:community:network': GATE,
   'eval:electron:source-power': GATE,

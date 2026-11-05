@@ -142,6 +142,8 @@ interface DesktopPtyApi {
   /** An explicit operator keystroke; terminal protocol replies never call it. */
   engage: BridgeInvoke<'pty:engage'>;
   resize: BridgeInvoke<'pty:resize'>;
+  /** What this window's shown panes have painted (Session liveness). */
+  reportPaint: BridgeInvoke<'pty:report-paint'>;
   kill: BridgeInvoke<'pty:kill'>;
   /** One-stroke close (D24): stop, await death, forget the runtime record.
    *  `discard` also sheds retained history (never-started Sessions). */

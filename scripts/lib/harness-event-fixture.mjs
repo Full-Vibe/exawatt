@@ -30,6 +30,9 @@ import { writeFakeHarness } from './harness-probe-fixture.mjs';
  *   halt                 the interrupt that kills children WITHOUT any hook
  *                        (measured: an aborted turn emits no boundary, ENG-023 D7)
  *   lose <id>            a SubagentStop the loopback never receives
+ *   count                Claude Code's working line: one redraw of an elapsed
+ *                        counter every second, no hook (Session liveness)
+ *   freeze               the counter stops with no hook: a wedged harness
  *
  * Census and rendering follow what was measured on Claude Code 2.1.270
  * (2026-09-13): every `Stop`/`SubagentStop` carries `background_tasks`, the
@@ -149,6 +152,11 @@ setInterval(() => {
       ' \u00b7 ' + elapsed + 's'
   );
 }, 1000).unref();
+// Claude Code's working line ("Clauding… (3m 20s)"): the harness advances it
+// itself every second while it works, which is what makes a frozen one mean
+// something stopped (BUG-330). \`freeze\` stops it without any hook.
+let counter = null;
+let counterStartedAt = 0;
 // One command at a time, in arrival order. A real harness posts its hooks
 // one after another; concurrent async handlers let a later command's post
 // overtake an earlier one's, and the first report of a gate wins, so
@@ -218,6 +226,17 @@ async function handle(chunk) {
     // reaches Exawatt as nothing but this: one bare BEL, no hook at all.
     else if (command === 'bell') process.stdout.write('\\x07');
     else if (command === 'say') process.stdout.write(rest + '\\n');
+    else if (command === 'count') {
+      counterStartedAt = Date.now();
+      counter ??= setInterval(() => {
+        const elapsed = Math.round((Date.now() - counterStartedAt) / 1000);
+        process.stdout.write('\\r\\x1b[2K\u273b Clauding\u2026 (' + elapsed + 's)');
+      }, 1000);
+    }
+    else if (command === 'freeze') {
+      clearInterval(counter);
+      counter = null;
+    }
   }
 }
 setInterval(() => {}, 1 << 30);

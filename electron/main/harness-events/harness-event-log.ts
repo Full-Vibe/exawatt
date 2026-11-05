@@ -9,6 +9,10 @@
  * nothing a relaunch left behind could say what a wedged Session had been
  * doing.
  *
+ * Session liveness writes here too (`liveness.*`): which side stopped when a
+ * working Session's output or a shown pane's paint stopped
+ * (`pty/session-liveness.ts`), beside the start and exit it belongs to.
+ *
  * Content-free like `main.jsonl`: identities, kinds, counts and reasons,
  * never a prompt, a reply, a spawn label or a path. Bounded like the other
  * logs under `logs/`: one rotated generation of `MAX_BYTES` each and a
@@ -38,6 +42,10 @@ const BUDGETS = {
   session: 120,
   'harness.turn': 240,
   'harness.team': 120,
+  // Session liveness (`pty/session-liveness.ts`): one line per stall and one
+  // per recovery, so a renderer freeze across every shown pane cannot spend
+  // the lines a Session's start or exit needs.
+  liveness: 60,
 } as const;
 
 /** Delegated-child and census traffic: the volume a team fan-out makes. */
@@ -50,6 +58,7 @@ const TEAM_KINDS: ReadonlySet<string> = new Set<HarnessEvent['kind']>([
 
 function budgetOf(event: string): keyof typeof BUDGETS {
   if (event.startsWith('session.')) return 'session';
+  if (event.startsWith('liveness.')) return 'liveness';
   return TEAM_KINDS.has(event.slice('harness.'.length))
     ? 'harness.team'
     : 'harness.turn';

@@ -12,6 +12,7 @@ import {
   nativeTheme,
   powerSaveBlocker,
   shell,
+  webContents,
 } from 'electron';
 import { handleBounded } from './ipc-arguments';
 import { handleTrusted } from './ipc-security';
@@ -48,6 +49,7 @@ import {
   attachHarnessEventLog,
   openHarnessEventLog,
 } from './harness-events/harness-event-log';
+import { attachSessionLiveness, livenessTuning } from './pty/session-liveness';
 import { ClosedSessionLedger } from './pty/closed-session-ledger';
 import { createWorktree, expandTilde } from './pty/project-resolve';
 import {
@@ -328,10 +330,33 @@ export function registerPtyIPC(
   delegationMonitor.attach(harnessEventChannel, ptySessions);
   // What each Session's process and harness did, readable after a relaunch
   // (BUG-102): `logs/harness-events.jsonl`.
+  const harnessEvents = openHarnessEventLog(app.getPath('userData'));
   const sessionLog = attachHarnessEventLog(
-    openHarnessEventLog(app.getPath('userData')),
+    harnessEvents,
     ptySessions,
     delegationMonitor
+  );
+  // Which side stopped when a working Session's terminal stops moving: the
+  // harness's output or a shown pane's paint (BUG-330, BUG-102's evidence).
+  // Same log, same durable Session keys.
+  const liveness = attachSessionLiveness({
+    record: harnessEvents,
+    sessions: ptySessions,
+    attention: attentionMonitor,
+    windowFacts: id => {
+      const contents = webContents.fromId(id);
+      const win = contents ? BrowserWindow.fromWebContents(contents) : null;
+      return win && !win.isDestroyed()
+        ? {
+            shown: win.isVisible() && !win.isMinimized(),
+            focused: win.isFocused(),
+          }
+        : null;
+    },
+    ...livenessTuning(process.env),
+  });
+  handleBounded('pty:report-paint', (event, report) =>
+    liveness.report(event.sender, report)
   );
   // ENG-044 safety controls: a launch carries the hooks of the controls that
   // are on, and the guard answers them against the live settings. An
@@ -661,6 +686,7 @@ export function registerPtyIPC(
       if (operatorEngaged) {
         contextSummarizer.noteInput(id, data);
         attentionMonitor.noteEngaged(id);
+        liveness.input(id);
       }
       ptySessions.write(id, data);
       // Input clears attention only when the session is actually watched:

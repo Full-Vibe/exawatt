@@ -48,8 +48,12 @@ const xterm = vi.hoisted(() => {
     getSelection() {
       return '';
     }
-    write(data: string) {
+    write(data: string, parsed?: () => void) {
       this.writes.push(data);
+      parsed?.();
+    }
+    onRender() {
+      return { dispose: vi.fn() };
     }
     dispose() {
       state.disposeCalls += 1;

@@ -433,6 +433,29 @@ export interface ClipboardPasteResult {
   path?: string;
 }
 
+/**
+ * What one window says about the terminal panes it is showing (ENG-002 /
+ * ENG-016 Session liveness, BUG-330). Main knows when each Session's process
+ * last wrote; only the renderer knows whether a pane painted it. Sent at most
+ * every couple of seconds while a shown pane paints new output, and at once
+ * when a pane is shown, hidden or closed or the page changes visibility.
+ * Counts and cursors only, never terminal text.
+ */
+export interface PtyPaintReport {
+  /** The page is being rendered (`document.visibilityState === 'visible'`).
+   *  A hidden page paints nothing and is owed nothing. */
+  visible: boolean;
+  /** Every shown pane and the highest output cursor (the `cursor` of
+   *  `pty:data`) whose bytes it has painted. A pane not listed is not shown. */
+  panes: PtyPanePaint[];
+}
+
+export interface PtyPanePaint {
+  /** The PTY id the pane is bound to. */
+  id: string;
+  painted: number;
+}
+
 /* ---- Pushes ------------------------------------------------------------- */
 
 export interface PtyDataEvent {

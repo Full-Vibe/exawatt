@@ -173,6 +173,7 @@ const bridge = {
       invoke('pty:write', id, data, operatorEngaged),
     engage: id => invoke('pty:engage', id),
     resize: (id, cols, rows) => invoke('pty:resize', id, cols, rows),
+    reportPaint: report => invoke('pty:report-paint', report),
     kill: id => invoke('pty:kill', id),
     closeSession: (durableSessionId, discard = false) =>
       invoke('pty:close-session', durableSessionId, discard),

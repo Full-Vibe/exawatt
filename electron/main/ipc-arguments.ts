@@ -284,6 +284,34 @@ export const ARGUMENT_BOUNDARIES = {
       return [durableSessionId];
     },
   },
+  // Session liveness: ids and cursors only. A report main cannot read is
+  // refused, never treated as "nothing painted" or as "all caught up".
+  'pty:report-paint': {
+    read([report]) {
+      if (
+        !isRecord(report) ||
+        typeof report.visible !== 'boolean' ||
+        !Array.isArray(report.panes) ||
+        report.panes.length > 256
+      ) {
+        throw new Error('Invalid paint report');
+      }
+      const panes = report.panes.map(pane => {
+        if (
+          !isRecord(pane) ||
+          typeof pane.id !== 'string' ||
+          !SESSION_ID.test(pane.id) ||
+          typeof pane.painted !== 'number' ||
+          !Number.isSafeInteger(pane.painted) ||
+          pane.painted < 0
+        ) {
+          throw new Error('Invalid paint report');
+        }
+        return { id: pane.id, painted: pane.painted };
+      });
+      return [{ visible: report.visible, panes }];
+    },
+  },
   'pty:copy-text': {
     read([text]) {
       if (typeof text !== 'string' || text.length > 4_000_000) {
