@@ -63,6 +63,78 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | active-build | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
 
+## Execution front (2026-11-04): system upgrades for the open backlog
+
+Operator direction (2026-11-04): fix the open bugs "through holistic general
+code and architecture improvements that naturally cause the bugs to get fixed
+as a side effect", not one patch per bug. Every open record and the six
+untriaged inbox rows were grouped by the system they live in. Each packet
+upgrades one system, names the change in its report, and lists the records
+that fell out; a record found outside a packet's system goes back to the
+coordinator. One worktree per packet, one train, one dogfood build.
+
+1. **bus-attention** (ENG-029). A bus message is one delivery to named
+   recipients, and every turn carries who started it (the operator, an Agent
+   over the bus, a trigger). Attention on turn end follows the initiator, and
+   Chatter changes its selection only when the operator does. Closes BUG-329
+   (co-recipients unnamed), BUG-332 (bus traffic marks idle Agents unread and
+   fills ⌘J), BUG-333 (Chatter's selection switched under the operator).
+2. **launch-config** (ENG-016). Launch configuration is a set of independent
+   axes (engine, model, effort, permission mode) drawn by one choice control
+   that Settings uses too, with one open disclosure at a time, and the mode an
+   Agent started in is visible Exawatt state. Closes BUG-328 (two panels open),
+   BUG-334 (effort flattened into the model list), BUG-331 (the default mode
+   reads as an old harness), BUG-326 (the Fleet v2 choice does not read as
+   selected) and the three BUG-324 findings in `launch-controls.tsx`.
+3. **committed-input** (ENG-039, ENG-004, ENG-016). Renderer code is React
+   Compiler clean on the eslint-config-next that matches Next; key and event
+   handlers read the state committed when the event arrives; a held
+   transition holds a whole snapshot. Closes BUG-324 (the other six findings),
+   BUG-323 (0 after a Fleet drill only re-centers), BUG-318 (closing a tab
+   moves its neighbours inside the hold).
+4. **landing-parity** (ENG-022, ENG-039, ENG-030). A landing asks public CI's
+   and the public projection's exact questions, cheapest first: each commit's
+   paths classified by that commit's manifest, suites on CI's pinned Node,
+   suite membership in a list two packets can both append to, and a bisect
+   that reports a flake instead of convicting a car. Closes BUG-319, BUG-320,
+   BUG-321, BUG-322.
+5. **session-liveness** (ENG-002, ENG-016). Main records when each working
+   Session's process last wrote output and the renderer reports when its pane
+   last painted; a working Session whose output or paint stops writes one
+   record naming the side that stopped. Closes BUG-330's exit and adds the
+   evidence BUG-102's next recurrence needs.
+6. **renderer-helper** (ENG-016). The packaged Next server runs as a helper
+   macOS does not list as an application, under the one renderer-server
+   lifecycle owner. Closes BUG-310.
+7. **native-dialogs** (ENG-016). One owner for native dialog requests that
+   always settles and always releases the control that asked, with every call
+   site (Browse, Import, Locate and the rest) going through it. Closes
+   BUG-327, a recurrence of the symptom `ef24cfade` fixed in July.
+
+Collision map: `launch-controls.tsx` and the Settings choice rows belong to
+packet 2; `command-palette.tsx`, `workspace-client.tsx`, the operations-board
+files and the project ribbon to packet 3; `packages/core/src/bus/`,
+`src/lib/bus/`, Chatter and turn attention to packet 1; the landing scripts
+and the `test:agent-delivery` list to packet 4; PTY output liveness to packet
+5; `renderer-server.ts` to packet 6; `project-opener.tsx` and dialog IPC to
+packet 7. A packet that must touch another's file keeps the edit minimal and
+says so in its report.
+
+Not in this front: BUG-133 and BUG-134 (owned by `agent/delegation-build`,
+pending Fleet review); BUG-102 (open until a recurrence is diagnosed; packet 5
+adds the evidence); BUG-113 (needs a readout from a run with the affected
+source); BUG-117 (operator recheck); BUG-224 and BUG-278 (do not reproduce;
+failing runs now keep their evidence); BUG-227 (physical sleep and unplug
+acceptance and Claude power control are open on the harness side); BUG-260
+(the remaining gap is by design); BUG-271 (dev-loop only, next ENG-022 pass);
+BUG-112 and BUG-198 (operator calls); FIX-004, FIX-005, FIX-013 and BUG-267
+(features or dependency majors, not defects).
+
+Inbox drained into this front: `5fb9f54c` → BUG-332, `bfb10af1` → BUG-333,
+`44fb2f7f` → BUG-334, `a41c2457` → a recurrence note on BUG-002 (incident
+`0001`, no in-process remedy), `f6080184` → ENG-033 H5 evidence, `57f60719` →
+ENG-009 evidence.
+
 ## Execution front (2026-10-21): bug clusters by system
 
 Operator direction (2026-10-21): the bug work "should be clusters of fixes,
@@ -1886,6 +1958,8 @@ Direction (operator framing, 2026-08-03): source-owned credentials are the right
 
 Direction amended (operator, 2026-08-10, `product-feedback 71d9b784` — the first concrete pull for this item, from daily use rather than planning): _"I find myself repeatedly giving the same instructions and the same credentials to agents across different projects. For example post-hoc admin API key to add projects or add a dashboard or add telemetry support. And also for example Resend and Improv MX API keys to add email aliases pretty much use the same script or whatever between different projects and having to give every agent access to credentials is repetitive and rote. Therefore I proposed a security vault to unlock the safe-use store and provide access and observability of access to such credentials. This would be managed invisibly with Exawatt, the app itself, and then accessible, safe for other agents… This could be extensible for access to other resources as a time capping managed by Exawatt."_ Three things this adds to the recorded scope, none of them shaped here: the vault is **cross-Project by default** (the repetition is the pain, so per-Project custody is the anti-goal); access is **observable** (who read which credential, when); and grants are **time-capped**, which makes Exawatt the broker rather than a copy-paste source. Open question the design pass must answer: the row also asks for repeated **instructions** to be reusable across Projects, which is not credential custody at all — decide whether that belongs here, to ENG-028 Agent Types, or to a third thing, before shaping either.
 
+Operator evidence 2026-11-04 (`product-feedback 57f60719`): "I find myself often pasting in API keys directly into the Claude Code chats inside Exawatt. I want instead a first-party way to be able to save and revoke access to different vault items, like secrets that all my agents have access to (maybe scoped per project, for all projects, temporary per session, or with some time duration or something like that)", with "one keyboard gesture" to add one and the Agent told at once how to reach it. Still unshaped pending this item's design pass.
+
 Scope:
 
 - research buy-vs-build options for secrets management
@@ -2442,7 +2516,7 @@ Ownership: ENG-010 owns H1, ENG-011 later proves mixed-source fleet scale,
 ENG-012 owns hosted metadata/governance/billing, and ENG-033 owns the
 user-facing progression. No fourth execution plan.
 
-- H5 Provider-hosted Agents on the same board — ENQUEUED 2026-10-15 (operator: "Yes 100%... I want the user to spin up and monitor and talk to and manipulate their cloud agents just the same as they do local agents. Of course the visual treatment should be different, clear, and subtle but they should live on the same game board in the same project space"). Claude Code first, because its interfaces now exist and are documented: `claude --cloud "<task>"` creates a cloud session (GitHub remote or a bundled local repo), `claude agents --json` lists cloud and Remote Control sessions beside local ones when signed in to claude.ai, `claude -p "<text>" --cloud <session-id>` queues a follow-up, and `--teleport` pulls a session down. Shape: placement `provider-hosted` on the configured source (decision `0037` §3: a fact, never a different Agent noun), the same Agent, Project, Team, Fleet, Chatter and Direct surfaces, a subtle distinct treatment, and the bus delivering to a cloud Claude through the follow-up queue. Codex cloud is second (operator, 2026-10-15), through `codex cloud` and the ChatGPT sign-in the source already uses; the Gemini managed agent follows on its own evidence. Design pass next, after the 2026-10-14 front's MVPs; recorded caveat, the operator's own: "how does [the bus] work between remote and local or between agents of different species across the cloud barrier? I'm not sure how that works. Maybe we'll solve it later."
+- H5 Provider-hosted Agents on the same board — ENQUEUED 2026-10-15 (operator: "Yes 100%... I want the user to spin up and monitor and talk to and manipulate their cloud agents just the same as they do local agents. Of course the visual treatment should be different, clear, and subtle but they should live on the same game board in the same project space"). Claude Code first, because its interfaces now exist and are documented: `claude --cloud "<task>"` creates a cloud session (GitHub remote or a bundled local repo), `claude agents --json` lists cloud and Remote Control sessions beside local ones when signed in to claude.ai, `claude -p "<text>" --cloud <session-id>` queues a follow-up, and `--teleport` pulls a session down. Shape: placement `provider-hosted` on the configured source (decision `0037` §3: a fact, never a different Agent noun), the same Agent, Project, Team, Fleet, Chatter and Direct surfaces, a subtle distinct treatment, and the bus delivering to a cloud Claude through the follow-up queue. Codex cloud is second (operator, 2026-10-15), through `codex cloud` and the ChatGPT sign-in the source already uses; the Gemini managed agent follows on its own evidence. Design pass next, after the 2026-10-14 front's MVPs; recorded caveat, the operator's own: "how does [the bus] work between remote and local or between agents of different species across the cloud barrier? I'm not sure how that works. Maybe we'll solve it later." Operator evidence 2026-10-28 (`product-feedback f6080184`): he started a cloud Claude Code session in a repo and expected to "seamlessly pop it open in Exawatt and monitor and communicate with it here", but it was not in recents.
 
 Project doc and decision: same as ENG-010 above.
 
@@ -5790,3 +5864,29 @@ need to fix that at least."). Exit: a new user can tell from Exawatt which
 permission mode an Agent was started in and that it is Exawatt's default, so
 the harness's own status line does not read as staleness. The default itself
 does not change.
+
+### BUG-332 Bus traffic marks an idle Agent unread and puts it in ⌘J each time
+
+Status: bug · ENG-029 · product-feedback 5fb9f54c 2026-10-22
+
+The operator: "These messages are spamming an idle agent, and make the agent
+unread and show up in the cmd+j queue each time. Not sure what the fix is, but
+it's pretty annoying." A turn another Agent started over the bus ends the
+same way an operator's turn does, so it raises the same attention. Execution
+front (2026-11-04) packet 1.
+
+### BUG-333 Chatter's selected Agent changed while the operator was reading it
+
+Status: bug · ENG-029 · product-feedback bfb10af1 2026-10-22
+
+The operator: "I was looking at Chatter (10) and then the selected agent
+switched and I didn't see any chatter - selection shouldn't change
+automatically." Execution front (2026-11-04) packet 1.
+
+### BUG-334 Effort is flattened into the New Agent model list
+
+Status: small-fix · ENG-016 · product-feedback 44fb2f7f 2026-10-22
+
+The operator: "Thinking effort should be an orthogonal selector, not just a
+flattened list". Same window as BUG-328. Execution front (2026-11-04) packet
+2.
