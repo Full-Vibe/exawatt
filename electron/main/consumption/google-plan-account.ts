@@ -42,6 +42,7 @@ import {
   type PlanAccountRead,
   type PlanAccountReader,
   type PlanAccountReadFailure,
+  type PlanReadHost,
 } from './plan-account-service';
 
 const STATE_FILE = 'google-plan.json';
@@ -239,6 +240,8 @@ interface GooglePlanAccountOptions {
   run?: HarnessCommandRunner;
   /** Antigravity's state directory; its presence means the operator uses it. */
   antigravityHome?: string;
+  /** No read while the Mac sleeps or is locked (BUG-335). */
+  host?: PlanReadHost | null;
   now?: () => number;
   minFetchIntervalMs?: number;
   jitterMs?: number;
@@ -263,6 +266,10 @@ export class GooglePlanAccountService extends PlanAccountService {
         now,
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       }),
+      host: options.host,
+      // A signed-out or offline `agy -p` opens a Google sign-in in the
+      // operator's browser and waits there until it is killed (BUG-335).
+      backOffAfterTimeout: true,
       now,
       minFetchIntervalMs: options.minFetchIntervalMs,
       jitterMs: options.jitterMs,

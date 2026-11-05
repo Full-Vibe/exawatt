@@ -19,6 +19,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import type { HostPowerSnapshot } from '@exawatt/core/desktop-bridge';
 import type { ConfigFileUnreadableCause } from '@exawatt/core/server';
 import {
   WindowObservationAccumulator,
@@ -118,13 +119,45 @@ interface PlanAccountServiceOptions {
   spendReset?: (creditId: string | null) => Promise<PlanResetOutcome>;
   /** Re-reads a saved window in the current meaning (schema moves). */
   migrateWindow?: (window: PlanWindow) => PlanWindow;
+  /**
+   * The Mac's sleep and screen-lock state (BUG-335). Absent means always in
+   * use; the app passes its one host-power observer.
+   */
+  host?: PlanReadHost | null;
+  /**
+   * Set by a source whose harness answers a lost sign-in by opening one in
+   * the operator's browser and waiting there, which Exawatt sees only as a
+   * timeout (`agy`, BUG-335). Each consecutive timed-out read then doubles
+   * the wait before the next, up to four hours; any finished read resets it.
+   */
+  backOffAfterTimeout?: boolean;
   now?: () => number;
   minFetchIntervalMs?: number;
   jitterMs?: number;
 }
 
+/** What the reads need from the app's host-power observer. */
+export interface PlanReadHost {
+  getSnapshot(): HostPowerSnapshot;
+  subscribe(listener: (snapshot: HostPowerSnapshot) => void): () => void;
+}
+
+/**
+ * A read starts a harness process, so none starts while the Mac sleeps or
+ * its screen is locked. macOS's brief dark wakes run timers with the screen
+ * still locked and before the network is back; `agy` met every one of them
+ * by opening a Google sign-in tab (BUG-335). An unknown lock is not a lock.
+ */
+function hostInUse(snapshot: HostPowerSnapshot): boolean {
+  return snapshot.systemSleep !== 'suspended' && snapshot.screenLock !== 'locked';
+}
+
 const DEFAULT_MIN_FETCH_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_JITTER_MS = 45_000;
+/** Wi-Fi and DNS come back seconds after a wake: an `agy` read in the wake's
+ *  first second found no network (BUG-335). */
+const RETURN_SETTLE_MS = 60_000;
+const MAX_TIMEOUT_BACKOFF_MS = 4 * 60 * 60_000;
 
 interface PersistedPlanState {
   version: 1;
@@ -195,8 +228,12 @@ export class PlanAccountService implements PlanAccountSource {
   private readonly now: () => number;
   private readonly minFetchIntervalMs: number;
   private readonly jitterMs: number;
+  private readonly backOffAfterTimeout: boolean;
 
   private preferenceEnabled: boolean;
+  private inUse = true;
+  private offHost: (() => void) | null = null;
+  private timeoutStreak = 0;
   private last: Omit<PersistedPlanState, 'version' | 'observations'> = {
     observedAt: null,
     planType: null,
@@ -233,6 +270,12 @@ export class PlanAccountService implements PlanAccountSource {
     this.minFetchIntervalMs =
       options.minFetchIntervalMs ?? DEFAULT_MIN_FETCH_INTERVAL_MS;
     this.jitterMs = options.jitterMs ?? DEFAULT_JITTER_MS;
+    this.backOffAfterTimeout = options.backOffAfterTimeout ?? false;
+    const host = options.host ?? null;
+    if (host) {
+      this.offHost = host.subscribe(snapshot => this.hostChanged(snapshot));
+      this.inUse = hostInUse(host.getSnapshot());
+    }
     this.loadPersisted();
   }
 
@@ -286,13 +329,15 @@ export class PlanAccountService implements PlanAccountSource {
 
   /**
    * Fire-and-forget: never blocks a snapshot, never runs concurrently, never
-   * reads more often than the cadence. Callers may invoke it on every pull
-   * and must not await it; the returned promise exists for tests.
+   * reads more often than the cadence, and never while the Mac sleeps or is
+   * locked. Callers may invoke it on every pull and must not await it; the
+   * returned promise exists for tests.
    */
   maybeRefresh(): Promise<void> {
     if (!this.enabled || this.disposed)
       return this.inFlight ?? Promise.resolve();
     if (this.inFlight) return this.inFlight;
+    if (!this.inUse) return Promise.resolve();
     if (this.now() < this.nextAllowedAtMs) return Promise.resolve();
     this.nextAllowedAtMs =
       this.now() + this.minFetchIntervalMs + Math.random() * this.jitterMs;
@@ -351,9 +396,39 @@ export class PlanAccountService implements PlanAccountSource {
   dispose(): void {
     this.disposed = true;
     this.listeners.clear();
+    this.offHost?.();
+    this.offHost = null;
   }
 
   /* ---------------------------------------------------------------- */
+
+  /** Back at the Mac: the first read waits for the network to return. */
+  private hostChanged(snapshot: HostPowerSnapshot): void {
+    const inUse = hostInUse(snapshot);
+    if (inUse && !this.inUse) {
+      this.nextAllowedAtMs = Math.max(
+        this.nextAllowedAtMs,
+        this.now() + RETURN_SETTLE_MS
+      );
+    }
+    this.inUse = inUse;
+  }
+
+  /** A timed-out read may be a harness waiting on a browser sign-in it
+   *  opened; asking again on the usual cadence opens another (BUG-335). */
+  private backOff(read: PlanAccountRead | PlanAccountReadFailure | null): void {
+    if (!this.backOffAfterTimeout) return;
+    if (!isReadFailure(read) || read.failure !== 'timed-out') {
+      this.timeoutStreak = 0;
+      return;
+    }
+    this.timeoutStreak += 1;
+    const waitMs = Math.min(
+      this.minFetchIntervalMs * 2 ** this.timeoutStreak,
+      MAX_TIMEOUT_BACKOFF_MS
+    );
+    this.nextAllowedAtMs = Math.max(this.nextAllowedAtMs, this.now() + waitMs);
+  }
 
   private bump(): void {
     this.revisionCount += 1;
@@ -363,6 +438,7 @@ export class PlanAccountService implements PlanAccountSource {
   private async refresh(): Promise<void> {
     if (this.unreadable && this.loadPersisted()) this.bump();
     const read = await this.read().catch(() => null);
+    this.backOff(read);
     if (this.disposed || !this.enabled) return;
     if (
       !read ||

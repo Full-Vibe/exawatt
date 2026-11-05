@@ -38,6 +38,7 @@ import {
   type PlanAccountRead,
   type PlanAccountReader,
   type PlanAccountReadFailure,
+  type PlanReadHost,
 } from './plan-account-service';
 
 const STATE_FILE = 'codex-plan.json';
@@ -236,6 +237,8 @@ interface CodexPlanAccountOptions {
   readRateLimits?: () => Promise<unknown>;
   /** The spend call; injectable so tests NEVER spend a real reset. */
   consumeReset?: (creditId: string | null) => Promise<unknown>;
+  /** No read while the Mac sleeps or is locked (BUG-335). */
+  host?: PlanReadHost | null;
   now?: () => number;
   minFetchIntervalMs?: number;
   jitterMs?: number;
@@ -256,6 +259,7 @@ export class CodexPlanAccountService extends PlanAccountService {
         parseCodexResetOutcome(
           await (options.consumeReset ?? consumeWithAppServer)(creditId)
         ),
+      host: options.host,
       now,
       minFetchIntervalMs: options.minFetchIntervalMs,
       jitterMs: options.jitterMs,

@@ -462,7 +462,8 @@ deleted.)
   process and the meter shows Claude as unmetered again.
 - **Cadence**: at most one read per ~5 minutes, while a consumption surface
   is alive or the usage-alert check runs (every ~5 minutes in the
-  background, ENG-008 E17).
+  background, ENG-008 E17). Never while the Mac sleeps or its screen is
+  locked, and not until a minute after it wakes or unlocks (BUG-335).
 - **Spending a reset** (ENG-008 E17): only when the operator presses Use reset
   on the Codex card and confirms, Electron main asks the same app-server
   `account/rateLimitResetCredit/consume` with the soonest-expiring credit's
@@ -493,7 +494,8 @@ declaration gates it.
   (`codexPlanWindows.enabled`): off starts no app-server for this read, and the
   Codex card falls back to what the rollout logs report.
 - **Cadence**: at most one read per ~5 minutes, only while a consumption
-  surface is alive.
+  surface is alive. Never while the Mac sleeps or its screen is locked, and
+  not until a minute after it wakes or unlocks (BUG-335).
 
 A fourth own-account path exists since 2026-10-05 (ENG-038 slice 4): **Google
 plan usage** (`electron/main/consumption/google-plan-account.ts`). Electron
@@ -523,7 +525,12 @@ network identity, so no distribution declaration gates it.
   (`googlePlanWindows.enabled`): off starts no process and serves no account
   read.
 - **Cadence**: at most one read per ~5 minutes, only while a consumption
-  surface is alive. Antigravity exposes no switch for its own update check
+  surface is alive. Never while the Mac sleeps or its screen is locked, and
+  not until a minute after it wakes or unlocks. A signed-out or offline
+  `agy -p` opens a Google sign-in in the operator's browser and waits there,
+  which Exawatt sees only as a timeout, so each consecutive timeout doubles
+  the wait before the next read, up to four hours (BUG-335, incident `0042`).
+  Antigravity exposes no switch for its own update check
   and runs one at most every fifteen minutes on any invocation, so a read can
   let the operator's `agy` check for its update exactly as their own use does.
 

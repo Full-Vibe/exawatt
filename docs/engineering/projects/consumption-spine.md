@@ -1885,7 +1885,8 @@ sections that show the facts").
   by its reset rounded to ten minutes because Codex's reset jitters by
   seconds. `UsageAlertService` (main) checks every five minutes and on every
   snapshot change, which also keeps account reads fresh while the window is
-  in the background, and persists what it said in
+  in the background (never while the Mac sleeps or is locked, BUG-335), and
+  persists what it said in
   `consumption-plan/usage-alerts.json`, pruned as cycles reset. Settings,
   Notifications: "Usage alerts" (default on, the operator's pick) and a
   second-alert lead time from `USAGE_ALERT_POLICY.leadMinuteChoices` (default

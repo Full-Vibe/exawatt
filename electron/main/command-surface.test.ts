@@ -346,9 +346,11 @@ describe('bootstrapCommandSurface', () => {
     ]);
     for (const options of world.planAccountOptions) {
       expect(options.enabled).toBe(true);
+      // `host`: no read while the Mac sleeps or is locked (BUG-335).
       expect(Object.keys(options).sort()).toEqual([
         'allowed',
         'enabled',
+        'host',
         'stateDir',
       ]);
     }

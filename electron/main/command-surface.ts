@@ -422,6 +422,7 @@ export async function bootstrapCommandSurface(
           stateDir: path.join(userDataPath(), 'consumption-plan'),
           enabled: isClaudePlanWindowsEnabled(loadSettings()),
           allowed: !deps.isTest,
+          host: runtime.hostPower,
         });
         runtime.claudePlanAccount = claudePlanAccount;
         // ENG-038 slice 2: the Codex account, asked of the operator's own
@@ -432,6 +433,7 @@ export async function bootstrapCommandSurface(
           stateDir: path.join(userDataPath(), 'consumption-plan'),
           enabled: isCodexPlanWindowsEnabled(loadSettings()),
           allowed: !deps.isTest,
+          host: runtime.hostPower,
         });
         runtime.codexPlanAccount = codexPlanAccount;
         // ENG-038 slice 4: the Google account, asked of the operator's own
@@ -442,6 +444,7 @@ export async function bootstrapCommandSurface(
           stateDir: path.join(userDataPath(), 'consumption-plan'),
           enabled: isGooglePlanWindowsEnabled(loadSettings()),
           allowed: !deps.isTest,
+          host: runtime.hostPower,
         });
         runtime.googlePlanAccount = googlePlanAccount;
         const composite = new ProviderPlanCompositeSource(

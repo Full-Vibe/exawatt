@@ -8,6 +8,7 @@
  * read keeps the last good windows at their true observed instant; a machine
  * without Antigravity is never asked and never carries the account.
  */
+import { EventEmitter } from 'node:events';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -32,8 +33,10 @@ import type {
   HarnessCommandRunner,
 } from './harness-command-run';
 import { SIGNED_IN_NEARLY_SPENT, SIGNED_IN_SPENT } from './agy-usage.fixtures';
+import type { PlanReadHost } from './plan-account-service';
 import { ProviderPlanCompositeSource } from './provider-plan-composite';
 import type { ConsumptionScannerLike } from '../consumption-ipc';
+import { observeHostPower } from '../host-power';
 
 // @scans none: reads only its own temporary directory
 
@@ -346,7 +349,8 @@ describe('GooglePlanAccountService', () => {
     await svc.maybeRefresh();
     nowMs += 6 * 60_000;
     await svc.maybeRefresh();
-    nowMs += 6 * 60_000;
+    // A timeout doubles the wait before the next read (BUG-335).
+    nowMs += 10 * 60_000;
     await svc.maybeRefresh();
     const view = svc.view();
     expect(view.account.status).toBe('ok');
@@ -363,6 +367,125 @@ describe('GooglePlanAccountService', () => {
     fs.mkdirSync(path.join(stateDir, 'nowhere'));
     expect(absent.installed()).toBe(true);
     expect(defaultAntigravityHome('/Users/op')).toBe('/Users/op/.gemini/antigravity-cli');
+  });
+
+  /*
+   * BUG-335: a signed-out or offline `agy -p` opens a Google sign-in in the
+   * operator's browser and waits there until Exawatt kills it. 25 of the 27
+   * tabs that could be matched to the power log opened in the same second as
+   * a macOS dark wake (screen still locked, network not back).
+   */
+  describe('the Mac asleep or locked (BUG-335)', () => {
+    /** Electron's powerMonitor as the app's one host observer sees it. */
+    function mac(lock: 'unlocked' | 'locked' = 'unlocked') {
+      const power = Object.assign(new EventEmitter(), {
+        isOnBatteryPower: () => true,
+        lockState: lock as 'unlocked' | 'locked',
+        getScreenLockState(): 'unlocked' | 'locked' {
+          return power.lockState;
+        },
+      });
+      const host = observeHostPower(power, () => {});
+      return {
+        host,
+        sleep() {
+          power.lockState = 'locked';
+          power.emit('lock-screen');
+          power.emit('suspend');
+        },
+        /** A dark wake: Electron resumes; the screen stays locked. */
+        darkWake() {
+          power.emit('resume');
+        },
+        unlock() {
+          power.lockState = 'unlocked';
+          power.emit('resume');
+          power.emit('unlock-screen');
+        },
+      };
+    }
+
+    const hosted = (run: HarnessCommandRunner, host: PlanReadHost) =>
+      new GooglePlanAccountService({
+        stateDir,
+        enabled: true,
+        run,
+        antigravityHome: home,
+        host,
+        now: () => nowMs,
+        minFetchIntervalMs: 5 * 60_000,
+        jitterMs: 0,
+      });
+
+    it('starts no agy in a dark wake, however long the Mac slept', async () => {
+      const run = runnerOf(good());
+      const m = mac();
+      const svc = hosted(run, m.host);
+      m.sleep();
+      for (let wake = 0; wake < 20; wake += 1) {
+        nowMs += 16 * 60_000;
+        m.darkWake();
+        await svc.maybeRefresh();
+      }
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it('starts none while the screen is locked and the Mac awake', async () => {
+      const run = runnerOf(good());
+      const svc = hosted(run, mac('locked').host);
+      await svc.maybeRefresh();
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it('reads again a minute after the operator unlocks, once the network is back', async () => {
+      const run = runnerOf(good());
+      const m = mac();
+      const svc = hosted(run, m.host);
+      m.sleep();
+      nowMs += 8 * 60 * 60_000;
+      m.unlock();
+      await svc.maybeRefresh();
+      expect(run).not.toHaveBeenCalled();
+      nowMs += 59_000;
+      await svc.maybeRefresh();
+      expect(run).not.toHaveBeenCalled();
+      nowMs += 1_000;
+      await svc.maybeRefresh();
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(svc.view().account.status).toBe('ok');
+    });
+  });
+
+  describe('an agy stuck on its browser sign-in (BUG-335)', () => {
+    /** Minutes after the first read at which each later read runs. */
+    async function readTimes(run: HarnessCommandRunner, minutes: number) {
+      const svc = service({ run });
+      const start = nowMs;
+      const at: number[] = [];
+      const calls = () => (run as ReturnType<typeof vi.fn>).mock.calls.length;
+      for (let minute = 0; minute <= minutes; minute += 1) {
+        nowMs = start + minute * 60_000;
+        const before = calls();
+        await svc.maybeRefresh();
+        if (calls() > before) at.push(minute);
+      }
+      return at;
+    }
+
+    it('waits twice as long after each timeout instead of opening a tab every five minutes', async () => {
+      const at = await readTimes(runnerOf({ kind: 'timed-out' }), 8 * 60);
+      expect(at.slice(0, 6)).toEqual([0, 10, 30, 70, 150, 310]);
+      // Never more than four hours apart, and never every five minutes.
+      expect(at.length).toBeLessThan(10);
+    });
+
+    it('returns to the usual cadence after any finished read', async () => {
+      const at = await readTimes(
+        runnerOf({ kind: 'timed-out' }, finished('', 1, 'boom'), good()),
+        25
+      );
+      expect(at).toEqual([0, 10, 15, 20, 25]);
+    });
   });
 
   describe('through the composite', () => {

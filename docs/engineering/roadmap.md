@@ -5890,3 +5890,23 @@ Status: small-fix · ENG-016 · product-feedback 44fb2f7f 2026-10-22
 The operator: "Thinking effort should be an orthogonal selector, not just a
 flattened list". Same window as BUG-328. Execution front (2026-11-04) packet
 2.
+
+### BUG-335 Antigravity sign-in tabs pile up in the browser while the Mac sleeps
+
+Status: fixed 2026-11-04 · ENG-038 · found 2026-11-04 by the operator ("sometimes I'll open my laptop and I'll have like 20 of these tabs open"); incident [`0042`](incidents/0042-antigravity-sign-in-tabs-from-dark-wakes.md).
+
+Every one of the 188 Google "Sign in to Antigravity" tabs recorded since
+2026-10-20 came from the Google plan read (ENG-038 slice 4): Antigravity's own
+log names Exawatt's scratch directory as the workspace of each. When `agy -p`
+cannot refresh its hourly token (no network yet), it gives up on silent
+sign-in and opens a browser sign-in, then waits there until Exawatt's
+30-second timeout kills it. 25 of the 27 tabs the power log still covers
+opened in the same second as a macOS dark wake, when a five-minute usage
+check fired with the screen locked; one at a lid-open wake, one during a
+network outage while the operator was at the Mac. Fixed in the shared account
+service: no plan read starts while the Mac sleeps or its screen is locked,
+the first after a wake or unlock waits a minute for the network, and for
+`agy` each consecutive timeout doubles the wait before the next read, up to
+four hours, instead of opening a tab every five minutes. A signed-out `agy`
+still opens one tab on that schedule while the operator is at the Mac;
+Antigravity has no switch to stop it.

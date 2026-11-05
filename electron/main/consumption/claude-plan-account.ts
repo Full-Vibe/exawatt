@@ -39,6 +39,7 @@ import {
   type PlanAccountRead,
   type PlanAccountReader,
   type PlanAccountReadFailure,
+  type PlanReadHost,
 } from './plan-account-service';
 
 const STATE_FILE = 'claude-plan.json';
@@ -469,6 +470,8 @@ export interface ClaudePlanAccountOptions {
   allowed?: boolean;
   /** The process run; injectable so tests replay recorded output. */
   run?: ClaudeUsageRunner;
+  /** No read while the Mac sleeps or is locked (BUG-335). */
+  host?: PlanReadHost | null;
   now?: () => number;
   minFetchIntervalMs?: number;
   jitterMs?: number;
@@ -491,6 +494,7 @@ export class ClaudePlanAccountService extends PlanAccountService {
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       }),
       migrateWindow: migratePersistedLimitName,
+      host: options.host,
       now,
       minFetchIntervalMs: options.minFetchIntervalMs,
       jitterMs: options.jitterMs,
