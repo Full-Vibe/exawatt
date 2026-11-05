@@ -27,7 +27,7 @@ export interface PaneLiveness {
   dispose(): void;
 }
 
-export interface PaintReporterDependencies {
+interface PaintReporterDependencies {
   send(report: PtyPaintReport): void;
   documentVisible(): boolean;
   onVisibilityChange(listener: () => void): () => void;

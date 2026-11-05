@@ -58,9 +58,9 @@ export const DELIVERY_GAP_MS = 5_000;
 /** Operator input this close before the last output "preceded the silence". */
 const INPUT_BEFORE_SILENCE_MS = 2_000;
 
-export type StallSide = 'harness' | 'pane';
+type StallSide = 'harness' | 'pane';
 
-export type StallClearedCause =
+type StallClearedCause =
   | 'output'
   | 'painted'
   | 'pane-hidden'
@@ -68,7 +68,7 @@ export type StallClearedCause =
   | 'renderer-gone'
   | 'exited';
 
-export interface LivenessSessionIdentity {
+interface LivenessSessionIdentity {
   durableSessionId: string;
   harness: string;
   harnessSessionId: string | null;
@@ -85,7 +85,7 @@ export interface SessionLivenessOptions {
   deliveryGapMs?: number;
 }
 
-export interface SessionLiveness {
+interface SessionLiveness {
   /** Main delivered output up to `cursor` (the `pty:data` cursor). */
   output(id: string, cursor: number): void;
   /** The operator wrote to the Session (a keystroke, not a protocol reply). */
@@ -433,7 +433,7 @@ interface LivenessAttention {
 }
 
 /** The parts of a reporting renderer's `webContents` liveness listens to. */
-export interface LivenessSender {
+interface LivenessSender {
   readonly id: number;
   once(event: 'destroyed', listener: () => void): unknown;
   on(event: 'render-process-gone', listener: () => void): unknown;

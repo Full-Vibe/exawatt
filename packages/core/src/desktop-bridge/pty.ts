@@ -450,7 +450,7 @@ export interface PtyPaintReport {
   panes: PtyPanePaint[];
 }
 
-export interface PtyPanePaint {
+interface PtyPanePaint {
   /** The PTY id the pane is bound to. */
   id: string;
   painted: number;
