@@ -11,6 +11,7 @@ import {
   session as electronSession,
   shell,
   systemPreferences,
+  utilityProcess,
 } from 'electron';
 import { randomUUID } from 'crypto';
 import path from 'path';
@@ -160,6 +161,8 @@ const isShuttingDown = () => {
 };
 
 const rendererServer = createRendererServer({
+  fork: (modulePath, args, options) =>
+    utilityProcess.fork(modulePath, args, options),
   userDataPath,
   cacheNamespace: identity.cacheNamespace,
   isTest,
@@ -175,13 +178,13 @@ const rendererServer = createRendererServer({
   }),
   onUnexpectedExit: details => rendererServerSupervisor.exited(details),
 });
-// A cached renderer uses only Node APIs and can boot before Electron's ready
-// event, overlapping its server start with Chromium initialization. A cold
+// A cached renderer starts its server the moment Electron is ready (a utility
+// process cannot be forked before), alongside the launch frame. A cold
 // renderer intentionally waits until the launch frame exists so archive I/O
 // cannot delay the first visible acknowledgement.
 const rendererWasWarmAtLaunch = !isDev && rendererServer.hasWarmCache();
 let rendererReadyPromise = rendererWasWarmAtLaunch
-  ? rendererServer.start()
+  ? app.whenReady().then(() => rendererServer.start())
   : null;
 // Bootstrap awaits and reports this same promise; an early observer keeps a
 // very fast failure from becoming an unhandled rejection before ready.

@@ -81,6 +81,41 @@ function isAlive(pid) {
   }
 }
 
+/**
+ * LaunchServices' record of `pid` as a running application: its bundle id and
+ * type (`Foreground` is what the Dock and app switchers list), or null when
+ * the process never registered as one.
+ */
+function launchServicesEntry(pid) {
+  const asn = execFileSync('lsappinfo', ['find', `pid=${pid}`], {
+    encoding: 'utf8',
+  }).trim();
+  if (!asn) return null;
+  const info = execFileSync(
+    'lsappinfo',
+    ['info', '-only', 'bundleid', '-only', 'ApplicationType', asn],
+    { encoding: 'utf8' }
+  );
+  const field = key => info.match(new RegExp(`"${key}"="([^"]*)"`))?.[1];
+  return {
+    bundleId: field('CFBundleIdentifier'),
+    type: field('ApplicationType'),
+  };
+}
+
+/** The diagnostics records the launch wrote to `logs/main.jsonl`. */
+function mainRecords() {
+  try {
+    return readFileSync(join(userData, 'logs', 'main.jsonl'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map(line => JSON.parse(line));
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
 async function waitUntil(condition, failure, deadlineMs = 10_000) {
   const deadline = Date.now() + deadlineMs;
   while (Date.now() < deadline) {
@@ -363,17 +398,80 @@ try {
         );
       }
 
-      // BUG-070: the renderer server ends with Electron main however main ends.
-      // SIGKILL runs no shutdown code at all, so only the child's own lifeline to
-      // main can end it; before that lifeline the server reparented to launchd and
-      // kept its port, its memory, and a Dock icon of its own.
       const rendererPort = Number(new URL(relaunched.url()).port);
-      const serverPid = listenerOn(rendererPort);
-      if (!serverPid) {
+      const firstServerPid = listenerOn(rendererPort);
+      if (!firstServerPid) {
         throw new Error(
           `Nothing is listening on the renderer port ${rendererPort}`
         );
       }
+
+      // BUG-310: macOS lists one application for the app, not two. The server
+      // used to run as the app's own executable, and Next naming its process
+      // registered it as a second running application with the app's bundle
+      // id; as a utility process it runs from the helper bundle, which macOS
+      // keeps out of the Dock and every app switcher.
+      const mainPid = app.process().pid;
+      const appEntry = launchServicesEntry(mainPid);
+      const serverEntry = launchServicesEntry(firstServerPid);
+      if (appEntry?.bundleId !== packaged.identity.appId) {
+        throw new Error(
+          `Electron main is not the registered ${packaged.identity.appId} application: ${JSON.stringify(appEntry)}`
+        );
+      }
+      if (
+        serverEntry !== null &&
+        (serverEntry.bundleId === packaged.identity.appId ||
+          serverEntry.type === 'Foreground')
+      ) {
+        throw new Error(
+          `The renderer server (pid ${firstServerPid}) is registered as a second application: ${JSON.stringify(serverEntry)}`
+        );
+      }
+
+      // BUG-223: a server killed from outside comes back on its own port, so
+      // the origin survives, and the death is on the record twice: Chromium's
+      // account of its helper and the supervisor's restart.
+      process.kill(firstServerPid, 'SIGKILL');
+      await waitUntil(
+        () => {
+          const pid = listenerOn(rendererPort);
+          return pid !== null && pid !== firstServerPid;
+        },
+        `The renderer server killed from outside did not come back on port ${rendererPort}`,
+        30_000
+      );
+      await relaunched.locator('[data-command-altitude]').waitFor();
+      if (new URL(relaunched.url()).origin !== secondOrigin) {
+        throw new Error(
+          `The restarted renderer server moved the origin: ${secondOrigin} -> ${new URL(relaunched.url()).origin}`
+        );
+      }
+      await waitUntil(() => {
+        const events = mainRecords().map(record => record.event);
+        return events.includes('renderer-server.restarted');
+      }, 'The renderer server restart is not on the record');
+      const records = mainRecords();
+      const exited = records.filter(r => r.event === 'renderer-server.exited');
+      const gone = records.filter(
+        r => r.event === 'child.gone' && r.name === 'Renderer Server'
+      );
+      if (
+        exited.length !== 1 ||
+        exited[0].action !== 'restart' ||
+        gone.length !== 1 ||
+        gone[0].reason !== 'killed'
+      ) {
+        throw new Error(
+          `The renderer server's death is not on the record as one kill and one restart: ${JSON.stringify({ exited, gone })}`
+        );
+      }
+
+      // BUG-070: the renderer server ends with Electron main however main ends.
+      // SIGKILL runs no shutdown code at all; Chromium ends a utility process
+      // when main goes. Before that, the server reparented to launchd and kept
+      // its port, its memory, and a Dock icon of its own.
+      const serverPid = listenerOn(rendererPort);
       const mainExited = new Promise(resolve =>
         app.process().once('exit', resolve)
       );
@@ -388,6 +486,7 @@ try {
         `PASS packaged Electron (${packaged.identity.productName}): background launch + ` +
           'local renderer + capability-shaped preload/menu/diagnostics + PTY round trip + contract-declared updater ' +
           `${productUpdatesEnabled ? 'present' : 'absent'} + one origin and its storage across a relaunch + ` +
+          'one registered application + a killed renderer server restarts on its origin, on the record + ' +
           'renderer server ends with a killed main'
       );
     },

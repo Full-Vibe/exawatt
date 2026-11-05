@@ -17,7 +17,14 @@ import { ensurePackagedApp } from './lib/packaged-app.mjs';
 const packaged = await ensurePackagedApp({ label: 'startup' });
 const runs = Math.max(1, Number.parseInt(process.env.STARTUP_RUNS ?? '3', 10));
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-startup-eval-'));
-const staleRendererCache = join(userData, 'renderer-cache', 'stale-build');
+// Under the distribution's own namespace, the only directory prune reads: a
+// fixture beside it is never touched, and the check below could never pass.
+const staleRendererCache = join(
+  userData,
+  'renderer-cache',
+  packaged.identity.cacheNamespace,
+  'stale-build'
+);
 mkdirSync(staleRendererCache, { recursive: true });
 writeFileSync(join(staleRendererCache, 'obsolete'), 'fixture');
 const results = [];

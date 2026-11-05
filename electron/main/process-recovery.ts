@@ -371,7 +371,7 @@ interface RendererServerSupervisorDependencies {
 export function createRendererServerSupervisor(
   deps: RendererServerSupervisorDependencies
 ): {
-  exited(details: { code: number | null; signal: string | null }): void;
+  exited(details: { code: number }): void;
   /** A shutdown that had begun returned to idle: serve again if it stopped. */
   shutdownCancelled(): void;
 } {
@@ -437,8 +437,8 @@ export function createRendererServerSupervisor(
   }
 
   return {
-    exited({ code, signal }) {
-      const fields = { code, signal };
+    exited({ code }) {
+      const fields = { code };
       if (deps.isQuitting() || restarting) {
         deps.record('renderer-server.exited', { ...fields, action: 'none' });
         return;

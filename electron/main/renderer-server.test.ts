@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { PassThrough } from 'stream';
-import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
+import { spawn } from 'child_process';
 import net from 'net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -12,46 +12,71 @@ import {
 } from './process-recovery';
 import {
   createRendererServer,
-  rendererServerLaunch,
+  RENDERER_SERVER_SERVICE,
+  type ForkServer,
   type RendererServerDependencies,
+  type ServerProcess,
 } from './renderer-server';
 
 // @scans none: reads only its own temporary directory (the __dirname is the stand-in server's)
 
 /**
- * A child process double built from the surface `renderer-server` and
- * `stopChildProcess` actually touch: stdio streams, exit state, `kill`, and
- * the `close` event. `kill` records the signal and closes on the next turn
- * the way a cooperative Node server does on SIGTERM.
+ * A double of Electron's `UtilityProcess`, built from its surface: `pid`,
+ * stdout and stderr, `kill()`, and the `spawn` and `exit` events. As in
+ * Electron, the process spawns on a later turn, `kill()` does nothing (and
+ * returns false) before it has spawned or after it has exited, a process that
+ * honours the kill exits with code 0, and `exit` carries only a code: a
+ * process a signal ended reports the signal's number.
  */
-class FakeChild extends EventEmitter {
-  stdin = new PassThrough();
+class FakeServer extends EventEmitter implements ServerProcess {
   stdout = new PassThrough();
   stderr = new PassThrough();
-  exitCode: number | null = null;
-  signalCode: NodeJS.Signals | null = null;
-  signals: string[] = [];
-  honoursSignals = true;
+  pid: number | undefined = undefined;
+  kills = 0;
+  honoursKill = true;
+  private spawned = false;
+  private exited = false;
 
-  kill(signal: NodeJS.Signals = 'SIGTERM'): boolean {
-    this.signals.push(signal);
-    if (this.honoursSignals) queueMicrotask(() => this.exit(null, signal));
+  /** Spawns on the next turn, or only when `spawn()` is called. */
+  constructor(spawnsItself = true) {
+    super();
+    if (spawnsItself) queueMicrotask(() => this.spawn());
+  }
+
+  spawn(): void {
+    if (this.spawned || this.exited) return;
+    this.spawned = true;
+    this.pid = 90_000;
+    this.emit('spawn');
+  }
+
+  kill(): boolean {
+    if (!this.spawned || this.exited) return false;
+    this.kills += 1;
+    if (this.honoursKill) queueMicrotask(() => this.exit(0));
     return true;
   }
 
-  exit(code: number | null, signal: NodeJS.Signals | null = null): void {
-    this.exitCode = code;
-    this.signalCode = signal;
-    this.emit('exit', code, signal);
-    this.emit('close', code, signal);
+  get alive(): boolean {
+    return !this.exited;
+  }
+
+  exit(code: number): void {
+    if (this.exited) return;
+    this.exited = true;
+    this.pid = undefined;
+    this.emit('exit', code);
   }
 }
 
-interface Spawned {
-  command: string;
-  args: readonly string[];
-  options: SpawnOptions;
-  child: FakeChild;
+/** The exit code of a process SIGKILL ended, as `UtilityProcess` reports it. */
+const SIGKILLED = 9;
+
+interface Forked {
+  modulePath: string;
+  args: string[];
+  options: Parameters<ForkServer>[2];
+  child: FakeServer;
 }
 
 let root: string;
@@ -77,7 +102,7 @@ afterEach(() => {
 });
 
 function harness(overrides: Partial<RendererServerDependencies> = {}) {
-  const spawned: Spawned[] = [];
+  const spawned: Forked[] = [];
   const extracted: string[] = [];
   const served: number[] = [];
   const sweeps: string[] = [];
@@ -87,15 +112,14 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
     resourcesPath,
     userDataPath: () => userData,
     cacheNamespace: 'community',
-    execPath: '/Applications/Exawatt.app/Contents/MacOS/Exawatt',
     pid: 4242,
     isTest: true,
     childEnvironment: () => ({ AMBIENT: 'kept', PORT: 'overridden' }),
     forwardStdout: false,
-    spawn: (command, args, options) => {
-      const child = new FakeChild();
-      spawned.push({ command, args, options, child });
-      return child as unknown as ChildProcess;
+    fork: (modulePath, args, options) => {
+      const child = new FakeServer();
+      spawned.push({ modulePath, args, options, child });
+      return child;
     },
     extractArchive: async (_archive, destination) => {
       extracted.push(destination);
@@ -119,9 +143,7 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
     // Like the real port: only a live child of ours answers on it.
     probe: async () => {
       const child = spawned.at(-1)?.child;
-      if (!child || child.exitCode !== null || child.signalCode !== null) {
-        return false;
-      }
+      if (!child?.alive) return false;
       return ++probes >= answerAfter;
     },
     // Never advances, so only the child's exit or an answer ends the wait;
@@ -149,7 +171,7 @@ const versionRoot = () =>
   path.join(userData, 'renderer-cache', 'community', HASH);
 
 describe('createRendererServer', () => {
-  it('unpacks a cold version, runs its server as Node on loopback, and reports the origin once it answers', async () => {
+  it('unpacks a cold version, runs its server as a utility process on loopback, and reports the origin once it answers', async () => {
     const { server, spawned, extracted, served } = harness();
     expect(server.hasWarmCache()).toBe(false);
     expect(server.origin).toBeNull();
@@ -164,14 +186,14 @@ describe('createRendererServer', () => {
     expect(fs.existsSync(`${versionRoot()}.staging-4242`)).toBe(false);
     expect(server.hasWarmCache()).toBe(true);
     expect(spawned).toHaveLength(1);
-    const [{ command, args, options }] = spawned;
+    const [{ modulePath, args, options }] = spawned;
     const standalone = path.join(versionRoot(), 'dist-renderer');
-    expect(command).toBe('/Applications/Exawatt.app/Contents/MacOS/Exawatt');
-    expect(args[args.length - 1]).toBe(path.join(standalone, 'server.js'));
+    expect(modulePath).toBe(path.join(standalone, 'server.js'));
+    expect(args).toEqual([]);
     expect(options.cwd).toBe(standalone);
-    expect(options.env).toMatchObject({
+    expect(options.serviceName).toBe(RENDERER_SERVER_SERVICE);
+    expect(options.env).toEqual({
       AMBIENT: 'kept',
-      ELECTRON_RUN_AS_NODE: '1',
       HOSTNAME: '127.0.0.1',
       PORT: '34567',
       NODE_ENV: 'production',
@@ -219,12 +241,12 @@ describe('createRendererServer', () => {
     expect(server.origin).toBeNull();
   });
 
-  it('fails the start when its child died, even though the port answers', async () => {
-    let spawnedChild: FakeChild | null = null;
+  it('fails the start when its server died, even though the port answers', async () => {
+    let spawnedChild: FakeServer | null = null;
     const { server, served } = harness({
-      spawn: () => {
-        spawnedChild = new FakeChild();
-        return spawnedChild as unknown as ChildProcess;
+      fork: () => {
+        spawnedChild = new FakeServer();
+        return spawnedChild;
       },
       // Another program answers the moment our child is gone.
       probe: async () => {
@@ -242,23 +264,24 @@ describe('createRendererServer', () => {
     expect(server.origin).toBeNull();
   });
 
-  it('stops its child with SIGTERM and releases it only once it has closed', async () => {
+  it('stops its server and releases it only once it has exited', async () => {
     const { server, spawned } = harness();
     await server.start();
 
     await server.stop();
-    expect(spawned[0].child.signals).toEqual(['SIGTERM']);
+    expect(spawned[0].child.kills).toBe(1);
+    expect(spawned[0].child.alive).toBe(false);
 
     await server.stop();
-    expect(spawned[0].child.signals).toEqual(['SIGTERM']);
+    expect(spawned[0].child.kills).toBe(1);
   });
 
-  it('keeps a child that will not stop owned, so the next shutdown can retry', async () => {
+  it('keeps a server that will not stop owned, so the next shutdown can retry', async () => {
     const { server, spawned } = harness();
     await server.start();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const child = spawned[0].child;
-    child.honoursSignals = false;
+    child.honoursKill = false;
 
     const stopping = server.stop();
     const refused = expect(stopping).rejects.toThrow(
@@ -266,11 +289,36 @@ describe('createRendererServer', () => {
     );
     await vi.runAllTimersAsync();
     await refused;
-    expect(child.signals).toEqual(['SIGTERM', 'SIGKILL']);
+    expect(child.kills).toBe(1);
 
-    child.honoursSignals = true;
+    child.honoursKill = true;
     await server.stop();
-    expect(child.signals).toEqual(['SIGTERM', 'SIGKILL', 'SIGTERM']);
+    expect(child.kills).toBe(2);
+    expect(child.alive).toBe(false);
+  });
+
+  // `kill()` does nothing before the process has spawned (Electron returns
+  // false), so a stop that arrives first must wait for the spawn rather than
+  // leave a server running that nothing owns.
+  it('stops a server whose stop arrived before it had spawned', async () => {
+    let child: FakeServer | null = null;
+    const { server, answerAfter } = harness({
+      fork: () => (child = new FakeServer(false)),
+    });
+    answerAfter(Number.POSITIVE_INFINITY);
+    const started = server.start().catch(error => error as Error);
+    await vi.waitFor(() => expect(child).not.toBeNull());
+    const late = child as unknown as FakeServer;
+
+    const stopping = server.stop();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(late.kills).toBe(0);
+    late.spawn();
+    await stopping;
+
+    expect(late.kills).toBe(1);
+    expect(late.alive).toBe(false);
+    expect(String(await started)).toContain('Packaged renderer exited with 0');
   });
 
   it('is a no-op to stop a server that never started', async () => {
@@ -319,9 +367,9 @@ describe('createRendererServer', () => {
       });
       await server.start();
 
-      spawned[0].child.exit(null, 'SIGKILL');
+      spawned[0].child.exit(SIGKILLED);
 
-      expect(exits).toEqual([{ code: null, signal: 'SIGKILL' }]);
+      await vi.waitFor(() => expect(exits).toEqual([{ code: SIGKILLED }]));
     });
 
     it('does not report the exit a stop asked for', async () => {
@@ -344,11 +392,10 @@ describe('createRendererServer', () => {
       answerAfter(Number.POSITIVE_INFINITY);
       const started = server.start();
       await vi.waitFor(() => expect(spawned).toHaveLength(1));
-      spawned[0].child.exit(null, 'SIGKILL');
+      spawned[0].child.exit(SIGKILLED);
 
-      // A signal leaves no exit code; the start must still fail at once.
       await expect(started).rejects.toThrow(
-        'Packaged renderer exited with SIGKILL'
+        `Packaged renderer exited with ${SIGKILLED}`
       );
       expect(exits).toEqual([]);
     });
@@ -368,7 +415,7 @@ describe('createRendererServer', () => {
         onUnexpectedExit: details => exits.push(details),
       });
       const origin = await server.start();
-      spawned[0].child.exit(null, 'SIGKILL');
+      spawned[0].child.exit(SIGKILLED);
 
       const restarted = await server.restart();
 
@@ -379,24 +426,23 @@ describe('createRendererServer', () => {
       expect(spawned[1].options.env).toMatchObject({ PORT: '34567' });
       expect(spawned[1].options.cwd).toBe(spawned[0].options.cwd);
 
-      // The restarted child is supervised the same way.
-      spawned[1].child.exit(null, 'SIGTERM');
-      expect(exits).toEqual([
-        { code: null, signal: 'SIGKILL' },
-        { code: null, signal: 'SIGTERM' },
-      ]);
+      // The restarted server is supervised the same way.
+      spawned[1].child.exit(15);
+      await vi.waitFor(() =>
+        expect(exits).toEqual([{ code: SIGKILLED }, { code: 15 }])
+      );
     });
 
     it('refuses to restart a server that never served, or while a stop is in flight', async () => {
       const { server, spawned } = harness();
       await expect(server.restart()).rejects.toThrow('has not served yet');
       await server.start();
-      spawned[0].child.honoursSignals = false;
+      spawned[0].child.honoursKill = false;
       const stopping = server.stop().catch(() => {});
 
       await expect(server.restart()).rejects.toThrow('stopping');
 
-      spawned[0].child.exit(null, 'SIGTERM');
+      spawned[0].child.exit(15);
       await stopping;
       expect(server.isDown()).toBe(true);
       await expect(server.restart()).resolves.toBe('http://127.0.0.1:34567');
@@ -411,7 +457,7 @@ describe('createRendererServer', () => {
       await server.start();
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       const child = spawned[0].child;
-      child.honoursSignals = false;
+      child.honoursKill = false;
       const stopping = server.stop();
       const refused = expect(stopping).rejects.toThrow('did not stop');
       await vi.runAllTimersAsync();
@@ -419,9 +465,9 @@ describe('createRendererServer', () => {
       vi.useRealTimers();
 
       // The shutdown was abandoned; the server dies later on its own.
-      child.exit(null, 'SIGKILL');
+      child.exit(SIGKILLED);
 
-      expect(exits).toEqual([{ code: null, signal: 'SIGKILL' }]);
+      await vi.waitFor(() => expect(exits).toEqual([{ code: SIGKILLED }]));
       await expect(server.restart()).resolves.toBe('http://127.0.0.1:34567');
     });
 
@@ -441,28 +487,28 @@ describe('createRendererServer', () => {
         'Timed out starting the packaged renderer'
       );
 
-      expect(spawned[0].child.signals).toEqual(['SIGTERM']);
-      expect(spawned[0].child.signalCode).toBe('SIGTERM');
+      expect(spawned[0].child.kills).toBe(1);
+      expect(spawned[0].child.alive).toBe(false);
       // Nothing is left owned: a stop has nothing to do.
       await server.stop();
-      expect(spawned[0].child.signals).toEqual(['SIGTERM']);
+      expect(spawned[0].child.kills).toBe(1);
     });
 
-    it('treats a child that died during the last readiness probe as a failed start', async () => {
+    it('treats a server that died during the last readiness probe as a failed start', async () => {
       const exits: unknown[] = [];
       const { server, spawned } = harness({
         probe: async () => {
           // Nothing answers before the child exists; then it answers and is
           // gone before the answer is handed over.
           if (spawned.length === 0) return false;
-          spawned[0].child.exit(null, 'SIGKILL');
+          spawned[0].child.exit(SIGKILLED);
           return true;
         },
         onUnexpectedExit: details => exits.push(details),
       });
 
       await expect(server.start()).rejects.toThrow(
-        'Packaged renderer exited with SIGKILL'
+        `Packaged renderer exited with ${SIGKILLED}`
       );
       expect(server.origin).toBeNull();
       expect(exits).toEqual([]);
@@ -471,18 +517,67 @@ describe('createRendererServer', () => {
 });
 
 /**
- * BUG-070, against real processes: a killed or crashed Electron main used to
- * leave its renderer server reparented to launchd, holding its port and a
- * Dock icon. The server entry here is a stand-in for Next's `server.js` that
- * listens on loopback and reports `<pid> <port>`.
+ * `utilityProcess.fork` played by a Node child process, for the tests that need
+ * a real server listening, dying or hanging. It offers exactly the
+ * `ServerProcess` surface with Electron's semantics: `kill()` asks with
+ * SIGTERM and ends the process outright two seconds later, as Chromium does,
+ * and `exit` carries a code: 0 for a process that honoured `kill()`, the
+ * signal's number for one another signal ended. That Chromium also ends the
+ * process with main (BUG-070) is the packaged gate's to prove: no double can.
  */
-describe('rendererServerLaunch', () => {
-  const ENTRY = `require('net').createServer().listen(0, '127.0.0.1', function () {
-  process.stdout.write(process.pid + ' ' + this.address().port + '\\n');
-});`;
+class NodeServer extends EventEmitter implements ServerProcess {
+  private readonly child;
+  private exited = false;
+  private killed = false;
 
+  constructor(modulePath: string, options: Parameters<ForkServer>[2]) {
+    super();
+    this.child = spawn(process.execPath, [modulePath], {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    this.child.once('spawn', () => this.emit('spawn'));
+    this.child.once('exit', (code, signal) => {
+      this.exited = true;
+      const honoured = this.killed && signal === 'SIGTERM';
+      this.emit(
+        'exit',
+        code ?? (honoured ? 0 : os.constants.signals[signal ?? 'SIGKILL'])
+      );
+    });
+  }
+
+  get pid(): number | undefined {
+    return this.exited ? undefined : this.child.pid;
+  }
+
+  get stdout(): NodeJS.ReadableStream | null {
+    return this.child.stdout;
+  }
+
+  get stderr(): NodeJS.ReadableStream | null {
+    return this.child.stderr;
+  }
+
+  kill(): boolean {
+    if (this.exited || this.child.pid === undefined) return false;
+    this.killed = true;
+    this.child.kill('SIGTERM');
+    setTimeout(() => {
+      if (!this.exited) this.child.kill('SIGKILL');
+    }, 2_000).unref();
+    return true;
+  }
+}
+
+const nodeFork: ForkServer = (modulePath, _args, options) =>
+  new NodeServer(modulePath, options);
+
+/** The renderer server against real processes (BUG-223). */
+describe('createRendererServer with a real server', () => {
   // Whatever a failing assertion leaves running is ended here, by pid, so a
-  // red run cannot become the orphan this suite exists to prevent.
+  // red run cannot leave an orphan behind.
   const started: number[] = [];
   afterEach(() => {
     for (const pid of started.splice(0)) {
@@ -494,26 +589,6 @@ describe('rendererServerLaunch', () => {
     }
   });
 
-  function writeEntry(): string {
-    const entry = path.join(root, 'server.js');
-    fs.writeFileSync(entry, ENTRY);
-    return entry;
-  }
-
-  function firstLine(stream: NodeJS.ReadableStream): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let buffered = '';
-      stream.on('data', chunk => {
-        buffered += String(chunk);
-        const end = buffered.indexOf('\n');
-        if (end >= 0) resolve(buffered.slice(0, end));
-      });
-      stream.once('end', () =>
-        reject(new Error(`stream ended before a line: ${buffered}`))
-      );
-    });
-  }
-
   function alive(pid: number): boolean {
     try {
       process.kill(pid, 0);
@@ -522,60 +597,6 @@ describe('rendererServerLaunch', () => {
       return false;
     }
   }
-
-  function connects(port: number): Promise<boolean> {
-    return new Promise(resolve => {
-      const socket = net.connect(port, '127.0.0.1');
-      socket.once('connect', () => {
-        socket.destroy();
-        resolve(true);
-      });
-      socket.once('error', () => resolve(false));
-    });
-  }
-
-  it('runs the entry and keeps serving until its parent lets go of stdin', async () => {
-    const launch = rendererServerLaunch(writeEntry());
-    const child = spawn(process.execPath, launch.args, {
-      stdio: launch.stdio,
-    });
-    started.push(child.pid!);
-    const exited = new Promise<number | null>(resolve =>
-      child.once('exit', code => resolve(code))
-    );
-    const [, port] = (await firstLine(child.stdout!)).split(' ').map(Number);
-
-    expect(await connects(port)).toBe(true);
-    child.stdin!.end();
-    expect(await exited).toBe(0);
-  });
-
-  it('ends the server when its parent is killed outright', async () => {
-    const launch = rendererServerLaunch(writeEntry());
-    const parentSource = `const { spawn } = require('child_process');
-const launch = JSON.parse(process.argv[1]);
-const child = spawn(process.execPath, launch.args, { stdio: launch.stdio });
-child.stdout.pipe(process.stdout);
-setInterval(() => {}, 60000);`;
-    const parent = spawn(
-      process.execPath,
-      ['-e', parentSource, JSON.stringify(launch)],
-      { stdio: ['ignore', 'pipe', 'inherit'] }
-    );
-    started.push(parent.pid!);
-    const [serverPid, port] = (await firstLine(parent.stdout!))
-      .split(' ')
-      .map(Number);
-    started.push(serverPid);
-    expect(await connects(port)).toBe(true);
-
-    parent.kill('SIGKILL');
-
-    await vi.waitFor(() => expect(alive(serverPid)).toBe(false), {
-      timeout: 10_000,
-      interval: 20,
-    });
-  });
 
   it('brings a server killed from outside back on the same origin (BUG-223)', async () => {
     // A stand-in for Next's server that answers with its own pid, so the test
@@ -600,7 +621,7 @@ setInterval(() => {}, 60000);`;
       resourcesPath,
       userDataPath: () => userData,
       cacheNamespace: 'community',
-      execPath: process.execPath,
+      fork: nodeFork,
       isTest: true,
       childEnvironment: () => ({ PATH: process.env.PATH }),
       forwardStdout: false,
@@ -614,10 +635,10 @@ setInterval(() => {}, 60000);`;
       started.push(firstPid);
 
       process.kill(firstPid, 'SIGKILL');
-      await vi.waitFor(
-        () => expect(exits).toEqual([{ code: null, signal: 'SIGKILL' }]),
-        { timeout: 10_000, interval: 20 }
-      );
+      await vi.waitFor(() => expect(exits).toEqual([{ code: SIGKILLED }]), {
+        timeout: 10_000,
+        interval: 20,
+      });
 
       expect(await server.restart()).toBe(origin);
       const secondPid = await pidAt(origin);
@@ -689,7 +710,7 @@ if (step === 'hang') {
         resourcesPath,
         userDataPath: () => userData,
         cacheNamespace: 'community',
-        execPath: process.execPath,
+        fork: nodeFork,
         isTest: true,
         childEnvironment: () => ({ PATH: process.env.PATH }),
         forwardStdout: false,

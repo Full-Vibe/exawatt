@@ -515,7 +515,7 @@ describe('createRendererServerSupervisor', () => {
       await new Promise(resolve => setImmediate(resolve));
     }
   };
-  const sigkill = { code: null, signal: 'SIGKILL' };
+  const sigkill = { code: 9 };
   const actions = (events: Recorded[]) =>
     events.map(e => [e.event, e.fields.action]);
 
@@ -625,7 +625,7 @@ describe('createRendererServerSupervisor', () => {
     });
     h.quitting();
 
-    h.supervisor.exited({ code: 0, signal: null });
+    h.supervisor.exited({ code: 0 });
     await settle();
 
     expect(restarts).toBe(0);
