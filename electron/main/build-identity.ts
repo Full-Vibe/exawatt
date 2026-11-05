@@ -64,7 +64,16 @@ interface IdentityApp {
   setName(name: string): void;
   getPath(name: 'userData' | 'sessionData'): string;
   setPath(name: 'userData' | 'sessionData', value: string): void;
+  commandLine: { appendSwitch(name: string): void };
 }
+
+/**
+ * Chromium's switch that puts `safeStorage` and the cookie store (OSCrypt) on
+ * an in-process mock keychain: encryption stays real, keyed by a fixed mock
+ * password, and the login keychain is never read or written. Electron's own
+ * spec suite runs its macOS safeStorage cases under it.
+ */
+export const TEST_KEYCHAIN_SWITCH = 'use-mock-keychain';
 
 /**
  * Names the app and settles its data paths. A hermetic test run gets its own
@@ -72,12 +81,19 @@ interface IdentityApp {
  * never redirect real data. Otherwise the established official install keeps
  * its data path, and Community uses its app-id namespace so it can never
  * mutate official state or renderer caches.
+ *
+ * A test run also never touches the operator's login keychain (BUG-336).
+ * Every test build carries a new ad-hoc signature, so the "<App> Safe
+ * Storage" item's access list never matches it and macOS stops the operator
+ * with a password prompt. `main.ts` calls this first, before `ready`, which is
+ * when a Chromium switch still takes effect.
  */
 export function applyBuildIdentity(
   app: IdentityApp,
   build: BuildIdentity,
   env: NodeJS.ProcessEnv
 ): void {
+  if (env.EXAWATT_TEST) app.commandLine.appendSwitch(TEST_KEYCHAIN_SWITCH);
   if (env.EXAWATT_TEST && env.EXAWATT_USER_DATA) {
     app.setPath('userData', env.EXAWATT_USER_DATA);
   }

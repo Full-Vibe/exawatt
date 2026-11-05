@@ -6160,3 +6160,25 @@ that refuses Launch Services opens for it and every child. A signed-out
 `agy` was verified to open no tab inside it; the read stops at its
 "Authentication required" prompt and the card says Antigravity isn't signed
 in. The interim timeout backoff was removed.
+
+### BUG-336 Test launches of the app never touch the login keychain
+
+Status: fixed 2026-11-05 · ENG-022 · found 2026-11-05 by the operator, interrupted repeatedly during a landing train by "Exawatt Community wants to use your confidential information stored in 'Exawatt Community Safe Storage' in your keychain".
+
+Connected Sources keep their device credentials in Electron `safeStorage`,
+and Chromium encrypts the cookie store with the same "<App> Safe Storage"
+keychain item. Every packaged test build carries a new ad-hoc signature, so
+the item's access list never matches it, and each launch of
+`eval:electron:connected-fleet` (and any other eval that reached the keychain)
+stopped the operator for their login password. Fixed at the one place every
+test launch passes through: `applyBuildIdentity`, which `main.ts` runs before
+anything else and which already gives an `EXAWATT_TEST` run its own
+`userData`, now also appends Chromium's `use-mock-keychain` switch for it,
+before `ready`. Encryption stays real (an in-process keychain with a fixed
+mock password, the switch Electron's own spec suite runs its macOS
+safeStorage cases under), so connected-fleet still proves its relaunch
+authenticates with credentials it encrypted and decrypted; production
+launches are unchanged. `build-identity.test.ts` pins that a test launch
+carries the switch and a normal one does not. A throwaway Electron 43.8.3
+probe with the switch reported encryption available, a `v10` ciphertext
+round trip, and left no keychain item behind.

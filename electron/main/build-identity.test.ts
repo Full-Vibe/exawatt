@@ -12,6 +12,7 @@ import {
   applyBuildIdentity,
   assertPackagedRendererComposition,
   resolveBuildIdentity,
+  TEST_KEYCHAIN_SWITCH,
 } from './build-identity';
 import type { BuildInfo } from '@exawatt/core/desktop-bridge';
 
@@ -110,10 +111,17 @@ describe('applyBuildIdentity', () => {
       sessionData: '/Users/op/Library/Application Support/Exawatt',
     };
     let name = '';
+    const switches: string[] = [];
     return {
       paths,
+      switches,
       name: () => name,
       app: {
+        commandLine: {
+          appendSwitch: (value: string) => {
+            switches.push(value);
+          },
+        },
         setName: (value: string) => {
           name = value;
         },
@@ -155,6 +163,20 @@ describe('applyBuildIdentity', () => {
     expect(paths.sessionData).toBe(
       '/Users/op/Library/Application Support/Exawatt'
     );
+  });
+
+  it('keeps every test launch off the login keychain (BUG-336)', () => {
+    const { app, switches } = fakeApp();
+    applyBuildIdentity(app, build(), { EXAWATT_TEST: '1' });
+    expect(switches).toEqual([TEST_KEYCHAIN_SWITCH]);
+  });
+
+  it('leaves a normal launch on the real keychain', () => {
+    const { app, switches } = fakeApp();
+    applyBuildIdentity(app, build(), {
+      EXAWATT_USER_DATA: '/tmp/eval-user-data',
+    });
+    expect(switches).toEqual([]);
   });
 
   it('never redirects real data on a stray variable outside a test run', () => {
