@@ -18,7 +18,7 @@ import {
   type BoardRoute,
 } from './board-route';
 
-export interface BoardRouteMove {
+interface BoardRouteMove {
   altitude?: BoardAltitude;
   project?: string | null;
   agent?: string | null;
