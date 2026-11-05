@@ -80,7 +80,7 @@ export interface AgentLauncherProps {
 }
 
 /** What is unfolded under the row. Never two things. */
-export type LauncherDisclosure = 'setup' | 'catalog' | null;
+type LauncherDisclosure = 'setup' | 'catalog' | null;
 
 export function AgentLauncher({
   setups,

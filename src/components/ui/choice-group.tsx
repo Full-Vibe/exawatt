@@ -25,7 +25,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export interface ChoiceGroupOption<T extends string> {
+interface ChoiceGroupOption<T extends string> {
   value: T;
   label: ReactNode;
   /** Second line under the label (card layout only). */
@@ -37,7 +37,7 @@ export interface ChoiceGroupOption<T extends string> {
   disabledReason?: string;
 }
 
-export interface ChoiceGroupProps<T extends string> {
+interface ChoiceGroupProps<T extends string> {
   /** Accessible name of the group. */
   label: string;
   value: T | null;
