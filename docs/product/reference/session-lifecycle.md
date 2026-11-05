@@ -213,7 +213,8 @@ operator goal.
 
 A started Agent Session's context menu and **⌘K** expose **Clone to…** and each
 available Agent Launch Configuration. The selected target is exact: configured
-Agent Source, source-native model, and effort or variant. Shell and unavailable
+Agent Source and source-native model, at the effort that configuration was last
+started with. Shell and unavailable
 configurations are excluded.
 
 Clone creates a distinct new Agent and Session. Exawatt gives it a bounded,

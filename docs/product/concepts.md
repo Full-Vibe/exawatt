@@ -485,11 +485,15 @@ Examples:
 ## Launch Configuration
 
 One selectable thing that carries a whole Agent launch: which configured Agent
-Source runs it, which source-native model it uses, and its exact effort or
-variant. The Harness is derived from the configured source; it is not sufficient
-identity by itself because two source instances may use the same Harness with
-different endpoints, accounts, catalogs, or readiness. Agent Type is a future
-axis and remains explicitly coming soon; no Type identity is created today.
+Source runs it, which source-native model it uses, and the effort it launches
+at. Its identity is the source and the model (and, later, the Type); effort is
+an independent axis the configuration carries, the value it was last launched
+or named with, never a second configuration (BUG-334). The effort axis offers
+only what the chosen model declares. The Harness is derived from the configured
+source; it is not sufficient identity by itself because two source instances
+may use the same Harness with different endpoints, accounts, catalogs, or
+readiness. Agent Type is a future axis and remains explicitly coming soon; no
+Type identity is created today.
 
 Planned ENG-023 D8 adds disclosed environmental context beside the launch task,
 not another configuration identity or Agent Type. A Session receipt distinguishes
@@ -501,7 +505,8 @@ than an assembly of independent settings. Its identity is deliberately those
 axes and no more — launch permissions, worktree/branch, and roadmap association
 are per-launch modifiers that travel beside a configuration rather than inside
 it, so the same configuration can be started cautiously or freely without
-becoming two things.
+becoming two things. A running Agent states the permission mode it was started
+in, and whether that is Exawatt's default, beside its model (BUG-331).
 
 Configurations enter the reusable pool through a successful launch or explicit
 naming, not through incidental setup work. Selection, navigation, edits,

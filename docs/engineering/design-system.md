@@ -299,7 +299,12 @@ Honesty markers are product UI and stay: **Coming soon**, Demo banners, "not rec
 ## Menus
 
 Value selection uses `OptionMenu`; actions use its `ActionMenu` face in the
-same module. Both use the existing Radix popover and shared keyboard grammar.
+same module. A short exclusive set the operator should see whole (Fleet view,
+Theme mode, a tile material, a model's efforts) uses `ChoiceGroup`
+(`src/components/ui/choice-group.tsx`), segmented or as cards. It has the one
+selected treatment for a visible choice, the action role as border over its
+wash at full text strength, in semantic tokens so Settings and the workspace
+draw it alike; never restyle a selected choice locally (BUG-326). Both use the existing Radix popover and shared keyboard grammar.
 Terminal and Project/Session context menus must not implement separate focus
 loops. An action menu owns arrows, type-ahead, Home/End and Escape while open;
 its caller restores focus synchronously on keyboard close. Closing a terminal
@@ -696,6 +701,17 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-11-04 — ENG-016 execution front packet 2: `ChoiceGroup` is the shared
+  control for a short exclusive choice (Menus). Settings' segmented control,
+  whose selected state was a label turning to full text, is deleted; Fleet
+  view, Theme mode, the Fleet tile materials and a running Agent's effort row
+  use it. The model control amends the 2026-09-17 entry: models are the list
+  and the staged model's efforts are a `ChoiceGroup` in the same menu, not one
+  row per model and effort (BUG-334). A running Agent's context row states its
+  launch permission mode (BUG-331) as a chrome-micro mono statement in the
+  dense control height, with the caution border the Permission axis already
+  uses. No new color, type or spacing rung.
 
 - 2026-10-21 — ENG-031 W31: the band homepage at `/old` is deleted, and the
   `site-closing` rung (72px) retires with the closing band, its only use; the

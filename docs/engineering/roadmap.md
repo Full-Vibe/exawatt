@@ -4538,6 +4538,7 @@ Later milestones amend earlier ones. These supersessions are load-bearing: an ag
 | D6 depth-only scope and D3c parent-filter/capped/aggregate population | ENG-023 D6 research brief, 2026-09-18 | Expand to full scoped census, same-entity queries, separate match/context sets and conserved projection buckets; preserve Agent footprint and Consumption. New visuals need gallery acceptance. |
 | ENG-028 settings injection treated as proof of instruction composition | ENG-023 D8, 2026-09-18 | Hook configuration proves a transport seam only; instruction precedence, resume adoption and inheritance require separate source evidence. Types remain separate. |
 | D3c initial `0.72×` ratio and skipped-child arrow navigation | Existing operator peer-scale amendment / current navigation, reconciled 2026-09-18 | `0.92×` peer scale and keyboard child inspection supersede the stale initial tuning note; independent child commands remain gated by D2. |
+| FIX-016's "Single combined menu, no nested dropdowns" for a running Agent's model and effort; a Launch Configuration's identity including its effort | BUG-334, operator feedback 2026-10-22 ("Thinking effort should be an orthogonal selector, not just a flattened list") | Effort is its own axis: the model control lists models and offers the staged model's declared efforts as one `ChoiceGroup` in the same menu (still no nested dropdown); a Launch Configuration is source, model and Type, carrying its last effort. Stored pools migrate on read. |
 | D45 active Project always uses title tabs; model selection only at launch | FIX-015/FIX-016 operator acceptance, 2026-09-18 | Active Project name explicitly toggles titles/icons while selection and work continue. Local Claude/Codex model choices may apply through exact-conversation resume between turns. Single combined menu, no nested dropdowns. [Contract](projects/daily-driver-adoption.md#2026-09-18--approved-controls-wired-into-agent-and-demo-views). |
 | D5 root-wide child-read failure and BUG-133 half 2 left unshaped | Operator approval, 2026-09-16 | D5.1 isolates child/parent-activity failures and exposes source observation health separately from turn and launch truth; half 1 and BUG-134 remain open. [Contract](projects/delegation-visibility.md#2026-09-16--bug-133-half-2-isolate-uncertainty-and-disclose-observation-health). |
 | ENG-030's remaining milestones (OS5.5, OS4.4, OS6.0, OS6.1, OS6.2, OS6.3) | launch runway, 2026-09-16 | Sequenced as packets R1 through R9 under the ENG-030 milestones, each with owner and done-when; R1 to R4 run in parallel, R9 gates on R1, R4, R5, R6 and R8. No gate loosened. |
@@ -5822,6 +5823,12 @@ kept the config at 16.3.8 so a security landing changed no app code. Exit:
 each finding fixed at its cause, eslint-config-next on the version that
 matches Next, lint clean.
 
+2026-11-04, packet 2: the three `launch-controls.tsx` findings are fixed at
+their cause. The requested-source ref written during render became an Effect
+Event, and the click-only `refreshModels` lost a memo over a render-derived
+source the compiler could not keep. eslint-plugin-react-hooks 7.1.1 reports
+nothing in that file; the other six findings stay with packet 3.
+
 ### BUG-325 Type check and build fail once a packaged renderer has been prepared
 
 Status: fixed 2026-10-28 (`4cd13e24`) · ENG-022 · found 2026-10-28 building the 0.1.25 dependency refresh under Node 22.
@@ -5836,7 +5843,8 @@ both pass with the directory present.
 
 ### BUG-326 The Fleet v2 choice in Settings does not read as selected
 
-Status: bug · ENG-004 · partner conversation 2026-10-29
+Status: fixed · ENG-004 · partner conversation 2026-10-29; fixed 2026-11-04 by
+execution front packet 2.
 
 Settings ▸ Fleet, choosing v2 (Preview): the chosen option only turns its
 label white, so an external user on `0.1.25` could not tell it was selected,
@@ -5844,6 +5852,14 @@ in Dark and only slightly better in his green theme. The operator: "it should
 at least match the other highlighted buttons." Exit: the selected Fleet
 version uses the same selected treatment as the other choice controls in
 Settings, in every theme.
+
+Cause: Settings drew its segmented choice with its own selected state (label
+to full text over a ground one step from its neighbours) while the material
+cards beside it used the action border and wash. Both are now the shared
+`ChoiceGroup` (`src/components/ui/choice-group.tsx`), which has one selected
+treatment in semantic tokens; `SettingsSegmentedControl` is deleted, and Theme
+mode moved too. `fleet-settings.test.tsx` and `choice-group.test.tsx` prove it;
+Settings ▸ Fleet screenshots in Classic, Air and Night.
 
 ### BUG-327 New Project's Browse folder goes grey and stays unclickable
 
@@ -5859,12 +5875,20 @@ leaves `nativePicker` set without a sheet on screen.
 
 ### BUG-328 The New Agent window opens the engine panel and the model defaults list at once
 
-Status: bug · ENG-016 · partner conversation 2026-10-29
+Status: fixed · ENG-016 · partner conversation 2026-10-29; fixed 2026-11-04 by
+execution front packet 2.
 
 The operator, starting an Agent live: "I expanded the engine model adjustment
 panel, but the other scroll list of model default configurations were made
 open, and it looks very confusing with both those things open." Exit: opening
 one of the two closes the other. The window's wider redesign stays with D54.
+
+Cause: two owners. The launcher held the setup drawer's open state and the
+composer held the catalog's, so nothing related them. The launcher now owns one
+disclosure (`setup`, `catalog` or none) and renders the composer's catalog in
+it, so opening either closes the other by construction, and Escape folds
+whichever is open. `agent-launcher.test.tsx` (one disclosure at a time) and the
+New Agent screenshots in each theme prove it.
 
 ### BUG-329 Directed Agents are not told who else received the message
 
@@ -5898,7 +5922,8 @@ working Agent's pane keeps painting while the harness writes.
 
 ### BUG-331 The default unrestricted mode reads as an outdated harness to a new user
 
-Status: small-fix · ENG-016 · partner conversation 2026-11-04
+Status: fixed · ENG-016 · partner conversation 2026-11-04; fixed 2026-11-04 by
+execution front packet 2.
 
 Exawatt's default launch mode is `unrestricted`
 (`DEFAULT_LAUNCH_PERMISSION_MODE` in `electron/main/pty/harness-command.ts`),
@@ -5912,6 +5937,18 @@ need to fix that at least."). Exit: a new user can tell from Exawatt which
 permission mode an Agent was started in and that it is Exawatt's default, so
 the harness's own status line does not read as staleness. The default itself
 does not change.
+
+Cause: the mode an Agent ran in was nowhere in Exawatt's state. Three copies of
+the default existed (renderer, the launch command, a literal in the Session
+manager) and the Session record kept the model and effort but not the mode.
+Core now owns `DEFAULT_AGENT_PERMISSION_MODE`; main resolves the mode once per
+launch and records it as `launchPermissionMode`, which a reloaded renderer
+reads back from the live record; the Agent's header shows it
+beside the model ("YOLO default", with the full statement on hover and for
+assistive tech), and the New Agent Permission menu marks the default option.
+Proven by `session-launch-permission.test.ts`,
+`session-permission-mode.test.tsx` and `eval:electron:model-change`, which
+reads the stated mode back against main's record.
 
 ### BUG-332 Bus traffic marks an idle Agent unread and puts it in ⌘J each time
 
@@ -5933,11 +5970,29 @@ automatically." Execution front (2026-11-04) packet 1.
 
 ### BUG-334 Effort is flattened into the New Agent model list
 
-Status: small-fix · ENG-016 · product-feedback 44fb2f7f 2026-10-22
+Status: fixed · ENG-016 · product-feedback 44fb2f7f 2026-10-22; fixed
+2026-11-04 by execution front packet 2.
 
 The operator: "Thinking effort should be an orthogonal selector, not just a
-flattened list". Same window as BUG-328. Execution front (2026-11-04) packet
-2.
+flattened list". Same window as BUG-328. Execution front (2026-11-04) packet 2. The feedback's
+screenshot is a running Agent's model control (FIX-016), which listed one row
+per model and effort ("GPT-6-Astra · Low" to "· Max"); the same flattening
+made a Launch Configuration's identity include its effort, so the launcher's
+setups and Clone to… multiplied by effort (the operator's own pool held four
+`opus[1m]` setups).
+
+Effort is now an axis. A Launch Configuration's identity is source, model and
+Type; effort is the value it carries, updated by each launch, and stored pools
+migrate on read (rows that differ only by effort collapse, keeping the most
+recently launched effort, summed usage, remapped pins and any name). The model
+control lists models and offers only the efforts the staged model declares in
+a `ChoiceGroup`; one rule (`launch-axes.ts`) carries a chosen effort across a
+model change wherever the new model offers it (a default that was only
+showing gives way to the new model's default), in both places. Proven by
+`launch-configurations.test.ts` (migration of a flattened pool),
+`launch-axes.test.ts`, `session-model-control.test.tsx` and
+`eval:electron:model-change`. Supersedes FIX-016's "single combined menu" (see
+the amendment chain).
 
 ### BUG-335 Antigravity sign-in tabs pile up in the browser while the Mac sleeps
 

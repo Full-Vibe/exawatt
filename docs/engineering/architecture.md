@@ -1012,9 +1012,16 @@ naming, failed starts, and abandoned composer work do not train frecency.
 The workspace combines that pool with the normalized Agent Source registry and
 source-native model catalogs to produce one Project-ranked selector. The task,
 ribbon, Customize, All catalog, `⌘K`, and launch request use the same exact
-configuration identity and launch translation. Configured source, model, and
-effort/variant are identity; permission, worktree/branch, and roadmap
-association remain per-launch modifiers. Readiness is revalidated at spawn, and
+configuration identity and launch translation. Configured source and model
+(and later Type) are identity; effort is an independent axis the configuration
+carries from its last launch or naming, offered only where the chosen model
+declares it (`launch-axes.ts` carries a chosen effort across a model change for
+the launcher and a running Agent's model control alike), and stored pools that keyed effort
+into identity collapse on read (BUG-334). Permission, worktree/branch, and
+roadmap association remain per-launch modifiers. Core owns the default
+permission mode; main resolves each launch's mode once and records it on the
+Session as `launchPermissionMode`, which the Agent's context row states
+(BUG-331). Readiness is revalidated at spawn, and
 an unavailable saved configuration remains inspectable rather than being
 silently translated to another source or model. Agent Type remains a future
 axis; a friendly configuration name is not a Type.

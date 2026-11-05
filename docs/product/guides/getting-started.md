@@ -28,8 +28,9 @@ does not start a shell or Agent.
 
 Inside a Project, the new-Agent page stays deliberately small: an optional first
 task, two-to-four whole Agent setup cards, **More**, and **Start**. Each card is
-an exact configured source, source-native model, and effort or variant. A blank
-task starts an interactive Agent Session. The fast paths are:
+an exact configured source and source-native model, shown with the effort it
+starts at. Effort is its own setting under **Adjust**, offering only what the
+model supports. A blank task starts an interactive Agent Session. The fast paths are:
 
 - **⌘T**, type, **Enter** to start the selected Agent.
 - **⌘T**, use **⌥↑/↓** before typing to cycle the whole Agent choice, then type
@@ -296,11 +297,19 @@ Both modes should exercise the same interface concepts.
 
 See `docs/product/concepts.md` for canonical definitions.
 
+## See how an Agent was started
+
+The context row names the permission mode a running Agent was started in, such
+as **YOLO default** for Exawatt's default. A harness may describe the same
+mode in its own terminal, for example Claude Code's "bypass permissions on".
+Change the mode for new Agents under **Permission** in the New Agent setup.
+
 ## Change a Session's model
 
 For a running local Claude Code or Codex Session, open **Model** in the context
-row. Choose a model/effort combination from the same source catalog used by the
-launcher, then select **Apply and resume**. Exawatt waits for an eligible
+row. Choose a model from the same source catalog used by the launcher and,
+under it, one of the efforts that model supports, then select **Apply and
+resume**. Exawatt waits for an eligible
 between-turn state: active work, delegated work and outstanding operator gates
 block the change. It starts a replacement process with the same saved provider
 conversation and permission policy. Unsent terminal input is not preserved.
