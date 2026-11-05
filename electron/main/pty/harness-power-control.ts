@@ -4,7 +4,11 @@ import path from 'node:path';
 import type { PtyHarness } from '@exawatt/core';
 import type { PtyPowerControl } from '@exawatt/core/desktop-bridge';
 import { harnessDescriptor } from './harness-registry';
-import { loginShellFamily, planLoginShell, shellQuote } from './login-shell';
+import {
+  loginShellFamily,
+  planUnattendedLaunch,
+  shellQuote,
+} from './login-shell';
 
 const execFileAsync = promisify(execFile);
 
@@ -43,12 +47,12 @@ export async function probeHarnessPowerControl(
     };
   }
   const run = async (command: string): Promise<string> => {
-    const plan = planLoginShell(request.shell, {
+    const launch = planUnattendedLaunch(request.shell, {
       command,
       directory: request.cwd,
     });
-    const { stdout } = await execFileAsync(request.shell, plan.args, {
-      cwd: plan.cwd,
+    const { stdout } = await execFileAsync(launch.file, launch.args, {
+      cwd: launch.cwd,
       env: request.env ?? { ...process.env, SHELL: request.shell },
       timeout: 3_000,
       maxBuffer: 64 * 1024,

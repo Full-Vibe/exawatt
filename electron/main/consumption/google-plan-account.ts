@@ -60,9 +60,15 @@ const WINDOW_MINUTES: Readonly<Record<string, number>> = {
   monthly: 43_200,
 };
 
-/** A report that names its own sign-in problem. Not yet captured from a real
- *  signed-out `agy`; the shape is a guess the test records as one. */
+/** A report that names its own sign-in problem. A signed-out `agy` 1.5.0
+ *  that waited out its own sign-in answered `"status":"ERROR"` with
+ *  `"error":"authentication failed or timed out"` (2026-11-04). */
 const SIGN_IN_NEEDED = /sign in|signed out|log ?in|not authenticated|authenticat/i;
+
+/** What `agy -p` prints on stderr the moment it starts a browser sign-in:
+ *  "Authentication required. Please visit the URL to log in:" (1.5.0,
+ *  captured signed out on 2026-11-04). */
+const AGY_SIGN_IN_PROMPT = /Authentication required/;
 
 type Json = Record<string, unknown>;
 
@@ -179,6 +185,8 @@ export function judgeAgyUsageRun(
 ): PlanAccountRead | PlanAccountReadFailure {
   if (run.kind === 'timed-out') return { failure: 'timed-out' };
   if (run.kind === 'spawn-failed') return { failure: 'exited' };
+  // `agy` asked for a sign-in and was stopped there (BUG-335).
+  if (run.kind === 'sign-in-required') return { failure: 'no-plan' };
   if (run.exitCode !== 0) {
     return {
       failure:
@@ -197,7 +205,9 @@ export function judgeAgyUsageRun(
  * where their terminal finds it, from Exawatt's scratch directory. Antigravity
  * exposes no switch for its own update check (it runs one at most every
  * fifteen minutes on any invocation), so the read is simply the same
- * invocation the operator's own use makes.
+ * invocation the operator's own use makes. A signed-out or offline `agy -p`
+ * starts a browser sign-in: the sandbox keeps the page from opening
+ * (decision 0054) and the run stops at its prompt (BUG-335).
  */
 export function createAgyUsageRunner(
   options: { resolveShell?: () => Promise<string> } = {}
@@ -205,6 +215,7 @@ export function createAgyUsageRunner(
   return createLoginShellCommandRunner({
     command: 'agy',
     args: AGY_USAGE_ARGS,
+    signInPrompt: AGY_SIGN_IN_PROMPT,
     resolveShell: options.resolveShell,
   });
 }
@@ -267,9 +278,6 @@ export class GooglePlanAccountService extends PlanAccountService {
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       }),
       host: options.host,
-      // A signed-out or offline `agy -p` opens a Google sign-in in the
-      // operator's browser and waits there until it is killed (BUG-335).
-      backOffAfterTimeout: true,
       now,
       minFetchIntervalMs: options.minFetchIntervalMs,
       jitterMs: options.jitterMs,

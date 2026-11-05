@@ -431,6 +431,7 @@ export function judgeClaudeUsageRun(
 ): PlanAccountRead | PlanAccountReadFailure {
   if (run.kind === 'timed-out') return { failure: 'timed-out' };
   if (run.kind === 'spawn-failed') return { failure: 'exited' };
+  if (run.kind === 'sign-in-required') return { failure: 'no-plan' };
   if (run.exitCode !== 0) {
     return {
       failure:

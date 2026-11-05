@@ -16,7 +16,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
-import { defaultShell, planLoginShell, shellQuote } from '../pty/login-shell';
+import {
+  defaultShell,
+  planUnattendedLaunch,
+  shellQuote,
+} from '../pty/login-shell';
 import type { HarnessEvent } from './delegation-state';
 import type { DelegationReportSink } from './delegation-monitor';
 import {
@@ -363,12 +367,12 @@ export function parseCodexSubagentActivity(
 
 async function launchCodexAppServer(): Promise<ChildProcessWithoutNullStreams> {
   const shell = await defaultShell();
-  const plan = planLoginShell(shell, {
+  const launch = planUnattendedLaunch(shell, {
     command: `${codexInvocation()} app-server --stdio`,
     directory: os.homedir(),
   });
-  return spawn(shell, plan.args, {
-    cwd: plan.cwd,
+  return spawn(launch.file, launch.args, {
+    cwd: launch.cwd,
     env: { ...process.env, SHELL: shell },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -411,12 +415,12 @@ const execFileAsync = promisify(execFile);
  */
 async function resolveCodexBinary(): Promise<string | null> {
   const shell = await defaultShell();
-  const plan = planLoginShell(shell, {
+  const launch = planUnattendedLaunch(shell, {
     command: `command -v ${codexInvocation()}`,
   });
   try {
-    const result = await execFileAsync(shell, plan.args, {
-      cwd: plan.cwd,
+    const result = await execFileAsync(launch.file, launch.args, {
+      cwd: launch.cwd,
       timeout: 8_000,
       maxBuffer: 64 * 1024,
       encoding: 'utf8',

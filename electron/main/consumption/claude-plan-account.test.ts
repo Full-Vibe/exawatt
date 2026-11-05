@@ -611,7 +611,11 @@ describe('the usage runner', () => {
     const run = createClaudeUsageRunner({
       resolveShell: async () => path.join(dir, 'no-such-shell'),
     });
-    expect(await run(10_000)).toEqual({ kind: 'spawn-failed' });
+    // On macOS the sandbox starts and reports the missing shell itself
+    // (decision 0054); either way the read failed without an answer.
+    expect(judgeClaudeUsageRun(await run(10_000), NOW_MS)).toEqual({
+      failure: 'exited',
+    });
   });
 });
 

@@ -192,6 +192,52 @@ export function planLoginShell(
   };
 }
 
+/** macOS's own sandbox front end. */
+const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
+
+/**
+ * Everything is allowed except asking Launch Services to open an app, a
+ * document or a URL: the way a command-line tool puts a browser tab or an app
+ * window in front of the operator.
+ */
+const NO_APP_LAUNCH_PROFILE = '(version 1)(allow default)(deny lsopen)';
+
+/** A spawn for work nobody is watching. */
+interface UnattendedLaunch {
+  /** What to spawn: the sandbox on macOS, the shell elsewhere. */
+  file: string;
+  args: string[];
+  /** Directory the process is spawned in, i.e. where startup files run. */
+  cwd: string;
+}
+
+/**
+ * Plans a login-shell command nobody is watching: a probe, a usage read, a
+ * recap, an app-server. Exawatt never opens an app, a browser tab or a
+ * sign-in page from such work (decision 0054), yet a tool's own fallback can:
+ * a signed-out or offline `agy -p` opened 188 Google sign-in tabs (incident
+ * 0042). So on macOS the command runs inside a sandbox that cannot open
+ * anything, and its children inherit it. A Mac without the sandbox fails the
+ * spawn, so the work does not run. Exawatt ships only for macOS; elsewhere
+ * (CI) the shell runs directly. Interactive Sessions keep `planLoginShell`:
+ * the operator is watching those.
+ */
+export function planUnattendedLaunch(
+  shell: string,
+  request: LoginShellRequest & { command: string },
+  platform: NodeJS.Platform = process.platform
+): UnattendedLaunch {
+  const plan = planLoginShell(shell, request);
+  if (platform !== 'darwin') {
+    return { file: shell, args: plan.args, cwd: plan.cwd };
+  }
+  return {
+    file: SANDBOX_EXEC,
+    args: ['-p', NO_APP_LAUNCH_PROFILE, shell, ...plan.args],
+    cwd: plan.cwd,
+  };
+}
+
 /** An interactive shell must not exit when `cd` fails; it just stays put. */
 function enterDirectoryInteractive(directory: string): string {
   return `cd -- ${shellQuote(directory)}`;
@@ -321,12 +367,12 @@ export async function runLoginShell(
   command: string,
   options: { cwd: string; timeout: number; maxBuffer: number }
 ): Promise<LoginShellRun> {
-  const plan = planLoginShell(shell, {
+  const launch = planUnattendedLaunch(shell, {
     command,
     directory: options.cwd,
   });
-  const child = spawn(shell, plan.args, {
-    cwd: plan.cwd,
+  const child = spawn(launch.file, launch.args, {
+    cwd: launch.cwd,
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

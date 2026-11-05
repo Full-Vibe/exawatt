@@ -256,6 +256,20 @@ describe('createAgyUsageRunner', () => {
     expect(result).toEqual({ kind: 'timed-out' });
     expect(judgeAgyUsageRun(result, NOW_MS)).toEqual({ failure: 'timed-out' });
   });
+
+  it('stops a signed-out agy at its sign-in prompt and says it is not signed in (BUG-335)', async () => {
+    // agy 1.5.0, signed out, 2026-11-04: it prints this, starts a browser
+    // sign-in (the sandbox keeps the page from opening) and waits.
+    const run = createAgyUsageRunner({
+      resolveShell: scriptedShell(
+        `printf 'Authentication required. Please visit the URL to log in:\\n  https://accounts.google.com/o/oauth2/auth?x\\n' >&2\nsleep 30`
+      ),
+    });
+    // Far longer than the prompt takes: a timeout would mean it waited.
+    const result = await run(20_000);
+    expect(result).toEqual({ kind: 'sign-in-required' });
+    expect(judgeAgyUsageRun(result, NOW_MS)).toEqual({ failure: 'no-plan' });
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -349,8 +363,7 @@ describe('GooglePlanAccountService', () => {
     await svc.maybeRefresh();
     nowMs += 6 * 60_000;
     await svc.maybeRefresh();
-    // A timeout doubles the wait before the next read (BUG-335).
-    nowMs += 10 * 60_000;
+    nowMs += 6 * 60_000;
     await svc.maybeRefresh();
     const view = svc.view();
     expect(view.account.status).toBe('ok');
@@ -453,38 +466,6 @@ describe('GooglePlanAccountService', () => {
       await svc.maybeRefresh();
       expect(run).toHaveBeenCalledTimes(1);
       expect(svc.view().account.status).toBe('ok');
-    });
-  });
-
-  describe('an agy stuck on its browser sign-in (BUG-335)', () => {
-    /** Minutes after the first read at which each later read runs. */
-    async function readTimes(run: HarnessCommandRunner, minutes: number) {
-      const svc = service({ run });
-      const start = nowMs;
-      const at: number[] = [];
-      const calls = () => (run as ReturnType<typeof vi.fn>).mock.calls.length;
-      for (let minute = 0; minute <= minutes; minute += 1) {
-        nowMs = start + minute * 60_000;
-        const before = calls();
-        await svc.maybeRefresh();
-        if (calls() > before) at.push(minute);
-      }
-      return at;
-    }
-
-    it('waits twice as long after each timeout instead of opening a tab every five minutes', async () => {
-      const at = await readTimes(runnerOf({ kind: 'timed-out' }), 8 * 60);
-      expect(at.slice(0, 6)).toEqual([0, 10, 30, 70, 150, 310]);
-      // Never more than four hours apart, and never every five minutes.
-      expect(at.length).toBeLessThan(10);
-    });
-
-    it('returns to the usual cadence after any finished read', async () => {
-      const at = await readTimes(
-        runnerOf({ kind: 'timed-out' }, finished('', 1, 'boom'), good()),
-        25
-      );
-      expect(at).toEqual([0, 10, 15, 20, 25]);
     });
   });
 

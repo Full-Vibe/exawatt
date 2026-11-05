@@ -8,7 +8,7 @@ import {
   nativeHistoryAdapter,
   parseOpencodeSessionList,
 } from './conversation-catalog';
-import { defaultShell, planLoginShell, shellQuote } from './login-shell';
+import { defaultShell, planUnattendedLaunch, shellQuote } from './login-shell';
 import type {
   HarnessResumeCandidate,
   ReconciledResumeIdentity,
@@ -35,12 +35,12 @@ async function listOpencodeResumeCandidates(
   const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
   let stdout = '';
   try {
-    const plan = planLoginShell(shell, {
+    const launch = planUnattendedLaunch(shell, {
       command: `${invocation} --pure session list --format json --max-count 200`,
       directory: cwd,
     });
-    const result = await execFileAsync(shell, plan.args, {
-      cwd: plan.cwd,
+    const result = await execFileAsync(launch.file, launch.args, {
+      cwd: launch.cwd,
       timeout: Math.max(1, Math.min(15_000, timeoutMs)),
       maxBuffer: 2 * 1024 * 1024,
       encoding: 'utf8',
@@ -103,12 +103,12 @@ export async function opencodeSessionAgent(
   const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
   let stdout = '';
   try {
-    const plan = planLoginShell(shell, {
+    const launch = planUnattendedLaunch(shell, {
       command: `${invocation} --pure export ${shellQuote(sessionId)}`,
       directory: cwd,
     });
-    const result = await execFileAsync(shell, plan.args, {
-      cwd: plan.cwd,
+    const result = await execFileAsync(launch.file, launch.args, {
+      cwd: launch.cwd,
       timeout: Math.max(1, Math.min(15_000, timeoutMs)),
       maxBuffer: 2 * 1024 * 1024,
       encoding: 'utf8',

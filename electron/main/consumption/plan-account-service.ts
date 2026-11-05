@@ -124,13 +124,6 @@ interface PlanAccountServiceOptions {
    * use; the app passes its one host-power observer.
    */
   host?: PlanReadHost | null;
-  /**
-   * Set by a source whose harness answers a lost sign-in by opening one in
-   * the operator's browser and waiting there, which Exawatt sees only as a
-   * timeout (`agy`, BUG-335). Each consecutive timed-out read then doubles
-   * the wait before the next, up to four hours; any finished read resets it.
-   */
-  backOffAfterTimeout?: boolean;
   now?: () => number;
   minFetchIntervalMs?: number;
   jitterMs?: number;
@@ -157,7 +150,6 @@ const DEFAULT_JITTER_MS = 45_000;
 /** Wi-Fi and DNS come back seconds after a wake: an `agy` read in the wake's
  *  first second found no network (BUG-335). */
 const RETURN_SETTLE_MS = 60_000;
-const MAX_TIMEOUT_BACKOFF_MS = 4 * 60 * 60_000;
 
 interface PersistedPlanState {
   version: 1;
@@ -228,12 +220,10 @@ export class PlanAccountService implements PlanAccountSource {
   private readonly now: () => number;
   private readonly minFetchIntervalMs: number;
   private readonly jitterMs: number;
-  private readonly backOffAfterTimeout: boolean;
 
   private preferenceEnabled: boolean;
   private inUse = true;
   private offHost: (() => void) | null = null;
-  private timeoutStreak = 0;
   private last: Omit<PersistedPlanState, 'version' | 'observations'> = {
     observedAt: null,
     planType: null,
@@ -270,7 +260,6 @@ export class PlanAccountService implements PlanAccountSource {
     this.minFetchIntervalMs =
       options.minFetchIntervalMs ?? DEFAULT_MIN_FETCH_INTERVAL_MS;
     this.jitterMs = options.jitterMs ?? DEFAULT_JITTER_MS;
-    this.backOffAfterTimeout = options.backOffAfterTimeout ?? false;
     const host = options.host ?? null;
     if (host) {
       this.offHost = host.subscribe(snapshot => this.hostChanged(snapshot));
@@ -414,22 +403,6 @@ export class PlanAccountService implements PlanAccountSource {
     this.inUse = inUse;
   }
 
-  /** A timed-out read may be a harness waiting on a browser sign-in it
-   *  opened; asking again on the usual cadence opens another (BUG-335). */
-  private backOff(read: PlanAccountRead | PlanAccountReadFailure | null): void {
-    if (!this.backOffAfterTimeout) return;
-    if (!isReadFailure(read) || read.failure !== 'timed-out') {
-      this.timeoutStreak = 0;
-      return;
-    }
-    this.timeoutStreak += 1;
-    const waitMs = Math.min(
-      this.minFetchIntervalMs * 2 ** this.timeoutStreak,
-      MAX_TIMEOUT_BACKOFF_MS
-    );
-    this.nextAllowedAtMs = Math.max(this.nextAllowedAtMs, this.now() + waitMs);
-  }
-
   private bump(): void {
     this.revisionCount += 1;
     for (const listener of [...this.listeners]) listener();
@@ -438,7 +411,6 @@ export class PlanAccountService implements PlanAccountSource {
   private async refresh(): Promise<void> {
     if (this.unreadable && this.loadPersisted()) this.bump();
     const read = await this.read().catch(() => null);
-    this.backOff(read);
     if (this.disposed || !this.enabled) return;
     if (
       !read ||

@@ -38,8 +38,10 @@ describe('per-launch source sleep control probe', () => {
       executable: '/opt/codex',
       version: '0.156.1',
     });
-    for (const [shell, args, options] of run.mock.calls) {
-      expect(shell).toBe(request.shell);
+    for (const [file, args, options] of run.mock.calls) {
+      // A probe runs sandboxed, so it cannot open an app (decision 0054).
+      expect(file).toBe('/usr/bin/sandbox-exec');
+      expect(args[2]).toBe(request.shell);
       expect(args.at(-1)).toContain("cd -- '/tmp/power project'");
       expect(options.cwd).not.toBe(request.cwd);
       expect(options.env).toBe(env);

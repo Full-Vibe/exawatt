@@ -9,7 +9,11 @@
  */
 import { execFile } from 'child_process';
 import path from 'path';
-import { defaultShell, planLoginShell, shellQuote } from '../pty/login-shell';
+import {
+  defaultShell,
+  planUnattendedLaunch,
+  shellQuote,
+} from '../pty/login-shell';
 import type { SourceCommandArg, SourceCommandResult } from './transports/types';
 
 const SOURCE_COMMAND_TIMEOUT_MS = 20_000;
@@ -49,13 +53,13 @@ export async function runSourceCommand(
 ): Promise<SourceCommandResult> {
   const shell = await defaultShell();
   const { command, env } = sourceCommandLine(executable, args);
-  const plan = planLoginShell(shell, { command, directory: cwd });
+  const launch = planUnattendedLaunch(shell, { command, directory: cwd });
   return new Promise(resolve => {
     execFile(
-      shell,
-      plan.args,
+      launch.file,
+      launch.args,
       {
-        cwd: plan.cwd,
+        cwd: launch.cwd,
         env: { ...launchEnvironment, ...env },
         timeout: SOURCE_COMMAND_TIMEOUT_MS,
         maxBuffer: 256 * 1024,

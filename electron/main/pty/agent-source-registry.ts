@@ -39,7 +39,7 @@ import {
   parseAntigravityModelRows,
   parseAntigravityVersion,
 } from './antigravity-source';
-import { planLoginShell, shellQuote } from './login-shell';
+import { planUnattendedLaunch, shellQuote } from './login-shell';
 import {
   parseGrokAuthBanner,
   parseGrokModelCatalog,
@@ -99,7 +99,7 @@ async function loginShellCommand(
   timeout = 3_000,
   directory: string | null = null
 ): Promise<CommandResult> {
-  const plan = planLoginShell(shell, { command, directory });
+  const launch = planUnattendedLaunch(shell, { command, directory });
   // Test-only telemetry: the one chokepoint every registry probe passes
   // through, so a probe can count login shells per gesture instead of
   // guessing (BUG-062's second number).
@@ -117,8 +117,8 @@ async function loginShellCommand(
     }
   }
   try {
-    const result = await execFileAsync(shell, plan.args, {
-      cwd: plan.cwd,
+    const result = await execFileAsync(launch.file, launch.args, {
+      cwd: launch.cwd,
       timeout,
       maxBuffer: 256 * 1024,
       encoding: 'utf8',

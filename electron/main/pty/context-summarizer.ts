@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 import type { PtySessionManager } from './session-manager';
-import { defaultShell, planLoginShell } from './login-shell';
+import { defaultShell, planUnattendedLaunch } from './login-shell';
 import {
   recordHostedCallHttpFailure,
   recordHostedCallTransportFailure,
@@ -1154,10 +1154,10 @@ export class ContextSummarizer extends EventEmitter<ContextSummarizerEvents> {
     maxChars: number
   ): Promise<string | null> {
     const shell = await defaultShell();
-    const plan = planLoginShell(shell, { command: this.recapCommand });
+    const launch = planUnattendedLaunch(shell, { command: this.recapCommand });
     return new Promise((resolve, reject) => {
-      const proc = spawn(shell, plan.args, {
-        cwd: plan.cwd,
+      const proc = spawn(launch.file, launch.args, {
+        cwd: launch.cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: true,
       });

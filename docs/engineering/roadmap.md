@@ -5951,10 +5951,14 @@ sign-in and opens a browser sign-in, then waits there until Exawatt's
 30-second timeout kills it. 25 of the 27 tabs the power log still covers
 opened in the same second as a macOS dark wake, when a five-minute usage
 check fired with the screen locked; one at a lid-open wake, one during a
-network outage while the operator was at the Mac. Fixed in the shared account
-service: no plan read starts while the Mac sleeps or its screen is locked,
-the first after a wake or unlock waits a minute for the network, and for
-`agy` each consecutive timeout doubles the wait before the next read, up to
-four hours, instead of opening a tab every five minutes. A signed-out `agy`
-still opens one tab on that schedule while the operator is at the Mac;
-Antigravity has no switch to stop it.
+network outage while the operator was at the Mac. Fixed in two layers. The
+shared account service starts no plan read while the Mac sleeps or its
+screen is locked, and the first after a wake or unlock waits a minute for the
+network. And, after the operator's "I never want it to open a browser tab
+surreptitiously on the user's computer" (decision `0054`), every login-shell
+command Exawatt runs outside a visible Session goes through
+`planUnattendedLaunch`, which on macOS runs it in a `sandbox-exec` profile
+that refuses Launch Services opens for it and every child. A signed-out
+`agy` was verified to open no tab inside it; the read stops at its
+"Authentication required" prompt and the card says Antigravity isn't signed
+in. The interim timeout backoff was removed.

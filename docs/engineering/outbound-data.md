@@ -526,10 +526,11 @@ network identity, so no distribution declaration gates it.
   read.
 - **Cadence**: at most one read per ~5 minutes, only while a consumption
   surface is alive. Never while the Mac sleeps or its screen is locked, and
-  not until a minute after it wakes or unlocks. A signed-out or offline
-  `agy -p` opens a Google sign-in in the operator's browser and waits there,
-  which Exawatt sees only as a timeout, so each consecutive timeout doubles
-  the wait before the next read, up to four hours (BUG-335, incident `0042`).
+  not until a minute after it wakes or unlocks. The read runs in a sandbox
+  that cannot open an app or a browser tab (decision `0054`): a signed-out or
+  offline `agy -p` that starts its own Google sign-in is stopped at its
+  prompt and the card says Antigravity isn't signed in (BUG-335, incident
+  `0042`).
   Antigravity exposes no switch for its own update check
   and runs one at most every fifteen minutes on any invocation, so a read can
   let the operator's `agy` check for its update exactly as their own use does.

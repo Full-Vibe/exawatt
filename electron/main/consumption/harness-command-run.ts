@@ -6,12 +6,17 @@
  * (`claude -p "/usage"`, `agy -p "/usage"`) through their login shell, so the
  * binary is found where their terminal finds it (a packaged app has a bare
  * PATH), from Exawatt's scratch directory so no shell startup file runs inside
- * a Project (incident `0006`), with a hard timeout that kills the whole
+ * a Project (incident `0006`), inside a sandbox that cannot open an app or a
+ * browser tab (decision 0054), with a hard timeout that kills the whole
  * process group, and bounded output. Nothing here is a credential: the
  * harness makes the request under its own sign-in.
  */
 import { spawn } from 'node:child_process';
-import { defaultShell, planLoginShell, shellQuote } from '../pty/login-shell';
+import {
+  defaultShell,
+  planUnattendedLaunch,
+  shellQuote,
+} from '../pty/login-shell';
 
 const MAX_STDOUT_BYTES = 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
@@ -20,7 +25,9 @@ const MAX_STDERR_BYTES = 64 * 1024;
 export type HarnessCommandRun =
   | { kind: 'finished'; exitCode: number; stdout: string; stderr: string }
   | { kind: 'timed-out' }
-  | { kind: 'spawn-failed' };
+  | { kind: 'spawn-failed' }
+  /** The harness asked for a sign-in and was stopped there (BUG-335). */
+  | { kind: 'sign-in-required' };
 
 export type HarnessCommandRunner = (
   timeoutMs: number
@@ -37,6 +44,12 @@ interface LoginShellCommandOptions {
   args: readonly string[];
   /** Environment added to Exawatt's own for the run. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * What the harness prints on stderr when it starts its own sign-in. The
+   * run stops there instead of waiting out a sign-in nobody will see; the
+   * sandbox has already kept its browser page from opening (decision 0054).
+   */
+  signInPrompt?: RegExp;
   resolveShell?: () => Promise<string>;
 }
 
@@ -51,7 +64,7 @@ export function createLoginShellCommandRunner(
   const command = `${options.command} ${options.args.map(shellQuote).join(' ')}`;
   return async timeoutMs => {
     const shell = await resolveShell();
-    const plan = planLoginShell(shell, { command });
+    const launch = planUnattendedLaunch(shell, { command });
     return new Promise<HarnessCommandRun>(resolve => {
       let settled = false;
       const settle = (run: HarnessCommandRun) => {
@@ -62,8 +75,8 @@ export function createLoginShellCommandRunner(
       };
       let child: ReturnType<typeof spawn>;
       try {
-        child = spawn(shell, plan.args, {
-          cwd: plan.cwd,
+        child = spawn(launch.file, launch.args, {
+          cwd: launch.cwd,
           env: { ...process.env, SHELL: shell, ...options.env },
           stdio: ['ignore', 'pipe', 'pipe'],
           detached: true,
@@ -72,14 +85,16 @@ export function createLoginShellCommandRunner(
         resolve({ kind: 'spawn-failed' });
         return;
       }
-      const timer = setTimeout(() => {
-        if (child.pid) {
-          try {
-            process.kill(-child.pid, 'SIGKILL');
-          } catch {
-            child.kill('SIGKILL');
-          }
+      const killGroup = () => {
+        if (!child.pid) return;
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
         }
+      };
+      const timer = setTimeout(() => {
+        killGroup();
         settle({ kind: 'timed-out' });
       }, timeoutMs);
       let stdout = '';
@@ -89,6 +104,10 @@ export function createLoginShellCommandRunner(
       });
       child.stderr?.on('data', (data: Buffer) => {
         if (stderr.length < MAX_STDERR_BYTES) stderr += data.toString();
+        if (!settled && options.signInPrompt?.test(stderr)) {
+          killGroup();
+          settle({ kind: 'sign-in-required' });
+        }
       });
       child.on('error', () => settle({ kind: 'spawn-failed' }));
       child.on('close', code =>

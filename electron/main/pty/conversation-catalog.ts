@@ -35,7 +35,7 @@ import {
   antigravitySummariesFile,
   readAntigravityConversationSummaries,
 } from './antigravity-source';
-import { defaultShell, planLoginShell, shellQuote } from './login-shell';
+import { defaultShell, planUnattendedLaunch, shellQuote } from './login-shell';
 import {
   claudeProjectsRoot,
   codexHome,
@@ -1058,12 +1058,12 @@ export class OpenCodeConversationAdapter implements ConversationCatalogAdapter {
         ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, 'opencode')
         : null;
     const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
-    const plan = planLoginShell(shell, {
+    const launch = planUnattendedLaunch(shell, {
       command: `${invocation} --pure session list --format json --max-count 200`,
       directory: projectDir,
     });
-    const result = await execFileAsync(shell, plan.args, {
-      cwd: plan.cwd,
+    const result = await execFileAsync(launch.file, launch.args, {
+      cwd: launch.cwd,
       timeout: 15_000,
       maxBuffer: 2 * 1024 * 1024,
       encoding: 'utf8',
