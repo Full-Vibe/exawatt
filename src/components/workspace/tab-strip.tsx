@@ -45,6 +45,7 @@ import {
   stickyProjectForScroll,
   type RibbonLayoutPolicy,
   type RibbonProjectInput,
+  type RibbonRowLayout,
   type RibbonTarget,
 } from './project-ribbon-layout';
 import { naturalContentWidth } from './natural-width';
@@ -291,9 +292,13 @@ export function TabStrip({
    *  measured now: tab chips are either a fixed glyph width or a width the
    *  engine assigns, so nothing else can feed its own output back in. */
   const [headerWidths, setHeaderWidths] = useState<Record<string, number>>({});
-  const [heldCloseKeys, setHeldCloseKeys] = useState<Set<string>>(
-    () => new Set()
-  );
+  // A pointer close holds the strip (Chrome's stability window): the whole
+  // row as it stood when the first close was pressed, positions AND widths,
+  // so nothing under the pointer moves until the hold releases (BUG-318).
+  const [heldClose, setHeldClose] = useState<{
+    keys: ReadonlySet<string>;
+    layout: RibbonRowLayout;
+  } | null>(null);
   const heldCloseTimers = useRef(
     new Map<string, ReturnType<typeof setTimeout>>()
   );
@@ -360,6 +365,7 @@ export function TabStrip({
       ? reorderTokensForTabDrag(tokens, pointerDrag.key, pointerDrag.index)
       : reorderTokensForProjectDrag(tokens, pointerDrag.id, pointerDrag.index);
   }, [pointerDrag, tokens]);
+  const heldCloseKeys = heldClose?.keys ?? EMPTY_SET;
   const presentTokens = useRibbonPresence(orderedTokens, heldCloseKeys);
   const currentKeys = useMemo(
     () => new Set(orderedTokens.map(token => token.key)),
@@ -368,17 +374,17 @@ export function TabStrip({
 
   const layoutEntries = useMemo(
     () =>
-      presentTokens.filter(entry => {
-        if (exiting.has(entry.token.project.dir)) return false;
-        return entry.phase !== 'exiting' || heldCloseKeys.has(entry.token.key);
-      }),
-    [exiting, heldCloseKeys, presentTokens]
+      presentTokens.filter(
+        entry =>
+          !exiting.has(entry.token.project.dir) && entry.phase !== 'exiting'
+      ),
+    [exiting, presentTokens]
   );
   // One row, laid out from the Projects in their current (possibly
   // drag-hypothetical) order. The engine decides each Project's
   // presentation; rendering reads that rather than deciding for itself, so
   // width truth and paint truth cannot disagree.
-  const layout = useMemo(() => {
+  const liveLayout = useMemo(() => {
     type Block = Omit<RibbonProjectInput, 'tabs'> & {
       tabs: Array<RibbonProjectInput['tabs'][number]>;
     };
@@ -438,6 +444,21 @@ export function TabStrip({
     summaries,
     agentNames,
   ]);
+  // The row the strip paints: the held snapshot while a pointer close holds
+  // it, otherwise the live layout. Chips the snapshot has no slot for stay
+  // inside their folded Project until the release, but a new tab in a
+  // Project the snapshot shows open or mini needs a real slot, so it ends
+  // the hold.
+  const layout =
+    heldClose &&
+    orderedTokens.every(
+      token =>
+        !liveLayout.targets.has(token.key) ||
+        heldClose.layout.targets.has(token.key) ||
+        heldClose.layout.presentation.get(token.project.dir) === 'folded'
+    )
+      ? heldClose.layout
+      : liveLayout;
   const presentationFor = useCallback(
     (dir: string): ProjectPresentation =>
       layout.presentation.get(dir) ?? (dir === activeDir ? 'open' : 'mini'),
@@ -663,22 +684,27 @@ export function TabStrip({
       const timer = heldCloseTimers.current.get(key);
       if (timer) clearTimeout(timer);
       heldCloseTimers.current.delete(key);
-      setHeldCloseKeys(current => {
-        if (!current.has(key)) return current;
-        const next = new Set(current);
-        next.delete(key);
-        return next;
+      setHeldClose(current => {
+        if (!current?.keys.has(key)) return current;
+        const keys = new Set(current.keys);
+        keys.delete(key);
+        return keys.size === 0 ? null : { ...current, keys };
       });
       return;
     }
     for (const timer of heldCloseTimers.current.values()) clearTimeout(timer);
     heldCloseTimers.current.clear();
-    setHeldCloseKeys(current => (current.size === 0 ? current : new Set()));
+    setHeldClose(null);
   }, []);
 
   const armPointerClose = useCallback(
     (key: string) => {
-      setHeldCloseKeys(current => new Set(current).add(key));
+      // Hold the row on screen. A close pressed inside a hold joins it, and
+      // the row on screen is then already the snapshot.
+      setHeldClose(current => ({
+        keys: new Set(current?.keys).add(key),
+        layout,
+      }));
       const prior = heldCloseTimers.current.get(key);
       if (prior) clearTimeout(prior);
       heldCloseTimers.current.set(
@@ -686,7 +712,7 @@ export function TabStrip({
         setTimeout(() => releaseHeldClose(key), POINTER_CLOSE_STABILIZE_MS)
       );
     },
-    [releaseHeldClose]
+    [layout, releaseHeldClose]
   );
 
   useEffect(

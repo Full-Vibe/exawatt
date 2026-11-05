@@ -134,21 +134,52 @@ try {
     path: join(SCREENSHOT_DIR, 'selected-gpagent.png'),
   });
 
-  // Pointer close gets a short Chrome-style stability window: adjacent close
-  // targets do not jump under the pointer, then the layout releases smoothly.
+  // Pointer close gets a short Chrome-style stability window: nothing to the
+  // right of the closed tab moves under the pointer (BUG-318), then the
+  // layout releases smoothly.
   const stableTarget = study.locator('[data-project="exawatt"]');
   const beforeClose = await rect(stableTarget);
   // gpagent's one Session, "Fix the UTC date boundary" in the study corpus.
-  await study
-    .locator(
-      '[data-ribbon-item="initiative"][data-project-parent="/workspace/gpagent"] [data-tab-close]'
-    )
-    .click();
+  const closing = study.locator(
+    '[data-ribbon-item="initiative"][data-project-parent="/workspace/gpagent"]'
+  );
+  const rightOf = edge =>
+    strip.evaluate(
+      (element, closingEdge) =>
+        Array.from(element.querySelectorAll('[data-ribbon-item]'))
+          .filter(node => !node.hasAttribute('data-close-stabilized'))
+          .map(node => {
+            const box = node.getBoundingClientRect();
+            return {
+              item:
+                node.getAttribute('data-project') ??
+                node.getAttribute('data-ribbon-item'),
+              x: box.x,
+              width: box.width,
+            };
+          })
+          .filter(entry => entry.x >= closingEdge),
+      edge
+    );
+  const closingBox = await rect(closing);
+  const rightBeforeClose = await rightOf(closingBox.x + closingBox.width);
+  if (rightBeforeClose.length === 0) {
+    throw new Error('Pointer close step found nothing right of the tab');
+  }
+  await closing.locator('[data-tab-close]').click();
   await page.waitForTimeout(240);
-  const heldClose = await rect(stableTarget);
-  if (distance(beforeClose, heldClose) > 2) {
+  const rightHeld = await rightOf(closingBox.x + closingBox.width);
+  const moved = rightBeforeClose.filter(before => {
+    const held = rightHeld.find(entry => entry.item === before.item);
+    return (
+      !held ||
+      Math.abs(held.x - before.x) > 2 ||
+      Math.abs(held.width - before.width) > 2
+    );
+  });
+  if (moved.length > 0) {
     throw new Error(
-      `Pointer close target moved during stabilization: ${JSON.stringify({ beforeClose, heldClose })}`
+      `Pointer close moved work right of the tab during stabilization: ${JSON.stringify({ rightBeforeClose, rightHeld })}`
     );
   }
   await page.waitForTimeout(620);
