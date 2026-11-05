@@ -86,3 +86,16 @@ future scope, not permission to build its controls in the current pass.
 The [ENG-036 shaping brief](../projects/design-system-of-record.md#2026-10-04--everyday-use-polish-shaping-and-research-basis)
 owns the research ledger and before/after usability checks. Those sources
 motivate evaluation; they do not prove this queue ordering is optimal.
+
+## Amendment, 2026-11-04: a turn another Agent started (BUG-332)
+
+The operator: "These messages are spamming an idle agent, and make the agent
+unread and show up in the cmd+j queue each time." Every turn now carries who
+started it: the operator (a keystroke, a launch task, Direct, Send as
+operator) or another Agent over the bus (ENG-029, decision `0052`). A
+finished result is unread news only for a turn the operator started; a turn
+another Agent started ends with its result already read, no alert and no
+⌘J entry, and it never clears or replaces the operator's own unread result.
+Hard blockers and questions are unchanged: a gate or bell raises unread and
+joins ⌘J whoever started the turn. Chatter's unread count is where bus
+traffic is noticed. The operator's own engagement always makes a turn his.

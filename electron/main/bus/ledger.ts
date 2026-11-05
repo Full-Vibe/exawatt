@@ -5,8 +5,16 @@
  * `BusStore` is the seam the operator asked for ("we may in fact just plug in
  * some other ... system"): the bus core only appends and reads through it.
  * The first implementation is machine-local JSONL, `<root>/<key>.jsonl` per
- * Project, append-only: a message line when it is accepted, a delivery line
- * whenever its delivery moves.
+ * Project, append-only: one message line when it is logged, naming every
+ * recipient with its first delivery, and a delivery line whenever one
+ * recipient's delivery moves.
+ *
+ * Line versions: `v: 2` is a message to recipients (`to` a list, one
+ * delivery each; a delivery line names its recipient). `v: 1` lines, from
+ * before a message could name several recipients, are still read: a v1
+ * message is a message to its one recipient, and a v1 delivery line moves
+ * that recipient. They are never rewritten, so a downgrade reads the old
+ * messages it wrote.
  *
  * Size class (decision `0039`): at most `BUS_LEDGER_BOUNDS.messages` messages
  * and `BUS_LEDGER_BOUNDS.bytes` per Project, enforced on the write path. Over
@@ -28,6 +36,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   isBusDeliveryState,
+  type BusEndpoint,
   type BusLedgerRead,
   type DeliveryEvent,
   type MessageRecord,
@@ -36,10 +45,12 @@ import {
 export interface BusStore {
   /** Log a newly accepted message with its first delivery event. */
   append(record: MessageRecord): Promise<void>;
-  /** Log a delivery change for a message already logged. */
+  /** Log a change in one recipient's delivery of a message already
+   *  logged. */
   appendDelivery(
     projectId: string,
     id: string,
+    recipientSessionId: string,
     event: DeliveryEvent
   ): Promise<void>;
   read(projectId: string): Promise<BusLedgerRead>;
@@ -53,12 +64,26 @@ const BUS_LEDGER_BOUNDS = {
   lowWater: 0.75,
 } as const;
 
-/** How every message line begins (`JSON.stringify` keeps key order). */
-const MESSAGE_LINE_PREFIX = '{"v":1,"type":"message"';
+/** How every message line begins, in either version
+ *  (`JSON.stringify` keeps key order). */
+const MESSAGE_LINE = /^\{"v":[12],"type":"message"/;
+
+/** A message as a v1 line held it: one recipient, one delivery. */
+interface MessageRecordV1 extends Omit<MessageRecord, 'to' | 'deliveries'> {
+  to: BusEndpoint;
+  delivery: DeliveryEvent;
+  history: DeliveryEvent[];
+}
 
 type LedgerLine =
-  | { v: 1; type: 'message'; record: MessageRecord }
-  | { v: 1; type: 'delivery'; id: string; event: DeliveryEvent };
+  | { v: 2; type: 'message'; record: MessageRecord }
+  | { v: 2; type: 'delivery'; id: string; to: string; event: DeliveryEvent };
+
+/** What a line means once read, whichever version wrote it. A v1 delivery
+ *  line names no recipient: it moves the message's only one. */
+type ReadLine =
+  | { type: 'message'; record: MessageRecord }
+  | { type: 'delivery'; id: string; to: string | null; event: DeliveryEvent };
 
 function isEvent(value: unknown): value is DeliveryEvent {
   const event = value as DeliveryEvent | null;
@@ -71,34 +96,98 @@ function isEvent(value: unknown): value is DeliveryEvent {
   );
 }
 
-function parseLine(text: string): LedgerLine | null {
+function isEndpoint(value: unknown): value is BusEndpoint {
+  const endpoint = value as BusEndpoint | null;
+  return (
+    !!endpoint &&
+    typeof endpoint === 'object' &&
+    typeof endpoint.sessionId === 'string' &&
+    typeof endpoint.name === 'string' &&
+    typeof endpoint.harness === 'string'
+  );
+}
+
+function isEnvelope(record: Partial<MessageRecord> | undefined): boolean {
+  return (
+    !!record &&
+    typeof record.id === 'string' &&
+    typeof record.projectId === 'string' &&
+    typeof record.text === 'string' &&
+    typeof record.at === 'number' &&
+    !!record.from
+  );
+}
+
+/** A v1 message, read as the message to one recipient it was. */
+function fromV1(record: MessageRecordV1 | undefined): MessageRecord | null {
+  if (
+    !record ||
+    !isEnvelope(record as unknown as Partial<MessageRecord>) ||
+    !isEndpoint(record.to) ||
+    !isEvent(record.delivery) ||
+    !Array.isArray(record.history) ||
+    !record.history.every(isEvent)
+  )
+    return null;
+  const { to, delivery, history, ...envelope } = record;
+  return {
+    ...envelope,
+    to: [to],
+    deliveries: [{ sessionId: to.sessionId, delivery, history }],
+  };
+}
+
+function isRecordV2(record: MessageRecord | undefined): boolean {
+  return (
+    !!record &&
+    isEnvelope(record) &&
+    Array.isArray(record.to) &&
+    record.to.length > 0 &&
+    record.to.every(isEndpoint) &&
+    Array.isArray(record.deliveries) &&
+    record.deliveries.length === record.to.length &&
+    record.deliveries.every(
+      (entry, index) =>
+        !!entry &&
+        entry.sessionId === record.to[index].sessionId &&
+        isEvent(entry.delivery) &&
+        Array.isArray(entry.history) &&
+        entry.history.every(isEvent)
+    )
+  );
+}
+
+function parseLine(text: string): ReadLine | null {
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
     return null;
   }
-  const line = value as Partial<LedgerLine> | null;
-  if (!line || typeof line !== 'object' || line.v !== 1) return null;
+  const line = value as {
+    v?: unknown;
+    type?: unknown;
+    record?: unknown;
+    id?: unknown;
+    to?: unknown;
+    event?: unknown;
+  } | null;
+  if (!line || typeof line !== 'object') return null;
+  if (line.v !== 1 && line.v !== 2) return null;
   if (line.type === 'message') {
-    const record = (line as { record?: MessageRecord }).record;
-    return record &&
-      typeof record.id === 'string' &&
-      typeof record.projectId === 'string' &&
-      typeof record.text === 'string' &&
-      typeof record.at === 'number' &&
-      record.from &&
-      record.to &&
-      isEvent(record.delivery) &&
-      Array.isArray(record.history) &&
-      record.history.every(isEvent)
-      ? (line as LedgerLine)
-      : null;
+    if (line.v === 1) {
+      const record = fromV1(line.record as MessageRecordV1 | undefined);
+      return record ? { type: 'message', record } : null;
+    }
+    const record = line.record as MessageRecord | undefined;
+    return record && isRecordV2(record) ? { type: 'message', record } : null;
   }
   if (line.type === 'delivery') {
-    const delivery = line as { id?: unknown; event?: unknown };
-    return typeof delivery.id === 'string' && isEvent(delivery.event)
-      ? (line as LedgerLine)
+    if (typeof line.id !== 'string' || !isEvent(line.event)) return null;
+    if (line.v === 1)
+      return { type: 'delivery', id: line.id, to: null, event: line.event };
+    return typeof line.to === 'string'
+      ? { type: 'delivery', id: line.id, to: line.to, event: line.event }
       : null;
   }
   return null;
@@ -134,7 +223,10 @@ function fold(text: string): Folded {
     if (line.type === 'message') {
       records.set(line.record.id, {
         ...line.record,
-        history: [...line.record.history],
+        deliveries: line.record.deliveries.map(entry => ({
+          ...entry,
+          history: [...entry.history],
+        })),
       });
       lines.set(line.record.id, [raw]);
       continue;
@@ -142,8 +234,20 @@ function fold(text: string): Folded {
     const record = records.get(line.id);
     // A delivery for a message pruned before it: history that is gone.
     if (!record) continue;
-    record.history.push(line.event);
-    record.delivery = line.event;
+    const entry =
+      line.to === null
+        ? record.deliveries.length === 1
+          ? record.deliveries[0]
+          : undefined
+        : record.deliveries.find(item => item.sessionId === line.to);
+    if (!entry) {
+      return {
+        ok: false,
+        reason: `The message log for this Project is damaged at line ${index + 1}; Exawatt left it as it is`,
+      };
+    }
+    entry.history.push(line.event);
+    entry.delivery = line.event;
     lines.get(line.id)!.push(raw);
   }
   return {
@@ -177,15 +281,20 @@ export class JsonlBusStore implements BusStore {
   }
 
   append(record: MessageRecord): Promise<void> {
-    return this.write(record.projectId, { v: 1, type: 'message', record }, 1);
+    return this.write(record.projectId, { v: 2, type: 'message', record }, 1);
   }
 
   appendDelivery(
     projectId: string,
     id: string,
+    recipientSessionId: string,
     event: DeliveryEvent
   ): Promise<void> {
-    return this.write(projectId, { v: 1, type: 'delivery', id, event }, 0);
+    return this.write(
+      projectId,
+      { v: 2, type: 'delivery', id, to: recipientSessionId, event },
+      0
+    );
   }
 
   async read(projectId: string): Promise<BusLedgerRead> {
@@ -289,9 +398,7 @@ export class JsonlBusStore implements BusStore {
       // bound would let it grow past the limit.
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    const count = text
-      .split('\n')
-      .filter(raw => raw.startsWith(MESSAGE_LINE_PREFIX)).length;
+    const count = text.split('\n').filter(raw => MESSAGE_LINE.test(raw)).length;
     this.counts.set(file, count);
     return count;
   }

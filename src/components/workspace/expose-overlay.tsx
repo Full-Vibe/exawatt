@@ -93,6 +93,7 @@ import {
   hasTeamDockSummon,
 } from '@/components/team/team-dock-summon';
 import { ChatterView } from '@/components/team/chatter/chatter-view';
+import { useKeyedSelection } from './use-keyed-selection';
 import type { ChatterParticipant } from '@/components/team/chatter/chatter-endpoint';
 import { useBusMessages, useProjectUnread } from '@/lib/bus/use-bus';
 import {
@@ -441,7 +442,8 @@ export function ExposeOverlay({
 
   // start where the operator was — ⌃⌘2 then Enter must be a no-op return,
   // never a jump to whatever happens to be tile 0
-  const [sel, setSel] = useState(() => {
+  // held by identity, so tiles rebuilding never move it (BUG-333)
+  const [sel, setSel] = useKeyedSelection(items, selectionKey, () => {
     const i = items.findIndex(item =>
       activeTabId
         ? item.tabId === activeTabId
@@ -622,7 +624,7 @@ export function ExposeOverlay({
       if (next !== s) requestAnimationFrame(() => focusSelection(next));
       return next;
     });
-  }, [focusSelection, items.length]);
+  }, [focusSelection, items.length, setSel]);
 
   // The fixed tab-ring shortcuts remain live at Sessions altitude. Mirror an
   // active-tab change back into the overview's roving selection so ⌘⇧[/]
@@ -658,7 +660,7 @@ export function ExposeOverlay({
     if (next === selectedIndexRef.current) return;
     setSel(next);
     requestAnimationFrame(() => focusSelection(next));
-  }, [activeProjectDir, activeTabId, focusSelection, items.length]);
+  }, [activeProjectDir, activeTabId, focusSelection, items.length, setSel]);
 
   // The same tab-ring result drives the underlay and Team. This controlled
   // subject is necessary when the destination already IS the hidden active
@@ -688,7 +690,7 @@ export function ExposeOverlay({
     if (next === -1 || next === selectedIndexRef.current) return;
     setSel(next);
     requestAnimationFrame(() => focusSelection(next));
-  }, [focusSelection, items.length, navigationSelection]);
+  }, [focusSelection, items.length, navigationSelection, setSel]);
 
   // take the keyboard away from xterm; entrance flag flips post-mount so
   // tiles transition in (staggered). When a dock summon is in flight the

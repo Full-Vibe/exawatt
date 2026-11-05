@@ -6,8 +6,11 @@ import {
   AGENT_HARNESSES,
   BUS_OPERATOR_ID,
   type AgentHarness,
+  type BusSendResult,
   type BusSender,
+  type DeliveryEvent,
   type MessageRecord,
+  type TurnInitiator,
 } from '@exawatt/core';
 import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 import { BusDirectory } from './directory';
@@ -125,6 +128,9 @@ function world(
   const live = recipients(states);
   const terminal = recordingTerminal(true);
   const pushed: MessageRecord[] = [];
+  /** What the turn truth was told, in order, with every door's hand-over:
+   *  `expect <pty> <initiator>` and `door <pty>`. */
+  const turns: string[] = [];
   let clock = 100;
   const dispatcher = new BusDispatcher({
     directory: new BusDirectory({ list: () => sessions }),
@@ -139,10 +145,14 @@ function world(
     }),
     harnessLabel: harness =>
       harness === 'operator' ? 'the operator' : `${harness}-label`,
+    expectTurn: (ptyId: string, initiator: TurnInitiator) =>
+      turns.push(
+        `expect ${ptyId} ${initiator.kind === 'agent' ? initiator.name : 'operator'}`
+      ),
     onRecord: record => pushed.push(record),
     now: () => (clock += 1),
   });
-  return { dispatcher, store, live, terminal, pushed };
+  return { dispatcher, store, live, terminal, pushed, turns, root };
 }
 
 const codexSender: BusSender = {
@@ -157,6 +167,23 @@ const operator: BusSender = {
   harness: BUS_OPERATOR_ID,
   kind: 'operator',
 };
+
+/** A send the bus logged. */
+function recordOf(result: BusSendResult): MessageRecord {
+  if (!result.ok) throw new Error(`refused: ${result.reason}`);
+  return result.record;
+}
+
+/** The delivery of a send to one recipient. */
+function deliveryOf(result: BusSendResult): DeliveryEvent {
+  return recordOf(result).deliveries[0].delivery;
+}
+
+/** A send the bus refused before logging anything. */
+function refusalOf(result: BusSendResult) {
+  if (result.ok) throw new Error('expected a refusal, the send was logged');
+  return result;
+}
 
 const sessions = [
   session('pty-1', 'codex', 'codex-2'),
@@ -183,7 +210,7 @@ describe('addressing and refusal', () => {
     dispatcher.send({
       from: codexSender,
       projectId: '/work/app',
-      to,
+      to: [to],
       text,
       senderSessionId: codexSender.sessionId,
     });
@@ -199,31 +226,28 @@ describe('addressing and refusal', () => {
     ['the sender itself', '@codex-2', /That is you/],
     ['a shell tab', '@zsh', /No Agent named @zsh/],
   ])('refuses %s at the sender, logging nothing', async (_case, to, reason) => {
-    const result = await send(to);
-    expect(result.record).toBeNull();
-    expect(result.delivery.state).toBe('undeliverable');
-    expect(result.delivery.adapter).toBe('bus');
-    expect(result.delivery.reason).toMatch(reason);
+    expect(refusalOf(await send(to)).reason).toMatch(reason);
   });
 
   it('refuses an ambiguous name and lists the Sessions it could mean', async () => {
-    const result = await send('@reviewer');
-    expect(result.record).toBeNull();
+    const result = refusalOf(await send('@reviewer'));
     expect(result.candidates?.map(entry => entry.sessionId).sort()).toEqual([
       'session-pty-3',
       'session-pty-4',
     ]);
     // The candidate's id then addresses it exactly.
     const exact = await send('session-pty-3');
-    expect(exact.record?.to.sessionId).toBe('session-pty-3');
+    expect(recordOf(exact).to.map(endpoint => endpoint.sessionId)).toEqual([
+      'session-pty-3',
+    ]);
   });
 
   it('refuses empty and oversized text', async () => {
-    expect((await send('@claude-1', ' \u0007\n ')).delivery.reason).toMatch(
+    expect(refusalOf(await send('@claude-1', ' \u0007\n ')).reason).toMatch(
       /Nothing to send/
     );
     expect(
-      (await send('@claude-1', 'x'.repeat(BUS_MAX_TEXT_CHARS + 1))).delivery
+      refusalOf(await send('@claude-1', 'x'.repeat(BUS_MAX_TEXT_CHARS + 1)))
         .reason
     ).toMatch(/carries up to/);
   });
@@ -232,10 +256,10 @@ describe('addressing and refusal', () => {
     const read = await store.read('/work/app');
     expect(
       read.ok &&
-        read.records.every(record => record.to.sessionId === 'session-pty-3')
+        read.records.every(record => record.to[0].sessionId === 'session-pty-3')
     ).toBe(true);
     expect(
-      pushed.every(record => record.to.sessionId === 'session-pty-3')
+      pushed.every(record => record.to[0].sessionId === 'session-pty-3')
     ).toBe(true);
   });
 });
@@ -249,10 +273,10 @@ describe('a peer message', () => {
     const result = await dispatcher.send({
       from: codexSender,
       projectId: '/work/app',
-      to: '@claude-1',
+      to: ['@claude-1'],
       text: '/help\u0003 review the diff\r\nplease',
     });
-    expect(result.delivery).toMatchObject({
+    expect(deliveryOf(result)).toMatchObject({
       state: 'delivered',
       adapter: 'claude-socket',
     });
@@ -264,9 +288,9 @@ describe('a peer message', () => {
     // Control characters never reach a door; line breaks are text.
     expect(body.join('\n')).toBe('/help review the diff\nplease');
     const read = await store.read('/work/app');
-    expect(read).toEqual({ ok: true, records: [result.record] });
-    expect(result.record?.from).toEqual(codexSender);
-    expect(pushed).toEqual([result.record]);
+    expect(read).toEqual({ ok: true, records: [recordOf(result)] });
+    expect(recordOf(result).from).toEqual(codexSender);
+    expect(pushed).toEqual([recordOf(result)]);
   });
 
   it('addresses an Agent by its own name, or by its harness when it is the only one', async () => {
@@ -284,14 +308,16 @@ describe('a peer message', () => {
       const result = await dispatcher.send({
         from: codexSender,
         projectId: '/work/app',
-        to,
+        to: [to],
         text: 'hi',
       });
-      expect(result.record?.to).toEqual({
-        sessionId: 'session-pty-2',
-        name: 'claude-1',
-        harness: 'claude',
-      });
+      expect(recordOf(result).to).toEqual([
+        {
+          sessionId: 'session-pty-2',
+          name: 'claude-1',
+          harness: 'claude',
+        },
+      ]);
     }
     expect(door.handed[0].text.split('\n')[0]).toContain('@codex-2');
   });
@@ -301,11 +327,11 @@ describe('a peer message', () => {
     const result = await dispatcher.send({
       from: codexSender,
       projectId: '/work/app',
-      to: '@claude-1',
+      to: ['@claude-1'],
       text: 'hi',
     });
-    expect(result.record?.delivery.state).toBe('undeliverable');
-    expect(result.delivery.reason).toMatch(
+    expect(deliveryOf(result).state).toBe('undeliverable');
+    expect(deliveryOf(result).reason).toMatch(
       /claude-label takes no peer messages/
     );
   });
@@ -330,7 +356,7 @@ describe('a peer message', () => {
       dispatcher.send({
         from: codexSender,
         projectId: '/work/app',
-        to: '@claude-1',
+        to: ['@claude-1'],
         text,
         senderSessionId: codexSender.sessionId,
       });
@@ -339,9 +365,9 @@ describe('a peer message', () => {
     const second = send('second');
     live.set('pty-2', 'ended');
     finishFirst();
-    expect((await first).delivery.state).toBe('delivered');
+    expect(deliveryOf(await first).state).toBe('delivered');
     const result = await second;
-    expect(result.delivery).toMatchObject({
+    expect(deliveryOf(result)).toMatchObject({
       state: 'undeliverable',
       reason: expect.stringMatching(
         /@claude-1 ended before it could read this/
@@ -367,11 +393,11 @@ describe('a peer message', () => {
     const result = await dispatcher.send({
       from: codexSender,
       projectId: '/work/app',
-      to: '@claude-1',
+      to: ['@claude-1'],
       text: 'hi',
     });
-    expect(result.delivery.state).toBe('unknown');
-    expect(result.delivery.reason).toMatch(/boom/);
+    expect(deliveryOf(result).state).toBe('unknown');
+    expect(deliveryOf(result).reason).toMatch(/boom/);
   });
 
   it('moves a queue’s `queued` to delivered when the recipient’s next turn starts', async () => {
@@ -395,15 +421,17 @@ describe('a peer message', () => {
         harness: 'claude',
       },
       projectId: '/work/app',
-      to: '@codex-2',
+      to: ['@codex-2'],
       text: 'hi',
     });
-    expect(result.delivery.state).toBe('queued');
+    expect(deliveryOf(result).state).toBe('queued');
     live.turnStart('pty-2');
-    await expect.poll(() => pushed.at(-1)?.delivery.state).toBe('delivered');
+    await expect
+      .poll(() => pushed.at(-1)?.deliveries[0].delivery.state)
+      .toBe('delivered');
     const read = await store.read('/work/app');
     expect(
-      read.ok && read.records[0].history.map(event => event.state)
+      read.ok && read.records[0].deliveries[0].history.map(event => event.state)
     ).toEqual(['queued', 'delivered']);
   });
 });
@@ -423,22 +451,24 @@ describe('an operator message (the user’s turn)', () => {
     const result = await dispatcher.send({
       from: operator,
       projectId: '/work/app',
-      to: 'session-pty-2',
+      to: ['session-pty-2'],
       text: '/compact',
     });
-    expect(result.delivery.state).toBe('queued');
-    expect(result.delivery.reason).toMatch(/turn to end/);
+    expect(deliveryOf(result).state).toBe('queued');
+    expect(deliveryOf(result).reason).toMatch(/turn to end/);
     expect(terminal.writes).toEqual([]);
 
     live.set('pty-2', 'running');
     expect(terminal.writes).toEqual([]);
     live.set('pty-2', 'ready');
-    await expect.poll(() => pushed.at(-1)?.delivery.state).toBe('delivered');
+    await expect
+      .poll(() => pushed.at(-1)?.deliveries[0].delivery.state)
+      .toBe('delivered');
     // Typed as written, no stamp: it is the operator's own turn.
     expect(terminal.writes).toEqual(['\x1b[200~/compact\x1b[201~', '\r']);
     const read = await store.read('/work/app');
     expect(
-      read.ok && read.records[0].history.map(event => event.state)
+      read.ok && read.records[0].deliveries[0].history.map(event => event.state)
     ).toEqual(['queued', 'delivered']);
     expect(read.ok && read.records[0].from).toEqual(operator);
   });
@@ -452,14 +482,16 @@ describe('an operator message (the user’s turn)', () => {
     const result = await dispatcher.send({
       from: operator,
       projectId: '/work/app',
-      to: 'session-pty-2',
+      to: ['session-pty-2'],
       text: 'yes',
     });
-    expect(result.delivery.reason).toMatch(/open question/);
+    expect(deliveryOf(result).reason).toMatch(/open question/);
     live.set('pty-2', 'running');
     expect(terminal.writes).toEqual([]);
     live.set('pty-2', 'ready');
-    await expect.poll(() => pushed.at(-1)?.delivery.state).toBe('delivered');
+    await expect
+      .poll(() => pushed.at(-1)?.deliveries[0].delivery.state)
+      .toBe('delivered');
   });
 
   it('keeps two held messages in order', async () => {
@@ -471,20 +503,22 @@ describe('an operator message (the user’s turn)', () => {
     await dispatcher.send({
       from: operator,
       projectId: '/work/app',
-      to: 'session-pty-2',
+      to: ['session-pty-2'],
       text: 'first',
     });
     await dispatcher.send({
       from: operator,
       projectId: '/work/app',
-      to: 'session-pty-2',
+      to: ['session-pty-2'],
       text: 'second',
     });
     live.set('pty-2', 'ready');
     await expect
       .poll(
         () =>
-          pushed.filter(record => record.delivery.state === 'delivered').length
+          pushed.filter(
+            record => record.deliveries[0].delivery.state === 'delivered'
+          ).length
       )
       .toBe(2);
     expect(terminal.writes.filter(write => write !== '\r')).toEqual([
@@ -503,11 +537,11 @@ describe('an operator message (the user’s turn)', () => {
       dispatcher.send({
         from: operator,
         projectId: '/work/app',
-        to: 'session-pty-2',
+        to: ['session-pty-2'],
         text,
       });
     const results = await Promise.all([send('first'), send('second')]);
-    expect(results.map(result => result.delivery.state)).toEqual([
+    expect(results.map(result => deliveryOf(result).state)).toEqual([
       'queued',
       'queued',
     ]);
@@ -515,7 +549,9 @@ describe('an operator message (the user’s turn)', () => {
     await expect
       .poll(
         () =>
-          pushed.filter(record => record.delivery.state === 'delivered').length
+          pushed.filter(
+            record => record.deliveries[0].delivery.state === 'delivered'
+          ).length
       )
       .toBe(2);
     expect(terminal.writes.filter(write => write !== '\r')).toEqual([
@@ -524,7 +560,7 @@ describe('an operator message (the user’s turn)', () => {
     ]);
     const read = await store.read('/work/app');
     expect(
-      read.ok && read.records.map(record => record.delivery.state)
+      read.ok && read.records.map(record => record.deliveries[0].delivery.state)
     ).toEqual(['delivered', 'delivered']);
   });
 
@@ -552,15 +588,16 @@ describe('an operator message (the user’s turn)', () => {
       dispatcher.send({
         from: operator,
         projectId: '/work/app',
-        to: 'session-pty-2',
+        to: ['session-pty-2'],
         text,
       });
     const [first, second] = await Promise.all([send('first'), send('second')]);
-    expect(first.record).toBeNull();
-    expect(first.delivery.reason).toMatch(/could not log/);
-    expect(second.delivery.state).toBe('queued');
+    expect(refusalOf(first).reason).toMatch(/could not log/);
+    expect(deliveryOf(second).state).toBe('queued');
     live.set('pty-2', 'ready');
-    await expect.poll(() => pushed.at(-1)?.delivery.state).toBe('delivered');
+    await expect
+      .poll(() => pushed.at(-1)?.deliveries[0].delivery.state)
+      .toBe('delivered');
     expect(terminal.writes).toEqual(['\x1b[200~second\x1b[201~', '\r']);
   });
 
@@ -573,12 +610,12 @@ describe('an operator message (the user’s turn)', () => {
     await dispatcher.send({
       from: operator,
       projectId: '/work/app',
-      to: 'session-pty-2',
+      to: ['session-pty-2'],
       text: 'hi',
     });
     live.set('pty-2', 'ended');
     await expect
-      .poll(() => pushed.at(-1)?.delivery.state)
+      .poll(() => pushed.at(-1)?.deliveries[0].delivery.state)
       .toBe('undeliverable');
     expect(terminal.writes).toEqual([]);
   });
@@ -592,13 +629,15 @@ describe('an operator message (the user’s turn)', () => {
     const result = await dispatcher.send({
       from: operator,
       projectId: '/work/app',
-      to: 'session-pty-2',
+      to: ['session-pty-2'],
       text: 'go',
     });
-    expect(result.delivery.reason).toMatch(/finish starting/);
+    expect(deliveryOf(result).reason).toMatch(/finish starting/);
     expect(terminal.writes).toEqual([]);
     live.set('pty-2', 'ready');
-    await expect.poll(() => pushed.at(-1)?.delivery.state).toBe('delivered');
+    await expect
+      .poll(() => pushed.at(-1)?.deliveries[0].delivery.state)
+      .toBe('delivered');
   });
 
   it('is typed at once into a recipient that is ready', async () => {
@@ -608,11 +647,219 @@ describe('an operator message (the user’s turn)', () => {
     const result = await dispatcher.send({
       from: operator,
       projectId: '/work/app',
-      to: 'session-pty-2',
+      to: ['session-pty-2'],
       text: 'go',
     });
-    expect(result.delivery.state).toBe('delivered');
+    expect(deliveryOf(result).state).toBe('delivered');
     expect(terminal.writes).toEqual(['\x1b[200~go\x1b[201~', '\r']);
+  });
+});
+
+describe('a message to several recipients (BUG-329)', () => {
+  const trio = [
+    session('pty-1', 'codex', 'codex-4'),
+    session('pty-2', 'claude', 'claude-4'),
+    session('pty-3', 'antigravity', 'gemini-1'),
+  ];
+
+  it('is one message, logged once, delivered to each through its own door, each told who else received it', async () => {
+    const claude = fixtureDoor('claude-socket');
+    const codex = fixtureDoor(
+      'codex-queue',
+      { state: 'queued', reason: 'next turn' },
+      { queuedUntilTurnStart: true }
+    );
+    const { dispatcher, store, pushed, live, root } = world(trio, {
+      claude: { agent: null, operator: claude.transport },
+      codex: { agent: null, operator: codex.transport },
+    });
+    const result = await dispatcher.send({
+      from: operator,
+      projectId: '/work/app',
+      to: ['@claude-4', '@codex-4'],
+      text: 'Take opposing views on the cache design and talk it through.',
+    });
+    const record = recordOf(result);
+    expect(record.to.map(endpoint => endpoint.sessionId)).toEqual([
+      'session-pty-2',
+      'session-pty-1',
+    ]);
+    expect(
+      record.deliveries.map(entry => [entry.sessionId, entry.delivery.state])
+    ).toEqual([
+      ['session-pty-2', 'delivered'],
+      ['session-pty-1', 'queued'],
+    ]);
+    // each recipient reads the other by address, never itself
+    const toClaude = claude.handed[0].text.split('\n')[0];
+    const toCodex = codex.handed[0].text.split('\n')[0];
+    expect(toClaude).toContain('@codex-4');
+    expect(toClaude).not.toContain('@claude-4');
+    expect(toCodex).toContain('@claude-4');
+    expect(toCodex).not.toContain('@codex-4');
+    // one message line in the ledger, not one per recipient
+    const ledger = fs
+      .readdirSync(root)
+      .filter(name => name.endsWith('.jsonl'))
+      .map(name => fs.readFileSync(path.join(root, name), 'utf8'))
+      .join('');
+    expect(ledger.match(/"type":"message"/g)).toHaveLength(1);
+    expect(pushed).toHaveLength(1);
+    // one recipient's delivery moves on its own
+    live.turnStart('pty-1');
+    await expect
+      .poll(() => pushed.at(-1)?.deliveries.map(entry => entry.delivery.state))
+      .toEqual(['delivered', 'delivered']);
+    const read = await store.read('/work/app');
+    expect(
+      read.ok &&
+        read.records[0].deliveries.map(entry =>
+          entry.history.map(event => event.state)
+        )
+    ).toEqual([['delivered'], ['queued', 'delivered']]);
+  });
+
+  it('holds one recipient while typing to the other, and logs the held delivery when it lands', async () => {
+    const door = terminalInputTransport({
+      delivered: 'delivered',
+      holdWhile: ['starting', 'running', 'blocked'],
+    });
+    const { dispatcher, live, terminal, pushed, store } = world(
+      trio,
+      {
+        claude: { agent: null, operator: door },
+        codex: { agent: null, operator: door },
+      },
+      { 'pty-1': 'running' }
+    );
+    const record = recordOf(
+      await dispatcher.send({
+        from: operator,
+        projectId: '/work/app',
+        to: ['@claude-4', '@codex-4'],
+        text: 'Compare notes.',
+      })
+    );
+    expect(record.deliveries.map(entry => entry.delivery.state)).toEqual([
+      'delivered',
+      'queued',
+    ]);
+    expect(terminal.writes).toHaveLength(2);
+    live.set('pty-1', 'ready');
+    await expect
+      .poll(() => pushed.at(-1)?.deliveries[1].delivery.state)
+      .toBe('delivered');
+    expect(terminal.writes).toHaveLength(4);
+    const read = await store.read('/work/app');
+    expect(
+      read.ok && read.records[0].deliveries.map(entry => entry.delivery.state)
+    ).toEqual(['delivered', 'delivered']);
+  });
+
+  it('is refused whole, nothing logged and nothing handed over, when one address does not resolve', async () => {
+    const claude = fixtureDoor('claude-socket');
+    const { dispatcher, store, pushed } = world(trio, {
+      claude: { agent: claude.transport, operator: null },
+    });
+    const result = await dispatcher.send({
+      from: codexSender,
+      projectId: '/work/app',
+      to: ['@claude-4', '@nobody'],
+      text: 'hi',
+      senderSessionId: 'session-pty-1',
+    });
+    expect(refusalOf(result).reason).toMatch(/@nobody/);
+    expect(claude.handed).toEqual([]);
+    expect(pushed).toEqual([]);
+    expect(await store.read('/work/app')).toEqual({ ok: true, records: [] });
+  });
+
+  it('names a recipient once, however many ways the sender named it', async () => {
+    const claude = fixtureDoor('claude-socket');
+    const { dispatcher } = world(trio, {
+      claude: { agent: claude.transport, operator: null },
+    });
+    const record = recordOf(
+      await dispatcher.send({
+        from: codexSender,
+        projectId: '/work/app',
+        to: ['@claude-4', 'session-pty-2', '@claude'],
+        text: 'hi',
+        senderSessionId: 'session-pty-1',
+      })
+    );
+    expect(record.to).toHaveLength(1);
+    expect(claude.handed).toHaveLength(1);
+    expect(claude.handed[0].text.split('\n')[0]).not.toContain('to you and');
+  });
+});
+
+describe('who starts the turn a message opens (BUG-332)', () => {
+  it('tells the turn truth, before the door, that a peer’s note opens the peer’s turn and an operator message the operator’s', async () => {
+    // the doors write into the same log the turn truth is told in
+    let log: string[] = [];
+    const recordingDoor = (kind: string): BusTransport => ({
+      kind,
+      holdWhile: [],
+      async deliver(_envelope, target) {
+        log.push(`door ${target.ptyId}`);
+        return { state: 'delivered', adapter: kind };
+      },
+    });
+    const built = world(sessions, {
+      claude: {
+        agent: recordingDoor('claude-socket'),
+        operator: recordingDoor('terminal-input'),
+      },
+    });
+    log = built.turns;
+    await built.dispatcher.send({
+      from: codexSender,
+      projectId: '/work/app',
+      to: ['@claude-1'],
+      text: 'review this',
+      senderSessionId: codexSender.sessionId,
+    });
+    await built.dispatcher.send({
+      from: operator,
+      projectId: '/work/app',
+      to: ['@claude-1'],
+      text: 'go on',
+    });
+    expect(log).toEqual([
+      'expect pty-2 codex-2',
+      'door pty-2',
+      'expect pty-2 operator',
+      'door pty-2',
+    ]);
+  });
+
+  it('says nothing of a turn when nothing is handed over', async () => {
+    const { dispatcher, turns, live, pushed } = world(
+      sessions,
+      {
+        claude: {
+          agent: null,
+          operator: terminalInputTransport({
+            delivered: 'delivered',
+            holdWhile: ['running'],
+          }),
+        },
+      },
+      { 'pty-2': 'running' }
+    );
+    await dispatcher.send({
+      from: operator,
+      projectId: '/work/app',
+      to: ['@claude-1'],
+      text: 'later',
+    });
+    expect(turns).toEqual([]);
+    live.set('pty-2', 'ended');
+    await expect
+      .poll(() => pushed.at(-1)?.deliveries[0].delivery.state)
+      .toBe('undeliverable');
+    expect(turns).toEqual([]);
   });
 });
 
@@ -646,14 +893,14 @@ describe('the reply hint', () => {
     await dispatcher.send({
       from: codexSender,
       projectId: '/work/app',
-      to: '@claude-1',
+      to: ['@claude-1'],
       text: 'one',
       senderSessionId: codexSender.sessionId,
     });
     await dispatcher.send({
       from: claudeSender,
       projectId: '/work/app',
-      to: '@codex-2',
+      to: ['@codex-2'],
       text: 'two',
       senderSessionId: 'session-pty-2',
     });
@@ -676,7 +923,7 @@ describe('the reply hint', () => {
     await dispatcher.send({
       from: claudeSender,
       projectId: '/work/app',
-      to: '@codex-2',
+      to: ['@codex-2'],
       text: 'two',
       senderSessionId: 'session-pty-2',
     });

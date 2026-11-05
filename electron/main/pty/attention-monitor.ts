@@ -7,6 +7,7 @@ import {
   projectSessionAttention,
   markAttentionUnread,
   type SessionBackgroundTask,
+  type TurnInitiator,
 } from '@exawatt/core';
 import type { PtySessionManager } from './session-manager';
 import type {
@@ -44,6 +45,17 @@ import type {
  * still reopen a settle it produced (2026-08-04, decision `0018` amendment).
  * A spawn grace period keeps auto-revived tabs from all lighting up at app
  * start.
+ *
+ * Every turn carries who started it (BUG-332). The operator starts a turn by
+ * giving work (a keystroke, a launch task, Direct); another Agent starts one
+ * by a message the bus hands to this Session's door (`expectTurn`). A turn's
+ * END raises attention for its initiator: an operator turn ends with an
+ * unread result, an Agent's turn ends with the result already read and no
+ * alert, so traffic between Agents never marks an idle Agent unread or puts
+ * it in ⌘J. Chatter is where the operator notices it. What genuinely needs
+ * the operator (a reported question or permission gate, a bell) is raised
+ * the same whoever started the turn, and an Agent's turn neither clears nor
+ * replaces the operator's own unread result: it leaves attention as it was.
  *
  * Pure Node (no Electron imports) so it unit-tests directly. Env knobs:
  *   EXAWATT_ATTENTION=0               disable entirely
@@ -109,6 +121,9 @@ const DEFAULTS = {
   minBurstBytes: envInt('EXAWATT_ATTENTION_MIN_BURST', 600),
   spawnGraceMs: 20_000,
 };
+
+/** Every turn nobody else is known to have started. */
+const OPERATOR_TURN: TurnInitiator = Object.freeze({ kind: 'operator' });
 
 /** Output arriving this soon after WE resized the PTY is the TUI's WINCH
  *  redraw, not the agent working (D24: clicking an idle tab attaches the
@@ -186,6 +201,13 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    *  `lastDataAt` records every chunk regardless, so `reclaimStaleReportedTurn`
    *  keeps measuring real silence rather than time-since-latch. */
   private settled = new Set<string>();
+  /** Who started each Session's current or last turn. Absent is the
+   *  operator: every turn before the bus was his. */
+  private initiators = new Map<string, TurnInitiator>();
+  /** Whose the next turn a Session opens is: set as the bus hands it a
+   *  message, taken when a turn opens. The operator giving work takes it
+   *  back (he is now in the turn too). */
+  private expected = new Map<string, TurnInitiator>();
   /** sessions ever given work (D22: composer task, exact resume, or a human
    *  keystroke via pty:engage) or that ever raised attention (a turn-end
    *  implies a turn happened) — the strip's started/unstarted truth */
@@ -376,8 +398,53 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    *  Deliberately NOT gated on `disabled`: startedness is explicit fact,
    *  not stream inference. Emits 'engaged' once per session. */
   noteEngaged(id: string): void {
-    // A finished Agent turn is sticky across passive PTY output. Explicit
-    // operator engagement is the sole boundary that opens the next turn.
+    // The operator's own work: whatever a peer's message expected, this turn
+    // is his, and so is the result it ends with.
+    this.expected.delete(id);
+    this.initiators.set(id, OPERATOR_TURN);
+    this.giveWork(id);
+  }
+
+  /**
+   * A message the bus is about to hand to this Session's door will open its
+   * next turn, started by `initiator` (an Agent, or the operator through
+   * Direct). Taken by the next turn that opens: a door's own Enter
+   * (`noteTurnOpened`), a reported turn start, or output beginning.
+   */
+  expectTurn(id: string, initiator: TurnInitiator): void {
+    this.expected.set(id, initiator);
+  }
+
+  /** The bus's terminal door pressed Enter on a message: work given, by
+   *  whoever the message's turn was expected to belong to. */
+  noteTurnOpened(id: string): void {
+    this.takeExpectedTurn(id);
+    this.giveWork(id);
+  }
+
+  /** Who started this Session's current or last turn. */
+  turnInitiator(id: string): TurnInitiator {
+    return this.initiators.get(id) ?? OPERATOR_TURN;
+  }
+
+  /** A turn opened: it is the expected initiator's, when one is expected;
+   *  otherwise it continues as the last turn's (a parent resuming on its
+   *  child's result is still the work its starter gave). */
+  private takeExpectedTurn(id: string): void {
+    const expected = this.expected.get(id);
+    if (!expected) return;
+    this.expected.delete(id);
+    this.initiators.set(id, expected);
+  }
+
+  private agentTurn(id: string): boolean {
+    return this.turnInitiator(id).kind === 'agent';
+  }
+
+  private giveWork(id: string): void {
+    // A finished Agent turn is sticky across passive PTY output. Work given
+    // explicitly (the operator's, or a bus door pressing Enter on a message)
+    // is the sole boundary that opens the next turn.
     // Mark it working from that semantic fact instead of waiting for echo:
     // a guarded resize can overlap the first prompt bytes, and some TUIs do
     // not echo input at all.
@@ -605,14 +672,18 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     if (!session || session.exited || session.harness === 'shell') return;
     this.settled.delete(id);
     this.markEngaged(id);
+    this.takeExpectedTurn(id);
     // A source-confirmed new turn supersedes its old result and proves a
     // synchronous gate was released. Asynchronous requests can outlive turns
-    // and are retired only by their own correlated source reply.
+    // and are retired only by their own correlated source reply. A turn
+    // another Agent started supersedes nothing the operator is owed: his
+    // result stays as he left it, read or unread (BUG-332).
+    const agentTurn = this.agentTurn(id);
     this.clear(
       id,
       record =>
         record.source === 'harness' &&
-        (record.kind === 'turn-end' || record.request !== 'working')
+        (record.kind === 'turn-end' ? !agentTurn : record.request !== 'working')
     );
     this.lastDataAt.set(id, this.now());
     this.setWorking(id, true);
@@ -845,7 +916,12 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       source: 'harness',
       kind,
       since: this.now(),
-      unread: !this.isWatched(id),
+      // A result is the operator's news only when the operator started the
+      // turn; one another Agent started arrives already read, so it neither
+      // marks the Agent unread nor alerts nor joins ⌘J (BUG-332). Requests
+      // and bells need him whoever started the turn.
+      unread:
+        !this.isWatched(id) && !(kind === 'turn-end' && this.agentTurn(id)),
       ...(request ? { request } : {}),
       ...(requestId ? { requestId } : {}),
     };
@@ -900,6 +976,9 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   private setWorking(id: string, working: boolean): void {
     if (working) {
       if (this.working.has(id)) return;
+      // Output beginning is a turn opening for a source that reports none
+      // (a CLI queue runs a peer's message as its next turn).
+      this.takeExpectedTurn(id);
       this.working.add(id);
     } else if (!this.working.delete(id)) {
       return;
@@ -920,6 +999,8 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     this.carry.delete(id);
     this.engaged.delete(id);
     this.settled.delete(id);
+    this.initiators.delete(id);
+    this.expected.delete(id);
     this.setWorking(id, false);
     this.clear(id);
   }

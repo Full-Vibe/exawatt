@@ -57,8 +57,10 @@ export function registerBusIPC(userData: string): void {
   const store = new JsonlBusStore(root);
   const directory = new BusDirectory(ptySessions);
 
+  // The door's Enter opens the turn its message expected (`expectTurn`
+  // below): a peer's message opens that peer's turn, not the operator's.
   const terminals = createTerminalDoors(ptySessions, {
-    engage: id => attentionMonitor.noteEngaged(id),
+    engage: id => attentionMonitor.noteTurnOpened(id),
   });
 
   const recipients = createRecipientStateSource({
@@ -145,6 +147,8 @@ export function registerBusIPC(userData: string): void {
       sourceEnvironment: () => sourceEnvironmentOf(target),
     }),
     harnessLabel,
+    expectTurn: (ptyId, initiator) =>
+      attentionMonitor.expectTurn(ptyId, initiator),
     onRecord: record =>
       broadcastToWindows(BrowserWindow.getAllWindows(), 'bus:message', record),
   });

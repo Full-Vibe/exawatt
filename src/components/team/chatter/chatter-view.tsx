@@ -5,7 +5,8 @@
  * Agents sent each other, and the operator's own, in the Chatter tab of
  * Team's dock. Two altitudes in one panel, the two the operator named: the
  * list ("chatter is happening", one row per message, newest first) and the
- * thread ("read and mediate", one pair's conversation with Send as operator).
+ * thread ("read and mediate", the conversation among a message's sender and
+ * recipients, with Send as operator).
  *
  * Nothing here summarizes, scores, flags or counts rounds. Unavailable is one
  * honest line, never an empty list.
@@ -19,7 +20,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { markSeenThrough, seenThrough } from '@/lib/bus/read-state';
 import { useBackOut } from '@/lib/shortcuts/back-out';
-import { latestAt, newestFirst, threadOf } from '@/lib/bus/selectors';
+import {
+  latestAt,
+  messageParticipants,
+  newestFirst,
+  threadOf,
+} from '@/lib/bus/selectors';
 import type { BusEndpoint, MessageRecord, BusSendResult } from '@exawatt/core';
 import type { BusMessagesState } from '@/lib/bus/use-bus';
 import { EXAWATT_HOSTED_ORIGIN } from '@/lib/analytics/config';
@@ -31,9 +37,19 @@ import {
 import { ChatterRow } from './chatter-row';
 import { ChatterComposer, ChatterThreadMessage } from './chatter-thread';
 
+/** Selections are message ids, never positions: the list is newest first,
+ *  so a message arriving shifts every position, and the operator's place
+ *  must move only when he moves it (BUG-333). */
 type Mode =
   | { kind: 'list' }
-  | { kind: 'thread'; a: BusEndpoint; b: BusEndpoint; fromRow: number };
+  | {
+      kind: 'thread';
+      /** everyone the opened message involved: its sender, then each
+       *  recipient */
+      participants: BusEndpoint[];
+      /** the row the thread was opened from, selected again on the way back */
+      fromRow: string;
+    };
 
 /** Where an empty Project's line leads (ENG-031 W28): the review-loop guide. */
 const REVIEW_GUIDE_URL = `${EXAWATT_HOSTED_ORIGIN}/guides/agents-review-each-other`;
@@ -64,8 +80,8 @@ export function ChatterView({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'list' });
-  const [sel, setSel] = useState(0);
-  const [threadSel, setThreadSel] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [threadSelectedId, setThreadSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -82,7 +98,7 @@ export function ChatterView({
   // a Project switch re-scopes the panel to its list
   useEffect(() => {
     setMode({ kind: 'list' });
-    setSel(0);
+    setSelectedId(null);
   }, [projectId]);
 
   // what is on screen counts as read; the dots keep marking what arrived
@@ -99,39 +115,55 @@ export function ChatterView({
   const thread = useMemo(
     () =>
       mode.kind === 'thread'
-        ? threadOf(messages, mode.a.sessionId, mode.b.sessionId)
+        ? threadOf(
+            messages,
+            mode.participants.map(endpoint => endpoint.sessionId)
+          )
         : [],
     [messages, mode]
   );
 
-  useEffect(() => {
-    setSel(s => Math.min(s, Math.max(0, list.length - 1)));
-  }, [list.length]);
+  // The selection rests on a message. Until the operator picks one it is the
+  // newest message at the moment the list first showed, pinned by id, so a
+  // later arrival lands above it instead of taking it over. A message that
+  // left the list (pruned) hands the selection to the newest one.
+  const listIndex = list.findIndex(message => message.id === selectedId);
+  if (list.length > 0 && listIndex === -1) setSelectedId(list[0].id);
+  const sel = Math.max(0, listIndex);
+  const threadIndex = thread.findIndex(
+    message => message.id === threadSelectedId
+  );
+  if (thread.length > 0 && threadIndex === -1)
+    setThreadSelectedId(thread[0].id);
+  const threadSel = Math.max(0, threadIndex);
+  const selectRow = (index: number) => {
+    const message = list[index];
+    if (message) setSelectedId(message.id);
+  };
+  const selectThreadMessage = (index: number) => {
+    const message = thread[index];
+    if (message) setThreadSelectedId(message.id);
+  };
 
   const focusRoot = () => requestAnimationFrame(() => rootRef.current?.focus());
 
   const openThread = (index: number) => {
     const message = list[index];
     if (!message) return;
-    const pair = threadOf(
+    const participants = messageParticipants(message);
+    const conversation = threadOf(
       messages,
-      message.from.sessionId,
-      message.to.sessionId
+      participants.map(endpoint => endpoint.sessionId)
     );
-    const latest = pair[pair.length - 1];
-    setMode({ kind: 'thread', a: message.from, b: message.to, fromRow: index });
-    setThreadSel(
-      Math.max(
-        0,
-        pair.findIndex(m => m.id === message.id)
-      )
-    );
+    const latest = conversation[conversation.length - 1];
+    setMode({ kind: 'thread', participants, fromRow: message.id });
+    setThreadSelectedId(message.id);
     setExpanded(new Set([message.id, ...(latest ? [latest.id] : [])]));
     focusRoot();
   };
 
   const backToList = () => {
-    if (mode.kind === 'thread') setSel(mode.fromRow);
+    if (mode.kind === 'thread') setSelectedId(mode.fromRow);
     setMode({ kind: 'list' });
     focusRoot();
   };
@@ -171,10 +203,10 @@ export function ChatterView({
         backToList();
       } else if (key === 'ArrowDown' || key === 'j') {
         handled();
-        setThreadSel(s => Math.min(thread.length - 1, s + 1));
+        selectThreadMessage(Math.min(thread.length - 1, threadSel + 1));
       } else if (key === 'ArrowUp' || key === 'k') {
         handled();
-        setThreadSel(s => Math.max(0, s - 1));
+        selectThreadMessage(Math.max(0, threadSel - 1));
       } else if (key === 'Enter' || key === ' ' || key === 'ArrowRight') {
         const message = thread[threadSel];
         if (message) {
@@ -186,10 +218,10 @@ export function ChatterView({
     }
     if (key === 'ArrowDown' || key === 'j') {
       handled();
-      setSel(s => Math.min(list.length - 1, s + 1));
+      selectRow(Math.min(list.length - 1, sel + 1));
     } else if (key === 'ArrowUp' || key === 'k') {
       handled();
-      setSel(s => Math.max(0, s - 1));
+      selectRow(Math.max(0, sel - 1));
     } else if (key === 'Enter' || key === 'ArrowRight') {
       if (list[sel]) {
         handled();
@@ -212,8 +244,8 @@ export function ChatterView({
   }, [list, mode, sel, thread, threadSel]);
 
   const color = projectColor ?? HUD.cyan;
-  const recipients =
-    mode.kind === 'thread' ? [mode.a, mode.b].filter(e => !isOperator(e)) : [];
+  const threadParticipants = mode.kind === 'thread' ? mode.participants : [];
+  const recipients = threadParticipants.filter(e => !isOperator(e));
   const lastAgentSender = [...thread]
     .reverse()
     .find((m: MessageRecord) => m.from.kind === 'agent')?.from.sessionId;
@@ -247,8 +279,10 @@ export function ChatterView({
             >
               ←
             </button>
-            <span className="flex min-w-0 items-center gap-1 font-ui text-chrome-label">
-              {[mode.a, mode.b].map((endpoint, index) => {
+            <span
+              className={`flex min-w-0 items-center font-ui text-chrome-label ${mode.participants.length === 2 ? 'gap-1' : 'gap-2'}`}
+            >
+              {mode.participants.map((endpoint, index) => {
                 const tabId = isOperator(endpoint)
                   ? null
                   : (participants.get(endpoint.sessionId)?.tabId ?? null);
@@ -257,7 +291,7 @@ export function ChatterView({
                     key={endpoint.sessionId}
                     className="flex min-w-0 items-center gap-1"
                   >
-                    {index === 1 && (
+                    {index > 0 && mode.participants.length === 2 && (
                       <span aria-hidden style={{ color: HUD.textDim }}>
                         ⇄
                       </span>
@@ -373,11 +407,11 @@ export function ChatterView({
                 expanded={expanded.has(message.id)}
                 selected={index === threadSel}
                 onToggle={() => {
-                  setThreadSel(index);
+                  setThreadSelectedId(message.id);
                   toggle(message.id);
                   focusRoot();
                 }}
-                onHover={() => setThreadSel(index)}
+                onHover={() => setThreadSelectedId(message.id)}
               />
             ))}
           </ul>
@@ -394,10 +428,10 @@ export function ChatterView({
                 }
                 selected={index === sel}
                 onOpen={() => {
-                  setSel(index);
+                  setSelectedId(message.id);
                   openThread(index);
                 }}
-                onHover={() => setSel(index)}
+                onHover={() => setSelectedId(message.id)}
               />
             ))}
           </div>
@@ -406,7 +440,7 @@ export function ChatterView({
 
       {mode.kind === 'thread' && recipients.length > 0 && (
         <ChatterComposer
-          key={`${mode.a.sessionId}:${mode.b.sessionId}`}
+          key={mode.participants.map(endpoint => endpoint.sessionId).join(':')}
           recipients={recipients}
           defaultTo={
             recipients.some(r => r.sessionId === lastAgentSender)

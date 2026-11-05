@@ -39,7 +39,7 @@ export interface BusClient {
   list(projectId: string): Promise<BusReadResult>;
   /** every message between two addresses of one Project, in ledger order */
   thread(projectId: string, a: string, b: string): Promise<BusReadResult>;
-  /** `record` null is a refusal at the sender, with the reason */
+  /** `ok: false` is a refusal at the sender, with the reason */
   send(request: BusSendRequest): Promise<BusSendResult>;
   /**
    * New messages and delivery updates, as they happen. A later record with an
@@ -50,9 +50,6 @@ export interface BusClient {
 }
 
 /** A refusal before anything was logged. */
-export function refusedSend(reason: string, adapter = 'bus'): BusSendResult {
-  return {
-    delivery: { state: 'undeliverable', reason, adapter },
-    record: null,
-  };
+export function refusedSend(reason: string): BusSendResult {
+  return { ok: false, reason };
 }

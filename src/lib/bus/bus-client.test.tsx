@@ -7,6 +7,7 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  busThread,
   demoBusSendResult,
   DEMO_BASE_AGENTS,
   DEMO_CHATTER,
@@ -50,7 +51,7 @@ const PARTICIPANTS = [
 function message(
   id: string,
   from: string,
-  to: string,
+  to: string | readonly string[],
   at: number,
   options: Parameters<typeof busMessage>[4] = {}
 ): MessageRecord {
@@ -70,11 +71,10 @@ function fakeBridge(messages: MessageRecord[] = []) {
     }),
     thread: async (projectId, a, b) => ({
       ok: true,
-      records: messages.filter(
-        m =>
-          m.projectId === projectId &&
-          [a, b].includes(m.from.sessionId) &&
-          [a, b].includes(m.to.sessionId)
+      records: busThread(
+        messages.filter(m => m.projectId === projectId),
+        a,
+        b
       ),
     }),
     send: async request => {
@@ -89,7 +89,7 @@ function fakeBridge(messages: MessageRecord[] = []) {
           text: request.text,
         }
       );
-      return { delivery: record.delivery, record };
+      return { ok: true, record };
     },
     onMessage: handler => {
       handlers.add(handler);
@@ -111,12 +111,12 @@ describe('live client', () => {
       (
         await client.send({
           projectId: PROJECT,
-          to: 'a',
+          to: ['a'],
           text: 'hi',
           kind: 'operator',
         })
-      ).record
-    ).toBeNull();
+      ).ok
+    ).toBe(false);
     expect(() => client.subscribe(() => {})()).not.toThrow();
   });
 
@@ -151,18 +151,11 @@ describe('live client', () => {
     expect(
       await client.send({
         projectId: PROJECT,
-        to: 'a',
+        to: ['a'],
         text: 'x',
         kind: 'operator',
       })
-    ).toEqual({
-      delivery: {
-        state: 'undeliverable',
-        reason: 'recipient ended',
-        adapter: 'bus',
-      },
-      record: null,
-    });
+    ).toEqual({ ok: false, reason: 'recipient ended' });
   });
 });
 
@@ -179,8 +172,20 @@ describe('demo client', () => {
       'expired',
       'unknown',
     ];
-    const seen = new Set(messages.map(m => m.delivery.state));
+    const seen = new Set(
+      messages.flatMap(m => m.deliveries.map(entry => entry.delivery.state))
+    );
     for (const state of states) expect(seen).toContain(state);
+  });
+
+  it('logs a message to several recipients once, with each recipient’s own delivery', () => {
+    const several = messages.filter(m => m.to.length > 1);
+    expect(several.length).toBeGreaterThan(0);
+    for (const m of several) {
+      expect(m.deliveries.map(entry => entry.sessionId)).toEqual(
+        m.to.map(endpoint => endpoint.sessionId)
+      );
+    }
   });
 
   it('addresses Demo Sessions in the sender’s own Project', () => {
@@ -190,7 +195,8 @@ describe('demo client', () => {
     for (const m of messages) {
       const projectKey = projectByDir.get(m.projectId);
       expect(projectKey).toBeDefined();
-      expect(agents.get(m.to.sessionId)?.projectKey).toBe(projectKey);
+      for (const endpoint of m.to)
+        expect(agents.get(endpoint.sessionId)?.projectKey).toBe(projectKey);
       if (m.from.kind === 'agent') {
         expect(agents.get(m.from.sessionId)?.projectKey).toBe(projectKey);
       } else {
@@ -216,7 +222,7 @@ describe('demo client', () => {
     expect(
       await client.send({
         projectId: project,
-        to: messages[0].to.sessionId,
+        to: [messages[0].to[0].sessionId],
         text: 'x',
         kind: 'operator',
       })
@@ -237,20 +243,34 @@ describe('selectors', () => {
     const delivered = message('9', 'a', 'b', 50);
     const list = upsertMessage(upsertMessage([a], queued), delivered);
     expect(list).toHaveLength(2);
-    expect(list[1].delivery.state).toBe('delivered');
+    expect(list[1].deliveries[0].delivery.state).toBe('delivered');
     expect(upsertMessage([b], a).map(m => m.id)).toEqual(['1', '2']);
   });
 
   it('threads a pair with the operator’s messages to either of them', () => {
-    expect(threadOf([a, b, op, other], 'a', 'b').map(m => m.id)).toEqual([
+    expect(threadOf([a, b, op, other], ['a', 'b']).map(m => m.id)).toEqual([
       '1',
       '2',
       '3',
     ]);
     expect(
-      threadOf([a, b, op, other], BUS_OPERATOR.sessionId, 'a').map(m => m.id)
+      threadOf([a, b, op, other], [BUS_OPERATOR.sessionId, 'a']).map(m => m.id)
     ).toEqual(['3']);
     expect(newestFirst([a, b, op]).map(m => m.id)).toEqual(['3', '2', '1']);
+  });
+
+  it('threads everyone a message to several Agents involves', () => {
+    const direct = message('5', BUS_OPERATOR.sessionId, ['a', 'b'], 5, {
+      operator: true,
+    });
+    const reply = message('6', 'b', ['a', 'c'], 45);
+    const thread = threadOf(
+      [direct, a, b, op, other, reply],
+      [BUS_OPERATOR.sessionId, 'a', 'b']
+    );
+    expect(thread.map(m => m.id)).toEqual(['5', '1', '2', '3', '6']);
+    expect(agentUnreadCount([direct, reply], 0, 'c')).toBe(1);
+    expect(agentUnreadCount([direct, reply], 0, 'a')).toBe(1);
   });
 
   it('counts unread after the reading position, never the operator’s own', () => {
@@ -324,7 +344,8 @@ describe('hooks', () => {
     });
     const state = result.current.state;
     expect(
-      state.status === 'ok' && state.messages.map(m => [m.id, m.delivery.state])
+      state.status === 'ok' &&
+        state.messages.map(m => [m.id, m.deliveries[0].delivery.state])
     ).toEqual([
       ['1', 'delivered'],
       ['2', 'delivered'],

@@ -79,13 +79,24 @@ function bridge(states: Record<string, BusDeliveryState>) {
     thread: async () => ({ ok: true, records: [] }),
     send: async request => {
       sent.push(request);
-      const record = busMessage(`m-${request.to}`, 'operator', request.to, 1, {
-        operator: true,
-        projectId: request.projectId,
-        text: request.text,
-        state: states[request.to] ?? 'unknown',
-      });
-      return { delivery: record.delivery, record };
+      const record = busMessage(
+        `m-${request.to.join(',')}`,
+        'operator',
+        request.to,
+        1,
+        {
+          operator: true,
+          projectId: request.projectId,
+          text: request.text,
+        }
+      );
+      // each recipient's door answers on its own
+      for (const entry of record.deliveries) {
+        const state = states[entry.sessionId] ?? 'unknown';
+        entry.delivery = { ...entry.delivery, state };
+        entry.history = [entry.delivery];
+      }
+      return { ok: true, record };
     },
     onMessage: () => () => undefined,
   };
@@ -167,7 +178,7 @@ const tone = (agentId: string) =>
     ?.getAttribute('data-direct-tone') ?? null;
 
 describe('Direct N Agents', () => {
-  it('sends once per reachable recipient and shows each result', async () => {
+  it('sends one message to every reachable recipient of a Project and shows each result', async () => {
     const { sent, double } = bridge({
       'session-a': 'delivered',
       'session-b': 'queued',
@@ -182,12 +193,11 @@ describe('Direct N Agents', () => {
     fireEvent.change(input, { target: { value: 'run the tests' } });
     fireEvent.keyDown(input, { key: 'Enter', metaKey: true });
 
-    await waitFor(() => expect(sent).toHaveLength(2));
-    expect(sent.map(request => request.to).sort()).toEqual([
-      'session-a',
-      'session-b',
-    ]);
-    expect(sent.every(request => request.kind === 'operator')).toBe(true);
+    // One message, both recipients named in it: each is told about the
+    // other (BUG-329). The stopped Session is not among them.
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect([...sent[0].to].sort()).toEqual(['session-a', 'session-b']);
+    expect(sent[0].kind).toBe('operator');
     await waitFor(() =>
       expect(document.querySelector('[data-direct-result="a"]')).not.toBeNull()
     );

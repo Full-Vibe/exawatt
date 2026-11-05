@@ -77,6 +77,14 @@ const WELL_FORMED: { [C in Channel]: unknown[] } = {
   'settings:record-operator-profile-state': [
     { startedAt: '2026-09-01T00:00:00.000Z', profileEnabled: true },
   ],
+  'bus:send': [
+    {
+      projectId: '/work/app',
+      to: ['@claude-4', 'session-1'],
+      text: 'Compare notes.',
+      kind: 'operator',
+    },
+  ],
 };
 
 describe('argument boundaries', () => {
@@ -207,6 +215,23 @@ describe('argument boundaries', () => {
     ]) {
       expect(() => read('pty:create', options)).toThrow(
         'Invalid launch options'
+      );
+    }
+  });
+
+  it('reads a bus send as one message to a bounded list of recipients', () => {
+    const request = WELL_FORMED['bus:send'][0] as { to: string[] };
+    expect(read('bus:send', request)[0].to).toEqual(request.to);
+    for (const to of [
+      '@claude-4',
+      [],
+      [''],
+      [42],
+      ['x'.repeat(241)],
+      Array.from({ length: 65 }, (_, index) => `@agent-${index}`),
+    ]) {
+      expect(() => read('bus:send', { ...request, to })).toThrow(
+        'Invalid bus message'
       );
     }
   });

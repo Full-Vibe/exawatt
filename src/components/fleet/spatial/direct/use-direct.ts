@@ -25,8 +25,9 @@ import {
 export type RecipientAddress = { address: string } | { refused: string };
 
 /**
- * Sends one operator message to every recipient, one bus send each
- * (decision `0052`), and keeps each recipient's result as it arrives.
+ * Sends one operator message to every recipient, one bus message per
+ * Project naming all of that Project's recipients (decision `0052`,
+ * BUG-329), and keeps each recipient's result as it arrives.
  *
  * `resolveAddresses` maps the board's Agents to bus addresses: the durable
  * Session id on this machine, the Agent's own id in the Demo. It is injected
@@ -120,29 +121,46 @@ export function useDirect({
         };
         // Stopped Sessions are listed and answered, never sent: an ended
         // Session has no door, and the row already said so before Send.
+        // Everyone addressed in one Project is one message, so each
+        // recipient is told who else received it (BUG-329); the bus scopes
+        // a message to its Project, so a selection across Projects is one
+        // send per Project.
+        const byProject = new Map<
+          string,
+          { agentId: string; address: string }[]
+        >();
+        for (const recipient of targets) {
+          if (recipient.readiness === 'stopped') continue;
+          const address = resolved.get(recipient.agentId);
+          if (!address || 'refused' in address || !recipient.projectId) {
+            settle(recipient.agentId, {
+              state: 'undeliverable',
+              reason:
+                address && 'refused' in address
+                  ? address.refused
+                  : 'No Session to deliver to',
+            });
+            continue;
+          }
+          const group = byProject.get(recipient.projectId) ?? [];
+          group.push({ agentId: recipient.agentId, address: address.address });
+          byProject.set(recipient.projectId, group);
+        }
         await Promise.all(
-          targets
-            .filter(recipient => recipient.readiness !== 'stopped')
-            .map(async recipient => {
-              const address = resolved.get(recipient.agentId);
-              if (!address || 'refused' in address || !recipient.projectId) {
-                settle(recipient.agentId, {
-                  state: 'undeliverable',
-                  reason:
-                    address && 'refused' in address
-                      ? address.refused
-                      : 'No Session to deliver to',
-                });
-                return;
-              }
-              const result = await client.send({
-                projectId: recipient.projectId,
-                to: address.address,
-                text: trimmed,
-                kind: 'operator',
-              });
-              settle(recipient.agentId, directResultOf(result));
-            })
+          [...byProject].map(async ([projectId, group]) => {
+            const result = await client.send({
+              projectId,
+              to: group.map(member => member.address),
+              text: trimmed,
+              kind: 'operator',
+            });
+            group.forEach((member, index) =>
+              settle(
+                member.agentId,
+                directResultOf(result, member.address, index)
+              )
+            );
+          })
         );
         // ENG-047: counts only, once per Send, whatever the selection did
         // meanwhile (the send happened either way)

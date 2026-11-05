@@ -28,7 +28,7 @@ const STATES: BusDeliveryState[] = [
 function message(
   id: string,
   from: string,
-  to: string,
+  to: string | readonly string[],
   at: number,
   state: BusDeliveryState = 'delivered',
   kind: 'agent' | 'operator' = 'agent'
@@ -51,7 +51,7 @@ function renderChatter(
       projectName="Alpha"
       projectColor="#50e6ff"
       state={state}
-      send={async () => refusedSend('Demo cannot send', 'demo')}
+      send={async () => refusedSend('Demo cannot send')}
       participants={new Map()}
       visible={false}
       onSelectSession={() => {}}
@@ -119,7 +119,9 @@ describe('Chatter states', () => {
       messages.map(m => m.id).reverse()
     );
     for (const row of rows) {
-      const state = row.getAttribute('data-delivery');
+      const state = row
+        .querySelector('[data-chatter-recipient-delivery]')
+        ?.getAttribute('data-chatter-recipient-delivery');
       expect(
         row.querySelector(`[data-delivery-glyph="${state}"]`)
       ).not.toBeNull();
@@ -127,6 +129,103 @@ describe('Chatter states', () => {
         row.querySelector('[data-delivery-glyph]')?.getAttribute('aria-label')
       ).toContain(`${state} because`);
     }
+  });
+
+  it('names every recipient of a message, each with its own delivery', () => {
+    const several = message('m', 'op', ['a', 'b'], 1, 'delivered', 'operator');
+    several.deliveries[1].delivery = {
+      state: 'queued',
+      reason: 'queued because',
+      adapter: 'test',
+      at: 1,
+    };
+    const { container } = renderChatter({
+      status: 'ok',
+      messages: [several],
+    });
+    const row = container.querySelector('[data-chatter-row="m"]')!;
+    expect(
+      [...row.querySelectorAll('[data-chatter-recipient-delivery]')].map(node =>
+        node.getAttribute('data-chatter-recipient-delivery')
+      )
+    ).toEqual(['delivered', 'queued']);
+    const label = row.getAttribute('aria-label') ?? '';
+    expect(label).toContain('a:');
+    expect(label).toContain('b:');
+    expect(label).toContain('queued because');
+  });
+
+  it('keeps the selected row when a new message arrives; only the operator moves it (BUG-333)', () => {
+    const older = [message('one', 'a', 'b', 10), message('two', 'b', 'a', 20)];
+    const view = (messages: MessageRecord[]) => (
+      <ChatterView
+        projectId={PROJECT}
+        projectName="Alpha"
+        projectColor={null}
+        state={{ status: 'ok', messages }}
+        send={async () => refusedSend('x')}
+        participants={new Map()}
+        visible={false}
+        onSelectSession={() => {}}
+      />
+    );
+    const { container, rerender } = render(view(older));
+    const selected = () =>
+      container
+        .querySelector('[data-chatter-row][data-selected]')
+        ?.getAttribute('data-chatter-row');
+    const root = container.querySelector('[data-chatter]') as HTMLElement;
+    expect(selected()).toBe('two');
+    fireEvent.keyDown(root, { key: 'ArrowDown' });
+    expect(selected()).toBe('one');
+    // chatter keeps arriving above the operator's place
+    rerender(view([...older, message('three', 'a', 'b', 30)]));
+    expect(selected()).toBe('one');
+    rerender(
+      view([
+        ...older,
+        message('three', 'a', 'b', 30),
+        message('four', 'b', 'a', 40),
+      ])
+    );
+    expect(selected()).toBe('one');
+    // and in the thread too
+    fireEvent.keyDown(root, { key: 'Enter' });
+    const selectedInThread = () =>
+      container
+        .querySelector('[data-chatter-thread-message][data-selected]')
+        ?.getAttribute('data-chatter-thread-message');
+    expect(selectedInThread()).toBe('one');
+    rerender(
+      view([
+        ...older,
+        message('three', 'a', 'b', 30),
+        message('four', 'b', 'a', 40),
+        message('five', 'a', 'b', 50),
+      ])
+    );
+    expect(selectedInThread()).toBe('one');
+  });
+
+  it('opens the thread of everyone a message to several Agents involves', () => {
+    const messages = [
+      message('direct', 'op', ['a', 'b'], 10, 'delivered', 'operator'),
+      message('ab', 'a', 'b', 20),
+      message('ba', 'b', 'a', 30),
+      message('cd', 'c', 'd', 40),
+    ];
+    const { container } = renderChatter({ status: 'ok', messages });
+    fireEvent.click(container.querySelector('[data-chatter-row="direct"]')!);
+    expect(
+      [...container.querySelectorAll('[data-chatter-thread-message]')].map(m =>
+        m.getAttribute('data-chatter-thread-message')
+      )
+    ).toEqual(['direct', 'ab', 'ba']);
+    expect(
+      [...container.querySelectorAll('[data-chatter-recipient]')].map(node =>
+        node.getAttribute('data-chatter-recipient')
+      )
+    ).toEqual(['a', 'b']);
   });
 
   it('marks what arrived since the last look and moves the reading position when shown', () => {
@@ -184,7 +283,7 @@ describe('Chatter keyboard and thread', () => {
                 projectName="Alpha"
                 projectColor="#50e6ff"
                 state={{ status: 'ok', messages }}
-                send={async () => refusedSend('Demo cannot send', 'demo')}
+                send={async () => refusedSend('Demo cannot send')}
                 participants={new Map()}
                 visible={false}
                 onSelectSession={() => {}}
@@ -226,7 +325,7 @@ describe('Chatter keyboard and thread', () => {
         ...message('sent', 'op', to, 40, 'queued', 'operator'),
         text,
       };
-      return { delivery: record.delivery, record };
+      return { ok: true as const, record };
     });
     const messages = [message('q', 'a', 'b', 10)];
     const { container } = renderChatter({ status: 'ok', messages }, { send });

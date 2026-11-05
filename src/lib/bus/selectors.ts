@@ -3,7 +3,12 @@
  * flags or counts rounds (decision `0052`); the only number derived is
  * unread, which is the operator's own reading position.
  */
-import { BUS_OPERATOR_ID, busThread, type MessageRecord } from '@exawatt/core';
+import {
+  BUS_OPERATOR_ID,
+  busIsRecipient,
+  type BusEndpoint,
+  type MessageRecord,
+} from '@exawatt/core';
 
 /** Ledger order (oldest first), with a later record for an id replacing it:
  *  how a `queued` message becomes `delivered` without a second row. */
@@ -32,25 +37,40 @@ export function newestFirst(
 }
 
 /**
- * The conversation between two Sessions, oldest first: what each said to the
- * other, plus anything the operator said to either of them, so a reply sent
- * from the thread stays in the thread.
+ * The conversation among a set of Sessions, oldest first: every message one
+ * of them sent with another of them among its recipients, plus anything the
+ * operator said to any of them, so a reply sent from the thread stays in the
+ * thread. For two Agents this is what each said to the other, plus the
+ * operator's messages to either.
  */
 export function threadOf(
   messages: readonly MessageRecord[],
-  a: string,
-  b: string
+  participants: readonly string[]
 ): MessageRecord[] {
-  const pair = busThread(messages, a, b);
-  if (a === BUS_OPERATOR_ID || b === BUS_OPERATOR_ID) return pair;
-  const seen = new Set(pair.map(message => message.id));
-  const fromOperator = [
-    ...busThread(messages, BUS_OPERATOR_ID, a),
-    ...busThread(messages, BUS_OPERATOR_ID, b),
-  ].filter(
-    message => message.from.kind === 'operator' && !seen.has(message.id)
-  );
-  return [...pair, ...fromOperator].sort((x, y) => x.at - y.at);
+  const members = new Set(participants);
+  const agents = participants.filter(id => id !== BUS_OPERATOR_ID);
+  return messages
+    .filter(message => {
+      const sender = message.from.sessionId;
+      if (
+        members.has(sender) &&
+        message.to.some(
+          endpoint =>
+            endpoint.sessionId !== sender && members.has(endpoint.sessionId)
+        )
+      )
+        return true;
+      return (
+        message.from.kind === 'operator' &&
+        agents.some(id => busIsRecipient(message, id))
+      );
+    })
+    .sort((x, y) => x.at - y.at);
+}
+
+/** Everyone a message involves: its sender, then each recipient. */
+export function messageParticipants(message: MessageRecord): BusEndpoint[] {
+  return [message.from, ...message.to];
 }
 
 export function firstLine(text: string): string {
@@ -87,7 +107,7 @@ export function agentUnreadCount(
     if (
       isUnread(message, seenThrough) &&
       (message.from.sessionId === sessionId ||
-        message.to.sessionId === sessionId)
+        busIsRecipient(message, sessionId))
     ) {
       count += 1;
     }

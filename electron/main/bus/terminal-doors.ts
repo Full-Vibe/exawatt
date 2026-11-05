@@ -31,7 +31,8 @@ interface TerminalDoorOptions {
   quietMs?: number;
   /** The longest a paste waits for its echo. */
   maxMs?: number;
-  /** Marks the Session as given work when Enter is pressed. */
+  /** Marks the Session as given work when Enter is pressed: the turn the
+   *  message opens, whoever the bus said it belongs to. */
   engage?(id: string): void;
 }
 

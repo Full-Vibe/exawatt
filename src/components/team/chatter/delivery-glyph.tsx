@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
-import type { MessageRecord, BusDeliveryState } from '@exawatt/core';
+import type { BusDeliveryState, DeliveryEvent } from '@exawatt/core';
 import { DELIVERY_LABEL } from './chatter-format';
 
 const MARK: Record<BusDeliveryState, { Icon: LucideIcon; color: string }> = {
@@ -26,9 +26,7 @@ const MARK: Record<BusDeliveryState, { Icon: LucideIcon; color: string }> = {
   unknown: { Icon: CircleHelp, color: HUD.idle },
 };
 
-export function deliveryDescription(
-  delivery: MessageRecord['delivery']
-): string {
+export function deliveryDescription(delivery: DeliveryEvent): string {
   const label = DELIVERY_LABEL[delivery.state];
   return delivery.reason ? `${label}. ${delivery.reason}` : label;
 }
@@ -38,7 +36,7 @@ export function DeliveryGlyph({
   size = 12,
   withLabel = false,
 }: {
-  delivery: MessageRecord['delivery'];
+  delivery: DeliveryEvent;
   size?: number;
   /** print the label beside the mark (the thread's stamp line) */
   withLabel?: boolean;

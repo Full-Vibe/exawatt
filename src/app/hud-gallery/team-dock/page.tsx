@@ -195,7 +195,10 @@ export default function TeamDockSpecimenPage() {
   const byState = useMemo(
     () =>
       DELIVERY_STATES.map(
-        state => MESSAGES.find(message => message.delivery.state === state)!
+        state =>
+          MESSAGES.find(message =>
+            message.deliveries.some(entry => entry.delivery.state === state)
+          )!
       ),
     []
   );

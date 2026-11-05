@@ -608,6 +608,95 @@ describe('Sessions overview', () => {
     view.unmount();
   });
 
+  // ── BUG-333: the selection was a POSITION in the tile list. A tab opening
+  // earlier in the grid, or the Activity order moving a working Agent up,
+  // put a different tile in that slot, and the dock's Chatter followed it to
+  // another Project while the operator was reading. Only he moves it.
+  it('keeps the selected tile and the dock’s Project when tiles rebuild around it', async () => {
+    window.localStorage.removeItem('exawatt.team-order.v1');
+    const one = projects[0];
+    const two: SessionProject = {
+      dir: '/two',
+      name: 'Two',
+      color: '#FFB020',
+      activeTabId: 'tab-d',
+      tabs: [
+        {
+          ...one.tabs[1],
+          id: 'tab-d',
+          durableSessionId: 'durable-d',
+          title: 'Delta',
+          cwd: '/two',
+          sessionId: 'session-d',
+        },
+      ],
+    };
+    const opened: SessionProject = {
+      ...one,
+      tabs: [
+        ...one.tabs,
+        {
+          ...one.tabs[1],
+          id: 'tab-e',
+          durableSessionId: 'durable-e',
+          title: 'Epsilon',
+          sessionId: 'session-e',
+          startedAt: 10_000,
+        },
+      ],
+    };
+    const overlay = (list: SessionProject[], activity = {}) => (
+      <ExposeOverlay
+        projects={list}
+        summaries={{}}
+        attention={NO_FLEET_ATTENTION}
+        activity={activity}
+        activeTabId="tab-d"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const view = render(overlay([one, two]));
+    const selected = () =>
+      document
+        .querySelector('[data-expose-tile][data-selected]')
+        ?.getAttribute('aria-label')
+        ?.split(',')[0];
+    const chatterProject = () =>
+      document
+        .querySelector('[data-chatter]')
+        ?.getAttribute('data-chatter-project');
+    await waitFor(() => expect(selected()).toBe('Delta'));
+    expect(chatterProject()).toBe('/two');
+
+    // a new Agent opens in the Project above: every later position shifts
+    view.rerender(overlay([opened, two]));
+    await Promise.resolve();
+    expect(selected()).toBe('Delta');
+    expect(chatterProject()).toBe('/two');
+
+    // the Activity order leads One with whichever Agent works, live
+    fireEvent.click(screen.getByRole('radio', { name: 'Activity' }));
+    const beta = screen.getByRole('button', { name: /^Beta, One/ });
+    // the operator points at Beta
+    fireEvent.mouseMove(beta, { clientX: 1, clientY: 1 });
+    fireEvent.mouseMove(beta, { clientX: 2, clientY: 1 });
+    await waitFor(() => expect(selected()).toBe('Beta'));
+    view.rerender(overlay([opened, two], { 'session-e': true }));
+    await waitFor(() =>
+      expect(
+        document
+          .querySelector('[data-expose-tile]')
+          ?.getAttribute('aria-label')
+          ?.split(',')[0]
+      ).toBe('Epsilon')
+    );
+    expect(selected()).toBe('Beta');
+    expect(chatterProject()).toBe('/one');
+    window.localStorage.removeItem('exawatt.team-order.v1');
+    view.unmount();
+  });
+
   // ── FIX-010 review: the Resume control shipped mouse-only. It sits outside
   // the tab order on purpose (the grid is one roving stop), so without a key
   // it was unreachable, and its focus-visible styling could never fire.

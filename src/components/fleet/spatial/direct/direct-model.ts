@@ -6,10 +6,11 @@
  * a count of answers (decision `0052`; operator 2026-10-15: a second
  * agent-communication view would "duplicate and diverge").
  */
-import type {
-  BusDeliveryState,
-  BusSendResult,
-  ExawattAgent,
+import {
+  busDeliveryTo,
+  type BusDeliveryState,
+  type BusSendResult,
+  type ExawattAgent,
 } from '@exawatt/core';
 import { workStateReading } from '@/components/status-light/protocol';
 
@@ -63,12 +64,23 @@ export type DirectResult =
   | { state: BusDeliveryState; reason?: string };
 
 /**
- * The bus's answer to one send, reduced to the recipient's row. This is the
- * one place that reads a send result. A `null` record is a refusal before
- * anything was logged; its `delivery` says why.
+ * The bus's answer to one send, reduced to one recipient's row. This is the
+ * one place that reads a send result. One send carries every recipient of a
+ * Project, so its record holds each recipient's own delivery; a refusal
+ * before anything was logged answers every recipient with its reason.
+ * `address` is what the row sent to (the durable Session id the record keys
+ * by); `index` is its place in the send, the order the record keeps.
  */
-export function directResultOf(result: BusSendResult): DirectResult {
-  const { delivery } = result;
+export function directResultOf(
+  result: BusSendResult,
+  address: string,
+  index: number
+): DirectResult {
+  if (!result.ok) return { state: 'undeliverable', reason: result.reason };
+  const entry =
+    busDeliveryTo(result.record, address) ?? result.record.deliveries[index];
+  if (!entry) return { state: 'unknown', reason: 'The bus did not answer' };
+  const { delivery } = entry;
   return {
     state: delivery.state,
     ...(delivery.reason ? { reason: delivery.reason } : {}),

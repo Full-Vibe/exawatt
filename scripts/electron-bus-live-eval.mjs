@@ -189,7 +189,7 @@ try {
         ({ id, to }) =>
           window.electron.bus.send({
             projectId: id,
-            to,
+            to: [to],
             text:
               'Run exactly this shell command once, then stop and wait: ' +
               "exawatt send @codex-2 'PING-FROM-CLAUDE. Please answer me by running: exawatt send @claude-1 PONG-FROM-CODEX'",
@@ -197,7 +197,10 @@ try {
           }),
         { id: projectId, to: claude.durableSessionId }
       );
-      console.log('operator kickoff:', JSON.stringify(kickoff.delivery));
+      console.log(
+        'operator kickoff:',
+        JSON.stringify(kickoff.ok ? kickoff.record.deliveries : kickoff)
+      );
       const shot = name =>
         process.env.EXAWATT_BUS_LIVE_KEEP
           ? page.screenshot({ path: join(root, `${name}.png`) })
@@ -218,13 +221,13 @@ try {
                     record =>
                       record.from.harness === 'codex' &&
                       record.text.includes('PONG-FROM-CODEX') &&
-                      record.delivery.state === 'delivered'
+                      record.deliveries[0].delivery.state === 'delivered'
                   ) &&
                   read.records.some(
                     record =>
                       record.from.harness === 'claude' &&
                       record.text.includes('PING-FROM-CLAUDE') &&
-                      record.delivery.state === 'delivered'
+                      record.deliveries[0].delivery.state === 'delivered'
                   )
               ),
           arg: projectId,
@@ -266,19 +269,19 @@ try {
       check(
         'Claude reached Codex through codex queue: queued, then delivered when its turn began',
         ping?.from.sessionId === claude.durableSessionId &&
-          ping?.to.sessionId === codex.durableSessionId &&
-          ping.delivery.adapter === 'codex-queue' &&
-          ping.history.map(event => event.state).join('>') ===
+          ping?.to[0].sessionId === codex.durableSessionId &&
+          ping.deliveries[0].delivery.adapter === 'codex-queue' &&
+          ping.deliveries[0].history.map(event => event.state).join('>') ===
             'queued>delivered',
-        JSON.stringify(ping?.history)
+        JSON.stringify(ping?.deliveries[0].history)
       );
       check(
         'Codex answered Claude through its socket: delivered',
         pong?.from.sessionId === codex.durableSessionId &&
-          pong?.to.sessionId === claude.durableSessionId &&
-          pong.delivery.adapter === 'claude-socket' &&
-          pong.delivery.state === 'delivered',
-        JSON.stringify(pong?.history)
+          pong?.to[0].sessionId === claude.durableSessionId &&
+          pong.deliveries[0].delivery.adapter === 'claude-socket' &&
+          pong.deliveries[0].delivery.state === 'delivered',
+        JSON.stringify(pong?.deliveries[0].history)
       );
       const codexScreen = await page.evaluate(
         id => window.electron.pty.buffer(id),
@@ -297,16 +300,16 @@ try {
         : null;
       check(
         'the operator message reached Claude as his own turn and reads delivered',
-        operatorRecord?.to.sessionId === claude.durableSessionId &&
-          operatorRecord.delivery.adapter === 'terminal-input' &&
-          operatorRecord.delivery.state === 'delivered',
-        JSON.stringify(operatorRecord?.history)
+        operatorRecord?.to[0].sessionId === claude.durableSessionId &&
+          operatorRecord.deliveries[0].delivery.adapter === 'terminal-input' &&
+          operatorRecord.deliveries[0].delivery.state === 'delivered',
+        JSON.stringify(operatorRecord?.deliveries[0].history)
       );
       const refused = await page.evaluate(
         id =>
           window.electron.bus.send({
             projectId: id,
-            to: '@nobody',
+            to: ['@nobody'],
             text: 'hi',
             kind: 'operator',
           }),
@@ -314,8 +317,8 @@ try {
       );
       check(
         'an unknown recipient is refused at the sender with a reason',
-        refused.record === null &&
-          /No Agent named @nobody/.test(refused.delivery.reason ?? '')
+        refused.ok === false &&
+          /No Agent named @nobody/.test(refused.reason ?? '')
       );
     },
     { maxMs: 900_000 }

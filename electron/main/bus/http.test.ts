@@ -23,8 +23,46 @@ function session(
   } as PtySessionRecord;
 }
 
+/** What the bus answers a send: by default each named recipient reached,
+ *  `states` overriding one recipient's delivery. */
+function delivered(
+  input: BusSendInput,
+  states: Record<string, 'delivered' | 'queued' | 'undeliverable'> = {}
+): BusSendResult {
+  const to = input.to.map(handle => ({
+    sessionId: `session-${handle}`,
+    name: handle.replace(/^@/, ''),
+    harness: 'codex' as const,
+  }));
+  return {
+    ok: true,
+    record: {
+      id: 'm-1',
+      projectId: input.projectId,
+      from: input.from,
+      to,
+      at: 1,
+      text: input.text,
+      deliveries: to.map((endpoint, index) => {
+        const state = states[input.to[index]] ?? 'delivered';
+        const event = {
+          state,
+          adapter: 'claude-socket',
+          at: 1,
+          ...(state === 'delivered' ? {} : { reason: 'its turn is running' }),
+        };
+        return {
+          sessionId: endpoint.sessionId,
+          delivery: event,
+          history: [event],
+        };
+      }),
+    },
+  };
+}
+
 function handler(
-  result: Partial<BusSendResult> = {},
+  answer: (input: BusSendInput) => BusSendResult = input => delivered(input),
   records: MessageRecord[] = []
 ) {
   const sends: BusSendInput[] = [];
@@ -44,11 +82,7 @@ function handler(
     dispatcher: {
       send: async input => {
         sends.push(input);
-        return {
-          delivery: { state: 'delivered', adapter: 'claude-socket' },
-          record: { to: { name: 'codex-2' } } as MessageRecord,
-          ...result,
-        };
+        return answer(input);
       },
     },
     store: { read: async () => ({ ok: true, records }) },
@@ -88,7 +122,7 @@ describe('the bus HTTP verbs', () => {
           kind: 'agent',
         },
         projectId: '/work/app',
-        to: '@codex-2',
+        to: ['@codex-2'],
         text: 'line one\nline two',
         senderSessionId: 'session-pty-1',
       },
@@ -96,13 +130,9 @@ describe('the bus HTTP verbs', () => {
   });
 
   it('answers a refusal as a failure the command exits non-zero on, with the candidates', async () => {
-    const { handle } = handler({
-      delivery: {
-        state: 'undeliverable',
-        reason: '@reviewer could mean 2 Agents',
-        adapter: 'bus',
-      },
-      record: null,
+    const { handle } = handler(() => ({
+      ok: false,
+      reason: '@reviewer could mean 2 Agents',
       candidates: [
         {
           sessionId: 'session-x',
@@ -114,28 +144,56 @@ describe('the bus HTTP verbs', () => {
           state: 'live',
         },
       ],
-    });
+    }));
     const answer = await handle('pty-1', 'send', '@reviewer\nhi');
     expect(answer.status).toBe(409);
     expect(answer.text).toContain('Not sent: @reviewer could mean 2 Agents.');
     expect(answer.text).toContain('session-x');
   });
 
-  it('shows my inbox and only my inbox', async () => {
+  it('sends one message to every recipient the first line names, answering for each', async () => {
+    const { handle, sends } = handler(input =>
+      delivered(input, { '@gemini-1': 'queued' })
+    );
+    const answer = await handle(
+      'pty-1',
+      'send',
+      '@codex-2, @gemini-1 @codex-2\ncompare notes'
+    );
+    expect(sends.map(input => input.to)).toEqual([['@codex-2', '@gemini-1']]);
+    expect(answer.status).toBe(200);
+    expect(answer.text.split('\n')).toEqual([
+      'Sent to @codex-2: delivered.',
+      'Sent to @gemini-1: queued: its turn is running.',
+    ]);
+  });
+
+  it('shows my inbox and only my inbox, naming who else each message reached', async () => {
     const mine = {
       from: { name: 'codex-2', harness: 'codex', kind: 'agent' },
-      to: { sessionId: 'session-pty-1' },
+      to: [{ sessionId: 'session-pty-1', name: 'claude-1' }],
       at: 0,
       text: 'for you',
     } as MessageRecord;
+    const shared = {
+      ...mine,
+      to: [
+        { sessionId: 'session-pty-3', name: 'gemini-1' },
+        { sessionId: 'session-pty-1', name: 'claude-1' },
+      ],
+      text: 'for you both',
+    } as MessageRecord;
     const theirs = {
       ...mine,
-      to: { sessionId: 'session-pty-2' },
+      to: [{ sessionId: 'session-pty-2', name: 'codex-2' }],
       text: 'not yours',
     } as MessageRecord;
-    const { handle } = handler({}, [mine, theirs]);
+    const { handle } = handler(undefined, [mine, shared, theirs]);
     const answer = await handle('pty-1', 'inbox', '');
     expect(answer.text).toContain('from @codex-2 (codex-label):\nfor you');
+    expect(answer.text).toContain(
+      'from @codex-2 (codex-label), also to @gemini-1:\nfor you both'
+    );
     expect(answer.text).not.toContain('not yours');
   });
 

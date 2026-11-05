@@ -5955,7 +5955,8 @@ New Agent screenshots in each theme prove it.
 
 ### BUG-329 Directed Agents are not told who else received the message
 
-Status: bug · ENG-029 · partner conversation 2026-10-29
+Status: fixed · ENG-029 · partner conversation 2026-10-29 · fixed 2026-11-04,
+execution front packet 1
 
 Direct to two Agents (Fleet drag-select, ⌘D) delivers two independent
 messages. The stamp line each recipient reads (`busStampLine` in
@@ -5967,6 +5968,19 @@ problem… Codex 4 should know that he should be talking to Claw 4." Exit: a
 directed message names its other recipients by address. That is delivery
 metadata, not a coordination pattern, so decision `0052` (no productized
 debate, no policing) is unchanged.
+
+Fixed 2026-11-04. Cause: the bus had no notion of a message to several
+Agents, so Direct sent N independent messages and each stamp could only name
+its sender. System change: a bus message is one delivery to named
+recipients. The envelope's `to` is a list, the ledger logs the message once
+(v2 lines; v1 lines still read) with a delivery history per recipient, an
+addressing failure refuses the whole send, and each recipient's text names
+the others by address (the peer stamp line, or one line ahead of an
+operator message that is not a `/` command). Direct sends one message per
+Project; `exawatt send @a,@b` and the MCP send tool take several. Proof:
+`envelope.test.ts`, `dispatch.test.ts` ("a message to several recipients"),
+`ledger.test.ts` (per-recipient deliveries, v1 migration),
+`direct-composer.test.tsx`, `eval:electron:fleet-direct`.
 
 ### BUG-330 A Claude Agent's working timer froze for a minute or two
 
@@ -6015,7 +6029,8 @@ reads the stated mode back against main's record.
 
 ### BUG-332 Bus traffic marks an idle Agent unread and puts it in ⌘J each time
 
-Status: bug · ENG-029 · product-feedback 5fb9f54c 2026-10-22
+Status: fixed · ENG-029 · product-feedback 5fb9f54c 2026-10-22 · fixed
+2026-11-04, execution front packet 1
 
 The operator: "These messages are spamming an idle agent, and make the agent
 unread and show up in the cmd+j queue each time. Not sure what the fix is, but
@@ -6023,13 +6038,35 @@ it's pretty annoying." A turn another Agent started over the bus ends the
 same way an operator's turn does, so it raises the same attention. Execution
 front (2026-11-04) packet 1.
 
+Fixed 2026-11-04. Cause: the attention monitor had no idea who started a
+turn, and the terminal door's Enter was recorded as operator engagement.
+System change: every turn carries its initiator. The bus tells the monitor
+whose turn a message opens as it hands it to a door (`expectTurn`); a door's
+Enter, a reported turn start or output beginning takes it; the operator's
+own engagement always makes the turn his. A turn another Agent started ends
+with its result already read, no alert and no ⌘J entry, and never clears the
+operator's own unread result; gates and bells raise as before. Recorded as
+an amendment to decision `0046`. Proof: `attention-monitor.test.ts` ("turns
+another Agent started"), `dispatch.test.ts` ("who starts the turn"),
+`eval:electron:turn-truth`.
+
 ### BUG-333 Chatter's selected Agent changed while the operator was reading it
 
-Status: bug · ENG-029 · product-feedback bfb10af1 2026-10-22
+Status: fixed · ENG-029 · product-feedback bfb10af1 2026-10-22 · fixed
+2026-11-04, execution front packet 1
 
 The operator: "I was looking at Chatter (10) and then the selected agent
 switched and I didn't see any chatter - selection shouldn't change
 automatically." Execution front (2026-11-04) packet 1.
+
+Fixed 2026-11-04. Cause: selections were positions. Team's roving selection,
+which picks the Project the dock's Chatter shows, was an index into tiles
+that rebuild when an Agent starts or stops working (Active-first order) or a
+tab opens earlier in the grid, and Chatter's own list and thread selection
+were indexes into a newest-first list. System change: both are held by
+identity (`useKeyedSelection` keyed by tile, Chatter by message id), so only
+operator action moves them. Proof: `use-keyed-selection.dom.test.ts`,
+`expose-overlay.test.tsx`, `team-dock.test.tsx`, `eval:workspace:team`.
 
 ### BUG-334 Effort is flattened into the New Agent model list
 

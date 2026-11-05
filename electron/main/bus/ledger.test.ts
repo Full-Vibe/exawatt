@@ -33,11 +33,10 @@ function record(id: string, at: number, text = `message ${id}`): MessageRecord {
       harness: 'codex',
       kind: 'agent',
     },
-    to: { sessionId: 'session-b', name: 'claude-1', harness: 'claude' },
+    to: [{ sessionId: 'session-b', name: 'claude-1', harness: 'claude' }],
     at,
     text,
-    delivery: event,
-    history: [event],
+    deliveries: [{ sessionId: 'session-b', delivery: event, history: [event] }],
   };
 }
 
@@ -52,16 +51,115 @@ describe('JsonlBusStore', () => {
       adapter: 'terminal-input',
       at: 3,
     };
-    await store.appendDelivery('/work/app', 'm1', delivered);
+    await store.appendDelivery('/work/app', 'm1', 'session-b', delivered);
     const read = await store.read('/work/app');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.records.map(item => item.id)).toEqual(['m1', 'm2']);
-    expect(read.records[0].delivery).toEqual(delivered);
-    expect(read.records[0].history.map(event => event.state)).toEqual([
-      'queued',
-      'delivered',
+    expect(read.records[0].deliveries[0].delivery).toEqual(delivered);
+    expect(
+      read.records[0].deliveries[0].history.map(event => event.state)
+    ).toEqual(['queued', 'delivered']);
+  });
+
+  it('keeps each recipient’s delivery of one message apart', async () => {
+    const store = new JsonlBusStore(root());
+    const message = record('m1', 1);
+    const queued = message.deliveries[0].delivery;
+    await store.append({
+      ...message,
+      to: [
+        ...message.to,
+        { sessionId: 'session-c', name: 'gemini-1', harness: 'antigravity' },
+      ],
+      deliveries: [
+        ...message.deliveries,
+        { sessionId: 'session-c', delivery: queued, history: [queued] },
+      ],
+    });
+    await store.appendDelivery('/work/app', 'm1', 'session-c', {
+      state: 'delivered',
+      adapter: 'terminal-input',
+      at: 2,
+    });
+    const read = await store.read('/work/app');
+    expect(
+      read.ok &&
+        read.records[0].deliveries.map(entry => [
+          entry.sessionId,
+          entry.history.map(event => event.state),
+        ])
+    ).toEqual([
+      ['session-b', ['queued']],
+      ['session-c', ['queued', 'delivered']],
     ]);
+  });
+
+  it('reads a ledger written before a message could name several recipients, and keeps adding to it', async () => {
+    const dir = root();
+    const store = new JsonlBusStore(dir);
+    const file = store.fileFor('/work/app');
+    const queued = {
+      state: 'queued',
+      reason: 'held',
+      adapter: 'terminal-input',
+      at: 1,
+    };
+    const v1 = {
+      id: 'old',
+      projectId: '/work/app',
+      from: {
+        sessionId: 'session-a',
+        name: 'codex-2',
+        harness: 'codex',
+        kind: 'agent',
+      },
+      to: { sessionId: 'session-b', name: 'claude-1', harness: 'claude' },
+      at: 1,
+      text: 'from before',
+      delivery: queued,
+      history: [queued],
+    };
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      file,
+      `${JSON.stringify({ v: 1, type: 'message', record: v1 })}\n` +
+        `${JSON.stringify({ v: 1, type: 'delivery', id: 'old', event: { state: 'delivered', adapter: 'terminal-input', at: 2 } })}\n`
+    );
+    await store.append(record('new', 3));
+    const read = await store.read('/work/app');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.records.map(item => item.id)).toEqual(['old', 'new']);
+    expect(read.records[0].to).toEqual([v1.to]);
+    expect(read.records[0].deliveries).toEqual([
+      {
+        sessionId: 'session-b',
+        delivery: { state: 'delivered', adapter: 'terminal-input', at: 2 },
+        history: [
+          queued,
+          { state: 'delivered', adapter: 'terminal-input', at: 2 },
+        ],
+      },
+    ]);
+    // the old lines stay exactly as they were written
+    expect(fs.readFileSync(file, 'utf8').split('\n')[0]).toBe(
+      JSON.stringify({ v: 1, type: 'message', record: v1 })
+    );
+  });
+
+  it('fails loud on a delivery line for a recipient the message never named', async () => {
+    const store = new JsonlBusStore(root());
+    await store.append(record('m1', 1));
+    await store.appendDelivery('/work/app', 'm1', 'session-z', {
+      state: 'delivered',
+      adapter: 'terminal-input',
+      at: 2,
+    });
+    expect(await store.read('/work/app')).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/damaged at line 2/),
+    });
   });
 
   it('fails a write over a ledger it cannot read, never counting it as empty', async () => {
@@ -129,14 +227,16 @@ describe('JsonlBusStore', () => {
     // The app restarts and logs again.
     const after = new JsonlBusStore(dir);
     await after.append(record('m3', 3));
-    await after.appendDelivery('/work/app', 'm3', {
+    await after.appendDelivery('/work/app', 'm3', 'session-b', {
       state: 'delivered',
       adapter: 'terminal-input',
       at: 4,
     });
     const read = await after.read('/work/app');
     expect(read.ok && read.records.map(item => item.id)).toEqual(['m1', 'm3']);
-    expect(read.ok && read.records[1].delivery.state).toBe('delivered');
+    expect(read.ok && read.records[1].deliveries[0].delivery.state).toBe(
+      'delivered'
+    );
     const lines = fs.readFileSync(file, 'utf8').split('\n');
     expect(lines.at(-1)).toBe('');
     expect(lines.slice(0, -1).every(line => JSON.parse(line))).toBeTruthy();
@@ -150,7 +250,7 @@ describe('JsonlBusStore', () => {
     const file = before.fileFor('/work/app');
     fs.appendFileSync(
       file,
-      JSON.stringify({ v: 1, type: 'message', record: record('m2', 2) })
+      JSON.stringify({ v: 2, type: 'message', record: record('m2', 2) })
     );
     const after = new JsonlBusStore(dir);
     await after.append(record('m3', 3));
@@ -181,7 +281,7 @@ describe('JsonlBusStore', () => {
     const store = new JsonlBusStore(root(), bounds);
     for (let index = 1; index <= 9; index += 1) {
       await store.append(record(`m${index}`, index));
-      await store.appendDelivery('/work/app', `m${index}`, {
+      await store.appendDelivery('/work/app', `m${index}`, 'session-b', {
         state: 'delivered',
         adapter: 'terminal-input',
         at: index + 0.5,
@@ -196,7 +296,8 @@ describe('JsonlBusStore', () => {
     ]);
     // Each kept message kept its own delivery history, whole.
     expect(
-      read.ok && read.records.every(item => item.history.length === 2)
+      read.ok &&
+        read.records.every(item => item.deliveries[0].history.length === 2)
     ).toBe(true);
     const lines = fs
       .readFileSync(store.fileFor('/work/app'), 'utf8')

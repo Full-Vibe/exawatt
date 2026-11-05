@@ -396,7 +396,7 @@ describe('one Demo Agent wears one harness on every surface (BUG-293)', () => {
     );
     const endpoints = demoBusMessages(Date.now()).flatMap(message => [
       message.from,
-      message.to,
+      ...message.to,
     ]);
     let compared = 0;
     for (const endpoint of endpoints) {

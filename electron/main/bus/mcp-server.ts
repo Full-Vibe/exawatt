@@ -82,7 +82,7 @@ export const BUS_MCP_TOOLS: readonly ToolDefinition[] = [
         to: {
           type: 'string',
           description:
-            'The agent to message: its @name (for example @codex-2) or its session id.',
+            'The agent to message: its @name (for example @codex-2) or its session id. Name several, separated by commas (@codex-2,@claude-1), to send one message every one of them receives, each told who else did.',
         },
         message: {
           type: 'string',
@@ -175,7 +175,7 @@ async function callTool(
     }
     verb = 'send';
     // The bus's own request shape, the one `exawatt send` posts: the
-    // recipient on the first line, the message after it.
+    // recipients on the first line, the message after it.
     body = `${to}\n${message}`;
   } else {
     verb = name === 'exawatt_list_agents' ? 'agents' : 'inbox';

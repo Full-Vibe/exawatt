@@ -33,7 +33,8 @@ export interface TerminalDoor {
    *  quiet), or at a bound if it never does. */
   settled(): Promise<void>;
   /** Press Enter, as its own write: the turn this opens is work given to
-   *  the Session, exactly as if the operator had pressed it. */
+   *  the Session, started by the message's sender (the operator's own turn
+   *  for an operator message, the peer's for a peer's note). */
   submit(): boolean;
 }
 

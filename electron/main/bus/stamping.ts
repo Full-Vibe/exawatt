@@ -31,7 +31,7 @@ export function cleanBusText(text: string): string {
 export function stampEnvelope(input: {
   projectId: string;
   from: BusSender;
-  to: BusEndpoint;
+  to: BusEndpoint[];
   text: string;
   at: number;
   id?: string;
@@ -40,26 +40,31 @@ export function stampEnvelope(input: {
     id: input.id ?? `msg-${randomUUID()}`,
     projectId: input.projectId,
     from: { ...input.from },
-    to: { ...input.to },
+    to: input.to.map(endpoint => ({ ...endpoint })),
     at: input.at,
     text: input.text,
   };
 }
 
-/** The exact text the recipient receives. */
+/** The exact text one recipient receives. */
 export function deliveredText(
   envelope: MessageEnvelope,
   senderHarness: string,
   projectName: string,
+  recipientSessionId: string,
   reply: { tool: string | null; commandSandboxed: boolean } = {
     tool: null,
     commandSandboxed: false,
   }
 ): string {
-  return busDeliveredText(envelope, {
-    senderHarness,
-    projectName,
-    replyTool: reply.tool,
-    replyCommandSandboxed: reply.commandSandboxed,
-  });
+  return busDeliveredText(
+    envelope,
+    {
+      senderHarness,
+      projectName,
+      replyTool: reply.tool,
+      replyCommandSandboxed: reply.commandSandboxed,
+    },
+    recipientSessionId
+  );
 }

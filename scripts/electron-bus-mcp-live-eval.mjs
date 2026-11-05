@@ -183,9 +183,9 @@ try {
         read.records.some(
           record =>
             record.from.sessionId === from.durableSessionId &&
-            record.to.sessionId === recipient.durableSessionId &&
+            record.to[0].sessionId === recipient.durableSessionId &&
             record.text.includes('MCP-PING') &&
-            record.delivery.state === 'delivered'
+            record.deliveries[0].delivery.state === 'delivered'
         );
       while (Date.now() < deadline) {
         read = await page.evaluate(
@@ -232,9 +232,9 @@ try {
       const ping = record(sender);
       check(
         'a Codex Agent in Auto-review reached another Agent through the MCP door',
-        ping?.to.sessionId === recipient.durableSessionId &&
-          ping.delivery.state === 'delivered' &&
-          ping.delivery.adapter === 'codex-queue',
+        ping?.to[0].sessionId === recipient.durableSessionId &&
+          ping.deliveries[0].delivery.state === 'delivered' &&
+          ping.deliveries[0].delivery.adapter === 'codex-queue',
         JSON.stringify(ping ?? read)
       );
       const recipientScreen = plain(
@@ -260,7 +260,7 @@ try {
         const claudePing = record(claude);
         check(
           'a Claude Code Agent reached the same Agent through the MCP door',
-          claudePing?.to.sessionId === recipient.durableSessionId,
+          claudePing?.to[0].sessionId === recipient.durableSessionId,
           JSON.stringify(claudePing ?? null)
         );
       }

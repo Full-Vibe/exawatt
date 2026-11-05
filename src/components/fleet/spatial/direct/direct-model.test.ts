@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { busMessage } from '@/lib/bus/bus.test-support';
 import { createAgent } from '@exawatt/core';
 import {
   directReached,
@@ -106,26 +107,36 @@ describe('recipientNote', () => {
 });
 
 describe('directResultOf', () => {
-  it('reads a refusal as undeliverable with its reason', () => {
-    expect(
-      directResultOf({
-        delivery: {
-          state: 'undeliverable',
-          reason: 'Demo cannot send',
-          adapter: 'demo',
-        },
-        record: null,
-      })
-    ).toEqual({ state: 'undeliverable', reason: 'Demo cannot send' });
+  it('answers every recipient of a refused send as undeliverable with its reason', () => {
+    const refused = { ok: false as const, reason: 'Demo cannot send' };
+    expect(directResultOf(refused, 'session-a', 0)).toEqual({
+      state: 'undeliverable',
+      reason: 'Demo cannot send',
+    });
+    expect(directResultOf(refused, 'session-b', 1)).toEqual({
+      state: 'undeliverable',
+      reason: 'Demo cannot send',
+    });
   });
 
-  it('reads a logged delivery as its state', () => {
-    expect(
-      directResultOf({
-        delivery: { state: 'queued', adapter: 'codex-queue' },
-        record: null,
-      })
-    ).toEqual({ state: 'queued' });
+  it('reads each recipient’s own delivery from the one logged message', () => {
+    const record = busMessage('m', 'operator', ['session-a', 'session-b'], 1, {
+      operator: true,
+    });
+    record.deliveries[1].delivery = {
+      state: 'queued',
+      reason: 'Codex runs it as the next turn.',
+      adapter: 'codex-queue',
+      at: 1,
+    };
+    const result = { ok: true as const, record };
+    expect(directResultOf(result, 'session-a', 0)).toEqual({
+      state: 'delivered',
+    });
+    expect(directResultOf(result, 'session-b', 1)).toEqual({
+      state: 'queued',
+      reason: 'Codex runs it as the next turn.',
+    });
   });
 });
 

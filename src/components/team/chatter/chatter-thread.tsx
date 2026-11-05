@@ -1,5 +1,5 @@
 /**
- * The zoom-in (ENG-029 C1 live): the conversation between two Sessions,
+ * The zoom-in (ENG-029 C1 live): the conversation among a message's Sessions,
  * oldest first, each message two lines until it is opened in place, with
  * Exawatt's stamped envelope visible when open. No bubbles: the operator is
  * reading a log, not a chat (operator, 2026-10-15: "Chronological list,
@@ -13,12 +13,16 @@ import { useBackOut } from '@/lib/shortcuts/back-out';
 import type { BusEndpoint, MessageRecord, BusSendResult } from '@exawatt/core';
 import { DELIVERY_LABEL, chatterAge, chatterStamp } from './chatter-format';
 import {
-  ChatterEndpoint,
   endpointLabel,
   isOperator,
   type ChatterParticipants,
 } from './chatter-endpoint';
 import { DeliveryGlyph } from './delivery-glyph';
+import {
+  ChatterRecipients,
+  ChatterSender,
+  SoleDeliveryGlyph,
+} from './chatter-recipients';
 
 function harnessName(endpoint: BusEndpoint): string {
   return isOperator(endpoint)
@@ -65,22 +69,18 @@ export function ChatterThreadMessage({
         className="flex w-full flex-col gap-0.5 px-3 py-1.5 text-left outline-none"
       >
         <span className="flex w-full min-w-0 items-center gap-1 font-ui text-chrome-label">
-          <ChatterEndpoint
-            endpoint={message.from}
-            participants={participants}
-            strong
-          />
+          <ChatterSender message={message} participants={participants} strong />
           <span aria-hidden className="shrink-0" style={{ color: HUD.textDim }}>
             →
           </span>
-          <ChatterEndpoint endpoint={message.to} participants={participants} />
+          <ChatterRecipients message={message} participants={participants} />
           <span
             className="ml-auto shrink-0 pl-1.5 font-mono text-chrome-micro tabular-nums"
             style={{ color: HUD.textDim }}
           >
             {chatterAge(message.at, now)}
           </span>
-          <DeliveryGlyph delivery={message.delivery} size={11} />
+          <SoleDeliveryGlyph message={message} />
         </span>
         {!expanded && (
           <span
@@ -113,9 +113,16 @@ export function ChatterThreadMessage({
               {harnessName(message.from)}
             </dd>
             <dt>to</dt>
-            <dd className="min-w-0 truncate" style={{ color: HUD.textMono }}>
-              {endpointLabel(message.to, participants)} ·{' '}
-              {harnessName(message.to)}
+            <dd
+              className="flex min-w-0 flex-col"
+              style={{ color: HUD.textMono }}
+            >
+              {message.to.map(endpoint => (
+                <span key={endpoint.sessionId} className="min-w-0 truncate">
+                  {endpointLabel(endpoint, participants)} ·{' '}
+                  {harnessName(endpoint)}
+                </span>
+              ))}
             </dd>
             {projectName && (
               <>
@@ -126,13 +133,36 @@ export function ChatterThreadMessage({
             <dt>sent</dt>
             <dd>{chatterStamp(message.at, now)}</dd>
             <dt>result</dt>
-            <dd className="flex min-w-0 flex-col gap-0.5">
-              <DeliveryGlyph delivery={message.delivery} size={11} withLabel />
-              {message.delivery.reason && (
-                <span className="font-ui text-chrome-meta">
-                  {message.delivery.reason}
-                </span>
-              )}
+            <dd className="flex min-w-0 flex-col gap-1">
+              {message.deliveries.map(({ sessionId, delivery }) => {
+                const endpoint = message.to.find(
+                  candidate => candidate.sessionId === sessionId
+                );
+                return (
+                  <span
+                    key={sessionId}
+                    data-chatter-stamp-delivery={sessionId}
+                    className="flex min-w-0 flex-col gap-0.5"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      {message.to.length > 1 && endpoint && (
+                        <span
+                          className="min-w-0 truncate"
+                          style={{ color: HUD.textMono }}
+                        >
+                          {endpointLabel(endpoint, participants)}
+                        </span>
+                      )}
+                      <DeliveryGlyph delivery={delivery} size={11} withLabel />
+                    </span>
+                    {delivery.reason && (
+                      <span className="font-ui text-chrome-meta">
+                        {delivery.reason}
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
             </dd>
           </dl>
         </div>
@@ -142,8 +172,8 @@ export function ChatterThreadMessage({
 }
 
 /** A refusal in one line; an ambiguous name lists who it could mean. */
-function refusalLine(result: BusSendResult): string {
-  const reason = result.delivery.reason ?? 'Not sent';
+function refusalLine(result: Extract<BusSendResult, { ok: false }>): string {
+  const reason = result.reason || 'Not sent';
   const candidates = result.candidates ?? [];
   return candidates.length > 0
     ? `${reason}: ${candidates.map(candidate => candidate.name).join(', ')}`
@@ -200,8 +230,14 @@ export function ChatterComposer({
       result,
       to: endpointLabel(recipient, participants),
     });
-    if (result.record) setText('');
+    if (result.ok) setText('');
   };
+  const sent =
+    state.phase === 'done' && state.result.ok
+      ? (state.result.record.deliveries[0]?.delivery ?? null)
+      : null;
+  const refused =
+    state.phase === 'done' && !state.result.ok ? state.result : null;
 
   return (
     <form
@@ -281,34 +317,20 @@ export function ChatterComposer({
       <div className="flex min-h-6 items-center gap-2">
         <span
           data-chatter-send-result={
-            state.phase === 'done'
-              ? state.result.record
-                ? state.result.record.delivery.state
-                : 'refused'
-              : undefined
+            sent ? sent.state : refused ? 'refused' : undefined
           }
           aria-live="polite"
           className="min-w-0 flex-1 truncate font-ui text-chrome-meta"
-          style={{
-            color:
-              state.phase === 'done' && !state.result.record
-                ? HUD.amber
-                : HUD.textDim,
-          }}
-          title={
-            state.phase === 'done'
-              ? (state.result.record?.delivery.reason ??
-                state.result.delivery.reason)
-              : undefined
-          }
+          style={{ color: refused ? HUD.amber : HUD.textDim }}
+          title={sent?.reason ?? refused?.reason}
         >
           {state.phase === 'sending'
             ? 'Sending…'
-            : state.phase === 'done'
-              ? state.result.record
-                ? `${DELIVERY_LABEL[state.result.record.delivery.state]} · ${state.to}`
-                : refusalLine(state.result)
-              : null}
+            : sent && state.phase === 'done'
+              ? `${DELIVERY_LABEL[sent.state]} · ${state.to}`
+              : refused
+                ? refusalLine(refused)
+                : null}
         </span>
         <button
           type="submit"

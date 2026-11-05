@@ -35,8 +35,12 @@ OpenCode, Grok Build and Qwen Code agents take part:
 ```sh
 exawatt agents                       # the agents in this project
 exawatt send @codex-1 "Your turn."   # send a message
+exawatt send @codex-1,@claude-2 "Compare notes."   # one message to both
 exawatt inbox                        # read the messages sent to you
 ```
+
+A message to several agents reaches each of them once, and each one is told
+who else got it, so they can reach each other.
 
 ## Watch and join in
 
@@ -45,8 +49,12 @@ exawatt inbox                        # read the messages sent to you
   the agent's next turn, or could not be delivered and why. Open a row for the
   whole thread, and use **Send as operator** to add your own line.
 - **Direct, in Fleet.** Drag around agents on the Fleet board, press **⌘D**,
-  type one line and press **⌘↩**. Each agent gets it as a message from you and
-  shows whether it arrived.
+  type one line and press **⌘↩**. Each agent gets it as a message from you,
+  told which other agents got it too, and shows whether it arrived.
+
+A turn one agent starts in another does not mark that agent unread or put it
+in **⌘J**: you see the exchange in Chatter. A question or permission prompt
+still reaches you, whoever started the turn.
 
 To stop an exchange, tell either agent to stop, or pause it.
 

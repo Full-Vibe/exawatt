@@ -1,5 +1,10 @@
 import { EventEmitter } from 'events';
 import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  attentionIsUnread,
+  orderedAttentionTargets,
+  type TurnInitiator,
+} from '@exawatt/core';
 import { AttentionMonitor } from './attention-monitor';
 import type { PtySessionManager } from './session-manager';
 
@@ -618,6 +623,123 @@ describe('AttentionMonitor', () => {
    * a parent that handed work off and went quiet looked exactly like one that
    * finished. The harness reports the difference.
    */
+  describe('turns another Agent started (BUG-332)', () => {
+    const peer: TurnInitiator = {
+      kind: 'agent',
+      sessionId: 'session-codex',
+      name: 'codex-4',
+    };
+    /** What ⌘J would visit, from this monitor's attention alone. */
+    const jumpTargets = (...ids: string[]) =>
+      orderedAttentionTargets(
+        Object.fromEntries(
+          ids.flatMap(id => {
+            const attention = monitor.get(id);
+            return attention ? [[id, attention]] : [];
+          })
+        ),
+        null
+      );
+    let alerts: string[];
+    beforeEach(() => {
+      alerts = [];
+      monitor.on('alert', (id, record) => alerts.push(`${id}:${record.kind}`));
+    });
+
+    it('ends with the result already read: no unread mark, no alert, no ⌘J', () => {
+      add('a');
+      monitor.expectTurn('a', peer);
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.turnInitiator('a')).toEqual(peer);
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')).toMatchObject({ kind: 'turn-end' });
+      expect(attentionIsUnread(monitor.get('a'))).toBe(false);
+      expect(alerts).toEqual([]);
+      expect(jumpTargets('a')).toEqual([]);
+      expect(monitor.count()).toBe(0);
+    });
+
+    it('still raises a question or permission gate it ends in, unread, alerted and in ⌘J', () => {
+      add('a');
+      monitor.expectTurn('a', peer);
+      monitor.noteHarnessTurnStart('a');
+      monitor.noteHarnessBlocked('a', 'blocking', 'permission-1');
+      expect(monitor.get('a')).toMatchObject({ kind: 'blocked', unread: true });
+      expect(alerts).toEqual(['a:blocked']);
+      expect(jumpTargets('a')).toEqual(['a']);
+    });
+
+    it('is the operator’s turn again the moment he gives it work', () => {
+      add('a');
+      monitor.expectTurn('a', peer);
+      // he types before the peer’s message opened anything
+      monitor.noteEngaged('a');
+      monitor.noteHarnessTurnStart('a');
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.turnInitiator('a')).toEqual({ kind: 'operator' });
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        unread: true,
+      });
+      expect(alerts).toEqual(['a:turn-end']);
+      expect(jumpTargets('a')).toEqual(['a']);
+    });
+
+    it('leaves the operator’s own unread result as it was', () => {
+      add('a');
+      monitor.noteEngaged('a');
+      monitor.noteHarnessTurnStart('a');
+      monitor.noteHarnessTurnEnd('a');
+      const owed = monitor.get('a');
+      expect(owed).toMatchObject({ kind: 'turn-end', unread: true });
+      clock += 60_000;
+      monitor.expectTurn('a', peer);
+      monitor.noteHarnessTurnStart('a');
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')).toEqual(owed);
+      expect(alerts).toEqual(['a:turn-end']);
+      expect(jumpTargets('a')).toEqual(['a']);
+    });
+
+    it('opens through the terminal door’s Enter as the peer’s turn, read by inference too', () => {
+      add('a', 'antigravity');
+      monitor.expectTurn('a', peer);
+      monitor.noteTurnOpened('a');
+      expect(monitor.isEngaged('a')).toBe(true);
+      expect(monitor.isWorking('a')).toBe(true);
+      data('a', 'x'.repeat(500));
+      clock += 5000;
+      monitor.sweepNow();
+      expect(monitor.get('a')).toMatchObject({ kind: 'turn-end' });
+      expect(attentionIsUnread(monitor.get('a'))).toBe(false);
+      expect(alerts).toEqual([]);
+    });
+
+    it('opens when output begins, for a source that runs a queued message as its next turn', () => {
+      add('a', 'codex');
+      monitor.expectTurn('a', peer);
+      data('a', 'x'.repeat(500));
+      expect(monitor.turnInitiator('a')).toEqual(peer);
+      clock += 5000;
+      monitor.sweepNow();
+      expect(attentionIsUnread(monitor.get('a'))).toBe(false);
+      expect(jumpTargets('a')).toEqual([]);
+    });
+
+    it('treats a message the operator sent over the bus (Direct) as his own turn', () => {
+      add('a');
+      monitor.expectTurn('a', { kind: 'operator' });
+      monitor.noteTurnOpened('a');
+      monitor.noteHarnessTurnStart('a');
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')).toMatchObject({
+        kind: 'turn-end',
+        unread: true,
+      });
+      expect(alerts).toEqual(['a:turn-end']);
+    });
+  });
+
   describe('delegated work', () => {
     const goQuietAfterWork = (id: string) => {
       data(id, 'x'.repeat(500));

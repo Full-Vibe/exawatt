@@ -33,6 +33,7 @@ export { DEMO_BASE_AGENTS } from './agents';
 export {
   DEMO_CHATTER,
   type DemoChatterEntry,
+  type DemoChatterDelivery,
   type DemoChatterDeliveryState,
 } from './chatter';
 export { DEMO_TRANSCRIPTS } from './transcripts';

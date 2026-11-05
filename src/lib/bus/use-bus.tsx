@@ -114,11 +114,11 @@ export function useBusMessages(projectId: string | null): {
       if (!projectId) return refusedSend('Open a Project first');
       const result = await client.send({
         projectId,
-        to,
+        to: [to],
         text,
         kind: 'operator',
       });
-      const sent = result.record;
+      const sent = result.ok ? result.record : null;
       if (sent && sent.projectId === projectId) {
         setState(current =>
           current.status === 'ok'

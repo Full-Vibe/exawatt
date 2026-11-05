@@ -36,12 +36,15 @@ export interface BusSender extends BusEndpoint {
 
 /** What Exawatt stamps on every message. `projectId` is the Project's
  *  directory (`projectDir`, the same key the renderer groups Agents by);
- *  scope is the Project, so both ends always share it. */
+ *  scope is the Project, so every end always shares it. */
 export interface MessageEnvelope {
   id: string;
   projectId: string;
   from: BusSender;
-  to: BusEndpoint;
+  /** Every recipient, in the order the sender named them: never empty,
+   *  never repeated. One message is one delivery to each of them, and each
+   *  is told who else received it (BUG-329). */
+  to: BusEndpoint[];
   /** Epoch milliseconds when Exawatt accepted the send. */
   at: number;
   text: string;
@@ -84,11 +87,38 @@ export interface DeliveryEvent extends DeliveryResult {
   at: number;
 }
 
-/** One logged message: the envelope plus its delivery history, oldest
- *  first. `delivery` is the newest entry of `history`. */
-export interface MessageRecord extends MessageEnvelope {
+/** One recipient's delivery: its history, oldest first, and `delivery`,
+ *  the newest entry of it. */
+export interface RecipientDelivery {
+  /** The recipient's address, one of the envelope's `to`. */
+  sessionId: string;
   delivery: DeliveryEvent;
   history: DeliveryEvent[];
+}
+
+/** One logged message: the envelope, logged once, plus each recipient's
+ *  delivery in `to`'s order. */
+export interface MessageRecord extends MessageEnvelope {
+  deliveries: RecipientDelivery[];
+}
+
+/**
+ * Who started an Agent's turn. The operator's turns (a keystroke, a launch
+ * task, Direct, "Send as operator") are his to be told about when they end;
+ * a turn another Agent started over the bus is that Agent's business, and
+ * Chatter is where the operator notices it (BUG-332). A turn nobody can
+ * attribute is the operator's: that is how every turn read before the bus.
+ */
+export type TurnInitiator =
+  | { kind: 'operator' }
+  | { kind: 'agent'; sessionId: string; name: string };
+
+/** The turn a message opens in its recipient: an operator message is the
+ *  operator's turn, a peer's note is the peer's. */
+export function busTurnInitiator(from: BusSender): TurnInitiator {
+  return from.kind === 'operator'
+    ? { kind: 'operator' }
+    : { kind: 'agent', sessionId: from.sessionId, name: from.name };
 }
 
 /** A Session the bus can address. Shell tabs are not Agents and never
@@ -119,21 +149,22 @@ export interface MessagingTransport<Target = unknown, Context = unknown> {
  *  UI can never speak as an Agent. */
 export interface BusSendRequest {
   projectId: string;
-  /** The recipient's durable Session id, or `@handle`. */
-  to: string;
+  /** Every recipient: a durable Session id or `@handle` each. */
+  to: string[];
   text: string;
   kind: 'operator';
 }
 
-/** What a send answers. `record` is null when the bus refused before
- *  logging (unknown, ended, ambiguous or cross-Project recipient, empty or
- *  oversized text, Demo); `delivery` then carries the reason, and
- *  `candidates` lists the Sessions an ambiguous name could mean. */
-export interface BusSendResult {
-  delivery: DeliveryResult;
-  record: MessageRecord | null;
-  candidates?: BusDirectoryEntry[];
-}
+/** What a send answers: the logged record, whose `deliveries` say what
+ *  happened at each recipient's door, or a refusal before anything was
+ *  logged (an unknown, ended, ambiguous or cross-Project recipient, empty or
+ *  oversized text, Demo) with the reason, and `candidates` listing the
+ *  Sessions an ambiguous name could mean. An addressing failure refuses the
+ *  whole send: a message never reaches some of the recipients it names
+ *  while telling them about one it could not reach. */
+export type BusSendResult =
+  | { ok: true; record: MessageRecord }
+  | { ok: false; reason: string; candidates?: BusDirectoryEntry[] };
 
 /** A ledger read. A damaged ledger is `ok: false` with the reason, never an
  *  empty list (BUG-125's rule: absence is not an answer). */
