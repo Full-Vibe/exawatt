@@ -356,7 +356,10 @@ try {
     waitUntil: 'networkidle',
   });
   await shortPage.waitForTimeout(700);
-  const triggers = await shortPage.$$('button[aria-expanded]');
+  // Option menus by their own handle: a disclosure toggle also carries
+  // aria-expanded, and opening one folds the other (BUG-328), so clicking
+  // every expandable button would unmount the drawer's menus mid-sweep.
+  const triggers = await shortPage.$$('button[data-option-menu-trigger]');
   const menus = [];
   for (const trigger of triggers) {
     try {

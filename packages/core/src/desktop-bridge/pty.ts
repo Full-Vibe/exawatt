@@ -97,6 +97,10 @@ export interface PtySessionRecord {
   /** Requested at launch; a native in-terminal change may differ. */
   launchModel?: string;
   launchEffort?: string;
+  /** The permission mode main launched this Agent in, its default
+   *  included; absent for a shell and on records from before it was kept.
+   *  A native in-terminal mode change may differ (BUG-331). */
+  launchPermissionMode?: AgentPermissionMode;
   /** Absent on pre-observation records: treat absence as unknown. Never
    * inherit this evidence when replacing a process or resuming a Session. */
   powerControl?: PtyPowerControl;

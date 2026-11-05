@@ -4,6 +4,13 @@
  * A configuration's identity is deliberately narrower than a launch request:
  * permissions, worktrees, branches, prompts, and roadmap links do not belong
  * here. Shell is a peer launch target, but never an Agent configuration.
+ *
+ * Identity is (source, model, Agent Type). Reasoning effort is an orthogonal
+ * axis the configuration CARRIES, not part of what it is (BUG-334): one model
+ * is one configuration whatever effort it last launched at, and a launch at a
+ * new effort updates the effort it carries. Pools written while effort was
+ * identity collapse on parse; ids are always recomputed, never trusted from
+ * disk, so the stored shape (schema 1) is unchanged.
  */
 
 export const LAUNCH_CONFIGURATION_SCHEMA_VERSION = 1 as const;
@@ -143,10 +150,10 @@ export function launchConfigurationFingerprint(
     throw new Error('Invalid Launch Configuration identity');
   }
   // A fixed-position tuple avoids object-key-order and delimiter ambiguity.
-  return `launch-configuration:v1:${JSON.stringify([
+  // Effort is validated above but is an axis, never identity (BUG-334).
+  return `launch-configuration:v2:${JSON.stringify([
     sourceId,
     modelId,
-    effort,
     typeId,
   ])}`;
 }
@@ -261,12 +268,19 @@ function upsertConfiguration(
     return candidate;
   }
   const existing = pool.configurations[existingIndex];
+  const labels = { ...existing.labels, ...candidate.labels };
+  // The effort axis moves with the latest launch or save: a label for an
+  // effort the configuration no longer carries would name the wrong one.
+  if (
+    !candidate.labels.effort &&
+    (candidate.effort === null || candidate.effort !== existing.effort)
+  ) {
+    delete labels.effort;
+  }
   const updated: AgentLaunchConfiguration = {
     ...existing,
-    labels:
-      Object.keys(candidate.labels).length > 0
-        ? { ...existing.labels, ...candidate.labels }
-        : existing.labels,
+    effort: candidate.effort,
+    labels,
     name: name === undefined ? existing.name : candidate.name,
   };
   pool.configurations[existingIndex] = updated;
@@ -516,6 +530,54 @@ function parseUsage(value: unknown): LaunchTargetUsage | null {
   return { launchCount: count, lastLaunchedAt };
 }
 
+interface RowRecency {
+  /** Latest launch of this stored row in any Project; null if never. */
+  launchedAt: number | null;
+  createdAt: number;
+}
+
+/** A launched row beats one never launched; ties keep the earlier row. */
+function moreRecent(candidate: RowRecency, current: RowRecency): boolean {
+  if (candidate.launchedAt !== null || current.launchedAt !== null) {
+    if (candidate.launchedAt === null) return false;
+    if (current.launchedAt === null) return true;
+    return candidate.launchedAt > current.launchedAt;
+  }
+  return candidate.createdAt > current.createdAt;
+}
+
+/** Latest launch per stored (raw) target id, across every Project, read from
+ *  whichever usage shape the parser will read. */
+function rawLaunchRecency(
+  candidate: Record<string, unknown>
+): Map<string, number> {
+  const latest = new Map<string, number>();
+  const visit = (usage: unknown) => {
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return;
+    for (const [rawId, rawUsage] of Object.entries(usage)) {
+      const parsed = parseUsage(rawUsage);
+      if (!parsed) continue;
+      latest.set(
+        rawId,
+        Math.max(latest.get(rawId) ?? -Infinity, parsed.lastLaunchedAt)
+      );
+    }
+  };
+  if (candidate.projects && typeof candidate.projects === 'object') {
+    for (const state of Object.values(candidate.projects)) {
+      if (state && typeof state === 'object') {
+        visit((state as Record<string, unknown>).usage);
+      }
+    }
+  } else if (
+    candidate.projectUsage &&
+    typeof candidate.projectUsage === 'object'
+  ) {
+    for (const usage of Object.values(candidate.projectUsage)) visit(usage);
+  }
+  return latest;
+}
+
 /** Parse V1 and the narrow pre-versioned prototype shape, dropping bad rows. */
 export function parseLaunchConfigurationPool(
   raw: unknown
@@ -535,6 +597,12 @@ export function parseLaunchConfigurationPool(
       ? candidate.items
       : [];
   const aliases = new Map<string, string>();
+  const launchedAt = rawLaunchRecency(candidate);
+  // Rows that differ only by effort (pools written while effort was identity)
+  // collapse into one configuration. The effort it carries is the one last
+  // launched in any Project; a name survives from the most recent named row.
+  const effortRecency = new Map<string, RowRecency>();
+  const nameRecency = new Map<string, RowRecency>();
   rawConfigurations.forEach((rawConfiguration, index) => {
     const parsed = parseConfiguration(rawConfiguration, index);
     if (!parsed) return;
@@ -543,16 +611,40 @@ export function parseLaunchConfigurationPool(
         ? (rawConfiguration as Record<string, unknown>).id
         : undefined;
     if (typeof rawId === 'string') aliases.set(rawId, parsed.id);
+    const recency: RowRecency = {
+      launchedAt:
+        typeof rawId === 'string' ? (launchedAt.get(rawId) ?? null) : null,
+      createdAt: parsed.createdAt,
+    };
     const existing = empty.configurations.find(
       configuration => configuration.fingerprint === parsed.fingerprint
     );
     if (!existing) {
       empty.configurations.push(parsed);
-    } else {
-      existing.labels = { ...existing.labels, ...parsed.labels };
-      if (!existing.name && parsed.name) existing.name = parsed.name;
-      existing.createdAt = Math.min(existing.createdAt, parsed.createdAt);
+      effortRecency.set(parsed.fingerprint, recency);
+      if (parsed.name) nameRecency.set(parsed.fingerprint, recency);
+      return;
     }
+    const keptEffortLabel = existing.labels.effort;
+    existing.labels = { ...existing.labels, ...parsed.labels };
+    if (moreRecent(recency, effortRecency.get(parsed.fingerprint)!)) {
+      effortRecency.set(parsed.fingerprint, recency);
+      existing.effort = parsed.effort;
+      if (parsed.labels.effort) existing.labels.effort = parsed.labels.effort;
+      else delete existing.labels.effort;
+    } else if (keptEffortLabel) {
+      existing.labels.effort = keptEffortLabel;
+    } else {
+      delete existing.labels.effort;
+    }
+    if (parsed.name) {
+      const named = nameRecency.get(parsed.fingerprint);
+      if (!named || moreRecent(recency, named)) {
+        nameRecency.set(parsed.fingerprint, recency);
+        existing.name = parsed.name;
+      }
+    }
+    existing.createdAt = Math.min(existing.createdAt, parsed.createdAt);
   });
 
   const rawProjects =

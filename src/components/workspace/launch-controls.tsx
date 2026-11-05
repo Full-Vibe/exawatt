@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import Link from 'next/link';
 import {
   GitBranch,
@@ -74,6 +81,7 @@ import {
   type LaunchTargetAvailability,
 } from './launch-target-catalog';
 import type { LaunchConfigurationRibbonItem } from './launch-configuration-ribbon';
+import { effortForModel, modelEfforts } from './launch-axes';
 import type { CommandPaletteLaunchConfiguration } from '@/components/shortcuts/command-palette-launch-configurations';
 import {
   DropdownMenu,
@@ -294,7 +302,6 @@ export function AgentComposer({
     source: AgentSourceId;
     status: 'checking' | 'updated' | 'failed';
   } | null>(null);
-  const [allConfigurationsOpen, setAllConfigurationsOpen] = useState(false);
   const [configurationMessage, setConfigurationMessage] = useState<
     string | null
   >(null);
@@ -332,6 +339,10 @@ export function AgentComposer({
   );
   const modelChoicesRef = useRef<Partial<Record<AgentSourceId, string>>>({});
   const effortChoicesRef = useRef<Record<string, string>>({});
+  // The effort the operator picked on the Thinking axis in this draft, the
+  // one a model change carries (BUG-334). A default that was only showing
+  // is not a choice, so it gives way to the new model's own default.
+  const chosenEffortRef = useRef<string | null>(null);
   const composerRootRef = useRef<HTMLDivElement>(null);
   const launcherMeasureRef = useRef<HTMLDivElement>(null);
   const openShellRef = useRef<() => void>(() => {});
@@ -593,6 +604,7 @@ export function AgentComposer({
               initialEffortRef.current,
           }
         : {};
+    chosenEffortRef.current = null;
     setSourcePreferences(null);
     setModelCatalog(null);
     setModel(initialModelRef.current ?? null);
@@ -668,12 +680,6 @@ export function AgentComposer({
     setSourceActionMessage({ ok: false, text: registryError.message });
   }, [registryError, registryRead.status]);
 
-  // the requested source must survive the preferences effect's reset —
-  // declared after it so a strict-mode remount replays them in order
-  useEffect(() => {
-    if (initialSource) chooseSourceRef.current?.(initialSource);
-  }, [initialSource]);
-
   const selectSource = useCallback(
     (nextSource: AgentSourceId) => {
       const nextModel = modelChoicesRef.current[nextSource] ?? null;
@@ -729,8 +735,16 @@ export function AgentComposer({
     },
     [selectSource, sourcePreferences]
   );
-  const chooseSourceRef = useRef<typeof chooseSource | null>(null);
-  chooseSourceRef.current = chooseSource;
+  // The requested source must survive the preferences effect's reset:
+  // declared after it, so a strict-mode remount replays them in order. An
+  // Effect Event reads the newest `chooseSource` without making the request
+  // re-apply every time the saved preferences land (BUG-324).
+  const chooseRequestedSource = useEffectEvent((next: AgentSourceId) =>
+    chooseSource(next)
+  );
+  useEffect(() => {
+    if (initialSource) chooseRequestedSource(initialSource);
+  }, [initialSource]);
 
   const applyAgentSelection = useCallback(
     (
@@ -760,7 +774,9 @@ export function AgentComposer({
     [chooseSource]
   );
 
-  const refreshModels = useCallback(async () => {
+  // Only ever a click handler, so it is not memoized: a manual memo over the
+  // render-derived source is one the compiler cannot keep (BUG-324).
+  const refreshModels = async () => {
     if (modelRefreshInFlightRef.current === effectiveSource) return;
     const requestedSource = effectiveSource;
     const refresh = modelRefreshes.begin();
@@ -786,7 +802,7 @@ export function AgentComposer({
     } finally {
       if (refresh.current) modelRefreshInFlightRef.current = null;
     }
-  }, [effectiveSource, modelRefreshes, projectDir]);
+  };
 
   useEffect(() => {
     if (!preferencesReady || !registryPainted || !selectedSourceAvailable) {
@@ -808,9 +824,6 @@ export function AgentComposer({
         modelChoicesRef.current[effectiveSource] ??
         restoredModel ??
         catalog.effectiveModel;
-      const selectedModelMeta = catalog.models.find(
-        option => option.id === selectedModel
-      );
       const restoredEffort =
         pendingMatchesSource &&
         (!pendingInitialModel.model ||
@@ -821,14 +834,14 @@ export function AgentComposer({
       const effortKey = selectedModel
         ? effortChoiceKey(effectiveSource, selectedModel)
         : null;
-      const selectedEffort = catalog.effortLocked
-        ? catalog.effectiveEffort
-        : ((effortKey ? effortChoicesRef.current[effortKey] : null) ??
-          restoredEffort ??
-          (selectedModel === catalog.effectiveModel
-            ? catalog.effectiveEffort
-            : selectedModelMeta?.defaultEffort) ??
-          null);
+      const selectedEffort = effortForModel({
+        catalog,
+        modelId: selectedModel,
+        current: null,
+        remembered:
+          (effortKey ? effortChoicesRef.current[effortKey] : null) ??
+          restoredEffort,
+      });
       if (selectedModel) {
         modelChoicesRef.current[effectiveSource] = selectedModel;
       }
@@ -1247,9 +1260,16 @@ export function AgentComposer({
       model: presented.model,
       modelVariant: presented.variant,
       vendor: launcherVendor(snapshot.harness, target.modelId),
-      thinking: target.effort
-        ? (target.labels.effort ?? displayEffortLabel(target.effort))
-        : null,
+      // The chip being adjusted shows the effort axis as it stands now; a
+      // chip at rest shows the effort it was last launched with.
+      thinking:
+        target.id === currentConfigurationId && selectedTargetKind === 'agent'
+          ? effort
+            ? effortLabel
+            : null
+          : target.effort
+            ? (target.labels.effort ?? displayEffortLabel(target.effort))
+            : null,
       reason: pinned
         ? 'pinned'
         : projectUsage[target.id]
@@ -1373,9 +1393,6 @@ export function AgentComposer({
   const selectedCatalog = catalogsBySource[effectiveSource] ?? modelCatalog;
   const sourceModelChooser =
     localAgentSourceDeclaration(effectiveSource).chooseModel ?? null;
-  const selectedModelOption = selectedCatalog?.models.find(
-    option => option.id === model
-  );
   const engineAxisOptions: DetailAxisOption[] = readiness.facts.map(fact => {
     const snapshot = fact.snapshot;
     const verdict = fact.verdict;
@@ -1407,8 +1424,9 @@ export function AgentComposer({
         : sourceMeta.label,
     keywords: option.id,
   }));
-  const thinkingAxisOptions: DetailAxisOption[] = (
-    selectedModelOption?.efforts ?? []
+  const thinkingAxisOptions: DetailAxisOption[] = modelEfforts(
+    selectedCatalog,
+    model
   ).map(option => ({
     id: option.id,
     label: option.label,
@@ -1420,7 +1438,10 @@ export function AgentComposer({
     ).map(mode => ({
       id: mode,
       label: AGENT_PERMISSION_MODE_META[mode].label,
-      description: AGENT_PERMISSION_MODE_META[mode].description,
+      description:
+        mode === DEFAULT_AGENT_PERMISSION_MODE
+          ? `Exawatt default. ${AGENT_PERMISSION_MODE_META[mode].description}`
+          : AGENT_PERMISSION_MODE_META[mode].description,
     }));
 
   const launcherAxes: DetailAxis[] = [
@@ -1470,13 +1491,14 @@ export function AgentComposer({
         );
         if (!nextModel) return;
         const key = effortChoiceKey(effectiveSource, optionId);
-        const nextEffort =
-          effortChoicesRef.current[key] ??
-          nextModel.defaultEffort ??
-          (optionId === selectedCatalog?.effectiveModel
-            ? selectedCatalog.effectiveEffort
-            : null) ??
-          null;
+        // Effort is its own axis (BUG-334): a chosen effort carries across
+        // the model change whenever the new model offers it.
+        const nextEffort = effortForModel({
+          catalog: selectedCatalog,
+          modelId: optionId,
+          current: chosenEffortRef.current,
+          remembered: effortChoicesRef.current[key],
+        });
         modelChoicesRef.current[effectiveSource] = optionId;
         if (nextEffort) effortChoicesRef.current[key] = nextEffort;
         setSelectedTargetKind('agent');
@@ -1520,6 +1542,7 @@ export function AgentComposer({
         if (!model) return;
         effortChoicesRef.current[effortChoiceKey(effectiveSource, model)] =
           optionId;
+        chosenEffortRef.current = optionId;
         setEffort(optionId);
         onDraftChangeRef.current?.({ draftEffort: optionId });
         reportDraftIntent({ draftEffort: optionId });
@@ -1725,7 +1748,310 @@ export function AgentComposer({
             reportDraftIntent({ draftTask: nextTask });
           }}
           onSelect={chooseLauncherSetup}
-          onOpenCatalog={() => setAllConfigurationsOpen(open => !open)}
+          catalog={close => (
+            <div
+              data-all-launch-configurations
+              className="rounded-md border p-1.5"
+              style={{ borderColor: HUD.strokeSoft, background: HUD.bg.deep }}
+            >
+              <p className="px-2 py-1 font-mono text-chrome-meta text-hud-text-dim">
+                All configurations
+              </p>
+              <div className="flex max-h-56 flex-col overflow-y-auto">
+                {ribbonTargets.map(entry => {
+                  const persistent =
+                    entry.target.kind === 'agent' &&
+                    configurationPool?.configurations.some(
+                      configuration => configuration.id === entry.target.id
+                    );
+                  const pinned = projectPins.has(entry.target.id);
+                  return (
+                    <div
+                      key={entry.target.id}
+                      className="flex min-w-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-hud-fill"
+                    >
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                        aria-label={entry.item.accessibleLabel}
+                        data-launch-configuration={entry.target.id}
+                        onClick={() => {
+                          if (entry.target.kind === 'shell') {
+                            void openShell();
+                          } else {
+                            const agentTarget = entry.target;
+                            const snapshot = sourceSnapshots.find(
+                              source =>
+                                source.id === agentTarget.sourceId ||
+                                source.harness === agentTarget.sourceId
+                            );
+                            if (snapshot) {
+                              applyAgentSelection(
+                                snapshot.harness,
+                                agentTarget.modelId,
+                                agentTarget.effort
+                              );
+                            }
+                          }
+                          close();
+                        }}
+                      >
+                        <span style={{ color: HUD.text }}>
+                          {entry.item.label}
+                        </span>
+                        {entry.item.detail ? (
+                          <span className="ml-2 text-hud-text-dim">
+                            {entry.item.detail}
+                          </span>
+                        ) : null}
+                        {!entry.available ? (
+                          <span className="ml-2 text-hud-amber">
+                            Unavailable
+                          </span>
+                        ) : null}
+                      </button>
+                      {(entry.target.kind === 'shell' || persistent) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Manage ${entry.item.label}`}
+                              className="h-8 w-8 shrink-0"
+                            >
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                void setLaunchConfigurationPinned(
+                                  projectDir,
+                                  entry.target.id,
+                                  !pinned
+                                )
+                                  .then(setConfigurationPool)
+                                  .catch(() =>
+                                    setConfigurationMessage(
+                                      'That pin could not be saved.'
+                                    )
+                                  );
+                              }}
+                            >
+                              {pinned ? (
+                                <PinOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Pin className="h-3.5 w-3.5" />
+                              )}
+                              {pinned
+                                ? 'Unpin in this Project'
+                                : 'Pin in this Project'}
+                            </DropdownMenuItem>
+                            {entry.target.kind === 'agent' && persistent && (
+                              <>
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    if (entry.target.kind !== 'agent') return;
+                                    const agentTarget = entry.target;
+                                    const nextName = window.prompt(
+                                      'Configuration name',
+                                      agentTarget.name ?? ''
+                                    );
+                                    if (!nextName?.trim()) return;
+                                    void renameLaunchConfiguration(
+                                      agentTarget.id,
+                                      nextName
+                                    )
+                                      .then(pool => {
+                                        setConfigurationPool(pool);
+                                        setFrozenTargets(current =>
+                                          current.map(target =>
+                                            target.kind === 'agent' &&
+                                            target.id === agentTarget.id
+                                              ? (pool.configurations.find(
+                                                  configuration =>
+                                                    configuration.id ===
+                                                    target.id
+                                                ) ?? target)
+                                              : target
+                                          )
+                                        );
+                                      })
+                                      .catch(() =>
+                                        setConfigurationMessage(
+                                          'That name could not be saved.'
+                                        )
+                                      );
+                                  }}
+                                >
+                                  Rename
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onSelect={() => {
+                                    if (
+                                      !window.confirm(
+                                        `Delete ${entry.item.label}? Launch history for it will also be removed.`
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                    void deleteLaunchConfiguration(
+                                      entry.target.id
+                                    )
+                                      .then(pool => {
+                                        setConfigurationPool(pool);
+                                        setFrozenTargets(current =>
+                                          current.filter(
+                                            target =>
+                                              target.id !== entry.target.id
+                                          )
+                                        );
+                                      })
+                                      .catch(() =>
+                                        setConfigurationMessage(
+                                          'That configuration could not be deleted.'
+                                        )
+                                      );
+                                  }}
+                                >
+                                  Delete
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-1 grid gap-2 border-t border-hud-divider px-2 py-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
+                  <label className="flex cursor-pointer items-center gap-2 font-mono text-chrome-label text-hud-text">
+                    <input
+                      type="checkbox"
+                      checked={worktree}
+                      onChange={event => {
+                        const nextWorktree = event.target.checked;
+                        setWorktree(nextWorktree);
+                        onDraftChangeRef.current?.({
+                          draftWorktree: nextWorktree,
+                          draftBranch: branch,
+                        });
+                        reportDraftIntent({
+                          draftWorktree: nextWorktree,
+                          draftBranch: branch,
+                        });
+                      }}
+                      className="accent-cyan-400"
+                    />
+                    <GitBranch aria-hidden="true" className="size-3.5" />
+                    New git worktree
+                  </label>
+                  {roadmapItems.length > 0 ? (
+                    <select
+                      data-launch-roadmap-item
+                      aria-label="Roadmap item this session will work on"
+                      value={roadmapItemId}
+                      onChange={event => {
+                        const nextRoadmapItemId = event.target.value;
+                        setRoadmapItemId(nextRoadmapItemId);
+                        onDraftChangeRef.current?.({
+                          draftRoadmapItemId: nextRoadmapItemId,
+                        });
+                        reportDraftIntent({
+                          draftRoadmapItemId: nextRoadmapItemId,
+                        });
+                      }}
+                      className="h-8 min-w-40 flex-1 rounded-md border border-hud-stroke-faint bg-hud-deep px-2 font-mono text-chrome-label text-hud-text outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
+                    >
+                      <option value="">No roadmap link</option>
+                      {roadmapItems.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!currentConfigurationInput}
+                    className="ml-auto shrink-0 font-mono text-chrome-label"
+                    onClick={() => {
+                      if (!currentConfigurationInput) return;
+                      const nextName = window.prompt('Configuration name', '');
+                      if (!nextName?.trim()) return;
+                      void saveNamedLaunchConfiguration(
+                        currentConfigurationInput,
+                        nextName
+                      )
+                        .then(pool => {
+                          setConfigurationPool(pool);
+                          const saved = pool.configurations.find(
+                            target => target.id === currentConfigurationId
+                          );
+                          if (saved) {
+                            setFrozenTargets(current => {
+                              const exists = current.some(
+                                target => target.id === saved.id
+                              );
+                              return exists
+                                ? current.map(target =>
+                                    target.id === saved.id ? saved : target
+                                  )
+                                : [
+                                    ...current.filter(
+                                      target => target.kind === 'agent'
+                                    ),
+                                    saved,
+                                    SHELL_LAUNCH_TARGET,
+                                  ];
+                            });
+                          }
+                          setConfigurationMessage('Named configuration saved.');
+                        })
+                        .catch(() =>
+                          setConfigurationMessage(
+                            'That configuration name could not be saved.'
+                          )
+                        );
+                    }}
+                  >
+                    <Save aria-hidden="true" className="size-3.5" />
+                    Name setup…
+                  </Button>
+                </div>
+                {worktree ? (
+                  <input
+                    value={branch}
+                    onChange={event => {
+                      branchEdits.invalidate();
+                      const nextBranch = event.target.value;
+                      setBranch(nextBranch);
+                      onDraftChangeRef.current?.({ draftBranch: nextBranch });
+                      reportDraftIntent({ draftBranch: nextBranch });
+                    }}
+                    aria-label="Branch name for the new worktree"
+                    aria-invalid={!branchReady}
+                    aria-describedby={branchReady ? undefined : branchErrorId}
+                    className="h-8 w-full rounded-md border border-hud-stroke-faint bg-hud-deep px-2 font-mono text-chrome-label text-hud-text outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
+                  />
+                ) : null}
+                {worktree && !branchReady ? (
+                  <p
+                    id={branchErrorId}
+                    className="font-mono text-chrome-micro text-hud-red"
+                  >
+                    Enter a branch name before starting.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          )}
           onStart={() => void launchAgent()}
           launching={launching === 'agent'}
           blockedReason={launcherBlockedReason}
@@ -1735,303 +2061,6 @@ export function AgentComposer({
           placeholderCount={Math.max(2, capacity)}
         />
       </div>
-
-      {allConfigurationsOpen && (
-        <div
-          data-all-launch-configurations
-          className="rounded-md border p-1.5"
-          style={{ borderColor: HUD.strokeSoft, background: HUD.bg.deep }}
-        >
-          <p className="px-2 py-1 font-mono text-chrome-meta text-hud-text-dim">
-            All configurations
-          </p>
-          <div className="flex max-h-56 flex-col overflow-y-auto">
-            {ribbonTargets.map(entry => {
-              const persistent =
-                entry.target.kind === 'agent' &&
-                configurationPool?.configurations.some(
-                  configuration => configuration.id === entry.target.id
-                );
-              const pinned = projectPins.has(entry.target.id);
-              return (
-                <div
-                  key={entry.target.id}
-                  className="flex min-w-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-hud-fill"
-                >
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                    aria-label={entry.item.accessibleLabel}
-                    data-launch-configuration={entry.target.id}
-                    onClick={() => {
-                      if (entry.target.kind === 'shell') {
-                        void openShell();
-                      } else {
-                        const agentTarget = entry.target;
-                        const snapshot = sourceSnapshots.find(
-                          source =>
-                            source.id === agentTarget.sourceId ||
-                            source.harness === agentTarget.sourceId
-                        );
-                        if (snapshot) {
-                          applyAgentSelection(
-                            snapshot.harness,
-                            agentTarget.modelId,
-                            agentTarget.effort
-                          );
-                        }
-                      }
-                      setAllConfigurationsOpen(false);
-                    }}
-                  >
-                    <span style={{ color: HUD.text }}>{entry.item.label}</span>
-                    {entry.item.detail ? (
-                      <span className="ml-2 text-hud-text-dim">
-                        {entry.item.detail}
-                      </span>
-                    ) : null}
-                    {!entry.available ? (
-                      <span className="ml-2 text-hud-amber">Unavailable</span>
-                    ) : null}
-                  </button>
-                  {(entry.target.kind === 'shell' || persistent) && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Manage ${entry.item.label}`}
-                          className="h-8 w-8 shrink-0"
-                        >
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            void setLaunchConfigurationPinned(
-                              projectDir,
-                              entry.target.id,
-                              !pinned
-                            )
-                              .then(setConfigurationPool)
-                              .catch(() =>
-                                setConfigurationMessage(
-                                  'That pin could not be saved.'
-                                )
-                              );
-                          }}
-                        >
-                          {pinned ? (
-                            <PinOff className="h-3.5 w-3.5" />
-                          ) : (
-                            <Pin className="h-3.5 w-3.5" />
-                          )}
-                          {pinned
-                            ? 'Unpin in this Project'
-                            : 'Pin in this Project'}
-                        </DropdownMenuItem>
-                        {entry.target.kind === 'agent' && persistent && (
-                          <>
-                            <DropdownMenuItem
-                              onSelect={() => {
-                                if (entry.target.kind !== 'agent') return;
-                                const agentTarget = entry.target;
-                                const nextName = window.prompt(
-                                  'Configuration name',
-                                  agentTarget.name ?? ''
-                                );
-                                if (!nextName?.trim()) return;
-                                void renameLaunchConfiguration(
-                                  agentTarget.id,
-                                  nextName
-                                )
-                                  .then(pool => {
-                                    setConfigurationPool(pool);
-                                    setFrozenTargets(current =>
-                                      current.map(target =>
-                                        target.kind === 'agent' &&
-                                        target.id === agentTarget.id
-                                          ? (pool.configurations.find(
-                                              configuration =>
-                                                configuration.id === target.id
-                                            ) ?? target)
-                                          : target
-                                      )
-                                    );
-                                  })
-                                  .catch(() =>
-                                    setConfigurationMessage(
-                                      'That name could not be saved.'
-                                    )
-                                  );
-                              }}
-                            >
-                              Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onSelect={() => {
-                                if (
-                                  !window.confirm(
-                                    `Delete ${entry.item.label}? Launch history for it will also be removed.`
-                                  )
-                                ) {
-                                  return;
-                                }
-                                void deleteLaunchConfiguration(entry.target.id)
-                                  .then(pool => {
-                                    setConfigurationPool(pool);
-                                    setFrozenTargets(current =>
-                                      current.filter(
-                                        target => target.id !== entry.target.id
-                                      )
-                                    );
-                                  })
-                                  .catch(() =>
-                                    setConfigurationMessage(
-                                      'That configuration could not be deleted.'
-                                    )
-                                  );
-                              }}
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-1 grid gap-2 border-t border-hud-divider px-2 py-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-2 font-mono text-chrome-label text-hud-text">
-                <input
-                  type="checkbox"
-                  checked={worktree}
-                  onChange={event => {
-                    const nextWorktree = event.target.checked;
-                    setWorktree(nextWorktree);
-                    onDraftChangeRef.current?.({
-                      draftWorktree: nextWorktree,
-                      draftBranch: branch,
-                    });
-                    reportDraftIntent({
-                      draftWorktree: nextWorktree,
-                      draftBranch: branch,
-                    });
-                  }}
-                  className="accent-cyan-400"
-                />
-                <GitBranch aria-hidden="true" className="size-3.5" />
-                New git worktree
-              </label>
-              {roadmapItems.length > 0 ? (
-                <select
-                  data-launch-roadmap-item
-                  aria-label="Roadmap item this session will work on"
-                  value={roadmapItemId}
-                  onChange={event => {
-                    const nextRoadmapItemId = event.target.value;
-                    setRoadmapItemId(nextRoadmapItemId);
-                    onDraftChangeRef.current?.({
-                      draftRoadmapItemId: nextRoadmapItemId,
-                    });
-                    reportDraftIntent({
-                      draftRoadmapItemId: nextRoadmapItemId,
-                    });
-                  }}
-                  className="h-8 min-w-40 flex-1 rounded-md border border-hud-stroke-faint bg-hud-deep px-2 font-mono text-chrome-label text-hud-text outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
-                >
-                  <option value="">No roadmap link</option>
-                  {roadmapItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={!currentConfigurationInput}
-                className="ml-auto shrink-0 font-mono text-chrome-label"
-                onClick={() => {
-                  if (!currentConfigurationInput) return;
-                  const nextName = window.prompt('Configuration name', '');
-                  if (!nextName?.trim()) return;
-                  void saveNamedLaunchConfiguration(
-                    currentConfigurationInput,
-                    nextName
-                  )
-                    .then(pool => {
-                      setConfigurationPool(pool);
-                      const saved = pool.configurations.find(
-                        target => target.id === currentConfigurationId
-                      );
-                      if (saved) {
-                        setFrozenTargets(current => {
-                          const exists = current.some(
-                            target => target.id === saved.id
-                          );
-                          return exists
-                            ? current.map(target =>
-                                target.id === saved.id ? saved : target
-                              )
-                            : [
-                                ...current.filter(
-                                  target => target.kind === 'agent'
-                                ),
-                                saved,
-                                SHELL_LAUNCH_TARGET,
-                              ];
-                        });
-                      }
-                      setConfigurationMessage('Named configuration saved.');
-                    })
-                    .catch(() =>
-                      setConfigurationMessage(
-                        'That configuration name could not be saved.'
-                      )
-                    );
-                }}
-              >
-                <Save aria-hidden="true" className="size-3.5" />
-                Name setup…
-              </Button>
-            </div>
-            {worktree ? (
-              <input
-                value={branch}
-                onChange={event => {
-                  branchEdits.invalidate();
-                  const nextBranch = event.target.value;
-                  setBranch(nextBranch);
-                  onDraftChangeRef.current?.({ draftBranch: nextBranch });
-                  reportDraftIntent({ draftBranch: nextBranch });
-                }}
-                aria-label="Branch name for the new worktree"
-                aria-invalid={!branchReady}
-                aria-describedby={branchReady ? undefined : branchErrorId}
-                className="h-8 w-full rounded-md border border-hud-stroke-faint bg-hud-deep px-2 font-mono text-chrome-label text-hud-text outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
-              />
-            ) : null}
-            {worktree && !branchReady ? (
-              <p
-                id={branchErrorId}
-                className="font-mono text-chrome-micro text-hud-red"
-              >
-                Enter a branch name before starting.
-              </p>
-            ) : null}
-          </div>
-        </div>
-      )}
 
       {/* D49 deleted the second control row this file used to render below the
           launcher: Engine, Model, Thinking and Permission live on the setup

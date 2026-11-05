@@ -1,6 +1,7 @@
 import {
   AGENT_HARNESSES,
   agentSourceLaunchVerdict,
+  DEFAULT_AGENT_PERMISSION_MODE,
   isAgentPermissionMode,
 } from '@exawatt/core';
 import {
@@ -22,8 +23,8 @@ import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 export type AgentSourceId = AgentHarness;
 
-export const DEFAULT_AGENT_PERMISSION_MODE: AgentPermissionMode =
-  'unrestricted';
+/** Owned by core, so the renderer, main and analytics read one value. */
+export { DEFAULT_AGENT_PERMISSION_MODE };
 
 export const AGENT_PERMISSION_MODE_META: Record<
   AgentPermissionMode,

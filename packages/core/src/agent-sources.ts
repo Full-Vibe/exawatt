@@ -29,6 +29,17 @@ export const AGENT_PERMISSION_MODES = [
 ] as const;
 export type AgentPermissionMode = (typeof AGENT_PERMISSION_MODES)[number];
 
+/**
+ * Exawatt's default launch mode, the one value every layer reads: the New
+ * Agent window's starting choice, main's launch command when a request
+ * names none, the event-channel subscription, `agent_launched`, and the mode
+ * a Session records it was started in (BUG-331). An Agent started this way
+ * says so in its own pane, so a harness's status line for the mode ("bypass
+ * permissions on") reads as Exawatt's choice, not as a stale harness.
+ */
+export const DEFAULT_AGENT_PERMISSION_MODE: AgentPermissionMode =
+  'unrestricted';
+
 const AGENT_PERMISSION_MODE_SET: ReadonlySet<string> = new Set(
   AGENT_PERMISSION_MODES
 );

@@ -405,6 +405,7 @@ export function restoreLayout(
           startedAt: s.startedAt,
           launchModel: s.launchModel,
           launchEffort: s.launchEffort,
+          launchPermissionMode: s.launchPermissionMode,
           sessionId: s.id,
           harnessSessionId:
             s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,

@@ -8,7 +8,8 @@
  * `session-clone.ts`: it ordered targets differently from the launcher, it
  * labelled them with the model name ALONE, and two setups that differ only by
  * reasoning effort therefore rendered as two rows reading `GPT-5.6 Codex`
- * with nothing to tell them apart (operator, 2026-08-17).
+ * with nothing to tell them apart (operator, 2026-08-17). Effort has since
+ * left a setup's identity (BUG-334), so that pair is one row now.
  *
  * Composition, availability and presentation live here so a change to what a
  * setup is CALLED lands on every surface at once. Nothing in this module
@@ -73,7 +74,8 @@ export function resolveLaunchSource(
  * Ranked pool targets first, then one source-owned default per launchable
  * engine that the pool has not already covered. Identity is the Launch
  * Configuration id, so a default and a saved preset for the same
- * source/model/effort/type collapse into one row.
+ * source/model/type collapse into one row; effort is an axis the row
+ * carries, never a second row (BUG-334).
  */
 export function composeLaunchTargets({
   ranked = [],

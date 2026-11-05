@@ -3,17 +3,41 @@ import { expect, it, vi } from 'vitest';
 import { SessionModelControl } from './session-model-control';
 import { demoModelCatalog } from '@/lib/demo-workspace/model-choice-source';
 
-it('stages an exact model/effort choice in one menu and applies only on explicit action', async () => {
+it('stages a model and its effort as two axes and applies only on explicit action', async () => {
   const apply = vi.fn(async () => {});
   const catalog = await demoModelCatalog();
   const model = catalog.models[0];
-  const effort = model.efforts[0];
+  const effort = model.efforts[2];
   render(<SessionModelControl loadCatalog={demoModelCatalog} apply={apply} />);
   fireEvent.click(screen.getByRole('button', { name: 'Session model: Model' }));
-  const option = await screen.findByRole('option', {
-    name: `${model.label} · ${effort.label}`,
-  });
-  fireEvent.click(option);
+  // BUG-334: one row per model, never one per model and effort.
+  expect(
+    (await screen.findAllByRole('option')).map(option =>
+      option.getAttribute('data-option-id')
+    )
+  ).toEqual(catalog.models.map(candidate => candidate.id));
+  expect(document.querySelector('[data-session-effort]')).toBeNull();
+  fireEvent.click(screen.getByRole('option', { name: model.label }));
+  // The effort axis offers exactly what the staged model declares and starts
+  // on its default.
+  const efforts = () =>
+    Array.from(document.querySelectorAll('[data-session-effort]'), element =>
+      element.getAttribute('data-session-effort')
+    );
+  expect(efforts()).toEqual(model.efforts.map(option => option.id));
+  expect(
+    document.querySelector('[data-session-effort][aria-pressed="true"]')
+  ).toHaveAttribute('data-session-effort', model.defaultEffort);
+  fireEvent.click(
+    document.querySelector(`[data-session-effort="${effort.id}"]`)!
+  );
+  // A second model keeps the chosen effort: the axes are independent.
+  fireEvent.click(
+    screen.getByRole('option', { name: catalog.models[1].label })
+  );
+  expect(
+    document.querySelector('[data-session-effort][aria-pressed="true"]')
+  ).toHaveAttribute('data-session-effort', effort.id);
   expect(screen.getAllByRole('listbox')).toHaveLength(1);
   expect(apply).not.toHaveBeenCalled();
   // The trigger must not claim that an uncommitted selection is in effect.
@@ -22,7 +46,10 @@ it('stages an exact model/effort choice in one menu and applies only on explicit
   ).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Apply and resume' }));
   await waitFor(() =>
-    expect(apply).toHaveBeenCalledWith({ model: model.id, effort: effort.id })
+    expect(apply).toHaveBeenCalledWith({
+      model: catalog.models[1].id,
+      effort: effort.id,
+    })
   );
 });
 

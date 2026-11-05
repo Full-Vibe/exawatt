@@ -84,7 +84,6 @@ function renderLauncher(onSelect = vi.fn()) {
       task=""
       onTaskChange={vi.fn()}
       onSelect={onSelect}
-      onOpenCatalog={vi.fn()}
       onStart={vi.fn()}
     />
   );
@@ -148,7 +147,6 @@ describe('AgentLauncher keyboard navigation', () => {
         task=""
         onTaskChange={vi.fn()}
         onSelect={vi.fn()}
-        onOpenCatalog={vi.fn()}
         onStart={vi.fn()}
       />
     );
@@ -205,5 +203,52 @@ describe('AgentLauncher keyboard navigation', () => {
       'aria-hidden',
       'true'
     );
+  });
+
+  it('opens one disclosure at a time: the drawer and the catalog close each other', async () => {
+    render(
+      <AgentLauncher
+        setups={setups}
+        selectedId="claude-opus"
+        state="ready"
+        axes={axes}
+        task=""
+        onTaskChange={vi.fn()}
+        onSelect={vi.fn()}
+        catalog={close => (
+          <div data-test-catalog>
+            <button type="button" onClick={close}>
+              pick
+            </button>
+          </div>
+        )}
+        onStart={vi.fn()}
+      />
+    );
+    const handle = document.querySelector('[data-setup-drawer-handle]')!;
+    const catalogTrigger = document.querySelector(
+      '[data-setup-catalog-trigger]'
+    )!;
+    const drawerOpen = () =>
+      document
+        .querySelector('[data-setup-detail]')
+        ?.getAttribute('aria-hidden') === 'false';
+    const catalogOpen = () =>
+      document.querySelector('[data-test-catalog]') !== null;
+
+    fireEvent.click(handle);
+    expect([drawerOpen(), catalogOpen()]).toEqual([true, false]);
+
+    // BUG-328: opening the catalog with the drawer open folds the drawer.
+    fireEvent.click(catalogTrigger);
+    expect([drawerOpen(), catalogOpen()]).toEqual([false, true]);
+    expect(catalogTrigger).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(handle);
+    expect([drawerOpen(), catalogOpen()]).toEqual([true, false]);
+
+    fireEvent.click(catalogTrigger);
+    fireEvent.click(screen.getByRole('button', { name: 'pick' }));
+    expect([drawerOpen(), catalogOpen()]).toEqual([false, false]);
   });
 });

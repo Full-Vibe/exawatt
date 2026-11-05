@@ -134,6 +134,8 @@ describe('Agent composer · sources and policy', () => {
       expect(modelTrigger).toHaveAccessibleName('Model: GPT-5.6-Terra')
     );
     expect(modelTrigger).toHaveTextContent('GPT-5.6-Terra');
+    // Extra high was Sol's default, not a choice, so Terra's own default
+    // replaces it (BUG-334 carries only a chosen effort).
     await settled(() =>
       expect(effortTrigger).toHaveAccessibleName('Thinking: Medium')
     );
@@ -158,6 +160,45 @@ describe('Agent composer · sources and policy', () => {
         })
       )
     );
+  });
+
+  it('carries an effort the operator chose across a model change (BUG-334)', async () => {
+    const onLaunch = vi.fn(async () => true);
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialSource="codex"
+        onLaunch={onLaunch}
+      />
+    );
+    const drawer = screen.getByRole('button', {
+      name: 'Adjust engine, model, thinking, permission',
+    });
+    await settled(() => expect(drawer).not.toBeDisabled());
+    fireEvent.click(drawer);
+    const modelTrigger = await settled(() =>
+      screen.getByRole('button', { name: 'Model: GPT-5.6-Sol' })
+    );
+    const effortTrigger = screen.getByRole('button', {
+      name: 'Thinking: Extra high',
+    });
+    fireEvent.click(effortTrigger);
+    fireEvent.click(screen.getByRole('option', { name: /Low.*Fast/i }));
+    await settled(() =>
+      expect(effortTrigger).toHaveAccessibleName('Thinking: Low')
+    );
+
+    fireEvent.click(modelTrigger);
+    fireEvent.click(
+      screen.getByRole('option', {
+        name: /GPT-5\.6-Terra.*Balanced coding model/i,
+      })
+    );
+    await settled(() =>
+      expect(modelTrigger).toHaveAccessibleName('Model: GPT-5.6-Terra')
+    );
+    expect(effortTrigger).toHaveAccessibleName('Thinking: Low');
   });
 
   it('checks for new models on request without moving the current setup or focus', async () => {

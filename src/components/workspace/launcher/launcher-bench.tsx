@@ -91,7 +91,6 @@ function ScenarioCase({ scenario }: { scenario: BenchScenario }) {
           task={task}
           onTaskChange={setTask}
           onSelect={setSelectedId}
-          onOpenCatalog={() => {}}
           onStart={() => {}}
           launching={scenario.launching}
           blockedReason={scenario.blockedReason ?? null}
@@ -119,7 +118,7 @@ function ScenarioCase({ scenario }: { scenario: BenchScenario }) {
                 )
               : undefined
           }
-          defaultDetailOpen={scenario.detailOpen}
+          defaultDisclosure={scenario.detailOpen ? 'setup' : null}
           placeholderCount={3}
         />
       </div>

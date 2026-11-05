@@ -13,18 +13,14 @@
  *   - no co-visible "All configurations" and "Customize" (finding 5)
  *   - no `Shapes` link, no "Optional name" field (findings 8, 9)
  *
- * `drawer` picks how the detail view announces itself. Both mechanics host the
- * identical fields; only the closed face differs, which is the whole point of
- * keeping WHAT and WHERE apart in `setup-detail.tsx`.
+ * One disclosure at a time (BUG-328). The setup drawer and the "All engines
+ * and models" catalog are two answers to one question, "what will this
+ * start?", and opening both stacked a second list under the first. The
+ * launcher owns ONE disclosure state, so opening either closes the other by
+ * construction; the catalog's content is the caller's, its open state is not.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -52,7 +48,11 @@ export interface AgentLauncherProps {
   task: string;
   onTaskChange: (task: string) => void;
   onSelect: (id: string) => void;
-  onOpenCatalog: () => void;
+  /**
+   * The "All engines and models" catalog, rendered under the row while it is
+   * the open disclosure. `close` folds it (a pick that launches or selects).
+   */
+  catalog?: (close: () => void) => React.ReactNode;
   onStart: () => void;
   launching?: boolean;
   /** Blocks Start with a stated reason; never silently disabled. */
@@ -74,10 +74,13 @@ export interface AgentLauncherProps {
    *  source's disclosure line. */
   detailSource?: React.ReactNode;
   placeholderCount?: number;
-  /** Bench escape hatch: open the detail panel for a screenshot. */
-  defaultDetailOpen?: boolean;
+  /** Bench escape hatch: open a disclosure for a screenshot. */
+  defaultDisclosure?: LauncherDisclosure;
   className?: string;
 }
+
+/** What is unfolded under the row. Never two things. */
+export type LauncherDisclosure = 'setup' | 'catalog' | null;
 
 export function AgentLauncher({
   setups,
@@ -89,7 +92,7 @@ export function AgentLauncher({
   task,
   onTaskChange,
   onSelect,
-  onOpenCatalog,
+  catalog,
   onStart,
   launching = false,
   blockedReason,
@@ -97,23 +100,34 @@ export function AgentLauncher({
   noticeActions = [],
   detailSource,
   placeholderCount,
-  defaultDetailOpen = false,
+  defaultDisclosure = null,
   className,
 }: AgentLauncherProps) {
-  const [open, setOpen] = useState(defaultDetailOpen);
+  const [disclosure, setDisclosure] =
+    useState<LauncherDisclosure>(defaultDisclosure);
+  // A row that stops being ready has no setup to adjust: the drawer folds
+  // and stays folded (a catalog stays open). Adjusted while rendering, from
+  // the state the previous render saw, so no effect paints it open first.
+  const [seenState, setSeenState] = useState(state);
+  if (seenState !== state) {
+    setSeenState(state);
+    if (state !== 'ready' && disclosure === 'setup') setDisclosure(null);
+  }
+  const shownDisclosure =
+    disclosure === 'setup' && state !== 'ready' ? null : disclosure;
   const [detailFocusRequest, setDetailFocusRequest] = useState(0);
   const [notchPosition, setNotchPosition] = useState<number | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  // The open details are the launcher's rung of the back-out ladder: Escape
-  // folds them and returns to the task. Folded, Escape falls through.
+  // Whatever is unfolded is the launcher's rung of the back-out ladder:
+  // Escape folds it and returns to the task. Folded, Escape falls through.
   useBackOut({
     rung: 'panel',
     element: formRef,
-    enabled: open,
+    enabled: disclosure !== null,
     back: () => {
-      setOpen(false);
+      setDisclosure(null);
       requestAnimationFrame(() => taskRef.current?.focus());
       return true;
     },
@@ -146,19 +160,15 @@ export function AgentLauncher({
     return () => observer.disconnect();
   }, [selectedId, setups]);
 
-  useEffect(() => {
-    if (state !== 'ready') setOpen(false);
-  }, [state]);
-
-  const toggleDetail = useCallback(() => setOpen(current => !current), []);
-  const enterDetail = useCallback(
-    (id: string) => {
-      if (id !== selectedId) onSelect(id);
-      setOpen(true);
-      setDetailFocusRequest(current => current + 1);
-    },
-    [onSelect, selectedId]
-  );
+  const toggle = (next: Exclude<LauncherDisclosure, null>) =>
+    setDisclosure(current => (current === next ? null : next));
+  const toggleDetail = () => toggle('setup');
+  const closeDisclosure = () => setDisclosure(null);
+  const enterDetail = (id: string) => {
+    if (id !== selectedId) onSelect(id);
+    setDisclosure('setup');
+    setDetailFocusRequest(current => current + 1);
+  };
   const startBlocked = Boolean(blockedReason) || launching || selected === null;
 
   return (
@@ -198,13 +208,14 @@ export function AgentLauncher({
           <SetupRow
             setups={setups}
             selectedId={selectedId}
-            expandedId={open ? selectedId : null}
+            expandedId={shownDisclosure === 'setup' ? selectedId : null}
             state={state}
             placeholderCount={placeholderCount}
             onSelect={onSelect}
             onToggleDetail={toggleDetail}
             onEnterDetail={enterDetail}
-            onOpenCatalog={onOpenCatalog}
+            catalogOpen={shownDisclosure === 'catalog'}
+            onOpenCatalog={() => toggle('catalog')}
             className="flex-1"
           />
           <Button
@@ -230,7 +241,7 @@ export function AgentLauncher({
         </div>
 
         <SetupDrawerHandle
-          open={open}
+          open={shownDisclosure === 'setup'}
           axes={axes}
           tickPosition={notchPosition}
           onToggle={toggleDetail}
@@ -238,15 +249,19 @@ export function AgentLauncher({
         />
 
         <SetupDetailPanel
-          open={open && ready}
+          open={shownDisclosure === 'setup' && ready}
           focusRequest={detailFocusRequest}
           axes={axes}
           footnote={detailFootnote}
           action={detailAction}
           source={detailSource}
-          onDone={toggleDetail}
+          onDone={closeDisclosure}
         />
       </div>
+
+      {shownDisclosure === 'catalog' && catalog
+        ? catalog(closeDisclosure)
+        : null}
 
       {/* The status line is RESERVED, never revealed: a reason that appears
           under the row would move the hint line and the recents below it
@@ -306,7 +321,7 @@ export function AgentLauncher({
           ? 'Checking which engines are available.'
           : selected
             ? `Selected ${setupAccessibleLabel(selected)}.${
-                open ? ' Adjusting this setup.' : ''
+                shownDisclosure === 'setup' ? ' Adjusting this setup.' : ''
               }`
             : ''}
       </span>

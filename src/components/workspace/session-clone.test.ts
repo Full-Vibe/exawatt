@@ -120,7 +120,7 @@ describe('sessionClonePrompt', () => {
   // real targets on one model, so they share a label. The operator saw them as
   // two identical rows; what separates them is the effort on `detail` and the
   // Launch Configuration id, never the words.
-  it('separates two setups that differ only by reasoning effort', () => {
+  it('offers one target per model, carrying the effort it was last launched with', () => {
     const registry = fallbackAgentSourceRegistry('launch');
     registry.sources = registry.sources.map(source => ({
       ...source,
@@ -155,13 +155,11 @@ describe('sessionClonePrompt', () => {
       },
     });
 
-    expect(targets.map(target => target.label)).toEqual([
-      'GPT-5.6 Codex',
-      'GPT-5.6 Codex',
-    ]);
-    expect(targets.map(target => target.detail)).toEqual(['High', 'Medium']);
-    expect(new Set(targets.map(target => target.id)).size).toBe(2);
-    expect(new Set(targets.map(target => target.accessibleLabel)).size).toBe(2);
+    // Effort is an axis, not identity (BUG-334): the source default at
+    // Medium and the saved setup at High are one model, so one target, and
+    // it clones at the effort the operator last chose for it.
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({ id: saved.id, detail: 'High' });
   });
 
   it('offers the composer catalog in the composer order, availability aside', () => {

@@ -21,12 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  SettingsGroup,
-  SettingRow,
-  SettingSwitch,
-  SettingsSegmentedControl,
-} from './settings-controls';
+import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
+import { ChoiceGroup } from '@/components/ui/choice-group';
 
 const AIR_THEME_ID = 'exawatt-air-light';
 const CLASSIC_THEME_ID = 'exawatt-classic-dark';
@@ -251,13 +247,15 @@ export function AppearanceSettings() {
           )
         }
       >
-        <SettingsSegmentedControl
+        <ChoiceGroup
           label="Theme mode"
           value={preferences.selection.mode}
           options={[
             { value: 'auto', label: 'Auto' },
             { value: 'manual', label: 'Manual' },
           ]}
+          optionAttribute="data-settings-option"
+          className="font-ui text-chrome-label"
           disabled={disabled}
           onChange={mode =>
             commit(current =>

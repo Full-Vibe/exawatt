@@ -53,9 +53,12 @@ try {
       'idle boundary'
     );
     await page.locator('[data-session-model]').click();
+    // Model and effort are two axes (BUG-334): the model row, then the
+    // effort the model declares.
     await page
-      .getByRole('option', { name: 'Fixture Claude Sol · High', exact: true })
+      .locator(`[role="option"][data-option-id="${FIXTURE_CLAUDE_MODEL_ID}"]`)
       .click();
+    await page.locator('[data-session-effort="high"]').click();
     await page.screenshot({ path: '/tmp/exawatt-session-model.png' });
     await page.locator('[data-session-model-apply]').click();
     const replacement = await until(
@@ -119,6 +122,15 @@ try {
           ?.getAttribute('aria-label')
           ?.includes(model),
       FIXTURE_CLAUDE_MODEL_ID
+    );
+    // BUG-331: the pane states the mode main recorded the Agent started in.
+    assert.ok(replacement.launchPermissionMode);
+    await page.waitForFunction(
+      mode =>
+        document
+          .querySelector('[data-session-permission-mode]')
+          ?.getAttribute('data-session-permission-mode') === mode,
+      replacement.launchPermissionMode
     );
     console.log(
       'PASS model change: busy/invalid choices preserve process; exact identity, launch flags, permission policy and single replacement proven'

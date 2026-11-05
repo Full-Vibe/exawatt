@@ -7,10 +7,7 @@ import * as pty from 'node-pty';
 import { expandTilde, resolveProject } from './project-resolve';
 import { ScrollbackStore } from './scrollback-store';
 import { randomUUID } from 'crypto';
-import {
-  buildHarnessCommand,
-  DEFAULT_LAUNCH_PERMISSION_MODE,
-} from './harness-command';
+import { buildHarnessCommand } from './harness-command';
 import type { HarnessLaunchWiring } from './harness-command';
 import type { LaunchMcpServer } from './launch-mcp';
 import { harnessEventChannel } from '../harness-events/channel';
@@ -23,6 +20,7 @@ import {
   type AgentNameRequest,
   type AgentRenameResult,
   type SafetyControlSettings,
+  DEFAULT_AGENT_PERMISSION_MODE,
 } from '@exawatt/core';
 import { AgentNameStore } from './agent-name-store';
 import {
@@ -511,6 +509,10 @@ export class PtySessionManager extends EventEmitter {
       .catch(() => path.resolve(cwd));
     const cols = options.cols ?? 80;
     const rows = options.rows ?? 24;
+    // Resolved once: the launch command, the event channel, the environment
+    // and the Session's own record all carry the same mode (BUG-331).
+    const permissionMode =
+      options.permissionMode ?? DEFAULT_AGENT_PERMISSION_MODE;
     const shell = await defaultShell();
     const project = await resolveProject(cwd);
     let codexIdentityBaseline: Set<string> | null = null;
@@ -598,8 +600,7 @@ export class PtySessionManager extends EventEmitter {
       id,
       durableSessionId,
       options.harness,
-      // The same default the launch command applies.
-      options.permissionMode ?? 'unrestricted'
+      permissionMode
     );
     const launchEnvironment = {
       ...process.env,
@@ -652,8 +653,7 @@ export class PtySessionManager extends EventEmitter {
         id,
         options.harness,
         harnessSessionId,
-        // The same default the launch command applies.
-        options.permissionMode ?? DEFAULT_LAUNCH_PERMISSION_MODE
+        permissionMode
       )),
       ...(mcp ? { mcp } : {}),
       ...(opencodeLaunchAgentName
@@ -676,7 +676,7 @@ export class PtySessionManager extends EventEmitter {
               !!options.resumeSessionId,
               testHarnessExecutable,
               options.initialPrompt,
-              options.permissionMode,
+              permissionMode,
               options.model,
               options.effort,
               wiring
@@ -697,7 +697,7 @@ export class PtySessionManager extends EventEmitter {
                 !!options.resumeSessionId,
                 launchExecutable,
                 options.initialPrompt,
-                options.permissionMode,
+                permissionMode,
                 options.model,
                 options.effort,
                 { ...wiring, powerControl: powerCandidate }
@@ -744,6 +744,9 @@ export class PtySessionManager extends EventEmitter {
       harnessSessionId,
       launchModel: options.model,
       launchEffort: options.effort,
+      ...(options.harness === 'shell'
+        ? {}
+        : { launchPermissionMode: permissionMode }),
       powerControl: powerLaunch?.initialPowerControl ?? powerCandidate,
     };
 

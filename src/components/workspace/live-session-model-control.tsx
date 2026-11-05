@@ -2,6 +2,7 @@
 import { sessionTabSource } from './harnesses';
 import { useCallback } from 'react';
 import { SessionModelControl } from './session-model-control';
+import { SessionPermissionMode } from './session-permission-mode';
 import type { SessionTab } from './use-workspace-state';
 import type { SessionModelChange } from '@exawatt/core/desktop-bridge';
 
@@ -27,24 +28,29 @@ export function LiveSessionModelControl({
     [change, tab.id]
   );
   const supported = harness === 'claude' || harness === 'codex';
+  // The two launch axes a running Agent shows: the model (changeable) and
+  // the permission mode it was started in (stated).
   return (
-    <SessionModelControl
-      loadCatalog={loadCatalog}
-      apply={apply}
-      initialModel={tab.launchModel}
-      initialEffort={tab.launchEffort}
-      unavailableReason={
-        source.unavailableReason ??
-        (!supported
-          ? 'Change the model inside this Agent Source.'
-          : !tab.sessionId
-            ? 'Resume this Session to change its model.'
-            : !tab.harnessSessionId
-              ? 'Waiting for a saved conversation.'
-              : busy
-                ? 'Available after the Agent and its delegated work finish.'
-                : undefined)
-      }
-    />
+    <>
+      <SessionPermissionMode mode={tab.launchPermissionMode} />
+      <SessionModelControl
+        loadCatalog={loadCatalog}
+        apply={apply}
+        initialModel={tab.launchModel}
+        initialEffort={tab.launchEffort}
+        unavailableReason={
+          source.unavailableReason ??
+          (!supported
+            ? 'Change the model inside this Agent Source.'
+            : !tab.sessionId
+              ? 'Resume this Session to change its model.'
+              : !tab.harnessSessionId
+                ? 'Waiting for a saved conversation.'
+                : busy
+                  ? 'Available after the Agent and its delegated work finish.'
+                  : undefined)
+        }
+      />
+    </>
   );
 }

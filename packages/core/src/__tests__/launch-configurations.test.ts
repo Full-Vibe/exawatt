@@ -36,11 +36,17 @@ describe('Launch Configuration identity', () => {
         labels: { source: 'Renamed source', model: 'Opus' },
       })
     ).toBe(first);
-    expect(launchConfigurationId({ ...opus, effort: 'medium' })).not.toBe(
-      first
-    );
     expect(launchConfigurationId({ ...opus, typeId: 'reviewer' })).not.toBe(
       first
+    );
+  });
+
+  it('treats effort as an axis the configuration carries, not identity (BUG-334)', () => {
+    const first = launchConfigurationId(opus);
+    expect(launchConfigurationId({ ...opus, effort: 'medium' })).toBe(first);
+    expect(launchConfigurationId({ ...opus, effort: null })).toBe(first);
+    expect(() => launchConfigurationId({ ...opus, effort: '  ' })).toThrow(
+      'Invalid Launch Configuration identity'
     );
   });
 
@@ -70,6 +76,41 @@ describe('Launch Configuration pool', () => {
       launchCount: 2,
       lastLaunchedAt: 200,
     });
+  });
+
+  it('keeps one configuration per model and carries the latest launched effort', () => {
+    let pool = recordLaunchConfigurationSuccess(
+      emptyLaunchConfigurationPool(),
+      '/alpha',
+      opus,
+      100
+    );
+    pool = recordLaunchConfigurationSuccess(
+      pool,
+      '/alpha',
+      { ...opus, effort: 'medium', labels: { effort: 'Medium' } },
+      200
+    );
+    expect(pool.configurations).toHaveLength(1);
+    expect(pool.configurations[0]).toMatchObject({
+      id: launchConfigurationId(opus),
+      effort: 'medium',
+      labels: { source: 'Claude Code', model: 'Opus 5', effort: 'Medium' },
+    });
+    expect(pool.projects['/alpha'].usage[launchConfigurationId(opus)]).toEqual({
+      launchCount: 2,
+      lastLaunchedAt: 200,
+    });
+
+    // The source-owned default: no effort, and no stale label naming one.
+    pool = recordLaunchConfigurationSuccess(
+      pool,
+      '/beta',
+      { ...opus, effort: null, labels: {} },
+      300
+    );
+    expect(pool.configurations[0].effort).toBeNull();
+    expect(pool.configurations[0].labels.effort).toBeUndefined();
   });
 
   it('saves and renames a friendly preset without changing usage', () => {
@@ -178,6 +219,127 @@ describe('Launch Configuration persistence parsing and migration', () => {
       },
       pins: [launchConfigurationId(opus)],
     });
+  });
+
+  it('collapses a pool written while effort was identity into one configuration per model', () => {
+    // A v1 pool as the operator's machine holds it: one model launched at
+    // four efforts, across two Projects, with a pin and a name on rows that
+    // are not the latest launch.
+    const v1Id = (effort: string | null) =>
+      `agent:${encodeURIComponent(
+        `launch-configuration:v1:${JSON.stringify([
+          'claude-local',
+          'opus[1m]',
+          effort,
+          null,
+        ])}`
+      )}`;
+    const row = (effort: string | null, createdAt: number, extra = {}) => ({
+      kind: 'agent',
+      id: v1Id(effort),
+      fingerprint: 'stale',
+      sourceId: 'claude-local',
+      modelId: 'opus[1m]',
+      effort,
+      typeId: null,
+      labels: {
+        source: 'Claude Code',
+        model: 'Opus (1M context)',
+        ...(effort ? { effort: effort.toUpperCase() } : {}),
+      },
+      name: null,
+      createdAt,
+      ...extra,
+    });
+    const stored = {
+      schemaVersion: 1,
+      configurations: [
+        row('high', 10, { name: 'Deep work' }),
+        row('auto', 20),
+        row('xhigh', 30),
+        row(null, 40),
+        {
+          kind: 'agent',
+          id: 'codex-row',
+          sourceId: 'codex-local',
+          modelId: 'gpt-6-astra',
+          effort: 'medium',
+          typeId: null,
+          labels: {},
+          name: null,
+          createdAt: 5,
+        },
+      ],
+      projects: {
+        '/alpha': {
+          usage: {
+            [v1Id('high')]: { launchCount: 3, lastLaunchedAt: 500 },
+            [v1Id('auto')]: { launchCount: 1, lastLaunchedAt: 900 },
+            'codex-row': { launchCount: 1, lastLaunchedAt: 100 },
+          },
+          pins: [v1Id('high'), v1Id('auto')],
+        },
+        '/beta': {
+          usage: {
+            [v1Id('xhigh')]: { launchCount: 2, lastLaunchedAt: 1_000 },
+            [v1Id('high')]: { launchCount: 1, lastLaunchedAt: 600 },
+          },
+          pins: [v1Id('high')],
+        },
+      },
+    };
+    expect(isStoredLaunchConfigurationPool(stored)).toBe(true);
+
+    const migrated = parseLaunchConfigurationPool(stored);
+    const opusId = launchConfigurationId({
+      sourceId: 'claude-local',
+      modelId: 'opus[1m]',
+    });
+    expect(migrated.configurations).toHaveLength(2);
+    expect(
+      migrated.configurations.find(configuration => configuration.id === opusId)
+    ).toMatchObject({
+      // xhigh was launched last, in /beta.
+      effort: 'xhigh',
+      labels: {
+        source: 'Claude Code',
+        model: 'Opus (1M context)',
+        effort: 'XHIGH',
+      },
+      name: 'Deep work',
+      createdAt: 10,
+    });
+    expect(migrated.projects['/alpha']).toEqual({
+      usage: {
+        [opusId]: { launchCount: 4, lastLaunchedAt: 900 },
+        [launchConfigurationId({
+          sourceId: 'codex-local',
+          modelId: 'gpt-6-astra',
+        })]: { launchCount: 1, lastLaunchedAt: 100 },
+      },
+      pins: [opusId],
+    });
+    expect(migrated.projects['/beta']).toEqual({
+      usage: { [opusId]: { launchCount: 3, lastLaunchedAt: 1_000 } },
+      pins: [opusId],
+    });
+
+    expect(isStoredLaunchConfigurationPool(migrated)).toBe(true);
+    expect(parseLaunchConfigurationPool(migrated)).toEqual(migrated);
+  });
+
+  it('takes a never-launched collapse effort from the newest row', () => {
+    const migrated = parseLaunchConfigurationPool({
+      configurations: [
+        { ...opus, id: 'a', effort: 'low', createdAt: 1 },
+        { ...opus, id: 'b', effort: 'max', labels: {}, createdAt: 9 },
+        { ...opus, id: 'c', effort: 'medium', createdAt: 5 },
+      ],
+    });
+    expect(migrated.configurations).toHaveLength(1);
+    expect(migrated.configurations[0].effort).toBe('max');
+    expect(migrated.configurations[0].labels.effort).toBeUndefined();
+    expect(migrated.configurations[0].createdAt).toBe(1);
   });
 
   it('migrates the unversioned prototype and source memory without inventing models', () => {

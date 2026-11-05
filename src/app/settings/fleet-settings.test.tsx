@@ -102,6 +102,32 @@ describe('Fleet presentation choices', () => {
       (await createPresentationPreferenceSource().load())?.fleetMaterial
     ).toBeUndefined();
   });
+  it('draws the view and the material with the one shared choice control', async () => {
+    renderSettings();
+    const preview = document.querySelector('[data-settings-option="v2"]')!;
+    await waitFor(() => expect(preview).not.toBeDisabled());
+    fireEvent.click(preview);
+    await waitFor(() =>
+      expect(preview).toHaveAttribute('aria-pressed', 'true')
+    );
+    // BUG-326: v2 read as selected only by its label turning white. Both
+    // controls are now the same component, so the chosen view carries the
+    // same selected state the chosen material does, in every theme.
+    for (const selector of [
+      '[data-settings-option]',
+      '[data-fleet-material]',
+    ]) {
+      const options = Array.from(document.querySelectorAll(selector));
+      expect(options.length).toBeGreaterThan(1);
+      for (const option of options) {
+        expect(option.closest('[data-choice-group]')).not.toBeNull();
+        expect(option.hasAttribute('data-selected')).toBe(
+          option.getAttribute('aria-pressed') === 'true'
+        );
+      }
+    }
+    expect(preview).toHaveAttribute('data-selected');
+  });
   it('restores a saved choice in production without rewriting it', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     const saved = JSON.stringify({

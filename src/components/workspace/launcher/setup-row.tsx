@@ -52,7 +52,9 @@ export interface SetupRowProps {
   onToggleDetail: (id: string) => void;
   /** Opens this setup's detail drawer and moves focus into its first axis. */
   onEnterDetail: (id: string) => void;
+  /** Toggles the catalog; it and the setup drawer are one disclosure. */
   onOpenCatalog: () => void;
+  catalogOpen?: boolean;
   className?: string;
 }
 
@@ -66,6 +68,7 @@ export function SetupRow({
   onToggleDetail,
   onEnterDetail,
   onOpenCatalog,
+  catalogOpen = false,
   className,
 }: SetupRowProps) {
   const chipRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -143,6 +146,8 @@ export function SetupRow({
       <button
         type="button"
         data-setup-catalog-trigger
+        aria-expanded={catalogOpen}
+        data-open={catalogOpen || undefined}
         disabled={state === 'settling'}
         onClick={onOpenCatalog}
         aria-label="All engines and models"
@@ -151,6 +156,7 @@ export function SetupRow({
           'flex w-14 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg border border-hud-stroke-faint bg-hud-surface-input text-hud-text-dim outline-none',
           'transition-[border-color,color,background-color] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
           'hover:border-hud-cyan/45 hover:bg-hud-fill hover:text-hud-text',
+          'data-[open]:border-hud-cyan/45 data-[open]:text-hud-text',
           'focus-visible:ring-2 focus-visible:ring-hud-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-hud-void',
           'disabled:cursor-not-allowed disabled:opacity-40'
         )}

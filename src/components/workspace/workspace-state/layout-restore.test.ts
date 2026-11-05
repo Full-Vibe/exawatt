@@ -87,6 +87,7 @@ describe('restoreLayout', () => {
       id: 'pty-new-incarnation',
       durableSessionId: 'durable-a',
       harnessSessionId: 'conversation-a',
+      launchPermissionMode: 'auto',
     });
     const { restored, unclaimed } = restoreLayout(
       layout([savedTab('a')]),
@@ -98,6 +99,9 @@ describe('restoreLayout', () => {
       lifecycle: 'running',
       resumeState: 'live',
       exitSignal: null,
+      // BUG-331: the mode main launched it in is never persisted, so a
+      // reloaded renderer reads it from the live record.
+      launchPermissionMode: 'auto',
     });
     expect(unclaimed).toEqual([]);
   });

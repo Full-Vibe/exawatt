@@ -14,6 +14,7 @@ import {
 } from '@exawatt/ui-model';
 import type { SessionGlyphState } from '../session-status';
 import type { AgentSourceId } from '../agent-sources';
+import type { AgentPermissionMode } from '@exawatt/core';
 import type {
   ClosedSessionEntry,
   PtySessionRecord,
@@ -33,6 +34,10 @@ export interface SessionTab {
   resumeAfterRestart?: boolean;
   launchModel?: string;
   launchEffort?: string;
+  /** The mode main launched the running process in (BUG-331). Read from
+   *  the live Session record, never persisted: a restored tab learns it
+   *  again when its process starts. */
+  launchPermissionMode?: AgentPermissionMode;
   kind: 'session';
   /** Opaque JSON extensions from a supported layout version; never runtime options. */
   sourceRecordExtensions?: Readonly<Record<string, unknown>>;
@@ -339,6 +344,7 @@ export function tabFromPtySession(
     startedAt: session.startedAt,
     launchModel: session.launchModel,
     launchEffort: session.launchEffort,
+    launchPermissionMode: session.launchPermissionMode,
   };
 }
 
@@ -522,6 +528,7 @@ export function runtimeAdoptionPatch(
     cwd: session.cwd,
     launchModel: session.launchModel,
     launchEffort: session.launchEffort,
+    launchPermissionMode: session.launchPermissionMode,
     lifecycle: exited ? 'exited' : 'running',
     resumeState: exited
       ? session.harnessSessionId || tab.harnessSessionId
