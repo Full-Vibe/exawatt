@@ -6652,7 +6652,7 @@ Status: bug · ENG-022 · reported 2026-11-06 by the operator
 
 While the batch merge ran its `eval:electron:*` gates (device-power,
 source-power, project-pause and neighbours), Exawatt dev builds kept opening
-and taking focus from a movie the operator was watching. Evals are meant to
+and taking focus from the operator's foreground app. Evals are meant to
 be headless and never take focus. Cause not yet traced; start with which
 launch path activates the app or shows a window under `EXAWATT_TEST`.
 
