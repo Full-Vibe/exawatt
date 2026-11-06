@@ -4,7 +4,7 @@ import {
   COMMUNITY_DISTRIBUTION,
   parseDistributionContract,
 } from '@exawatt/core/distribution';
-import { DEFAULT_AGENT_PERMISSION_MODE } from '@/components/workspace/agent-sources';
+import { DEFAULT_AGENT_PERMISSION_MODE } from '@exawatt/core';
 import {
   OUTBOUND_CONTROLS,
   OWN_ACCOUNT_FEATURE_IDS,

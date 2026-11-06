@@ -20,9 +20,9 @@ import type {
   PtyAttention,
   SessionModelChange,
 } from '@exawatt/core/desktop-bridge';
+import { DEFAULT_AGENT_PERMISSION_MODE } from '@exawatt/core';
 import { sessionTabSource } from '../harnesses';
 import {
-  DEFAULT_AGENT_PERMISSION_MODE,
   loadAgentSourcePreferences,
   permissionModeFor,
 } from '../agent-sources';

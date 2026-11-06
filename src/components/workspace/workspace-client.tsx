@@ -163,7 +163,6 @@ import type {
 import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
 import { useAgentComposerRequests } from './use-agent-composer-requests';
 import {
-  DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
   loadAgentSourcePreferences,
   loadAgentSourceRegistry,
@@ -178,7 +177,10 @@ import {
   type CloneSessionTarget,
 } from './session-clone';
 import { loadLaunchConfigurationPool } from '@/lib/launch-configurations';
-import { rankLaunchTargets } from '@exawatt/core';
+import {
+  DEFAULT_AGENT_PERMISSION_MODE,
+  rankLaunchTargets,
+} from '@exawatt/core';
 import {
   projectDeclaredLinks,
   projectRoadmapAttentionSessions,

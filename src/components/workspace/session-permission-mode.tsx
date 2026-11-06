@@ -1,10 +1,10 @@
 'use client';
 
-import type { AgentPermissionMode } from '@exawatt/core';
 import {
-  AGENT_PERMISSION_MODE_META,
   DEFAULT_AGENT_PERMISSION_MODE,
-} from './agent-sources';
+  type AgentPermissionMode,
+} from '@exawatt/core';
+import { AGENT_PERMISSION_MODE_META } from './agent-sources';
 import { cn } from '@/lib/utils';
 
 /**

@@ -17,13 +17,13 @@ import {
 import { recordLaunchConfigurationSuccess } from '@/lib/launch-configurations';
 import {
   agentModelLaunchable,
+  DEFAULT_AGENT_PERMISSION_MODE,
   type AgentPermissionMode,
   type PtyHarness,
 } from '@exawatt/core';
 import type { PtySessionRecord } from '@exawatt/core/desktop-bridge';
 import { HARNESS_META } from '../harnesses';
 import {
-  DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
   loadAgentModelCatalog,
   loadAgentSourcePreferences,

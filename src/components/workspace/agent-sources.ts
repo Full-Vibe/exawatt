@@ -23,9 +23,6 @@ import type { AgentModelCatalog } from '@exawatt/core/desktop-bridge';
 
 export type AgentSourceId = AgentHarness;
 
-/** Owned by core, so the renderer, main and analytics read one value. */
-export { DEFAULT_AGENT_PERMISSION_MODE };
-
 export const AGENT_PERMISSION_MODE_META: Record<
   AgentPermissionMode,
   {

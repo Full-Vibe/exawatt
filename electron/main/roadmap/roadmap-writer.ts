@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import {
+  DEFAULT_AGENT_PERMISSION_MODE,
   parseRoadmap,
   resolveRoadmapSectionStatus,
   type RoadmapDoc,
@@ -214,9 +215,10 @@ export function resolveRoadmapWritePermission(projectDir: string): {
     : undefined;
   return {
     permission: ROADMAP_STATE_WRITE_PERMISSION,
-    // This resolver is intentionally its own seam even though its default
-    // reads the Project's launch policy today (decision 0035).
-    mode: mode ?? 'unrestricted',
+    // This resolver is its own seam (decision 0035), and its default IS the
+    // Project's launch policy: the mode a launch would get here, read from
+    // the one owner, never a copy that can drift from it.
+    mode: mode ?? DEFAULT_AGENT_PERMISSION_MODE,
   };
 }
 

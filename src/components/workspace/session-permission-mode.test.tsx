@@ -1,7 +1,9 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { AGENT_PERMISSION_MODES } from '@exawatt/core';
-import { DEFAULT_AGENT_PERMISSION_MODE } from './agent-sources';
+import {
+  AGENT_PERMISSION_MODES,
+  DEFAULT_AGENT_PERMISSION_MODE,
+} from '@exawatt/core';
 import { SessionPermissionMode } from './session-permission-mode';
 
 describe('SessionPermissionMode', () => {
