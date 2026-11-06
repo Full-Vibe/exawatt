@@ -6039,6 +6039,19 @@ treatment in semantic tokens; `SettingsSegmentedControl` is deleted, and Theme
 mode moved too. `fleet-settings.test.tsx` and `choice-group.test.tsx` prove it;
 Settings ▸ Fleet screenshots in Classic, Air and Night.
 
+Amended 2026-11-05 (review front packet 4). The review found the theme cards
+on the same Appearance page still drew their own selected treatment, and that
+ChoiceGroup, declared the one control for this, was toggle buttons: no radio
+semantics and a Tab stop per option. ChoiceGroup is now a radio group in the
+codebase's existing pattern (the New Agent row, the launch configuration
+ribbon): `role="radiogroup"` over `role="radio"` with `aria-checked`, one Tab
+stop on the checked option, arrow keys that wrap and skip a disabled option,
+Home and End. The theme cards are a ChoiceGroup with a swatch preview, so the
+page has one selected treatment. Proven by `choice-group.test.tsx` (roles,
+Tab stop, keys), `appearance-settings.test.tsx`, `eval:settings:navigation`
+and `eval:theme-system` (both read `aria-checked` now), and Appearance and
+Fleet screenshots in Classic, Air and Night.
+
 ### BUG-327 New Project's Browse folder goes grey and stays unclickable
 
 Status: fixed · amended 2026-11-05 · ENG-016 · partner conversation
@@ -6255,8 +6268,9 @@ operator action moves them. Proof: `use-keyed-selection.dom.test.ts`,
 
 ### BUG-334 Effort is flattened into the New Agent model list
 
-Status: fixed · ENG-016 · product-feedback 44fb2f7f 2026-10-22; fixed
-2026-11-04 by execution front packet 2.
+Status: fixed · amended 2026-11-05 · ENG-016 · product-feedback 44fb2f7f
+2026-10-22; fixed 2026-11-04 by execution front packet 2; amended by review
+front packet 4.
 
 The operator: "Thinking effort should be an orthogonal selector, not just a
 flattened list". Same window as BUG-328. Execution front (2026-11-04) packet 2. The feedback's
@@ -6269,7 +6283,9 @@ setups and Clone to… multiplied by effort (the operator's own pool held four
 Effort is now an axis. A Launch Configuration's identity is source, model and
 Type; effort is the value it carries, updated by each launch, and stored pools
 migrate on read (rows that differ only by effort collapse, keeping the most
-recently launched effort, summed usage, remapped pins and any name). The model
+recently launched effort, summed usage and remapped pins; a name is kept only
+since the amendment below, which corrects this record's earlier "and any
+name"). The model
 control lists models and offers only the efforts the staged model declares in
 a `ChoiceGroup`; one rule (`launch-axes.ts`) carries a chosen effort across a
 model change wherever the new model offers it (a default that was only
@@ -6278,6 +6294,40 @@ showing gives way to the new model's default), in both places. Proven by
 `launch-axes.test.ts`, `session-model-control.test.tsx` and
 `eval:electron:model-change`. Supersedes FIX-016's "single combined menu" (see
 the amendment chain).
+
+Amended 2026-11-05 (review front packet 4). The review found three flaws in
+that fix. Names were not kept: the merge kept one name per model and attached
+it to the last launched effort (stored "Deep work"·high, "Quick"·low and an
+unnamed max became one "Quick" at max), a second Name setup… renamed the
+first, and any launch re-efforted a named setup. A setup chip, catalog row
+or engine switch left the Thinking axis's "chosen" effort behind, so a later
+model change applied an effort chosen for another setup. And the catalog had
+moved inside the launcher's form, so Enter in the worktree branch field
+started the Agent. System change: a named setup is its own identity (its name
+is part of the fingerprint; the unnamed tuple, and every id on disk for it,
+is unchanged). It carries the effort it was saved with; a launch credits it
+only when it starts it exactly, never renames or re-efforts it, and the
+read-time migration never merges it with another row, so the operator's
+lossless, idempotent 29→13 migration is unchanged. Renaming moves usage and
+pins to the new id and refuses a name another setup on the model holds. The
+effort axis has one owner, `EffortSelection` (`launch-axes.ts`): the value and
+whether the operator chose it, set together on every path, so only a choice
+made on the axis carries across a model change. The launch options
+(worktree, branch, roadmap item, Name setup…) have their own panel,
+`launcher/launch-options.tsx`, behind an Options trigger on the status line
+that says what is set, rendered outside the form Start submits. Naming,
+renaming and deleting a setup are in-app dialogs (`launcher/setup-dialogs.tsx`):
+Electron's `window.prompt` throws, so Rename and Name setup… had never worked
+in the app. A running Agent's model control keeps Apply disabled until the
+staged effort is one the catalog declares, instead of dropping an undeclared
+running effort. Proven by `launch-configurations.test.ts` (two named rows of
+one model, a named and an unnamed row, idempotence, an older build's rewrite
+mapping forward), `launch-axes.test.ts`,
+`launch-controls.setups.test.tsx` (the review's stale-effort case, a named
+launch credited only while exact, the in-app name dialog),
+`launch-controls.interactions.test.tsx` (Enter in the branch field starts
+nothing), `session-model-control.test.tsx`, `eval:workspace:launcher` and
+`eval:roadmap:rail`.
 
 ### BUG-335 Antigravity sign-in tabs pile up in the browser while the Mac sleeps
 
