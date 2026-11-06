@@ -1516,7 +1516,11 @@ Built:
   silence another (a dropped minute leaves one `<family>.suppressed` line
   with its count); the app-level death listeners live in
   `watchProcessDeaths` (`main-diagnostics.ts`) and the per-window one in
-  `window.ts`. A dead renderer reloads itself, unless a navigation already in
+  `window.ts`. A helper our own code stopped is not a death: the renderer
+  server's owner records a stop it asked for once, as
+  `renderer-server.stopped`, and tells the watcher to leave Chromium's
+  `abnormal-exit` for it (Next exits 143 on SIGTERM) off the record and out
+  of `app_crashed`. A dead renderer reloads itself, unless a navigation already in
   flight will land on a new renderer by itself; a dead renderer server
   restarts on its own port, and a restart that dies or hangs while starting
   is killed (freeing the port) and retried; automatic attempts are budgeted

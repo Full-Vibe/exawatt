@@ -34,16 +34,19 @@
  *      FAILS the run. Absence is only evidence when the instrument is proven.
  *
  *   2. SOCKET SAMPLING (broad, sampling-limited).
- *      `lsof` every ~200 ms over every process running a binary from inside
- *      the bundle under observation — Electron main, its helpers, and the
- *      loopback Next standalone server child — so anything that bypasses the
- *      Chromium resolver (Node's own `fetch`/undici, a native module) is seen
- *      by its socket rather than by its name. Two limits, both stated: a
- *      connection that opens and closes inside one sampling interval can be
- *      missed, and a process the operator's own Agent Source launched is out
- *      of scope by design — that is their traffic, not this build's network
- *      identity (decision `0036` §6). Its positive control is the sink traffic
- *      itself: the sampler must observe the app connecting to the sink.
+ *      `lsof` every ~200 ms over every process whose executable image lies
+ *      inside the bundle under observation — Electron main, its helpers, and
+ *      the loopback Next server the app runs as a utility process — so
+ *      anything that bypasses the Chromium resolver (Node's own
+ *      `fetch`/undici, a native module) is seen by its socket rather than by
+ *      its name. Two limits, both stated: a connection that opens and closes
+ *      inside one sampling interval can be missed, and a process the
+ *      operator's own Agent Source launched is out of scope by design — that
+ *      is their traffic, not this build's network identity (decision `0036`
+ *      §6). Two positive controls: the sampler must observe the app
+ *      connecting to the sink, and it must have identified the renderer
+ *      server, which the app names by pid, as one of the bundle's processes
+ *      (BUG-337: it renames itself, and an earlier sampler never saw it).
  *
  * ── WHAT A GREEN RUN PROVES ──────────────────────────────────────────────
  *
@@ -63,17 +66,15 @@
  *     observation by design (see the second limit above).
  */
 
-import { execFile } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
+import { sampleBundleSockets } from './lib/bundle-sockets.mjs';
 import { waitForPageCondition, withElectronApp } from './lib/electron-eval.mjs';
 import { ensurePackagedApp } from './lib/packaged-app.mjs';
 
-const execFileAsync = promisify(execFile);
 const ROOT = process.cwd();
 
 /** Host suffixes that identify an Exawatt-operated service. */
@@ -170,33 +171,24 @@ async function startResolverSink() {
 /* instrument 2 — process-tree socket sampling                         */
 /* ------------------------------------------------------------------ */
 
-/**
- * The app's own processes, by EXECUTABLE PATH rather than by ancestry.
+/*
+ * The app's own processes are found by EXECUTABLE IMAGE rather than by
+ * ancestry or by name (`lib/bundle-sockets.mjs`).
  *
  * Descending the `ppid` chain is the obvious way to find them and it is not
  * sound here: pids are recycled, so a stranger whose parent pid was recycled
- * into this tree joins it, and a short-lived child that exits between the `ps`
- * read and the `lsof` read hands its pid to whoever takes it next. The first
- * runs of this gate did exactly that and blamed a packaged community build for
- * a sibling agent's `opencode` TLS connections. Asking instead "is this pid
- * running a binary inside the bundle under observation?" cannot be confused by
- * either, and it is also the more honest scope: the Next standalone server
- * child runs `process.execPath` from inside the bundle and stays covered, while
- * an Agent Source shell the operator launched is their own process making their
- * own traffic (decision `0036` §6), not this build's network identity.
+ * into this tree joins it, and a short-lived child that exits between two
+ * reads hands its pid to whoever takes it next. The first runs of this gate
+ * did exactly that and blamed a packaged community build for a sibling
+ * agent's `opencode` TLS connections. The name `ps` lists is no better: it is
+ * the process's own argument memory, which Next's server rewrites with
+ * `process.title`, so the app's own renderer server went unsampled (BUG-337).
+ * The image is the file the kernel mapped at exec and cannot change. It is
+ * also the honest scope: the renderer server runs the bundle's helper binary
+ * and is covered, while an Agent Source shell the operator launched is their
+ * own process making their own traffic (decision `0036` §6), not this
+ * build's network identity.
  */
-async function snapshotBundleProcesses(bundlePath) {
-  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,comm=']);
-  const command = new Map();
-  for (const line of stdout.split('\n')) {
-    const match = /^\s*(\d+)\s+(.*)$/.exec(line);
-    if (!match) continue;
-    const executable = match[2].trim();
-    if (!executable.startsWith(bundlePath)) continue;
-    command.set(Number(match[1]), executable.split('/').pop());
-  }
-  return { pids: [...command.keys()], command };
-}
 
 function isLoopback(address) {
   return (
@@ -207,64 +199,19 @@ function isLoopback(address) {
   );
 }
 
-/** `lsof -F` machine output → the remote peers this process tree holds. */
-function parseSockets(output) {
-  const peers = [];
-  let pid = null;
-  let command = null;
-  for (const line of output.split('\n')) {
-    const tag = line[0];
-    const value = line.slice(1);
-    if (tag === 'p') pid = Number(value);
-    if (tag === 'c') command = value;
-    if (tag !== 'n') continue;
-    const arrow = value.indexOf('->');
-    if (arrow < 0) continue; // a listener, not a peer
-    const remote = value.slice(arrow + 2).replace(/\s*\(.*\)$/, '');
-    const port = remote.lastIndexOf(':');
-    if (port < 0) continue;
-    peers.push({
-      pid,
-      command,
-      address: remote.slice(0, port),
-      port: Number(remote.slice(port + 1)),
-      raw: remote,
-    });
-  }
-  return peers;
-}
-
 function startSocketSampler(bundlePath) {
   const peers = new Map();
-  let reusedPids = 0;
+  /** Every pid identified as the bundle's in any sample. */
+  const identified = new Set();
   let samples = 0;
   let stopped = false;
   const loop = (async () => {
     while (!stopped) {
       try {
-        const tree = await snapshotBundleProcesses(bundlePath);
-        if (tree.pids.length === 0) {
-          await new Promise(ok => setTimeout(ok, SAMPLE_INTERVAL_MS));
-          continue;
-        }
-        const { stdout } = await execFileAsync('lsof', [
-          '-nP',
-          '-i',
-          '-a',
-          '+c',
-          '0',
-          '-p',
-          tree.pids.join(','),
-          '-F',
-          'pcn',
-        ]).catch(error => ({ stdout: error.stdout ?? '' }));
+        const sample = await sampleBundleSockets(bundlePath);
         samples += 1;
-        for (const peer of parseSockets(stdout)) {
-          if (tree.command.get(peer.pid) !== peer.command) {
-            // The pid changed hands between the `ps` read and the `lsof` read.
-            reusedPids += 1;
-            continue;
-          }
+        for (const pid of sample.pids) identified.add(pid);
+        for (const peer of sample.peers) {
           const key = `${peer.command} ${peer.raw}`;
           if (!peers.has(key)) {
             peers.set(key, { ...peer, firstSeen: Date.now() });
@@ -280,7 +227,7 @@ function startSocketSampler(bundlePath) {
     async stop() {
       stopped = true;
       await loop;
-      return { peers: [...peers.values()], reusedPids, samples };
+      return { peers: [...peers.values()], identified, samples };
     },
   };
 }
@@ -367,6 +314,14 @@ try {
         throw new Error(`Packaged renderer is not on loopback: ${origin}`);
       }
       steps.push('workspace rendered');
+      // The app names its renderer server's pid; the sampler must have found
+      // that process by its image on its own (BUG-337).
+      const rendererServerPid = await app.evaluate(
+        ({ app: electronApp }) =>
+          electronApp
+            .getAppMetrics()
+            .find(metric => metric.name === 'Renderer Server')?.pid ?? null
+      );
 
       // ── positive controls, before any absence is believed ──────────────
       const mainProbe = await app.evaluate(async ({ net }, host) => {
@@ -441,13 +396,14 @@ try {
         mainProbe,
         rendererProbe,
         signInRendered: signInText.trim().length,
+        rendererServerPid,
         windowMs: Date.now() - startedAt,
       };
     },
     { maxMs: OBSERVATION_MS + 120_000, firstWindowMs: 45_000 }
   );
 
-  const { peers, reusedPids, samples } = await sampler.stop();
+  const { peers, identified, samples } = await sampler.stop();
   sampler = null;
   await sink.stop();
 
@@ -469,8 +425,8 @@ try {
   console.log(
     `[observatory] window ${Math.round(observed.windowMs / 1000)}s; ` +
       `sink saw ${sink.connections.length} connection(s); ` +
-      `sampler took ${samples} samples and saw ${peers.length} distinct peer(s)` +
-      (reusedPids > 0 ? `, dropping ${reusedPids} reused-pid sample(s)` : '')
+      `sampler took ${samples} samples of ${identified.size} app process(es) ` +
+      `and saw ${peers.length} distinct peer(s)`
   );
   console.log(
     `[observatory] renderer connect-src probe: ${observed.rendererProbe}`
@@ -502,6 +458,16 @@ try {
     findings.push(
       'INSTRUMENT UNPROVEN: the socket sampler never observed the app holding ' +
         'a connection to the sink, so its absence report is not evidence.'
+    );
+  }
+  if (
+    observed.rendererServerPid === null ||
+    !identified.has(observed.rendererServerPid)
+  ) {
+    findings.push(
+      'INSTRUMENT UNPROVEN: the socket sampler never identified the renderer ' +
+        `server (pid ${observed.rendererServerPid ?? 'not reported by the app'}) ` +
+        "as one of the app's processes, so a connection it made would not be seen."
     );
   }
 

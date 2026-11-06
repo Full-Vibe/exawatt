@@ -7,6 +7,11 @@ import { spawn } from 'child_process';
 import net from 'net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  __resetMainAnalyticsForTests,
+  drainMainAnalyticsEvents,
+} from './analytics-bridge';
+import { watchProcessDeaths } from './main-diagnostics';
+import {
   createRendererServerSupervisor,
   type RecoveryChoice,
 } from './process-recovery';
@@ -20,13 +25,34 @@ import {
 
 // @scans none: reads only its own temporary directory (the __dirname is the stand-in server's)
 
+/** Chromium's account of a helper that went away (`child-process-gone`). */
+interface ChildGone {
+  type: string;
+  reason: string;
+  exitCode: number;
+  serviceName: string;
+  name: string;
+}
+
+/** Next's standalone server exits with this when SIGTERM asks it to end. */
+const NEXT_SIGTERM_EXIT = 143;
+
+/** The exit code of a process SIGKILL ended, as `UtilityProcess` reports it. */
+const SIGKILLED = 9;
+
 /**
  * A double of Electron's `UtilityProcess`, built from its surface: `pid`,
  * stdout and stderr, `kill()`, and the `spawn` and `exit` events. As in
  * Electron, the process spawns on a later turn, `kill()` does nothing (and
- * returns false) before it has spawned or after it has exited, a process that
- * honours the kill exits with code 0, and `exit` carries only a code: a
- * process a signal ended reports the signal's number.
+ * returns false) before it has spawned or after it has exited, and `exit`
+ * carries only a code: a process a signal ended reports the signal's number.
+ * A process that honours the kill exits as Next's server does, with 143
+ * (`next/dist/server/lib/start-server.js`), which Electron passes through.
+ *
+ * `chromium`, when given, hears what Chromium's `child-process-gone` would
+ * say about the same ending: nothing for exit code 0, `killed` for a process
+ * a signal ended, `abnormal-exit` for any other non-zero exit, in the same
+ * turn as `exit`.
  */
 class FakeServer extends EventEmitter implements ServerProcess {
   stdout = new PassThrough();
@@ -38,7 +64,10 @@ class FakeServer extends EventEmitter implements ServerProcess {
   private exited = false;
 
   /** Spawns on the next turn, or only when `spawn()` is called. */
-  constructor(spawnsItself = true) {
+  constructor(
+    spawnsItself = true,
+    private readonly chromium?: (gone: ChildGone) => void
+  ) {
     super();
     if (spawnsItself) queueMicrotask(() => this.spawn());
   }
@@ -53,8 +82,13 @@ class FakeServer extends EventEmitter implements ServerProcess {
   kill(): boolean {
     if (!this.spawned || this.exited) return false;
     this.kills += 1;
-    if (this.honoursKill) queueMicrotask(() => this.exit(0));
+    if (this.honoursKill) queueMicrotask(() => this.exit(NEXT_SIGTERM_EXIT));
     return true;
+  }
+
+  /** Ended by SIGKILL from outside, as `kill -9` would. */
+  killFromOutside(): void {
+    this.end(SIGKILLED, 'killed');
   }
 
   get alive(): boolean {
@@ -62,15 +96,25 @@ class FakeServer extends EventEmitter implements ServerProcess {
   }
 
   exit(code: number): void {
+    this.end(code, code === 0 ? null : 'abnormal-exit');
+  }
+
+  private end(code: number, reason: string | null): void {
     if (this.exited) return;
     this.exited = true;
     this.pid = undefined;
     this.emit('exit', code);
+    if (reason) {
+      this.chromium?.({
+        type: 'Utility',
+        reason,
+        exitCode: code,
+        serviceName: 'node.mojom.NodeService',
+        name: RENDERER_SERVER_SERVICE,
+      });
+    }
   }
 }
-
-/** The exit code of a process SIGKILL ended, as `UtilityProcess` reports it. */
-const SIGKILLED = 9;
 
 interface Forked {
   modulePath: string;
@@ -114,6 +158,7 @@ function harness(overrides: Partial<RendererServerDependencies> = {}) {
     cacheNamespace: 'community',
     pid: 4242,
     isTest: true,
+    record: () => {},
     childEnvironment: () => ({ AMBIENT: 'kept', PORT: 'overridden' }),
     forwardStdout: false,
     fork: (modulePath, args, options) => {
@@ -318,7 +363,9 @@ describe('createRendererServer', () => {
 
     expect(late.kills).toBe(1);
     expect(late.alive).toBe(false);
-    expect(String(await started)).toContain('Packaged renderer exited with 0');
+    expect(String(await started)).toContain(
+      `Packaged renderer exited with ${NEXT_SIGTERM_EXIT}`
+    );
   });
 
   it('is a no-op to stop a server that never started', async () => {
@@ -517,12 +564,130 @@ describe('createRendererServer', () => {
 });
 
 /**
+ * The server's deaths as the running app records them: the renderer server
+ * and the app's process-death watcher wired as the composition root wires
+ * them, with Chromium's `child-process-gone` played by the double.
+ */
+describe('the renderer server’s deaths on the record', () => {
+  beforeEach(() => __resetMainAnalyticsForTests());
+
+  function recorded(overrides: Partial<RendererServerDependencies> = {}) {
+    const app = Object.assign(new EventEmitter(), {
+      getVersion: () => '0.1.25',
+    });
+    const records: Array<{ event: string; fields?: unknown }> = [];
+    const record = (event: string, fields?: Record<string, unknown>) => {
+      records.push({ event, fields });
+    };
+    const exits: unknown[] = [];
+    const h = harness({
+      record,
+      fork: (modulePath, args, options) => {
+        const child = new FakeServer(true, gone =>
+          app.emit('child-process-gone', {}, gone)
+        );
+        h.spawned.push({ modulePath, args, options, child });
+        return child;
+      },
+      onUnexpectedExit: details => exits.push(details),
+      ...overrides,
+    });
+    watchProcessDeaths(app as never, new EventEmitter() as never, record, d =>
+      h.server.endedOnRequest(d)
+    );
+    const crashes = () =>
+      drainMainAnalyticsEvents().map(event => ({
+        name: event.name,
+        reason: (event as { reason?: string }).reason,
+      }));
+    return { ...h, records, exits, crashes };
+  }
+
+  it('records a stop once, as a stop, and never as a crash', async () => {
+    const { server, records, exits, crashes } = recorded();
+    await server.start();
+
+    await server.stop();
+
+    expect(records).toEqual([
+      {
+        event: 'renderer-server.stopped',
+        fields: { code: NEXT_SIGTERM_EXIT },
+      },
+    ]);
+    expect(crashes()).toEqual([]);
+    expect(exits).toEqual([]);
+  });
+
+  it('records a server killed from outside as a crash, and reports it for a restart', async () => {
+    const { server, spawned, records, exits, crashes } = recorded();
+    await server.start();
+
+    spawned[0].child.killFromOutside();
+
+    await vi.waitFor(() => expect(exits).toEqual([{ code: SIGKILLED }]));
+    expect(records).toEqual([
+      {
+        event: 'child.gone',
+        fields: expect.objectContaining({
+          reason: 'killed',
+          exitCode: SIGKILLED,
+          name: RENDERER_SERVER_SERVICE,
+        }),
+      },
+    ]);
+    expect(crashes()).toEqual([{ name: 'app_crashed', reason: 'killed' }]);
+  });
+
+  it('records a server it cleared after a failed start as stopped, not crashed', async () => {
+    let now = 0;
+    const { server, records, crashes, answerAfter } = recorded({
+      clock: {
+        now: () => (now += 1_000),
+        sleep: () => new Promise(resolve => setImmediate(resolve)),
+      },
+    });
+    answerAfter(Number.POSITIVE_INFINITY);
+
+    await expect(server.start()).rejects.toThrow('Timed out');
+
+    expect(records).toEqual([
+      {
+        event: 'renderer-server.stopped',
+        fields: { code: NEXT_SIGTERM_EXIT },
+      },
+    ]);
+    expect(crashes()).toEqual([]);
+  });
+
+  it('records a death after a stop that gave up as a crash (an abandoned shutdown)', async () => {
+    const { server, spawned, records, exits, crashes } = recorded();
+    await server.start();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const child = spawned[0].child;
+    child.honoursKill = false;
+    const refused = expect(server.stop()).rejects.toThrow('did not stop');
+    await vi.runAllTimersAsync();
+    await refused;
+    vi.useRealTimers();
+
+    child.killFromOutside();
+
+    await vi.waitFor(() => expect(exits).toEqual([{ code: SIGKILLED }]));
+    expect(records.map(entry => entry.event)).toEqual(['child.gone']);
+    expect(crashes()).toEqual([{ name: 'app_crashed', reason: 'killed' }]);
+  });
+});
+
+/**
  * `utilityProcess.fork` played by a Node child process, for the tests that need
  * a real server listening, dying or hanging. It offers exactly the
  * `ServerProcess` surface with Electron's semantics: `kill()` asks with
  * SIGTERM and ends the process outright two seconds later, as Chromium does,
- * and `exit` carries a code: 0 for a process that honoured `kill()`, the
- * signal's number for one another signal ended. That Chromium also ends the
+ * and `exit` carries a code: the process's own exit code if it exited (143
+ * for a server that ends on SIGTERM like Next's), 0 for one `kill()`'s
+ * signals ended (Electron rewrites SIGTERM and SIGKILL after `kill()`), and
+ * the signal's number for one another signal ended. That Chromium also ends the
  * process with main (BUG-070) is the packaged gate's to prove: no double can.
  */
 class NodeServer extends EventEmitter implements ServerProcess {
@@ -540,7 +705,8 @@ class NodeServer extends EventEmitter implements ServerProcess {
     this.child.once('spawn', () => this.emit('spawn'));
     this.child.once('exit', (code, signal) => {
       this.exited = true;
-      const honoured = this.killed && signal === 'SIGTERM';
+      const honoured =
+        this.killed && (signal === 'SIGTERM' || signal === 'SIGKILL');
       this.emit(
         'exit',
         code ?? (honoured ? 0 : os.constants.signals[signal ?? 'SIGKILL'])
@@ -600,12 +766,14 @@ describe('createRendererServer with a real server', () => {
 
   it('brings a server killed from outside back on the same origin (BUG-223)', async () => {
     // A stand-in for Next's server that answers with its own pid, so the test
-    // can kill exactly it and tell the restarted process apart.
+    // can kill exactly it and tell the restarted process apart, and that ends
+    // on SIGTERM the way Next's does.
     const standalone = path.join(versionRoot(), 'dist-renderer');
     fs.mkdirSync(standalone, { recursive: true });
     fs.writeFileSync(
       path.join(standalone, 'server.js'),
-      `require('http').createServer((req, res) => res.end(String(process.pid)))
+      `process.on('SIGTERM', () => process.exit(${NEXT_SIGTERM_EXIT}));
+require('http').createServer((req, res) => res.end(String(process.pid)))
   .listen(Number(process.env.PORT), process.env.HOSTNAME);`
     );
     const port = await new Promise<number>(resolve => {
@@ -623,6 +791,7 @@ describe('createRendererServer with a real server', () => {
       cacheNamespace: 'community',
       fork: nodeFork,
       isTest: true,
+      record: () => {},
       childEnvironment: () => ({ PATH: process.env.PATH }),
       forwardStdout: false,
       ports: { allocate: async () => port, serving: async () => {} },
@@ -654,9 +823,11 @@ describe('createRendererServer with a real server', () => {
     /**
      * A stand-in for Next's server that follows a script, one step per start:
      * `serve` answers with its pid, `die` exits before listening, and `hang`
-     * stays alive without ever listening (and says so in `hung`).
+     * stays alive without ever listening (and says so in `hung`). Like Next's,
+     * it ends on SIGTERM with 143.
      */
-    const SCRIPTED_SERVER = `const fs = require('fs');
+    const SCRIPTED_SERVER = `process.on('SIGTERM', () => process.exit(${NEXT_SIGTERM_EXIT}));
+const fs = require('fs');
 const path = require('path');
 const at = name => path.join(__dirname, name);
 const plan = JSON.parse(fs.readFileSync(at('plan.json'), 'utf8'));
@@ -712,6 +883,7 @@ if (step === 'hang') {
         cacheNamespace: 'community',
         fork: nodeFork,
         isTest: true,
+        record: () => {},
         childEnvironment: () => ({ PATH: process.env.PATH }),
         forwardStdout: false,
         ports: { allocate: async () => port, serving: async () => {} },

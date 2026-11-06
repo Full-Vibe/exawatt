@@ -5506,7 +5506,7 @@ half above now holds every landing awake.
 
 ### BUG-310 The packaged renderer server registers with macOS as a second Exawatt
 
-Status: fixed 2026-11-04 · ENG-016 · found 2026-10-22 by the instance packet; execution front (2026-11-04) packet 6.
+Status: fixed 2026-11-04 · amended 2026-11-05 · ENG-016 · found 2026-10-22 by the instance packet; execution front (2026-11-04) packet 6; review front (2026-11-05) packet 5.
 
 The packaged app starts its Next server with its own executable
 (`process.execPath` with `ELECTRON_RUN_AS_NODE`, `renderer-server.ts`), so
@@ -5539,6 +5539,25 @@ application under the app's bundle id (red on the old build: `Foreground`,
 origin with both records, and still that it ends with a SIGKILLed main;
 `renderer-server.test.ts` holds the lifecycle against a double of
 `UtilityProcess`.
+
+Amended 2026-11-05 (review): every normal stop read as a crash. Next's
+server exits 143 on SIGTERM (`next/dist/server/lib/start-server.js`),
+Electron rewrites only 15 and 9 to 0 after `kill()`
+(`electron_api_utility_process.cc`, 43.8.3), and Chromium reports any
+non-zero exit of a utility process as `child-process-gone` with reason
+`abnormal-exit`, so each quit wrote `child.gone` for `Renderer Server` and
+queued `app_crashed`. The test double exited 0 when killed, which no real
+server does. Fix by system: the renderer server's owner is the one place
+that classifies its deaths. A server that exits while a stop of it is in
+flight (a shutdown, or clearing a failed start) is recorded once as
+`renderer-server.stopped`, and the process-death watcher asks the owner
+(`endedOnRequest`) before it records or counts Chromium's account; a stop
+that gives up clears the claim, so a later death is still a crash and still
+restarts. The doubles now exit 143 like Next. Proof: `renderer-server.test.ts`
+wires the server and `watchProcessDeaths` as the composition root does, with
+Chromium's report played by the double: a stop is one `renderer-server.stopped`
+and no crash (red without the classification), a kill from outside is one
+`child.gone` reading `killed` plus `app_crashed` and a restart.
 
 ### BUG-311 The train's bisect re-ran every landing check per prefix and could convict a car by elimination
 
@@ -6355,7 +6374,7 @@ in. The interim timeout backoff was removed.
 
 ### BUG-336 Test launches of the app never touch the login keychain
 
-Status: fixed 2026-11-05 · ENG-022 · found 2026-11-05 by the operator, interrupted repeatedly during a landing train by "Exawatt Community wants to use your confidential information stored in 'Exawatt Community Safe Storage' in your keychain".
+Status: fixed 2026-11-05 · amended 2026-11-05 · ENG-022 · found 2026-11-05 by the operator, interrupted repeatedly during a landing train by "Exawatt Community wants to use your confidential information stored in 'Exawatt Community Safe Storage' in your keychain".
 
 Connected Sources keep their device credentials in Electron `safeStorage`,
 and Chromium encrypts the cookie store with the same "<App> Safe Storage"
@@ -6375,15 +6394,49 @@ carries the switch and a normal one does not. A throwaway Electron 43.8.3
 probe with the switch reported encryption available, a `v10` ciphertext
 round trip, and left no keychain item behind.
 
+Amended 2026-11-05 (review, packet 5): the two halves answered to different
+conditions. The stand-in keychain needed any `EXAWATT_TEST`, the throwaway
+`userData` needed `EXAWATT_TEST` and `EXAWATT_USER_DATA`, and the composition
+root's `isTest` needed `EXAWATT_TEST=1`; a test launch without a profile
+would have rewritten the operator's cookies with the mock key (signed out
+on his next launch), and a stray `EXAWATT_USER_DATA` outside a test run
+skipped Community's own data namespace. Fix by system: one predicate,
+`hermeticTestRun`, decides a test run for `applyBuildIdentity` and the
+composition root alike. A test run gets its own `userData` and the stand-in
+keychain together; `EXAWATT_TEST=1` with no throwaway profile is refused on
+stderr before anything touches a profile (every current launcher already
+passes one); outside a test run `EXAWATT_USER_DATA` changes nothing. The
+switch is still applied first in `main.ts`, before `ready` and before the
+lazy `safeStorage` read in `connected-sources-ipc.ts`. Proof:
+`build-identity.test.ts` checks both halves together, the refusal, and that
+`EXAWATT_TEST=true` is neither half.
+
 ### BUG-337 The offline network check never sees the app's Next server
 
-Status: bug · ENG-030 · found 2026-11-05 by execution front packet 6
+Status: fixed 2026-11-05 · ENG-030 · found 2026-11-05 by execution front packet 6; review front (2026-11-05) packet 5.
 
 `scripts/community-network-observatory.mjs` (`eval:community:network`) finds
 the app's processes by executable path, but the renderer server renames its
 process to `next-server (v16.x)`, so its traffic has never been observed,
 before or after the server moved to a utility process (BUG-310). Start by
 matching the server through its parent process rather than its path.
+
+Cause: the path came from `ps -o comm`, which is read from the process's own
+argument memory, and Next's `process.title` rewrites it. The suggested
+parent-process match was not taken: recycled parent pids once put a sibling
+agent's traffic on this check's record, which is why it left ancestry. Fix
+by system: `scripts/lib/bundle-sockets.mjs` knows a process by its executable
+image, the first `txt` entry `lsof` lists, which a process cannot change; one
+sample reads which processes hold internet sockets, then every open file of
+exactly those, so each process's image and sockets come from the same read
+and a recycled pid can never carry a stranger's socket. Chosen over asking
+the app (`app.getAppMetrics()`), which would miss any process the app starts
+outside Chromium's process model. The check now also fails as unproven
+unless the sampler identified the renderer server, whose pid the app
+reports, as one of the bundle's processes. Proof: `scripts/bundle-sockets.test.mjs`
+runs a process inside a bundle that renames itself `next-server (v16.4.2)`
+(found) beside one outside it that names itself after the bundle (not
+found), with `ps` listing each the wrong way round.
 
 ### BUG-338 A few handlers still read state from an earlier render
 

@@ -3,6 +3,7 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import { promisify } from 'util';
+import type { DiagnosticRecorder } from './diagnostics-log';
 import type { RendererPortPolicy } from './renderer-port';
 
 /**
@@ -27,6 +28,14 @@ import type { RendererPortPolicy } from './renderer-port';
  * the storage Chromium keeps under it, survive. Chromium records the same
  * death as a `child-process-gone` of the service named here.
  *
+ * This module is also the one place that says which of the server's deaths
+ * were asked for. Next's server exits 143 on SIGTERM, and Chromium reports
+ * any non-zero exit of a utility process as `child-process-gone` with reason
+ * `abnormal-exit`, so every stop would otherwise read as a crash. A server
+ * that exits while a stop of it is in flight was stopped: it is recorded once
+ * as `renderer-server.stopped`, and `endedOnRequest` tells the process-death
+ * watcher not to record or count Chromium's account of it.
+ *
  * Every process boundary is an argument (`fork`, the archive extractor, port
  * allocation, the readiness probe, the clock), so the lifecycle is exercised
  * with a double of the utility process rather than a packaged app.
@@ -36,7 +45,9 @@ import type { RendererPortPolicy } from './renderer-port';
  * The part of Electron's `UtilityProcess` this module uses. `kill()` asks the
  * process to end (SIGTERM) and Chromium ends it outright if it has not after
  * two seconds; it does nothing before `spawn`. `exit` carries the wait status
- * code, which is the signal's number for a process a signal ended.
+ * code, which is the signal's number for a process a signal ended. Electron
+ * reports 0 only for a process that `kill()`'s own signal ended; Next's
+ * server handles SIGTERM and exits 143, which arrives as 143.
  */
 export interface ServerProcess {
   readonly pid: number | undefined;
@@ -81,6 +92,8 @@ export interface RendererServerDependencies {
   pid?: number;
   /** Faster cache pruning under automation. */
   isTest: boolean;
+  /** `logs/main.jsonl`: where a stop this module asked for is recorded. */
+  record: DiagnosticRecorder;
   /** The distribution-scoped environment the server inherits. */
   childEnvironment: () => NodeJS.ProcessEnv;
   /** Mirrors the server's stdout (EXAWATT_RENDERER_LOGS=1). */
@@ -109,6 +122,12 @@ interface RendererServer {
   restart(): Promise<string>;
   /** True when a server has served before and none is serving now. */
   isDown(): boolean;
+  /**
+   * Whether a `child-process-gone` Chromium reported is this server ending
+   * because this module asked it to (a stop, or a failed start being
+   * cleared). Such a death is already recorded here; it is not a crash.
+   */
+  endedOnRequest(gone: { name?: string }): boolean;
   /** The origin being served, or null before the first successful start. */
   readonly origin: string | null;
   /** Whether this version is already unpacked, so start can run pre-ready. */
@@ -141,6 +160,12 @@ interface ServerChild {
   readonly process: ServerProcess;
   /** The exit code once it has exited, else null. */
   exitCode: number | null;
+  /**
+   * True while a stop of this process is in flight, and for good once that
+   * stop sees it exit. A stop that gives up on a process still running
+   * clears it, so a death after an abandoned shutdown is reported.
+   */
+  stopRequested: boolean;
   readonly exited: Promise<number>;
   readonly spawned: Promise<void>;
 }
@@ -153,6 +178,7 @@ function track(server: ServerProcess): ServerChild {
   const child: ServerChild = {
     process: server,
     exitCode: null,
+    stopRequested: false,
     spawned,
     exited: new Promise<number>(resolve => {
       server.once('exit', code => {
@@ -179,6 +205,7 @@ async function stopServerProcess(
   failureMessage: string
 ): Promise<void> {
   if (child.exitCode !== null) return;
+  child.stopRequested = true;
   void child.spawned.then(() => {
     if (child.exitCode === null) child.process.kill();
   });
@@ -193,6 +220,10 @@ async function stopServerProcess(
         );
       }),
     ]);
+  } catch (error) {
+    // Given up on: whatever ends this process later was not this stop.
+    if (child.exitCode === null) child.stopRequested = false;
+    throw error;
   } finally {
     clearTimeout(deadline);
   }
@@ -230,15 +261,21 @@ export function createRendererServer(
   const pid = deps.pid ?? process.pid;
 
   let rendererServer: ServerChild | null = null;
+  /**
+   * The process Chromium's next `child-process-gone` for this service is
+   * about. Chromium reports a process's `exit` and its `child-process-gone`
+   * from the same disconnect, and a replacement is forked only after an
+   * asynchronous readiness probe, so no newer process can come between them.
+   */
+  let lastForked: ServerChild | null = null;
   let rendererOrigin: string | null = null;
   let activeRendererCacheKey: string | null = null;
   /** What the serving process was launched from, for a same-port restart. */
   let served: { standaloneRoot: string; port: number } | null = null;
   /**
-   * True while a `stop()` is in flight: the exit it asks for is expected, and
-   * nothing may start a replacement under it. Cleared when the stop settles,
-   * so after a shutdown that is abandoned a later death is reported and a
-   * restart is allowed again.
+   * True while a `stop()` is in flight: nothing may start a replacement under
+   * it. Cleared when the stop settles, so after a shutdown that is abandoned
+   * a restart is allowed again.
    */
   let stopping = false;
 
@@ -320,12 +357,17 @@ export function createRendererServer(
     });
     const child = track(server);
     rendererServer = child;
-    // A server that dies while starting is reported by the start that
-    // launched it (the promise rejects), so only an exit after it answered is
-    // unexpected.
+    lastForked = child;
+    // An exit a stop asked for is recorded here and nowhere else. A server
+    // that dies while starting is reported by the start that launched it
+    // (the promise rejects), so only an exit after it answered is unexpected.
     let answered = false;
     void child.exited.then(code => {
-      if (!answered || stopping || rendererServer !== child) return;
+      if (child.stopRequested) {
+        deps.record('renderer-server.stopped', { code });
+        return;
+      }
+      if (!answered || rendererServer !== child) return;
       deps.onUnexpectedExit?.({ code });
     });
     server.stdout?.on('data', data => {
@@ -446,6 +488,9 @@ export function createRendererServer(
     stop: stopRendererServer,
     restart: restartRendererServer,
     isDown: isRendererServerDown,
+    endedOnRequest: gone =>
+      gone.name === RENDERER_SERVER_SERVICE &&
+      lastForked?.stopRequested === true,
     get origin() {
       return rendererOrigin;
     },

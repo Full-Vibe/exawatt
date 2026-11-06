@@ -44,14 +44,19 @@ describe('openMainDiagnostics', () => {
 });
 
 describe('watchProcessDeaths', () => {
-  function fakeApp() {
+  function fakeApp(
+    endedOnRequest: (details: { name?: string }) => boolean = () => false
+  ) {
     const app = Object.assign(new EventEmitter(), {
       getVersion: () => '0.1.13',
     });
     const proc = new EventEmitter();
     const recorded: Array<{ event: string; fields?: unknown }> = [];
-    watchProcessDeaths(app as never, proc as never, (event, fields) =>
-      recorded.push({ event, fields })
+    watchProcessDeaths(
+      app as never,
+      proc as never,
+      (event, fields) => recorded.push({ event, fields }),
+      endedOnRequest
     );
     return { app, proc, recorded };
   }
@@ -102,5 +107,18 @@ describe('watchProcessDeaths', () => {
         },
       },
     ]);
+  });
+
+  it('leaves a helper its owner stopped on purpose to that owner', () => {
+    const { app, recorded } = fakeApp(details => details.name === 'Owned');
+
+    app.emit(
+      'child-process-gone',
+      {},
+      { type: 'Utility', reason: 'abnormal-exit', exitCode: 143, name: 'Owned' }
+    );
+
+    expect(recorded).toEqual([]);
+    expect(drainMainAnalyticsEvents()).toEqual([]);
   });
 });

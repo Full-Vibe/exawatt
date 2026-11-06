@@ -101,6 +101,15 @@ export function installMainInstrumentation(
   watchShellStartupArtifacts(userDataPath, record);
 }
 
+/** Chromium's account of a helper that went away (`child-process-gone`). */
+interface ChildProcessGone {
+  type: string;
+  reason: string;
+  exitCode: number;
+  serviceName?: string;
+  name?: string;
+}
+
 interface ProcessDeathApp {
   getVersion(): string;
   on(
@@ -113,16 +122,7 @@ interface ProcessDeathApp {
   ): unknown;
   on(
     event: 'child-process-gone',
-    listener: (
-      event: unknown,
-      details: {
-        type: string;
-        reason: string;
-        exitCode: number;
-        serviceName?: string;
-        name?: string;
-      }
-    ) => void
+    listener: (event: unknown, details: ChildProcessGone) => void
   ): unknown;
 }
 
@@ -132,6 +132,11 @@ interface ProcessDeathApp {
  * (ENG-030 OS1.5b). A renderer's own death is recorded by its window's
  * recovery, which knows what it did about it; the per-window listener lives
  * with the window.
+ *
+ * A helper one of our modules stopped on purpose is not a death. Its owner
+ * says so (`endedOnRequest`) and records the stop itself: the packaged
+ * renderer server exits 143 when stopped, which Chromium reports as an
+ * `abnormal-exit` like any crash.
  *
  * Each analytics listener queues one typed event into the in-memory analytics
  * bridge; it reaches PostHog only if a renderer later drains it through the
@@ -144,7 +149,8 @@ export function watchProcessDeaths(
   proc: {
     on(event: 'uncaughtExceptionMonitor', listener: () => void): unknown;
   },
-  record: DiagnosticRecorder
+  record: DiagnosticRecorder,
+  endedOnRequest: (details: ChildProcessGone) => boolean
 ): void {
   app.on('render-process-gone', (_event, _webContents, details) => {
     const crash = appCrashFromRenderProcessGone(
@@ -156,6 +162,7 @@ export function watchProcessDeaths(
   // Chromium restarts its own GPU, network and utility helpers; the record is
   // what says one died.
   app.on('child-process-gone', (_event, details) => {
+    if (endedOnRequest(details)) return;
     recordChildProcessGone(record, details);
     const crash = appCrashFromChildProcessGone(
       details.type,

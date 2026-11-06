@@ -28,7 +28,10 @@ import {
   applyNativeAppearancePreference,
   testSystemDarkOverride,
 } from './appearance';
-import { assertPackagedRendererComposition } from './build-identity';
+import {
+  assertPackagedRendererComposition,
+  hermeticTestRun,
+} from './build-identity';
 import { launchBuildIdentity } from './launch-identity';
 import {
   registerCommandEngineIPC,
@@ -102,7 +105,7 @@ import {
 
 const env = process.env;
 const isDev = env.NODE_ENV === 'development';
-const isTest = env.EXAWATT_TEST === '1';
+const isTest = hermeticTestRun(env) !== null;
 const windowLaunchMode = resolveWindowLaunchMode({
   isDevelopment: isDev,
   isTest,
@@ -169,6 +172,7 @@ const rendererServer = createRendererServer({
   userDataPath,
   cacheNamespace: identity.cacheNamespace,
   isTest,
+  record: processDiagnostics,
   childEnvironment: () => distributionChildEnvironment(distribution, env),
   forwardStdout: env.EXAWATT_RENDERER_LOGS === '1',
   ports: createRendererPortPolicy({
@@ -566,7 +570,9 @@ app.whenReady().then(() => {
   );
 });
 
-watchProcessDeaths(app, process, processDiagnostics);
+watchProcessDeaths(app, process, processDiagnostics, details =>
+  rendererServer.endedOnRequest(details)
+);
 
 app.on(
   'before-quit',

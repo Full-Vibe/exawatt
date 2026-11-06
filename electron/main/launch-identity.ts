@@ -1,6 +1,10 @@
 import { app } from 'electron';
 import path from 'path';
-import { applyBuildIdentity, resolveBuildIdentity } from './build-identity';
+import {
+  applyBuildIdentity,
+  resolveBuildIdentity,
+  TestLaunchRefused,
+} from './build-identity';
 
 let launched: ReturnType<typeof resolveBuildIdentity> | null = null;
 
@@ -17,6 +21,15 @@ export function launchBuildIdentity(): ReturnType<typeof resolveBuildIdentity> {
     mainRoot: path.join(__dirname, '..'),
     resourcesPath: process.resourcesPath,
   });
-  applyBuildIdentity(app, launched, process.env);
+  try {
+    applyBuildIdentity(app, launched, process.env);
+  } catch (error) {
+    // Said on stderr, where the launching eval reads it, and ended before
+    // anything touches a profile. An uncaught throw would also stop the
+    // launch, but behind a modal error dialog on the operator's screen.
+    if (!(error instanceof TestLaunchRefused)) throw error;
+    console.error(error.message);
+    process.exit(1);
+  }
   return launched;
 }

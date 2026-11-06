@@ -11,8 +11,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   applyBuildIdentity,
   assertPackagedRendererComposition,
+  hermeticTestRun,
   resolveBuildIdentity,
   TEST_KEYCHAIN_SWITCH,
+  TestLaunchRefused,
 } from './build-identity';
 import type { BuildInfo } from '@exawatt/core/desktop-bridge';
 
@@ -153,8 +155,8 @@ describe('applyBuildIdentity', () => {
     );
   });
 
-  it('gives a hermetic test run the userData it asked for, and nothing else', () => {
-    const { app, paths } = fakeApp();
+  it('gives a hermetic test run its throwaway userData and the stand-in keychain together (BUG-336)', () => {
+    const { app, paths, switches } = fakeApp();
     applyBuildIdentity(app, build(), {
       EXAWATT_TEST: '1',
       EXAWATT_USER_DATA: '/tmp/eval-user-data',
@@ -163,30 +165,45 @@ describe('applyBuildIdentity', () => {
     expect(paths.sessionData).toBe(
       '/Users/op/Library/Application Support/Exawatt'
     );
-  });
-
-  it('keeps every test launch off the login keychain (BUG-336)', () => {
-    const { app, switches } = fakeApp();
-    applyBuildIdentity(app, build(), { EXAWATT_TEST: '1' });
     expect(switches).toEqual([TEST_KEYCHAIN_SWITCH]);
   });
 
-  it('leaves a normal launch on the real keychain', () => {
-    const { app, switches } = fakeApp();
-    applyBuildIdentity(app, build(), {
-      EXAWATT_USER_DATA: '/tmp/eval-user-data',
-    });
+  it('refuses a test launch with no throwaway profile, before it changes anything', () => {
+    const { app, paths, switches, name } = fakeApp();
+    expect(() =>
+      applyBuildIdentity(app, build(), { EXAWATT_TEST: '1' })
+    ).toThrow(TestLaunchRefused);
     expect(switches).toEqual([]);
-  });
-
-  it('never redirects real data on a stray variable outside a test run', () => {
-    const { app, paths } = fakeApp();
-    applyBuildIdentity(app, build(), {
-      EXAWATT_USER_DATA: '/tmp/eval-user-data',
-    });
     expect(paths.userData).toBe(
       '/Users/op/Library/Application Support/Exawatt'
     );
+    expect(name()).toBe('');
+  });
+
+  it('treats a launch as a test run exactly when the composition root does', () => {
+    for (const [env, test] of [
+      [{ EXAWATT_TEST: '1', EXAWATT_USER_DATA: '/tmp/eval' }, true],
+      [{ EXAWATT_TEST: 'true', EXAWATT_USER_DATA: '/tmp/eval' }, false],
+      [{ EXAWATT_USER_DATA: '/tmp/eval' }, false],
+      [{}, false],
+    ] as const) {
+      const { app, paths, switches } = fakeApp();
+      applyBuildIdentity(app, build(), env);
+      expect(hermeticTestRun(env) !== null).toBe(test);
+      expect(switches.includes(TEST_KEYCHAIN_SWITCH)).toBe(test);
+      expect(paths.userData === '/tmp/eval').toBe(test);
+    }
+  });
+
+  it('leaves a normal launch on the real keychain, and a stray profile variable changes nothing', () => {
+    const stray = fakeApp();
+    const normal = fakeApp();
+    applyBuildIdentity(stray.app, build(), {
+      EXAWATT_USER_DATA: '/tmp/eval-user-data',
+    });
+    applyBuildIdentity(normal.app, build(), {});
+    expect(stray.switches).toEqual([]);
+    expect(stray.paths).toEqual(normal.paths);
   });
 });
 
