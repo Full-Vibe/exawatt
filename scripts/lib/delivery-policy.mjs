@@ -1,9 +1,10 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { loadavg, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 import { acquireMachineSlot } from './machine-slots.mjs';
 import {
@@ -1327,31 +1328,32 @@ export function deliveryAffectingPath(file, tree = deliveryTree()) {
 }
 
 /**
- * The delivery pins that read the product tree itself, so any change can
- * break them: the font scan over `src/`, the suite-environment walk over every
- * test file, the route derivation over every tracked path, the public-variant
- * renderers over the documents, and the runbook links. About 40 seconds
- * together; they run on every landing the whole suite does not.
- */
-/**
  * The Node release public CI and the release builds run, read from the tree
  * being checked (BUG-320). `.node-version` is the one copy: every workflow's
- * `setup-node` reads it (`node-version-file`), and the landing runs its test
- * suites under it through pnpm's own runtime pin (`use-node-version`), which
+ * `setup-node` reads it (`node-version-file`), and the landing runs its
+ * checks under it through pnpm's own runtime pin (`use-node-version`), which
  * fetches that exact release once per machine and puts it first on every
  * script's PATH. Landings had run the suites on this Mac's Node 26 while CI
  * ran 22, and three commits passed every landing and failed CI on 22 alone.
- * Null for a tree without the file, whose suites run on the landing's Node.
+ * Null for a tree without the file, whose checks run on the landing's Node.
+ * Any other failure to read it throws: a pin that could not be read is not a
+ * tree without one (BUG-320, amended 2026-11-05).
  */
 export const CI_NODE_VERSION_FILE = '.node-version';
 const CI_NODE_VERSION = /^\d+\.\d+\.\d+$/u;
 const ciNodeVersion = perTree(tree => {
-  let source;
-  try {
-    source = treeGit(tree, ['show', `${tree.hash}:${CI_NODE_VERSION_FILE}`]);
-  } catch {
-    return null;
-  }
+  const listed = treeGit(tree, [
+    'ls-tree',
+    '--name-only',
+    tree.hash,
+    '--',
+    CI_NODE_VERSION_FILE,
+  ]).trim();
+  if (listed === '') return null;
+  const source = treeGit(tree, [
+    'show',
+    `${tree.hash}:${CI_NODE_VERSION_FILE}`,
+  ]);
   const version = source.trim().replace(/^v/u, '');
   // A range or alias would let CI and the landing resolve different
   // releases, so only an exact one is a pin.
@@ -1364,19 +1366,25 @@ const ciNodeVersion = perTree(tree => {
 });
 
 /**
- * The checks that run a test suite, which run under CI's Node. The other
- * landing checks keep the landing's Node: surface gates and evals drive a
- * dev server and Electron, which CI does not run.
+ * What every check set a landing runs passes through last (BUG-320): one
+ * check per id, the first definition winning, and each check pinned to CI's
+ * Node unless it says `pinned: false`. Pinning is the default, so a check
+ * added later runs as CI runs it without anyone listing it; the checks that
+ * opt out drive the dev server, Electron or a browser on this Mac, which
+ * public CI never runs.
  */
-const CI_NODE_CHECKS = new Set([
-  'test:agent-delivery',
-  'delivery-pins',
-  'vitest-related',
-  'module-tests',
-  'full-suite',
-  'scanning-tests',
-  'test:service-conformance',
-]);
+function repositoryChecks(checks, tree) {
+  const node = ciNodeVersion(tree);
+  const owned = new Map();
+  for (const check of checks) {
+    if (owned.has(check.id)) continue;
+    owned.set(
+      check.id,
+      node && check.pinned !== false ? { ...check, node } : check
+    );
+  }
+  return [...owned.values()];
+}
 
 /**
  * The whole delivery suite: every top-level test in `scripts/` (BUG-319).
@@ -1395,6 +1403,13 @@ export function deliverySuiteFiles(files) {
   return files.filter(file => suite.test(file)).sort();
 }
 
+/**
+ * The delivery pins that read the product tree itself, so any change can
+ * break them: the font scan over `src/`, the suite-environment walk over every
+ * test file, the route derivation over every tracked path, the public-variant
+ * renderers over the documents, and the runbook links. About 40 seconds
+ * together; they run on every landing the whole suite does not.
+ */
 // `pnpm test:delivery-pins` runs exactly these; `delivery-policy.test.mjs`
 // holds the package script to this list.
 export const PRODUCT_TREE_PINS = Object.freeze([
@@ -1564,6 +1579,9 @@ export function classifyDeliveryPolicy(
       id: 'open-source:paths:check',
       command: 'pnpm',
       args: ['run', 'open-source:paths:check', '--', '--landing'],
+      // Its answer depends on the commits, not only the tree: one tree is
+      // reached by histories the projection answers differently.
+      readsHistory: true,
     },
     {
       id: 'content:scan',
@@ -1577,6 +1595,9 @@ export function classifyDeliveryPolicy(
       id: 'security:secrets:landing',
       command: 'pnpm',
       args: ['run', 'security:secrets:landing'],
+      // It scans the commits, so a secret added and removed again is found
+      // in a tree that holds none.
+      readsHistory: true,
     },
     // BUG-316: two fonts and a recaptured share image landed without their
     // provenance on 2026-10-14, and only CI, already red, read the manifest.
@@ -1922,6 +1943,9 @@ export function classifyDeliveryPolicy(
       id: 'electron:compile',
       command: 'pnpm',
       args: ['run', 'electron:compile'],
+      // Builds the main process and native modules the Electron gates load
+      // on this Mac.
+      pinned: false,
     });
   }
 
@@ -1934,6 +1958,8 @@ export function classifyDeliveryPolicy(
       id: 'qa:browser:doctor',
       command: 'pnpm',
       args: ['run', 'qa:browser:doctor'],
+      // Proves the browser the evals drive on this Mac.
+      pinned: false,
     });
   }
 
@@ -1987,23 +2013,23 @@ export function classifyDeliveryPolicy(
       id: 'eval:r3f',
       command: 'pnpm',
       args: ['run', 'eval:r3f'],
+      // Drives a browser on this Mac.
+      pinned: false,
     });
   }
 
+  // The surface gates the change declared: they drive the dev server and
+  // Electron on this Mac, so they keep its Node.
   for (const script of extras) {
-    checks.push({ id: script, command: 'pnpm', args: ['run', script] });
+    checks.push({
+      id: script,
+      command: 'pnpm',
+      args: ['run', script],
+      pinned: false,
+    });
   }
 
-  const node = ciNodeVersion(tree);
-  const repositoryOwned = new Map();
-  for (const check of checks) {
-    if (repositoryOwned.has(check.id)) continue;
-    repositoryOwned.set(
-      check.id,
-      node && CI_NODE_CHECKS.has(check.id) ? { ...check, node } : check
-    );
-  }
-  return [...repositoryOwned.values()];
+  return repositoryChecks(checks, tree);
 }
 
 /**
@@ -2021,24 +2047,34 @@ const DOCS_LANDING_CHECK_IDS = new Set([
 /**
  * The public-variant renderer contract. The landing checks run this file as
  * one of `PRODUCT_TREE_PINS` or inside the whole `test:agent-delivery`; the
- * docs subset, a pre-push check, names it on its own.
+ * docs subset, a pre-push check, names it on its own, through pnpm like
+ * every other check so it runs on CI's Node too.
  */
 export const RECIPE_RENDERERS_CHECK = Object.freeze({
   id: 'recipe-renderers',
-  command: 'node',
-  args: ['--test', 'scripts/recipe-renderers.test.mjs'],
+  command: 'pnpm',
+  args: ['exec', 'node', '--test', 'scripts/recipe-renderers.test.mjs'],
 });
 
+/**
+ * The docs lane's and `pnpm docs:check`'s checks: the renderer contract and
+ * the landing checks a documentation change can fail, as
+ * `classifyDeliveryPolicy` defines them, through the same last step
+ * (`repositoryChecks`), so each runs on the Node the landing would run it on.
+ */
 export function classifyDocsChecks(
   changedPaths,
   { tree = deliveryTree() } = {}
 ) {
-  return [
-    RECIPE_RENDERERS_CHECK,
-    ...classifyDeliveryPolicy(changedPaths, [], { tree }).filter(check =>
-      DOCS_LANDING_CHECK_IDS.has(check.id)
-    ),
-  ];
+  return repositoryChecks(
+    [
+      RECIPE_RENDERERS_CHECK,
+      ...classifyDeliveryPolicy(changedPaths, [], { tree }).filter(check =>
+        DOCS_LANDING_CHECK_IDS.has(check.id)
+      ),
+    ],
+    tree
+  );
 }
 
 /**
@@ -2461,6 +2497,83 @@ export function checkEnvironment(check, env = process.env) {
     );
   }
   return { ...env, npm_config_use_node_version: check.node };
+}
+
+/**
+ * The landing could not make a pinned Node release ready. It is the
+ * machine's, never a check's verdict: the landing throws it before any check
+ * runs, so no car is convicted and no `--land-passing` train is drained.
+ */
+export class CheckNodeError extends Error {}
+
+const provisionedNodes = new Map();
+
+/**
+ * Makes ready, on this machine, every Node release `checks` are pinned to,
+ * before any of them runs (BUG-320, amended 2026-11-05). pnpm fetches a
+ * pinned release from nodejs.org the first time a command asks for it, so
+ * offline, or with nodejs.org down, every pinned check failed with pnpm's
+ * download error, and a train bisected that to a car: to the first car when
+ * master had moved `.node-version`, or to the car that did. The landing asks
+ * here, beside its install refresh, once per release per process, and holds
+ * the answer to the exact release: pnpm's `node` must report it.
+ * Returns the releases made ready; throws `CheckNodeError`.
+ */
+export async function provisionCheckNode(
+  root,
+  checks,
+  { env = process.env } = {}
+) {
+  const versions = [
+    ...new Set(checks.map(check => check.node).filter(Boolean)),
+  ].sort();
+  for (const version of versions) {
+    if (!provisionedNodes.has(version)) {
+      const ready = probeCheckNode(root, version, env);
+      provisionedNodes.set(version, ready);
+      ready.catch(() => provisionedNodes.delete(version));
+    }
+    await provisionedNodes.get(version);
+  }
+  return versions;
+}
+
+async function probeCheckNode(root, version, env) {
+  const probe = {
+    id: 'check-node',
+    command: 'pnpm',
+    args: ['exec', 'node', '--print', 'process.version'],
+    node: version,
+  };
+  let reported;
+  try {
+    const { stdout } = await promisify(execFile)(probe.command, probe.args, {
+      cwd: root,
+      env: checkEnvironment(probe, env),
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    reported = stdout.trim().split('\n').at(-1);
+  } catch (error) {
+    const reason =
+      String(error.stderr ?? '').trim() || error.message.split('\n')[0];
+    throw new CheckNodeError(checkNodeMessage(version, reason));
+  }
+  if (reported !== `v${version}`) {
+    throw new CheckNodeError(
+      checkNodeMessage(
+        version,
+        `pnpm's node reported ${JSON.stringify(reported ?? '')}`
+      )
+    );
+  }
+}
+
+function checkNodeMessage(version, reason) {
+  return [
+    `[agent-land] Node ${version}, the release CI runs and the landing runs its checks on (${CI_NODE_VERSION_FILE}), is not ready on this machine:`,
+    reason,
+    'That is the machine, not the change: no check ran and no car is blamed. pnpm fetches the release once from nodejs.org; restore that, then land again.',
+  ].join('\n');
 }
 
 async function spawnCheck(root, check, args = check.args) {

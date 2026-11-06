@@ -57,8 +57,14 @@ test('docs:check runs the landing checks’ own check definitions', () => {
     'security:secrets:landing',
   ]);
   for (const check of docs) {
-    if (check === RECIPE_RENDERERS_CHECK) continue;
+    if (check.id === RECIPE_RENDERERS_CHECK.id) continue;
     assert.deepEqual(check, landing.get(check.id), check.id);
+  }
+  // BUG-320: every docs check runs on the Node CI runs, the renderer
+  // contract included, as the landing runs it inside its suites.
+  const pinned = readFileSync(path.join(ROOT, '.node-version'), 'utf8').trim();
+  for (const check of docs) {
+    assert.equal(check.node, pinned, `${check.id} runs on CI's Node`);
   }
   // The landing checks run the renderer contract inside `test:agent-delivery`.
   const scripts = JSON.parse(

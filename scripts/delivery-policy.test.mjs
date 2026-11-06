@@ -66,6 +66,8 @@ import { PARTNER_CONVERSATIONS_DIRECTORY } from './lib/recipe-renderers.mjs';
 import { PUBLICATION_GATES } from './publication-check.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+/** The Node release every check that does not opt out runs on (BUG-320). */
+const CI_NODE = readFileSync(path.join(root, '.node-version'), 'utf8').trim();
 
 async function pathManifest() {
   return JSON.parse(
@@ -136,12 +138,15 @@ test('path classification runs first, per commit and then over the tree, before 
     id: 'open-source:paths:check',
     command: 'pnpm',
     args: ['run', 'open-source:paths:check', '--', '--landing'],
+    readsHistory: true,
+    node: CI_NODE,
   });
   assert.ok(!REUSABLE_CHECKS.has('open-source:paths:check'));
   assert.deepEqual(scan, {
     id: 'content:scan',
     command: 'pnpm',
     args: ['run', 'content:scan', '--', 'docs/a.md', 'src/z.ts'],
+    node: CI_NODE,
   });
 });
 
@@ -1490,6 +1495,7 @@ test('lint runs whole wherever the topology cannot scope a change, a module land
     id: 'lint',
     command: 'pnpm',
     args: ['run', 'lint'],
+    node: CI_NODE,
   });
   // Inside one module, off its public surface: that module's files.
   const scoped = classifyDeliveryPolicy(['electron/main/bus/ledger.ts']);
@@ -1536,6 +1542,7 @@ test('changed source files owe the consumer-less export check', () => {
     id: 'exports:check',
     command: 'pnpm',
     args: ['run', 'exports:check', '--', 'scripts/c.mjs', 'src/b.ts'],
+    node: CI_NODE,
   });
   assert.ok(
     checks.findIndex(check => check.id === 'exports:check') <
@@ -1994,7 +2001,51 @@ test('the test suites run on the Node release CI runs, read from the tree being 
     'PUBLIC'
   );
 
-  const suites = new Set([
+  // Every check runs on CI's Node unless it opts out, so a check added later
+  // needs no list to join. The ones that opt out drive the dev server,
+  // Electron or a browser on this Mac, which CI never runs.
+  const opted = new Set([
+    'eval:r3f',
+    'qa:browser:doctor',
+    'electron:compile',
+    'eval:electron:lifecycle',
+  ]);
+  const checks = [
+    ...classifyDeliveryPolicy([
+      'scripts/lib/delivery-policy.mjs',
+      'src/lib/utils.ts',
+      'contracts/conformance/x.test.ts',
+      'src/components/fleet/spatial/x.tsx',
+      'scripts/qa-browser-doctor.mjs',
+      'electron/main/index.ts',
+    ]),
+    ...classifyDeliveryPolicy(['docs/product/concepts.md']),
+    ...classifyDeliveryPolicy(['electron/main/bus/ledger.ts']),
+    ...classifyDeliveryPolicy(
+      ['src/lib/utils.ts'],
+      ['eval:electron:lifecycle'],
+      {
+        wholeRepo: true,
+      }
+    ),
+  ];
+  const seen = new Set();
+  for (const check of checks) {
+    seen.add(check.id);
+    if (opted.has(check.id)) {
+      assert.equal(check.pinned, false, check.id);
+      assert.equal(
+        check.node,
+        undefined,
+        `${check.id} keeps the landing's Node`
+      );
+    } else {
+      assert.equal(check.node, pinned, `${check.id} runs on CI's Node`);
+      assert.equal(path.basename(check.command), 'pnpm');
+    }
+  }
+  for (const id of [
+    ...opted,
     'test:agent-delivery',
     'delivery-pins',
     'vitest-related',
@@ -2002,32 +2053,10 @@ test('the test suites run on the Node release CI runs, read from the tree being 
     'full-suite',
     'scanning-tests',
     'test:service-conformance',
-  ]);
-  const checks = [
-    ...classifyDeliveryPolicy([
-      'scripts/lib/delivery-policy.mjs',
-      'src/lib/utils.ts',
-      'contracts/conformance/x.test.ts',
-    ]),
-    ...classifyDeliveryPolicy(['docs/product/concepts.md']),
-    ...classifyDeliveryPolicy(['electron/main/bus/ledger.ts']),
-    ...classifyDeliveryPolicy(['src/lib/utils.ts'], [], { wholeRepo: true }),
-  ];
-  const seen = new Set();
-  for (const check of checks) {
-    seen.add(check.id);
-    if (suites.has(check.id)) {
-      assert.equal(check.node, pinned, `${check.id} runs on CI's Node`);
-      assert.equal(path.basename(check.command), 'pnpm');
-    } else {
-      assert.equal(
-        check.node,
-        undefined,
-        `${check.id} keeps the landing's Node`
-      );
-    }
-  }
-  for (const id of suites) assert.ok(seen.has(id), `${id} was classified`);
+    'lint',
+    'type-check',
+  ])
+    assert.ok(seen.has(id), `${id} was classified`);
 
   // A tree without the file runs every suite on the landing's Node, and one
   // that names a range is refused rather than resolved two ways.
@@ -2053,6 +2082,22 @@ test('the test suites run on the Node release CI runs, read from the tree being 
           tree: deliveryTree(directory),
         }),
       /must name one exact Node release/u
+    );
+    // A pin that cannot be read is not a tree without one: it throws rather
+    // than run every check on the landing's Node.
+    await writeFile(path.join(directory, CI_NODE_VERSION_FILE), '22.23.4\n');
+    git(directory, ['add', CI_NODE_VERSION_FILE]);
+    git(directory, ['commit', '--quiet', '-m', 'an unreadable pin']);
+    const blob = git(directory, ['rev-parse', `HEAD:${CI_NODE_VERSION_FILE}`]);
+    await rm(
+      path.join(directory, '.git', 'objects', blob.slice(0, 2), blob.slice(2))
+    );
+    assert.throws(
+      () =>
+        classifyDeliveryPolicy(['scripts/x.mjs'], [], {
+          tree: deliveryTree(directory),
+        }),
+      error => error.message.includes(CI_NODE_VERSION_FILE)
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

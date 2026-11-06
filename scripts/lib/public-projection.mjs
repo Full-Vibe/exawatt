@@ -1357,67 +1357,191 @@ async function sourceCommitStep({
 }
 
 /**
- * The projection's classification question, asked of every commit
- * `baseSha..sourceSha` adds, before any of them reaches master (BUG-321).
+ * One source commit of the replay, applied to `outputMap`: the paths it
+ * changes, read against the manifest it carries, with every public variant it
+ * affects rendered into `projectionRepo`. A commit that moves the manifest is
+ * projected whole by Gate A (`materializePublicSnapshot`); any other by its
+ * changed paths (`applyPublicCommitChanges`). Every refusal the replay can
+ * make of one commit is made here (an unclassified path, an unknown recipe, a
+ * recipe that does not declare its input, a variant that does not render), so
+ * a landing asks them all by calling this (`checkCommitReplay`, BUG-321).
+ */
+async function replaySourceCommit({
+  sourceRepo,
+  previousSource,
+  commit,
+  manifestPath,
+  manifestState,
+  outputMap,
+  projectionRepo,
+  blobCache,
+  renderedObjectCache,
+}) {
+  const step = await sourceCommitStep({
+    sourceRepo,
+    previousSource,
+    commit,
+    manifestPath,
+    manifestState,
+  });
+  if (step.manifestChanged) {
+    const snapshot = await materializePublicSnapshot({
+      sourceRepo,
+      sourceSha: commit,
+      projectionRepo,
+      manifestPath,
+      blobCache,
+      renderedObjectCache,
+    });
+    return {
+      sourcePaths: step.sourcePaths,
+      manifestState: step.manifestState,
+      snapshot,
+      outputMap: new Map(snapshot.outputs.map(output => [output.path, output])),
+      renderedVariants: snapshot.renderedVariants,
+      tree: snapshot.tree,
+    };
+  }
+  const renderedVariants = await applyPublicCommitChanges({
+    sourceRepo,
+    commit,
+    changedPaths: step.sourcePaths,
+    outputMap,
+    manifestState: step.manifestState,
+    projectionRepo,
+    blobCache,
+    renderedObjectCache,
+  });
+  return {
+    sourcePaths: step.sourcePaths,
+    manifestState: step.manifestState,
+    snapshot: null,
+    outputMap,
+    renderedVariants,
+    tree: await writeTree(
+      projectionRepo,
+      [...outputMap.values()].sort((a, b) => a.path.localeCompare(b.path))
+    ),
+  };
+}
+
+/**
+ * A repository to render into and throw away: its objects are its own, and
+ * it reads the source's objects through git's alternates, so the source
+ * gains nothing and nothing is fetched.
+ */
+async function throwawayProjectionStore(sourceRepo) {
+  const sourceObjects = (
+    await git(
+      ['rev-parse', '--path-format=absolute', '--git-path', 'objects'],
+      {
+        cwd: sourceRepo,
+      }
+    )
+  ).trim();
+  const store = await mkdtemp(path.join(tmpdir(), 'exawatt-landing-replay-'));
+  try {
+    await git(['init', '--quiet', store]);
+    await writeFile(
+      path.join(store, '.git', 'objects', 'info', 'alternates'),
+      sourceObjects + '\n'
+    );
+  } catch (error) {
+    await rm(store, { recursive: true, force: true });
+    throw error;
+  }
+  return store;
+}
+
+/**
+ * The replay's own questions, asked of every commit `baseSha..sourceSha`
+ * adds before any of them reaches master (BUG-321).
  *
- * The replay projects private history one commit at a time, each against
- * the manifest as of that commit, so a commit that adds a file only a later
- * commit classifies is refused by the projection even though the final tree
- * classifies every path. A landing's tree check could not see that: on
- * 2026-10-22 a train ran an hour of checks and gates and then the projection
- * refused it. This walks the same commits with the replay's own steps and
- * classifier (a manifest change answered by Gate A over the whole tree, any
- * other commit by its changed paths), so a landing asks the same question in
- * seconds. The history must be linear, as the replay requires. Throws naming
+ * The replay projects private history one commit at a time, each against the
+ * manifest as of that commit, rendering each public variant that commit
+ * affects. A commit that adds a file only a later commit classifies, or a
+ * public-variant directive only a later commit fixes, is refused by the
+ * projection even though the final tree passes every check. A landing's tree
+ * checks could not see that: on 2026-10-22 a train ran an hour of checks and
+ * gates and then the projection refused it, and BUG-131 stalled publication
+ * on a directive the tip had already repaired. This runs the replay's own
+ * step (`replaySourceCommit`) on each commit, into a throwaway store, then
+ * Gate A over the tip as the replay ends, so a landing gets the replay's
+ * answer in seconds. The walk starts from no public outputs, because a
+ * landing must not depend on master's own projection (a maintenance hold
+ * lands repairs while it is refused), and no refusal of a commit reads
+ * them. The history must be linear, as the replay requires. Throws naming
  * the commit; returns how many commits it asked about.
  */
-export async function checkCommitClassification({
+export async function checkCommitReplay({
   sourceRepo,
   baseSha,
   sourceSha,
   manifestPath = OPEN_SOURCE_PATH_MANIFEST,
 }) {
   const commits = await sourceCommitsAfter(sourceRepo, baseSha, sourceSha);
-  let manifestState = await readManifestState(
-    sourceRepo,
-    baseSha,
-    manifestPath
-  );
-  let previousSource = baseSha;
-  const blobCache = new Map();
-  for (const commit of commits) {
-    try {
-      const step = await sourceCommitStep({
-        sourceRepo,
-        previousSource,
-        commit,
-        manifestPath,
-        manifestState,
-      });
-      manifestState = step.manifestState;
-      if (step.manifestChanged) {
-        await buildProjectionPlan({
+  const projectionRepo = await throwawayProjectionStore(sourceRepo);
+  const refusedAt = async (commit, error) => {
+    const subject = (
+      await git(['log', '-1', '--format=%s', commit], { cwd: sourceRepo })
+    ).trim();
+    const refusal = new Error(
+      `${commit.slice(0, 12)} (${subject}): ${error.message.replace(/^\[[\w-]+\] /u, '')}`
+    );
+    refusal.commit = commit;
+    if (error.renderRefusal) refusal.renderRefusal = error.renderRefusal;
+    return refusal;
+  };
+  try {
+    let manifestState = await readManifestState(
+      sourceRepo,
+      baseSha,
+      manifestPath
+    );
+    let outputMap = new Map();
+    let tipSnapshot = null;
+    let previousSource = baseSha;
+    const blobCache = new Map();
+    const renderedObjectCache = new Map();
+    for (const commit of commits) {
+      try {
+        const step = await replaySourceCommit({
           sourceRepo,
-          sourceSha: commit,
+          previousSource,
+          commit,
+          manifestPath,
+          manifestState,
+          outputMap,
+          projectionRepo,
+          blobCache,
+          renderedObjectCache,
+        });
+        ({ manifestState, outputMap } = step);
+        tipSnapshot = step.snapshot;
+      } catch (error) {
+        throw await refusedAt(commit, error);
+      }
+      previousSource = commit;
+    }
+    const tip = commits.at(-1);
+    if (tip && tipSnapshot?.sourceSha !== tip) {
+      try {
+        await materializePublicSnapshot({
+          sourceRepo,
+          sourceSha: tip,
+          projectionRepo,
           manifestPath,
           blobCache,
+          renderedObjectCache,
         });
-      } else {
-        classifyChangedPaths(manifestState, step.sourcePaths);
+      } catch (error) {
+        throw await refusedAt(tip, error);
       }
-    } catch (error) {
-      const subject = (
-        await git(['log', '-1', '--format=%s', commit], { cwd: sourceRepo })
-      ).trim();
-      const refusal = new Error(
-        `${commit.slice(0, 12)} (${subject}): ${error.message.replace(/^\[[\w-]+\] /u, '')}`
-      );
-      refusal.commit = commit;
-      throw refusal;
     }
-    previousSource = commit;
+    return { commits: commits.length };
+  } finally {
+    await rm(projectionRepo, { recursive: true, force: true });
   }
-  return { commits: commits.length };
 }
 
 async function applyPublicCommitChanges({
@@ -1606,46 +1730,22 @@ async function replayAfterEpoch({
   );
 
   for (const commit of commits) {
-    const step = await sourceCommitStep({
+    const step = await replaySourceCommit({
       sourceRepo,
       previousSource,
       commit,
       manifestPath,
       manifestState,
+      outputMap,
+      projectionRepo,
+      blobCache,
+      renderedObjectCache,
     });
     const { sourcePaths } = step;
-    manifestState = step.manifestState;
-    let nextTree;
-    if (step.manifestChanged) {
-      tipSnapshot = await materializePublicSnapshot({
-        sourceRepo,
-        sourceSha: commit,
-        projectionRepo,
-        manifestPath,
-        blobCache,
-        renderedObjectCache,
-      });
-      outputMap = new Map(
-        tipSnapshot.outputs.map(output => [output.path, output])
-      );
-      renderedVariants += tipSnapshot.renderedVariants;
-      nextTree = tipSnapshot.tree;
-    } else {
-      renderedVariants += await applyPublicCommitChanges({
-        sourceRepo,
-        commit,
-        changedPaths: sourcePaths,
-        outputMap,
-        manifestState,
-        projectionRepo,
-        blobCache,
-        renderedObjectCache,
-      });
-      nextTree = await writeTree(
-        projectionRepo,
-        [...outputMap.values()].sort((a, b) => a.path.localeCompare(b.path))
-      );
-    }
+    ({ manifestState, outputMap } = step);
+    if (step.snapshot) tipSnapshot = step.snapshot;
+    renderedVariants += step.renderedVariants;
+    const nextTree = step.tree;
     if (nextTree !== publicTree) {
       const publicPaths = nullSeparatedPaths(
         await git(

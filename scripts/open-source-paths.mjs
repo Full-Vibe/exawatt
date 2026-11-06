@@ -166,15 +166,17 @@ function option(args, name) {
 }
 
 /**
- * BUG-321. The landing form asks the public projection's own question first:
- * every commit HEAD adds, each path it changes classified by the manifest
- * that commit carries (`checkCommitClassification`, the replay's own steps
- * and classifier). The tree check below cannot see a commit that adds a file
- * only a later commit classifies; the projection refuses that commit.
+ * BUG-321. The landing form asks the public projection's own questions
+ * first: every commit HEAD adds, replayed as the projection replays it
+ * (`checkCommitReplay`, the replay's own per-commit step), so each path it
+ * changes is classified by the manifest that commit carries and each public
+ * variant it affects is rendered from that commit's bytes. The tree check
+ * below sees only the final tree; the projection refuses a commit that adds a
+ * file only a later commit classifies, or a directive only a later commit
+ * fixes.
  */
 async function checkLandingCommits(args) {
-  const { checkCommitClassification } =
-    await import('./lib/public-projection.mjs');
+  const { checkCommitReplay } = await import('./lib/public-projection.mjs');
   const base = (
     await git([
       'rev-parse',
@@ -187,7 +189,7 @@ async function checkLandingCommits(args) {
   const head = (await git(['rev-parse', '--verify', 'HEAD^{commit}'])).trim();
   let asked;
   try {
-    asked = await checkCommitClassification({
+    asked = await checkCommitReplay({
       sourceRepo: ROOT,
       baseSha: base,
       sourceSha: head,
@@ -197,9 +199,10 @@ async function checkLandingCommits(args) {
       [
         '[open-source-paths] the public projection would refuse this history: ' +
           error.message,
-        'It replays each commit against the manifest that commit carries, so the',
-        'commit that adds a path must classify it. Move the manifest entry into',
-        'that commit (git rebase -i), then land again.',
+        'It replays each commit with the manifest and the bytes that commit carries,',
+        'so the commit that adds a path must classify it, and every public variant',
+        'must render at every commit. Fix the commit that is named (git rebase -i),',
+        'then land again.',
       ].join('\n')
     );
   }
@@ -208,7 +211,7 @@ async function checkLandingCommits(args) {
       asked.commits +
       ' commit(s) ' +
       base.slice(0, 12) +
-      '..HEAD adds classifies every path it changes by its own manifest\n'
+      '..HEAD adds replays as the public projection replays it\n'
   );
 }
 
@@ -290,9 +293,10 @@ async function main() {
         '  pnpm open-source:paths:project -- --source <commit>',
         '',
         'The check fails closed on every unclassified tracked path. With',
-        '--landing it first classifies every path each commit HEAD adds to',
-        '<rev> (default: where HEAD leaves origin/master) changes, by that',
-        "commit's own manifest, as the public projection does. A plan",
+        '--landing it first replays each commit HEAD adds to <rev> (default:',
+        'where HEAD leaves origin/master) as the public projection does: every',
+        "path classified by that commit's own manifest, every public variant",
+        'it affects rendered. A plan',
         'records the exact source commit, tree, manifest blob, Git blobs and',
         'modes. --reviewed-tree additionally locks every reviewed output hash.',
         '',

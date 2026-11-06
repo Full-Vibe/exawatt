@@ -21,7 +21,10 @@ import {
   setTicketHold,
   updateAttempt,
 } from './lib/delivery-queue.mjs';
-import { runDeliveryChecks } from './lib/delivery-policy.mjs';
+import {
+  provisionCheckNode,
+  runDeliveryChecks,
+} from './lib/delivery-policy.mjs';
 import {
   appendDeliveryMetric,
   delay,
@@ -895,28 +898,25 @@ async function verifyTrain({ lane, session, base, cars, options }) {
   const excluded = [];
   const bisect = [];
   const names = list => list.map(car => car.branch).join(',');
-  // BUG-322: every answer this train has had, by tree and check. A bisection
-  // convicts a car only by comparing answers for different trees, so one
-  // tree that both passed and failed one check makes every comparison
-  // through that check unsound: it is a suspected flake in that check on
-  // that tree, and no car is convicted. On 2026-10-22 a four-car train
-  // failed eval:spatial twice, the three-car prefix passed it, the docs car
-  // was convicted by elimination, and the stack without it (the same tree
-  // as that prefix) then failed it.
-  const answers = new Map();
-  const answered = async ({ tree, check, result, stack, message = '' }) => {
-    const key = `${tree}\0${check}`;
-    const earlier = answers.get(key);
-    if (!earlier) {
-      answers.set(key, { result, cars: names(stack), message });
-      return;
-    }
-    if (earlier.result === result) return;
-    const failed =
-      result === 'failed' ? { cars: names(stack), message } : earlier;
-    const passed = result === 'passed' ? names(stack) : earlier.cars;
+  // BUG-322: the session remembers every answer any check gave on any tree
+  // (`session.contradiction`). A bisection convicts a car only by comparing
+  // answers for different trees, so one tree that both passed and failed one
+  // check makes every comparison through that check unsound: it is a
+  // suspected flake in that check on that tree, and no car is convicted. On
+  // 2026-10-22 a four-car train failed eval:spatial twice, the three-car
+  // prefix passed it, the docs car was convicted by elimination, and the
+  // stack without it (the same tree as that prefix) then failed it.
+  const failures = new Map();
+  const refuseFlake = async () => {
+    const flake = session.contradiction;
+    if (!flake) return;
+    const { check, tree, passed } = flake;
+    const failed = {
+      cars: flake.failed,
+      message: failures.get(`${tree}\0${check}`) ?? '',
+    };
     bisect.push({
-      cars: stack.map(car => car.branch),
+      cars: flake.cars,
       check,
       tree,
       result: 'flake',
@@ -934,13 +934,17 @@ async function verifyTrain({ lane, session, base, cars, options }) {
       `TRAIN flake: ${check} passed and failed on the same tree ${tree.slice(0, 12)} (${passed === failed.cars ? passed : `as ${passed} and as ${failed.cars}`}), so it is a suspected flake in ${check} on that tree and no car is convicted.\n${failed.message}\nNothing landed. Chase the flake in ${check}, then run the train again.`
     );
   };
+  const verifyOnce = async options => {
+    const step = await verifyStack({ lane, session, base, ...options });
+    if (!step.passed)
+      failures.set(`${step.tree}\0${step.failedCheck}`, step.message);
+    await refuseFlake();
+    return step;
+  };
   // One bisection question on the stack the worktree holds: does `check`
   // fail here? Only that check runs, after what it needs.
   const ask = async (stack, check, record = {}) => {
-    const step = await verifyStack({
-      lane,
-      session,
-      base,
+    const step = await verifyOnce({
       cars: stack,
       phase: 'bisect',
       only: check,
@@ -949,15 +953,6 @@ async function verifyTrain({ lane, session, base, cars, options }) {
     // only when the prefix's policy names it.
     const owed =
       check === TREE_POLICY_CHECK || step.verified?.checks.length > 0;
-    if (!step.passed || owed) {
-      await answered({
-        tree: step.tree,
-        check: step.passed ? check : step.failedCheck,
-        result: step.passed ? 'passed' : 'failed',
-        stack,
-        message: step.message,
-      });
-    }
     const answer = {
       cars: stack.map(car => car.branch),
       check,
@@ -1001,23 +996,13 @@ async function verifyTrain({ lane, session, base, cars, options }) {
       }
     }
     restack = true;
-    const attempt = await verifyStack({
-      lane,
-      session,
-      base,
+    const attempt = await verifyOnce({
       cars: current,
       phase: 'candidate',
       recheck: true,
     });
     if (attempt.passed) return { ...attempt, cars: current, excluded, bisect };
     const check = attempt.failedCheck;
-    await answered({
-      tree: attempt.tree,
-      check,
-      result: 'failed',
-      stack: current,
-      message: attempt.message,
-    });
     bisect.push({
       cars: current.map(car => car.branch),
       check,
@@ -1171,15 +1156,58 @@ function createLandingSession(lane) {
   const flakes = [];
   const reusedChecks = [];
   let failedCheck = null;
-  const recordLandingCheck = extra => async result => {
-    if (result.status === 'flaked') flakes.push(result);
-    if (result.status === 'failed') failedCheck = result.id;
-    if (result.reused)
-      reusedChecks.push(
-        result.phase === 'rebase' ? `${result.id}(rebase)` : result.id
-      );
-    await appendDeliveryMetric(root, 'landing_check', { ...extra, ...result });
+
+  // BUG-322: every verdict any check gave in this landing, by the tree it ran
+  // on, or by the commit for a check that reads history (one tree is reached
+  // by histories it answers differently). A run of one check also runs what
+  // it needs, and a full run passes every check before the one that fails;
+  // each of those is an answer too. The first tree or commit that answers a
+  // check both ways is the landing's `contradiction`: a suspected flake, which
+  // a train reports instead of convicting a car.
+  const answers = new Map();
+  let contradiction = null;
+  const remember = (scope, result) => {
+    const verdict =
+      result.status === 'failed'
+        ? 'failed'
+        : result.status === 'passed' || result.status === 'flaked'
+          ? 'passed'
+          : null;
+    if (!verdict) return;
+    const key = scope.readsHistory.has(result.id)
+      ? `commit\0${scope.commit}\0${result.id}`
+      : `tree\0${scope.tree}\0${result.id}`;
+    const cars = scope.cars.join(',');
+    const earlier = answers.get(key);
+    if (!earlier) {
+      answers.set(key, { verdict, cars });
+      return;
+    }
+    if (earlier.verdict === verdict || contradiction) return;
+    contradiction = {
+      check: result.id,
+      tree: scope.tree,
+      cars: scope.cars,
+      passed: verdict === 'passed' ? cars : earlier.cars,
+      failed: verdict === 'failed' ? cars : earlier.cars,
+    };
   };
+
+  const recordLandingCheck =
+    (extra, scope = null) =>
+    async result => {
+      if (result.status === 'flaked') flakes.push(result);
+      if (result.status === 'failed') failedCheck = result.id;
+      if (result.reused)
+        reusedChecks.push(
+          result.phase === 'rebase' ? `${result.id}(rebase)` : result.id
+        );
+      if (scope) remember(scope, result);
+      await appendDeliveryMetric(root, 'landing_check', {
+        ...extra,
+        ...result,
+      });
+    };
 
   // BUG-219: every landing-check run first makes node_modules the installed form of
   // the tree it is about to check. A rebase that brings a lockfile change, or
@@ -1209,6 +1237,23 @@ function createLandingSession(lane) {
       phase,
       ...refreshed,
     });
+  };
+
+  // BUG-320: the Node release the pinned checks run under is the landing's
+  // infrastructure, like the install: made ready before any check runs, and
+  // a failure to fetch it is the machine's, thrown, never a check's verdict
+  // that a train would bisect to a car.
+  const provisionNode = async (phase, extra, checks) => {
+    try {
+      await provisionCheckNode(root, checks);
+    } catch (error) {
+      await appendDeliveryMetric(root, 'check_node_failed', {
+        ...extra,
+        phase,
+        reason: error.message.split('\n')[1] ?? error.message,
+      });
+      throw error;
+    }
   };
 
   // BUG-246: a gate that reads the dev server runs only once that server
@@ -1289,6 +1334,7 @@ function createLandingSession(lane) {
   }) => {
     failedCheck = null;
     const meta = { candidateSha, ...extra };
+    const tree = await git(root, 'rev-parse', 'HEAD^{tree}');
     const { extras, owed, needsServer } = await classify(
       phase,
       meta,
@@ -1310,9 +1356,17 @@ function createLandingSession(lane) {
     const checks = only ? bisectChecks(owed, only) : owed;
     if (checks.length === 0) return { checks, evidence: [], extras };
     await refreshInstall(phase, meta);
+    await provisionNode(phase, meta, checks);
     const evidence = await lane.runChecks(root, checks, {
       phase,
-      onResult: recordLandingCheck(meta),
+      onResult: recordLandingCheck(meta, {
+        tree,
+        commit: candidateSha,
+        readsHistory: new Set(
+          checks.filter(check => check.readsHistory).map(check => check.id)
+        ),
+        cars: extra.trainCars ?? [lane.branch],
+      }),
       beforeCheck: freshServerBefore(needsServer, phase, files, meta),
       reuse: await lane.openReuse(),
       candidateSha,
@@ -1329,12 +1383,17 @@ function createLandingSession(lane) {
     serverRefreshes,
     recordLandingCheck,
     refreshInstall,
+    provisionNode,
     freshServerBefore,
     classify,
     verify,
     /** The check whose failure ended the last `verify`, or null. */
     get failedCheck() {
       return failedCheck;
+    },
+    /** The first check one tree (or commit) both passed and failed, or null. */
+    get contradiction() {
+      return contradiction;
     },
   };
 }
@@ -1359,6 +1418,7 @@ async function landThroughQueue({
     serverRefreshes,
     recordLandingCheck,
     refreshInstall,
+    provisionNode,
     freshServerBefore,
     classify,
   } = session;
@@ -1750,6 +1810,7 @@ async function landThroughQueue({
           fromBase,
           toBase: remoteBase,
         });
+        await provisionNode('rebase', rebaseMeta, rebaseChecks);
         const rebaseEvidence = await lane.runChecks(root, rebaseChecks, {
           phase: 'rebase',
           queueHead: true,

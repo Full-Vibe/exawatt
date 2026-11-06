@@ -56,9 +56,9 @@ const KEY_ENVIRONMENT =
  * follows the import graph, and several delivery pins read the whole tree).
  */
 export const REUSABLE_CHECKS = new Set([
-  // Not `open-source:paths:check`: it also classifies each commit the
-  // landing adds (BUG-321), and one tree can be reached by histories the
-  // projection answers differently.
+  // Not `open-source:paths:check`: it also replays each commit the landing
+  // adds (BUG-321), and one tree can be reached by histories the projection
+  // answers differently (the check says `readsHistory`).
   'content:scan',
   'lint',
   // Not `type-check`: it also builds @exawatt/core's runtime, which the

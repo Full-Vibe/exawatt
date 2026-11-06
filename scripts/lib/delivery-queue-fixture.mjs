@@ -170,6 +170,22 @@ export function createQueueFixture(
     [
       '#!/bin/sh',
       '[ -n "$FIXTURE_PNPM_LOG" ] && echo "$*" >> "$FIXTURE_PNPM_LOG"',
+      // pnpm's `use-node-version`, as the real one honours it: every command
+      // given a release runs on it, so with FIXTURE_NODE_UNREACHABLE (pnpm
+      // cannot fetch the release) every such command fails, and `node`
+      // reports the release it was given (BUG-320).
+      'if [ -n "$npm_config_use_node_version" ]; then',
+      '  if [ -n "$FIXTURE_NODE_UNREACHABLE" ]; then',
+      '    echo " ERR_PNPM_FAILED_DOWNLOAD_SHASUM_FILE  stand-in: cannot fetch Node $npm_config_use_node_version" >&2',
+      '    exit 1',
+      '  fi',
+      '  case "$*" in',
+      '    "exec node --print process.version")',
+      '      echo "v$npm_config_use_node_version"',
+      '      exit 0',
+      '      ;;',
+      '  esac',
+      'fi',
       'case "$*" in',
       '  "dev"*)',
       '    if [ -n "$FIXTURE_DEV_FAILS" ]; then',
@@ -186,6 +202,12 @@ export function createQueueFixture(
       '    fi',
       '    mkdir -p node_modules/.pnpm && cp pnpm-lock.yaml node_modules/.pnpm/lock.yaml',
       '    exit $?',
+      '    ;;',
+      // `exec node` runs node, as pnpm's does: the renderer contract's
+      // stand-in is a real test, run through pnpm like every check.
+      '  "exec node "*)',
+      '    shift',
+      '    exec "$@"',
       '    ;;',
       'esac',
       'if [ -n "$FIXTURE_REQUIRE_FRESH_INSTALL" ] && [ -f pnpm-lock.yaml ] &&',

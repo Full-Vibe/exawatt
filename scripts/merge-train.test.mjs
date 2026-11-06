@@ -443,6 +443,148 @@ test('a last car whose stack fails every time it is asked is still the car the t
   }
 });
 
+// BUG-322, amended 2026-11-05: the flake memory holds every answer a tree
+// gave, not only the one the bisection asked for. A question about one check
+// runs what that check needs first, and each pass is an answer too.
+test('a prerequisite that passed on a tree and then fails there is a suspected flake, not a second guilty car', async () => {
+  const fixture = createQueueFixture('exawatt-train-prerequisite-');
+  try {
+    fixture.agentWorktree('agent/a', { 'a.txt': 'a\n' });
+    fixture.agentWorktree('agent/b', { 'b.txt': 'b\n' });
+    const log = fixture.at('pnpm.log');
+    const before = fixture.originMaster();
+    // The delivery suite fails on the full stack and its recheck (its runs
+    // 1, 2) and passes on agent/a (run 3), after type-check, which it needs,
+    // passed there (type-check's run 2). Asked again as the stack without
+    // agent/b, the same tree, type-check fails (its run 3).
+    const landed = await finished(
+      fixture.land(fixture.main, ['--train', 'agent/a', 'agent/b'], {
+        ...QUIET,
+        FIXTURE_FAIL_RUNS: 'test:agent-delivery=1,2 type-check=3',
+        FIXTURE_RUN_COUNT: fixture.at('runs'),
+        EXAWATT_CHECK_REUSE: '0',
+        FIXTURE_PNPM_LOG: log,
+      })
+    );
+    assertNothingLanded(fixture, before, landed);
+    assert.match(
+      landed.output,
+      /train bisect: agent\/a passed test:agent-delivery/u
+    );
+    assert.match(
+      landed.output,
+      /TRAIN flake: type-check passed and failed on the same tree [0-9a-f]{12} \(agent\/a\), so it is a suspected flake in type-check/u
+    );
+    assert.doesNotMatch(landed.output, /Another car also breaks|TRAIN red/u);
+    assert.equal(scriptRuns(log)['type-check'], 3, landed.output);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// BUG-322, amended 2026-11-05: a check that reads the commits, not only the
+// tree, is answered per commit. A car that adds a file and removes it again
+// leaves the tree as the car before it left it, and the history check still
+// tells the two stacks apart.
+test('a car whose commits leave the tree unchanged is still convicted by a check that reads history', async () => {
+  const fixture = createQueueFixture('exawatt-train-history-');
+  try {
+    fixture.agentWorktree('agent/a', { 'a.txt': 'a\n' });
+    const b = fixture.at('agent-b');
+    git(fixture.main, [
+      'worktree',
+      'add',
+      '--quiet',
+      b,
+      '-b',
+      'agent/b',
+      'agent/a',
+    ]);
+    write(b, 'private.txt', 'never public\n');
+    commit(b, 'agent: add a file');
+    git(b, ['rm', '--quiet', 'private.txt']);
+    commit(b, 'agent: remove it again');
+    const before = fixture.originMaster();
+    // The history check fails on the full stack and its recheck (runs 1,
+    // 2) and passes on agent/a alone (run 3), which has the same tree.
+    const landed = await finished(
+      fixture.land(fixture.main, ['--train', 'agent/a', 'agent/b'], {
+        ...QUIET,
+        FIXTURE_FAIL_RUNS: 'open-source:paths:check=1,2',
+        FIXTURE_RUN_COUNT: fixture.at('runs'),
+        EXAWATT_CHECK_REUSE: '0',
+      })
+    );
+    assertNothingLanded(fixture, before, landed);
+    assert.match(
+      landed.output,
+      /TRAIN red: agent\/b broke open-source:paths:check; agent\/a passed without it\./u
+    );
+    assert.doesNotMatch(landed.output, /TRAIN flake/u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// BUG-320, amended 2026-11-05: pnpm fetches the pinned Node the first time a
+// command asks for it. Offline, every pinned check failed with pnpm's
+// download error, and the train convicted the first car, or with
+// --land-passing left out every car in turn. The release is the landing's
+// infrastructure, made ready before any check.
+test('a pinned Node the machine cannot fetch convicts no car and drains no --land-passing train', async () => {
+  const fixture = createQueueFixture('exawatt-train-node-', {
+    files: { '.node-version': '22.23.4\n' },
+  });
+  try {
+    fixture.agentWorktree('agent/a', { 'a.txt': 'a\n' });
+    fixture.agentWorktree('agent/b', { 'b.txt': 'b\n' });
+    const before = fixture.originMaster();
+    const refused = await finished(
+      fixture.land(
+        fixture.main,
+        ['--train', 'agent/a', 'agent/b', '--land-passing'],
+        { ...QUIET, FIXTURE_NODE_UNREACHABLE: '1' }
+      )
+    );
+    assertNothingLanded(fixture, before, refused);
+    assert.match(
+      refused.output,
+      /Node 22\.23\.4, the release CI runs and the landing runs its checks on \(\.node-version\), is not ready on this machine/u
+    );
+    assert.match(refused.output, /ERR_PNPM_FAILED_DOWNLOAD_SHASUM_FILE/u);
+    assert.match(refused.output, /no car is blamed/u);
+    assert.doesNotMatch(
+      refused.output,
+      /TRAIN red|train left out|guilty=|No car is left/u
+    );
+    const metrics = await readDeliveryMetrics(fixture.main);
+    assert.ok(
+      metrics.some(event => event.type === 'check_node_failed'),
+      'the failure is recorded as the landing’s'
+    );
+    assert.ok(
+      !metrics.some(
+        event => event.type === 'landing_check' && event.status === 'failed'
+      ),
+      'no check failed'
+    );
+
+    // Reachable, the same train lands, and asks for the release once.
+    const log = fixture.at('pnpm.log');
+    const landed = await finished(
+      fixture.land(fixture.main, ['--train', 'agent/a', 'agent/b'], {
+        ...QUIET,
+        FIXTURE_PNPM_LOG: log,
+      })
+    );
+    assert.equal(landed.code, 0, landed.output);
+    assert.equal(runs(log, 'exec node --print process.version'), 1);
+    assert.match(landed.output, /\(Node 22\.23\.4, as CI runs it\)/u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test('the verdict names the check that failed on the guilty prefix', async () => {
   const fixture = createQueueFixture('exawatt-train-verdict-');
   try {

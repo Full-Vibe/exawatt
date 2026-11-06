@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import {
   assertFastForward,
   buildProjectionPlan,
-  checkCommitClassification,
+  checkCommitReplay,
   comparePublicSnapshot,
   parseFilterRepoCommitMap,
   PROJECTOR_MODULES,
@@ -703,11 +703,12 @@ test('manifest reclassification is forward-only after the public epoch', async (
   }
 });
 
-// BUG-321: a landing asks the projection's question of each commit it adds,
-// and gets the projection's answer. On 2026-10-22 a train passed every check
+// BUG-321: a landing asks the projection's questions of each commit it adds,
+// and gets the projection's answers. On 2026-10-22 a train passed every check
 // on its final tree and the replay refused it: one commit added a file and
-// the next classified it.
-test('a landing classifies each commit as the replay does, and is refused where the replay is', async () => {
+// the next classified it. The replay renders each commit's public variants
+// too, so a directive a later commit repairs stalls it the same way (BUG-131).
+test('a landing replays each commit as the projection does, and is refused where the projection is', async () => {
   const fixture = sourceFixture();
   try {
     const epochProjection = await projectPublicHistory({
@@ -740,7 +741,7 @@ test('a landing classifies each commit as the replay does, and is refused where 
     };
     const manifest = value => JSON.stringify(value, null, 2) + '\n';
     const bothAnswer = async (sourceSha, destination) => {
-      const landing = await checkCommitClassification({
+      const landing = await checkCommitReplay({
         sourceRepo: fixture.source,
         baseSha: fixture.head,
         sourceSha,
@@ -810,6 +811,54 @@ test('a landing classifies each commit as the replay does, and is refused where 
       stale.landing.message,
       /stale rule matches no tracked path: public-docs/u
     );
+
+    // A public variant that does not render at the commit that introduced
+    // it, repaired one commit later: the tip renders, the replay does not.
+    git(fixture.source, ['reset', '--quiet', '--hard', fixture.head]);
+    const broken = commitFiles(
+      { [WORKFLOW]: unrenderableWorkflow(50) },
+      'the workflow gains a secret'
+    );
+    const repaired = commitFiles(
+      { [WORKFLOW]: workflow(50) },
+      'the workflow drops it again'
+    );
+    assert.doesNotThrow(() =>
+      renderRecipeOutput({
+        recipeId: 'public-ci',
+        kind: 'render-public-ci',
+        path: WORKFLOW,
+        source: Buffer.from(workflow(50)),
+      })
+    );
+    const unrendered = await bothAnswer(repaired, 'unrendered');
+    assert.match(unrendered.projection?.message ?? '', /secrets\./u);
+    assert.equal(
+      unrendered.projection.renderRefusal?.privateSha,
+      broken,
+      'the projection names the commit whose bytes it refused'
+    );
+    assert.equal(
+      unrendered.landing?.commit,
+      broken,
+      'the landing names the same commit'
+    );
+    assert.match(
+      unrendered.landing.message,
+      /the workflow gains a secret.*secrets\./su
+    );
+    assert.equal(unrendered.landing.renderRefusal?.privateSha, broken);
+
+    // The same final tree in one commit renders at every commit.
+    git(fixture.source, ['reset', '--quiet', '--hard', fixture.head]);
+    const clean = commitFiles(
+      { [WORKFLOW]: workflow(50) },
+      'the workflow changes and renders'
+    );
+    assert.deepEqual(await bothAnswer(clean, 'rendered'), {
+      landing: null,
+      projection: null,
+    });
   } finally {
     fixture.cleanup();
   }
