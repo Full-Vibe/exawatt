@@ -150,10 +150,11 @@ try {
           .filter(node => !node.hasAttribute('data-close-stabilized'))
           .map(node => {
             const box = node.getBoundingClientRect();
+            // `data-ribbon-key` is unique per chip; `data-ribbon-item` is
+            // shared by every tab chip, so keying by it compared each tab
+            // with the first one.
             return {
-              item:
-                node.getAttribute('data-project') ??
-                node.getAttribute('data-ribbon-item'),
+              item: node.getAttribute('data-ribbon-key'),
               x: box.x,
               width: box.width,
             };

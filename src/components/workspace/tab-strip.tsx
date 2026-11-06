@@ -22,6 +22,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -286,18 +287,19 @@ export function TabStrip({
     right: false,
   });
   const itemNodesRef = useRef(new Map<string, HTMLDivElement>());
-  const lastTargetsRef = useRef(new Map<string, RibbonTarget>());
   const [containerWidth, setContainerWidth] = useState(FALLBACK_RIBBON_WIDTH);
   /** Project dir → measured natural header width. Only headers are
    *  measured now: tab chips are either a fixed glyph width or a width the
    *  engine assigns, so nothing else can feed its own output back in. */
   const [headerWidths, setHeaderWidths] = useState<Record<string, number>>({});
   // A pointer close holds the strip (Chrome's stability window): the whole
-  // row as it stood when the first close was pressed, positions AND widths,
-  // so nothing under the pointer moves until the hold releases (BUG-318).
+  // row as it stood when the first close was pressed, positions, widths AND
+  // the Project order the pinned header reads, so nothing under the pointer
+  // moves until the hold releases (BUG-318). A drag ends it.
   const [heldClose, setHeldClose] = useState<{
     keys: ReadonlySet<string>;
     layout: RibbonRowLayout;
+    orderedProjects: readonly { dir: string }[];
   } | null>(null);
   const heldCloseTimers = useRef(
     new Map<string, ReturnType<typeof setTimeout>>()
@@ -320,15 +322,15 @@ export function TabStrip({
     y: number;
     index: number;
   } | null>(null);
+  // Handlers read the gesture synchronously between renders; render reads
+  // `pointerDrag`.
   const pointerDragRef = useRef<typeof pointerDrag>(null);
   const justDraggedRef = useRef(false);
-  const activeGestureCleanupRef = useRef<(() => void) | null>(null);
-  const dragGeometryRef = useRef<{
-    tokens: RibbonToken[];
-    orderedTokens: RibbonToken[];
-    layout: ReturnType<typeof layoutRibbonRow>;
-    dormant: ReadonlySet<string>;
-  } | null>(null);
+  // The armed pointer gesture. Its window listeners live exactly as long as
+  // this does, from the press until the real release, even after Escape has
+  // reverted the visuals (so the release click is still suppressed).
+  const [gesture, setGesture] = useState<{ pointerId: number } | null>(null);
+  const gestureCanceledRef = useRef(false);
 
   const dormant = dormantProjectDirs ?? EMPTY_SET;
   const exiting = exitingProjectDirs ?? EMPTY_SET;
@@ -449,7 +451,7 @@ export function TabStrip({
   // inside their folded Project until the release, but a new tab in a
   // Project the snapshot shows open or mini needs a real slot, so it ends
   // the hold.
-  const layout =
+  const held =
     heldClose &&
     orderedTokens.every(
       token =>
@@ -457,8 +459,10 @@ export function TabStrip({
         heldClose.layout.targets.has(token.key) ||
         heldClose.layout.presentation.get(token.project.dir) === 'folded'
     )
-      ? heldClose.layout
-      : liveLayout;
+      ? heldClose
+      : null;
+  const layout = held?.layout ?? liveLayout;
+  const paintedProjects = held?.orderedProjects ?? orderedProjects;
   const presentationFor = useCallback(
     (dir: string): ProjectPresentation =>
       layout.presentation.get(dir) ?? (dir === activeDir ? 'open' : 'mini'),
@@ -470,21 +474,32 @@ export function TabStrip({
   // hypothetical-variant machinery D42 needed is gone.
   const stripHeight = ribbonHeightForRows(layout.rows);
 
-  useLayoutEffect(() => {
-    for (const [key, target] of layout.targets) {
-      lastTargetsRef.current.set(key, target);
-    }
-  }, [layout]);
-
-  // Last-known bounds intentionally outlive removal for the exit animation,
-  // but not forever. Long-running workspaces churn through thousands of
-  // Sessions; prune once presence has released them.
-  useEffect(() => {
+  // Last-known bounds outlive removal for the exit animation: a chip that
+  // leaves the layout keeps the slot it last had while presence still draws
+  // it, and is forgotten once presence releases it (long-running workspaces
+  // churn through thousands of Sessions). That is information from earlier
+  // renders, so it lives in state and is carried forward during render when
+  // the layout changes (React's pattern for it): a render React discards
+  // takes its bounds with it.
+  const [knownTargets, setKnownTargets] = useState(() => ({
+    layout,
+    presentTokens,
+    targets: layout.targets as ReadonlyMap<string, RibbonTarget>,
+  }));
+  let lastTargets = knownTargets.targets;
+  if (
+    knownTargets.layout !== layout ||
+    knownTargets.presentTokens !== presentTokens
+  ) {
     const presentKeys = new Set(presentTokens.map(entry => entry.token.key));
-    for (const key of lastTargetsRef.current.keys()) {
-      if (!presentKeys.has(key)) lastTargetsRef.current.delete(key);
+    const carried = new Map<string, RibbonTarget>();
+    for (const [key, target] of knownTargets.targets) {
+      if (presentKeys.has(key)) carried.set(key, target);
     }
-  }, [presentTokens]);
+    for (const [key, target] of layout.targets) carried.set(key, target);
+    lastTargets = carried;
+    setKnownTargets({ layout, presentTokens, targets: carried });
+  }
 
   // Only Project headers are measured, and only through
   // `naturalContentWidth`, which builds a width from parts that are
@@ -551,22 +566,15 @@ export function TabStrip({
   // on the scroll frame instead of a re-render behind it.
   const pinnedNodeRef = useRef<HTMLElement | null>(null);
   const [pinnedDir, setPinnedDir] = useState<string | null>(null);
-  const layoutRef = useRef(layout);
-  layoutRef.current = layout;
-  const orderedRef = useRef(orderedProjects);
-  orderedRef.current = orderedProjects;
-
+  // Reads the row as painted: during a hold, the snapshot's positions and
+  // its Project order together.
   const syncPinnedProject = useCallback(() => {
     const node = scrollerRef.current;
     if (!node) return;
     // Never pin under a drag: the layout recomputes on every pointer move.
     const sticky = pointerDragRef.current?.engaged
       ? null
-      : stickyProjectForScroll(
-          orderedRef.current,
-          layoutRef.current,
-          node.scrollLeft
-        );
+      : stickyProjectForScroll(paintedProjects, layout, node.scrollLeft);
     const previous = pinnedNodeRef.current;
     if (
       previous &&
@@ -587,7 +595,7 @@ export function TabStrip({
             `[data-ribbon-project-header="${CSS.escape(sticky.dir)}"]`
           );
     if (header) {
-      const target = layoutRef.current.targets.get(`project:${sticky.dir}`);
+      const target = layout.targets.get(`project:${sticky.dir}`);
       const pin = target
         ? node.scrollLeft - target.x + sticky.offsetX
         : sticky.offsetX;
@@ -595,7 +603,7 @@ export function TabStrip({
       pinnedNodeRef.current = header;
     }
     setPinnedDir(current => (current === sticky.dir ? current : sticky.dir));
-  }, []);
+  }, [layout, paintedProjects]);
 
   const syncScrollEdges = useCallback(() => {
     const node = scrollerRef.current;
@@ -704,6 +712,7 @@ export function TabStrip({
       setHeldClose(current => ({
         keys: new Set(current?.keys).add(key),
         layout,
+        orderedProjects: paintedProjects,
       }));
       const prior = heldCloseTimers.current.get(key);
       if (prior) clearTimeout(prior);
@@ -712,7 +721,7 @@ export function TabStrip({
         setTimeout(() => releaseHeldClose(key), POINTER_CLOSE_STABILIZE_MS)
       );
     },
-    [layout, releaseHeldClose]
+    [layout, paintedProjects, releaseHeldClose]
   );
 
   useEffect(
@@ -795,42 +804,40 @@ export function TabStrip({
     ]
   );
 
-  const activeRef = useRef({ projects, activeDir });
-  activeRef.current = { projects, activeDir };
-  const agentNamesRef = useRef(agentNames);
-  agentNamesRef.current = agentNames;
+  // A named target wins; without one the editor opens on what is active
+  // (the ⌘E chord and the native Session menu). Effect Events: they read the
+  // Projects committed when the command arrives and subscribe once.
+  const renameTab = useEffectEvent((event: Event) => {
+    const named = (event as CustomEvent<{ tabId?: string } | null>).detail
+      ?.tabId;
+    const group = named
+      ? projects.find(project => project.tabs.some(tab => tab.id === named))
+      : projects.find(project => project.dir === activeDir);
+    const tab = group?.tabs.find(
+      candidate => candidate.id === (named ?? group.activeTabId)
+    );
+    if (tab)
+      setEditing({
+        kind: 'tab',
+        id: tab.id,
+        value: tabEditValue(tab, agentNames),
+      });
+  });
+  const editProject = useEffectEvent((event: Event) => {
+    const named = (event as CustomEvent<{ dir?: string } | null>).detail?.dir;
+    const group = projects.find(
+      project => project.dir === (named ?? activeDir)
+    );
+    if (group) setEditing({ kind: 'group', id: group.dir, value: group.name });
+  });
   useEffect(() => {
-    // A named target wins; without one the editor opens on what is active
-    // (the ⌘E chord and the native Session menu).
-    const renameTab = (event: Event) => {
-      const { projects: current, activeDir: active } = activeRef.current;
-      const named = (event as CustomEvent<{ tabId?: string } | null>).detail
-        ?.tabId;
-      const group = named
-        ? current.find(project => project.tabs.some(tab => tab.id === named))
-        : current.find(project => project.dir === active);
-      const tab = group?.tabs.find(
-        candidate => candidate.id === (named ?? group.activeTabId)
-      );
-      if (tab)
-        setEditing({
-          kind: 'tab',
-          id: tab.id,
-          value: tabEditValue(tab, agentNamesRef.current),
-        });
-    };
-    const editProject = (event: Event) => {
-      const { projects: current, activeDir: active } = activeRef.current;
-      const named = (event as CustomEvent<{ dir?: string } | null>).detail?.dir;
-      const group = current.find(project => project.dir === (named ?? active));
-      if (group)
-        setEditing({ kind: 'group', id: group.dir, value: group.name });
-    };
-    window.addEventListener(RENAME_TAB_EVENT, renameTab);
-    window.addEventListener(EDIT_PROJECT_EVENT, editProject);
+    const onRenameTab = (event: Event) => renameTab(event);
+    const onEditProject = (event: Event) => editProject(event);
+    window.addEventListener(RENAME_TAB_EVENT, onRenameTab);
+    window.addEventListener(EDIT_PROJECT_EVENT, onEditProject);
     return () => {
-      window.removeEventListener(RENAME_TAB_EVENT, renameTab);
-      window.removeEventListener(EDIT_PROJECT_EVENT, editProject);
+      window.removeEventListener(RENAME_TAB_EVENT, onRenameTab);
+      window.removeEventListener(EDIT_PROJECT_EVENT, onEditProject);
     };
   }, []);
 
@@ -881,223 +888,199 @@ export function TabStrip({
     return ordinals;
   }, [projects]);
 
-  dragGeometryRef.current = { tokens, orderedTokens, layout, dormant };
+  // The release click must not select whatever chip sits under the pointer.
+  // The UA dispatches that click in the same input task as pointerup --
+  // BEFORE any queued timeout, but AFTER microtasks -- so a macrotask clear
+  // covers the click and still resets promptly when no click follows
+  // (release outside the press target).
+  const suppressReleaseClick = () => {
+    justDraggedRef.current = true;
+    setTimeout(() => {
+      justDraggedRef.current = false;
+    }, 0);
+  };
 
-  const endPointerDrag = useCallback(
-    (commit: boolean) => {
-      const current = pointerDragRef.current;
-      pointerDragRef.current = null;
-      document.body.style.userSelect = '';
-      if (current?.engaged) {
-        // The release click must not select whatever chip sits under the
-        // pointer. The UA dispatches that click in the same input task as
-        // pointerup — BEFORE any queued timeout, but AFTER microtasks — so
-        // a macrotask clear covers the click and still resets promptly when
-        // no click follows (release outside the press target).
-        justDraggedRef.current = true;
-        setTimeout(() => {
-          justDraggedRef.current = false;
-        }, 0);
-        const geometry = dragGeometryRef.current;
-        if (commit && geometry) {
-          if (current.kind === 'tab') {
-            const ids = (list: RibbonToken[]) =>
-              list
-                .filter(
-                  token =>
-                    token.kind === 'tab' && token.project.dir === current.dir
-                )
-                .map(token => (token.kind === 'tab' ? token.tab.id : ''));
-            const placement = placementForOrder(
-              ids(geometry.tokens),
-              ids(geometry.orderedTokens),
-              current.id
-            );
-            if (placement) {
-              onReorderTab?.(current.id, placement.targetId, placement.place);
-            }
-          } else {
-            // Dormant chips are auto-partitioned to the tail; preview and
-            // commit must both speak the LIVE projection or they disagree
-            // the moment the ribbon re-partitions the committed order.
-            const dirs = (list: RibbonToken[]) =>
-              list
-                .filter(
-                  token =>
-                    token.kind === 'project' &&
-                    !geometry.dormant.has(token.project.dir)
-                )
-                .map(token => token.project.dir);
-            const placement = placementForOrder(
-              dirs(geometry.tokens),
-              dirs(geometry.orderedTokens),
-              current.id
-            );
-            if (placement) {
-              onReorderProject?.(
-                current.id,
-                placement.targetId,
-                placement.place
-              );
-            }
-          }
-        }
-      }
-      setPointerDrag(null);
-    },
-    [onReorderProject, onReorderTab]
-  );
-
-  const beginPointerDrag = useCallback(
-    (
-      event: React.PointerEvent,
-      params: { kind: 'tab' | 'project'; key: string; id: string; dir: string }
-    ) => {
-      if (event.button !== 0 || editing || pointerDragRef.current) return;
-      if ((event.target as HTMLElement).closest('[data-ribbon-passive]')) {
+  // The gesture's handlers are Effect Events: each pointer event reads the
+  // ribbon committed when it arrives (the live order, the reorder callbacks)
+  // rather than the one the press saw.
+  const moveGesture = useEffectEvent((moveEvent: PointerEvent) => {
+    const active = pointerDragRef.current;
+    const scroller = scrollerRef.current;
+    if (!active || !scroller) return;
+    const x = ribbonContentX(moveEvent.clientX, scroller);
+    const y = moveEvent.clientY - scroller.getBoundingClientRect().top;
+    let engaged = active.engaged;
+    if (!engaged) {
+      if (
+        Math.hypot(x - active.startX, y - active.startY) < DRAG_THRESHOLD_PX
+      ) {
+        pointerDragRef.current = { ...active, x, y };
         return;
       }
-      // A dormant chip's tail position is automatic, not manual order —
-      // there is nothing meaningful to drag it against.
-      if (params.kind === 'project' && dormant.has(params.dir)) return;
-      // Defensive: tear down any zombie gesture (its pointerup never
-      // arrived) before arming a new one, so listener sets cannot stack.
-      activeGestureCleanupRef.current?.();
-      const scroller = scrollerRef.current;
-      const node = itemNodesRef.current.get(params.key);
-      if (!scroller || !node) return;
-      const nodeRect = node.getBoundingClientRect();
-      const gesturePointerId = event.pointerId;
-      const start = {
-        x: ribbonContentX(event.clientX, scroller),
-        y: event.clientY - scroller.getBoundingClientRect().top,
-      };
-      const candidate = {
-        ...params,
-        engaged: false,
-        startX: start.x,
-        startY: start.y,
-        grabDX: event.clientX - nodeRect.left,
-        grabDY: event.clientY - nodeRect.top,
-        x: start.x,
-        y: start.y,
-        index: 0,
-      };
-      pointerDragRef.current = candidate;
-      setPointerDrag(candidate);
-      // Escape reverts the visuals immediately but the gesture stays armed
-      // until the REAL release, so the release click is still suppressed.
-      let canceled = false;
+      engaged = true;
+      document.body.style.userSelect = 'none';
+      // A drag ends a close hold: the row starts answering the hand at once,
+      // and drop slots come from the live row, not the snapshot.
+      releaseHeldClose();
+    }
+    const siblings =
+      active.kind === 'tab'
+        ? orderedTokens.filter(
+            token =>
+              token.kind === 'tab' &&
+              token.project.dir === active.dir &&
+              token.key !== active.key
+          )
+        : orderedTokens.filter(
+            token =>
+              token.kind === 'project' &&
+              token.key !== active.key &&
+              !dormant.has(token.project.dir)
+          );
+    const centers = siblings
+      .map(token => liveLayout.targets.get(token.key))
+      .filter((target): target is RibbonTarget => !!target)
+      .map(slotCenter);
+    const next = {
+      ...active,
+      engaged,
+      x,
+      y,
+      index: dropIndexForPointer(centers, x),
+    };
+    pointerDragRef.current = next;
+    setPointerDrag(next);
+  });
 
-      const suppressReleaseClick = () => {
-        // The UA dispatches the post-release click in the same input task
-        // as pointerup — before any queued timeout, after microtasks — so
-        // a macrotask clear covers the click and still resets promptly
-        // when no click follows.
-        justDraggedRef.current = true;
-        setTimeout(() => {
-          justDraggedRef.current = false;
-        }, 0);
-      };
-      const onMove = (moveEvent: PointerEvent) => {
-        if (moveEvent.pointerId !== gesturePointerId) return;
-        const active = pointerDragRef.current;
-        const liveScroller = scrollerRef.current;
-        if (!active || !liveScroller) return;
-        const x = ribbonContentX(moveEvent.clientX, liveScroller);
-        const y = moveEvent.clientY - liveScroller.getBoundingClientRect().top;
-        let engaged = active.engaged;
-        if (!engaged) {
-          if (
-            Math.hypot(x - active.startX, y - active.startY) < DRAG_THRESHOLD_PX
-          ) {
-            pointerDragRef.current = { ...active, x, y };
-            return;
-          }
-          engaged = true;
-          document.body.style.userSelect = 'none';
-        }
-        const geometry = dragGeometryRef.current;
-        let index = active.index;
-        if (geometry) {
-          const siblings =
-            active.kind === 'tab'
-              ? geometry.orderedTokens.filter(
-                  token =>
-                    token.kind === 'tab' &&
-                    token.project.dir === active.dir &&
-                    token.key !== active.key
-                )
-              : geometry.orderedTokens.filter(
-                  token =>
-                    token.kind === 'project' &&
-                    token.key !== active.key &&
-                    !geometry.dormant.has(token.project.dir)
-                );
-          const centers = siblings
-            .map(token => geometry.layout.targets.get(token.key))
-            .filter((target): target is RibbonTarget => !!target)
-            .map(slotCenter);
-          index = dropIndexForPointer(centers, x);
-        }
-        const next = { ...active, engaged, x, y, index };
-        pointerDragRef.current = next;
-        setPointerDrag(next);
-      };
-      const onKey = (keyEvent: KeyboardEvent) => {
-        if (keyEvent.key === 'Escape' && pointerDragRef.current?.engaged) {
-          keyEvent.stopPropagation();
-          canceled = true;
-          pointerDragRef.current = null;
-          document.body.style.userSelect = '';
-          setPointerDrag(null);
-        }
-      };
-      const onUp = (upEvent: PointerEvent) => {
-        if (upEvent.pointerId !== gesturePointerId) return;
-        cleanup();
-        if (canceled) {
-          suppressReleaseClick();
-          return;
-        }
-        endPointerDrag(true);
-      };
-      const onCancel = (cancelEvent: PointerEvent) => {
-        if (cancelEvent.pointerId !== gesturePointerId) return;
-        cleanup();
-        if (!canceled) endPointerDrag(false);
-      };
-      const cleanup = () => {
-        // Only release the slot if it is still OURS — an Escape-canceled
-        // gesture's late pointerup must not clobber a newer gesture's
-        // cleanup registration.
-        if (activeGestureCleanupRef.current === cleanup) {
-          activeGestureCleanupRef.current = null;
-        }
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onCancel);
-        window.removeEventListener('keydown', onKey, true);
-      };
-      activeGestureCleanupRef.current = cleanup;
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onCancel);
-      window.addEventListener('keydown', onKey, true);
-    },
-    [dormant, editing, endPointerDrag]
-  );
+  const endGesture = useEffectEvent((commit: boolean) => {
+    setGesture(null);
+    const current = pointerDragRef.current;
+    pointerDragRef.current = null;
+    document.body.style.userSelect = '';
+    if (gestureCanceledRef.current) {
+      // Escape already reverted the visuals; only the click is left.
+      suppressReleaseClick();
+      return;
+    }
+    setPointerDrag(null);
+    if (!current?.engaged) return;
+    suppressReleaseClick();
+    if (!commit) return;
+    if (current.kind === 'tab') {
+      const ids = (list: RibbonToken[]) =>
+        list
+          .filter(
+            token => token.kind === 'tab' && token.project.dir === current.dir
+          )
+          .map(token => (token.kind === 'tab' ? token.tab.id : ''));
+      const placement = placementForOrder(
+        ids(tokens),
+        ids(orderedTokens),
+        current.id
+      );
+      if (placement) {
+        onReorderTab?.(current.id, placement.targetId, placement.place);
+      }
+      return;
+    }
+    // Dormant chips are auto-partitioned to the tail; preview and commit
+    // must both speak the LIVE projection or they disagree the moment the
+    // ribbon re-partitions the committed order.
+    const dirs = (list: RibbonToken[]) =>
+      list
+        .filter(
+          token => token.kind === 'project' && !dormant.has(token.project.dir)
+        )
+        .map(token => token.project.dir);
+    const placement = placementForOrder(
+      dirs(tokens),
+      dirs(orderedTokens),
+      current.id
+    );
+    if (placement) {
+      onReorderProject?.(current.id, placement.targetId, placement.place);
+    }
+  });
 
-  // Unmounting mid-gesture must release the window listeners and the
-  // user-select lock without committing anything through stale closures.
+  const cancelGesture = useEffectEvent((keyEvent: KeyboardEvent) => {
+    if (keyEvent.key !== 'Escape' || !pointerDragRef.current?.engaged) return;
+    keyEvent.stopPropagation();
+    gestureCanceledRef.current = true;
+    pointerDragRef.current = null;
+    document.body.style.userSelect = '';
+    setPointerDrag(null);
+  });
+
+  // One subscription per armed gesture. A new press replaces a gesture whose
+  // release never arrived, so listener sets cannot stack, and unmounting
+  // mid-gesture releases them without committing anything.
+  useEffect(() => {
+    if (!gesture) return;
+    const ours = (event: PointerEvent) => event.pointerId === gesture.pointerId;
+    const onMove = (event: PointerEvent) => {
+      if (ours(event)) moveGesture(event);
+    };
+    const onUp = (event: PointerEvent) => {
+      if (ours(event)) endGesture(true);
+    };
+    const onCancel = (event: PointerEvent) => {
+      if (ours(event)) endGesture(false);
+    };
+    const onKey = (event: KeyboardEvent) => cancelGesture(event);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [gesture]);
   useEffect(
     () => () => {
-      activeGestureCleanupRef.current?.();
       pointerDragRef.current = null;
       document.body.style.userSelect = '';
     },
     []
   );
+
+  const beginPointerDrag = (
+    event: React.PointerEvent,
+    params: { kind: 'tab' | 'project'; key: string; id: string; dir: string }
+  ) => {
+    if (event.button !== 0 || editing || pointerDragRef.current) return;
+    if ((event.target as HTMLElement).closest('[data-ribbon-passive]')) {
+      return;
+    }
+    // A dormant chip's tail position is automatic, not manual order --
+    // there is nothing meaningful to drag it against.
+    if (params.kind === 'project' && dormant.has(params.dir)) return;
+    const scroller = scrollerRef.current;
+    const node = itemNodesRef.current.get(params.key);
+    if (!scroller || !node) return;
+    const nodeRect = node.getBoundingClientRect();
+    const start = {
+      x: ribbonContentX(event.clientX, scroller),
+      y: event.clientY - scroller.getBoundingClientRect().top,
+    };
+    const candidate = {
+      ...params,
+      engaged: false,
+      startX: start.x,
+      startY: start.y,
+      grabDX: event.clientX - nodeRect.left,
+      grabDY: event.clientY - nodeRect.top,
+      x: start.x,
+      y: start.y,
+      index: 0,
+    };
+    pointerDragRef.current = candidate;
+    gestureCanceledRef.current = false;
+    setPointerDrag(candidate);
+    setGesture({ pointerId: event.pointerId });
+  };
 
   const itemStyle = (
     entry: PresentRibbonToken,
@@ -1107,14 +1090,13 @@ export function TabStrip({
     // Nothing is evicted any more, so presence alone decides visibility.
     const visible =
       (currentKeys.has(entry.token.key) && !projectExiting) || held;
-    const target = layout.targets.get(entry.token.key) ??
-      lastTargetsRef.current.get(entry.token.key) ?? {
-        id: entry.token.key,
-        x: 0,
-        y: 0,
-        row: 0,
-        width: estimateRibbonTokenWidth(entry.token),
-      };
+    const target = lastTargets.get(entry.token.key) ?? {
+      id: entry.token.key,
+      x: 0,
+      y: 0,
+      row: 0,
+      width: estimateRibbonTokenWidth(entry.token),
+    };
     const leaving = entry.phase === 'exiting' || projectExiting;
     // The dragged chip tracks the pointer 1:1 — no transition, elevated,
     // slightly lifted. Siblings keep the shared eased re-targeting.

@@ -84,6 +84,7 @@ function strip({
   exitingProjectDirs,
   onCloseTab = vi.fn(),
   onSelectTab = vi.fn(),
+  onReorderTab,
 }: {
   tabs: SessionTab[];
   summaries?: Record<string, string>;
@@ -103,10 +104,12 @@ function strip({
   exitingProjectDirs?: ReadonlySet<string>;
   onCloseTab?: (tabId: string) => void;
   onSelectTab?: (dir: string, tabId: string) => void;
+  onReorderTab?: ComponentProps<typeof TabStrip>['onReorderTab'];
 }) {
   const view = (
     nextTabs: SessionTab[],
-    nextDelegation: Record<string, SessionDelegation> = delegation
+    nextDelegation: Record<string, SessionDelegation> = delegation,
+    reorderTab = onReorderTab
   ) => {
     const projects: Project[] = [
       {
@@ -148,6 +151,7 @@ function strip({
           onRenameTab={vi.fn()}
           onRenameProject={vi.fn()}
           onSetProjectColor={vi.fn()}
+          onReorderTab={reorderTab}
           exitingProjectDirs={exitingProjectDirs}
         />
       </TooltipProvider>
@@ -160,6 +164,8 @@ function strip({
     /** re-render with different harness-reported delegation (ENG-023) */
     rerenderDelegation: (next: Record<string, SessionDelegation>) =>
       result.rerender(view(tabs, next)),
+    rerenderReorder: (next: ComponentProps<typeof TabStrip>['onReorderTab']) =>
+      result.rerender(view(tabs, delegation, next)),
   };
 }
 
@@ -769,6 +775,49 @@ describe('TabStrip turn-state glyphs (D22)', () => {
  * whether anything needs them, so a tab that handed work off must not read as
  * finished, and the dots must not make the strip jump while children churn.
  */
+describe('TabStrip pointer-close hold (BUG-318)', () => {
+  it('ends the hold when a drag starts inside it', () => {
+    const { container } = strip({
+      tabs: [tab({ id: 'a' }), tab({ id: 'b' }), tab({ id: 'c' })],
+      onReorderTab: vi.fn(),
+    });
+    const chip = (id: string) =>
+      container.querySelector<HTMLElement>(`[data-ribbon-key="tab:${id}"]`)!;
+    fireEvent.pointerDown(chip('b').querySelector('[data-tab-close]')!, {
+      button: 0,
+    });
+    expect(chip('b')).toHaveAttribute('data-close-stabilized');
+
+    fireEvent.pointerDown(chip('c'), { button: 0, pointerId: 1, clientX: 0 });
+    // Short of the drag threshold this is still a press; the hold stands.
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 1 });
+    expect(chip('b')).toHaveAttribute('data-close-stabilized');
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 80 });
+    expect(chip('b')).not.toHaveAttribute('data-close-stabilized');
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 80 });
+  });
+});
+
+describe('TabStrip drag gesture (BUG-338)', () => {
+  it('commits through the reorder handler current at release, not at the press', () => {
+    const atPress = vi.fn();
+    const view = strip({
+      tabs: [tab({ id: 'a' }), tab({ id: 'b' }), tab({ id: 'c' })],
+      onReorderTab: atPress,
+    });
+    const chip = view.container.querySelector<HTMLElement>(
+      '[data-ribbon-key="tab:a"]'
+    )!;
+    fireEvent.pointerDown(chip, { button: 0, pointerId: 1, clientX: 0 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 400 });
+    const atRelease = vi.fn();
+    view.rerenderReorder(atRelease);
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 400 });
+    expect(atPress).not.toHaveBeenCalled();
+    expect(atRelease).toHaveBeenCalledWith('a', 'c', 'after');
+  });
+});
+
 describe('TabStrip delegated work (ENG-023)', () => {
   const children = (count: number, kind = 'Explore') =>
     Array.from({ length: count }, (_, index) => ({
