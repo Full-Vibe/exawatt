@@ -73,6 +73,10 @@ upgrades one system, names the change in its report, and lists the records
 that fell out; a record found outside a packet's system goes back to the
 coordinator. One worktree per packet, one train, one dogfood build.
 
+Landed 2026-11-05: packet 4 alone at `d24ec199`, packets 1, 2, 3, 5, 6
+and 7 as one train at `26885c2c2` with BUG-336 riding along. Follow-ups
+found by the packets: BUG-337 to BUG-342.
+
 1. **bus-attention** (ENG-029). A bus message is one delivery to named
    recipients, and every turn carries who started it (the operator, an Agent
    over the bus, a trigger). Attention on turn end follows the initiator, and
@@ -6182,3 +6186,61 @@ launches are unchanged. `build-identity.test.ts` pins that a test launch
 carries the switch and a normal one does not. A throwaway Electron 43.8.3
 probe with the switch reported encryption available, a `v10` ciphertext
 round trip, and left no keychain item behind.
+
+### BUG-337 The offline network check never sees the app's Next server
+
+Status: bug · ENG-030 · found 2026-11-05 by execution front packet 6
+
+`scripts/community-network-observatory.mjs` (`eval:community:network`) finds
+the app's processes by executable path, but the renderer server renames its
+process to `next-server (v16.x)`, so its traffic has never been observed,
+before or after the server moved to a utility process (BUG-310). Start by
+matching the server through its parent process rather than its path.
+
+### BUG-338 A few handlers still read state from an earlier render
+
+Status: bug · ENG-016 · found 2026-11-05 by execution front packet 3
+
+Left over after packet 3 moved key handling onto committed state (BUG-323,
+BUG-318): the project ribbon's drag listeners keep the handlers from when the
+drag started; `tab-strip.tsx` writes `layoutRef` during render; Escape right
+after a Fleet drill still reads the rendered altitude rather than the address
+it is moving to; the homepage key listeners subscribe again on every render
+(harmless today, since they call the latest prop). Same class, same fix:
+`useEffectEvent` for listeners, refs written at commit.
+
+### BUG-339 A failed folder pick from the Start screen says nothing
+
+Status: bug · ENG-016 · found 2026-11-05 by execution front packet 7
+
+When the folder picker fails or never appears from the Start screen, the
+request settles (BUG-327) but the Start screen has no place to show the
+message the project chooser shows, so the operator sees nothing happen. Its
+buttons are never disabled, so nothing gets stuck.
+
+### BUG-340 Direct refuses a whole Project's send when one recipient just ended
+
+Status: bug · ENG-004 · found 2026-11-05 by execution front packet 1
+
+A Direct message to several Agents in a Project is one bus send. If one
+recipient's Session ends between selecting and sending, the whole send for
+that Project is refused instead of reaching the Agents still running.
+
+### BUG-341 Demo Mode Agents show no permission mode
+
+Status: small-fix · ENG-027 · found 2026-11-05 by execution front packet 2
+
+The Agent header now states the permission mode a Session started in
+(BUG-331), read from main's launch record. Demo Sessions have no such record,
+so Demo Mode shows no statement. Related, in the gallery only: the launcher
+bench on `/hud-gallery` passes no catalog, so its "All engines and models"
+trigger opens nothing there.
+
+### BUG-342 Escape that stops a Claude turn also triggers the stale-turn reclaim
+
+Status: bug · ENG-002 · found 2026-11-05 by execution front packet 5
+
+Pressing Escape to stop a Claude turn leaves the turn open until the 12 s
+stale-turn reclaim closes it. The new harness-side liveness record marks this
+case `inputBeforeSilence: true`, so it can be told apart from a wedged
+harness; the turn should end when the operator's Escape lands.
