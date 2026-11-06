@@ -24,6 +24,8 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -377,13 +379,11 @@ export function ConnectSourceDialog({
     () => (bridge === undefined ? electronBridge() : bridge),
     [bridge]
   );
+  // Read by the flow's async steps, which outlive the render that began them.
   const bridgeRef = useRef(resolvedBridge);
-  bridgeRef.current = resolvedBridge;
-
-  /** The source under test, read from inside a subscription that outlives it. */
-  const testingSourceId = useRef<string | null>(null);
-  testingSourceId.current =
-    state.attempt?.phase.kind === 'testing' ? state.attempt.sourceId : null;
+  useLayoutEffect(() => {
+    bridgeRef.current = resolvedBridge;
+  }, [resolvedBridge]);
   const knownProjectIds = useMemo(
     () => projects.map(project => project.id),
     [projects]
@@ -498,6 +498,16 @@ export function ConnectSourceDialog({
     loadServers();
   }, [loadServers]);
 
+  /** A tick moves the row only for the source under test as it is committed. */
+  const onSourceChanged = useEffectEvent((change: ConnectSourceProgress) => {
+    const testing =
+      state.attempt?.phase.kind === 'testing' ? state.attempt.sourceId : null;
+    if (change.sourceId !== testing) return;
+    const stage = stageForPhase(change.phase);
+    if (stage === null) return;
+    dispatch({ type: 'test-stage', stage });
+  });
+
   /**
    * The bounded test ticks from main's own connection channel, subscribed for
    * as long as the dialog is open so the first stage is never missed. Only the
@@ -505,12 +515,7 @@ export function ConnectSourceDialog({
    */
   useEffect(() => {
     if (!open || !resolvedBridge) return;
-    return resolvedBridge.onSourceChanged(change => {
-      if (change.sourceId !== testingSourceId.current) return;
-      const stage = stageForPhase(change.phase);
-      if (stage === null) return;
-      dispatch({ type: 'test-stage', stage });
-    });
+    return resolvedBridge.onSourceChanged(change => onSourceChanged(change));
   }, [open, resolvedBridge]);
 
   /**

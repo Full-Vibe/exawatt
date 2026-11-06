@@ -38,7 +38,15 @@
  *   to one. The units stay one InstancedMesh with `raycast` disabled.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { SpatialThemeSnapshot } from '@/components/fleet/spatial/spatial-theme';
 import { spatialColorWithAlpha } from '@/components/fleet/spatial/spatial-theme';
 import { cn } from '@/lib/utils';
@@ -204,11 +212,8 @@ export function HeroBoardOverlay({
   const shown =
     hovered >= 0 ? hovered : selected >= 0 ? selected : highlight.subject.unit;
   const shownRef = useRef(shown);
-  shownRef.current = shown;
   const selectedRef = useRef(selected);
-  selectedRef.current = selected;
   const beaconRef = useRef(highlight.beacon);
-  beaconRef.current = highlight.beacon;
   /**
    * The Project of whatever mark the pointer is on, or -1 (W9).
    *
@@ -217,9 +222,16 @@ export function HeroBoardOverlay({
    * the fold's crop it is the whole interaction: the reader points at a dot
    * and the board tells them which team it belongs to.
    */
-  const hoverZoneRef = useRef(-1);
-  hoverZoneRef.current =
-    hovered >= 0 ? (capture.units[hovered]?.zone ?? -1) : -1;
+  const hoverZone = hovered >= 0 ? (capture.units[hovered]?.zone ?? -1) : -1;
+  const hoverZoneRef = useRef(hoverZone);
+  // The frame loop and the handlers read what this render committed. Synced
+  // before any effect below runs a flush.
+  useLayoutEffect(() => {
+    shownRef.current = shown;
+    selectedRef.current = selected;
+    beaconRef.current = highlight.beacon;
+    hoverZoneRef.current = hoverZone;
+  }, [shown, selected, highlight.beacon, hoverZone]);
 
   /* -------------------------------------------------------------- */
   /* per-frame positioning: transforms only, never a layout read     */
@@ -585,14 +597,18 @@ export function HeroBoardOverlay({
     };
   }, [getBridge]);
 
+  // Escape releases a pinned card. Subscribed while one is pinned, not on
+  // every render; the release reads the committed handler.
+  const releaseSelection = useEffectEvent(() => onSelect(-1));
+  const pinned = selected >= 0;
   useEffect(() => {
-    if (selected < 0) return;
+    if (!pinned) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onSelect(-1);
+      if (event.key === 'Escape') releaseSelection();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [selected, onSelect]);
+  }, [pinned]);
 
   /* -------------------------------------------------------------- */
   /* render                                                          */

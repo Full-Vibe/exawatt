@@ -731,7 +731,11 @@ function ActionKeyTextLegend({
     context.textBaseline = 'middle';
     context.shadowColor = 'rgba(166, 225, 244, 0.32)';
     context.shadowBlur = 10;
-    context.fillText(legend.toUpperCase(), canvas.width / 2, canvas.height / 2 + 3);
+    context.fillText(
+      legend.toUpperCase(),
+      canvas.width / 2,
+      canvas.height / 2 + 3
+    );
 
     const nextTexture = new THREE.CanvasTexture(canvas);
     nextTexture.colorSpace = THREE.SRGBColorSpace;
@@ -1087,7 +1091,11 @@ function KeySwitchAssembly({
   const [hovered, setHovered] = useState(false);
   const invalidate = useThree(state => state.invalidate);
   useCursor(hovered);
-  pressedSnapshot.current = pressed;
+  // The hint's timers read the press committed when they fire; synced before
+  // the effects below queue a hint.
+  useLayoutEffect(() => {
+    pressedSnapshot.current = pressed;
+  }, [pressed]);
 
   const dispatchReleaseSettled = useCallback(() => {
     onReleaseSettled?.(releasePosition.current);
@@ -1612,10 +1620,9 @@ export function KeySwitchStudy({
           <span
             className="font-mono text-chrome-micro uppercase tracking-[0.2em]"
             style={{
-              color:
-                DARK_BACKDROP_VARIANT_IDS.has(variant.id)
-                  ? 'rgba(219, 237, 243, 0.62)'
-                  : 'rgba(14, 29, 36, 0.58)',
+              color: DARK_BACKDROP_VARIANT_IDS.has(variant.id)
+                ? 'rgba(219, 237, 243, 0.62)'
+                : 'rgba(14, 29, 36, 0.58)',
             }}
           >
             Individual switch study · {variant.name}

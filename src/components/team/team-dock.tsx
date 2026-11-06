@@ -23,6 +23,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useId,
   useRef,
   useState,
@@ -139,12 +140,13 @@ export function TeamDock({
   // ⌘B / palette / context chip: show the requested tab (or the remembered
   // one) and move focus into its panel, whether the summon arrived before
   // this dock mounted or while it is on screen
-  const onTabChangeRef = useRef(onTabChange);
-  onTabChangeRef.current = onTabChange;
+  const showSummonedTab = useEffectEvent((tab: TeamDockTab) =>
+    onTabChange(tab)
+  );
   useEffect(() => {
     const land = () => {
       const summon = takeTeamDockSummon();
-      if (summon?.tab) onTabChangeRef.current(summon.tab);
+      if (summon?.tab) showSummonedTab(summon.tab);
       requestAnimationFrame(focusActivePanel);
     };
     if (takeTeamDockSummon()) land();

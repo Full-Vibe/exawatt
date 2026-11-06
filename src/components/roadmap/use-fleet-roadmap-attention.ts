@@ -32,7 +32,7 @@
  * `since` survives the gap (`pinRoadmapBlockedSince`), so the ⌘J order is
  * intact when the file reads again.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { parseRoadmap } from '@exawatt/core';
 import {
   createLatestRequest,
@@ -83,6 +83,15 @@ function publicationKey(
 const PENDING: CachedRead = { mtimeMs: null, read: { status: 'pending' } };
 const ABSENT: CachedRead = { mtimeMs: null, read: { status: 'absent' } };
 
+function samePins(
+  a: ReadonlyMap<string, number>,
+  b: ReadonlyMap<string, number>
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, since] of a) if (b.get(id) !== since) return false;
+  return true;
+}
+
 function failed(error: string): CachedRead {
   return { mtimeMs: null, read: { status: 'failed', error } };
 }
@@ -120,8 +129,9 @@ export function useFleetRoadmapAttention(
     return channel;
   };
 
-  const load = useRef<(dir: string, pass: RequestTicket) => void>(() => {});
-  load.current = (dir: string, pass: RequestTicket) => {
+  // Called from the effects and subscriptions below, against the state of the
+  // commit the read starts from.
+  const load = useEffectEvent((dir: string, pass: RequestTicket) => {
     const api = window.electron?.roadmap;
     if (!api) {
       setReads(prev =>
@@ -186,7 +196,7 @@ export function useFleetRoadmapAttention(
           keepOrFail(reason instanceof Error ? reason.message : String(reason))
         );
       });
-  };
+  });
 
   // Project set changed: read the new ones, forget the closed ones.
   useEffect(() => {
@@ -208,7 +218,7 @@ export function useFleetRoadmapAttention(
       for (const dir of Object.keys(prev)) if (!open.has(dir)) changed = true;
       return changed ? next : prev;
     });
-    for (const dir of dirs) load.current(dir, pass);
+    for (const dir of dirs) load(dir, pass);
   }, [dirs, passes]);
 
   // One owner watches every open Project's roadmap; `use-project-roadmap`
@@ -226,7 +236,7 @@ export function useFleetRoadmapAttention(
   useEffect(() => {
     const api = window.electron?.roadmap;
     const off = api?.onFileChanged?.(({ projectDir }) => {
-      if (dirs.includes(projectDir)) load.current(projectDir, passes.current());
+      if (dirs.includes(projectDir)) load(projectDir, passes.current());
     });
     return () => off?.();
   }, [dirs, passes]);
@@ -234,7 +244,7 @@ export function useFleetRoadmapAttention(
   // The same fallback the lens uses when a watcher could not be installed.
   useEffect(() => {
     const onFocus = () => {
-      for (const dir of dirs) load.current(dir, passes.current());
+      for (const dir of dirs) load(dir, passes.current());
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
@@ -291,7 +301,7 @@ export function useFleetRoadmapAttention(
           ]);
           if (retriedPublications.current.get(project.dir) !== rejected) {
             retriedPublications.current.set(project.dir, rejected);
-            load.current(project.dir, passes.current());
+            load(project.dir, passes.current());
           }
         }
         setPublished(previous => {
@@ -313,13 +323,25 @@ export function useFleetRoadmapAttention(
     }
   }, [fleet, projects, reads, passes]);
 
-  // `since` survives Project switches; see `pinRoadmapBlockedSince`.
-  const pins = useRef<ReadonlyMap<string, number>>(new Map());
+  // `since` survives Project switches; see `pinRoadmapBlockedSince`. The pins
+  // are state, re-pinned against each evaluation as it renders (React's
+  // "adjust state when a value changes" pattern) and stored only when they
+  // differ, so a render React discards cannot advance them and a re-run
+  // render settles at once.
+  const [storedPins, setStoredPins] = useState<ReadonlyMap<string, number>>(
+    () => new Map()
+  );
+  let pins: ReadonlyMap<string, number> = pinRoadmapBlockedSince(
+    storedPins,
+    fleet,
+    Date.now()
+  );
+  if (samePins(pins, storedPins)) pins = storedPins;
+  else setStoredPins(pins);
   return useMemo(() => {
-    pins.current = pinRoadmapBlockedSince(pins.current, fleet, Date.now());
     const signals: Record<string, SessionAttentionSignal> = {};
     for (const entry of fleet.blocked) {
-      const since = pins.current.get(entry.sessionId);
+      const since = pins.get(entry.sessionId);
       if (since === undefined) continue;
       if (!authoritative)
         signals[entry.sessionId] = { kind: 'roadmap-blocked', since };
@@ -354,5 +376,5 @@ export function useFleetRoadmapAttention(
         .filter(sessionId => !blind.has(sessionId))
     );
     return scopedAttention('roadmap', signals, covered);
-  }, [fleet, projects, authoritative, published, reads]);
+  }, [fleet, pins, projects, authoritative, published, reads]);
 }

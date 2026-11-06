@@ -469,7 +469,10 @@ export function ExposeOverlay({
   const rootRef = useRef<HTMLDivElement>(null);
   const tileRefs = useRef(new Map<string, HTMLButtonElement>());
   const selectedIndexRef = useRef(sel);
-  selectedIndexRef.current = sel;
+  // Synced at commit, before the effects below that read it.
+  useLayoutEffect(() => {
+    selectedIndexRef.current = sel;
+  }, [sel]);
 
   const focusSelection = useCallback(
     (
@@ -639,7 +642,9 @@ export function ExposeOverlay({
   // tab that arrives later is still found without the array's identity
   // becoming a trigger.
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+  useLayoutEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
   const mirroredRef = useRef<string | null>(null);
   /** What the publish effect below last told the parent. Read by the
    *  navigationSelection effect to tell a genuine external command apart

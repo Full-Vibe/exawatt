@@ -17,7 +17,14 @@ import { markAttentionUnread } from '@exawatt/core';
  *   an exact saved provider ID after an explicit operator action; a renderer
  *   reload re-adopts still-live PTYs.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   useSessionScope,
   useSessionScopeRelease,
@@ -122,7 +129,7 @@ export interface WorkspaceStateOptions {
 
 export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const sizeRef = useRef(options.getInitialSize);
-  sizeRef.current = options.getInitialSize;
+  const getInitialSize = options.getInitialSize;
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeDir, setActiveDir] = useState<string | null>(null);
   const [lastUsedDir, setLastUsedDir] = useState('');
@@ -179,9 +186,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     lastUsedDir,
     pinnedTabId,
   });
-  stateRef.current = { projects, activeDir, lastUsedDir, pinnedTabId };
   const readyRef = useRef(ready);
-  readyRef.current = ready;
+  // The verbs below run in handlers, IPC subscriptions and timers; they read
+  // the layout of the last commit, synced here before any later effect runs.
+  useLayoutEffect(() => {
+    sizeRef.current = getInitialSize;
+    stateRef.current = { projects, activeDir, lastUsedDir, pinnedTabId };
+    readyRef.current = ready;
+  });
   // Exits can precede the IPC reply that introduces a replacement runtime.
   // Keep them only for the lifetime of the corresponding operation.
   const operationExitsRef =

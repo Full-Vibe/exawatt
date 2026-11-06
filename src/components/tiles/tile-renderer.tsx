@@ -45,7 +45,7 @@
  * uploaded range, which it clears on upload.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { StatusLightState } from '@/components/status-light/protocol';
@@ -526,34 +526,37 @@ export function TileRenderer({
   // outlives a change of model (the material study swaps the hero's status
   // in place), so a tile keeps its rise and its weight across the swap.
   const animRef = useRef<Anim | null>(null);
-  if (
-    animRef.current === null ||
-    animRef.current.scale.length !== tileCount ||
-    animRef.current.partCount.length !== parts.length
-  ) {
-    const previous = animRef.current;
-    const next = makeAnim(tileCount, parts.length);
-    if (previous) {
-      for (const key of Object.keys(next) as (keyof Anim)[]) {
-        const target = next[key];
-        const old = previous[key];
-        if (ArrayBuffer.isView(target) && ArrayBuffer.isView(old))
-          (target as Float32Array).set(
-            (old as Float32Array).subarray(0, (target as Float32Array).length)
-          );
-      }
-      next.owners.splice(0, previous.owners.length, ...previous.owners);
-      next.clock = previous.clock;
-      next.hover = previous.hover;
-      next.press = previous.press;
-      next.ringTile = previous.ringTile;
-      next.ring = previous.ring;
-      next.fadingTile = previous.fadingTile;
-      next.fading = previous.fading;
-    }
-    animRef.current = next;
+  if (animRef.current === null) {
+    animRef.current = makeAnim(tileCount, parts.length);
   }
-  const anim = animRef.current;
+  // A change of tile or mark count reallocates the buffers at commit, before
+  // any frame or pointer event reads them, carrying each tile's values over.
+  useLayoutEffect(() => {
+    const previous = animRef.current!;
+    if (
+      previous.scale.length === tileCount &&
+      previous.partCount.length === parts.length
+    )
+      return;
+    const next = makeAnim(tileCount, parts.length);
+    for (const key of Object.keys(next) as (keyof Anim)[]) {
+      const target = next[key];
+      const old = previous[key];
+      if (ArrayBuffer.isView(target) && ArrayBuffer.isView(old))
+        (target as Float32Array).set(
+          (old as Float32Array).subarray(0, (target as Float32Array).length)
+        );
+    }
+    next.owners.splice(0, previous.owners.length, ...previous.owners);
+    next.clock = previous.clock;
+    next.hover = previous.hover;
+    next.press = previous.press;
+    next.ringTile = previous.ringTile;
+    next.ring = previous.ring;
+    next.fadingTile = previous.fadingTile;
+    next.fading = previous.fading;
+    animRef.current = next;
+  }, [tileCount, parts.length]);
   const { size, gl } = useThree();
   const agentSlots = useMemo(() => {
     const slots = new Map<string, number>();
@@ -755,10 +758,12 @@ export function TileRenderer({
   useEffect(() => {
     if (!interactive) return;
     const up = () => {
+      const anim = animRef.current!;
       letGo(anim, play);
       requestFrame?.();
     };
     const drop = () => {
+      const anim = animRef.current!;
       anim.press = -1;
       anim.slotPressed = -1;
       requestFrame?.();
@@ -771,19 +776,22 @@ export function TileRenderer({
       window.removeEventListener('pointercancel', drop);
       window.removeEventListener('blur', drop);
     };
-  }, [anim, play, requestFrame, interactive]);
+  }, [play, requestFrame, interactive]);
 
   const setCursor = (pointing: boolean) => {
     gl.domElement.style.setProperty('cursor', pointing ? 'pointer' : '');
     requestFrame?.();
   };
   // measured as R3F measures a click's travel, so the two always agree
-  const travelled = (e: ThreeEvent<PointerEvent>) =>
-    Math.hypot(
+  const travelled = (e: ThreeEvent<PointerEvent>) => {
+    const anim = animRef.current!;
+    return Math.hypot(
       e.nativeEvent.clientX - anim.pressX,
       e.nativeEvent.clientY - anim.pressY
     );
+  };
   const hold = (e: ThreeEvent<PointerEvent>) => {
+    const anim = animRef.current!;
     requestFrame?.();
     anim.pressX = e.nativeEvent.clientX;
     anim.pressY = e.nativeEvent.clientY;
@@ -795,6 +803,7 @@ export function TileRenderer({
   };
   /** The pointer came up over what it pressed: a tap on glass clicks now. */
   const release = (e: ThreeEvent<PointerEvent>) => {
+    const anim = animRef.current!;
     requestFrame?.();
     const tap = travelled(e) <= DRAG_PX;
     if (anim.pressTouch && tap) play('press');
@@ -811,6 +820,7 @@ export function TileRenderer({
   // Hover, press and click on the packed agent instances: the instance id
   // is a slot, and the slot names its tile.
   const agentAt = (e: ThreeEvent<PointerEvent | MouseEvent>): number => {
+    const anim = animRef.current!;
     const slot = e.instanceId ?? -1;
     if (slot < 0) return -1;
     const agent = model.tiles[anim.agentTile[slot]]?.agent ?? -1;
@@ -821,6 +831,7 @@ export function TileRenderer({
       : -1;
   };
   const hoverTile = (e: ThreeEvent<PointerEvent>) => {
+    const anim = animRef.current!;
     const agent = agentAt(e);
     if (agent >= 0) e.stopPropagation();
     // a press that travels is a drag turning the world: the key comes up
@@ -836,6 +847,7 @@ export function TileRenderer({
     }
   };
   const leaveTile = () => {
+    const anim = animRef.current!;
     // pressed and slid off: the key comes back up
     if (anim.press >= 0) letGo(anim, play);
     if (anim.hover !== -1) {
@@ -845,6 +857,7 @@ export function TileRenderer({
     }
   };
   const pressTile = (e: ThreeEvent<PointerEvent>) => {
+    const anim = animRef.current!;
     if (e.button !== 0) return;
     const agent = agentAt(e);
     if (agent < 0) return;
@@ -853,10 +866,11 @@ export function TileRenderer({
     hold(e);
   };
   const releaseTile = (e: ThreeEvent<PointerEvent>) => {
-    if (anim.press >= 0) release(e);
+    if (animRef.current!.press >= 0) release(e);
   };
   // A click is a press that did not travel; a drag turned the world.
   const clickTile = (e: ThreeEvent<MouseEvent>) => {
+    const anim = animRef.current!;
     if (e.delta > DRAG_PX) return;
     const agent = agentAt(e);
     if (agent < 0) return;
@@ -873,9 +887,10 @@ export function TileRenderer({
   // pointer like an agent does, and a click fills the cluster.
   const slotAt = (e: ThreeEvent<PointerEvent | MouseEvent>): number => {
     const id = e.instanceId ?? -1;
-    return id >= 0 ? anim.tileOfGhost[id] : -1;
+    return id >= 0 ? animRef.current!.tileOfGhost[id] : -1;
   };
   const hoverSlot = (e: ThreeEvent<PointerEvent>) => {
+    const anim = animRef.current!;
     if (!slotsLive) return;
     const tile = slotAt(e);
     if (tile >= 0) e.stopPropagation();
@@ -886,6 +901,7 @@ export function TileRenderer({
     }
   };
   const leaveSlot = () => {
+    const anim = animRef.current!;
     if (anim.slotPressed >= 0) letGo(anim, play);
     if (anim.slotHovered !== -1) {
       anim.slotHovered = -1;
@@ -893,6 +909,7 @@ export function TileRenderer({
     }
   };
   const pressSlot = (e: ThreeEvent<PointerEvent>) => {
+    const anim = animRef.current!;
     if (!slotsLive || e.button !== 0) return;
     const tile = slotAt(e);
     if (tile < 0) return;
@@ -901,9 +918,10 @@ export function TileRenderer({
     hold(e);
   };
   const releaseSlot = (e: ThreeEvent<PointerEvent>) => {
-    if (anim.slotPressed >= 0) release(e);
+    if (animRef.current!.slotPressed >= 0) release(e);
   };
   const clickSlot = (e: ThreeEvent<MouseEvent>) => {
+    const anim = animRef.current!;
     if (!slotsLive || e.delta > DRAG_PX) return;
     if (slotAt(e) < 0) return;
     e.stopPropagation();
@@ -965,6 +983,7 @@ export function TileRenderer({
   const uploadedPointer = useRef({ hover: -1, press: -1 });
 
   useFrame((state, rawDelta) => {
+    const anim = animRef.current!;
     const input = readFrame();
     if (input.hoveredId !== undefined)
       anim.hover = agentSlots.get(input.hoveredId ?? '') ?? -1;

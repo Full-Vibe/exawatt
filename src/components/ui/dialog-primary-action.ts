@@ -20,7 +20,13 @@
  * Return. Nothing pushes a hardcoded keydown handler on one form.
  */
 
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 
 /** The manifest verb this module is the target of. */
 export const DIALOG_PRIMARY_ACTION_SHORTCUT_ID = 'dialog-primary-action';
@@ -85,15 +91,21 @@ export function useDialogPrimaryActionDepth(): number {
 
 /**
  * Publish this dialog's primary action for as long as it is mounted. The
- * handle is mutated in place on every render, so a label or a disabled state
+ * handle is updated in place on every commit, so a label or a disabled state
  * that changes mid-dialog never needs a re-subscription.
  */
 export function useDialogPrimaryActionSlot(
   action: DialogPrimaryActionSpec | null
 ): void {
   const slot = useRef<Slot>({ run: () => {}, disabled: true });
-  slot.current.run = action?.run ?? (() => {});
-  slot.current.disabled = action ? action.disabled === true : true;
+  const run = action?.run;
+  const disabled = action ? action.disabled === true : true;
+  // The handle takes each commit's action before the effect below publishes
+  // it, and the key that runs it reads the action on screen.
+  useLayoutEffect(() => {
+    slot.current.run = run ?? (() => {});
+    slot.current.disabled = disabled;
+  }, [run, disabled]);
 
   const active = action !== null;
   useEffect(() => {

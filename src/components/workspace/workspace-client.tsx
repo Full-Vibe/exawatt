@@ -22,6 +22,8 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useEffectEvent,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -294,6 +296,35 @@ function ComposerViewport({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * The PTY incarnation each Session tab last showed on screen (BUG-046,
+ * decision 0042), advanced by one render of the stage. `painting` is whether
+ * that render draws the panes: a tab records the incarnation it shows, a
+ * resuming tab drops the one it is replacing, and a closed tab drops its
+ * entry. Returns `previous` itself when nothing changed.
+ */
+function nextShownIncarnations(
+  previous: ReadonlyMap<string, string>,
+  entries: readonly { tab: Parameters<typeof isSessionTab>[0] }[],
+  painting: boolean
+): ReadonlyMap<string, string> {
+  const next = new Map(previous);
+  const open = new Set<string>();
+  for (const { tab } of entries) {
+    open.add(tab.id);
+    if (!painting || !isSessionTab(tab)) continue;
+    if (tab.sessionId) next.set(tab.id, tab.sessionId);
+    // the next incarnation replaces the old terminal
+    else if (tab.resumeState === 'resuming') next.delete(tab.id);
+  }
+  // a closed tab releases its terminal; nothing outlives the tab
+  for (const id of previous.keys()) if (!open.has(id)) next.delete(id);
+  const unchanged =
+    next.size === previous.size &&
+    [...next].every(([id, incarnation]) => previous.get(id) === incarnation);
+  return unchanged ? previous : next;
+}
+
 export function WorkspaceClient() {
   const { activateCommandAltitude } = useCommandNavigation();
   // SSR renders neither branch; the electron check runs after mount so the
@@ -310,12 +341,15 @@ export function WorkspaceClient() {
   // resumes: the xterm already holds the bytes, so nothing is read, nothing
   // is replayed at the wrong width, and the operator sees the Agent finish.
   // A Session opened after its death (relaunch, restored layout) has no
-  // mounted terminal and shows the record instead.
-  const shownIncarnation = useRef(new Map<string, string>());
+  // mounted terminal and shows the record instead. Information from earlier
+  // renders, so it is state, adjusted while rendering (`nextShownIncarnations`).
+  const [shownIncarnations, setShownIncarnations] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
   // split view (S2): the last active NON-pinned tab — the driven/left side.
-  // Lives up here unconditionally (rules of hooks); assigned below once the
+  // Lives up here unconditionally (rules of hooks); adjusted below once the
   // active tab is known.
-  const companionRef = useRef<string | null>(null);
+  const [companionTabId, setCompanionTabId] = useState<string | null>(null);
 
   // effective terminal font = defaults + userData/settings.json (S3) —
   // panes render only after it resolves so every terminal is born with the
@@ -594,8 +628,12 @@ export function WorkspaceClient() {
     };
   }, [activeProjectRootPath]);
 
+  // The roster as last committed, for the open-by-roster gestures: they
+  // read it after an await, outside any render.
   const coworkersRef = useRef(coworkers);
-  coworkersRef.current = coworkers;
+  useLayoutEffect(() => {
+    coworkersRef.current = coworkers;
+  }, [coworkers]);
 
   /** The roster reads the two open-by-roster gestures below share. They
    *  claim the operator's position before the read, in the helper. */
@@ -623,6 +661,16 @@ export function WorkspaceClient() {
     [rosterOpener]
   );
 
+  // Opens with the roster gestures of the render committed when the request
+  // arrives; the listener subscribes once.
+  const openRosterAgent = useEffectEvent(
+    (agentId: string, stillWanted: () => boolean) =>
+      void openRosterCoworker(
+        candidate => candidate.agentId === agentId,
+        rosterOpener,
+        { preferKnown: true, stillWanted }
+      )
+  );
   useEffect(() => {
     // A route handoff may arrive while persisted layout is still restoring.
     // Leave the pending slot untouched until restoration can no longer erase
@@ -630,11 +678,7 @@ export function WorkspaceClient() {
     if (!ready) return;
     let mounted = true;
     const openById = (agentId: string) =>
-      void openRosterCoworker(
-        candidate => candidate.agentId === agentId,
-        rosterOpener,
-        { preferKnown: true, stillWanted: () => mounted }
-      );
+      openRosterAgent(agentId, () => mounted);
     const handle = (event: Event) => {
       const agentId = (event as CustomEvent<string>).detail;
       consumePendingRemoteAgentOpen();
@@ -647,7 +691,7 @@ export function WorkspaceClient() {
       mounted = false;
       window.removeEventListener(REMOTE_AGENT_OPEN_EVENT, handle);
     };
-  }, [ready, rosterOpener]);
+  }, [ready]);
 
   /** One move for every entry point: the fixed chords and native menu on the
    *  active tab, and Move left/right on any tab's menu or ⌘K group. */
@@ -706,27 +750,30 @@ export function WorkspaceClient() {
     onCloseProject: closeProject,
   });
 
+  const summonOpenerRoute = useEffectEvent((route: 'projects' | 'connect') =>
+    summonProjectOpener(route)
+  );
   useEffect(() => {
     if (!inElectron) return;
     const openPicker = () => {
       consumePendingProjectPicker();
-      summonProjectOpener('projects');
+      summonOpenerRoute('projects');
     };
     // Connect is a route ON the chooser, so the File menu opens the chooser
     // already there rather than a second door onto the same flow.
     const openConnect = () => {
       consumePendingConnectAgentSource();
-      summonProjectOpener('connect');
+      summonOpenerRoute('connect');
     };
     window.addEventListener(OPEN_PROJECT_PICKER_EVENT, openPicker);
     window.addEventListener(OPEN_CONNECT_SOURCE_EVENT, openConnect);
-    if (consumePendingProjectPicker()) summonProjectOpener('projects');
-    if (consumePendingConnectAgentSource()) summonProjectOpener('connect');
+    if (consumePendingProjectPicker()) summonOpenerRoute('projects');
+    if (consumePendingConnectAgentSource()) summonOpenerRoute('connect');
     return () => {
       window.removeEventListener(OPEN_PROJECT_PICKER_EVENT, openPicker);
       window.removeEventListener(OPEN_CONNECT_SOURCE_EVENT, openConnect);
     };
-  }, [inElectron, summonProjectOpener]);
+  }, [inElectron]);
 
   // New Agent requests (⌘N, the palette, the Fleet board's ghost slot):
   // each acted on once, from the state it arrives in.
@@ -831,31 +878,37 @@ export function WorkspaceClient() {
 
   // The ⌘K rows dispatch these; run the same ladder so a row can never do
   // less than the chord it advertises (the JUMP_ATTENTION_EVENT pattern).
+  const onResumeAgent = useEffectEvent(() => void resumeActiveAgentNow());
+  const onResumeScope = useEffectEvent(() => void resumeParkedScopeNow());
   useEffect(() => {
-    const onResumeAgent = () => resumeActiveAgentNow();
-    const onResumeScope = () => resumeParkedScopeNow();
-    window.addEventListener(RESUME_ACTIVE_AGENT_EVENT, onResumeAgent);
-    window.addEventListener(RESUME_PARKED_SCOPE_EVENT, onResumeScope);
+    const resumeAgent = () => onResumeAgent();
+    const resumeScope = () => onResumeScope();
+    window.addEventListener(RESUME_ACTIVE_AGENT_EVENT, resumeAgent);
+    window.addEventListener(RESUME_PARKED_SCOPE_EVENT, resumeScope);
     return () => {
-      window.removeEventListener(RESUME_ACTIVE_AGENT_EVENT, onResumeAgent);
-      window.removeEventListener(RESUME_PARKED_SCOPE_EVENT, onResumeScope);
+      window.removeEventListener(RESUME_ACTIVE_AGENT_EVENT, resumeAgent);
+      window.removeEventListener(RESUME_PARKED_SCOPE_EVENT, resumeScope);
     };
-  }, [resumeActiveAgentNow, resumeParkedScopeNow]);
+  }, []);
 
-  useEffect(() => {
-    const off = window.electron?.pty?.onNotificationClick(({ id }) => {
-      for (const project of projects) {
-        const tab = project.tabs.find(
-          item => isSessionTab(item) && item.sessionId === id
-        );
-        if (tab) {
-          selectTab(project.dir, tab.id);
-          return;
-        }
+  const onNotificationClick = useEffectEvent((sessionId: string) => {
+    for (const project of projects) {
+      const tab = project.tabs.find(
+        item => isSessionTab(item) && item.sessionId === sessionId
+      );
+      if (tab) {
+        selectTab(project.dir, tab.id);
+        return;
       }
-    });
-    return off;
-  }, [projects, selectTab]);
+    }
+  });
+  useEffect(
+    () =>
+      window.electron?.pty?.onNotificationClick(({ id }) =>
+        onNotificationClick(id)
+      ),
+    []
+  );
 
   const toggleNotifications = () => {
     void window.electron?.settings
@@ -1078,45 +1131,49 @@ export function WorkspaceClient() {
   ]);
 
   // the palette row dispatches OPEN_ROADMAP_EVENT; same summon as ⌘B
+  const onOpenRoadmap = useEffectEvent(() => void summonRoadmap());
   useEffect(() => {
-    const onOpenRoadmap = () => void summonRoadmap();
-    window.addEventListener(OPEN_ROADMAP_EVENT, onOpenRoadmap);
-    return () => window.removeEventListener(OPEN_ROADMAP_EVENT, onOpenRoadmap);
-  }, [summonRoadmap]);
+    const openRoadmap = () => onOpenRoadmap();
+    window.addEventListener(OPEN_ROADMAP_EVENT, openRoadmap);
+    return () => window.removeEventListener(OPEN_ROADMAP_EVENT, openRoadmap);
+  }, []);
 
   // the menu item and palette row dispatch JUMP_ATTENTION_EVENT; run the
   // same ladder here so they never do less than the ⌘J key they advertise
+  const onJumpAttention = useEffectEvent(() => void jumpAttentionQueue());
   useEffect(() => {
-    const onJump = () => jumpAttentionQueue();
-    window.addEventListener(JUMP_ATTENTION_EVENT, onJump);
-    return () => window.removeEventListener(JUMP_ATTENTION_EVENT, onJump);
-  }, [jumpAttentionQueue]);
+    const jump = () => onJumpAttention();
+    window.addEventListener(JUMP_ATTENTION_EVENT, jump);
+    return () => window.removeEventListener(JUMP_ATTENTION_EVENT, jump);
+  }, []);
 
   // palette and menu rows nudge the active tab through the same pure move
   // the ⌘⌥[/⌘⌥] fixed family uses
+  const onMoveActiveTab = useEffectEvent((delta: 1 | -1) =>
+    moveTabWithFeedback(activeTab?.id ?? null, delta)
+  );
   useEffect(() => {
     const onMove = (event: Event) => {
       const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
-      if (delta === 1 || delta === -1) {
-        moveTabWithFeedback(activeTab?.id ?? null, delta);
-      }
+      if (delta === 1 || delta === -1) onMoveActiveTab(delta);
     };
     window.addEventListener(MOVE_ACTIVE_TAB_EVENT, onMove);
     return () => window.removeEventListener(MOVE_ACTIVE_TAB_EVENT, onMove);
-  }, [activeTab?.id, moveTabWithFeedback]);
+  }, []);
 
   // Palette and menu rows nudge the active Project through the same pure
   // move the ⌘⌥⇧[/⌘⌥⇧] fixed family uses.
+  const onMoveActiveProject = useEffectEvent((delta: 1 | -1) =>
+    moveProjectWithFeedback(activeProject?.dir ?? null, delta)
+  );
   useEffect(() => {
     const onMove = (event: Event) => {
       const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
-      if (delta === 1 || delta === -1) {
-        moveProjectWithFeedback(activeProject?.dir ?? null, delta);
-      }
+      if (delta === 1 || delta === -1) onMoveActiveProject(delta);
     };
     window.addEventListener(MOVE_ACTIVE_PROJECT_EVENT, onMove);
     return () => window.removeEventListener(MOVE_ACTIVE_PROJECT_EVENT, onMove);
-  }, [activeProject?.dir, moveProjectWithFeedback]);
+  }, []);
 
   // agent-first mirror (S9): tabId → what that agent is executing. Declared
   // ids cover every project (machine-local layout truth); the active
@@ -1196,15 +1253,17 @@ export function WorkspaceClient() {
     [router]
   );
   useEffect(() => setOverviewOpen(requestedOverview), [requestedOverview]);
-  // Read through a ref so the resolver is registered ONCE. Re-registering a
-  // fresh closure on every tab-activity tick republished capability state for
-  // no change (D50 review); the truth it reads is the same either way.
-  const projectsRef = useRef(projects);
-  projectsRef.current = projects;
-
   // Which recorded locations still exist (D50). A ⌘W-destroyed tab must
   // stop being a Back stop; the history owns what to do about that, the
-  // workspace owns the truth of which tabs are open (BUG-006).
+  // workspace owns the truth of which tabs are open (BUG-006). The resolver
+  // is registered ONCE and reads the committed tabs through a ref: re-
+  // registering a fresh closure on every tab-activity tick republished
+  // capability state for no change (D50 review). A ref, not an Effect Event:
+  // the back stack asks it while the navigation provider renders.
+  const projectsRef = useRef(projects);
+  useLayoutEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
   useEffect(() => {
     navHistory.setLocationResolver(location => {
       if (!location.tab) return true;
@@ -1230,20 +1289,25 @@ export function WorkspaceClient() {
 
   // Where the operator stands, for the authority that decides which
   // asynchronous completions are still allowed to move him (BUG-018). Read
-  // through a ref and registered ONCE, like the resolver above.
+  // through a ref synced on commit and registered ONCE, like the resolver
+  // above: the position is the one on screen, never a render's in progress.
   //
   // At the Sessions altitude the position deliberately carries NO tab: the
   // subject up there is the roving tile, and the tab underneath is not where
   // he is. That is also what makes "he asked from Team and is still at Team"
   // survive the launch selecting a tab underneath him.
   const positionRef = useRef<NavLocation>({ surface: '/workspace', tab: null });
-  positionRef.current = {
-    surface: overviewOpen ? '/workspace?view=sessions' : '/workspace',
-    tab:
-      !overviewOpen && activeProject && activeTab
-        ? { dir: activeProject.dir, tabId: activeTab.id }
-        : null,
-  };
+  const activeProjectDir = activeProject?.dir ?? null;
+  const activeTabId = activeTab?.id ?? null;
+  useLayoutEffect(() => {
+    positionRef.current = {
+      surface: overviewOpen ? '/workspace?view=sessions' : '/workspace',
+      tab:
+        !overviewOpen && activeProjectDir && activeTabId
+          ? { dir: activeProjectDir, tabId: activeTabId }
+          : null,
+    };
+  }, [overviewOpen, activeProjectDir, activeTabId]);
   useEffect(() => {
     operatorPosition.setSource(() => positionRef.current);
     // An unmounted workspace owns no position, and a stale one would let a
@@ -1403,17 +1467,18 @@ export function WorkspaceClient() {
     setError
   );
   const requestProjectPause = projectPause.requestPause;
+  const onPauseActiveProject = useEffectEvent(() => {
+    if (activeProject) void requestProjectPause(activeProject.dir);
+  });
   useEffect(() => {
-    const pauseActiveProject = () => {
-      if (activeProject) void requestProjectPause(activeProject.dir);
-    };
+    const pauseActiveProject = () => onPauseActiveProject();
     window.addEventListener(PAUSE_ACTIVE_PROJECT_EVENT, pauseActiveProject);
     return () =>
       window.removeEventListener(
         PAUSE_ACTIVE_PROJECT_EVENT,
         pauseActiveProject
       );
-  }, [activeProject, requestProjectPause]);
+  }, []);
 
   const [closeConfirm, setCloseConfirm] = useState<{
     tabId: string;
@@ -1736,54 +1801,59 @@ export function WorkspaceClient() {
 
   // palette-issued workspace verbs (close/overview live here; the rest are
   // handled by the state hook and the tab strip)
+  const onCloseActive = useEffectEvent(() => void closeActiveItem());
+  const onCloseActiveProject = useEffectEvent(() => void closeActiveProject());
+  const onRevealActivePath = useEffectEvent(() => void revealActivePath());
+  const onReopenClosedSession = useEffectEvent(
+    (durableSessionId: string) => void reopenClosedSession(durableSessionId)
+  );
   useEffect(() => {
-    const onCloseActive = () => void closeActiveItem();
-    const onCloseActiveProject = () => void closeActiveProject();
-    const onRevealActivePath = () => void revealActivePath();
+    const closeActive = () => onCloseActive();
+    const closeActiveProjectNow = () => onCloseActiveProject();
+    const revealActivePathNow = () => onRevealActivePath();
     const onReopenClosed = (e: Event) => {
       const durableSessionId = (e as CustomEvent<{ durableSessionId?: string }>)
         .detail?.durableSessionId;
-      if (durableSessionId) void reopenClosedSession(durableSessionId);
+      if (durableSessionId) onReopenClosedSession(durableSessionId);
     };
     window.addEventListener(REOPEN_CLOSED_EVENT, onReopenClosed);
-    window.addEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
-    window.addEventListener(CLOSE_ACTIVE_PROJECT_EVENT, onCloseActiveProject);
-    window.addEventListener(REVEAL_ACTIVE_PATH_EVENT, onRevealActivePath);
+    window.addEventListener(CLOSE_ACTIVE_EVENT, closeActive);
+    window.addEventListener(CLOSE_ACTIVE_PROJECT_EVENT, closeActiveProjectNow);
+    window.addEventListener(REVEAL_ACTIVE_PATH_EVENT, revealActivePathNow);
     return () => {
       window.removeEventListener(REOPEN_CLOSED_EVENT, onReopenClosed);
-      window.removeEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
+      window.removeEventListener(CLOSE_ACTIVE_EVENT, closeActive);
       window.removeEventListener(
         CLOSE_ACTIVE_PROJECT_EVENT,
-        onCloseActiveProject
+        closeActiveProjectNow
       );
-      window.removeEventListener(REVEAL_ACTIVE_PATH_EVENT, onRevealActivePath);
+      window.removeEventListener(REVEAL_ACTIVE_PATH_EVENT, revealActivePathNow);
     };
-  }, [
-    closeActiveItem,
-    closeActiveProject,
-    reopenClosedSession,
-    revealActivePath,
-  ]);
+  }, []);
 
   // Native Session menu requests survive a route transition; the shortcut
   // itself calls the same action directly below. Wait for restored workspace
   // state before consuming the pending request so startup cannot overwrite it.
+  const reopenLastClosedNow = useEffectEvent(
+    () => void reopenLastClosedSession()
+  );
   useEffect(() => {
     if (!ready) return;
     const onReopenLastClosed = () => {
       consumePendingReopenLastClosed();
-      reopenLastClosedSession();
+      reopenLastClosedNow();
     };
     window.addEventListener(REOPEN_LAST_CLOSED_EVENT, onReopenLastClosed);
-    if (consumePendingReopenLastClosed()) reopenLastClosedSession();
+    if (consumePendingReopenLastClosed()) reopenLastClosedNow();
     return () =>
       window.removeEventListener(REOPEN_LAST_CLOSED_EVENT, onReopenLastClosed);
-  }, [ready, reopenLastClosedSession]);
+  }, [ready]);
 
+  const activeSessionLive = !!activeSessionTab?.sessionId;
   const shortcutActions = useMemo<WorkspaceShortcutActions>(() => {
     const focusTerminal = () => {
       window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
-      return !!activeSessionTab?.sessionId;
+      return activeSessionLive;
     };
     return {
       launchShell: () =>
@@ -1819,8 +1889,7 @@ export function WorkspaceClient() {
         return true;
       },
       moveTab: delta => moveTabWithFeedback(activeTab?.id ?? null, delta),
-      moveProject: delta =>
-        moveProjectWithFeedback(activeProject?.dir ?? null, delta),
+      moveProject: delta => moveProjectWithFeedback(activeProjectDir, delta),
       newAgent: () => {
         // same summon the palette uses: expands + focuses the composer, or
         // opens the Project chooser first when nothing is open
@@ -1907,8 +1976,8 @@ export function WorkspaceClient() {
     };
   }, [
     activeTab,
-    activeProject?.dir,
-    activeSessionTab?.sessionId,
+    activeProjectDir,
+    activeSessionLive,
     announceWorkspace,
     attentionJumpTargets.length,
     commandAvailability,
@@ -1975,12 +2044,13 @@ export function WorkspaceClient() {
   const allTabs = projects.flatMap(g =>
     g.tabs.map(t => ({ tab: t, dir: g.dir }))
   );
-  // a closed tab releases its terminal; nothing outlives the tab
-  if (shownIncarnation.current.size > 0) {
-    const open = new Set(allTabs.map(entry => entry.tab.id));
-    for (const id of shownIncarnation.current.keys()) {
-      if (!open.has(id)) shownIncarnation.current.delete(id);
-    }
+  const shownIncarnation = nextShownIncarnations(
+    shownIncarnations,
+    allTabs,
+    !!activeProject && font !== null
+  );
+  if (shownIncarnation !== shownIncarnations) {
+    setShownIncarnations(shownIncarnation);
   }
 
   // split view (S2, reworked D26): the pinned tab renders RIGHT beside the
@@ -1992,9 +2062,9 @@ export function WorkspaceClient() {
   // active non-pinned tab) keeps the split up while the keyboard sits in
   // the pinned pane — a click must never collapse the split (you could
   // not even copy text out of the watched pane otherwise).
-  if (activeTab && activeTab.id !== pinnedTabId) {
-    companionRef.current = activeTab.id;
-  }
+  const companion =
+    activeTab && activeTab.id !== pinnedTabId ? activeTab.id : companionTabId;
+  if (companion !== companionTabId) setCompanionTabId(companion);
   const stage = resolveStageLayout({
     entries: allTabs,
     activeTabId: activeTab?.id ?? null,
@@ -2003,7 +2073,7 @@ export function WorkspaceClient() {
       activeProjectRootPath !== null &&
       activeProject.tabs.length === 0,
     pinnedTabId,
-    companionTabId: companionRef.current,
+    companionTabId: companion,
   });
   const activeProjectExiting = !!(
     activeProject && exitingProjectDirs.has(activeProject.dir)
@@ -2405,14 +2475,6 @@ export function WorkspaceClient() {
                   {font !== null &&
                     allTabs.map(({ tab, dir }) => {
                       const layout = stage.layoutFor(tab.id);
-                      if (isSessionTab(tab)) {
-                        if (tab.sessionId) {
-                          shownIncarnation.current.set(tab.id, tab.sessionId);
-                        } else if (tab.resumeState === 'resuming') {
-                          // the next incarnation replaces the old terminal
-                          shownIncarnation.current.delete(tab.id);
-                        }
-                      }
                       if (isRemoteAgentTab(tab)) {
                         // A coworker's pane is its conversation, never a
                         // terminal: there is no local process to attach to,
@@ -2440,9 +2502,7 @@ export function WorkspaceClient() {
                         );
                       }
                       const incarnation =
-                        tab.sessionId ??
-                        shownIncarnation.current.get(tab.id) ??
-                        null;
+                        tab.sessionId ?? shownIncarnation.get(tab.id) ?? null;
                       if (incarnation) {
                         // The terminal a Session died in stays on screen
                         // (decision 0042): same key, same position, so React

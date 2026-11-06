@@ -74,7 +74,10 @@ function UnitChassis({
   const group = useRef<THREE.Group>(null);
   const material = useRef<THREE.MeshStandardMaterial>(null);
   const invalidate = useThree(state => state.invalidate);
-  const entered = useRef(reduced ? 1 : 0.86);
+  // The entrance starts here; the frame loop owns scale from then on, so a
+  // re-render never writes the group's scale back over a damped value.
+  const enteredFrom = reduced ? 1 : 0.86;
+  const entered = useRef(enteredFrom);
   const interactionScale = useRef(scale);
   const statusColor = HUD_STATUS_COLOR[unit.agent.status];
   const targetZ = selected ? 3.2 : hovered ? 2.2 : hero ? 1.8 : 1.25;
@@ -143,7 +146,7 @@ function UnitChassis({
     <group
       ref={group}
       position={[unit.x, unit.y, reduced ? targetZ : -1.5]}
-      scale={scale * entered.current}
+      scale={scale * enteredFrom}
       onPointerOver={(event: ThreeEvent<PointerEvent>) => {
         event.stopPropagation();
         onHover(true);

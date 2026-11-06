@@ -207,7 +207,8 @@ export function ScrollExperience({
     rail: 0,
     moving: 0,
   });
-  const anchor = useRef<VisualAnchor>(new VisualAnchor());
+  // One anchor for the story's lifetime: the scene writes it, the panel reads it.
+  const [anchor] = useState(() => new VisualAnchor());
   const [stage, setStage] = useState(0);
   const [visible, setVisible] = useState(true);
 
@@ -351,7 +352,7 @@ export function ScrollExperience({
     let then = performance.now();
     const tick = (frameTime: number) => {
       frame = requestAnimationFrame(tick);
-      const a = anchor.current;
+      const a = anchor;
       const stageEl = stageRef.current;
       if (!stageEl) return;
       // A push on the wheel before the page moves (W15i): eased here as on
@@ -544,7 +545,7 @@ export function ScrollExperience({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [onSelect]);
+  }, [anchor, onSelect]);
 
   const current = STAGES[stage];
   const focusedAgent = focused >= 0 ? model.agents[focused] : null;
@@ -573,7 +574,7 @@ export function ScrollExperience({
             model={model}
             theme={theme}
             drive={drive}
-            anchor={anchor.current}
+            anchor={anchor}
             reducedMotion={reducedMotion}
             visible={visible}
             material={material}
@@ -621,7 +622,7 @@ export function ScrollExperience({
         <PinnedAgentPanel
           agent={selectedAgent}
           theme={theme}
-          anchor={anchor.current}
+          anchor={anchor}
           column={panelSide(current)}
           insetTop={insetTop + 12}
           insetTopNarrow={insetTop + STEPS_CLEAR}

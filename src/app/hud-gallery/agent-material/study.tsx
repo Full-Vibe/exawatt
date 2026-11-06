@@ -230,7 +230,8 @@ export function AgentMaterialStudy() {
     drive.current.base = count;
     drive.current.count = count;
   }, [count]);
-  const anchor = useRef(new VisualAnchor());
+  // One anchor for the stage's lifetime: the scene writes it, the panel reads it.
+  const [anchor] = useState(() => new VisualAnchor());
 
   // Hover to feel it, click to open it, click it again to close it.
   const [openAgent, setOpenAgent] = useState(-1);
@@ -462,7 +463,7 @@ export function AgentMaterialStudy() {
             model={model}
             theme={theme}
             drive={drive}
-            anchor={anchor.current}
+            anchor={anchor}
             reducedMotion={reducedMotion}
             visible
             material={state.material}
@@ -481,7 +482,7 @@ export function AgentMaterialStudy() {
           <PinnedAgentPanel
             agent={selectedAgent}
             theme={theme}
-            anchor={anchor.current}
+            anchor={anchor}
             column={0}
             insetTop={12}
             insetBottom={32}

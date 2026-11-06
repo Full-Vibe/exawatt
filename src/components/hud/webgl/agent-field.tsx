@@ -35,6 +35,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -384,11 +385,12 @@ function Constellation({
 
   // ---- animation state (refs — never setState in useFrame) ----
   const boost = useRef<Float32Array>(new Float32Array(0));
-  if (boost.current.length !== count) {
-    const arr = new Float32Array(count);
-    arr.fill(1);
-    boost.current = arr;
-  }
+  // Sized to the population at commit, before the seed effect or a frame
+  // reads it.
+  useLayoutEffect(() => {
+    if (boost.current.length !== count)
+      boost.current = new Float32Array(count).fill(1);
+  }, [count]);
   const entrance = useRef({ t: 0, done: false });
   const settling = useRef(new Set<number>());
   const prevHover = useRef<number>(-1);

@@ -32,7 +32,7 @@
  * clock in a test.
  */
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface RequestTicket {
   /** True while no newer request has begun and the owner is still mounted. */
@@ -75,11 +75,7 @@ export function createLatestRequest(): LatestRequest {
 }
 
 export function useLatestRequest(): LatestRequest {
-  const channel = useRef<LatestRequest | null>(null);
-  channel.current ??= createLatestRequest();
-  useEffect(() => {
-    const owned = channel.current;
-    return () => owned?.invalidate();
-  }, []);
-  return useMemo(() => channel.current!, []);
+  const [channel] = useState(createLatestRequest);
+  useEffect(() => () => channel.invalidate(), [channel]);
+  return channel;
 }

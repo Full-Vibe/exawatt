@@ -63,6 +63,14 @@ export function TerrainStudy() {
       el.inert = opacity < 0.85;
     }
   }, []);
+  // Each inspector registers under its `data-inspector` index while mounted.
+  const trackInspector = (el: HTMLDivElement) => {
+    const index = Number(el.dataset.inspector);
+    inspectorNodes.current.set(index, el);
+    return () => {
+      inspectorNodes.current.delete(index);
+    };
+  };
   const [selected, setSelected] = useState(0);
   const [inspected, setInspected] = useState<number | null>(null);
   const [links, setLinks] = useState(true);
@@ -472,10 +480,7 @@ export function TerrainStudy() {
                         key={i}
                         className={styles.storyInspector}
                         data-inspector={i}
-                        ref={el => {
-                          if (el) inspectorNodes.current.set(i, el);
-                          else inspectorNodes.current.delete(i);
-                        }}
+                        ref={trackInspector}
                         style={{ opacity: 0, visibility: 'hidden' }}
                       >
                         {renderInspector(

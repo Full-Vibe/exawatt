@@ -12,6 +12,7 @@ import { useFrame } from '@react-three/fiber';
 import {
   memo,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -90,18 +91,25 @@ function useDelegationExits(
   reduced: boolean
 ): SpatialBoardDelegationUnit[] {
   const [exits, setExits] = useState<SpatialBoardDelegationUnit[]>([]);
+  // Only the commit phase reads or writes this.
   const previous = useRef<SpatialBoardDelegationUnit[]>([]);
-  const exitsRef = useRef<SpatialBoardDelegationUnit[]>([]);
-  exitsRef.current = exits;
   const timers = useRef(new Set<number>());
   useLayoutEffect(() => {
-    const {
-      exits: next,
-      departed,
-      changed,
-    } = nextDelegationExits(exitsRef.current, previous.current, units, reduced);
+    const before = previous.current;
     previous.current = units;
-    if (changed) setExits(next);
+    // The roster folds into the exits React holds when it applies the update,
+    // never into a copy of them read at some earlier render.
+    setExits(current => {
+      const { exits: next, changed } = nextDelegationExits(
+        current,
+        before,
+        units,
+        reduced
+      );
+      return changed ? next : current;
+    });
+    // Who departed depends only on the two rosters, not on the exits held.
+    const { departed } = nextDelegationExits([], before, units, reduced);
     if (departed.length === 0) return;
     const goneIds = new Set(departed.map(unit => unit.id));
     const timer = window.setTimeout(() => {
@@ -132,12 +140,12 @@ export function useSettledDelegationUnits(
   const [settledIds, setSettledIds] = useState<ReadonlySet<string>>(
     () => new Set()
   );
-  // A mirror the scheduling effect reads, so `settledIds` never has to be one
-  // of its dependencies. Depending on it would re-arm the effect every time a
-  // unit settles; reading it from the render closure instead would schedule
-  // against a stale set whenever two layouts land inside one settle window.
-  const settledRef = useRef(settledIds);
-  settledRef.current = settledIds;
+  // Read by the scheduling effect as an Effect Event, so `settledIds` never
+  // has to be one of its dependencies. Depending on it would re-arm the effect
+  // every time a unit settles; reading it from the effect's render closure
+  // instead would schedule against a stale set whenever two layouts land
+  // inside one settle window.
+  const isSettled = useEffectEvent((id: string) => settledIds.has(id));
   const pending = useRef(new Map<string, number>());
   useEffect(() => {
     const live = new Set(units.map(unit => unit.id));
@@ -163,7 +171,7 @@ export function useSettledDelegationUnits(
       const index = perParent.get(unit.parentPieceId) ?? 0;
       perParent.set(unit.parentPieceId, index + 1);
       const id = unit.id;
-      if (settledRef.current.has(id) || pending.current.has(id)) continue;
+      if (isSettled(id) || pending.current.has(id)) continue;
       const timer = window.setTimeout(() => {
         pending.current.delete(id);
         // Guard the resurrection case: the unit may have departed while its

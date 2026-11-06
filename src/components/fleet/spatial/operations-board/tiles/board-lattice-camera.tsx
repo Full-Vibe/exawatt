@@ -3,7 +3,13 @@
 import { CameraControls } from '@react-three/drei';
 import CameraControlsImpl from 'camera-controls';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import { Box3, Plane, Raycaster, Vector2, Vector3 } from 'three';
 import type { SpatialBoardRect } from '@exawatt/ui-model';
 import type { OperationsBoardTilesProps } from './operations-board-tiles-canvas';
@@ -101,15 +107,6 @@ export function LatticeCamera({
     followSelection,
     touchSelectionMode,
   });
-  current.current = {
-    layout,
-    onViewportChange,
-    onBackground,
-    onBandSelect,
-    onManualCameraInput,
-    followSelection,
-    touchSelectionMode,
-  };
   const populationInput = useRef({
     population,
     hover,
@@ -117,13 +114,27 @@ export function LatticeCamera({
     onDrillProject,
     tileProjects,
   });
-  populationInput.current = {
-    population,
-    hover,
-    press,
-    onDrillProject,
-    tileProjects,
-  };
+  // The rig's listeners, frame loop and imperative handle live outside
+  // React; they read the props of the last commit, synced here before any
+  // of them can run against it.
+  useLayoutEffect(() => {
+    current.current = {
+      layout,
+      onViewportChange,
+      onBackground,
+      onBandSelect,
+      onManualCameraInput,
+      followSelection,
+      touchSelectionMode,
+    };
+    populationInput.current = {
+      population,
+      hover,
+      press,
+      onDrillProject,
+      tileProjects,
+    };
+  });
   const scratch = useMemo(
     () => ({
       target: new Vector3(),

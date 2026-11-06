@@ -14,6 +14,7 @@ import {
   useCallback,
   useLayoutEffect,
   useRef,
+  useState,
   type ReactNode,
   useSyncExternalStore,
 } from 'react';
@@ -120,9 +121,10 @@ function DampedHtmlAnchor({
   const previousHitPixels = useRef(Number.NaN);
   const projectedCenter = useRef(new THREE.Vector3());
   const projectedEdge = useRef(new THREE.Vector3());
-  const initial = useRef(position);
+  // The group mounts at its first spot; later spots are damped to in frames.
+  const [initial] = useState(position);
+  // Where the frame loop damps to: the committed position, synced below.
   const target = useRef(position);
-  target.current = position;
   const frames = useFrameScheduler();
   // A moved anchor damps to its new spot; the frame that arrives ends it.
   const settling = useFrameDemand('transition', 'anchor');
@@ -139,6 +141,7 @@ function DampedHtmlAnchor({
   const transitionClock = useBoardTransitionClock();
   const [x, y, z] = position;
   useLayoutEffect(() => {
+    target.current = [x, y, z];
     if (!reduced) {
       settling.set(true);
       return;
@@ -217,7 +220,7 @@ function DampedHtmlAnchor({
     settling.set(moving);
   });
   return (
-    <group ref={group} position={initial.current}>
+    <group ref={group} position={initial}>
       <Html
         center={center}
         // drei defaults this to 16,777,271, which is above every app-chrome
@@ -729,7 +732,12 @@ function OverflowCount({
   const span = useRef<HTMLSpanElement>(null);
   const camera = useThree(state => state.camera);
   const size = (px: number) => `clamp(7px, ${px}px, var(--text-chrome-micro))`;
-  const shown = useRef(overflowCountFontPx(unit.size * camera.zoom, label));
+  // The size this render paints; frames write the zoom's size in between.
+  const renderedPx = overflowCountFontPx(unit.size * camera.zoom, label);
+  const shown = useRef(renderedPx);
+  useLayoutEffect(() => {
+    shown.current = renderedPx;
+  }, [renderedPx]);
   useFrame(state => {
     const px = overflowCountFontPx(unit.size * state.camera.zoom, label);
     if (px === shown.current || !span.current) return;
@@ -748,7 +756,7 @@ function OverflowCount({
         aria-hidden="true"
         data-board-delegation-overflow={unit.id}
         className="pointer-events-none select-none font-mono text-chrome-micro font-semibold"
-        style={{ color: theme.label, fontSize: size(shown.current) }}
+        style={{ color: theme.label, fontSize: size(renderedPx) }}
       >
         {label}
       </span>

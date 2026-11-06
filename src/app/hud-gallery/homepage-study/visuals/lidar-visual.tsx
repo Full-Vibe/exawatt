@@ -250,10 +250,10 @@ export function LidarVisual({
 }: VisualProps) {
   const palette = useMemo(() => paletteFrom(theme), [theme]);
   const placements = useMemo(() => placeTiles(model), [model]);
-  const cloudRef = useRef<Cloud | null>(null);
-  if (cloudRef.current === null)
-    cloudRef.current = buildCloud(model, placements, palette);
-  const cloud = cloudRef.current;
+  const cloud = useMemo(
+    () => buildCloud(model, placements, palette),
+    [model, placements, palette]
+  );
   const tileOfAgent = useMemo(() => {
     const map = new Int32Array(model.agents.length).fill(-1);
     model.tiles.forEach((t, i) => {
@@ -263,8 +263,9 @@ export function LidarVisual({
   }, [model]);
   const { size } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
-  const scanRef = useRef<THREE.Line | null>(null);
-  if (scanRef.current === null) {
+  // The frame loop writes these through `pointsRef` and `scanRef`; render
+  // only builds them.
+  const scanLine = useMemo(() => {
     const g = new THREE.BufferGeometry();
     g.setAttribute(
       'position',
@@ -280,26 +281,19 @@ export function LidarVisual({
       })
     );
     line.frustumCulled = false;
-    scanRef.current = line;
-  }
-  const scanLine = scanRef.current;
+    return line;
+  }, [theme.status.active]);
+  const scanRef = useRef<THREE.Line>(null);
+  // Per-tile damped presence, owned by the frame loop.
   const animRef = useRef<{
     tileScale: Float32Array;
     tileWeight: Float32Array;
     agentScale: Float32Array;
   } | null>(null);
-  if (animRef.current === null)
-    animRef.current = {
-      tileScale: new Float32Array(model.tiles.length),
-      tileWeight: new Float32Array(model.tiles.length).fill(1),
-      agentScale: new Float32Array(model.agents.length),
-    };
-  const { tileScale, tileWeight, agentScale } = animRef.current;
   const sweep = useRef(0);
   const hover = useRef(-1);
 
-  const geometryRef = useRef<THREE.BufferGeometry | null>(null);
-  if (geometryRef.current === null) {
+  const geometry = useMemo(() => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(cloud.positions, 3));
     g.setAttribute('pointColor', new THREE.BufferAttribute(cloud.colors, 3));
@@ -307,25 +301,25 @@ export function LidarVisual({
     g.setAttribute('pointAlpha', new THREE.BufferAttribute(cloud.alphas, 1));
     g.setAttribute('pointPhase', new THREE.BufferAttribute(cloud.phases, 1));
     g.setDrawRange(0, cloud.count);
-    geometryRef.current = g;
-  }
-  const geometry = geometryRef.current;
-  const materialRef = useRef<THREE.ShaderMaterial | null>(null);
-  if (materialRef.current === null)
-    materialRef.current = new THREE.ShaderMaterial({
-      vertexShader: VERT,
-      fragmentShader: FRAG,
-      uniforms: {
-        uSweep: { value: 0 },
-        uTime: { value: 0 },
-        uPixelRatio: { value: 1 },
-        uCenter: { value: new THREE.Vector3() },
-      },
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-  const material = materialRef.current;
+    return g;
+  }, [cloud]);
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: VERT,
+        fragmentShader: FRAG,
+        uniforms: {
+          uSweep: { value: 0 },
+          uTime: { value: 0 },
+          uPixelRatio: { value: 1 },
+          uCenter: { value: new THREE.Vector3() },
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    []
+  );
   useEffect(
     () => () => {
       geometry.dispose();
@@ -384,7 +378,23 @@ export function LidarVisual({
     state.camera.updateMatrixWorld();
     const d = drive.current;
     const points = pointsRef.current;
-    if (!points) return;
+    const scan = scanRef.current;
+    if (!points || !scan) return;
+    const material = points.material as THREE.ShaderMaterial;
+    const geometry = points.geometry;
+    let anim = animRef.current;
+    if (
+      !anim ||
+      anim.tileScale.length !== model.tiles.length ||
+      anim.agentScale.length !== model.agents.length
+    ) {
+      anim = animRef.current = {
+        tileScale: new Float32Array(model.tiles.length),
+        tileWeight: new Float32Array(model.tiles.length).fill(1),
+        agentScale: new Float32Array(model.agents.length),
+      };
+    }
+    const { tileScale, tileWeight, agentScale } = anim;
     const shown = shownRef.current;
     const at = fleetAt(model, Math.round(shown));
 
@@ -415,7 +425,9 @@ export function LidarVisual({
         ? present
         : THREE.MathUtils.damp(agentScale[i], present, 5, delta);
     }
-    const alphas = cloud.alphas;
+    const alphaAttribute = geometry.attributes
+      .pointAlpha as THREE.BufferAttribute;
+    const alphas = alphaAttribute.array as Float32Array;
     for (let p = 0; p < cloud.count; p += 1) {
       const t = cloud.tile[p];
       if (t < 0) {
@@ -433,13 +445,11 @@ export function LidarVisual({
         alphas[p] = tileScale[t] * 0.85;
       }
     }
-    (geometry.attributes.pointAlpha as THREE.BufferAttribute).needsUpdate =
-      true;
+    alphaAttribute.needsUpdate = true;
 
     // Sweep about the pole; the scan line is the sweep made visible.
     const center = material.uniforms.uCenter.value as THREE.Vector3;
     center.copy(SPHERE_CENTER);
-    const scan = scanLine;
     {
       const pos = scan.geometry.attributes.position as THREE.BufferAttribute;
       const reach = Math.min(
@@ -518,7 +528,7 @@ export function LidarVisual({
         material={material}
         frustumCulled={false}
       />
-      <primitive object={scanLine} />
+      <primitive ref={scanRef} object={scanLine} />
     </>
   );
 }

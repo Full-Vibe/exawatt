@@ -38,6 +38,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -405,14 +406,18 @@ export function useConnectedSources(): ConnectedSourcesState {
   }, [readList, readStatus]);
 
   /**
-   * The records this surface has seen, read from inside a subscription that
-   * outlives any one of them.
+   * A source moved. Read from the bridge's subscription, which outlives any
+   * one render, so it answers against the records committed when the change
+   * arrives.
    */
-  const knownIds = useRef<ReadonlySet<string>>(new Set());
-  knownIds.current = useMemo(
-    () => new Set(sources.map(source => source.id)),
-    [sources]
-  );
+  const onSourceChanged = useEffectEvent((sourceId: string) => {
+    void readStatus();
+    // A source this surface has never listed just moved, which is what
+    // connecting one from here looks like from this side. Settings is the
+    // page the operator is standing on while it happens, so the list picks
+    // it up rather than waiting to be reopened.
+    if (!sources.some(source => source.id === sourceId)) void readList();
+  });
 
   /**
    * Two inputs, because they answer different questions. The bridge's own
@@ -425,14 +430,7 @@ export function useConnectedSources(): ConnectedSourcesState {
     const api = connectedSourcesBridge();
     const stop =
       typeof api?.onChanged === 'function'
-        ? api.onChanged(change => {
-            void readStatus();
-            // A source this surface has never listed just moved, which is what
-            // connecting one from here looks like from this side. Settings is
-            // the page the operator is standing on while it happens, so the
-            // rail picks it up rather than waiting to be reopened.
-            if (!knownIds.current.has(change.sourceId)) void readList();
-          })
+        ? api.onChanged(change => onSourceChanged(change.sourceId))
         : null;
     const timer = window.setInterval(() => {
       void readStatus();

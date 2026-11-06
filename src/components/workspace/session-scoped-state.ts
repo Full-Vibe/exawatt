@@ -95,9 +95,8 @@ export class SessionScope {
 
 /** Create the scope this workspace's Session-keyed state is declared through. */
 export function useSessionScope(): SessionScope {
-  const scope = useRef<SessionScope | null>(null);
-  scope.current ??= new SessionScope();
-  return scope.current;
+  const [scope] = useState(() => new SessionScope());
+  return scope;
 }
 
 /**
@@ -117,8 +116,11 @@ export function useSessionScopedRecord<V>(
   MutableRefObject<Record<string, V>>,
 ] {
   const [value, setValue] = useState<Record<string, V>>(initial);
+  // The mirror callbacks read: the value of the last commit.
   const ref = useRef(value);
-  ref.current = value;
+  useLayoutEffect(() => {
+    ref.current = value;
+  }, [value]);
   const slot = useRef<object>({});
   useLayoutEffect(
     () =>

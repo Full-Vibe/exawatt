@@ -22,6 +22,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -543,8 +544,11 @@ export function RemoteAgentSurface({
     () => (bridge === undefined ? electronRemoteAgentBridge() : bridge),
     [bridge]
   );
+  // Read by awaited reads and sends, which outlive the render that began them.
   const bridgeRef = useRef(resolvedBridge);
-  bridgeRef.current = resolvedBridge;
+  useLayoutEffect(() => {
+    bridgeRef.current = resolvedBridge;
+  }, [resolvedBridge]);
 
   const [load, setLoad] = useState<ConversationLoad>({ kind: 'loading' });
   const [outbox, dispatchOutbox] = useReducer(outboxReducer, EMPTY_OUTBOX);
@@ -569,7 +573,9 @@ export function RemoteAgentSurface({
   const landedContext = useRef<string | null>(null);
   /** What is in the field right now, readable from an awaited send. */
   const draftRef = useRef(draft);
-  draftRef.current = draft;
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   /**
    * Read the authoritative conversation. This is the only way turns enter the

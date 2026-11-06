@@ -298,7 +298,12 @@ export function CommandPalette({
   // the best group to the top, and a scroll position left over from an
   // earlier keystroke can hide the selected first row above the fold.
   const listRef = useRef<HTMLDivElement | null>(null);
-  const pendingAction = useRef<(() => void) | null>(null);
+  // The row's action waits for the dialog to finish closing, so it runs with
+  // focus already restored. State, not a ref: every row's `onSelect` is
+  // built during render, and the first selection wins until the close lands.
+  const [pendingAction, setPendingAction] = useState<{
+    run: () => void;
+  } | null>(null);
   const searchAndRescroll = useCallback((value: string) => {
     setSearch(value);
     listRef.current?.scrollTo?.({ top: 0 });
@@ -447,27 +452,19 @@ export function CommandPalette({
 
   const handleSelect = useCallback(
     (callback: () => void) => {
-      if (pendingAction.current) return;
-      pendingAction.current = callback;
+      setPendingAction(current => current ?? { run: callback });
       onActionPendingChange?.(true);
       onOpenChange(false);
     },
     [onOpenChange, onActionPendingChange]
   );
   const finishSelection = useCallback(() => {
-    const action = pendingAction.current;
-    pendingAction.current = null;
+    setPendingAction(null);
     onActionPendingChange?.(false);
-    action?.();
-  }, [onActionPendingChange]);
+    pendingAction?.run();
+  }, [onActionPendingChange, pendingAction]);
   const releaseHandoff = useEffectEvent(() => onActionPendingChange?.(false));
-  useEffect(
-    () => () => {
-      pendingAction.current = null;
-      releaseHandoff();
-    },
-    []
-  );
+  useEffect(() => () => releaseHandoff(), []);
   const workspaceRows = useMemo(
     () =>
       tenancy?.hydrated

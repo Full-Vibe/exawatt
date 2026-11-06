@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import type { Project } from './use-workspace-state';
 
 /**
@@ -48,10 +54,14 @@ export function useProjectCloseLifecycle({
   const [dormantProjectDirs, setDormantProjectDirs] = useState<Set<string>>(
     () => new Set()
   );
+  // Read by the dormancy and exit timers: the layout of the last commit,
+  // synced before the effects below arm or cancel them.
   const projectsRef = useRef(projects);
   const activeDirRef = useRef(activeDir);
-  projectsRef.current = projects;
-  activeDirRef.current = activeDir;
+  useLayoutEffect(() => {
+    projectsRef.current = projects;
+    activeDirRef.current = activeDir;
+  }, [projects, activeDir]);
   const emptySinceRef = useRef(new Map<string, number>());
   const dormancyTimersRef = useRef(
     new Map<string, ReturnType<typeof setTimeout>>()

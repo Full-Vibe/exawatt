@@ -141,25 +141,21 @@ export function MercuryVisual({
     return out;
   }, [model]);
 
-  const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
-  if (materialRef.current === null)
-    materialRef.current = new THREE.MeshStandardMaterial({
-      color: 0xc3cad6,
-      metalness: 1,
-      roughness: 0.14,
-      envMapIntensity: 0.9,
-      vertexColors: true,
-    });
-  const material = materialRef.current;
-  const poolsRef = useRef<Pool[] | null>(null);
-  if (poolsRef.current === null) poolsRef.current = makePools(model, material);
-  const pools = poolsRef.current;
+  const material = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: 0xc3cad6,
+        metalness: 1,
+        roughness: 0.14,
+        envMapIntensity: 0.9,
+        vertexColors: true,
+      }),
+    []
+  );
+  const pools = useMemo(() => makePools(model, material), [model, material]);
+  // Frame-loop state: allocated by the first frame, never read in render.
   const animRef = useRef<ReturnType<typeof makeAnim> | null>(null);
-  if (animRef.current === null)
-    animRef.current = makeAnim(model.agents.length, pips.length);
-  const anim = animRef.current;
-  const fieldRef = useRef(makePoolField(RESOLUTION));
-  const field = fieldRef.current;
+  const fieldRef = useRef<ReturnType<typeof makePoolField> | null>(null);
   const { size, gl } = useThree();
   const pipsRef = useRef<THREE.InstancedMesh>(null);
   const ghostsRef = useRef<THREE.InstancedMesh>(null);
@@ -243,6 +239,15 @@ export function MercuryVisual({
     state.camera.updateMatrixWorld();
     const d = drive.current;
     const at = fleetAt(model, Math.round(shownRef.current));
+    if (
+      !animRef.current ||
+      animRef.current.scale.length !== model.agents.length ||
+      animRef.current.pipScale.length !== pips.length
+    ) {
+      animRef.current = makeAnim(model.agents.length, pips.length);
+    }
+    const anim = animRef.current;
+    const field = (fieldRef.current ??= makePoolField(RESOLUTION));
     anim.pulse += delta;
     const breathe = reducedMotion
       ? 0.5

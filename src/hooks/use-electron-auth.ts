@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { analyticsSurface, captureAnalyticsEvent } from '@/lib/analytics';
@@ -15,8 +15,11 @@ export function useElectronAuth(
 ) {
   const router = useRouter();
   const account = resolvedDistribution().account;
-  const callbacksRef = useRef(callbacks);
-  callbacksRef.current = callbacks;
+  // The failure reaches the callbacks of the commit it arrives in.
+  const reportFailure = useEffectEvent((message: string) => {
+    callbacks.onError(message);
+    callbacks.onLoadingChange(false);
+  });
 
   // Electron main owns system-browser PKCE and persists the completed session
   // into this renderer's canonical Supabase cookie jar. No renderer auth fetch
@@ -50,8 +53,7 @@ export function useElectronAuth(
             ? 'network'
             : 'provider_error',
       });
-      callbacksRef.current.onError(authErrorMessage(error));
-      callbacksRef.current.onLoadingChange(false);
+      reportFailure(authErrorMessage(error));
     });
 
     return () => {

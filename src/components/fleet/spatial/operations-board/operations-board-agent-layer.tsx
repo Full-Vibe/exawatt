@@ -60,6 +60,7 @@ import {
 import { statusMarkSubjects } from './status-mark-subjects';
 import { sameAgentBodyPaint } from './agent-body-subjects';
 import { StatusMarkLayer } from './operations-board-status-marks';
+import { useRetainedRecords } from './tiles/use-retained-records';
 
 /**
  * Batched spatial sibling of the DOM StatusLight. Project identity stays on
@@ -256,8 +257,6 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
       reduced ? 0 : undefined
     );
   }
-  const lastPieceById = useRef(new Map<string, SpatialBoardPiece>());
-  for (const piece of solid) lastPieceById.current.set(piece.id, piece);
   const [retiringIds, setRetiringIds] = useState<string[]>([]);
   const frames = useFrameScheduler();
   const previousReduced = useRef(reduced);
@@ -302,25 +301,8 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
     // A completed departure stays at zero until React has detached its refs;
     // pruning it earlier would briefly restore its default scale of one.
     emergence.current!.prune(performance.now(), retiringIds);
-    const retained = new Set([
-      ...solid.map(piece => piece.id),
-      ...retiringIds,
-      ...emergence.current!.retiring(performance.now()),
-    ]);
-    for (const id of lastPieceById.current.keys()) {
-      if (!retained.has(id)) lastPieceById.current.delete(id);
-    }
   }, [solid, retiringIds]);
-  const rendered = useMemo(() => {
-    const ids = new Set(solid.map(piece => piece.id));
-    const retiring: SpatialBoardPiece[] = [];
-    for (const id of retiringIds) {
-      if (ids.has(id)) continue;
-      const piece = lastPieceById.current.get(id);
-      if (piece) retiring.push(piece);
-    }
-    return retiring.length ? [...solid, ...retiring] : solid;
-  }, [retiringIds, solid]);
+  const rendered = useRetainedRecords(solid, retiringIds);
   const [hoveredMeshId, setHoveredMeshId] = useState<string | null>(null);
   const bodyMat = useRef<THREE.MeshLambertMaterial>(null);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
@@ -513,7 +495,7 @@ export const AgentPieceLayer = memo(function AgentPieceLayer({
 });
 
 type AgentBodyProps = {
-  pieces: SpatialBoardPiece[];
+  pieces: readonly SpatialBoardPiece[];
   color: string;
   reduced: boolean;
   interactive: boolean;

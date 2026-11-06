@@ -620,13 +620,11 @@ function HeroUnits({
   const elapsed = useRef(0);
   const pending = useRef(0);
   const random = useMemo(() => mulberry32(0x11ada7), []);
-  const followsStatus = useRef(highlight.followsStatus);
-  followsStatus.current = highlight.followsStatus;
 
   /** Emphasis this unit should be at, now, under the active highlight. */
   const focusTargetFor = useCallback(
     (index: number, status: number): number => {
-      if (!followsStatus.current) return highlight.units[index] ?? 1;
+      if (!highlight.followsStatus) return highlight.units[index] ?? 1;
       // Status-derived emphasis reads the LIVE status, not the captured one:
       // the scheduler turns agents while a visitor reads, and a highlight
       // frozen at capture time would keep a finished agent lit as waiting.
@@ -709,10 +707,6 @@ function HeroUnits({
    * on the bridge rather than to the captured ones, because the scheduler has
    * been turning agents the whole time the other lens was up.
    */
-  const lensRef = useRef(lens);
-  lensRef.current = lens;
-  const burstRef = useRef(transitionBurst);
-  burstRef.current = transitionBurst;
   useLayoutEffect(() => {
     const material_ = material.current;
     if (!material_) return;
@@ -762,6 +756,8 @@ function HeroUnits({
     frames.request();
   }, [capture, count, geometry, getBridge, frames, lens]);
 
+  // Called only from the frame loop, which runs the committed render's
+  // closure, so it reads this render's lens, burst and highlight directly.
   function changeOneUnit(): void {
     const bridge = getBridge();
     const index = Math.floor(random() * count);
@@ -770,7 +766,7 @@ function HeroUnits({
     const next = options[Math.floor(random() * options.length)]!;
     if (next === from) return;
     bridge.statuses[index] = next;
-    const lensed = lensRef.current.channel !== null;
+    const lensed = lens.channel !== null;
     const markFrom = geometry.getAttribute(
       'aMarkFrom'
     ) as THREE.InstancedBufferAttribute;
@@ -803,14 +799,14 @@ function HeroUnits({
     // the open arc becoming the check, which in mark terms is 1 becoming 2.
     // Every other turn keeps the plain crossfade it has always had.
     const isResult = MARK_BY_STATUS[from] === 1 && MARK_BY_STATUS[next] === 2;
-    pop.setX(index, isResult && burstRef.current ? 1 : 0);
+    pop.setX(index, isResult && transitionBurst ? 1 : 0);
     markFrom.needsUpdate = true;
     markTo.needsUpdate = true;
     statusFrom.needsUpdate = true;
     statusTo.needsUpdate = true;
     changeAt.needsUpdate = true;
     pop.needsUpdate = true;
-    if (followsStatus.current) {
+    if (highlight.followsStatus) {
       // The emphasis rides the same turn the colour does, so an agent that
       // stops needing a human fades out of the highlight instead of popping.
       retargetFocus(index, focusTargetFor(index, next));

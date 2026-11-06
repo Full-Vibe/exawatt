@@ -827,33 +827,22 @@ export function DemoWorkspaceClient() {
     return chip !== null && document.activeElement === chip;
   }, [activeId]);
 
-  const fixedActions = useMemo<FixedWorkspaceShortcutActions>(
-    () => ({
-      selectIndex: selectProject,
-      selectTabOrdinal,
-      cycle: cycleTab,
-      moveTab: delta => moveTab(activeId, delta),
-      moveProject: delta => moveProject(activeProject?.dir ?? null, delta),
-      focusTerminal: focusSession,
-      toggleFocus: () => {
-        if (sessionPaneRef.current?.contains(document.activeElement)) {
-          return focusActiveChip();
-        }
-        return focusSession();
-      },
-    }),
-    [
-      activeId,
-      activeProject?.dir,
-      cycleTab,
-      focusActiveChip,
-      focusSession,
-      moveProject,
-      moveTab,
-      selectProject,
-      selectTabOrdinal,
-    ]
-  );
+  // The shortcut layer reads these through Effect Events when a key arrives,
+  // so their identity never matters and nothing here runs during render.
+  const fixedActions: FixedWorkspaceShortcutActions = {
+    selectIndex: selectProject,
+    selectTabOrdinal,
+    cycle: cycleTab,
+    moveTab: delta => moveTab(activeId, delta),
+    moveProject: delta => moveProject(activeProject?.dir ?? null, delta),
+    focusTerminal: focusSession,
+    toggleFocus: () => {
+      if (sessionPaneRef.current?.contains(document.activeElement)) {
+        return focusActiveChip();
+      }
+      return focusSession();
+    },
+  };
   useFixedWorkspaceShortcuts(fixedActions);
 
   const commandAvailability = useMemo(() => {

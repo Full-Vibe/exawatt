@@ -21,7 +21,14 @@
  * overwritten by the older result (BUG-121's defect, stated once).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 import {
   checkingAgentSourceRegistry,
@@ -75,8 +82,11 @@ export function useAgentSourceRegistry(
   // request is newest owns the paint, and a remembered result that arrives
   // after the live one for the same request must not cover it.
   const reads = useLatestRequest();
+  // What `load` reads when it starts: the state of the last commit.
   const latest = useRef(state);
-  latest.current = state;
+  useLayoutEffect(() => {
+    latest.current = state;
+  }, [state]);
 
   const load = useCallback(
     async (force: boolean): Promise<AgentSourceRegistryLoadResult> => {

@@ -11,6 +11,8 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -113,22 +115,26 @@ export function TerminalPane({
   // the term is created ASYNC (dynamic import) — it must read the CURRENT
   // active state when it finally exists, or the first focus is lost
   const activeRef = useRef(active);
-  activeRef.current = active;
   // the initial font resolves before mounting; later settings refreshes
   // update this ref and the live xterm through applyFont below
   const fontRef = useRef(font);
-  fontRef.current = font;
   // Theme refresh is orthogonal to xterm/PTY lifecycle. An async constructor
   // reads the latest snapshot; an existing terminal receives it in place.
   const themeRef = useRef(terminalTheme);
-  themeRef.current = terminalTheme;
   // hidden panes must NOT resize their PTY: an invisible element keeps
   // full-container geometry, so during a split every hidden session would
   // get SIGWINCHed to the WRONG width on each layout change (TUIs then
   // redraw scrollback at that width). Freeze while hidden; the layout
   // effect refits on reveal.
   const layoutRef = useRef(layout);
-  layoutRef.current = layout;
+  // xterm, its observers and the async constructor run outside React; they
+  // read the props of the last commit, synced before any later effect runs.
+  useLayoutEffect(() => {
+    activeRef.current = active;
+    fontRef.current = font;
+    themeRef.current = terminalTheme;
+    layoutRef.current = layout;
+  });
   // What this pane has painted, for Session liveness (BUG-330): main compares
   // it with what it delivered to tell a stalled pane from a stalled harness.
   const livenessRef = useRef<PaneLiveness | null>(null);
@@ -151,8 +157,11 @@ export function TerminalPane({
     },
     [cwd]
   );
-  const openTargetRef = useRef(openTarget);
-  openTargetRef.current = openTarget;
+  // What xterm's link provider and the command handle call: the opener of
+  // the commit the click lands in, not the one the terminal was built with.
+  const openTargetFromTerminal = useEffectEvent((target: TerminalTarget) =>
+    openTarget(target)
+  );
   // The target under the pointer, kept current by the SAME link vocabulary
   // that decides what is clickable — this is what lets right-click copy a
   // link instead of offering verbs that know nothing about one.
@@ -176,7 +185,7 @@ export function TerminalPane({
           void window.electron?.pty?.pasteClipboard(sessionId);
         },
         selectAll: () => termRef.current?.selectAll(),
-        openLink: link => openTargetRef.current(link),
+        openLink: link => openTargetFromTerminal(link),
         copyLink: link => {
           void window.electron?.pty?.copyText(terminalTargetCopyText(link));
         },
@@ -242,7 +251,7 @@ export function TerminalPane({
               setNotice(`Exawatt does not open ${describeScheme(uri)} links.`);
               return;
             }
-            openTargetRef.current(target);
+            openTargetFromTerminal(target);
           },
           hover: (_event, uri) => {
             hoveredTarget.current = terminalTargetFromUri(uri);
@@ -275,7 +284,7 @@ export function TerminalPane({
       // providers can no longer decide that a line's paths do not exist.
       const links = term.registerLinkProvider(
         createTerminalLinkProvider(term, {
-          activate: target => openTargetRef.current(target),
+          activate: target => openTargetFromTerminal(target),
           hover: target => {
             hoveredTarget.current = target;
           },

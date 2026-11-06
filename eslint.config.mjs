@@ -33,10 +33,11 @@ const eslintConfig = [
   prettier,
   {
     rules: {
-      // Keep the current codebase lintable while React Compiler-oriented rules
-      // are evaluated separately from baseline correctness linting.
+      // `react-hooks/refs` is on (BUG-338): a ref read or written during
+      // render is state React cannot see, and a render React holds or
+      // discards leaves it wrong. Purity and set-state-in-effect are still
+      // being burned down separately.
       "react-hooks/purity": "off",
-      "react-hooks/refs": "off",
       "react-hooks/set-state-in-effect": "off",
     },
   },

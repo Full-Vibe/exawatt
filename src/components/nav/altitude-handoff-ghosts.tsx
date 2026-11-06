@@ -16,7 +16,7 @@
  * the animation instantly. Falling back is a normal outcome.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef } from 'react';
 import {
   ALTITUDE_HANDOFF_BUDGET_MS,
   ALTITUDE_HANDOFF_CROSSFADE_MS,
@@ -48,8 +48,10 @@ export function AltitudeHandoffGhosts({
   const scrim = useRef<HTMLDivElement | null>(null);
   const ghosts = useRef(new Map<string, HTMLDivElement>());
   const done = useRef(false);
-  const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
+  // The flight reports to the handler committed when it finishes.
+  const reportDone = useEffectEvent((outcome: HandoffOutcome) =>
+    onDone(outcome)
+  );
 
   useEffect(() => {
     let deadline: number | null = null;
@@ -62,7 +64,7 @@ export function AltitudeHandoffGhosts({
       done.current = true;
       if (deadline !== null) window.clearTimeout(deadline);
       if (stallFrame !== null) window.cancelAnimationFrame(stallFrame);
-      onDoneRef.current(outcome);
+      reportDone(outcome);
     };
 
     const fadeOutAll = (durationMs: number, outcome: HandoffOutcome) => {
