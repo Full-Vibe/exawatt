@@ -26,7 +26,7 @@ it('stages a model and its effort as two axes and applies only on explicit actio
     );
   expect(efforts()).toEqual(model.efforts.map(option => option.id));
   expect(
-    document.querySelector('[data-session-effort][aria-pressed="true"]')
+    document.querySelector('[data-session-effort][aria-checked="true"]')
   ).toHaveAttribute('data-session-effort', model.defaultEffort);
   fireEvent.click(
     document.querySelector(`[data-session-effort="${effort.id}"]`)!
@@ -36,7 +36,7 @@ it('stages a model and its effort as two axes and applies only on explicit actio
     screen.getByRole('option', { name: catalog.models[1].label })
   );
   expect(
-    document.querySelector('[data-session-effort][aria-pressed="true"]')
+    document.querySelector('[data-session-effort][aria-checked="true"]')
   ).toHaveAttribute('data-session-effort', effort.id);
   expect(screen.getAllByRole('listbox')).toHaveLength(1);
   expect(apply).not.toHaveBeenCalled();
@@ -89,5 +89,41 @@ it('marks its trigger and its apply action for anything driving the control', as
   await screen.findAllByRole('option');
   expect(document.querySelectorAll('[data-session-model-apply]')).toHaveLength(
     1
+  );
+});
+
+it('keeps Apply disabled until the running effort is one the catalog declares, never dropping it silently', async () => {
+  const apply = vi.fn(async () => {});
+  const catalog = await demoModelCatalog();
+  const model = catalog.models.find(candidate => candidate.efforts.length > 1)!;
+  render(
+    <SessionModelControl
+      loadCatalog={demoModelCatalog}
+      apply={apply}
+      initialModel={model.id}
+      initialEffort="not-declared"
+    />
+  );
+  fireEvent.click(document.querySelector('[data-session-model]')!);
+  await screen.findAllByRole('option');
+  const applyButton = screen.getByRole('button', { name: 'Apply and resume' });
+  // Nothing on the effort axis is checked, and Apply says why it waits.
+  expect(
+    document.querySelector('[data-session-effort][aria-checked="true"]')
+  ).toBeNull();
+  expect(applyButton).toBeDisabled();
+  expect(
+    document.querySelector('[data-session-effort-required]')
+  ).toHaveTextContent(model.label);
+  fireEvent.click(applyButton);
+  expect(apply).not.toHaveBeenCalled();
+  const chosen = model.efforts[0];
+  fireEvent.click(
+    document.querySelector(`[data-session-effort="${chosen.id}"]`)!
+  );
+  expect(applyButton).toBeEnabled();
+  fireEvent.click(applyButton);
+  await waitFor(() =>
+    expect(apply).toHaveBeenCalledWith({ model: model.id, effort: chosen.id })
   );
 });

@@ -4,7 +4,13 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChoiceGroup } from '@/components/ui/choice-group';
 import { OptionMenu } from '@/components/ui/option-menu';
-import { effortForModel, modelEfforts } from './launch-axes';
+import {
+  chosenEffort,
+  derivedEffort,
+  effortForModel,
+  modelEfforts,
+  type EffortSelection,
+} from './launch-axes';
 import type {
   AgentModelCatalog,
   SessionModelChange,
@@ -18,6 +24,12 @@ import type {
  * as "an orthogonal selector, not just a flattened list"; the list used to
  * hold one row per model and effort ("GPT-6 · Low" … "GPT-6 · Ultra"), so a
  * catalog of five models read as thirty rows.
+ *
+ * Apply resumes the Agent with exactly what is staged, so it stays disabled
+ * until the staging is a choice the catalog declares: a model it lists and,
+ * when that model declares efforts, one of them. A running effort the
+ * catalog does not declare is never dropped silently in favour of the
+ * harness default; the operator picks one first.
  */
 export function SessionModelControl({
   loadCatalog,
@@ -35,7 +47,12 @@ export function SessionModelControl({
   const [open, setOpen] = useState(false);
   const [catalog, setCatalog] = useState<AgentModelCatalog | null>(null);
   const [model, setModel] = useState<string | null>(null);
-  const [effort, setEffort] = useState<string | null>(null);
+  // The running effort is what the operator launched with, so it counts as
+  // chosen and carries across a model change wherever the new model offers it.
+  const [effortSelection, setEffortSelection] = useState<EffortSelection>(
+    derivedEffort(null)
+  );
+  const effort = effortSelection.value;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState<string | null>(null);
@@ -48,7 +65,9 @@ export function SessionModelControl({
         setCatalog(next);
         setError(null);
         setModel(initialModel ?? null);
-        setEffort(initialEffort ?? null);
+        setEffortSelection(
+          initialEffort ? chosenEffort(initialEffort) : derivedEffort(null)
+        );
       })
       .catch(() => {
         if (current) setError('Could not load models. Close and try again.');
@@ -74,14 +93,17 @@ export function SessionModelControl({
       ? 'Choose a model inside this Agent Source.'
       : undefined);
   const locked = pending || !!reason;
-  const staged: SessionModelChange | null = model
-    ? {
-        model,
-        ...(effort && efforts.some(option => option.id === effort)
-          ? { effort }
-          : {}),
-      }
-    : null;
+  const stagedModel = models.find(option => option.id === model) ?? null;
+  const effortDeclared =
+    efforts.length === 0 || efforts.some(option => option.id === effort);
+  const staged: SessionModelChange | null =
+    stagedModel && effortDeclared
+      ? {
+          model: stagedModel.id,
+          ...(efforts.length > 0 && effort ? { effort } : {}),
+        }
+      : null;
+  const effortMissing = stagedModel !== null && !effortDeclared;
 
   return (
     <OptionMenu
@@ -101,7 +123,9 @@ export function SessionModelControl({
         setModel(next);
         // The effort axis carries across the model change whenever the new
         // model offers it, the same rule the New Agent window applies.
-        setEffort(effortForModel({ catalog, modelId: next, current: effort }));
+        setEffortSelection(
+          effortForModel({ catalog, modelId: next, current: effortSelection })
+        );
       }}
       closeOnSelect={false}
       open={open}
@@ -126,7 +150,7 @@ export function SessionModelControl({
                 }))}
                 optionAttribute="data-session-effort"
                 disabled={locked}
-                onChange={setEffort}
+                onChange={value => setEffortSelection(chosenEffort(value))}
                 className="flex-wrap self-stretch font-mono text-chrome-micro"
                 optionClassName="h-7 px-2"
               />
@@ -135,6 +159,14 @@ export function SessionModelControl({
           {!catalog && !error && (
             <p role="status" className="text-chrome-meta text-muted-foreground">
               Loading models…
+            </p>
+          )}
+          {effortMissing && !reason && (
+            <p
+              data-session-effort-required
+              className="text-chrome-meta text-muted-foreground"
+            >
+              Choose an effort for {stagedModel.label}.
             </p>
           )}
           {reason && (
