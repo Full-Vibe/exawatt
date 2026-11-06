@@ -18,10 +18,17 @@
  * start?", and opening both stacked a second list under the first. The
  * launcher owns ONE disclosure state, so opening either closes the other by
  * construction; the catalog's content is the caller's, its open state is not.
+ *
+ * The <form> is what Start submits: the task, the row and the setup drawer.
+ * The catalog and the launch options (worktree, branch, roadmap link, Name
+ * setup…) are disclosures OUTSIDE it, so Enter in one of their fields can
+ * never start an Agent; nothing has to guard that key. The launch options
+ * have their own trigger on the status line, which also says what is set
+ * (a worktree branch, a roadmap link) while they are folded.
  */
 
 import { useLayoutEffect, useRef, useState } from 'react';
-import { LoaderCircle } from 'lucide-react';
+import { ChevronDown, LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useBackOut } from '@/lib/shortcuts/back-out';
@@ -53,6 +60,13 @@ export interface AgentLauncherProps {
    * the open disclosure. `close` folds it (a pick that launches or selects).
    */
   catalog?: (close: () => void) => React.ReactNode;
+  /**
+   * This launch's options (worktree, branch, roadmap link, naming the setup),
+   * rendered under the status line while they are the open disclosure.
+   */
+  options?: (close: () => void) => React.ReactNode;
+  /** What the options hold while folded, e.g. "Worktree agent/1105-1200". */
+  optionsSummary?: string | null;
   onStart: () => void;
   launching?: boolean;
   /** Blocks Start with a stated reason; never silently disabled. */
@@ -80,7 +94,7 @@ export interface AgentLauncherProps {
 }
 
 /** What is unfolded under the row. Never two things. */
-type LauncherDisclosure = 'setup' | 'catalog' | null;
+type LauncherDisclosure = 'setup' | 'catalog' | 'options' | null;
 
 export function AgentLauncher({
   setups,
@@ -93,6 +107,8 @@ export function AgentLauncher({
   onTaskChange,
   onSelect,
   catalog,
+  options,
+  optionsSummary = null,
   onStart,
   launching = false,
   blockedReason,
@@ -119,12 +135,12 @@ export function AgentLauncher({
   const [notchPosition, setNotchPosition] = useState<number | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<HTMLTextAreaElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   // Whatever is unfolded is the launcher's rung of the back-out ladder:
   // Escape folds it and returns to the task. Folded, Escape falls through.
   useBackOut({
     rung: 'panel',
-    element: formRef,
+    element: rootRef,
     enabled: disclosure !== null,
     back: () => {
       setDisclosure(null);
@@ -172,92 +188,97 @@ export function AgentLauncher({
   const startBlocked = Boolean(blockedReason) || launching || selected === null;
 
   return (
-    <form
-      ref={formRef}
+    <div
+      ref={rootRef}
       data-agent-launcher
       className={cn('flex w-full min-w-0 flex-col gap-2', className)}
-      onSubmit={event => {
-        event.preventDefault();
-        if (!startBlocked) onStart();
-      }}
     >
-      <textarea
-        ref={taskRef}
-        rows={1}
-        value={task}
-        maxLength={8_000}
-        onChange={event => onTaskChange(event.target.value)}
-        onKeyDown={event => {
-          if (event.nativeEvent.isComposing) return;
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            if (!startBlocked) onStart();
-          }
+      <form
+        data-agent-launcher-form
+        className="flex min-w-0 flex-col gap-2"
+        onSubmit={event => {
+          event.preventDefault();
+          if (!startBlocked) onStart();
         }}
-        placeholder="What should this Agent do?"
-        aria-label="Initial task for the new Agent"
-        data-launcher-task
-        className="max-h-40 min-h-11 w-full resize-none rounded-md border border-hud-stroke-soft bg-hud-surface-input px-3 py-2 font-mono text-xs leading-5 text-hud-text outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
-      />
+      >
+        <textarea
+          ref={taskRef}
+          rows={1}
+          value={task}
+          maxLength={8_000}
+          onChange={event => onTaskChange(event.target.value)}
+          onKeyDown={event => {
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              if (!startBlocked) onStart();
+            }
+          }}
+          placeholder="What should this Agent do?"
+          aria-label="Initial task for the new Agent"
+          data-launcher-task
+          className="max-h-40 min-h-11 w-full resize-none rounded-md border border-hud-stroke-soft bg-hud-surface-input px-3 py-2 font-mono text-xs leading-5 text-hud-text outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+        />
 
-      {/* Row, handle and panel are ONE block with no gaps between them: the
+        {/* Row, handle and panel are ONE block with no gaps between them: the
           handle used to sit in its own `gap-2` child and read as a detached
           arrow floating under the cards (operator, round 3). */}
-      <div ref={rowRef} className="flex min-w-0 flex-col">
-        <div className="flex min-w-0 items-stretch gap-2">
-          <SetupRow
-            setups={setups}
-            selectedId={selectedId}
-            expandedId={shownDisclosure === 'setup' ? selectedId : null}
-            state={state}
-            placeholderCount={placeholderCount}
-            onSelect={onSelect}
-            onToggleDetail={toggleDetail}
-            onEnterDetail={enterDetail}
-            catalogOpen={shownDisclosure === 'catalog'}
-            onOpenCatalog={() => toggle('catalog')}
-            className="flex-1"
+        <div ref={rowRef} className="flex min-w-0 flex-col">
+          <div className="flex min-w-0 items-stretch gap-2">
+            <SetupRow
+              setups={setups}
+              selectedId={selectedId}
+              expandedId={shownDisclosure === 'setup' ? selectedId : null}
+              state={state}
+              placeholderCount={placeholderCount}
+              onSelect={onSelect}
+              onToggleDetail={toggleDetail}
+              onEnterDetail={enterDetail}
+              catalogOpen={shownDisclosure === 'catalog'}
+              onOpenCatalog={() => toggle('catalog')}
+              className="flex-1"
+            />
+            <Button
+              type="submit"
+              data-launcher-start
+              aria-busy={launching}
+              disabled={startBlocked}
+              title={blockedReason ?? undefined}
+              // Stable hook for the chrome-layout gate, which checks that Start
+              // survives a narrowing window. D46 had one; D49's redraw dropped
+              // it and the gate rotted silently (BUG-010).
+              data-agent-start-button
+              className="min-w-24 shrink-0 self-stretch motion-reduce:transition-none"
+            >
+              {launching ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="animate-spin motion-reduce:animate-none"
+                />
+              ) : null}
+              {launching ? 'Starting…' : 'Start'}
+            </Button>
+          </div>
+
+          <SetupDrawerHandle
+            open={shownDisclosure === 'setup'}
+            axes={axes}
+            tickPosition={notchPosition}
+            onToggle={toggleDetail}
+            disabled={!ready}
           />
-          <Button
-            type="submit"
-            data-launcher-start
-            aria-busy={launching}
-            disabled={startBlocked}
-            title={blockedReason ?? undefined}
-            // Stable hook for the chrome-layout gate, which checks that Start
-            // survives a narrowing window. D46 had one; D49's redraw dropped
-            // it and the gate rotted silently (BUG-010).
-            data-agent-start-button
-            className="min-w-24 shrink-0 self-stretch motion-reduce:transition-none"
-          >
-            {launching ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="animate-spin motion-reduce:animate-none"
-              />
-            ) : null}
-            {launching ? 'Starting…' : 'Start'}
-          </Button>
+
+          <SetupDetailPanel
+            open={shownDisclosure === 'setup' && ready}
+            focusRequest={detailFocusRequest}
+            axes={axes}
+            footnote={detailFootnote}
+            action={detailAction}
+            source={detailSource}
+            onDone={closeDisclosure}
+          />
         </div>
-
-        <SetupDrawerHandle
-          open={shownDisclosure === 'setup'}
-          axes={axes}
-          tickPosition={notchPosition}
-          onToggle={toggleDetail}
-          disabled={!ready}
-        />
-
-        <SetupDetailPanel
-          open={shownDisclosure === 'setup' && ready}
-          focusRequest={detailFocusRequest}
-          axes={axes}
-          footnote={detailFootnote}
-          action={detailAction}
-          source={detailSource}
-          onDone={closeDisclosure}
-        />
-      </div>
+      </form>
 
       {shownDisclosure === 'catalog' && catalog
         ? catalog(closeDisclosure)
@@ -300,7 +321,38 @@ export function AgentLauncher({
               </button>
             ))
           : null}
+        {options ? (
+          <button
+            type="button"
+            data-launch-options-trigger
+            aria-expanded={shownDisclosure === 'options'}
+            data-open={shownDisclosure === 'options' || undefined}
+            onClick={() => toggle('options')}
+            className="ml-auto flex min-w-0 shrink items-center gap-1.5 rounded-sm font-mono text-chrome-micro leading-4 text-hud-text-dim outline-none transition-colors hover:text-hud-text focus-visible:ring-2 focus-visible:ring-hud-cyan data-[open]:text-hud-text motion-reduce:transition-none"
+          >
+            <span className="shrink-0">Options</span>
+            {optionsSummary ? (
+              <span
+                data-launch-options-summary
+                className="min-w-0 truncate text-hud-text"
+              >
+                {optionsSummary}
+              </span>
+            ) : null}
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                'size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none',
+                shownDisclosure === 'options' && 'rotate-180'
+              )}
+            />
+          </button>
+        ) : null}
       </div>
+
+      {shownDisclosure === 'options' && options
+        ? options(closeDisclosure)
+        : null}
 
       {/* The composer's ONE keyboard hint (BUG-017). The surrounding
           `launch-controls.tsx` printed a second copy of the same chords under
@@ -325,6 +377,6 @@ export function AgentLauncher({
               }`
             : ''}
       </span>
-    </form>
+    </div>
   );
 }

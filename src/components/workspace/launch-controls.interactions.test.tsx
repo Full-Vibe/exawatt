@@ -527,42 +527,49 @@ describe('Agent composer · interactions and drafts', () => {
 
     await composerReady();
 
-    const catalogButton = screen.getByRole('button', {
-      name: 'All engines and models',
+    // The launch options have their own home, outside the catalog, and say
+    // what is set while folded.
+    const optionsTrigger = await settled(() => {
+      const trigger = document.querySelector<HTMLButtonElement>(
+        '[data-launch-options-trigger]'
+      );
+      expect(trigger).not.toBeNull();
+      return trigger!;
     });
-    // Settling deliberately disables the catalog trigger. Under suite load,
-    // permissions can become ready first; clicking a disabled button is a
-    // no-op, so wait for the interaction boundary rather than the unrelated
-    // permission boundary (D52: a flaky check stops being trusted).
-    await settled(() => expect(catalogButton).not.toBeDisabled());
-    fireEvent.click(catalogButton);
+    expect(
+      optionsTrigger.querySelector('[data-launch-options-summary]')
+    ).toHaveTextContent('Worktree agent/preserved-branch · ENG-017');
+    fireEvent.click(optionsTrigger);
     expect(
       await settled(() =>
         screen.getByRole('checkbox', { name: 'New git worktree' })
       )
     ).toBeChecked();
     expect(
+      document.querySelector('[data-all-launch-configurations]')
+    ).toBeNull();
+    expect(
       screen.getByLabelText('Branch name for the new worktree')
     ).toHaveValue('agent/preserved-branch');
     expect(
-      screen.getByLabelText('Roadmap item this session will work on')
+      document.querySelector('[data-launch-options] [data-launch-roadmap-item]')
     ).toHaveValue('ENG-017');
-    expect(
-      document.querySelector(
-        '[data-all-launch-configurations] [data-launch-roadmap-item]'
-      )
-    ).toHaveValue('ENG-017');
-    fireEvent.change(
-      screen.getByLabelText('Branch name for the new worktree'),
-      { target: { value: 'agent/revised-branch' } }
+    const branchField = screen.getByLabelText(
+      'Branch name for the new worktree'
     );
+    fireEvent.change(branchField, {
+      target: { value: 'agent/revised-branch' },
+    });
     expect(onDraftIntent).toHaveBeenCalledWith({
       draftBranch: 'agent/revised-branch',
       draftTouched: true,
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'All engines and models' })
-    );
+    // Enter in the branch field is Enter in a text field: the options sit
+    // outside the form Start submits, so nothing starts (review finding 3).
+    expect(branchField.closest('form')).toBeNull();
+    fireEvent.keyDown(branchField, { key: 'Enter' });
+    expect(onLaunch).not.toHaveBeenCalled();
+    fireEvent.click(optionsTrigger);
 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     await settled(() =>

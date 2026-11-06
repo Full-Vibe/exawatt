@@ -2,19 +2,17 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
-  useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 import Link from 'next/link';
 import {
-  GitBranch,
   ExternalLink,
   MoreHorizontal,
   Pin,
   PinOff,
   RefreshCw,
-  Save,
   SquareTerminal,
 } from 'lucide-react';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
@@ -23,7 +21,6 @@ import {
   AGENT_SOURCE_META,
   AGENT_SOURCE_ORDER,
   AGENT_PERMISSION_MODE_META,
-  DEFAULT_AGENT_PERMISSION_MODE,
   fallbackAgentSourceRegistry,
   isAgentSourceId,
   launchSourceSnapshots,
@@ -55,6 +52,7 @@ import {
 import {
   createAgentLaunchConfiguration,
   AGENT_PERMISSION_MODES,
+  DEFAULT_AGENT_PERMISSION_MODE,
   emptyLaunchConfigurationPool,
   isAgentPermissionMode,
   launchConfigurationId,
@@ -81,7 +79,19 @@ import {
   type LaunchTargetAvailability,
 } from './launch-target-catalog';
 import type { LaunchConfigurationRibbonItem } from './launch-configuration-ribbon';
-import { effortForModel, modelEfforts } from './launch-axes';
+import {
+  chosenEffort,
+  derivedEffort,
+  effortForModel,
+  modelEfforts,
+  type EffortSelection,
+} from './launch-axes';
+import {
+  SetupDeleteDialog,
+  SetupNameDialog,
+  type SetupDeleteRequest,
+  type SetupNameRequest,
+} from './launcher/setup-dialogs';
 import type { CommandPaletteLaunchConfiguration } from '@/components/shortcuts/command-palette-launch-configurations';
 import {
   DropdownMenu,
@@ -94,6 +104,10 @@ import { sourceCardStep } from '@/components/agent-sources/source-card';
 import { localAgentSourceDeclaration } from '@/generated/agent-source-declarations';
 import { launcherSourceLines } from './launcher/source-lines';
 import { useComposerClipboard } from './launcher/use-composer-clipboard';
+import {
+  LaunchOptionsPanel,
+  launchOptionsSummary,
+} from './launcher/launch-options';
 import { AgentSourceMark } from './agent-source-mark';
 import {
   displayEffortLabel,
@@ -229,26 +243,27 @@ export function AgentComposer({
   onUserInteraction?: () => void;
 }) {
   const [task, setTaskState] = useState(initialTask ?? '');
+  // The parent's callbacks, read by event handlers and async completions.
+  // Synced after commit, never written during render.
   const onDraftChangeRef = useRef(onDraftChange);
-  onDraftChangeRef.current = onDraftChange;
   const onDraftIntentRef = useRef(onDraftIntent);
-  onDraftIntentRef.current = onDraftIntent;
   const onUserInteractionRef = useRef(onUserInteraction);
-  onUserInteractionRef.current = onUserInteraction;
-  const initialTaskRef = useRef(initialTask);
-  initialTaskRef.current = initialTask;
-  const initialModelRef = useRef(initialModel);
-  initialModelRef.current = initialModel;
-  const initialEffortRef = useRef(initialEffort);
-  initialEffortRef.current = initialEffort;
-  const initialSourceRef = useRef(initialSource);
-  initialSourceRef.current = initialSource;
-  const initialWorktreeRef = useRef(initialWorktree);
-  initialWorktreeRef.current = initialWorktree;
-  const initialBranchRef = useRef(initialBranch);
-  initialBranchRef.current = initialBranch;
-  const initialRoadmapItemIdRef = useRef(initialRoadmapItemId);
-  initialRoadmapItemIdRef.current = initialRoadmapItemId;
+  useLayoutEffect(() => {
+    onDraftChangeRef.current = onDraftChange;
+    onDraftIntentRef.current = onDraftIntent;
+    onUserInteractionRef.current = onUserInteraction;
+  });
+  // The draft tab's saved axes, read once when a Project visit begins: the
+  // visit restores them without re-running whenever the tab reports an edit.
+  const readSavedDraft = useEffectEvent(() => ({
+    task: initialTask,
+    source: initialSource,
+    model: initialModel,
+    effort: initialEffort,
+    worktree: initialWorktree,
+    branch: initialBranch,
+    roadmapItemId: initialRoadmapItemId,
+  }));
   const setTask = useCallback((next: string) => {
     setTaskState(next);
     onDraftChangeRef.current?.({ draftTask: next });
@@ -268,7 +283,22 @@ export function AgentComposer({
   const [loadedModelCatalog, setModelCatalog] =
     useState<AgentModelCatalog | null>(null);
   const [model, setModel] = useState<string | null>(initialModel ?? null);
-  const [effort, setEffort] = useState<string | null>(initialEffort ?? null);
+  // The effort axis's ONE owner: its value and whether the operator chose it
+  // (BUG-334). Every path that sets an effort says which it is.
+  const [effortSelection, setEffortSelection] = useState<EffortSelection>(() =>
+    derivedEffort(initialEffort ?? null)
+  );
+  const effort = effortSelection.value;
+  // The named setup the operator picked, if any. It is the selection only
+  // while the axes still equal that setup; changing its effort makes the
+  // draft the model's unnamed configuration, so a launch never re-efforts it.
+  const [setupName, setSetupName] = useState<string | null>(null);
+  const [nameRequest, setNameRequest] = useState<
+    (SetupNameRequest & { key: number }) | null
+  >(null);
+  const [deleteRequest, setDeleteRequest] = useState<
+    (SetupDeleteRequest & { key: number }) | null
+  >(null);
   const [permissionMode, setPermissionMode] = useState(
     DEFAULT_AGENT_PERMISSION_MODE
   );
@@ -293,7 +323,8 @@ export function AgentComposer({
   const [frozenTargets, setFrozenTargets] = useState<LaunchTarget[]>([
     SHELL_LAUNCH_TARGET,
   ]);
-  const launcherOrderFrozenRef = useRef(false);
+  // Ranked once per visit (D49); state, because the row renders from it.
+  const [launcherOrderFrozen, setLauncherOrderFrozen] = useState(false);
   const [launcherWidth, setLauncherWidth] = useState(768);
   const [catalogsBySource, setCatalogsBySource] = useState<
     Partial<Record<AgentSourceId, AgentModelCatalog>>
@@ -337,15 +368,13 @@ export function AgentComposer({
         }
       : null
   );
+  // Per-source model and per-model effort last shown in this draft, so
+  // switching back to a source or model restores what it showed. Memory for
+  // restoring, never a choice that carries across models.
   const modelChoicesRef = useRef<Partial<Record<AgentSourceId, string>>>({});
   const effortChoicesRef = useRef<Record<string, string>>({});
-  // The effort the operator picked on the Thinking axis in this draft, the
-  // one a model change carries (BUG-334). A default that was only showing
-  // is not a choice, so it gives way to the new model's own default.
-  const chosenEffortRef = useRef<string | null>(null);
   const composerRootRef = useRef<HTMLDivElement>(null);
   const launcherMeasureRef = useRef<HTMLDivElement>(null);
-  const openShellRef = useRef<() => void>(() => {});
   const taskElement = useCallback(
     () =>
       composerRootRef.current?.querySelector<HTMLTextAreaElement>(
@@ -354,7 +383,6 @@ export function AgentComposer({
     []
   );
   const recentRef = useRef<RecentConversationsHandle>(null);
-  const branchErrorId = useId();
   const clipboard = useComposerClipboard({
     scope: projectDir,
     task,
@@ -388,8 +416,6 @@ export function AgentComposer({
   const effectiveSource = isAgentSourceId(source)
     ? source
     : (sourceOrder[0] ?? AGENT_SOURCE_ORDER[0]);
-  const effectiveSourceRef = useRef(effectiveSource);
-  effectiveSourceRef.current = effectiveSource;
   // A catalog names its own harness, so whether it describes the selected
   // source is derived, never reset by hand. Choosing the source that is
   // already selected used to discard its loaded catalog while the load, keyed
@@ -446,7 +472,7 @@ export function AgentComposer({
       ? displayEffortLabel(effort)
       : (modelCatalog?.effectiveEffortLabel ?? 'Model default'));
   const permissionMeta = AGENT_PERMISSION_MODE_META[permissionMode];
-  const currentConfigurationInput: AgentLaunchConfigurationInput | null = model
+  const unnamedConfigurationInput: AgentLaunchConfigurationInput | null = model
     ? {
         sourceId: sourceMeta.id,
         modelId: model,
@@ -458,6 +484,22 @@ export function AgentComposer({
         },
       }
     : null;
+  // The picked named setup, while the draft still starts exactly it.
+  const selectedNamedSetup =
+    unnamedConfigurationInput && setupName
+      ? (configurationPool?.configurations.find(
+          configuration =>
+            configuration.id ===
+              launchConfigurationId({
+                ...unnamedConfigurationInput,
+                name: setupName,
+              }) && configuration.effort === effort
+        ) ?? null)
+      : null;
+  const currentConfigurationInput: AgentLaunchConfigurationInput | null =
+    unnamedConfigurationInput && selectedNamedSetup
+      ? { ...unnamedConfigurationInput, name: selectedNamedSetup.name }
+      : unnamedConfigurationInput;
   const currentConfigurationId = currentConfigurationInput
     ? launchConfigurationId(currentConfigurationInput)
     : `draft:${effectiveSource}`;
@@ -584,31 +626,27 @@ export function AgentComposer({
     primedSourcesRef.current = new Set();
     modelRefreshInFlightRef.current = null;
     requestedSourceRef.current = null;
-    const savedSource = initialSourceRef.current;
+    const saved = readSavedDraft();
+    const savedSource = saved.source;
     initialModelPendingRef.current =
-      initialModelRef.current || initialEffortRef.current
+      saved.model || saved.effort
         ? {
-            model: initialModelRef.current ?? null,
-            effort: initialEffortRef.current ?? null,
+            model: saved.model ?? null,
+            effort: saved.effort ?? null,
             source: savedSource ?? null,
           }
         : null;
     modelChoicesRef.current =
-      savedSource && initialModelRef.current
-        ? { [savedSource]: initialModelRef.current }
-        : {};
+      savedSource && saved.model ? { [savedSource]: saved.model } : {};
     effortChoicesRef.current =
-      savedSource && initialModelRef.current && initialEffortRef.current
-        ? {
-            [effortChoiceKey(savedSource, initialModelRef.current)]:
-              initialEffortRef.current,
-          }
+      savedSource && saved.model && saved.effort
+        ? { [effortChoiceKey(savedSource, saved.model)]: saved.effort }
         : {};
-    chosenEffortRef.current = null;
     setSourcePreferences(null);
     setModelCatalog(null);
-    setModel(initialModelRef.current ?? null);
-    setEffort(initialEffortRef.current ?? null);
+    setModel(saved.model ?? null);
+    setEffortSelection(derivedEffort(saved.effort ?? null));
+    setSetupName(null);
     setPermissionMode(DEFAULT_AGENT_PERMISSION_MODE);
     setUsedSafePreferenceFallback(false);
     setSourceActionMessage(null);
@@ -619,7 +657,7 @@ export function AgentComposer({
     setModelRefreshState(null);
     setConfigurationPool(null);
     setFrozenTargets([SHELL_LAUNCH_TARGET]);
-    launcherOrderFrozenRef.current = false;
+    setLauncherOrderFrozen(false);
     void loadLaunchConfigurationPool()
       .then(pool => {
         if (!visit.current) return;
@@ -655,10 +693,10 @@ export function AgentComposer({
     });
     // a (re)mount or Project change is not an operator edit: restore the
     // tab's saved draft directly instead of reporting a blank up (D28)
-    setTaskState(initialTaskRef.current ?? '');
-    setWorktree(initialWorktreeRef.current ?? false);
-    setBranch(initialBranchRef.current ?? defaultBranch());
-    setRoadmapItemId(initialRoadmapItemIdRef.current ?? '');
+    setTaskState(saved.task ?? '');
+    setWorktree(saved.worktree ?? false);
+    setBranch(saved.branch ?? defaultBranch());
+    setRoadmapItemId(saved.roadmapItemId ?? '');
     return () => {
       projectVisit.invalidate();
       catalogPrimes.invalidate();
@@ -689,7 +727,8 @@ export function AgentComposer({
         : null;
       setSource(nextSource);
       setModel(nextModel);
-      setEffort(nextEffort);
+      setEffortSelection(derivedEffort(nextEffort));
+      setSetupName(null);
       onDraftChangeRef.current?.({
         draftSource: nextSource,
         draftModel: nextModel,
@@ -725,7 +764,8 @@ export function AgentComposer({
         requestedSourceRef.current = next;
         setSource(next);
         setModel(nextModel);
-        setEffort(nextEffort);
+        setEffortSelection(derivedEffort(nextEffort));
+        setSetupName(null);
         onDraftChangeRef.current?.({
           draftSource: next,
           draftModel: nextModel,
@@ -746,11 +786,15 @@ export function AgentComposer({
     if (initialSource) chooseRequestedSource(initialSource);
   }, [initialSource]);
 
+  /** A whole-configuration pick (a setup chip, a catalog row, an engine, a
+   *  palette request). Its effort is the configuration's, shown rather than
+   *  chosen, so a later model change never carries it (BUG-334). */
   const applyAgentSelection = useCallback(
     (
       nextSource: AgentSourceId,
       nextModel: string | null,
-      nextEffort: string | null
+      nextEffort: string | null,
+      nextSetupName: string | null = null
     ) => {
       if (nextModel) {
         modelChoicesRef.current[nextSource] = nextModel;
@@ -764,7 +808,8 @@ export function AgentComposer({
       setSelectedTargetKind('agent');
       chooseSource(nextSource);
       setModel(nextModel);
-      setEffort(nextEffort);
+      setEffortSelection(derivedEffort(nextEffort));
+      setSetupName(nextSetupName);
       onDraftChangeRef.current?.({
         draftSource: nextSource,
         draftModel: nextModel,
@@ -792,9 +837,11 @@ export function AgentComposer({
         ...current,
         [requestedSource]: catalog,
       }));
-      if (effectiveSourceRef.current === requestedSource) {
-        setModelCatalog(catalog);
-      }
+      // The loaded catalog describes whichever source is selected now; a
+      // refresh for another source must not replace it.
+      setModelCatalog(current =>
+        current && current.harness !== requestedSource ? current : catalog
+      );
       setModelRefreshState({ source: requestedSource, status: 'updated' });
     } catch {
       if (!refresh.current) return;
@@ -837,7 +884,7 @@ export function AgentComposer({
       const selectedEffort = effortForModel({
         catalog,
         modelId: selectedModel,
-        current: null,
+        current: derivedEffort(null),
         remembered:
           (effortKey ? effortChoicesRef.current[effortKey] : null) ??
           restoredEffort,
@@ -845,11 +892,11 @@ export function AgentComposer({
       if (selectedModel) {
         modelChoicesRef.current[effectiveSource] = selectedModel;
       }
-      if (effortKey && selectedEffort) {
-        effortChoicesRef.current[effortKey] = selectedEffort;
+      if (effortKey && selectedEffort.value) {
+        effortChoicesRef.current[effortKey] = selectedEffort.value;
       }
       setModel(selectedModel);
-      setEffort(selectedEffort);
+      setEffortSelection(selectedEffort);
       setModelCatalog(catalog);
       setCatalogsBySource(current => ({
         ...current,
@@ -857,7 +904,7 @@ export function AgentComposer({
       }));
       onDraftChangeRef.current?.({
         draftModel: selectedModel,
-        draftEffort: selectedEffort,
+        draftEffort: selectedEffort.value,
       });
     });
     return () => modelLoads.invalidate();
@@ -914,7 +961,7 @@ export function AgentComposer({
   // nothing moves under the pointer or keyboard focus.
   useEffect(() => {
     if (
-      launcherOrderFrozenRef.current ||
+      launcherOrderFrozen ||
       !configurationPool ||
       readiness.phase !== 'ready'
     ) {
@@ -930,12 +977,18 @@ export function AgentComposer({
           : targetAvailability(target),
       rankedAt: Date.now(),
     });
-    launcherOrderFrozenRef.current = true;
+    setLauncherOrderFrozen(true);
     setFrozenTargets([
       ...ranked.ordered.map(row => row.target),
       SHELL_LAUNCH_TARGET,
     ]);
-  }, [configurationPool, projectDir, readiness.phase, targetAvailability]);
+  }, [
+    configurationPool,
+    launcherOrderFrozen,
+    projectDir,
+    readiness.phase,
+    targetAvailability,
+  ]);
 
   useEffect(() => {
     const element = launcherMeasureRef.current;
@@ -968,54 +1021,6 @@ export function AgentComposer({
     const frame = requestAnimationFrame(() => taskElement()?.focus());
     return () => cancelAnimationFrame(frame);
   }, [taskElement]);
-
-  useEffect(() => {
-    const focus = (request?: AgentComposerRequest) => {
-      if (typeof request === 'string') {
-        applyAgentSelection(request, null, null);
-      } else if (request?.configuration?.kind === 'shell') {
-        openShellRef.current();
-        return;
-      } else if (request?.configuration?.kind === 'agent') {
-        applyAgentSelection(
-          request.configuration.source,
-          request.configuration.model,
-          request.configuration.effort
-        );
-      } else if (request?.configurationId) {
-        const target = frozenTargets.find(
-          candidate => candidate.id === request.configurationId
-        );
-        if (target?.kind === 'shell') {
-          openShellRef.current();
-          return;
-        } else if (target?.kind === 'agent') {
-          const snapshot = sourceSnapshots.find(
-            candidate =>
-              candidate.id === target.sourceId ||
-              candidate.harness === target.sourceId
-          );
-          if (snapshot) {
-            applyAgentSelection(
-              snapshot.harness,
-              target.modelId,
-              target.effort
-            );
-          }
-        }
-      }
-      requestAnimationFrame(() => taskElement()?.focus());
-    };
-    const onFocus = (event: Event) => {
-      consumePendingAgentComposerRequest();
-      focus((event as CustomEvent<AgentComposerRequest>).detail);
-    };
-    window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
-    const pending = consumePendingAgentComposerRequest();
-    if (pending !== undefined) focus(pending);
-    return () =>
-      window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
-  }, [applyAgentSelection, frozenTargets, sourceSnapshots, taskElement]);
 
   useEffect(() => {
     if (
@@ -1121,7 +1126,72 @@ export function AgentComposer({
         );
     }
   };
-  openShellRef.current = () => void openShell();
+
+  /** Select a saved or composed configuration: its axes, and its name when
+   *  it is a named setup. */
+  const applyTarget = (
+    target: AgentLaunchConfiguration
+  ): AgentSourceId | null => {
+    const snapshot = sourceSnapshots.find(
+      candidate =>
+        candidate.id === target.sourceId ||
+        candidate.harness === target.sourceId
+    );
+    if (!snapshot) return null;
+    applyAgentSelection(
+      snapshot.harness,
+      target.modelId,
+      target.effort,
+      target.name
+    );
+    return snapshot.harness;
+  };
+
+  // A request from the palette, a menu or a summon. Registered once; the
+  // Effect Event reads this render's targets and handlers when it arrives.
+  const answerComposerRequest = useEffectEvent(
+    (request?: AgentComposerRequest) => {
+      if (typeof request === 'string') {
+        applyAgentSelection(request, null, null);
+      } else if (request?.configuration?.kind === 'shell') {
+        void openShell();
+        return;
+      } else if (request) {
+        const target = request.configurationId
+          ? frozenTargets.find(
+              candidate => candidate.id === request.configurationId
+            )
+          : undefined;
+        if (target?.kind === 'shell') {
+          void openShell();
+          return;
+        }
+        if (target?.kind === 'agent') {
+          applyTarget(target);
+        } else if (request.configuration?.kind === 'agent') {
+          applyAgentSelection(
+            request.configuration.source,
+            request.configuration.model,
+            request.configuration.effort
+          );
+        }
+      }
+      requestAnimationFrame(() => taskElement()?.focus());
+    }
+  );
+  useEffect(() => {
+    const onFocus = (event: Event) => {
+      consumePendingAgentComposerRequest();
+      answerComposerRequest(
+        (event as CustomEvent<AgentComposerRequest>).detail
+      );
+    };
+    window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
+    const pending = consumePendingAgentComposerRequest();
+    if (pending !== undefined) answerComposerRequest(pending);
+    return () =>
+      window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
+  }, []);
 
   /** A source-owned action (its sign-in, its own model picker): a Shell in
    *  this Project running the declared command, where the source does the
@@ -1228,8 +1298,7 @@ export function AgentComposer({
     return ok;
   };
 
-  const launcherSettled =
-    launcherOrderFrozenRef.current && readiness.phase === 'ready';
+  const launcherSettled = launcherOrderFrozen && readiness.phase === 'ready';
   const projectUsage = configurationPool?.projects[projectDir]?.usage ?? {};
 
   const targetToLauncherSetup = (
@@ -1375,19 +1444,13 @@ export function AgentComposer({
       return;
     }
     const target = launcherTargets.find(candidate => candidate.id === id);
-    if (!target) return;
-    const snapshot = sourceSnapshots.find(
-      candidate =>
-        candidate.id === target.sourceId ||
-        candidate.harness === target.sourceId
-    );
-    if (!snapshot) return;
+    const harness = target ? applyTarget(target) : null;
+    if (!target || !harness) return;
     reportDraftIntent({
-      draftSource: snapshot.harness,
+      draftSource: harness,
       draftModel: target.modelId,
       draftEffort: target.effort,
     });
-    applyAgentSelection(snapshot.harness, target.modelId, target.effort);
   };
 
   const selectedCatalog = catalogsBySource[effectiveSource] ?? modelCatalog;
@@ -1496,21 +1559,23 @@ export function AgentComposer({
         const nextEffort = effortForModel({
           catalog: selectedCatalog,
           modelId: optionId,
-          current: chosenEffortRef.current,
+          current: effortSelection,
           remembered: effortChoicesRef.current[key],
         });
         modelChoicesRef.current[effectiveSource] = optionId;
-        if (nextEffort) effortChoicesRef.current[key] = nextEffort;
+        if (nextEffort.value) effortChoicesRef.current[key] = nextEffort.value;
         setSelectedTargetKind('agent');
         setModel(optionId);
-        setEffort(nextEffort);
+        setEffortSelection(nextEffort);
+        // Another model is another configuration, never the named setup.
+        setSetupName(null);
         onDraftChangeRef.current?.({
           draftModel: optionId,
-          draftEffort: nextEffort,
+          draftEffort: nextEffort.value,
         });
         reportDraftIntent({
           draftModel: optionId,
-          draftEffort: nextEffort,
+          draftEffort: nextEffort.value,
         });
       },
       provenance: selectedCatalog?.catalogProvenance,
@@ -1542,8 +1607,7 @@ export function AgentComposer({
         if (!model) return;
         effortChoicesRef.current[effortChoiceKey(effectiveSource, model)] =
           optionId;
-        chosenEffortRef.current = optionId;
-        setEffort(optionId);
+        setEffortSelection(chosenEffort(optionId));
         onDraftChangeRef.current?.({ draftEffort: optionId });
         reportDraftIntent({ draftEffort: optionId });
       },
@@ -1675,6 +1739,132 @@ export function AgentComposer({
     : [];
   const launcherDetailSource = launcherSourceLines(effectiveSource, signInStep);
 
+  // Named setups (BUG-334): naming, renaming and deleting are the app's own
+  // dialogs. `window.prompt` throws in Electron and `window.confirm` is a
+  // blocking Chromium dialog outside the app's dialog line.
+  const dialogKey = useRef(0);
+  const nameErrorMessage = (cause: unknown, fallback: string) =>
+    cause instanceof Error &&
+    cause.message.includes('A setup with that name already exists')
+      ? 'Another setup on this model already has that name.'
+      : fallback;
+  const replaceFrozenTarget = (
+    previousId: string,
+    next: AgentLaunchConfiguration
+  ) =>
+    setFrozenTargets(current =>
+      current.some(target => target.id === previousId)
+        ? current.map(target => (target.id === previousId ? next : target))
+        : [
+            ...current.filter(target => target.kind === 'agent'),
+            next,
+            SHELL_LAUNCH_TARGET,
+          ]
+    );
+  const requestNameSetup = () => {
+    const input = unnamedConfigurationInput;
+    if (!input) return;
+    dialogKey.current += 1;
+    setNameRequest({
+      key: dialogKey.current,
+      title: 'Name this setup',
+      description: `${[sourceMeta.label, modelLabel, effort ? effortLabel : null].filter(Boolean).join(' · ')}. A named setup keeps this effort.`,
+      confirmLabel: 'Save',
+      initialName: '',
+      submit: async name => {
+        let pool: LaunchConfigurationPoolV1;
+        try {
+          pool = await saveNamedLaunchConfiguration(input, name);
+        } catch (cause) {
+          throw new Error(
+            nameErrorMessage(cause, 'That setup name could not be saved.')
+          );
+        }
+        setConfigurationPool(pool);
+        const savedId = launchConfigurationId({ ...input, name });
+        const saved = pool.configurations.find(target => target.id === savedId);
+        if (saved) {
+          replaceFrozenTarget(saved.id, saved);
+          setSetupName(saved.name);
+        }
+      },
+    });
+  };
+  const requestRename = (target: AgentLaunchConfiguration) => {
+    dialogKey.current += 1;
+    setNameRequest({
+      key: dialogKey.current,
+      title: target.name ? 'Rename setup' : 'Name this setup',
+      description: target.name
+        ? 'The setup keeps its effort and its launch history.'
+        : 'It keeps the effort it carries now and its launch history.',
+      confirmLabel: target.name ? 'Rename' : 'Save',
+      initialName: target.name ?? '',
+      submit: async name => {
+        let pool: LaunchConfigurationPoolV1;
+        try {
+          pool = await renameLaunchConfiguration(target.id, name);
+        } catch (cause) {
+          throw new Error(
+            nameErrorMessage(cause, 'That name could not be saved.')
+          );
+        }
+        setConfigurationPool(pool);
+        const renamedId = launchConfigurationId({ ...target, name });
+        const renamed = pool.configurations.find(
+          configuration => configuration.id === renamedId
+        );
+        if (renamed) replaceFrozenTarget(target.id, renamed);
+        if (renamed && selectedNamedSetup?.id === target.id) {
+          setSetupName(renamed.name);
+        }
+      },
+    });
+  };
+  const requestDelete = (id: string, label: string) => {
+    dialogKey.current += 1;
+    setDeleteRequest({
+      key: dialogKey.current,
+      label,
+      confirm: async () => {
+        const pool = await deleteLaunchConfiguration(id);
+        setConfigurationPool(pool);
+        setFrozenTargets(current => current.filter(target => target.id !== id));
+      },
+    });
+  };
+
+  // This launch's options: their own panel behind the launcher's Options
+  // trigger, outside the form Start submits.
+  const launchOptions = (
+    <LaunchOptionsPanel
+      worktree={worktree}
+      branch={branch}
+      onWorktreeChange={nextWorktree => {
+        setWorktree(nextWorktree);
+        onDraftChangeRef.current?.({
+          draftWorktree: nextWorktree,
+          draftBranch: branch,
+        });
+        reportDraftIntent({ draftWorktree: nextWorktree, draftBranch: branch });
+      }}
+      onBranchChange={nextBranch => {
+        branchEdits.invalidate();
+        setBranch(nextBranch);
+        onDraftChangeRef.current?.({ draftBranch: nextBranch });
+        reportDraftIntent({ draftBranch: nextBranch });
+      }}
+      roadmapItems={roadmapItems}
+      roadmapItemId={roadmapItemId}
+      onRoadmapItemChange={nextRoadmapItemId => {
+        setRoadmapItemId(nextRoadmapItemId);
+        onDraftChangeRef.current?.({ draftRoadmapItemId: nextRoadmapItemId });
+        reportDraftIntent({ draftRoadmapItemId: nextRoadmapItemId });
+      }}
+      onNameSetup={unnamedConfigurationInput ? requestNameSetup : null}
+    />
+  );
+
   const controls = (
     <div
       ref={composerRootRef}
@@ -1779,19 +1969,7 @@ export function AgentComposer({
                           if (entry.target.kind === 'shell') {
                             void openShell();
                           } else {
-                            const agentTarget = entry.target;
-                            const snapshot = sourceSnapshots.find(
-                              source =>
-                                source.id === agentTarget.sourceId ||
-                                source.harness === agentTarget.sourceId
-                            );
-                            if (snapshot) {
-                              applyAgentSelection(
-                                snapshot.harness,
-                                agentTarget.modelId,
-                                agentTarget.effort
-                              );
-                            }
+                            applyTarget(entry.target);
                           }
                           close();
                         }}
@@ -1853,68 +2031,19 @@ export function AgentComposer({
                                 <DropdownMenuItem
                                   onSelect={() => {
                                     if (entry.target.kind !== 'agent') return;
-                                    const agentTarget = entry.target;
-                                    const nextName = window.prompt(
-                                      'Configuration name',
-                                      agentTarget.name ?? ''
-                                    );
-                                    if (!nextName?.trim()) return;
-                                    void renameLaunchConfiguration(
-                                      agentTarget.id,
-                                      nextName
-                                    )
-                                      .then(pool => {
-                                        setConfigurationPool(pool);
-                                        setFrozenTargets(current =>
-                                          current.map(target =>
-                                            target.kind === 'agent' &&
-                                            target.id === agentTarget.id
-                                              ? (pool.configurations.find(
-                                                  configuration =>
-                                                    configuration.id ===
-                                                    target.id
-                                                ) ?? target)
-                                              : target
-                                          )
-                                        );
-                                      })
-                                      .catch(() =>
-                                        setConfigurationMessage(
-                                          'That name could not be saved.'
-                                        )
-                                      );
+                                    requestRename(entry.target);
                                   }}
                                 >
                                   Rename
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="text-destructive"
-                                  onSelect={() => {
-                                    if (
-                                      !window.confirm(
-                                        `Delete ${entry.item.label}? Launch history for it will also be removed.`
-                                      )
-                                    ) {
-                                      return;
-                                    }
-                                    void deleteLaunchConfiguration(
-                                      entry.target.id
+                                  onSelect={() =>
+                                    requestDelete(
+                                      entry.target.id,
+                                      entry.item.label
                                     )
-                                      .then(pool => {
-                                        setConfigurationPool(pool);
-                                        setFrozenTargets(current =>
-                                          current.filter(
-                                            target =>
-                                              target.id !== entry.target.id
-                                          )
-                                        );
-                                      })
-                                      .catch(() =>
-                                        setConfigurationMessage(
-                                          'That configuration could not be deleted.'
-                                        )
-                                      );
-                                  }}
+                                  }
                                 >
                                   Delete
                                 </DropdownMenuItem>
@@ -1927,131 +2056,17 @@ export function AgentComposer({
                   );
                 })}
               </div>
-              <div className="mt-1 grid gap-2 border-t border-hud-divider px-2 py-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-3">
-                  <label className="flex cursor-pointer items-center gap-2 font-mono text-chrome-label text-hud-text">
-                    <input
-                      type="checkbox"
-                      checked={worktree}
-                      onChange={event => {
-                        const nextWorktree = event.target.checked;
-                        setWorktree(nextWorktree);
-                        onDraftChangeRef.current?.({
-                          draftWorktree: nextWorktree,
-                          draftBranch: branch,
-                        });
-                        reportDraftIntent({
-                          draftWorktree: nextWorktree,
-                          draftBranch: branch,
-                        });
-                      }}
-                      className="accent-cyan-400"
-                    />
-                    <GitBranch aria-hidden="true" className="size-3.5" />
-                    New git worktree
-                  </label>
-                  {roadmapItems.length > 0 ? (
-                    <select
-                      data-launch-roadmap-item
-                      aria-label="Roadmap item this session will work on"
-                      value={roadmapItemId}
-                      onChange={event => {
-                        const nextRoadmapItemId = event.target.value;
-                        setRoadmapItemId(nextRoadmapItemId);
-                        onDraftChangeRef.current?.({
-                          draftRoadmapItemId: nextRoadmapItemId,
-                        });
-                        reportDraftIntent({
-                          draftRoadmapItemId: nextRoadmapItemId,
-                        });
-                      }}
-                      className="h-8 min-w-40 flex-1 rounded-md border border-hud-stroke-faint bg-hud-deep px-2 font-mono text-chrome-label text-hud-text outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
-                    >
-                      <option value="">No roadmap link</option>
-                      {roadmapItems.map(item => (
-                        <option key={item.id} value={item.id}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={!currentConfigurationInput}
-                    className="ml-auto shrink-0 font-mono text-chrome-label"
-                    onClick={() => {
-                      if (!currentConfigurationInput) return;
-                      const nextName = window.prompt('Configuration name', '');
-                      if (!nextName?.trim()) return;
-                      void saveNamedLaunchConfiguration(
-                        currentConfigurationInput,
-                        nextName
-                      )
-                        .then(pool => {
-                          setConfigurationPool(pool);
-                          const saved = pool.configurations.find(
-                            target => target.id === currentConfigurationId
-                          );
-                          if (saved) {
-                            setFrozenTargets(current => {
-                              const exists = current.some(
-                                target => target.id === saved.id
-                              );
-                              return exists
-                                ? current.map(target =>
-                                    target.id === saved.id ? saved : target
-                                  )
-                                : [
-                                    ...current.filter(
-                                      target => target.kind === 'agent'
-                                    ),
-                                    saved,
-                                    SHELL_LAUNCH_TARGET,
-                                  ];
-                            });
-                          }
-                          setConfigurationMessage('Named configuration saved.');
-                        })
-                        .catch(() =>
-                          setConfigurationMessage(
-                            'That configuration name could not be saved.'
-                          )
-                        );
-                    }}
-                  >
-                    <Save aria-hidden="true" className="size-3.5" />
-                    Name setup…
-                  </Button>
-                </div>
-                {worktree ? (
-                  <input
-                    value={branch}
-                    onChange={event => {
-                      branchEdits.invalidate();
-                      const nextBranch = event.target.value;
-                      setBranch(nextBranch);
-                      onDraftChangeRef.current?.({ draftBranch: nextBranch });
-                      reportDraftIntent({ draftBranch: nextBranch });
-                    }}
-                    aria-label="Branch name for the new worktree"
-                    aria-invalid={!branchReady}
-                    aria-describedby={branchReady ? undefined : branchErrorId}
-                    className="h-8 w-full rounded-md border border-hud-stroke-faint bg-hud-deep px-2 font-mono text-chrome-label text-hud-text outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
-                  />
-                ) : null}
-                {worktree && !branchReady ? (
-                  <p
-                    id={branchErrorId}
-                    className="font-mono text-chrome-micro text-hud-red"
-                  >
-                    Enter a branch name before starting.
-                  </p>
-                ) : null}
-              </div>
             </div>
           )}
+          options={() => launchOptions}
+          optionsSummary={launchOptionsSummary({
+            worktree,
+            branch,
+            roadmapItemId: roadmapItems.some(item => item.id === roadmapItemId)
+              ? roadmapItemId
+              : '',
+            setupName: selectedNamedSetup?.name ?? null,
+          })}
           onStart={() => void launchAgent()}
           launching={launching === 'agent'}
           blockedReason={launcherBlockedReason}
@@ -2137,6 +2152,20 @@ export function AgentComposer({
           onReturnToComposer={() => taskElement()?.focus()}
         />
       </div>
+      {nameRequest ? (
+        <SetupNameDialog
+          key={nameRequest.key}
+          request={nameRequest}
+          onClose={() => setNameRequest(null)}
+        />
+      ) : null}
+      {deleteRequest ? (
+        <SetupDeleteDialog
+          key={deleteRequest.key}
+          request={deleteRequest}
+          onClose={() => setDeleteRequest(null)}
+        />
+      ) : null}
     </div>
   );
 }

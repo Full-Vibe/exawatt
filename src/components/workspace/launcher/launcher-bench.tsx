@@ -19,6 +19,13 @@ import { sourceCardStep } from '@/components/agent-sources/source-card';
 import { HARNESS_META } from '../harnesses';
 import { AgentLauncher } from './agent-launcher';
 import { launcherSourceLines } from './source-lines';
+import { LaunchOptionsPanel, launchOptionsSummary } from './launch-options';
+import {
+  SetupDeleteDialog,
+  SetupNameDialog,
+  type SetupDeleteRequest,
+  type SetupNameRequest,
+} from './setup-dialogs';
 import {
   BENCH_SCENARIOS,
   benchAxes,
@@ -46,6 +53,13 @@ function ScenarioCase({ scenario }: { scenario: BenchScenario }) {
   );
   const [permission, setPermission] = useState('Ask first');
   const [task, setTask] = useState(scenario.task);
+  const [worktree, setWorktree] = useState(scenario.optionsOpen === true);
+  const [branch, setBranch] = useState('agent/1105-1900');
+  const [roadmapItemId, setRoadmapItemId] = useState('');
+  const [nameRequest, setNameRequest] = useState<SetupNameRequest | null>(null);
+  const [deleteRequest, setDeleteRequest] = useState<SetupDeleteRequest | null>(
+    null
+  );
 
   const selected = setups.find(setup => setup.id === selectedId) ?? null;
 
@@ -92,6 +106,33 @@ function ScenarioCase({ scenario }: { scenario: BenchScenario }) {
           onTaskChange={setTask}
           onSelect={setSelectedId}
           onStart={() => {}}
+          options={() => (
+            <LaunchOptionsPanel
+              worktree={worktree}
+              branch={branch}
+              onWorktreeChange={setWorktree}
+              onBranchChange={setBranch}
+              roadmapItems={[{ id: 'ENG-016', label: 'ENG-016 · New Agent' }]}
+              roadmapItemId={roadmapItemId}
+              onRoadmapItemChange={setRoadmapItemId}
+              onNameSetup={() =>
+                setNameRequest({
+                  title: 'Name this setup',
+                  description:
+                    'Claude Code · Opus 5 · High. A named setup keeps this effort.',
+                  confirmLabel: 'Save',
+                  initialName: '',
+                  submit: async () => {},
+                })
+              }
+            />
+          )}
+          optionsSummary={launchOptionsSummary({
+            worktree,
+            branch,
+            roadmapItemId,
+            setupName: null,
+          })}
           launching={scenario.launching}
           blockedReason={scenario.blockedReason ?? null}
           notice={scenario.notice ?? null}
@@ -118,10 +159,40 @@ function ScenarioCase({ scenario }: { scenario: BenchScenario }) {
                 )
               : undefined
           }
-          defaultDisclosure={scenario.detailOpen ? 'setup' : null}
+          defaultDisclosure={
+            scenario.detailOpen
+              ? 'setup'
+              : scenario.optionsOpen
+                ? 'options'
+                : null
+          }
           placeholderCount={3}
         />
       </div>
+      {scenario.optionsOpen ? (
+        <button
+          type="button"
+          data-bench-delete-setup
+          onClick={() =>
+            setDeleteRequest({ label: 'Deep work', confirm: async () => {} })
+          }
+          className="self-start font-mono text-chrome-micro text-hud-text-dim underline"
+        >
+          Delete a setup…
+        </button>
+      ) : null}
+      {nameRequest ? (
+        <SetupNameDialog
+          request={nameRequest}
+          onClose={() => setNameRequest(null)}
+        />
+      ) : null}
+      {deleteRequest ? (
+        <SetupDeleteDialog
+          request={deleteRequest}
+          onClose={() => setDeleteRequest(null)}
+        />
+      ) : null}
     </section>
   );
 }

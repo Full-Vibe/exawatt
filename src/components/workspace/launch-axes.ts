@@ -28,14 +28,39 @@ export function modelEfforts(
 }
 
 /**
+ * The effort axis and where its value came from, held together so neither
+ * can go stale without the other (BUG-334, amended 2026-11-05).
+ *
+ * `chosen` is true only when the operator picked the value on the effort
+ * axis itself. Every other path that sets an effort (a setup chip, a catalog
+ * row, an engine switch, a source's default, a restored draft) sets a derived
+ * one. A model change carries a chosen effort and lets a derived one give
+ * way, so an effort picked for one setup can never ride a later model change
+ * after the operator moved to another setup. One value, one provenance: the
+ * types admit no effort without it.
+ */
+export interface EffortSelection {
+  readonly value: string | null;
+  readonly chosen: boolean;
+}
+
+export function derivedEffort(value: string | null): EffortSelection {
+  return { value, chosen: false };
+}
+
+export function chosenEffort(value: string): EffortSelection {
+  return { value, chosen: true };
+}
+
+/**
  * The effort a launch carries once its model is `modelId`.
  *
  * The axis is orthogonal: an effort the operator chose survives a model
- * change whenever the new model offers it. An effort nobody chose (the last
- * model's default) does not: the new model's own default is the better
- * answer. Otherwise the remembered effort for that model, then the source's
- * default for it. A model that offers no efforts carries none, and a pinned
- * environment carries its pin.
+ * change whenever the new model offers it, and stays chosen. An effort nobody
+ * chose (the last model's default, a setup's) does not: the remembered effort
+ * for that model, then the source's default for it, is the better answer. A
+ * model that offers no efforts carries none, and a pinned environment
+ * carries its pin.
  */
 export function effortForModel({
   catalog,
@@ -45,26 +70,27 @@ export function effortForModel({
 }: {
   catalog: AgentModelCatalog | null | undefined;
   modelId: string | null;
-  /** The effort the operator chose before the model changed, or null when
-   *  the effort showing was only a default. */
-  current: string | null;
-  /** The effort last chosen for this exact model, if any. */
+  /** The effort axis as it stood before the model changed. */
+  current: EffortSelection;
+  /** The effort last shown for this exact model, if any. */
   remembered?: string | null;
-}): string | null {
+}): EffortSelection {
   if (!catalog) return current;
-  if (catalog.effortLocked) return catalog.effectiveEffort;
+  if (catalog.effortLocked) return derivedEffort(catalog.effectiveEffort);
   const model = modelId
     ? catalog.models.find(candidate => candidate.id === modelId)
     : undefined;
   // A model the catalog does not list (a restored draft's) has no declared
-  // efforts to check against, so the operator's own choice stands.
-  if (!model) return remembered ?? current;
+  // efforts to check against, so what the operator had stands.
+  if (!model) return remembered ? derivedEffort(remembered) : current;
   const offered = (effort: string | null | undefined): effort is string =>
     !!effort && model.efforts.some(option => option.id === effort);
-  if (offered(current)) return current;
-  if (offered(remembered)) return remembered;
+  if (current.chosen && offered(current.value)) return current;
+  if (offered(remembered)) return derivedEffort(remembered);
   if (model.id === catalog.effectiveModel && offered(catalog.effectiveEffort)) {
-    return catalog.effectiveEffort;
+    return derivedEffort(catalog.effectiveEffort);
   }
-  return offered(model.defaultEffort) ? model.defaultEffort : null;
+  return derivedEffort(
+    offered(model.defaultEffort) ? model.defaultEffort : null
+  );
 }

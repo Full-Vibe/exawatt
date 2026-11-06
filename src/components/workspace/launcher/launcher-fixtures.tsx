@@ -170,6 +170,8 @@ export interface BenchScenario {
   setups: LauncherSetup[];
   selectedIndex: number;
   detailOpen: boolean;
+  /** Open the launch options instead of the drawer, with a worktree set. */
+  optionsOpen?: boolean;
   task: string;
   blockedReason?: string;
   /** A non-blocking fact on the reserved status line (readiness fact model). */
@@ -278,6 +280,18 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
     setups: buildSetups(TRAINED_HISTORY),
     selectedIndex: 1,
     detailOpen: true,
+    task: 'Fix the launcher spinner and add a regression test',
+    width: 768,
+  },
+  {
+    id: 'options',
+    title: 'Launch options',
+    note: 'Worktree, branch, roadmap link and Name setup… have their own home, outside the form Start submits: Enter in the branch field is only Enter. Folded, the trigger says what is set.',
+    state: 'ready',
+    setups: buildSetups(TRAINED_HISTORY),
+    selectedIndex: 0,
+    detailOpen: false,
+    optionsOpen: true,
     task: 'Fix the launcher spinner and add a regression test',
     width: 768,
   },

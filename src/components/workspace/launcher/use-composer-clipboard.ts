@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useLatestRequest } from '@/hooks/use-latest-request';
 
 /** Clipboard I/O belongs to one composer visit. Draft and caret updates are
@@ -18,13 +24,18 @@ export function useComposerClipboard({
   // scope change ends the visit for all of them at once.
   const visits = useLatestRequest();
   const callbacks = useRef({ element, onInsert });
-  callbacks.current = { element, onInsert };
   const [pending, setPending] = useState(0);
   const [failed, setFailed] = useState(false);
-  const draft = useRef({ scope, renderedTask: task, task, caret: task.length });
-  if (draft.current.scope !== scope || draft.current.renderedTask !== task) {
-    draft.current = { scope, renderedTask: task, task, caret: task.length };
-  }
+  // The draft several clipboard reads settling in one batch build on. A task
+  // or scope the composer commits from elsewhere restarts it at the end of
+  // that text. Both refs sync after commit, never during render.
+  const draft = useRef({ task, caret: task.length });
+  useLayoutEffect(() => {
+    callbacks.current = { element, onInsert };
+  });
+  useLayoutEffect(() => {
+    draft.current = { task, caret: task.length };
+  }, [scope, task]);
 
   useEffect(() => {
     setPending(0);

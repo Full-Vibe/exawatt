@@ -988,10 +988,9 @@ export async function summonComposer(page) {
 }
 
 /**
- * Open the launcher's "All engines and models" catalog. D49 made it the home
- * for every setup outside the recommended row AND for the launch options —
- * worktree, branch, roadmap item, Name setup… — that used to sit in the second
- * control row it replaced.
+ * Open the launcher's "All engines and models" catalog: the home for every
+ * setup outside the recommended row (D49). The launch options left it in
+ * 2026-11-05 (BUG-334 amended); `openLaunchOptions` opens them.
  */
 export async function openLaunchCatalog(page) {
   await summonComposer(page);
@@ -1035,14 +1034,28 @@ export async function openShellFromLauncher(page) {
   await catalog.locator('[data-launch-configuration="shell"]').click();
 }
 
-/** Declare the roadmap item a launch will work on (ENG-017 S4). The control
- *  moved into the catalog when D49 deleted the second control row. */
+/**
+ * Open this launch's options (worktree, branch, roadmap item, Name setup…).
+ * They have their own trigger on the launcher's status line and render
+ * outside the form Start submits, so Enter in their fields starts nothing.
+ */
+export async function openLaunchOptions(page) {
+  await summonComposer(page);
+  const options = page.locator('[data-agent-composer] [data-launch-options]');
+  if (await options.isVisible().catch(() => false)) return options;
+  await waitForLauncherToSettle(page);
+  await page
+    .locator('[data-agent-composer] [data-launch-options-trigger]')
+    .click();
+  await options.waitFor();
+  return options;
+}
+
+/** Declare the roadmap item a launch will work on (ENG-017 S4), in the
+ *  launch options. */
 export async function declareRoadmapItem(page, itemId) {
-  await openLaunchCatalog(page);
-  await page.selectOption(
-    '[data-all-launch-configurations] [data-launch-roadmap-item]',
-    itemId
-  );
+  const options = await openLaunchOptions(page);
+  await options.locator('[data-launch-roadmap-item]').selectOption(itemId);
 }
 
 /** Open the setup drawer that ribbons out of the selected chip, where Engine,
