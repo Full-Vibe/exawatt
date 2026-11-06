@@ -1,4 +1,23 @@
 import '@testing-library/jest-dom/vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach } from 'vitest';
+
+/**
+ * Unmount each test's tree, then let the work that unmounting itself queued
+ * run while this file's window still exists. Radix's FocusScope restores
+ * focus from a `setTimeout(0)` in its unmount cleanup; after a file's last
+ * test that timer used to fire once jsdom was torn down, as an uncaught
+ * "parameter 1 is not of type 'Event'" charged to whichever file ran last
+ * (2026-11-05, `session-model-control.test.tsx`). Timers run in the order
+ * they were queued, so one queued after the unmount runs after Radix's. The
+ * real `setTimeout` is captured here so a test that left fake timers
+ * installed cannot hang the drain.
+ */
+const realSetTimeout = globalThis.setTimeout;
+afterEach(async () => {
+  cleanup();
+  await new Promise(resolve => realSetTimeout(resolve, 0));
+});
 
 /**
  * Every jsdom test that persists anything reads jsdom's Storage. When a Node
