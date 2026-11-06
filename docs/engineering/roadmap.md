@@ -5716,7 +5716,7 @@ first-launch cost is tracked under ENG-008.
 
 ### BUG-318 Closing a tab moves the tabs to its right before the strip settles
 
-Status: fixed 2026-11-04 (Execution front 2026-11-04, packet 3) · ENG-016 · found 2026-10-22 by the eval-handles packet, when
+Status: fixed · amended 2026-11-05 (Review front, packet 6) · ENG-016 · found 2026-10-22 by the eval-handles packet, when
 `eval:workspace:ribbon` reached its stabilization step for the first time.
 
 Closing a tab holds the strip for 600 ms. The hold keeps the closing tab's
@@ -5735,6 +5735,17 @@ widths and presentations) until the hold releases, and a close pressed inside
 the hold joins it. A new tab in a Project the snapshot shows open ends the
 hold, since it needs a real slot. `eval:workspace:ribbon` now checks every
 item right of the closed tab, and fails on the old strip.
+
+Amended 2026-11-05: the review found the eval keyed tab chips by
+`data-ribbon-item`, which every tab chip shares, so only the first tab right of
+the close was really compared; it now keys by the unique `data-ribbon-key`. A
+drag started inside the hold looked frozen, because the hold ended only when a
+key appeared and drop slots were measured from the snapshot. The hold is now a
+whole snapshot in one more sense (the Project order the pinned header reads
+travels with it, instead of the live order beside held positions), and a drag
+that crosses its threshold ends it, with drop slots from the live row
+(`tab-strip.test.tsx`, "ends the hold when a drag starts inside it", fails on
+the old strip).
 
 ### BUG-319 Parallel packets collide on the one-line delivery test list
 
@@ -5959,7 +5970,7 @@ refuses the train.
 
 ### BUG-323 Pressing 0 right after a Fleet drill only re-centers
 
-Status: fixed 2026-11-04 (Execution front 2026-11-04, packet 3) · ENG-004 · found 2026-10-28, `eval:spatial:pointer` failed once and passed on the same tree in a landing train.
+Status: fixed · amended 2026-11-05 (Review front, packet 6) · ENG-004 · found 2026-10-28, `eval:spatial:pointer` failed once and passed on the same tree in a landing train.
 
 In Fleet v1 the eval clicked an Agent, waited for the address to reach the
 Project, pressed 0, and waited 30 seconds for Fleet, which never came; run
@@ -5995,6 +6006,24 @@ failed on the old effect). The test
 (`operations-board-surface.dom.test.tsx`, "board keys inside a pending move")
 holds the drill's render with Suspense, presses 0, and failed on the old
 board with the address left at the Project.
+
+Amended 2026-11-05: the review found the board address still had more than
+one owner. The Fleet client decided ascend (click on empty board, the Escape
+ladder's altitude rung) and arrow-key selection from the rendered altitude, so
+an arrow pressed before a drill rendered sent the address back to Fleet, and
+the board flipped the rendered projection on `v`, so two quick presses toggled
+once. And the owner rewrote its "latest asked" address with every committed
+render. The owner now exposes every relative verb (`ascend(): boolean`,
+`selectAgent(id, owner)`, `inspectAgent`, `toggleProjection`), each computed
+from the latest address; the client and the board keep no altitude or
+projection logic. The latest address has two writers: a move as it is asked,
+and the URL when it brings an address from outside. A render committing never
+writes it, and neither does the router landing an older address of the
+board's own after a newer move (which used to fly the board back to it).
+`use-board-route.dom.test.tsx` drives a router double that lands each
+`replace` later, in order; it and the four pending-move cases in
+`operations-board-surface.dom.test.tsx` (0, an arrow, a click on empty board,
+`v` twice) fail on the old owner.
 
 ### BUG-324 Nine components break React Compiler rules that eslint-config-next 16.4 enforces
 
@@ -6496,7 +6525,7 @@ found), with `ps` listing each the wrong way round.
 
 ### BUG-338 A few handlers still read state from an earlier render
 
-Status: bug · ENG-016 · found 2026-11-05 by execution front packet 3
+Status: fixed 2026-11-05 (Review front, packet 6) · ENG-016 · found 2026-11-05 by execution front packet 3
 
 Left over after packet 3 moved key handling onto committed state (BUG-323,
 BUG-318): the project ribbon's drag listeners keep the handlers from when the
@@ -6505,6 +6534,22 @@ after a Fleet drill still reads the rendered altitude rather than the address
 it is moving to; the homepage key listeners subscribe again on every render
 (harmless today, since they call the latest prop). Same class, same fix:
 `useEffectEvent` for listeners, refs written at commit.
+
+Fix: the review measured the class at 164 `react-hooks/refs` errors in 38
+files, with the rule off, so nothing stopped new ones. The rule is on in
+`eslint.config.mjs` and every finding is fixed at its cause, never disabled:
+handlers and window listeners that must read the latest props are Effect
+Events subscribed once (the ribbon's drag gesture, rename and edit commands,
+the workspace's dozen command events, notification clicks); values that come
+from earlier renders (the Fleet layout's previous slots, the ribbon's last
+chip bounds, the workspace's shown incarnations) are state adjusted during
+render, so a render React discards takes them with it; refs read outside
+React (a roster after an await, a frame loop) are synced in a layout effect;
+lazy objects are `useState` initialisers. Escape after a drill moved to the
+board route's owner (BUG-323). The emergence test that passed on the old code
+was replaced by one that renders a rename React then discards and checks the
+departing Agent still wears its drawn name; it fails on the code before
+`aae45d230`. Packets 2 and 4 clean their own files before the train lands.
 
 ### BUG-339 A failed folder pick from the Start screen says nothing
 

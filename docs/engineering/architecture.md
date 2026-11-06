@@ -388,10 +388,16 @@ handlers are Effect Events (`useEffectEvent`) and they subscribe once, so a
 re-render neither leaves a handler from an older render live nor moves a
 layer in the keydown order its `defaultPrevented` checks rely on. A verb that
 depends on an address a transition has not rendered yet asks that address's
-owner: the Fleet board's is `useBoardRoute`, whose verbs answer from the latest
-address asked for (BUG-323). A held transition holds a whole snapshot: the
-Project ribbon's pointer-close hold paints the row as it stood, positions and
-widths together, until it releases (BUG-318).
+owner: the Fleet board's is `useBoardRoute`, which owns every relative verb
+(ascend, select, toggle the projection) and answers each from the latest
+address asked for. Only a move and a URL arriving from outside write that
+address; a committed render and the router landing the board's own older
+writes do not (BUG-323). A held transition holds a whole snapshot: the
+Project ribbon's pointer-close hold paints the row as it stood, positions,
+widths and order together, until it releases or a drag starts (BUG-318).
+`react-hooks/refs` is on: a ref is read and written only in handlers and
+effects, information from earlier renders is state adjusted during render,
+and listeners that need the latest props are Effect Events (BUG-338).
 
 ### Render-path performance contract
 
