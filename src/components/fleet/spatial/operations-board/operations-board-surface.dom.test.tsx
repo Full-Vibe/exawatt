@@ -16,7 +16,12 @@ vi.mock('@/components/hud/webgl/use-agent-field-glide', () => ({
 }));
 
 vi.mock('./operations-board-canvas', () => ({
-  OperationsBoardCanvas: () => <div data-mocked-board-canvas />,
+  // The canvas's one input these tests drive: a click on empty board.
+  OperationsBoardCanvas: ({ onBackground }: { onBackground: () => void }) => (
+    <div data-mocked-board-canvas>
+      <button type="button" data-mocked-background onClick={onBackground} />
+    </div>
+  ),
 }));
 
 vi.mock('./tiles/operations-board-tiles-canvas', () => ({
@@ -26,6 +31,7 @@ vi.mock('./tiles/operations-board-tiles-canvas', () => ({
 import { OperationsBoardSurface } from './operations-board-surface';
 import { boardViewFor } from './operations-board-views';
 import { useBoardRoute } from '../use-board-route';
+import type { BoardRoute } from '../board-route';
 
 function resolveClassicDark() {
   const theme = THEME_REGISTRY['exawatt-classic-dark'];
@@ -139,70 +145,142 @@ describe('board hotkey guard', () => {
 describe('board keys inside a pending move (BUG-323)', () => {
   // The Fleet client commits each move as a transition, so the board keeps
   // rendering the previous address until the move's render commits. A key
-  // pressed in that window must mean what it means a moment later.
-  function Board({ hold }: { hold: Promise<void> }) {
-    const board = useBoardRoute({
-      searchParams: new URLSearchParams(),
-      replace,
-    });
+  // pressed in that window must mean what it means a moment later, so every
+  // relative verb is the route owner's, wired here the way the client wires
+  // them.
+  const replace = vi.fn<(href: string) => void>();
+  const searchParams = new URLSearchParams();
+  function Board({
+    hold,
+    holdWhile,
+  }: {
+    hold: Promise<void>;
+    holdWhile: (route: BoardRoute) => boolean;
+  }) {
+    const board = useBoardRoute({ searchParams, replace });
     const { route } = board;
-    // Rendering away from Fleet waits on `hold`: React keeps the committed
-    // Fleet snapshot on screen for as long as the move stays pending.
-    if (route.altitude !== 'fleet') use(hold);
+    // Rendering the held address waits on `hold`: React keeps the committed
+    // snapshot on screen for as long as the move stays pending.
+    if (holdWhile(route)) use(hold);
+    const layout = selectSpatialBoardLayout(populated, {
+      altitude: route.altitude,
+      focusedProjectId: route.projectId,
+    });
+    const ownerOf = (agentId: string) =>
+      layout.zones.find(zone => zone.agentIds.includes(agentId))?.id ?? null;
     return (
-      <div data-rendered-altitude={route.altitude}>
+      <div
+        data-rendered-altitude={route.altitude}
+        data-rendered-projection={route.projection}
+      >
         <OperationsBoardSurface
-          layout={selectSpatialBoardLayout(populated, {
-            altitude: route.altitude,
-            focusedProjectId: route.projectId,
-          })}
-          projection="top-down"
+          layout={layout}
+          projection={route.projection}
           onDrillProject={board.drillToProject}
-          onSelectAgent={() => undefined}
+          onSelectAgent={agentId =>
+            agentId
+              ? board.inspectAgent(agentId, ownerOf(agentId))
+              : board.ascend()
+          }
+          onMoveAgentSelection={agentId =>
+            board.selectAgent(agentId, ownerOf(agentId))
+          }
           onOverview={board.overview}
-          onProjectionChange={() => undefined}
+          onProjectionChange={board.changeProjection}
+          onToggleProjection={board.toggleProjection}
           resolvedAppearance={resolveClassicDark()}
         />
       </div>
     );
   }
-  const replace = vi.fn<(href: string) => void>();
 
-  it('goes up to Fleet on 0 pressed before the drill has rendered', async () => {
+  function renderBoard(holdWhile: (route: BoardRoute) => boolean) {
     replace.mockClear();
     let release!: () => void;
     const hold = new Promise<void>(resolve => (release = resolve));
     const view = render(
       <Suspense fallback={null}>
-        <Board hold={hold} />
+        <Board hold={hold} holdWhile={holdWhile} />
       </Suspense>
     );
-    const rendered = () =>
+    const rendered = (name: 'altitude' | 'projection') =>
       view.container
-        .querySelector('[data-rendered-altitude]')
-        ?.getAttribute('data-rendered-altitude');
+        .querySelector(`[data-rendered-${name}]`)
+        ?.getAttribute(`data-rendered-${name}`);
+    const press = (key: string) =>
+      act(async () => {
+        fireEvent.keyDown(document.body, { key });
+      });
+    return { view, rendered, press, release: () => act(async () => release()) };
+  }
 
-    await act(async () => {
-      fireEvent.keyDown(document.body, { key: '1' });
-    });
+  const awayFromFleet = (route: BoardRoute) => route.altitude !== 'fleet';
+
+  it('goes up to Fleet on 0 pressed before the drill has rendered', async () => {
+    const { view, rendered, press, release } = renderBoard(awayFromFleet);
+    await press('1');
     expect(replace).toHaveBeenLastCalledWith(
       expect.stringContaining('altitude=project')
     );
     // The drill is asked for and still pending: the board shows Fleet.
-    expect(rendered()).toBe('fleet');
+    expect(rendered('altitude')).toBe('fleet');
 
-    await act(async () => {
-      fireEvent.keyDown(document.body, { key: '0' });
-    });
-    await act(async () => release());
+    await press('0');
+    await release();
 
     expect(replace).toHaveBeenLastCalledWith('/fleet/spatial');
-    await waitFor(() => expect(rendered()).toBe('fleet'));
+    await waitFor(() => expect(rendered('altitude')).toBe('fleet'));
     expect(
       view.container
         .querySelector('[data-board-overview]')
         ?.getAttribute('data-board-overview')
     ).toBe('fit');
+  });
+
+  it('keeps a pending drill when an arrow moves the selection', async () => {
+    const { rendered, press, release } = renderBoard(awayFromFleet);
+    await press('1');
+    expect(rendered('altitude')).toBe('fleet');
+    await press('ArrowRight');
+    await release();
+
+    const asked = new URLSearchParams(replace.mock.lastCall![0].split('?')[1]);
+    expect(asked.get('altitude')).toBe('project');
+    expect(asked.get('agent')).not.toBeNull();
+    await waitFor(() => expect(rendered('altitude')).toBe('project'));
+  });
+
+  it('ascends from the pending drill on a click on empty board', async () => {
+    const { view, rendered, press, release } = renderBoard(awayFromFleet);
+    const background = await waitFor(() => {
+      const button = view.container.querySelector<HTMLElement>(
+        '[data-mocked-background]'
+      );
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    await press('1');
+    expect(rendered('altitude')).toBe('fleet');
+    // The Escape ladder's altitude rung asks the same verb.
+    await act(async () => fireEvent.click(background));
+    await release();
+    expect(replace).toHaveBeenLastCalledWith('/fleet/spatial');
+    await waitFor(() => expect(rendered('altitude')).toBe('fleet'));
+  });
+
+  it('toggles the projection twice on v pressed twice before a render', async () => {
+    const { rendered, press, release } = renderBoard(
+      route => route.projection === 'fixed-angle'
+    );
+    await press('v');
+    expect(rendered('projection')).toBe('top-down');
+    await press('v');
+    await release();
+    expect(replace.mock.calls.map(([href]) => href)).toEqual([
+      '/fleet/spatial?projection=fixed-angle',
+      '/fleet/spatial',
+    ]);
+    await waitFor(() => expect(rendered('projection')).toBe('top-down'));
   });
 });
 

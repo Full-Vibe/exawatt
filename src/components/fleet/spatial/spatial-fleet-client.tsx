@@ -127,8 +127,18 @@ export function SpatialFleetClient() {
     (href: string) => router.replace(href, { scroll: false }),
     [router]
   );
-  const { route, navigate, drillToProject, overview, changeProjection } =
-    useBoardRoute({ searchParams, replace: replaceUrl });
+  // Every verb that moves the address is the owner's, answered from the
+  // latest address asked for; this client decides no altitude itself.
+  const {
+    route,
+    drillToProject,
+    inspectAgent,
+    selectAgent,
+    ascend,
+    overview,
+    changeProjection,
+    toggleProjection,
+  } = useBoardRoute({ searchParams, replace: replaceUrl });
   const altitude: Altitude = route.altitude;
   const focusedProjectId = route.projectId;
   const selectedAgentId = route.agentId;
@@ -222,7 +232,6 @@ export function SpatialFleetClient() {
   // The layout computes from the full fleet, then applies filter visibility so
   // surviving Projects/Agents keep their addresses. Previous output preserves
   // existing slots when live Projects or Agents arrive.
-  const previousBoardLayout = useRef<SpatialBoardLayout | null>(null);
   const visibleAgentIds = useMemo(
     () => new Set(Object.keys(filteredState.agents)),
     [filteredState.agents]
@@ -241,32 +250,41 @@ export function SpatialFleetClient() {
         .map(project => `project:${project.id}`)
     );
   }, [projects, query, statusFilter.length]);
-  const boardLayout = useMemo(
-    () =>
-      selectSpatialBoardLayout(fleetState, {
-        altitude,
-        focusedProjectId,
-        selectedAgentId,
-        projection,
-        visibleAgentIds,
-        visibleProjectIds,
-        projects,
-        previousLayout: previousBoardLayout.current,
-      }),
-    [
+  // Each layout derives from the one before it, so the previous layout is
+  // information from an earlier render: it lives in state and the next one is
+  // computed during render when an input changes (React's pattern for it). A
+  // render React discards takes its layout with it, so slots are only ever
+  // kept from a layout that was really drawn.
+  const layoutInputs = [
+    altitude,
+    fleetState,
+    focusedProjectId,
+    projection,
+    projects,
+    selectedAgentId,
+    visibleAgentIds,
+    visibleProjectIds,
+  ] as const;
+  const layOut = (previousLayout: SpatialBoardLayout | null) =>
+    selectSpatialBoardLayout(fleetState, {
       altitude,
-      fleetState,
       focusedProjectId,
-      projection,
-      projects,
       selectedAgentId,
+      projection,
       visibleAgentIds,
       visibleProjectIds,
-    ]
-  );
-  useEffect(() => {
-    previousBoardLayout.current = boardLayout;
-  }, [boardLayout]);
+      projects,
+      previousLayout,
+    });
+  const [laidOut, setLaidOut] = useState(() => ({
+    inputs: layoutInputs,
+    layout: layOut(null),
+  }));
+  let boardLayout = laidOut.layout;
+  if (layoutInputs.some((input, index) => input !== laidOut.inputs[index])) {
+    boardLayout = layOut(laidOut.layout);
+    setLaidOut({ inputs: layoutInputs, layout: boardLayout });
+  }
 
   const delegationUnits = useMemo(
     () => selectSpatialDelegationUnits(boardLayout),
@@ -432,18 +450,6 @@ export function SpatialFleetClient() {
     );
   }, [searchParams]);
 
-  const ascend = useCallback(() => {
-    if (scene.altitude === 'agent') {
-      navigate({
-        altitude: 'project',
-        project: scene.focusedProjectId,
-        agent: null,
-      });
-    } else if (scene.altitude === 'project') {
-      navigate({ altitude: 'fleet', project: null, agent: null });
-    }
-  }, [scene.altitude, scene.focusedProjectId, navigate]);
-
   // Clicking an agent drills to the agent (with its owning Project as the
   // focused context); clicking empty space releases the working set first,
   // then ascends (the RTS deselect-before-zoom-out order).
@@ -462,8 +468,7 @@ export function SpatialFleetClient() {
     (agentId: string | null) => {
       clearNotice();
       if (agentId) {
-        const owner = agentProjectOwners.get(agentId) ?? null;
-        navigate({ altitude: 'agent', project: owner, agent: agentId });
+        inspectAgent(agentId, agentProjectOwners.get(agentId) ?? null);
       } else if (multiSelection.size > 0) {
         clearMultiSelect();
       } else {
@@ -475,8 +480,8 @@ export function SpatialFleetClient() {
       clearMultiSelect,
       clearNotice,
       agentProjectOwners,
+      inspectAgent,
       multiSelection.size,
-      navigate,
     ]
   );
 
@@ -487,15 +492,9 @@ export function SpatialFleetClient() {
   });
 
   const moveAgentSelection = useCallback(
-    (agentId: string) => {
-      const owner = agentProjectOwners.get(agentId) ?? null;
-      navigate({
-        altitude: scene.altitude,
-        project: scene.altitude === 'fleet' ? null : owner,
-        agent: agentId,
-      });
-    },
-    [agentProjectOwners, navigate, scene.altitude]
+    (agentId: string) =>
+      selectAgent(agentId, agentProjectOwners.get(agentId) ?? null),
+    [agentProjectOwners, selectAgent]
   );
 
   // The board's rungs of the back-out ladder, in V4.2's order: a field's
@@ -514,11 +513,7 @@ export function SpatialFleetClient() {
   useBackOut({
     rung: 'altitude',
     ambient: true,
-    back: () => {
-      if (scene.altitude === 'fleet') return false;
-      ascend();
-      return true;
-    },
+    back: ascend,
   });
   // Search clears on Escape; an empty search lets the board take it.
   const searchRef = useRef<HTMLInputElement>(null);
@@ -805,9 +800,7 @@ export function SpatialFleetClient() {
             >
               <button
                 type="button"
-                onClick={() =>
-                  navigate({ altitude: 'fleet', project: null, agent: null })
-                }
+                onClick={overview}
                 className="text-chrome-label font-medium text-muted-foreground outline-none transition-colors hover:text-primary focus-visible:ring-1 focus-visible:ring-ring"
               >
                 Fleet
@@ -818,11 +811,8 @@ export function SpatialFleetClient() {
                   <button
                     type="button"
                     onClick={() =>
-                      navigate({
-                        altitude: 'project',
-                        project: scene.focusedProjectId,
-                        agent: null,
-                      })
+                      scene.focusedProjectId &&
+                      drillToProject(scene.focusedProjectId)
                     }
                     className="max-w-[24vw] truncate text-chrome-label font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
                   >
@@ -960,6 +950,7 @@ export function SpatialFleetClient() {
               onMoveAgentSelection={moveAgentSelection}
               onOverview={overview}
               onProjectionChange={changeProjection}
+              onToggleProjection={toggleProjection}
               multiSelection={multiSelection}
               onToggleAgentSelect={toggleAgentSelect}
               onToggleZoneSelect={toggleZoneSelect}

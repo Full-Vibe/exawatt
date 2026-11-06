@@ -334,6 +334,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
   onMoveAgentSelection,
   onOverview,
   onProjectionChange,
+  onToggleProjection,
   multiSelection,
   onToggleAgentSelect,
   onToggleZoneSelect,
@@ -359,16 +360,23 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
    *  attention triage below never reads it. */
   lens?: SpatialBoardLens;
   onDrillProject: (projectId: string) => void;
+  /**
+   * The host answers every verb below from the latest address asked for,
+   * which can be ahead of `layout` while a move's render is still pending
+   * (BUG-323); the board decides nothing about altitude or projection from
+   * what it rendered.
+   */
   onSelectAgent: (agentId: string | null) => void;
+  /** Move the selection, keeping the altitude the board is going to. */
   onMoveAgentSelection?: (agentId: string) => void;
   /**
    * Go up to the Fleet overview. Returns false when the address is already at
-   * Fleet altitude; the board then re-centers. The host answers from the
-   * latest address asked for, which can be ahead of `layout` while a move's
-   * render is still pending (BUG-323).
+   * Fleet altitude; the board then re-centers.
    */
   onOverview: () => boolean;
   onProjectionChange: (projection: SpatialBoardProjection) => void;
+  /** Flip between the view's two projections (`v`). */
+  onToggleProjection?: () => void;
   /** Multi-selection (V3.2): real, ephemeral, client-owned. Direct (V4.2)
    *  addresses it from the selection panel. */
   multiSelection?: ReadonlySet<string>;
@@ -713,9 +721,7 @@ export const OperationsBoardSurface = memo(function OperationsBoardSurface({
       triage(-1);
       event.preventDefault();
     } else if (event.key.toLowerCase() === 'v' && view.projections.length > 1) {
-      onProjectionChange(
-        projection === 'top-down' ? 'fixed-angle' : 'top-down'
-      );
+      onToggleProjection?.();
       event.preventDefault();
     } else if (event.key.startsWith('Arrow')) {
       const direction = event.key
