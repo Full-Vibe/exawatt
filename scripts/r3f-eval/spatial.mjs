@@ -1275,7 +1275,7 @@ async function runHandoffScenario(browser, scenario) {
         await page.waitForFunction(
           () => window.__EVAL_HANDOFF__?.poseAt != null,
           null,
-          { timeout: 10_000 }
+          { timeout: HANDOFF_POSE_BUDGET_MS + 5_000 }
         );
       } catch {
         const state = await page.evaluate(() => ({
@@ -1428,8 +1428,18 @@ async function runHandoffScenario(browser, scenario) {
   return result;
 }
 
+const HANDOFF_POSE_BUDGET_MS = 20_000;
 const handoffScenarios = [
-  { name: 'handoff-pose', expect: 'pose', highPower: true },
+  // The pose check is of the carry, not of machine speed: a loaded host can
+  // take longer than the product's 900 ms to build the board's first frame,
+  // and the product then cuts, which is correct and is what
+  // handoff-missed-budget checks (2026-11-06: 3 of 8 runs cut on master).
+  {
+    name: 'handoff-pose',
+    expect: 'pose',
+    highPower: true,
+    query: `?budget=${HANDOFF_POSE_BUDGET_MS}`,
+  },
   { name: 'handoff-reduced-motion', reduced: true },
   { name: 'handoff-low-power', lowPower: true },
   {

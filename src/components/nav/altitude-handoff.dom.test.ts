@@ -59,6 +59,7 @@ function projectCards(
     cards,
     viewport: { width: 1200, height: 800 },
     capturedAt: 0,
+    budgetMs: ALTITUDE_HANDOFF_BUDGET_MS,
   };
 }
 
@@ -88,6 +89,14 @@ describe('captureAltitudeCards', () => {
       document.body.appendChild(element);
     }
   }
+
+  it('captures with the product budget unless told otherwise', () => {
+    mount([{ label: 'grid-api' }]);
+    expect(captureAltitudeCards()?.budgetMs).toBe(ALTITUDE_HANDOFF_BUDGET_MS);
+    expect(captureAltitudeCards(document, { budgetMs: 5_000 })?.budgetMs).toBe(
+      5_000
+    );
+  });
 
   it('captures labeled, visible cards with identity and position', () => {
     mount([{ label: 'Dispatch-Engine ' }, { label: 'grid-api' }]);
@@ -129,6 +138,7 @@ describe('handoff store', () => {
     cards: [card('a', { left: 0, top: 0, width: 10, height: 10 })],
     viewport: { width: window.innerWidth, height: window.innerHeight },
     capturedAt: 1_000,
+    budgetMs: ALTITUDE_HANDOFF_BUDGET_MS,
   });
 
   it('claims a fresh snapshot exactly once', () => {
@@ -146,6 +156,13 @@ describe('handoff store', () => {
     expect(altitudeHandoffActive(1_000 + ALTITUDE_HANDOFF_BUDGET_MS + 1)).toBe(
       false
     );
+  });
+
+  it('holds each snapshot to the budget it was captured with', () => {
+    publishAltitudeHandoff({ ...snapshot(), budgetMs: 5_000 });
+    const late = 1_000 + ALTITUDE_HANDOFF_BUDGET_MS + 1;
+    expect(altitudeHandoffActive(late)).toBe(true);
+    expect(claimAltitudeHandoff(late)).not.toBeNull();
   });
 
   it('declines when the viewport changed since capture', () => {
@@ -195,6 +212,7 @@ describe('solveEntryPose', () => {
       ),
       viewport: { width: 1200, height: 800 },
       capturedAt: 0,
+      budgetMs: ALTITUDE_HANDOFF_BUDGET_MS,
     };
     const solution = solveEntryPose(stacked, grid, CANVAS);
     expect(solution).not.toBeNull();
@@ -243,12 +261,20 @@ describe('solveEntryPose', () => {
     const pose = { centerX: 26.5, centerY: 14, zoom: 18 };
     const zones = [
       ...grid,
-      zone('a', { x: 500, y: 500, width: 24, height: 11.5 }, {
-        isAggregate: true,
-      }),
-      zone('hidden', { x: 900, y: 0, width: 24, height: 11.5 }, {
-        visible: false,
-      }),
+      zone(
+        'a',
+        { x: 500, y: 500, width: 24, height: 11.5 },
+        {
+          isAggregate: true,
+        }
+      ),
+      zone(
+        'hidden',
+        { x: 900, y: 0, width: 24, height: 11.5 },
+        {
+          visible: false,
+        }
+      ),
     ];
     const solution = solveEntryPose(projectCards(grid, pose), zones, CANVAS);
     expect(solution).not.toBeNull();
@@ -267,6 +293,7 @@ describe('solveEntryPose', () => {
       ],
       viewport: { width: 1200, height: 800 },
       capturedAt: 0,
+      budgetMs: ALTITUDE_HANDOFF_BUDGET_MS,
     };
     expect(solveEntryPose(snapshot, samePoint, CANVAS)).toBeNull();
   });
@@ -283,6 +310,7 @@ describe('solveEntryPose', () => {
       ],
       viewport: { width: 1200, height: 800 },
       capturedAt: 0,
+      budgetMs: ALTITUDE_HANDOFF_BUDGET_MS,
     };
     const solution = solveEntryPose(mirrored, grid, CANVAS);
     expect(solution).not.toBeNull();

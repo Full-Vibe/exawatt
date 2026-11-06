@@ -122,6 +122,10 @@ function buildVoltaicFleet(): FleetState {
 function HandoffFixture() {
   const params = useSearchParams();
   const claimDelay = Math.max(0, Number(params.get('claimDelay') ?? 0) || 0);
+  // A wider claim budget for a check of the pose itself, so how fast this
+  // machine builds the board's first frame is not what it measures. Without
+  // it the snapshot carries the product's budget (the missed-budget check).
+  const budgetMs = Number(params.get('budget')) || undefined;
   const [phase, setPhase] = useState<'team' | 'board'>('team');
   const [boardMounted, setBoardMounted] = useState(false);
   const [snapshot, setSnapshot] = useState<HandoffSnapshot | null>(null);
@@ -180,7 +184,9 @@ function HandoffFixture() {
     const record = evalState();
     // The same gate the transition owner applies: reduced motion or low
     // power never attempts the handoff.
-    const captured = altitudeHandoffAllowed() ? captureAltitudeCards() : null;
+    const captured = altitudeHandoffAllowed()
+      ? captureAltitudeCards(document, { budgetMs })
+      : null;
     record.attempted = captured !== null;
     record.cardCount = captured?.cards.length ?? 0;
     if (captured) {
@@ -193,7 +199,7 @@ function HandoffFixture() {
     } else {
       setBoardMounted(true);
     }
-  }, [claimDelay, phase]);
+  }, [budgetMs, claimDelay, phase]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

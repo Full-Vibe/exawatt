@@ -18,7 +18,6 @@
 
 import { useEffect, useEffectEvent, useRef } from 'react';
 import {
-  ALTITUDE_HANDOFF_BUDGET_MS,
   ALTITUDE_HANDOFF_CROSSFADE_MS,
   ALTITUDE_HANDOFF_FALLBACK_EVENT,
   ALTITUDE_HANDOFF_POSE_EVENT,
@@ -191,7 +190,7 @@ export function AltitudeHandoffGhosts({
     const elapsed = performance.now() - snapshot.capturedAt;
     deadline = window.setTimeout(
       () => fadeOutAll(FALLBACK_FADE_MS, 'fallback'),
-      Math.max(0, ALTITUDE_HANDOFF_BUDGET_MS - elapsed)
+      Math.max(0, snapshot.budgetMs - elapsed)
     );
     return () => {
       window.removeEventListener(ALTITUDE_HANDOFF_POSE_EVENT, onPose);

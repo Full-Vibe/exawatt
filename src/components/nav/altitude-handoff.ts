@@ -37,6 +37,9 @@ export interface HandoffSnapshot {
   cards: HandoffCard[];
   viewport: { width: number; height: number };
   capturedAt: number;
+  /** How long after capture a board may still claim this snapshot. A board
+   *  that cannot claim inside it takes the cut. */
+  budgetMs: number;
 }
 
 export interface HandoffPoseTarget {
@@ -54,7 +57,9 @@ export interface HandoffPoseDetail {
 }
 
 /** Frame budget from capture to a claimed, solved entry pose. A cold route
- *  or renderer that cannot produce the pose inside this window hard-cuts. */
+ *  or renderer that cannot produce the pose inside this window hard-cuts.
+ *  The product always captures with it; a snapshot carries its own, so an
+ *  eval of the pose machinery need not also be a test of machine speed. */
 export const ALTITUDE_HANDOFF_BUDGET_MS = 900;
 /** Card → zone ghost crossfade duration. 460ms with an in-out flight ease:
  *  the front-loaded expo curve finished the position change in ~120ms and
@@ -103,7 +108,8 @@ export function normalizeHandoffKey(label: string): string {
  * takes the ordinary directional transition.
  */
 export function captureAltitudeCards(
-  doc: Document | null = typeof document === 'undefined' ? null : document
+  doc: Document | null = typeof document === 'undefined' ? null : document,
+  { budgetMs = ALTITUDE_HANDOFF_BUDGET_MS }: { budgetMs?: number } = {}
 ): HandoffSnapshot | null {
   if (!doc || typeof window === 'undefined') return null;
   const elements = doc.querySelectorAll<HTMLElement>('[data-handoff-card]');
@@ -147,7 +153,7 @@ export function captureAltitudeCards(
   // An ambiguous identity cannot carry position honestly — drop it.
   const unique = cards.filter(card => !duplicates.has(card.key));
   if (unique.length === 0) return null;
-  return { cards: unique, viewport, capturedAt: performance.now() };
+  return { cards: unique, viewport, capturedAt: performance.now(), budgetMs };
 }
 
 // ── Single-use snapshot store (module scope survives the route change) ──
@@ -170,7 +176,7 @@ export function claimAltitudeHandoff(
   const snapshot = pending;
   pending = null;
   if (!snapshot) return null;
-  if (now - snapshot.capturedAt > ALTITUDE_HANDOFF_BUDGET_MS) return null;
+  if (now - snapshot.capturedAt > snapshot.budgetMs) return null;
   if (
     typeof window !== 'undefined' &&
     (Math.abs(window.innerWidth - snapshot.viewport.width) > 2 ||
@@ -187,7 +193,7 @@ export function claimAltitudeHandoff(
 export function altitudeHandoffActive(
   now = typeof performance === 'undefined' ? 0 : performance.now()
 ): boolean {
-  if (pending && now - pending.capturedAt <= ALTITUDE_HANDOFF_BUDGET_MS) {
+  if (pending && now - pending.capturedAt <= pending.budgetMs) {
     return true;
   }
   return claimedAt > 0 && now - claimedAt <= CLAIM_ACTIVE_MS;
@@ -319,8 +325,7 @@ export function solveEntryPose(
   }
   if (norm <= 0) return null;
   const scaleZoom = median(sizeRatios);
-  const correlation =
-    normScreen > 0 ? dot / Math.sqrt(norm * normScreen) : 0;
+  const correlation = normScreen > 0 ? dot / Math.sqrt(norm * normScreen) : 0;
   const lsqZoom = dot / norm;
   let zoom =
     correlation >= MIN_LSQ_CORRELATION &&
@@ -363,7 +368,10 @@ export function solveEntryPose(
     const dy = center.y - canvas.top - screenY[index]!;
     squared += dx * dx + dy * dy;
   }
-  const diagonal = Math.hypot(snapshot.viewport.width, snapshot.viewport.height);
+  const diagonal = Math.hypot(
+    snapshot.viewport.width,
+    snapshot.viewport.height
+  );
   const residual = Math.sqrt(squared / matches.length) / Math.max(diagonal, 1);
   if (residual > MAX_RESIDUAL) return null;
 
