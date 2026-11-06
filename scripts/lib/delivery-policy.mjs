@@ -2504,7 +2504,7 @@ export function checkEnvironment(check, env = process.env) {
  * machine's, never a check's verdict: the landing throws it before any check
  * runs, so no car is convicted and no `--land-passing` train is drained.
  */
-export class CheckNodeError extends Error {}
+class CheckNodeError extends Error {}
 
 const provisionedNodes = new Map();
 
