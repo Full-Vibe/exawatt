@@ -13,9 +13,9 @@ import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import {
   listProjects,
   projectRegistryScope,
-  rebindProjectPath,
   type ProjectOpenedContext,
 } from '@/lib/projects/registry';
+import { projectFolderOnThisMachine } from '@/lib/projects/project-folder';
 import { extractRecentProjects } from './switcher-rows';
 import {
   mergeProjectLibrary,
@@ -30,8 +30,8 @@ import {
 import type { ProjectImportCandidate } from '@exawatt/core/desktop-bridge';
 import { ProjectCard, ProjectRoutes } from './project-routes';
 import {
-  nativeDialogFailureMessage,
-  useNativeDialog,
+  requestDirectory,
+  useFolderRequestPending,
 } from '@/lib/native-dialog/native-dialog';
 import {
   YourProjects,
@@ -166,8 +166,8 @@ export function ProjectOpener({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // The native folder picker is a sheet over this chooser, not a step out of
   // it: the chooser stays open underneath, so cancelling is simply the sheet
-  // going away (BUG-327).
-  const picker = useNativeDialog<'browse' | 'import' | 'locate'>();
+  // going away (BUG-327). The door hands focus back and reports failures.
+  const picking = useFolderRequestPending();
   const [connectOpen, setConnectOpen] = useState(false);
   const [suggestionsListed, setSuggestionsListed] = useState(0);
   // Connecting runs a tunnel and a Gateway handshake from the main process,
@@ -259,17 +259,11 @@ export function ProjectOpener({
     [library]
   );
 
-  /** Ask for a folder; the path, or null after saying why there is none. */
-  const pickDirectory = async (
-    kind: 'browse' | 'import' | 'locate',
-    title: string
-  ): Promise<string | null> => {
+  /** Ask for a folder; the path, or null (the door says why, if it failed). */
+  const pickDirectory = async (title: string): Promise<string | null> => {
     setError(null);
-    const outcome = await picker.pickDirectory(kind, title);
-    if (outcome.status === 'picked') return outcome.path;
-    const message = nativeDialogFailureMessage(outcome);
-    if (message) setError(message);
-    return null;
+    const outcome = await requestDirectory(title);
+    return outcome.status === 'picked' ? outcome.path : null;
   };
 
   // Connecting is a route out of this chooser, so it takes the screen the way
@@ -304,31 +298,13 @@ export function ProjectOpener({
       onOpenChange(false);
       return;
     }
-    let dir = project.rootPath;
-    const exists = await window.electron?.dialog?.pathExists(dir);
-    if (exists === false) {
-      const located = await pickDirectory('locate', `Locate ${project.name}`);
-      if (!located) return;
-      try {
-        const resolved = await window.electron?.projects?.resolve(located);
-        if (!resolved) return;
-        if (!resolved.ok) {
-          setError(resolved.error);
-          return;
-        }
-        dir = resolved.projectDir;
-        if (project.registryId) {
-          await rebindProjectPath(project.registryId, dir).catch(() => {});
-        }
-      } catch (cause) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : 'The selected Project could not be opened.'
-        );
-        return;
-      }
-    }
+    setError(null);
+    const dir = await projectFolderOnThisMachine({
+      registryId: project.registryId,
+      name: project.name,
+      rootPath: project.rootPath,
+    });
+    if (!dir) return;
     try {
       if (await onOpenProject(dir, { source: 'recent' })) onOpenChange(false);
     } catch (cause) {
@@ -341,7 +317,7 @@ export function ProjectOpener({
   };
 
   const browse = async () => {
-    const dir = await pickDirectory('browse', 'Open Project');
+    const dir = await pickDirectory('Open Project');
     if (!dir) return;
     try {
       if (await onOpenProject(dir, { source: 'browse' })) onOpenChange(false);
@@ -355,10 +331,7 @@ export function ProjectOpener({
   };
 
   const beginImport = async () => {
-    const dir = await pickDirectory(
-      'import',
-      'Choose a folder containing Projects'
-    );
+    const dir = await pickDirectory('Choose a folder containing Projects');
     if (dir) await reviewImport(dir);
   };
 
@@ -649,7 +622,7 @@ export function ProjectOpener({
                 style={{ borderColor: HUD.strokeFaint }}
               >
                 <ProjectRoutes
-                  disabled={picker.pending !== null}
+                  disabled={picking}
                   connectSupported={connectSupported}
                   onBrowse={() => void browse()}
                   onImport={() => void beginImport()}

@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useEffectEvent, useRef } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { isAgentSourceId } from './agent-sources';
 import {
+  claimPendingAgentComposer,
   FOCUS_AGENT_COMPOSER_EVENT,
-  hasPendingAgentComposer,
-  pendingAgentComposerProjectDir,
   type AgentComposerRequest,
 } from './session-jump';
 import {
@@ -18,9 +17,10 @@ import {
  * Answers New Agent requests (⌘N, the palette, the Fleet board's ghost slot)
  * in the workspace. Each request is acted on once: a live request when its
  * event arrives, and a request that arrived before the workspace mounted
- * once the layout has loaded. Neither re-runs because the workspace
- * re-rendered, so the Project chooser opens once per request instead of
- * reopening for as long as the request stays pending.
+ * once the layout has loaded. Both claim the request itself, so neither a
+ * re-render nor a remount of the workspace answers it again, and the
+ * Project chooser opens once per request instead of reopening for as long
+ * as the request stays pending (BUG-327).
  */
 export function useAgentComposerRequests({
   enabled,
@@ -72,22 +72,28 @@ export function useAgentComposerRequests({
   // has mounted: it waits in the pending slot until the layout is loaded.
   // The composer the draft hosts consumes it for its source and focus.
   const onPendingAtMount = useEffectEvent(() => {
-    if (!hasPendingAgentComposer()) return;
-    const dir = pendingAgentComposerProjectDir();
-    if (dir) openBoundDraft(dir);
-    else if (!activeProject) summonProjectOpener();
+    const claim = claimPendingAgentComposer();
+    if (!claim) return;
+    const { request } = claim;
+    if (request && typeof request === 'object' && request.projectDir) {
+      openBoundDraft(request.projectDir);
+    } else if (!activeProject) {
+      summonProjectOpener();
+    }
   });
-  const pendingHandled = useRef(false);
   useEffect(() => {
-    if (!enabled || !ready || pendingHandled.current) return;
-    pendingHandled.current = true;
+    if (!enabled || !ready) return;
     onPendingAtMount();
   }, [enabled, ready]);
 
   useEffect(() => {
     if (!enabled) return;
-    const listener = (event: Event) =>
+    const listener = (event: Event) => {
+      // The event IS the pending request; claim it so a later mount of the
+      // workspace does not answer it a second time.
+      claimPendingAgentComposer();
       onRequest((event as CustomEvent<AgentComposerRequest>).detail ?? null);
+    };
     window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, listener);
     return () =>
       window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, listener);

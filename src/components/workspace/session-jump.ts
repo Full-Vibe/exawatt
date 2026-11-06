@@ -125,7 +125,11 @@ let pendingLaunch: Pending<LaunchRequest> | null = null;
 let pendingOpenProject: Pending<string> | null = null;
 let pendingProjectPicker: Pending<true> | null = null;
 let pendingConnectSource: Pending<true> | null = null;
-let pendingAgentComposer: Pending<AgentComposerRequest> | null = null;
+/** `claimed`: the workspace has acted on it (opened its draft or the
+ *  chooser); only the composer that draft hosts still reads it. */
+let pendingAgentComposer:
+  | (Pending<AgentComposerRequest> & { claimed: boolean })
+  | null = null;
 let pendingReopenLastClosed: Pending<true> | null = null;
 
 function take<T>(slot: Pending<T> | null): T | null {
@@ -279,7 +283,7 @@ export function requestAgentComposer(
   request: AgentComposerRequest = null
 ): void {
   if (!launchVerbsAvailable()) return;
-  pendingAgentComposer = { value: request, at: Date.now() };
+  pendingAgentComposer = { value: request, at: Date.now(), claimed: false };
   window.dispatchEvent(
     new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT, { detail: request })
   );
@@ -319,20 +323,23 @@ export function consumePendingAgentComposer():
     | undefined;
 }
 
-/** The Project a pending composer request is bound to, without consuming
- *  it: the workspace opens the draft there on mount, and the composer that
- *  draft hosts consumes the request for its source and focus. */
-export function pendingAgentComposerProjectDir(): string | null {
-  if (!hasPendingAgentComposer()) return null;
-  const value = pendingAgentComposer?.value;
-  return value && typeof value === 'object' && value.projectDir
-    ? value.projectDir
-    : null;
-}
-
-export function hasPendingAgentComposer(): boolean {
-  return (
-    !!pendingAgentComposer &&
-    Date.now() - pendingAgentComposer.at <= AGENT_COMPOSER_TTL_MS
-  );
+/**
+ * The workspace's claim on the pending New Agent request: the request, the
+ * first time it is claimed, and null after that (or when there is none).
+ *
+ * A request is acted on once (BUG-327). The workspace answers it by opening
+ * a draft or the Project chooser; the composer that draft hosts consumes it
+ * later for its source and focus, so claiming does not consume it. Being
+ * claimed is a fact about the request, not about whoever claimed it, so a
+ * workspace that remounts while the request is still pending (the operator
+ * left and came back) does not answer it again.
+ */
+export function claimPendingAgentComposer(): {
+  request: AgentComposerRequest;
+} | null {
+  const slot = pendingAgentComposer;
+  if (!slot || slot.claimed) return null;
+  if (Date.now() - slot.at > AGENT_COMPOSER_TTL_MS) return null;
+  slot.claimed = true;
+  return { request: slot.value };
 }

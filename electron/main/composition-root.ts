@@ -147,6 +147,9 @@ const nativeDialogs = createNativeDialogBroker<BrowserWindow>({
       : dialog.showMessageBox(options),
   record: mainDiagnostics,
 });
+// From creation, so a sheet Chromium shows itself (a file input, a JS
+// dialog) holds the window's line before the broker is first asked.
+app.on('browser-window-created', (_event, win) => nativeDialogs.watch(win));
 // Process deaths are bounded so a helper stuck in a crash loop cannot fill
 // the diagnostics log (BUG-223), and bounded per family (`child`, `renderer`,
 // `renderer-server`) so that loop cannot silence the renderer's own record.

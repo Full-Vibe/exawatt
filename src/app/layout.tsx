@@ -7,6 +7,7 @@ import { SiteHeader } from '@/components/nav/site-header';
 import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
+import { NativeDialogNotice } from '@/lib/native-dialog/native-dialog-notice';
 import { MoveToApplicationsDialog } from '@/components/nav/move-to-applications-dialog';
 import { HeldStateBridge } from '@/components/nav/held-state-bridge';
 import { NoticeLaneProvider } from '@/components/ui/notice-lane';
@@ -123,6 +124,8 @@ export default function RootLayout({
                             <FleetProvider>
                               <SiteHeader />
                               <UpdateReadyNotice />
+                              {/* BUG-339: every folder request fails here */}
+                              <NativeDialogNotice />
                               {/* BUG-305: an official build outside Applications */}
                               <MoveToApplicationsDialog />
                               {/* BUG-260: where the operator stood survives a restart */}

@@ -3626,7 +3626,7 @@ decorative sockets for now; the shared-renderer ghost ring is still owed.
 Activation is one path: `requestAgentComposer({ projectDir })` through the
 existing pending slot, then the workspace. The workspace opens the same draft
 tab and `AgentLauncher` that ⌘T opens, in the ghost's Project rather than the
-active one (`pendingAgentComposerProjectDir` reads the binding without
+active one (`claimPendingAgentComposer` reads the binding once without
 consuming the request the composer still needs). Rendering the composer in
 place on the board was rejected on evidence: Session creation (tab, PTY,
 layout persistence) is owned by the mounted workspace, so an in-place launch

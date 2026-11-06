@@ -114,9 +114,9 @@ import {
   requestQuickFeedback,
   type QuickFeedbackKind,
 } from '@/components/feedback/quick-feedback-events';
-import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
+import { listProjects } from '@/lib/projects/registry';
 import type { Project } from '@/lib/projects/registry';
-import { requestDirectory } from '@/lib/native-dialog/native-dialog';
+import { projectFolderOnThisMachine } from '@/lib/projects/project-folder';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { demoSessionRows } from '@/lib/demo-workspace/model';
@@ -570,21 +570,18 @@ export function CommandPalette({
     [handleSelect, navigateCommandSurface]
   );
   /** open a known Project (⌘K Projects): if its directory is missing on this
-   *  machine (a synced Project from another machine), prompt to locate it and
-   *  re-bind the registry; then the workspace activates it without spawning */
+   *  machine (a synced Project from another machine), the chooser's own
+   *  Locate finds it; then the workspace activates it without spawning */
   const openProject = useCallback(
     (p: Project) =>
       handleSelect(async () => {
-        let dir = p.root_path;
+        if (!p.root_path) return;
+        const dir = await projectFolderOnThisMachine({
+          registryId: p.id,
+          name: p.name,
+          rootPath: p.root_path,
+        });
         if (!dir) return;
-        const exists = await window.electron?.dialog?.pathExists?.(dir);
-        if (exists === false) {
-          const pick = await requestDirectory(`Locate ${p.name}`);
-          // cancelled — leave it unavailable this time
-          if (pick.status !== 'picked') return;
-          await rebindProjectPath(p.id, pick.path).catch(() => {});
-          dir = pick.path;
-        }
         requestOpenProject(dir);
         if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),

@@ -74,6 +74,44 @@ describe('useAgentComposerRequests', () => {
     expect(summonProjectOpener).toHaveBeenCalledTimes(1);
   });
 
+  // BUG-327: the operator cancels the chooser, goes to Fleet and comes back
+  // while the request is still pending. The workspace mounts again; the
+  // request was already answered, so the chooser stays shut.
+  it('does not answer a request again when the workspace remounts', () => {
+    requestAgentComposer();
+    const first = mount({
+      enabled: true,
+      ready: true,
+      projects: [],
+      activeProject: null,
+    });
+    expect(first.summonProjectOpener).toHaveBeenCalledTimes(1);
+    first.view.unmount();
+
+    const second = mount({
+      enabled: true,
+      ready: true,
+      projects: [],
+      activeProject: null,
+    });
+    expect(second.summonProjectOpener).not.toHaveBeenCalled();
+
+    // A live request answered while mounted is not answered by a remount
+    // either; a new request is.
+    act(() => requestAgentComposer());
+    expect(second.summonProjectOpener).toHaveBeenCalledTimes(1);
+    second.view.unmount();
+    const third = mount({
+      enabled: true,
+      ready: true,
+      projects: [],
+      activeProject: null,
+    });
+    expect(third.summonProjectOpener).not.toHaveBeenCalled();
+    act(() => requestAgentComposer());
+    expect(third.summonProjectOpener).toHaveBeenCalledTimes(1);
+  });
+
   it('answers each live request once, from the state it arrives in', () => {
     const { view, props, summonProjectOpener, createDraftTab } = mount({
       enabled: true,

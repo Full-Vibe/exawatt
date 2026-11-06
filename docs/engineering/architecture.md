@@ -90,10 +90,12 @@ bootstrap are separate modules. IPC registration is data: module registrars
 are rows in one ordered table and main's own channels are records keyed by
 channel name, all registered through `handleTrusted`. Native dialogs have one
 owner on each side: `native-dialogs.ts` is main's only caller of `dialog.*`,
-lines up every dialog per window, and settles every folder request as picked,
-cancelled or failed with a reason (a macOS sheet that never begins is
-`not-presented`); the renderer asks only through `src/lib/native-dialog`,
-whose requests never reject and whose hook releases the control that asked.
+lines up every dialog per window (holding the line until the native call
+settles and while any sheet, Chromium's own included, is up), and settles
+every request within a deadline counted from the request (a macOS sheet that
+never begins is `not-presented`); the renderer asks only through
+`src/lib/native-dialog`, whose requests never reject, which takes and returns
+focus, and which reports every failure in one notice.
 
 The source tree's module boundaries are declared in `modules.json`
 (ENG-039): 13 modules today (`core`, `ui-model`, the main-process `shell`,

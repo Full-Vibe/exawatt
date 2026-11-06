@@ -253,7 +253,9 @@ describe('Project opener', () => {
     );
   });
 
-  it('releases Browse and says why when the picker never came up', async () => {
+  // Why it failed is the door's one notice (native-dialog.test.tsx), not
+  // the chooser's: the chooser only has to give the controls back.
+  it('releases Browse when the picker never came up', async () => {
     vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue({
       status: 'failed',
       reason: 'not-presented',
@@ -266,8 +268,15 @@ describe('Project opener', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Browse Folder' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('did not open');
-    expect(screen.getByRole('button', { name: 'Browse Folder' })).toBeEnabled();
+    await waitFor(() =>
+      expect(window.electron!.dialog!.openDirectory).toHaveBeenCalledOnce()
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Browse Folder' })
+      ).toBeEnabled()
+    );
+    expect(document.querySelector('[data-project-opener]')).not.toBeNull();
   });
 
   it('releases Browse when the bridge call itself throws', async () => {
@@ -282,8 +291,14 @@ describe('Project opener', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Import Folder' }));
 
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Import Folder' })).toBeEnabled();
+    await waitFor(() =>
+      expect(window.electron!.dialog!.openDirectory).toHaveBeenCalledOnce()
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Import Folder' })
+      ).toBeEnabled()
+    );
     expect(screen.getByRole('button', { name: 'Browse Folder' })).toBeEnabled();
   });
 

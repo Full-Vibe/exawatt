@@ -6041,8 +6041,9 @@ Settings ▸ Fleet screenshots in Classic, Air and Night.
 
 ### BUG-327 New Project's Browse folder goes grey and stays unclickable
 
-Status: fixed · ENG-016 · partner conversation 2026-10-29 · fixed 2026-11-04
-(execution front packet 7)
+Status: fixed · amended 2026-11-05 · ENG-016 · partner conversation
+2026-10-29 · fixed 2026-11-04 (execution front packet 7), amended by review
+front packet 2
 
 The operator, live on the call: ⌘N, Project, Browse folder; the picker did not
 come up ("Did it work?") and Browse then stayed greyed out. A refresh and a
@@ -6073,6 +6074,31 @@ close-and-wait state machine and `directory-picker.ts` are deleted. Proof:
 change), `native-dialogs.test.ts` and `native-dialog.test.tsx` hold the settle
 guarantee, and `eval:electron:project-agent` drives a sheet that never begins,
 a cancel, and a pick in the real app.
+
+Amended 2026-11-05: the review found the settle guarantee had holes. A folder
+request waiting behind a message box that never appeared had no deadline and
+held Browse; a sheet's deadline freed the window while its panel was still
+outstanding, so a late panel's pick went nowhere and a retry could stack a
+second one; Chromium's own sheets (the quick-capture file input) bypassed the
+line; the direct callers lost focus after cancel; a request whose window was
+gone opened an app-wide panel; and a pending New Agent request was answered
+once per mount, so coming back to the workspace reopened the chooser. System
+change: the broker follows each window's `sheet-begin` / `sheet-end` from
+creation (`browser-window-created`), which Electron emits for every sheet on
+the window (its `windowWillBeginSheet:` delegate; cited in
+`native-dialogs.ts`), so any sheet holds the line; every request on a macOS
+window, folder or message box, waiting or asked, settles within 2 s counted
+from the request (time behind a sheet on screen does not count); the line is held until the native call
+settles, and a box that never appeared is closed through its abort signal; a
+folder request whose window is gone is cancelled unshown. The renderer door
+owns the focus handoff both ways and `useFolderRequestPending` replaces the
+per-surface hook. A New Agent request now carries its own claimed mark
+(`claimPendingAgentComposer`), so neither a re-render nor a remount answers it
+twice. Proof: `native-dialogs.test.ts` (box that never appears, late panel,
+Chromium sheet, closed window), `native-dialog.test.tsx` (focus back to a
+stateless caller), `use-agent-composer-requests.dom.test.tsx` (remount), and
+`eval:electron:project-agent` now drives a late sheet and checks no panel is
+ever stacked.
 
 ### BUG-328 The New Agent window opens the engine panel and the model defaults list at once
 
@@ -6323,12 +6349,27 @@ it is moving to; the homepage key listeners subscribe again on every render
 
 ### BUG-339 A failed folder pick from the Start screen says nothing
 
-Status: bug · ENG-016 · found 2026-11-05 by execution front packet 7
+Status: fixed · ENG-016 · found 2026-11-05 by execution front packet 7 ·
+fixed 2026-11-05 (review front packet 2)
 
 When the folder picker fails or never appears from the Start screen, the
 request settles (BUG-327) but the Start screen has no place to show the
 message the project chooser shows, so the operator sees nothing happen. Its
 buttons are never disabled, so nothing gets stuck.
+
+Cause: the failure words lived in the door but only the chooser had a place
+to show them; Start screen Browse and Import and ⌘K Locate dropped every
+outcome but a pick. There were also two Locates: the chooser resolved the
+picked folder to its Project root before rebinding, ⌘K rebound the raw path.
+System change: the door reports every failure itself, into one
+`NativeDialogNotice` mounted once in the root layout (the notice lane), so
+every caller, present and future, fails in the same place with no code of its
+own. One Locate, `projectFolderOnThisMachine` in `src/lib/projects/`, is the
+chooser's version (resolve, then rebind to the root); ⌘K's raw rebind is
+deleted, and a pick that is not a Project fails in the same notice. Proof:
+`native-dialog.test.tsx` (one notice for every caller, none for cancel or
+busy), `project-folder.dom.test.ts`, and `eval:electron:project-agent`
+asserts the notice in the real app.
 
 ### BUG-340 Direct refuses a whole Project's send when one recipient just ended
 

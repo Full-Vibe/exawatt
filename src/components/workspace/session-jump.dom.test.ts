@@ -18,6 +18,7 @@ import {
   REMOTE_AGENT_OPEN_EVENT,
   REOPEN_LAST_CLOSED_EVENT,
   SESSION_JUMP_EVENT,
+  claimPendingAgentComposer,
   consumePendingAgentComposer,
   consumePendingAgentComposerRequest,
   consumePendingLaunch,
@@ -26,7 +27,6 @@ import {
   consumePendingRemoteAgentOpen,
   consumePendingReopenLastClosed,
   consumePendingSessionJump,
-  pendingAgentComposerProjectDir,
   requestAgentComposer,
   requestLaunch,
   requestOpenProject,
@@ -130,18 +130,20 @@ describe('session-jump launch verbs under tenant scope', () => {
 
   // The Fleet board's ghost slot (ENG-004 V4.2): the workspace opens the
   // draft in that Project on mount, and the composer it hosts still gets the
-  // whole request, so reading the Project must not consume the slot.
-  it('names a bound Project without consuming the composer request', () => {
+  // whole request, so the workspace's claim must not consume the slot.
+  it('lets the workspace claim a request once without consuming it', () => {
     publishActiveTenantKind('personal');
     const request = { projectDir: '/code/alpha' };
 
     requestAgentComposer(request);
 
-    expect(pendingAgentComposerProjectDir()).toBe('/code/alpha');
+    expect(claimPendingAgentComposer()).toEqual({ request });
+    expect(claimPendingAgentComposer()).toBeNull();
     expect(consumePendingAgentComposerRequest()).toEqual(request);
-    expect(pendingAgentComposerProjectDir()).toBeNull();
+    expect(claimPendingAgentComposer()).toBeNull();
+    // A new request is claimable again.
     requestAgentComposer('claude');
-    expect(pendingAgentComposerProjectDir()).toBeNull();
+    expect(claimPendingAgentComposer()).toEqual({ request: 'claude' });
   });
 
   it('carries Shell as a configuration selection without launching it', () => {

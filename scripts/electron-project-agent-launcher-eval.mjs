@@ -93,14 +93,18 @@ const launch = () => ({
 /**
  * Stands in for AppKit's folder panel. `answers` are consumed in order (the
  * last repeats): a folder path is picked, 'cancel' is the operator dismissing
- * the sheet, and 'never' is a sheet AppKit never begins, whose request never
- * returns (BUG-327). A sheet that begins announces itself the way AppKit
- * does, with the window's `sheet-begin`.
+ * the sheet, and 'late' is a sheet AppKit begins only after the broker's
+ * presentation deadline and the operator then dismisses (BUG-327). A sheet
+ * announces itself the way AppKit does, with the window's `sheet-begin` as
+ * it starts and `sheet-end` as it closes. Each call records how many panels
+ * were still outstanding when it was asked, so the eval can prove no panel
+ * is ever stacked beside another.
  */
 async function stubDirectoryPicker(app, ...answers) {
   await app.evaluate(({ dialog }, queued) => {
     globalThis.__EXAWATT_DIRECTORY_PICKER_CALLS = [];
     globalThis.__EXAWATT_DIRECTORY_PICKER_ANSWERS = queued;
+    globalThis.__EXAWATT_DIRECTORY_PICKER_OUTSTANDING = 0;
     dialog.showOpenDialog = async (...args) => {
       const attached = args.length === 2;
       const parent = attached ? args[0] : null;
@@ -123,12 +127,22 @@ async function stubDirectoryPicker(app, ...answers) {
         attached,
         options,
         renderer,
+        outstanding: globalThis.__EXAWATT_DIRECTORY_PICKER_OUTSTANDING,
       });
-      if (answer === 'never') return await new Promise(() => {});
-      parent?.emit('sheet-begin');
-      return answer === 'cancel'
-        ? { canceled: true, filePaths: [], bookmarks: [] }
-        : { canceled: false, filePaths: [answer], bookmarks: [] };
+      globalThis.__EXAWATT_DIRECTORY_PICKER_OUTSTANDING += 1;
+      try {
+        if (answer === 'late') {
+          // Past the broker's 2 s presentation deadline.
+          await new Promise(resolve => setTimeout(resolve, 3_000));
+        }
+        parent?.emit('sheet-begin');
+        parent?.emit('sheet-end');
+        return answer === 'cancel' || answer === 'late'
+          ? { canceled: true, filePaths: [], bookmarks: [] }
+          : { canceled: false, filePaths: [answer], bookmarks: [] };
+      } finally {
+        globalThis.__EXAWATT_DIRECTORY_PICKER_OUTSTANDING -= 1;
+      }
     };
   }, answers);
 }
@@ -323,7 +337,7 @@ try {
         console.log(`[project-launcher] pageerror: ${error.message}`)
       );
       await page.locator('[data-command-altitude]').waitFor();
-      await stubDirectoryPicker(app, 'never', 'cancel', projectA);
+      await stubDirectoryPicker(app, 'late', 'cancel', projectA);
       await page.waitForTimeout(250);
 
       const fileMenu = await app.evaluate(({ Menu }) =>
@@ -424,8 +438,9 @@ try {
       const browseRoute = page.locator(
         '[data-project-opener] [data-project-route="browse"]'
       );
-      // BUG-327: a sheet AppKit never begins. The request settles, Browse
-      // comes back, and the chooser says why, with no reload.
+      // BUG-327: a sheet AppKit has not begun by the deadline. The request
+      // settles, Browse comes back, and the one failure notice says why
+      // (BUG-339), with no reload.
       await browseRoute.click();
       await page.waitForFunction(
         () =>
@@ -441,16 +456,17 @@ try {
         return (
           browse instanceof HTMLButtonElement &&
           !browse.disabled &&
-          document.querySelector('[data-project-opener] [role="alert"]') !==
-            null
+          document.querySelector('[data-native-dialog-failure]') !== null
         );
       });
       check('a picker that never appears releases Browse and says so', true);
       await page.screenshot({
         path: join(output, '01b-picker-not-presented.png'),
       });
-      // The operator dismisses the sheet: the chooser never left, and Browse
-      // has the keyboard again.
+      // The operator retries while the late panel is still outstanding: the
+      // retry waits for it instead of stacking a second panel, then the
+      // operator dismisses the sheet. The chooser never left, and Browse has
+      // the keyboard again.
       await browseRoute.click();
       await page.waitForFunction(() => {
         const browse = document.querySelector(
@@ -470,6 +486,10 @@ try {
       check(
         'each Browse asks for exactly one picker',
         pickerCalls.length === 3
+      );
+      check(
+        'a retry never stacks a panel beside a late one',
+        pickerCalls.every(call => call.outstanding === 0)
       );
       check(
         'the chooser waits under the picker with no control holding the keyboard',
