@@ -63,6 +63,72 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 | ENG-022 | Agent development-loop hardening                 | active-build | Preserve honest worktrees while replacing stale-base races and dogfood lock contention with one fair, policy-driven delivery queue.                                                    |
 | ENG-039 | Module-owned code and verification topology      | active-build | Refactor around explicit source modules whose public contracts, dependencies, and layered test suites make selective verification trustworthy.                                         |
 
+## Review front (2026-11-05): what the 2026-11-04 front's review found
+
+Seven independent reviews of the 2026-11-04 front, one per packet, read each
+landed change against its claimed bugs. Same rule as that front: each packet
+upgrades the system its findings share, and the records amend the bug they
+belong to (reopened where the fix was partial). One worktree per packet, one
+train, packet 6 last.
+
+Operator rulings this front carries (2026-11-05, in session):
+
+- **A turn another Agent started is quiet however it ends.** No unread mark,
+  no ⌘J entry and no sound, from a result or from the harness's own bell.
+  Coordinator's call, flagged to the operator: a request only he can answer
+  (a permission or a question) still breaks through, because it is a specific
+  reason to get his attention and the Agent stalls without him.
+- **Sound and visible state are one-to-one.** Every alert sound or
+  notification coincides with a visible change in attention on screen, and
+  every visible rise in attention alerts when alerts are on. Amends decision
+  `0046`.
+
+1. **turn-record** (ENG-029, ENG-002, ENG-015). A turn opens in one place, at
+   a real boundary (a reported turn start, or settled to working), and its
+   initiator binds to that turn: a message delivered into a running turn
+   opens the next one, an expectation dies with its failed delivery or its
+   turn, and a turn nobody claimed is the operator's. A new turn's result
+   supersedes the last one whatever its read bit. Alerts derive from the
+   visible attention projection, so the one-to-one rule holds by
+   construction. Exawatt's own marker bytes are not process output; a lone
+   Escape in a generating turn is an expected interrupt; suspended time is
+   never silence. Amends BUG-332 (the fix swallowed the operator's own results
+   and Claude's idle bell brought the symptom back), BUG-333 (selection falls
+   back to position), BUG-330, BUG-342. Owns `electron/main/pty/`, the bus
+   dispatcher and doors, `pty-ipc.ts`'s alert and input paths, the bus core's
+   recipient cap and decision `0046`.
+2. **dialog-broker** (ENG-016). Every sheet's deadline runs from the request;
+   a window's line is held until the native call settles, and Chromium's own
+   dialogs occupy it; the one door that takes focus gives it back; a request
+   whose window is gone cancels; every caller shows a failure in one shared
+   place; one Locate. Amends BUG-327, BUG-339. Owns `native-dialogs.ts`,
+   `src/lib/native-dialog/`, `project-opener.tsx`, and the Browse, Import
+   and Locate call sites.
+3. **landing-parity** (ENG-022). The landing runs the projection's per-commit
+   render, not only its path classification; the pinned Node is provisioned
+   once as infrastructure, never blamed on a car; the docs lane's checks come
+   from the same policy; the flake memory holds every check a tree answered;
+   suites pin by default. Amends BUG-320, BUG-321, BUG-322.
+4. **launch-config** (ENG-016). A named setup carries the effort it was
+   saved with and is never merged with or overwritten by another; one owner
+   for the chosen effort and where it came from; launch options leave the
+   launcher's form; ChoiceGroup is a radio group with one tab stop and arrow
+   keys, used by the theme cards too; Electron-unsupported `window.prompt`
+   and `window.confirm` become in-app dialogs. Amends BUG-334, BUG-326. Owns
+   `launch-controls.tsx`, the launcher, `choice-group.tsx` and Settings
+   Appearance.
+5. **renderer-helper** (ENG-016, ENG-030). The renderer server's owner
+   classifies its own deaths, so a quit is not a crash; one "hermetic test
+   run" predicate gates the throwaway profile and the stand-in keychain
+   together; the network check knows the app's processes by their executable
+   image. Amends BUG-310, BUG-336, BUG-337.
+6. **committed-input** (ENG-039, ENG-004). The board route's owner exposes the
+   relative verbs (ascend, select, toggle) computed from the latest address,
+   which only an outside URL change rewrites; a New Agent request is claimed
+   once; a drag ends a close hold; and `react-hooks/refs` is on, with every
+   finding fixed at its cause (packets 2 and 4 fix their own files). Amends
+   BUG-323, BUG-318, BUG-338.
+
 ## Execution front (2026-11-04): system upgrades for the open backlog
 
 Operator direction (2026-11-04): fix the open bugs "through holistic general
