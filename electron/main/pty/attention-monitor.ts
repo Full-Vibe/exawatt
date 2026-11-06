@@ -147,7 +147,7 @@ export type AttentionBell =
     };
 
 /** Which terminal sequence rang: a real BEL, or a notification OSC. */
-export type TerminalBellSignal = 'bel' | 'osc-9' | 'osc-777';
+type TerminalBellSignal = 'bel' | 'osc-9' | 'osc-777';
 
 /** One Session's turn: whether one is open, and whose it is. */
 interface TurnRecord {
@@ -168,6 +168,9 @@ interface TurnExpectation {
   /** Takeable by the next opening. Delivered into a running turn, it arms
    *  when that turn closes: the message runs as the next turn. */
   armed: boolean;
+  /** What the door does with it if a turn is running (the door's own
+   *  declaration): `joins` is read into that turn, `next-turn` runs after. */
+  midTurn: 'joins' | 'next-turn';
 }
 
 export interface AttentionMonitorOptions {
@@ -535,7 +538,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   ): () => void {
     const open = this.turns.get(id)?.open ?? false;
     if (open && midTurn === 'joins') return () => {};
-    const expectation: TurnExpectation = { initiator, armed: !open };
+    const expectation: TurnExpectation = { initiator, armed: !open, midTurn };
     this.setExpected(id, [...(this.expected.get(id) ?? []), expectation]);
     return () => {
       const queue = this.expected.get(id);
@@ -594,6 +597,15 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    * The new turn is the oldest armed expectation's, else the operator's: a
    * turn nobody claimed never "continues as the last turn's" (a parent
    * resuming on its child's result after a peer's turn is his work).
+   *
+   * No armed claim outlives the opening it was armed for. The other armed
+   * claims of a door that reads messages into a running turn (`joins`) were
+   * read into this one, so they end with it, and an operator message among
+   * them makes the turn his: two messages reaching an idle Claude before its
+   * turn-start report returns are one turn, and the second must not stay to
+   * claim a later turn nobody sent (review front 2026-11-05). The other
+   * armed claims of a queue (`next-turn`) wait again: a queue runs one
+   * message per turn, and each arms when the turn before it closes.
    */
   private openTurn(
     id: string,
@@ -613,13 +625,21 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     turn.serial += 1;
     const queue = this.expected.get(id) ?? [];
     const claim =
-      cause === 'operator' ? -1 : queue.findIndex(item => item.armed);
-    turn.initiator = claim === -1 ? OPERATOR_TURN : queue[claim].initiator;
-    if (claim !== -1)
-      this.setExpected(
-        id,
-        queue.filter((_, index) => index !== claim)
-      );
+      cause === 'operator' ? undefined : queue.find(item => item.armed);
+    const joined = claim
+      ? queue.filter(
+          item => item.armed && item !== claim && item.midTurn === 'joins'
+        )
+      : [];
+    turn.initiator =
+      !claim || joined.some(item => item.initiator.kind === 'operator')
+        ? OPERATOR_TURN
+        : claim.initiator;
+    const waiting = queue.filter(
+      item => item !== claim && !joined.includes(item)
+    );
+    for (const item of waiting) item.armed = false;
+    this.setExpected(id, waiting);
   }
 
   /** The turn ended. A message queued for the next turn arms now. */

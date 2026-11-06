@@ -80,6 +80,62 @@ describe('the turn record', () => {
     monitor.on('bell', (_id, bell) => bells.push(bell));
   });
 
+  describe('a claim lives only as long as the turn it should open', () => {
+    const peerC: TurnInitiator = { kind: 'agent', sessionId: 's-c', name: 'c' };
+
+    it('claude: a second message read into the first message’s turn leaves no claim behind', () => {
+      // Two peers reach an idle Claude before its turn-start report returns:
+      // both claims are armed, and the socket reads the second into the
+      // first's turn. The next turn nobody claimed (a parent resuming on its
+      // child's result) is the operator's.
+      add('a');
+      monitor.expectTurn('a', peer, 'joins');
+      monitor.expectTurn('a', peerC, 'joins');
+      report = generating();
+      monitor.noteHarnessTurnStart('a');
+      report = available();
+      monitor.noteHarnessTurnEnd('a');
+      expect(alerts).toEqual([]);
+      report = generating();
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.turnInitiator('a')).toEqual(OPERATOR);
+      report = available();
+      monitor.noteHarnessTurnEnd('a');
+      expect(alerts).toEqual(['a:turn-end:true']);
+    });
+
+    it('claude: an operator message read into a peer’s turn makes that turn his', () => {
+      add('a');
+      monitor.expectTurn('a', peer, 'joins');
+      monitor.expectTurn('a', OPERATOR, 'joins');
+      report = generating();
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.turnInitiator('a')).toEqual(OPERATOR);
+      report = available();
+      monitor.noteHarnessTurnEnd('a');
+      expect(alerts).toEqual(['a:turn-end:true']);
+    });
+
+    it('codex: queued messages run one turn each, in order', () => {
+      add('a', 'codex');
+      monitor.noteEngaged('a');
+      report = generating();
+      monitor.noteHarnessTurnStart('a');
+      monitor.expectTurn('a', peer, 'next-turn');
+      monitor.expectTurn('a', OPERATOR, 'next-turn');
+      report = available();
+      monitor.noteHarnessTurnEnd('a');
+      report = generating();
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.turnInitiator('a')).toEqual(peer);
+      report = available();
+      monitor.noteHarnessTurnEnd('a');
+      report = generating();
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.turnInitiator('a')).toEqual(OPERATOR);
+    });
+  });
+
   describe('a peer message delivered into the operator’s running turn', () => {
     // Review P8. The socket (Claude) joins the running turn; the queue
     // (Codex) runs it as the next turn. Neither may hand the operator's

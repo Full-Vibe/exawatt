@@ -19,7 +19,7 @@
  */
 import type { HostPowerSnapshot } from '@exawatt/core/desktop-bridge';
 
-export interface AwakeClock {
+interface AwakeClock {
   /** Awake milliseconds, comparable only with another reading of this clock. */
   now(): number;
   suspended(): void;
