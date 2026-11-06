@@ -278,16 +278,20 @@ serves a worktree the train just created.
   guilty=<car> check=<check> passed=<cars> rest=passed|failed:<check>`.
   Nothing lands and no ticket is taken; each step is a `landing_check` with
   `phase: "bisect"`.
-- **One tree, two answers, no conviction** (BUG-322). The train keeps every
-  answer it gets, by tree and check. A bisection convicts a car only by
-  comparing different trees, so when one tree has passed and failed the same
-  check (a prefix that passed it and the stack without the last car, which
-  is that prefix again, failing it) the train refuses with `TRAIN flake:
-  <check> passed and failed on the same tree <tree>`, convicts no car, prints
-  `STATUS failed=train flake=<check> tree=<tree> cars=<cars>` and records a
-  `train_flake` metric. Nothing lands; chase the flake and run the train
-  again. A pass reused for the same tree is the same answer, not a second
-  one.
+- **One tree, two answers, no conviction** (BUG-322). The landing remembers
+  every verdict every check gives, by tree and check: the check a bisection
+  asked about, the checks it needs that ran first, and every check a full run
+  passed before the one that failed. A check that reads history as well as
+  the tree (`readsHistory`: the per-commit path classification and the
+  landing's gitleaks scan) is remembered by commit instead, so a car that
+  adds a file and removes it again, leaving the tree as the car before it
+  left it, is still told apart. A bisection convicts a car only by comparing
+  different trees, so when one tree (or commit) has passed and failed the
+  same check the train refuses with `TRAIN flake: <check> passed and failed
+  on the same tree <tree>`, convicts no car, prints `STATUS failed=train
+  flake=<check> tree=<tree> cars=<cars>` and records a `train_flake` metric.
+  Nothing lands; chase the flake and run the train again. A pass reused for
+  the same tree is the same answer, not a second one.
 - **`--land-passing`** lands the cars that pass: the guilty car is left out,
   the rest are restacked (a later car that conflicts without it is left out
   too), checked, bisected again if red, and landed, every left-out car named
@@ -338,7 +342,7 @@ stream.
 
 | Condition                                                                               | Required check                                                                                                |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Every candidate                                                                         | fail-closed path classification, first per commit as the public projection asks it and then over the tree (`pnpm open-source:paths:check -- --landing`, BUG-321), public-bound content scan, a gitleaks scan of only the commits the candidate adds (`pnpm security:secrets:landing`, the pinned binary and `scripts/gitleaks.toml`; a scanner it cannot obtain fails the check, BUG-316), the asset provenance manifest (`pnpm assets:check`, BUG-316), and the delivery pins: the whole `pnpm test:agent-delivery` when a changed path can reach what it reads (`deliveryAffectingPath`), otherwise `pnpm test:delivery-pins` (`PRODUCT_TREE_PINS`, the five suite files that read the product tree) |
+| Every candidate                                                                         | fail-closed path classification, first each commit replayed as the public projection replays it, public variants rendered, and then over the tree (`pnpm open-source:paths:check -- --landing`, BUG-321), public-bound content scan, a gitleaks scan of only the commits the candidate adds (`pnpm security:secrets:landing`, the pinned binary and `scripts/gitleaks.toml`; a scanner it cannot obtain fails the check, BUG-316), the asset provenance manifest (`pnpm assets:check`, BUG-316), and the delivery pins: the whole `pnpm test:agent-delivery` when a changed path can reach what it reads (`deliveryAffectingPath`), otherwise `pnpm test:delivery-pins` (`PRODUCT_TREE_PINS`, the five suite files that read the product tree) |
 | Any change the module topology cannot scope (below): an undeclared path, a module's public surface, `modules.json`, shared configuration, a train | `pnpm lint` and `pnpm type-check` |
 | A change inside declared modules, off their public surface                               | `lint:modules` (ESLint over those modules' paths) and `pnpm type-check:modules` (the program the change can reach) |
 | Changed JavaScript or TypeScript                                                        | the consumer-less export check (`pnpm exports:check`: a NEW export must have a consumer; existing ones are not counted) and `pnpm modules:check` (every import keeps `modules.json`), then the tests: the module closure as `module-tests`, the repository-wide related Vitest selection for what the topology cannot scope, or the whole suite as `full-suite` for shared test infrastructure and a train; each bounded to 25% workers, with one isolated rerun of any file it names failing |
@@ -354,33 +358,53 @@ stream.
 
 The path classification runs first because it is the cheapest question
 that can refuse an hour of work. The public projection replays private
-history one commit at a time, each against the manifest that commit
-carries, so a commit that adds a file only a later commit classifies passes
-a check of the final tree and is refused at publication: on 2026-10-22 a
-two-car train ran an hour of checks and gates and then the projection
-refused it. The landing form walks every commit HEAD adds since it left
-`origin/master` with the projection's own steps
-(`checkCommitClassification` in `scripts/lib/public-projection.mjs`): a
-commit that moves the manifest is answered by Gate A over its whole tree,
-any other by classifying each path it changes. It refuses in seconds,
-naming the commit, and it requires the linear history the projection
-requires. Because it reads history, not only the tree, its passes are never
-reused.
+history one commit at a time, each against the manifest and the bytes that
+commit carries, so a commit that adds a file only a later commit classifies,
+or a public-variant directive only a later commit repairs, passes every check
+of the final tree and is refused at publication: on 2026-10-22 a two-car
+train ran an hour of checks and gates and then the projection refused it,
+and BUG-131 stalled publication on a directive the tip had already fixed.
+The landing form runs the replay's own per-commit step
+(`replaySourceCommit`, through `checkCommitReplay` in
+`scripts/lib/public-projection.mjs`) on every commit HEAD adds since it left
+`origin/master`, into a throwaway repository that reads the source's objects
+through git's alternates: a commit that moves the manifest is projected
+whole by Gate A, any other by classifying each path it changes and
+rendering each public variant it affects, and the walk ends with Gate A over
+the tip as the replay does. The walk starts from no public outputs rather
+than master's projection, so a repair landed under a maintenance hold is not
+refused for master's own state, and no refusal of a commit reads them. It
+refuses in seconds (about eight for fifteen commits), naming the commit, and
+it requires the linear history the projection requires. Because it reads
+history, not only the tree, its passes are never reused.
 
-The test suites run on the Node release public CI runs (BUG-320).
+Every landing check runs on the Node release public CI runs (BUG-320).
 `.node-version` names one exact release; every workflow's `setup-node`
-reads it (`node-version-file`), and the landing gives each suite check
-(`test:agent-delivery`, the delivery pins, the related, module, scanning
-and whole Vitest selections, `test:service-conformance`) that release
-through pnpm's own runtime pin (`npm_config_use_node_version`). pnpm fetches
-it once per machine and puts it first on PATH for the check, every script
-it runs and every binary those call; the isolated rerun of a failed file
-gets it too. The check line, its evidence and its metric name the release
-(`node`). Other checks, and the gates, keep the landing's Node: CI runs no
-dev server or Electron. Before the pin, three commits passed every landing
-on this Mac's Node 26 and failed CI on Node 22 alone. Moving CI to a new
-release is one edit to `.node-version`, owed in the same change as anything
-it breaks.
+reads it (`node-version-file`), and the landing gives each check that
+release through pnpm's own runtime pin (`npm_config_use_node_version`).
+Pinning is the default, applied where every check set ends
+(`repositoryChecks`), so a check added later runs as CI runs it without
+joining a list; a check opts out with `pinned: false`, and only the ones
+that drive this Mac's dev server, Electron or a browser do (the surface
+gates, `eval:r3f`, `qa:browser:doctor`, `electron:compile`). The docs lane
+and `pnpm docs:check` pass through the same step, so the renderer contract
+(`pnpm exec node --test scripts/recipe-renderers.test.mjs`) runs on that
+release too. pnpm puts the release first on PATH for the check, every script
+it runs and every binary those call; the isolated rerun of a failed file gets
+it too. The check line, its evidence and its metric name the release
+(`node`). Before any check runs, beside the install refresh, the landing
+makes each release its checks need ready (`provisionCheckNode`: pnpm's
+`node` must report exactly that release), once per release per landing.
+pnpm fetches a release from nodejs.org the first time it is asked, so
+offline every pinned check used to fail with pnpm's download error and a
+train convicted a car for it; now the landing stops with `Node <release> ...
+is not ready on this machine`, records `check_node_failed`, and convicts no
+car, so a `--land-passing` train is never drained by it. A tree whose
+`.node-version` cannot be read stops the landing too; only a tree without
+the file runs on the landing's Node. Before the pin, three commits passed
+every landing on this Mac's Node 26 and failed CI on Node 22 alone. Moving
+CI to a new release is one edit to `.node-version`, owed in the same change
+as anything it breaks.
 
 A test that reads repository files instead of importing them (a ratchet, a
 whole-tree guard, a schema or contract parity test, a test that spawns a
@@ -440,7 +464,7 @@ again (`scripts/lib/check-reuse.mjs`). The key is a SHA-256 over the committed
 tree, the command and arguments, pnpm's installed lockfile, the Node version
 and platform, the worktree's real path, and the distribution environment, so
 a reuse can only stand in for an identical run: a resubmitted commit after a
-later check failed, or a rebased tree resubmitted as a candidate. A suite
+later check failed, or a rebased tree resubmitted as a candidate. A check
 pinned to CI's Node keys on that release too. Surface gates and evals,
 `type-check` and `type-check:modules` (they build the core runtime the
 delivery suite loads), `electron:compile`, the community build, the path

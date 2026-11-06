@@ -5813,7 +5813,7 @@ fail, 6 of them reading attributes the product had retired.
 
 ### BUG-320 Landings test on this Mac's Node while public CI and releases run Node 22
 
-Status: fixed 2026-11-04 · ENG-022 · found 2026-10-22 when public CI failed on two commits that passed every landing check; landing-parity packet, Execution front (2026-11-04).
+Status: fixed 2026-11-04 · amended 2026-11-05 · ENG-022 · found 2026-10-22 when public CI failed on two commits that passed every landing check; landing-parity packet, Execution front (2026-11-04); amended by Review front (2026-11-05) packet 3.
 
 Landings run the test suites with this Mac's Node (26). Public CI and the
 release builds run Node 22, the oldest `engines` allows (`>=22.18`). On
@@ -5841,9 +5841,28 @@ check reuse keys on it. Gates and the other checks keep the landing's Node.
 `engines`' major, and the runner to passing the pin to a suite and its rerun
 and not to lint.
 
+Amended 2026-11-05: the review found the fix partial. The docs lane's
+renderer contract ran as a bare `node` command outside the pinning, so `agent:land
+--docs` still ran it on Node 26; a pinned release pnpm could not fetch
+(offline, nodejs.org down) failed every pinned check, which a train bisected
+to the first car, or with `--land-passing` drained car by car; the pinned set
+was a hand-kept list a new suite had to join; and an unreadable
+`.node-version` read as absent. Now every check set ends in one step
+(`repositoryChecks`) that pins each check unless it says `pinned: false`
+(only what drives this Mac's dev server, Electron or a browser), the docs
+checks pass through it with the renderer contract as a pnpm command, the
+landing makes each release ready before any check beside the install refresh
+(`provisionCheckNode`, thrown as the machine's, recorded as
+`check_node_failed`, never a check verdict), and only a tree without the file
+is unpinned. `merge-train.test.mjs` runs a `--land-passing` train with the
+release unreachable (no car convicted or left out, then the same train lands
+asking for it once), `docs-check.test.mjs` holds every docs check to the
+release, and `delivery-policy.test.mjs` holds the default and an unreadable
+pin; each fails with the change reverted.
+
 ### BUG-321 A landing checks path classification on its final tree; the public copy checks every commit
 
-Status: fixed 2026-11-04 · ENG-030 · found 2026-10-22 when a train passed every check and gate and the public copy refused it; landing-parity packet, Execution front (2026-11-04).
+Status: fixed 2026-11-04 · amended 2026-11-05 · ENG-030 · found 2026-10-22 when a train passed every check and gate and the public copy refused it; landing-parity packet, Execution front (2026-11-04); amended by Review front (2026-11-05) packet 3.
 
 `open-source:paths:check` classifies the tree a landing ends with. The public
 projection replays private commits one at a time, each against the manifest
@@ -5860,7 +5879,8 @@ any other check, so the train refuses in seconds.
 Resolved 2026-11-04: the landing's first check is now `open-source:paths:check
 -- --landing`, which walks every commit HEAD adds since `origin/master` with
 the replay's own steps, now shared code in `public-projection.mjs`
-(`checkCommitClassification`): a commit that moves the manifest is answered by
+(`checkCommitClassification`, since replaced by `checkCommitReplay`): a
+commit that moves the manifest is answered by
 Gate A over its whole tree, any other by classifying each changed path, then
 the tree check runs as before. Replayed on the incident's own commits it
 refuses `0ff48b49` by name in 0.3 s. Its passes are no longer reused, since
@@ -5869,9 +5889,23 @@ one tree can sit on histories the projection answers differently.
 same histories (added late, added and classified together, classified before
 the file exists) and asserts they refuse the same commit or both pass.
 
+Amended 2026-11-05: the review found the landing asked only the replay's
+classification question, never its render: a commit that adds a public-variant
+directive the renderer refuses, repaired by a later commit, passed the landing
+and stalled publication (the BUG-131 shape). The replay's per-commit step is
+now one function, `replaySourceCommit` (Gate A for a manifest move, otherwise
+classify and render each affected variant), which the replay and the landing
+both call; the landing (`checkCommitReplay`, replacing
+`checkCommitClassification`) runs it on each commit into a throwaway
+repository that reads the source's objects through alternates, then Gate A over
+the tip, about 8 s for 15 commits. The parity test adds a directive broken in
+one commit and repaired in the next: both refuse the breaking commit by name
+and both pass the same tree made in one commit; it fails with the change
+reverted.
+
 ### BUG-322 A train's bisect convicted a docs car for a check the same tree had passed
 
-Status: fixed 2026-11-04 · ENG-039 M3 · found 2026-10-22 in a four-car coordinator train; landing-parity packet, Execution front (2026-11-04).
+Status: fixed 2026-11-04 · amended 2026-11-05 · ENG-039 M3 · found 2026-10-22 in a four-car coordinator train; landing-parity packet, Execution front (2026-11-04); amended by Review front (2026-11-05) packet 3.
 
 A four-car train (session-custody, frame-demand, eval-handles and a docs car
 last) failed `eval:spatial` twice on the full stack. The three-car
@@ -5891,6 +5925,18 @@ failed=train flake=<check> tree=<tree> cars=<cars>` and records a
 `train_flake` metric. `merge-train.test.mjs` replays the incident (four cars,
 the check failing on runs 1, 2 and 5) and fails without the change; a last car
 that fails every time is still convicted by elimination.
+
+Amended 2026-11-05: the review found the memory held only the answer the
+bisection asked for, so a prerequisite that passed on a tree (type-check before
+the delivery suite) and then failed there read as a second guilty car, and
+keyed every check by tree, so a car that adds and removes a file was called a
+flake by the history-reading path check. The landing session now remembers
+every verdict it records, prerequisites and earlier passes included, by tree,
+or by commit for a check that declares `readsHistory` (the per-commit path
+classification and the landing's gitleaks scan); the train refuses on the
+session's first contradiction. `merge-train.test.mjs` adds both cases; each
+fails with the change reverted. A red check still never lands: a contradiction
+refuses the train.
 
 ### BUG-323 Pressing 0 right after a Fleet drill only re-centers
 
