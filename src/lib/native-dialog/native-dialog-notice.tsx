@@ -9,7 +9,7 @@ import {
 } from './native-dialog';
 
 /** Long enough to read a sentence; the next request clears it sooner. */
-export const NATIVE_DIALOG_NOTICE_MS = 8_000;
+const NATIVE_DIALOG_NOTICE_MS = 8_000;
 
 /**
  * The one place a folder request says why it ended without the operator's
