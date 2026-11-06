@@ -45,10 +45,10 @@ type Boundaries = {
 };
 
 const SESSION_ID = /^[A-Za-z0-9._-]{1,200}$/;
-/** The most recipients one operator message may name: more than any Fleet
- *  selection Direct sends to, few enough that a send is never a broadcast
- *  storm through the terminal door. */
-const BUS_MAX_RECIPIENTS = 64;
+/** A shape bound on a send's recipient list, as the 64 KiB text bound is on
+ *  its text: the bus core owns, and words, the real limit
+ *  (`BUS_MAX_RECIPIENTS`). */
+const BUS_RECIPIENT_LIST_SHAPE = 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -450,7 +450,8 @@ export const ARGUMENT_BOUNDARIES = {
     },
   },
   // ENG-029 C4: a send types into an Agent's terminal, so its shape is read
-  // here. One message names up to BUS_MAX_RECIPIENTS recipients. Length beyond the bus's own bound is the bus's refusal to word.
+  // here. Counts and lengths beyond the bus's own bounds are the bus's
+  // refusal to word.
   'bus:send': {
     read([request]) {
       if (
@@ -461,7 +462,7 @@ export const ARGUMENT_BOUNDARIES = {
         request.projectId.length > 4096 ||
         !Array.isArray(request.to) ||
         request.to.length === 0 ||
-        request.to.length > BUS_MAX_RECIPIENTS ||
+        request.to.length > BUS_RECIPIENT_LIST_SHAPE ||
         !request.to.every(
           (to: unknown) =>
             typeof to === 'string' && to.length > 0 && to.length <= 240

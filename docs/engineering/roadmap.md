@@ -6178,9 +6178,18 @@ Project; `exawatt send @a,@b` and the MCP send tool take several. Proof:
 `ledger.test.ts` (per-recipient deliveries, v1 migration),
 `direct-composer.test.tsx`, `eval:electron:fleet-direct`.
 
+Amended 2026-11-05 (review front packet 1): the 64-recipient cap lived only
+at the renderer's IPC boundary, so the `exawatt` command and the MCP send
+tool were bounded only by the Project's size. The bus core now owns it
+(`BUS_MAX_RECIPIENTS`, refused with a worded reason in `dispatch.send` for
+every door), and the IPC keeps only a shape bound. The ledger's claim that
+a downgrade reads its old messages was wrong (an older build fails the fold
+at the first v2 line) and now says so. Proof: `dispatch.test.ts` ("the
+recipient cap").
+
 ### BUG-330 A Claude Agent's working timer froze for a minute or two
 
-Status: done · ENG-002 · partner conversation 2026-11-04; session-liveness packet, Execution front (2026-11-04)
+Status: done · amended 2026-11-05 · ENG-002 · partner conversation 2026-11-04; session-liveness packet, Execution front (2026-11-04); review front packet 1
 
 An external user reported that a Claude Code Agent's working line ("clauding"
 and its elapsed counter) "was stuck on three minutes twenty seconds for about a
@@ -6214,6 +6223,19 @@ tests (`session-liveness.test.ts`, `pane-paint-reporter.test.ts`) and an IPC
 test through preload and the argument boundary pin it. A recurrence now
 names its side in the log.
 
+Amended 2026-11-05. The review found the harness side could mislabel the
+recurrence it exists for: Exawatt's exit marker reached liveness as output,
+so a stalled harness that exited was logged as recovered; silence was wall
+time, so a Mac's sleep could be logged as a harness stall; and input was
+recorded only for keystrokes, not a paste or a bus door. System change: the
+Session owner's `data` event names its origin and only process output counts
+for liveness and the attention monitor; silence is measured on one awake
+clock fed by the host power observer (`awake-clock.ts`); and liveness takes
+its input fact from the one engagement owner. Proof:
+`session-liveness.ipc.test.ts` (the real exit order clears as `exited`; a
+paste counts), `awake-clock.test.ts`, `turn-record.test.ts` (a sleep
+reclaims nothing), `eval:electron:session-liveness`.
+
 ### BUG-331 The default unrestricted mode reads as an outdated harness to a new user
 
 Status: fixed · ENG-016 · partner conversation 2026-11-04; fixed 2026-11-04 by
@@ -6246,8 +6268,8 @@ reads the stated mode back against main's record.
 
 ### BUG-332 Bus traffic marks an idle Agent unread and puts it in ⌘J each time
 
-Status: fixed · ENG-029 · product-feedback 5fb9f54c 2026-10-22 · fixed
-2026-11-04, execution front packet 1
+Status: fixed · amended 2026-11-05 · ENG-029 · product-feedback 5fb9f54c
+2026-10-22 · fixed 2026-11-04, execution front packet 1; review front packet 1
 
 The operator: "These messages are spamming an idle agent, and make the agent
 unread and show up in the cmd+j queue each time. Not sure what the fix is, but
@@ -6267,10 +6289,33 @@ an amendment to decision `0046`. Proof: `attention-monitor.test.ts` ("turns
 another Agent started"), `dispatch.test.ts` ("who starts the turn"),
 `eval:electron:turn-truth`.
 
+Amended 2026-11-05. The review found the initiator was a loose flag: any
+"working" edge took it, including output resuming after a 3 s pause, so a
+peer message delivered into the operator's running turn handed that turn to
+the peer and swallowed his result (Claude, Codex, and Antigravity's queued
+door); an expectation outlived failed or absorbed deliveries; a turn nobody
+claimed inherited the last turn's owner; OpenCode and Grok swallowed the
+operator's next result behind any earlier one; and Claude's idle bell, a
+minute after `Stop`, brought the original symptom back. System change: one
+turn record per Session. A turn opens in one place, at a reported start,
+work given with no turn open, or output with no turn open; it takes the
+oldest armed claim, else it is the operator's. Each door declares what a
+message delivered mid-turn becomes (Claude's socket joins the turn, a queue
+runs it next), and a failed delivery withdraws its claim. A new turn's
+result supersedes the last whatever its read bit. Under the operator's
+2026-11-05 ruling a peer's turn is quiet however it ends, its bell included,
+and alerts derive in one place from the visible projection rising, so a
+sound always has a visible change (decision `0046` amendment); a request
+only he can answer still alerts (the coordinator's call, pending his
+confirmation). Every bell writes `attention.bell` with why, and OSC 9;4
+progress is no longer read as a bell. Proof: `turn-record.test.ts` (each of
+the review's probes), `session-attention.test.ts` (the visible rise),
+`dispatch.test.ts` (claims and withdrawals), `eval:electron:turn-truth`.
+
 ### BUG-333 Chatter's selected Agent changed while the operator was reading it
 
-Status: fixed · ENG-029 · product-feedback bfb10af1 2026-10-22 · fixed
-2026-11-04, execution front packet 1
+Status: fixed · amended 2026-11-05 · ENG-029 · product-feedback bfb10af1
+2026-10-22 · fixed 2026-11-04, execution front packet 1; review front packet 1
 
 The operator: "I was looking at Chatter (10) and then the selected agent
 switched and I didn't see any chatter - selection shouldn't change
@@ -6284,6 +6329,14 @@ were indexes into a newest-first list. System change: both are held by
 identity (`useKeyedSelection` keyed by tile, Chatter by message id), so only
 operator action moves them. Proof: `use-keyed-selection.dom.test.ts`,
 `expose-overlay.test.tsx`, `team-dock.test.tsx`, `eval:workspace:team`.
+
+Amended 2026-11-05. The review found one gap: when the selected tile's key
+disappeared and the count stayed the same (an empty Project's placeholder
+becoming its first tab), the selection fell back to a position and drifted
+with the next reorder. A gone selection now holds the item that took its
+place by that item's key until the operator moves it. Proof:
+`use-keyed-selection.dom.test.ts` ("holds the item that took a gone
+selection's place").
 
 ### BUG-334 Effort is flattened into the New Agent model list
 
@@ -6494,9 +6547,21 @@ trigger opens nothing there.
 
 ### BUG-342 Escape that stops a Claude turn also triggers the stale-turn reclaim
 
-Status: bug · ENG-002 · found 2026-11-05 by execution front packet 5
+Status: fixed · ENG-002 · found 2026-11-05 by execution front packet 5 ·
+fixed 2026-11-05, review front packet 1
 
 Pressing Escape to stop a Claude turn leaves the turn open until the 12 s
 stale-turn reclaim closes it. The new harness-side liveness record marks this
 case `inputBeforeSilence: true`, so it can be told apart from a wedged
 harness; the turn should end when the operator's Escape lands.
+
+Fixed 2026-11-05. Cause: Claude Code reports no boundary for an aborted
+turn, and nothing recognised the interrupt, so only the 12 s stale bound
+ended it, writing a harness stall that lasted until the operator's next
+prompt. System change: the engagement owner receives the keystroke itself;
+a lone Escape into an open, generating turn with no gate open marks an
+expected interrupt, the turn closes at ordinary quiet (4 s), the reclaim is
+logged as `operator-escape-then-quiet`, and liveness writes no stall for it.
+Proof: `turn-record.test.ts` ("an expected interrupt"),
+`session-liveness.test.ts` ("writes no stall for a turn the operator
+stopped").

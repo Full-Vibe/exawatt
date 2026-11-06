@@ -83,7 +83,7 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')).toBeNull();
   });
 
-  it('alerts a new correlated request while watched, but never its duplicate', () => {
+  it('alerts a request that newly needs the operator while watched, but never one changing nothing visible', () => {
     add('a');
     monitor.setWindowFocused(true);
     monitor.setFocus('a');
@@ -93,9 +93,17 @@ describe('AttentionMonitor', () => {
     monitor.noteHarnessBlocked('a', 'working', 'source-question-1');
     monitor.noteHarnessTurnEnd('a');
     expect(monitor.get('a')?.requestId).toBe('source-question-1');
+    // A second question beside a first, both on screen and read: the light,
+    // the dot and ⌘J are unchanged, so nothing sounds (decision 0046,
+    // 2026-11-05: sound and visible state are one-to-one).
     monitor.noteHarnessBlocked('a', 'working', 'source-question-2');
-    expect(alerts).toEqual(['source-question-1', 'source-question-2']);
+    expect(alerts).toEqual(['source-question-1']);
     expect(monitor.get('a')?.unread).toBe(false);
+    // Once the first is answered and he looks away, a new one alerts.
+    monitor.noteHarnessUnblocked('a');
+    monitor.setFocus(null);
+    monitor.noteHarnessBlocked('a', 'working', 'source-question-3');
+    expect(alerts).toEqual(['source-question-1', 'source-question-3']);
   });
 
   it('source turn-start releases a hard gate while preserving independent working questions', () => {
@@ -316,6 +324,14 @@ describe('AttentionMonitor', () => {
     data('b', `\x1b]777;notify;Title;Body\x1b\\`);
     expect(monitor.get('a')?.kind).toBe('bell');
     expect(monitor.get('b')?.kind).toBe('bell');
+  });
+
+  it('never reads OSC 9;4 progress (a ConEmu command Claude Code emits) as a bell', () => {
+    add('a');
+    data('a', `\x1b]9;4;3;${BELL}`);
+    data('a', `\x1b]9;4;1;50\x1b\\`);
+    data('a', `\x1b]9;4;0;${BELL}`);
+    expect(monitor.get('a')).toBeNull();
   });
 
   it('handles OSC sequences split across chunks without false bells', () => {
@@ -648,7 +664,7 @@ describe('AttentionMonitor', () => {
 
     it('ends with the result already read: no unread mark, no alert, no ⌘J', () => {
       add('a');
-      monitor.expectTurn('a', peer);
+      monitor.expectTurn('a', peer, 'joins');
       monitor.noteHarnessTurnStart('a');
       expect(monitor.turnInitiator('a')).toEqual(peer);
       monitor.noteHarnessTurnEnd('a');
@@ -659,9 +675,12 @@ describe('AttentionMonitor', () => {
       expect(monitor.count()).toBe(0);
     });
 
-    it('still raises a question or permission gate it ends in, unread, alerted and in ⌘J', () => {
+    // The operator's 2026-11-05 ruling makes a peer's turn quiet however it
+    // ends; a request only he can answer is the coordinator's exception,
+    // pending his confirmation (decision 0046 amendment).
+    it('still raises a request only the operator can answer, unread, alerted and in ⌘J', () => {
       add('a');
-      monitor.expectTurn('a', peer);
+      monitor.expectTurn('a', peer, 'joins');
       monitor.noteHarnessTurnStart('a');
       monitor.noteHarnessBlocked('a', 'blocking', 'permission-1');
       expect(monitor.get('a')).toMatchObject({ kind: 'blocked', unread: true });
@@ -671,7 +690,7 @@ describe('AttentionMonitor', () => {
 
     it('is the operator’s turn again the moment he gives it work', () => {
       add('a');
-      monitor.expectTurn('a', peer);
+      monitor.expectTurn('a', peer, 'joins');
       // he types before the peer’s message opened anything
       monitor.noteEngaged('a');
       monitor.noteHarnessTurnStart('a');
@@ -693,7 +712,7 @@ describe('AttentionMonitor', () => {
       const owed = monitor.get('a');
       expect(owed).toMatchObject({ kind: 'turn-end', unread: true });
       clock += 60_000;
-      monitor.expectTurn('a', peer);
+      monitor.expectTurn('a', peer, 'joins');
       monitor.noteHarnessTurnStart('a');
       monitor.noteHarnessTurnEnd('a');
       expect(monitor.get('a')).toEqual(owed);
@@ -703,7 +722,7 @@ describe('AttentionMonitor', () => {
 
     it('opens through the terminal door’s Enter as the peer’s turn, read by inference too', () => {
       add('a', 'antigravity');
-      monitor.expectTurn('a', peer);
+      monitor.expectTurn('a', peer, 'next-turn');
       monitor.noteTurnOpened('a');
       expect(monitor.isEngaged('a')).toBe(true);
       expect(monitor.isWorking('a')).toBe(true);
@@ -717,7 +736,7 @@ describe('AttentionMonitor', () => {
 
     it('opens when output begins, for a source that runs a queued message as its next turn', () => {
       add('a', 'codex');
-      monitor.expectTurn('a', peer);
+      monitor.expectTurn('a', peer, 'next-turn');
       data('a', 'x'.repeat(500));
       expect(monitor.turnInitiator('a')).toEqual(peer);
       clock += 5000;
@@ -728,7 +747,7 @@ describe('AttentionMonitor', () => {
 
     it('treats a message the operator sent over the bus (Direct) as his own turn', () => {
       add('a');
-      monitor.expectTurn('a', { kind: 'operator' });
+      monitor.expectTurn('a', { kind: 'operator' }, 'joins');
       monitor.noteTurnOpened('a');
       monitor.noteHarnessTurnStart('a');
       monitor.noteHarnessTurnEnd('a');
@@ -1052,6 +1071,7 @@ describe('AttentionMonitor', () => {
               staleMs: 12_000,
               ownTurn: 'generating',
               children: 1,
+              cause: 'silence',
             },
           },
         ]);

@@ -13,8 +13,11 @@
  * delivery each; a delivery line names its recipient). `v: 1` lines, from
  * before a message could name several recipients, are still read: a v1
  * message is a message to its one recipient, and a v1 delivery line moves
- * that recipient. They are never rewritten, so a downgrade reads the old
- * messages it wrote.
+ * that recipient. Reading never rewrites them. A downgrade is not covered: a
+ * build from before v2 reads a v2 line as damage and fails the whole fold,
+ * so after the first message to recipients that Project's Chatter reads as
+ * damaged on the older build until the operator updates again (nothing is
+ * lost; a damaged file is never rewritten).
  *
  * Size class (decision `0039`): at most `BUS_LEDGER_BOUNDS.messages` messages
  * and `BUS_LEDGER_BOUNDS.bytes` per Project, enforced on the write path. Over

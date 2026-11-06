@@ -26,6 +26,8 @@ export function codexQueueTransport(executable = 'codex'): BusTransport {
     kind: ADAPTER,
     holdWhile: [],
     queuedUntilTurnStart: true,
+    // "right after the running turn when busy": the next turn.
+    midTurn: 'next-turn',
     async deliver(_envelope, target, context): Promise<DeliveryResult> {
       if (!target.harnessSessionId) {
         return {

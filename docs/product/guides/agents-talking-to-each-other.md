@@ -52,9 +52,10 @@ who else got it, so they can reach each other.
   type one line and press **⌘↩**. Each agent gets it as a message from you,
   told which other agents got it too, and shows whether it arrived.
 
-A turn one agent starts in another does not mark that agent unread or put it
-in **⌘J**: you see the exchange in Chatter. A question or permission prompt
-still reaches you, whoever started the turn.
+A turn one agent starts in another stays quiet: it makes no sound, does not
+mark that agent unread and does not put it in **⌘J**. You see the exchange in
+Chatter. A question or permission prompt still reaches you, whoever started
+the turn.
 
 To stop an exchange, tell either agent to stop, or pause it.
 

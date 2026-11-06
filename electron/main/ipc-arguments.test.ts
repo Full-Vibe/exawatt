@@ -231,7 +231,7 @@ describe('argument boundaries', () => {
       [''],
       [42],
       ['x'.repeat(241)],
-      Array.from({ length: 65 }, (_, index) => `@agent-${index}`),
+      Array.from({ length: 1025 }, (_, index) => `@agent-${index}`),
     ]) {
       expect(() => read('bus:send', { ...request, to })).toThrow(
         'Invalid bus message'

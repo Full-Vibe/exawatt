@@ -27,6 +27,8 @@ interface TerminalInputOptions {
    *  message itself needs only `blocked` (a paste must never answer a
    *  permission dialog); an unmeasured one waits for its turn to end too. */
   holdWhile: readonly Exclude<RecipientState, 'ready' | 'ended'>[];
+  /** What a message typed into a running turn becomes (`BusTransport`). */
+  midTurn?: BusTransport['midTurn'];
 }
 
 export function terminalInputTransport(
@@ -35,6 +37,7 @@ export function terminalInputTransport(
   return {
     kind: 'terminal-input',
     holdWhile: options.holdWhile,
+    ...(options.midTurn ? { midTurn: options.midTurn } : {}),
     async deliver(_envelope, _target, context) {
       const terminal = context.terminal;
       if (!terminal) {

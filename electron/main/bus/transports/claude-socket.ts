@@ -143,6 +143,8 @@ export function claudeSocketTransport(
     // Claude registers its socket as it starts; a message to a tab still
     // starting waits for it instead of failing.
     holdWhile: ['starting'],
+    // Read "between tool calls when busy": part of the running turn.
+    midTurn: 'joins',
     async deliver(_envelope, target, context): Promise<DeliveryResult> {
       if (!target.harnessSessionId) {
         return {

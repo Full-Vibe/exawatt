@@ -122,14 +122,21 @@ function scenario() {
     },
     write() {
       cursor += 80;
-      sessions.emit('data', 'pty-1', 'redraw', cursor);
+      sessions.emit('data', 'pty-1', 'redraw', cursor, 'session-a', 'process');
       return cursor;
     },
     workFor(seconds: number) {
       for (let i = 0; i < seconds; i += 1) {
         clock += 1_000;
         cursor += 80;
-        sessions.emit('data', 'pty-1', 'redraw', cursor);
+        sessions.emit(
+          'data',
+          'pty-1',
+          'redraw',
+          cursor,
+          'session-a',
+          'process'
+        );
       }
     },
     get cursor() {
@@ -207,6 +214,7 @@ describe('session liveness over the real IPC shape', () => {
       staleMs: 12_000,
       ownTurn: 'generating',
       children: 0,
+      cause: 'silence',
     });
     s.tick(48_000);
     s.write();
@@ -226,5 +234,58 @@ describe('session liveness over the real IPC shape', () => {
     expect(
       s.events('liveness.stall').filter(line => line.fields.side === 'pane')
     ).toEqual([]);
+  });
+
+  it('closes a stall whose process exited as exited, not as output: the exit marker is Exawatt’s', () => {
+    // The real order (`PtySessionManager.recordExit`): the marker reaches
+    // every `data` listener, then `exit` follows.
+    const s = scenario();
+    s.write();
+    s.tick(12_000);
+    s.attention.emit('reported-turn-stale', 'pty-1', {
+      quietMs: 12_000,
+      staleMs: 12_000,
+      ownTurn: 'generating',
+      children: 0,
+      cause: 'silence',
+    });
+    s.tick(30_000);
+    s.sessions.emit(
+      'data',
+      'pty-1',
+      '[session stopped]',
+      s.cursor + 40,
+      'session-a',
+      'exawatt'
+    );
+    s.sessions.emit('exit', 'pty-1');
+    expect(s.events('liveness.stall-cleared').map(line => line.fields)).toEqual(
+      [
+        expect.objectContaining({
+          side: 'harness',
+          cause: 'exited',
+          stalledMs: 42_000,
+        }),
+      ]
+    );
+  });
+
+  it('takes its input fact from the engagement owner, so a paste or a door’s Enter counts', () => {
+    const s = scenario();
+    s.write();
+    s.tick(5_000);
+    s.attention.emit('input', 'pty-1'); // a paste, through `noteEngaged`
+    s.tick(7_000);
+    s.attention.emit('reported-turn-stale', 'pty-1', {
+      quietMs: 12_000,
+      staleMs: 12_000,
+      ownTurn: 'generating',
+      children: 0,
+      cause: 'silence',
+    });
+    expect(s.events('liveness.stall')[0].fields).toMatchObject({
+      side: 'harness',
+      inputDuringSilence: true,
+    });
   });
 });

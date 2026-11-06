@@ -46,6 +46,9 @@ const BUDGETS = {
   // per recovery, so a renderer freeze across every shown pane cannot spend
   // the lines a Session's start or exit needs.
   liveness: 60,
+  // Terminal bells (`attention.bell`), raised or suppressed: a TUI ringing
+  // in a loop spends its own budget, never a turn's.
+  attention: 60,
 } as const;
 
 /** Delegated-child and census traffic: the volume a team fan-out makes. */
@@ -59,6 +62,7 @@ const TEAM_KINDS: ReadonlySet<string> = new Set<HarnessEvent['kind']>([
 function budgetOf(event: string): keyof typeof BUDGETS {
   if (event.startsWith('session.')) return 'session';
   if (event.startsWith('liveness.')) return 'liveness';
+  if (event.startsWith('attention.')) return 'attention';
   return TEAM_KINDS.has(event.slice('harness.'.length))
     ? 'harness.team'
     : 'harness.turn';

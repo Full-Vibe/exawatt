@@ -109,6 +109,12 @@ describe('roadmap attention custody', () => {
   it('resolves only this producer and alerts a later re-block of the same item', async () => {
     const h = harness();
     h.monitor.noteHarnessBlocked(session.id, 'working', 'question');
+    // He has read the question, so each roadmap block is a visible rise
+    // (the unread mark); behind an unread question it would change nothing
+    // he can see, and alert nothing (decision 0046, 2026-11-05).
+    h.monitor.setWindowFocused(true);
+    h.monitor.setFocus(session.id);
+    h.monitor.setFocus(null);
     await h.owner.publish(await h.observation());
     h.read(file('clear'));
     await h.owner.publish(await h.observation());

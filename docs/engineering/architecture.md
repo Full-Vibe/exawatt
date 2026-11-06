@@ -1169,10 +1169,24 @@ address (a peer's stamp line, or one line ahead of an operator message that
 is not a `/` command). An addressing failure refuses the whole send. As the
 core hands a message to a door it tells the attention monitor whose turn the
 message opens (`expectTurn`: the operator for an operator message, the peer
-for a peer's note), and the monitor keeps an initiator per turn; the
-operator's own engagement always makes the turn his. A turn another Agent
-started ends with its result already read and no alert, and never clears the
-operator's own unread result; gates and bells raise as before (BUG-332).
+for a peer's note) and what a message delivered into a running turn becomes,
+as the door declares (`midTurn`: Claude's socket joins that turn, a CLI queue
+or a harness that queues pasted input runs it as the next one); a door that
+did not deliver withdraws the claim. The monitor keeps one turn record per
+Session: a turn opens in one place (`openTurn`), at a reported start, at work
+given with no turn open, or at output with no turn open, never at output
+resuming after a pause; it takes the oldest armed claim, else it is the
+operator's. A turn another Agent started is quiet however it ends: its
+result arrives read, the harness's own bell raises nothing, and it never
+clears or replaces what the operator is owed; a request only he can answer
+still raises. Alerts (the sound, the notification, the dock bounce) are
+derived in one place from the visible projection rising
+(`attentionVisibleRise` in `packages/core/src/session-attention.ts`), so a
+sound always has a visible change and every source-caused visible rise
+sounds (BUG-332, amended 2026-11-05; decision `0046`). Silence is measured on
+the awake clock (`electron/main/pty/awake-clock.ts`, fed by the host power
+observer), and only process output counts: the Session owner's `data` event
+names its origin, so Exawatt's exit marker is not the harness speaking.
 
 ### Persistence size classes
 
@@ -1189,7 +1203,7 @@ the rule and the three defects that produced it.
 | `agent-model-catalogs.json`     | one row per `(engine, shell, cwd)`                              | 48 rows, 14 days, and a row whose `cwd` no longer exists                                                                                                                                                                                                                                                                                                  | `AgentModelCatalogCache.write`, plus one sweep on load                                                       |
 | `agent-source-observations.json` | one row per Agent Source adapter: the last COMPLETE observation, keyed by adapter id | at most one row per declared adapter, none older than 30 days behind the newest row (an anchor no further than a day past wall time, `retentionAnchorMs`; a row stamped past that is evicted, BUG-182), all read through the same login shell as the newest write; an incomplete or simulated observation is never written | `AgentSourceObservationStore.remember`, plus one sweep on load |
 | `bus/<project key>.jsonl` | the agent-to-agent ledger: one append-only file per Project, one message line naming every recipient, plus a line per recipient delivery change (v2; v1 single-recipient lines are still read) | 2,000 messages and 4 MB per Project, pruned to 75% of both by whole message (never mid-record); a damaged log is never pruned or read as empty | `JsonlBusStore`'s write path |
-| `logs/harness-events.jsonl` | one content-free line per Session start, identity, exit, forget and harness event | 1 MB and one rotated generation; a minute's budget each for lifecycle (120), turn boundaries and gates (240) and child and census traffic (120), so a team fan-out cannot crowd out a turn; no run cap, so a long-lived run keeps recording | `createDiagnosticsLog`'s rotation, bounded in `harness-event-log.ts` |
+| `logs/harness-events.jsonl` | one content-free line per Session start, identity, exit, forget and harness event, per liveness stall, and per terminal bell raised or suppressed (`attention.bell`, with why) | 1 MB and one rotated generation; a minute's budget each for lifecycle (120), turn boundaries and gates (240), child and census traffic (120), liveness (60) and bells (60), so a team fan-out or a ringing TUI cannot crowd out a turn; no run cap, so a long-lived run keeps recording | `createDiagnosticsLog`'s rotation, bounded in `harness-event-log.ts` |
 
 Two rules carry most of the weight. **A large per-Session artifact never rides
 a small-object record**: it goes in a content-addressed side store, written

@@ -99,3 +99,38 @@ another Agent started ends with its result already read, no alert and no
 Hard blockers and questions are unchanged: a gate or bell raises unread and
 joins ⌘J whoever started the turn. Chatter's unread count is where bus
 traffic is noticed. The operator's own engagement always makes a turn his.
+
+## Amendment, 2026-11-05: a peer's turn is quiet; sound and sight are one-to-one
+
+The 2026-11-04 amendment kept bells and gates loud for a turn another Agent
+started, and the review of that change found Claude Code's idle bell (rung a
+minute after `Stop`) bringing BUG-332 back. The operator ruled, 2026-11-05:
+"if an agent messages another idle agent ... I think it should just be
+quiet. Bell is user notification, get his attention for a specific important
+reason. Also I believe the bell should correspond to a UI-visible state as
+well. If a bell rings and there's no change in how the product looks, that
+would be considered to be a design philosophy bug, they should be
+bijective."
+
+- **A turn another Agent started is quiet however it ends.** No unread mark,
+  no ⌘J entry and no sound, from its result or from the harness's own bell
+  (BEL, OSC 9, OSC 777), in the turn or after it. It never clears or replaces
+  what the operator is owed: his result and his bell stay as he left them.
+- **Exception, the coordinator's call pending the operator's confirmation:**
+  a request only the operator can answer (a reported permission prompt or
+  question) still raises and alerts, with its visible blocked state,
+  whoever started the turn. It is a specific reason to get his attention,
+  and the Agent stalls until he answers.
+- **Sound and visible attention are one-to-one, by construction.** An alert
+  (the sound, the native notification, the dock bounce) is emitted in one
+  place, from the visible projection rising: a gate appearing (the needs-you
+  light, a ⌘J entry) or something becoming unread (the corner dot, the dock
+  count). A producer cannot ring without a visible change or change what is
+  visible without ringing. A bell becoming the permission request it was
+  rings once; a result behind an unread open question changes nothing
+  visible and rings nothing. Operator intent (reading, Mark unread) and
+  restoration change what is visible without ringing, as before.
+- **A turn's owner is bound to that turn.** It opens at a real boundary, a
+  message delivered into a running turn opens the next one (or joins the
+  running one, as its door declares), a claim dies with a failed delivery,
+  and a turn nobody claimed is the operator's.

@@ -122,7 +122,8 @@ export function wireReportedTurnTruth({
   // Inference reclaiming a turn nothing will ever close (D4). An aborted
   // Claude Code turn emits no boundary at all; silence past the stale bound
   // with no gate open is the evidence the harness itself has stopped
-  // generating. Applied as one `turn-end` so the delegation record stays
+  // generating, and an operator's lone Escape followed by ordinary quiet is
+  // the evidence he stopped it. Applied as one `turn-end` so the delegation record stays
   // owned by one module. The children the source listed stay listed: silence
   // says nothing about a background child (BUG-258), so the result follows
   // the ordinary path from here — the reclaiming sweep raises it from the
@@ -140,7 +141,12 @@ export function wireReportedTurnTruth({
         childCount: before.children,
         quietMs: evidence.quietMs,
         staleMs: evidence.staleMs,
-        evidence: 'pty-silence-past-stale-bound-with-no-gate',
+        // An Escape the operator pressed into the generating turn, then
+        // ordinary quiet (BUG-342), is told apart from a harness gone silent.
+        evidence:
+          evidence.cause === 'interrupt'
+            ? 'operator-escape-then-quiet'
+            : 'pty-silence-past-stale-bound-with-no-gate',
       });
     }
   );

@@ -9,7 +9,9 @@
  * question after the fact. Before this nothing recorded either, so the two
  * were indistinguishable once the moment passed.
  *
- * Main already sees every byte the process writes (`output`). The renderer
+ * Main already sees every byte the process writes (`output`; Exawatt's own
+ * bytes, such as the exit marker, are not the process writing and do not
+ * count). The renderer
  * reports, per window, which panes it is showing and the highest output
  * cursor each has painted (`report`, `PtyPaintReport`). From those two facts:
  *
@@ -17,9 +19,13 @@
  *   process has written nothing past the attention monitor's stale bound.
  *   That monitor already measures exactly this silence to reclaim turns a
  *   harness left open (`reported-turn-stale`), so the harness side reuses its
- *   one measurement instead of keeping a second clock. The record says
- *   whether the operator typed just before or during the silence: an Escape
- *   that ends a turn is silent too, and a keystroke nothing echoed is not.
+ *   one measurement instead of keeping a second clock, on the awake clock
+ *   (`awake-clock.ts`), so a Mac's sleep is never a harness's silence. The
+ *   record says whether the operator typed just before or during the
+ *   silence (a keystroke nothing echoed), with input taken from the one
+ *   engagement owner, so a paste or a bus door's Enter counts as a keystroke
+ *   does. A turn the operator stopped with Escape closes at ordinary quiet
+ *   and is not a stall (BUG-342).
  * - **pane**: main has kept delivering output to a pane a visible page lists
  *   as shown, and for `paintStallMs` none of it has been painted. A renderer
  *   too busy or too frozen to report at all reads the same way, which is
@@ -28,7 +34,7 @@
  * Each episode writes one `liveness.stall` naming the side, and one
  * `liveness.stall-cleared` when it ends (output or paint resumed, the pane or
  * page was hidden, the renderer went away, the Session exited) with how long
- * it lasted. Lines land in `logs/harness-events.jsonl` beside the Session's
+ * it lasted, in awake time. Lines land in `logs/harness-events.jsonl` beside the Session's
  * start and exit, keyed by durable Session id. Content-free: ids, counts and
  * durations, never terminal text.
  *
@@ -49,6 +55,7 @@
 import type { PtyPaintReport } from '@exawatt/core/desktop-bridge';
 import type { DiagnosticFields, DiagnosticRecorder } from '../diagnostics-log';
 import type { StaleReportEvidence } from './attention-monitor';
+import type { PtyDataOrigin } from './session-manager';
 
 /** Unpainted delivery for this long, while delivery continues, is a stall. */
 export const PAINT_STALL_MS = 15_000;
@@ -93,7 +100,7 @@ interface SessionLiveness {
   /** The attention monitor found a reported turn silent past its bound. */
   turnStale(
     id: string,
-    evidence: Pick<StaleReportEvidence, 'quietMs' | 'children'>
+    evidence: Pick<StaleReportEvidence, 'quietMs' | 'children' | 'cause'>
   ): void;
   /** The Session's process ended or its record was dropped. */
   ended(id: string): void;
@@ -127,7 +134,6 @@ interface PaneWatch {
 }
 
 interface ReportingWindow {
-  visible: boolean;
   shown: Set<string>;
 }
 
@@ -289,8 +295,10 @@ export function createSessionLiveness(
       'turn-stale',
       (
         id: string,
-        evidence: Pick<StaleReportEvidence, 'quietMs' | 'children'>
+        evidence: Pick<StaleReportEvidence, 'quietMs' | 'children' | 'cause'>
       ) => {
+        // The operator's Escape stopped the turn; its quiet is his doing.
+        if (evidence.cause === 'interrupt') return;
         if (harnessStalls.has(id)) return;
         const at = now();
         const output = outputs.get(id);
@@ -331,14 +339,13 @@ export function createSessionLiveness(
       const at = now();
       let window = windows.get(windowId);
       if (!window) {
-        window = { visible: report.visible, shown: new Set() };
+        window = { shown: new Set() };
         windows.set(windowId, window);
         options.record('liveness.paint-reporting', {
           windowId,
           state: 'started',
         });
       }
-      window.visible = report.visible;
       const listed = new Map<string, number>();
       if (report.visible) {
         for (const pane of report.panes) {
@@ -418,18 +425,26 @@ export function createSessionLiveness(
 interface LivenessSessions {
   on(
     event: 'data',
-    listener: (id: string, data: string, cursor: number) => void
+    listener: (
+      id: string,
+      data: string,
+      cursor: number,
+      durableSessionId: string,
+      origin: PtyDataOrigin
+    ) => void
   ): unknown;
   on(event: 'exit', listener: (id: string) => void): unknown;
   list(): Array<LivenessSessionIdentity & { id: string }>;
 }
 
-/** The attention monitor's stale-turn measurement. */
+/** The attention monitor: its stale-turn measurement, and the one place
+ *  input reaches a Session as work (a keystroke, a paste, a door's Enter). */
 interface LivenessAttention {
   on(
     event: 'reported-turn-stale',
     listener: (id: string, evidence: StaleReportEvidence) => void
   ): unknown;
+  on(event: 'input', listener: (id: string) => void): unknown;
 }
 
 /** The parts of a reporting renderer's `webContents` liveness listens to. */
@@ -452,7 +467,7 @@ export function livenessTuning(
 
 /**
  * Wire liveness to the Session owner and the attention monitor, and return
- * the two doors IPC adds: a window's paint report and an operator keystroke.
+ * the door IPC adds: a window's paint report.
  */
 export function attachSessionLiveness({
   record,
@@ -467,7 +482,6 @@ export function attachSessionLiveness({
   attention: LivenessAttention;
 } & Omit<SessionLivenessOptions, 'record' | 'session'>): {
   report(sender: LivenessSender, report: PtyPaintReport): void;
-  input(id: string): void;
 } {
   const liveness = createSessionLiveness({
     record,
@@ -476,11 +490,17 @@ export function attachSessionLiveness({
     now,
     ...tuning,
   });
-  sessions.on('data', (id, _data, cursor) => liveness.output(id, cursor));
+  // Only the process writing counts as output: the exit marker arrives as
+  // data just before `exit`, and read as output it closed a harness stall
+  // as "output" when the process had in fact ended.
+  sessions.on('data', (id, _data, cursor, _durable, origin) => {
+    if (origin !== 'exawatt') liveness.output(id, cursor);
+  });
   sessions.on('exit', id => liveness.ended(id));
   attention.on('reported-turn-stale', (id, evidence) =>
     liveness.turnStale(id, evidence)
   );
+  attention.on('input', id => liveness.input(id));
   const watched = new Set<number>();
   return {
     report(sender, report) {
@@ -498,6 +518,5 @@ export function attachSessionLiveness({
       }
       liveness.report(sender.id, report);
     },
-    input: id => liveness.input(id),
   };
 }

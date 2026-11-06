@@ -9,6 +9,7 @@
  * as a newline inside the paste). The wait ends on the effect — output, then
  * quiet — and a bound keeps a TUI that never echoes from holding a message.
  */
+import type { PtyDataOrigin } from '../pty/session-manager';
 import type { TerminalDoor } from './transports/types';
 
 const ENABLE = '\x1b[?2004h';
@@ -16,12 +17,18 @@ const DISABLE = '\x1b[?2004l';
 /** Enough of the previous chunk to find a switch split across two. */
 const CARRY = ENABLE.length - 1;
 
+/** `PtySessionManager`'s `data` event, as the door reads it. */
+type DataListener = (
+  id: string,
+  data: string,
+  cursor: number,
+  durableSessionId: string,
+  origin: PtyDataOrigin
+) => void;
+
 interface TerminalSessions {
-  on(event: 'data', listener: (id: string, data: string) => void): unknown;
-  removeListener(
-    event: 'data',
-    listener: (id: string, data: string) => void
-  ): unknown;
+  on(event: 'data', listener: DataListener): unknown;
+  removeListener(event: 'data', listener: DataListener): unknown;
   /** False when the Session is gone or has exited: nothing was written. */
   write(id: string, data: string): boolean;
 }
@@ -57,7 +64,10 @@ export function createTerminalDoors(
   const waiters = new Map<string, Set<() => void>>();
   const up = new Set<string>();
   const upListeners = new Set<(ptyId: string) => void>();
-  const onData = (id: string, data: string) => {
+  const onData: DataListener = (id, data, _cursor, _durable, origin) => {
+    // Exawatt's own bytes (an exit marker, a notice) are neither the TUI
+    // switching bracketed paste nor its answer to a paste.
+    if (origin === 'exawatt') return;
     const text = (carry.get(id) ?? '') + data;
     const on = text.lastIndexOf(ENABLE);
     const off = text.lastIndexOf(DISABLE);

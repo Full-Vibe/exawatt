@@ -51,6 +51,18 @@ describe('useKeyedSelection', () => {
     expect(result.current[0]).toBe(2);
   });
 
+  it('holds the item that took a gone selection’s place by identity, when the count is unchanged', () => {
+    // An empty Project's placeholder becomes its first tab: the same count,
+    // a new key. The selection must not drift with later reorders.
+    const { result, rerender } = setup(['a', 'project:/x', 'c'], 1);
+    rerender({ items: ['a', 'tab-1', 'c'] });
+    expect(result.current[0]).toBe(1);
+    rerender({ items: ['tab-1', 'a', 'c'] });
+    expect(result.current[0]).toBe(0);
+    rerender({ items: ['a', 'c', 'tab-1'] });
+    expect(result.current[0]).toBe(2);
+  });
+
   it('ignores a position outside the items', () => {
     const { result } = setup(['a', 'b']);
     act(() => result.current[1](5));

@@ -50,6 +50,7 @@ import {
   openHarnessEventLog,
 } from './harness-events/harness-event-log';
 import { attachSessionLiveness, livenessTuning } from './pty/session-liveness';
+import { awakeClock, feedAwakeClock } from './pty/awake-clock';
 import { ClosedSessionLedger } from './pty/closed-session-ledger';
 import { createWorktree, expandTilde } from './pty/project-resolve';
 import {
@@ -336,6 +337,10 @@ export function registerPtyIPC(
     ptySessions,
     delegationMonitor
   );
+  // Silence is measured in awake time: the host's sleep stops the clock the
+  // attention monitor and liveness both read, so a Mac that slept through a
+  // turn never wakes to a reclaim or a harness stall as long as the sleep.
+  if (hostPower) app.once('will-quit', feedAwakeClock(awakeClock, hostPower));
   // Which side stopped when a working Session's terminal stops moving: the
   // harness's output or a shown pane's paint (BUG-330, BUG-102's evidence).
   // Same log, same durable Session keys.
@@ -343,6 +348,7 @@ export function registerPtyIPC(
     record: harnessEvents,
     sessions: ptySessions,
     attention: attentionMonitor,
+    now: awakeClock.now,
     windowFacts: id => {
       const contents = webContents.fromId(id);
       const win = contents ? BrowserWindow.fromWebContents(contents) : null;
@@ -358,6 +364,22 @@ export function registerPtyIPC(
   handleBounded('pty:report-paint', (event, report) =>
     liveness.report(event.sender, report)
   );
+  // Every terminal bell, raised or suppressed, with why: a beep, or the
+  // absence of one, is a line in the same log as the turn it rang in.
+  attentionMonitor.on('bell', (id, bell) => {
+    const session = ptySessions.list().find(item => item.id === id);
+    harnessEvents('attention.bell', {
+      ...(session
+        ? {
+            durableSessionId: session.durableSessionId,
+            ptyId: id,
+            harness: session.harness,
+            harnessSessionId: session.harnessSessionId,
+          }
+        : { ptyId: id }),
+      ...bell,
+    });
+  });
   // ENG-044 safety controls: a launch carries the hooks of the controls that
   // are on, and the guard answers them against the live settings. An
   // unreadable settings file keeps the last choice read in this run; with
@@ -685,8 +707,8 @@ export function registerPtyIPC(
       // finished turn was still latched, hiding the legitimate next turn.
       if (operatorEngaged) {
         contextSummarizer.noteInput(id, data);
-        attentionMonitor.noteEngaged(id);
-        liveness.input(id);
+        // The keystroke itself: a lone Escape stops a generating turn.
+        attentionMonitor.noteEngaged(id, data);
       }
       ptySessions.write(id, data);
       // Input clears attention only when the session is actually watched:

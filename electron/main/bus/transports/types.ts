@@ -91,4 +91,10 @@ export interface BusTransport extends MessagingTransport<
   /** A `queued` result from this door becomes `delivered` when the
    *  recipient's next turn starts (the harness runs it as that turn). */
   queuedUntilTurnStart?: boolean;
+  /** What a message this door delivers into a running turn becomes:
+   *  `joins` (the harness reads it into that turn, so it opens no turn of its
+   *  own) or `next-turn` (the harness runs it after that turn ends). The turn
+   *  record attributes the turn it opens accordingly. Absent is `joins`: a
+   *  turn nobody can attribute is the operator's, the safe error. */
+  midTurn?: 'joins' | 'next-turn';
 }

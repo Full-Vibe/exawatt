@@ -147,8 +147,8 @@ export function registerBusIPC(userData: string): void {
       sourceEnvironment: () => sourceEnvironmentOf(target),
     }),
     harnessLabel,
-    expectTurn: (ptyId, initiator) =>
-      attentionMonitor.expectTurn(ptyId, initiator),
+    expectTurn: (ptyId, initiator, midTurn) =>
+      attentionMonitor.expectTurn(ptyId, initiator, midTurn),
     onRecord: record =>
       broadcastToWindows(BrowserWindow.getAllWindows(), 'bus:message', record),
   });

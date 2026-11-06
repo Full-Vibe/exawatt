@@ -158,6 +158,9 @@ type LaunchEnvironmentProvider = (launch: {
   permissionMode: AgentPermissionMode;
 }) => Promise<LaunchEnvironmentExtension | null>;
 
+/** Who made the bytes a `data` event carries (`PtySessionManager.deliver`). */
+export type PtyDataOrigin = 'process' | 'exawatt';
+
 export class PtySessionManager extends EventEmitter {
   private sessions = new Map<string, Session>();
   /** Bounded 4 MB per session; late panes replay text and S4 reads visit deltas. */
@@ -792,14 +795,7 @@ export class PtySessionManager extends EventEmitter {
       const data = received?.data ?? rawData;
       if (!data) return;
       info.lastDataAt = Date.now();
-      this.appendBuffer(id, data);
-      this.emit(
-        'data',
-        id,
-        data,
-        this.scrollback.cursor(durableSessionId),
-        durableSessionId
-      );
+      this.deliver(id, data, 'process');
     });
     proc.onExit(({ exitCode, signal }) => {
       // kill() may have already removed the session (process death is
@@ -808,17 +804,11 @@ export class PtySessionManager extends EventEmitter {
       // records its own stops before this arrives
       const owner = this.sessions.get(id);
       if (!owner || owner.info.exited) return;
+      // Bytes the power-launch reader held back as a possible marker, released
+      // at exit: the process wrote them earlier, so they are no evidence that
+      // it is writing now.
       const pendingOutput = powerLaunch?.flush();
-      if (pendingOutput) {
-        this.appendBuffer(id, pendingOutput);
-        this.emit(
-          'data',
-          id,
-          pendingOutput,
-          this.scrollback.cursor(durableSessionId),
-          durableSessionId
-        );
-      }
+      if (pendingOutput) this.deliver(id, pendingOutput, 'exawatt');
       this.recordExit(id, owner, exitCode, signal);
     });
 
@@ -887,14 +877,7 @@ export class PtySessionManager extends EventEmitter {
           ? `ended by ${info.exitSignal}`
           : `exited ${exitCode}`
     }]\x1b[0m\r\n`;
-    this.appendBuffer(id, marker);
-    this.emit(
-      'data',
-      id,
-      marker,
-      this.scrollback.cursor(durableSessionId),
-      durableSessionId
-    );
+    this.deliver(id, marker, 'exawatt');
     // A dead process cannot report anything else, and its token is now
     // worthless — retire both before anyone can reuse the id.
     this.cleanupHarnessWiring(id);
@@ -1192,14 +1175,7 @@ export class PtySessionManager extends EventEmitter {
         session.opencodeIdentityStarted = false;
         const marker =
           '\r\n\x1b[38;5;214m[exawatt] OpenCode session snapshot failed; your task was not submitted. Try again.\x1b[0m\r\n';
-        this.appendBuffer(session.info.id, marker);
-        this.emit(
-          'data',
-          session.info.id,
-          marker,
-          this.scrollback.cursor(session.info.durableSessionId),
-          session.info.durableSessionId
-        );
+        this.deliver(session.info.id, marker, 'exawatt');
         return;
       }
       session.opencodeInput.release(data => {
@@ -1233,14 +1209,7 @@ export class PtySessionManager extends EventEmitter {
           const marker =
             `\r\n\x1b[38;5;214m[exawatt] OpenCode identity was not verified: ${reason}. ` +
             'This Session will not be offered as an exact resume target.\x1b[0m\r\n';
-          this.appendBuffer(session.info.id, marker);
-          this.emit(
-            'data',
-            session.info.id,
-            marker,
-            this.scrollback.cursor(session.info.durableSessionId),
-            session.info.durableSessionId
-          );
+          this.deliver(session.info.id, marker, 'exawatt');
         }
       } catch (error) {
         console.warn('OpenCode identity capture failed', error);
@@ -1248,14 +1217,7 @@ export class PtySessionManager extends EventEmitter {
           const marker =
             '\r\n\x1b[38;5;214m[exawatt] OpenCode identity verification failed. ' +
             'This Session will not be offered as an exact resume target.\x1b[0m\r\n';
-          this.appendBuffer(session.info.id, marker);
-          this.emit(
-            'data',
-            session.info.id,
-            marker,
-            this.scrollback.cursor(session.info.durableSessionId),
-            session.info.durableSessionId
-          );
+          this.deliver(session.info.id, marker, 'exawatt');
         }
       }
     })()
@@ -1758,6 +1720,30 @@ export class PtySessionManager extends EventEmitter {
     return durableId
       ? this.scrollback.since(durableId, cursor)
       : { text: '', truncated: false };
+  }
+
+  /**
+   * The one way bytes reach a Session's buffer and every `data` listener
+   * (panes, the attention monitor, liveness, the bus's terminal doors), named
+   * by where they came from. `process`: the program wrote them, now. `exawatt`:
+   * Exawatt made them (the exit marker, a notice) or released them late (the
+   * power-launch reader's held tail at exit). Panes draw both; only process
+   * output is evidence that the program is speaking, so the turn record and
+   * liveness read only that (review front 2026-11-05: an exit marker read as
+   * output closed a harness stall as "output" instead of "exited").
+   */
+  private deliver(id: string, data: string, origin: PtyDataOrigin): void {
+    const durableSessionId = this.sessions.get(id)?.info.durableSessionId;
+    if (!durableSessionId) return;
+    this.appendBuffer(id, data);
+    this.emit(
+      'data',
+      id,
+      data,
+      this.scrollback.cursor(durableSessionId),
+      durableSessionId,
+      origin
+    );
   }
 
   /** single append path: trims to BUFFER_LIMIT, then resyncs at a line

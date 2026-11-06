@@ -18,6 +18,7 @@
  * moment that ends. Messages to one Session go through its doors in order.
  */
 import {
+  BUS_MAX_RECIPIENTS,
   busTurnInitiator,
   type AgentHarness,
   type BusDirectoryEntry,
@@ -85,9 +86,15 @@ interface BusDispatchDeps {
   contextFor(target: BusTarget): Omit<BusDeliveryContext, 'text'>;
   /** A harness as the operator reads it (`Claude Code`, `Codex`). */
   harnessLabel(harness: AgentHarness | 'operator'): string;
-  /** Called as a message is handed to a recipient's door: the next turn
-   *  that recipient opens is this initiator's (the turn truth's input). */
-  expectTurn?(ptyId: string, initiator: TurnInitiator): void;
+  /** Called as a message is handed to a recipient's door: the turn it
+   *  opens is this initiator's (the turn record's input), and `midTurn` is
+   *  what it becomes if a turn is running. Returns the withdrawal the bus
+   *  calls when the door did not deliver: a failed delivery opens no turn. */
+  expectTurn?(
+    ptyId: string,
+    initiator: TurnInitiator,
+    midTurn: 'joins' | 'next-turn'
+  ): () => void;
   /** Every new record and every delivery change. */
   onRecord?(record: MessageRecord): void;
   now?: () => number;
@@ -200,6 +207,10 @@ export class BusDispatcher {
         `That message is ${text.length} characters; the bus carries up to ${BUS_MAX_TEXT_CHARS}`
       );
     if (!input.to.length) return refused('Say who the message is for');
+    if (input.to.length > BUS_MAX_RECIPIENTS)
+      return refused(
+        `That message names ${input.to.length} recipients; the bus carries one to up to ${BUS_MAX_RECIPIENTS}`
+      );
     // Every address resolves, or nothing is sent: a message never reaches
     // some of its recipients while naming one it could not reach.
     const addressees: BusAddressee[] = [];
@@ -376,19 +387,29 @@ export class BusDispatcher {
     const { transport, target, text } = recipient;
     // Before the door, never after: a door may open the turn as it delivers
     // (a terminal's Enter), and that turn is the sender's, not the operator's.
-    this.deps.expectTurn?.(target.ptyId, busTurnInitiator(envelope.from));
+    const withdraw = this.deps.expectTurn?.(
+      target.ptyId,
+      busTurnInitiator(envelope.from),
+      transport.midTurn ?? 'joins'
+    );
+    let result: DeliveryResult;
     try {
-      return await transport.deliver(envelope, target, {
+      result = await transport.deliver(envelope, target, {
         ...this.deps.contextFor(target),
         text,
       });
     } catch (error) {
-      return {
+      result = {
         state: 'unknown',
         reason: `The ${transport.kind} door failed: ${error instanceof Error ? error.message : String(error)}`,
         adapter: transport.kind,
       };
     }
+    // A message that never arrived (or may not have) opens no turn: its
+    // claim dies with it rather than waiting for some later, unrelated turn.
+    if (result.state === 'undeliverable' || result.state === 'unknown')
+      withdraw?.();
+    return result;
   }
 
   private inOrder<T>(ptyId: string, work: () => Promise<T>): Promise<T> {

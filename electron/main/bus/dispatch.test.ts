@@ -4,6 +4,7 @@ import path from 'path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   AGENT_HARNESSES,
+  BUS_MAX_RECIPIENTS,
   BUS_OPERATOR_ID,
   type AgentHarness,
   type BusSendResult,
@@ -145,10 +146,15 @@ function world(
     }),
     harnessLabel: harness =>
       harness === 'operator' ? 'the operator' : `${harness}-label`,
-    expectTurn: (ptyId: string, initiator: TurnInitiator) =>
-      turns.push(
-        `expect ${ptyId} ${initiator.kind === 'agent' ? initiator.name : 'operator'}`
-      ),
+    expectTurn: (
+      ptyId: string,
+      initiator: TurnInitiator,
+      midTurn: 'joins' | 'next-turn'
+    ) => {
+      const who = initiator.kind === 'agent' ? initiator.name : 'operator';
+      turns.push(`expect ${ptyId} ${who} ${midTurn}`);
+      return () => turns.push(`withdraw ${ptyId} ${who}`);
+    },
     onRecord: record => pushed.push(record),
     now: () => (clock += 1),
   });
@@ -794,6 +800,28 @@ describe('a message to several recipients (BUG-329)', () => {
   });
 });
 
+describe('the recipient cap', () => {
+  it('is the bus core’s, worded, for every door', async () => {
+    const { dispatcher, pushed } = world(sessions, {
+      claude: { agent: fixtureDoor('claude-socket').transport, operator: null },
+    });
+    const result = await dispatcher.send({
+      from: codexSender,
+      projectId: '/work/app',
+      to: Array.from(
+        { length: BUS_MAX_RECIPIENTS + 1 },
+        (_, index) => `@agent-${index}`
+      ),
+      text: 'everyone',
+      senderSessionId: codexSender.sessionId,
+    });
+    expect(refusalOf(result).reason).toBe(
+      `That message names ${BUS_MAX_RECIPIENTS + 1} recipients; the bus carries one to up to ${BUS_MAX_RECIPIENTS}`
+    );
+    expect(pushed).toEqual([]);
+  });
+});
+
 describe('who starts the turn a message opens (BUG-332)', () => {
   it('tells the turn truth, before the door, that a peer’s note opens the peer’s turn and an operator message the operator’s', async () => {
     // the doors write into the same log the turn truth is told in
@@ -827,12 +855,80 @@ describe('who starts the turn a message opens (BUG-332)', () => {
       text: 'go on',
     });
     expect(log).toEqual([
-      'expect pty-2 codex-2',
+      'expect pty-2 codex-2 joins',
       'door pty-2',
-      'expect pty-2 operator',
+      'expect pty-2 operator joins',
       'door pty-2',
     ]);
   });
+
+  it('says what a message delivered into a running turn becomes, as its door declares', async () => {
+    const queueDoor: BusTransport = {
+      kind: 'codex-queue',
+      holdWhile: [],
+      midTurn: 'next-turn',
+      async deliver() {
+        return { state: 'queued', adapter: 'codex-queue' };
+      },
+    };
+    const { dispatcher, turns } = world(sessions, {
+      claude: { agent: queueDoor, operator: null },
+    });
+    await dispatcher.send({
+      from: codexSender,
+      projectId: '/work/app',
+      to: ['@claude-1'],
+      text: 'after this turn',
+      senderSessionId: codexSender.sessionId,
+    });
+    expect(turns).toEqual(['expect pty-2 codex-2 next-turn']);
+  });
+
+  it.each([
+    [
+      'undeliverable',
+      async () => ({
+        state: 'undeliverable' as const,
+        reason: 'no socket',
+        adapter: 'x',
+      }),
+    ],
+    [
+      'unknown',
+      async () => ({
+        state: 'unknown' as const,
+        reason: 'timed out',
+        adapter: 'x',
+      }),
+    ],
+    [
+      'thrown',
+      async (): Promise<never> => {
+        throw new Error('boom');
+      },
+    ],
+  ])(
+    'withdraws the turn a message would have opened when its door answers %s',
+    async (_name, deliver) => {
+      const { dispatcher, turns } = world(sessions, {
+        claude: {
+          agent: { kind: 'x', holdWhile: [], deliver },
+          operator: null,
+        },
+      });
+      await dispatcher.send({
+        from: codexSender,
+        projectId: '/work/app',
+        to: ['@claude-1'],
+        text: 'lost',
+        senderSessionId: codexSender.sessionId,
+      });
+      expect(turns).toEqual([
+        'expect pty-2 codex-2 joins',
+        'withdraw pty-2 codex-2',
+      ]);
+    }
+  );
 
   it('says nothing of a turn when nothing is handed over', async () => {
     const { dispatcher, turns, live, pushed } = world(

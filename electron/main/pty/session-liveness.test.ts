@@ -265,7 +265,11 @@ describe('session liveness: the harness side', () => {
     t.workFor(5);
     const lastOutput = t.cursor;
     t.advance(12_000);
-    t.liveness.turnStale('pty-1', { quietMs: 12_000, children: 0 });
+    t.liveness.turnStale('pty-1', {
+      quietMs: 12_000,
+      children: 0,
+      cause: 'silence',
+    });
     expect(t.stalls()).toEqual([
       {
         event: 'liveness.stall',
@@ -283,7 +287,11 @@ describe('session liveness: the harness side', () => {
       },
     ]);
     // the same silence reported twice is still one episode
-    t.liveness.turnStale('pty-1', { quietMs: 13_000, children: 0 });
+    t.liveness.turnStale('pty-1', {
+      quietMs: 13_000,
+      children: 0,
+      cause: 'silence',
+    });
     expect(t.stalls()).toHaveLength(1);
 
     t.advance(68_000);
@@ -308,7 +316,11 @@ describe('session liveness: the harness side', () => {
     t.advance(200);
     t.write(); // "Interrupted", then nothing
     t.advance(12_000);
-    t.liveness.turnStale('pty-1', { quietMs: 12_000, children: 0 });
+    t.liveness.turnStale('pty-1', {
+      quietMs: 12_000,
+      children: 0,
+      cause: 'silence',
+    });
     expect(t.stalls()[0].fields).toMatchObject({
       inputBeforeSilence: true,
       inputDuringSilence: false,
@@ -321,18 +333,40 @@ describe('session liveness: the harness side', () => {
     t.advance(5_000);
     t.liveness.input('pty-1');
     t.advance(7_000);
-    t.liveness.turnStale('pty-1', { quietMs: 12_000, children: 0 });
+    t.liveness.turnStale('pty-1', {
+      quietMs: 12_000,
+      children: 0,
+      cause: 'silence',
+    });
     expect(t.stalls()[0].fields).toMatchObject({
       inputBeforeSilence: false,
       inputDuringSilence: true,
     });
   });
 
+  it('writes no stall for a turn the operator stopped with Escape (BUG-342)', () => {
+    const t = harness();
+    t.workFor(3);
+    t.liveness.input('pty-1');
+    t.write(); // "Interrupted", then quiet
+    t.advance(4_000);
+    t.liveness.turnStale('pty-1', {
+      quietMs: 4_000,
+      children: 0,
+      cause: 'interrupt',
+    });
+    expect(t.stalls()).toEqual([]);
+  });
+
   it('closes a harness stall when the process exits', () => {
     const t = harness();
     t.workFor(3);
     t.advance(12_000);
-    t.liveness.turnStale('pty-1', { quietMs: 12_000, children: 0 });
+    t.liveness.turnStale('pty-1', {
+      quietMs: 12_000,
+      children: 0,
+      cause: 'silence',
+    });
     t.advance(3_000);
     t.liveness.ended('pty-1');
     expect(t.cleared()[0].fields).toMatchObject({
@@ -381,7 +415,11 @@ describe('session liveness: idle Sessions and failures', () => {
     t.workFor(3);
     t.advance(12_000);
     expect(() =>
-      t.liveness.turnStale('pty-1', { quietMs: 12_000, children: 0 })
+      t.liveness.turnStale('pty-1', {
+        quietMs: 12_000,
+        children: 0,
+        cause: 'silence',
+      })
     ).not.toThrow();
     expect(() => t.workFor(5)).not.toThrow();
     expect(t.lines).toEqual([

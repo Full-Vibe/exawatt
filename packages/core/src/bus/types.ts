@@ -145,6 +145,12 @@ export interface MessagingTransport<Target = unknown, Context = unknown> {
   ): Promise<DeliveryResult>;
 }
 
+/** The most recipients one message may name, from any door (Direct, the
+ *  `exawatt` command, the MCP send tool): more than any Fleet selection
+ *  Direct sends to, few enough that a send is never a broadcast storm
+ *  through the terminal doors. The bus core refuses past it. */
+export const BUS_MAX_RECIPIENTS = 64;
+
 /** `bus:send`. The renderer is always the operator: the kind is fixed so the
  *  UI can never speak as an Agent. */
 export interface BusSendRequest {

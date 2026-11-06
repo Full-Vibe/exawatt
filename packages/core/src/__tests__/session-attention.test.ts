@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   attentionRecords,
   attentionIsUnread,
+  attentionVisibleRise,
   projectSessionAttention,
   orderedAttentionTargets,
   readPtyAttention,
@@ -127,5 +128,45 @@ describe('inspection projection', () => {
     );
     expect(attentionIsUnread(null)).toBe(false);
     expect(attentionIsUnread({ kind: 'turn-end', since: 1 })).toBe(true);
+  });
+});
+
+describe('a visible rise in attention (decision 0046, 2026-11-05)', () => {
+  const bell: PtyAttentionRecord = {
+    source: 'harness',
+    kind: 'bell',
+    request: 'unknown',
+    since: 3,
+    unread: true,
+  };
+  it('rises when a gate appears, even one already read because it is watched', () => {
+    expect(
+      attentionVisibleRise([], [{ ...bell, unread: false }])
+    ).toMatchObject({ kind: 'bell' });
+  });
+  it('rises when anything becomes unread, and names the record that did', () => {
+    expect(attentionVisibleRise([question], [question, result])).toBe(result);
+  });
+  it('does not rise for a fact hidden behind one already unread and needing him', () => {
+    const unreadQuestion = { ...question, unread: true };
+    expect(
+      attentionVisibleRise([unreadQuestion], [unreadQuestion, result])
+    ).toBeNull();
+  });
+  it('does not rise when a bell becomes the request it was', () => {
+    const blocked: PtyAttentionRecord = {
+      source: 'harness',
+      kind: 'blocked',
+      request: 'blocking',
+      since: 4,
+      unread: true,
+    };
+    expect(attentionVisibleRise([bell], [blocked])).toBeNull();
+  });
+  it('never rises when records are only read or removed', () => {
+    expect(attentionVisibleRise([bell, result], [result])).toBeNull();
+    expect(
+      attentionVisibleRise([result], [{ ...result, unread: false }])
+    ).toBeNull();
   });
 });

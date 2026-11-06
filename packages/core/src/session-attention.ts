@@ -53,6 +53,49 @@ export function projectSessionAttention(
   };
 }
 
+/**
+ * The record that made a Session's attention visibly rise, or null when
+ * nothing the operator can see rose.
+ *
+ * What he sees of attention is two facts of the projection: whether it needs
+ * him (a gate: the needs-you light, and a ⌘J entry whatever its read bit) and
+ * whether any of it is unread (the corner dot, the dock count, a ⌘J entry for
+ * a result). The sound, the notification and the dock bounce are owed
+ * exactly when one of those rises, and never otherwise: "If a bell rings and
+ * there's no change in how the product looks, that would be considered to be
+ * a design philosophy bug, they should be bijective" (decision `0046`,
+ * 2026-11-05). Alerts derive from this transition rather than from each
+ * producer's judgment, so a producer cannot ring without a visible change or
+ * change what is visible without ringing.
+ */
+export function attentionVisibleRise(
+  previous: readonly PtyAttentionRecord[],
+  next: readonly PtyAttentionRecord[]
+): PtyAttentionRecord | null {
+  const was = projectSessionAttention(previous);
+  const now = projectSessionAttention(next);
+  const rose =
+    (!attentionNeedsOperator(was) && attentionNeedsOperator(now)) ||
+    (!attentionIsUnread(was) && attentionIsUnread(now));
+  if (!rose) return null;
+  // The fact behind the rise: a record the previous list did not hold as it
+  // now stands. A rise needs one; removing or reading records cannot rise.
+  const fresh = next.filter(
+    record =>
+      !previous.some(
+        held =>
+          attentionRecordKey(held) === attentionRecordKey(record) &&
+          held.since === record.since &&
+          (held.unread !== false) === (record.unread !== false)
+      )
+  );
+  return (
+    [...fresh].sort(
+      (a, b) => priority(a) - priority(b) || a.since - b.since
+    )[0] ?? null
+  );
+}
+
 /** Operator inspection affects every currently presented fact, not execution. */
 export function withAttentionRead(
   snapshot: PtyAttention,

@@ -166,6 +166,7 @@ const operatorTurnDoor = terminalInputTransport({
 const queuedPeerTerminalDoor = terminalInputTransport({
   delivered: 'terminal',
   holdWhile: ['starting', 'blocked'],
+  midTurn: 'next-turn',
 });
 
 /** A peer message through a terminal nobody has measured mid-turn: typed

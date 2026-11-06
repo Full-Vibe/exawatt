@@ -4,12 +4,14 @@ import {
   attentionRecords,
   attentionNeedsOperator,
   attentionRecordKey,
+  attentionVisibleRise,
   projectSessionAttention,
   markAttentionUnread,
   type SessionBackgroundTask,
   type TurnInitiator,
 } from '@exawatt/core';
-import type { PtySessionManager } from './session-manager';
+import { awakeClock } from './awake-clock';
+import type { PtyDataOrigin, PtySessionManager } from './session-manager';
 import type {
   PtyAttention,
   PtyAttentionKind,
@@ -46,16 +48,40 @@ import type {
  * A spawn grace period keeps auto-revived tabs from all lighting up at app
  * start.
  *
- * Every turn carries who started it (BUG-332). The operator starts a turn by
- * giving work (a keystroke, a launch task, Direct); another Agent starts one
- * by a message the bus hands to this Session's door (`expectTurn`). A turn's
- * END raises attention for its initiator: an operator turn ends with an
- * unread result, an Agent's turn ends with the result already read and no
- * alert, so traffic between Agents never marks an idle Agent unread or puts
- * it in ⌘J. Chatter is where the operator notices it. What genuinely needs
- * the operator (a reported question or permission gate, a bell) is raised
- * the same whoever started the turn, and an Agent's turn neither clears nor
- * replaces the operator's own unread result: it leaves attention as it was.
+ * The turn record (BUG-332, amended 2026-11-05). A turn opens in one place,
+ * `openTurn`, at a real boundary: the source reporting a turn start, work
+ * given (the operator's keystroke, a bus door's Enter) into a Session with no
+ * turn open, or output resuming after the turn closed. Output pausing and
+ * resuming inside a turn opens nothing. A turn closes at the source's
+ * reported end or at the quiescence decision. Each turn carries who started
+ * it: the operator, or an Agent whose bus message it runs (`expectTurn`). A
+ * message delivered into a running turn either joins that turn (Claude's
+ * socket, read between tool calls) or opens the NEXT one (a CLI queue, a
+ * harness that queues pasted input); its expectation is withdrawn if the
+ * delivery failed and is taken only by a turn opening after it is armed. A
+ * turn nobody claimed is the operator's.
+ *
+ * A turn another Agent started is quiet however it ends: its result arrives
+ * read, and the harness's own bell (BEL, OSC 9, OSC 777) in or after it
+ * raises nothing (operator ruling, decision `0046`, 2026-11-05). A request
+ * only the operator can answer (a reported permission or question) still
+ * raises, whoever started the turn. A peer's turn never clears or replaces
+ * what the operator is owed: his result and his bell stay as he left them.
+ * A new operator turn's result supersedes the previous result record
+ * whatever its read bit; a second raise inside the same turn is the same
+ * result.
+ *
+ * Alerts are derived, never decided by a producer. Every source change to a
+ * Session's records goes through `commit`, which emits `alert` exactly when
+ * the visible projection rose (`attentionVisibleRise`: a gate appeared, or
+ * something became unread). Operator edits (reading, Mark unread) and
+ * restoration change records without alerting. So a sound always accompanies
+ * a visible change, and every visible rise from source evidence sounds.
+ *
+ * Silence is measured on the awake clock (`awake-clock.ts`), so a Mac that
+ * slept through a turn does not wake to a "silence" as long as the sleep.
+ * Only process output counts as the Session speaking: Exawatt's own bytes
+ * (the exit marker, a notice) reach panes but not this monitor.
  *
  * Pure Node (no Electron imports) so it unit-tests directly. Env knobs:
  *   EXAWATT_ATTENTION=0               disable entirely
@@ -89,13 +115,59 @@ export function attentionIsOperatorGate(kind: PtyAttentionKind): boolean {
 /** Why inference reclaimed a reported record (ENG-023 D4/D7): the evidence
  *  `reported-turn-stale` carries so the reclaim can be logged with it. */
 export interface StaleReportEvidence {
-  /** real byte silence measured on the PTY */
+  /** real byte silence measured on the PTY, awake time only */
   quietMs: number;
   /** the bound that silence crossed */
   staleMs: number;
   ownTurn: 'generating' | 'available' | 'unknown';
   /** reported children outstanding at the moment of reclaim */
   children: number;
+  /** `interrupt`: the operator's lone Escape stopped the turn and it went
+   *  quiet (BUG-342), so ordinary quiescence closed it; not a harness that
+   *  stopped writing. `silence`: nothing vouched for the turn past the
+   *  stale bound. */
+  cause: 'silence' | 'interrupt';
+}
+
+/** How a terminal bell was taken (`bell` event, `attention.bell` line). */
+export type AttentionBell =
+  | {
+      signal: TerminalBellSignal;
+      outcome: 'raised';
+      /** whether it made attention visibly rise, so an alert went out */
+      alerted: boolean;
+    }
+  | {
+      signal: TerminalBellSignal;
+      outcome: 'suppressed';
+      /** `agent-turn`: rung in or after a turn another Agent started.
+       *  `reported-turn-open`: the source reports its turn still open and no
+       *  gate. `team-working`: its delegated team is still working. */
+      reason: 'agent-turn' | 'reported-turn-open' | 'team-working';
+    };
+
+/** Which terminal sequence rang: a real BEL, or a notification OSC. */
+export type TerminalBellSignal = 'bel' | 'osc-9' | 'osc-777';
+
+/** One Session's turn: whether one is open, and whose it is. */
+interface TurnRecord {
+  open: boolean;
+  /** The source itself reported this turn's start. Until it does, its next
+   *  reported start is the report of this same turn (a keystroke's or a
+   *  door's Enter opened it here first). */
+  reported: boolean;
+  /** who started the open turn, or the last one */
+  initiator: TurnInitiator;
+  /** counts openings: a result belongs to the turn it was raised in */
+  serial: number;
+}
+
+/** A bus message's claim on a turn it should open. */
+interface TurnExpectation {
+  initiator: TurnInitiator;
+  /** Takeable by the next opening. Delivered into a running turn, it arms
+   *  when that turn closes: the message runs as the next turn. */
+  armed: boolean;
 }
 
 export interface AttentionMonitorOptions {
@@ -103,8 +175,11 @@ export interface AttentionMonitorOptions {
   quietMs?: number;
   minBurstBytes?: number;
   spawnGraceMs?: number;
-  /** injectable clock for tests */
+  /** injectable wall clock for tests: record timestamps */
   now?: () => number;
+  /** injectable awake clock for tests: silence. Defaults to `now` when
+   *  that is injected, else the app's awake clock. */
+  awake?: () => number;
 }
 
 /** honors an explicit 0 (Number(x) || fallback would silently discard it) */
@@ -154,9 +229,15 @@ const REPORTED_TURN_STALE_FACTOR = 3;
 type AttentionMonitorEvents = {
   activity: [id: string, working: boolean];
   attention: [id: string, attention: PtyAttention | null];
-  /** A new source transition, never a read/unread edit or restoration. */
+  /** Attention visibly rose on source evidence (`attentionVisibleRise`):
+   *  never a read/unread edit or restoration. Carries the record that rose. */
   alert: [id: string, attention: PtyAttentionRecord];
   engaged: [id: string];
+  /** Input reached the Session as work: the operator's keystroke or paste,
+   *  or a bus door's Enter. Liveness reads its input fact from here. */
+  input: [id: string];
+  /** A terminal bell, raised or suppressed, with why. */
+  bell: [id: string, bell: AttentionBell];
   'reported-turn-stale': [id: string, evidence: StaleReportEvidence];
 };
 
@@ -201,13 +282,17 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    *  `lastDataAt` records every chunk regardless, so `reclaimStaleReportedTurn`
    *  keeps measuring real silence rather than time-since-latch. */
   private settled = new Set<string>();
-  /** Who started each Session's current or last turn. Absent is the
-   *  operator: every turn before the bus was his. */
-  private initiators = new Map<string, TurnInitiator>();
-  /** Whose the next turn a Session opens is: set as the bus hands it a
-   *  message, taken when a turn opens. The operator giving work takes it
-   *  back (he is now in the turn too). */
-  private expected = new Map<string, TurnInitiator>();
+  /** Each Session's turn record. Absent: no turn yet, the operator's. */
+  private turns = new Map<string, TurnRecord>();
+  /** Bus messages' claims on the turns they open, oldest first. */
+  private expected = new Map<string, TurnExpectation[]>();
+  /** The turn serial the current result record was raised in. */
+  private resultTurn = new Map<string, number>();
+  /** An operator turn ended with its result withheld for its working team:
+   *  the result that arrives later is his, whoever started a turn since. */
+  private withheldForOperator = new Set<string>();
+  /** A lone Escape stopped the open, generating turn (BUG-342). */
+  private interrupted = new Set<string>();
   /** sessions ever given work (D22: composer task, exact resume, or a human
    *  keystroke via pty:engage) or that ever raised attention (a turn-end
    *  implies a turn happened) — the strip's started/unstarted truth */
@@ -223,8 +308,11 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    *  means the source reports nothing and inference is on its own. */
   private reportedTurn: (id: string) => ReportedTurn | null = () => null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private readonly opts: Required<Omit<AttentionMonitorOptions, 'now'>>;
+  private readonly opts: Required<
+    Omit<AttentionMonitorOptions, 'now' | 'awake'>
+  >;
   private readonly now: () => number;
+  private readonly awake: () => number;
   private readonly disabled = process.env.EXAWATT_ATTENTION === '0';
 
   private get reportedTurnStaleMs(): number {
@@ -240,11 +328,24 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       spawnGraceMs: options.spawnGraceMs ?? DEFAULTS.spawnGraceMs,
     };
     this.now = options.now ?? (() => Date.now());
+    this.awake = options.awake ?? options.now ?? awakeClock.now;
   }
 
   attach(manager: PtySessionManager): void {
     this.manager = manager;
-    manager.on('data', (id: string, data: string) => this.onData(id, data));
+    manager.on(
+      'data',
+      (
+        id: string,
+        data: string,
+        _cursor?: number,
+        _durableSessionId?: string,
+        origin?: PtyDataOrigin
+      ) => {
+        // Exawatt's own bytes are not the Session speaking.
+        if (origin !== 'exawatt') this.onData(id, data);
+      }
+    );
     manager.on(
       'exit',
       (id: string, _code: number, durableSessionId?: string) => {
@@ -348,15 +449,11 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       return record;
     });
     if (added.length === 0 && existing.size === ids.length) return;
-    const next = [
+    if (added.length) this.markEngaged(id);
+    this.commit(id, [
       ...previous.filter(record => record.source !== 'roadmap'),
       ...roadmap,
-    ];
-    if (next.length) this.attention.set(id, next);
-    else this.attention.delete(id);
-    if (added.length) this.markEngaged(id);
-    this.emit('attention', id, this.get(id));
-    for (const record of added) this.emitFactAlert(id, record);
+    ]);
   }
 
   /** Inspection and operator intent never raise a second source alert. */
@@ -390,55 +487,175 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    *  output. Keeping the side effect inside this boundary makes that order
    *  impossible for callers to accidentally reverse (D24/D33). */
   runWithResizeGuard<T>(id: string, resize: () => T): T {
-    this.lastResizeAt.set(id, this.now());
+    this.lastResizeAt.set(id, this.awake());
     return resize();
   }
 
   /** The operator gave this session work (task, resume, or keystroke).
    *  Deliberately NOT gated on `disabled`: startedness is explicit fact,
-   *  not stream inference. Emits 'engaged' once per session. */
-  noteEngaged(id: string): void {
-    // The operator's own work: whatever a peer's message expected, this turn
-    // is his, and so is the result it ends with.
-    this.expected.delete(id);
-    this.initiators.set(id, OPERATOR_TURN);
+   *  not stream inference. Emits 'engaged' once per session.
+   *
+   *  `input` is what he typed, when it came from the terminal: a lone Escape
+   *  into a generating turn with no gate open stops that turn (BUG-342).
+   *  Claude Code reports no boundary for an aborted turn, so without this the
+   *  turn stayed open until the stale bound reclaimed it, twelve seconds of
+   *  "working" and a harness stall that was the operator's own Escape. */
+  noteEngaged(id: string, input?: string): void {
+    if (input === '\x1b' && this.interruptible(id)) this.interrupted.add(id);
+    // The operator's own work: a message that would have opened this turn
+    // is part of his now. One queued for the turn after stays queued.
+    const queue = this.expected.get(id);
+    if (queue)
+      this.setExpected(
+        id,
+        queue.filter(item => !item.armed)
+      );
+    const session = this.liveAgent(id);
+    if (session) {
+      const turn = this.turn(id);
+      if (turn.open) turn.initiator = OPERATOR_TURN;
+      else this.openTurn(id, 'operator');
+    }
     this.giveWork(id);
+    this.emit('input', id);
   }
 
   /**
-   * A message the bus is about to hand to this Session's door will open its
-   * next turn, started by `initiator` (an Agent, or the operator through
-   * Direct). Taken by the next turn that opens: a door's own Enter
-   * (`noteTurnOpened`), a reported turn start, or output beginning.
+   * A message the bus is about to hand to this Session's door will open a
+   * turn started by `initiator` (an Agent, or the operator through Direct).
+   * `midTurn` is what the door's message becomes if a turn is running:
+   * `joins` (read into that turn: no turn of its own) or `next-turn` (run
+   * after it ends). Returns the withdrawal the bus calls when the door did
+   * not deliver: a message that never arrived opens no turn.
    */
-  expectTurn(id: string, initiator: TurnInitiator): void {
-    this.expected.set(id, initiator);
+  expectTurn(
+    id: string,
+    initiator: TurnInitiator,
+    midTurn: 'joins' | 'next-turn'
+  ): () => void {
+    const open = this.turns.get(id)?.open ?? false;
+    if (open && midTurn === 'joins') return () => {};
+    const expectation: TurnExpectation = { initiator, armed: !open };
+    this.setExpected(id, [...(this.expected.get(id) ?? []), expectation]);
+    return () => {
+      const queue = this.expected.get(id);
+      if (queue)
+        this.setExpected(
+          id,
+          queue.filter(item => item !== expectation)
+        );
+    };
   }
 
-  /** The bus's terminal door pressed Enter on a message: work given, by
-   *  whoever the message's turn was expected to belong to. */
+  /** The bus's terminal door pressed Enter on a message. Into an idle
+   *  Session that opens the turn the message expected; into a running turn
+   *  the harness queues it, and the expectation waits for the next turn. */
   noteTurnOpened(id: string): void {
-    this.takeExpectedTurn(id);
+    this.emit('input', id);
+    if (!this.liveAgent(id) || this.turns.get(id)?.open) return;
+    this.openTurn(id, 'door');
     this.giveWork(id);
   }
 
   /** Who started this Session's current or last turn. */
   turnInitiator(id: string): TurnInitiator {
-    return this.initiators.get(id) ?? OPERATOR_TURN;
+    return this.turns.get(id)?.initiator ?? OPERATOR_TURN;
   }
 
-  /** A turn opened: it is the expected initiator's, when one is expected;
-   *  otherwise it continues as the last turn's (a parent resuming on its
-   *  child's result is still the work its starter gave). */
-  private takeExpectedTurn(id: string): void {
-    const expected = this.expected.get(id);
-    if (!expected) return;
-    this.expected.delete(id);
-    this.initiators.set(id, expected);
+  private turn(id: string): TurnRecord {
+    let turn = this.turns.get(id);
+    if (!turn) {
+      turn = {
+        open: false,
+        reported: false,
+        initiator: OPERATOR_TURN,
+        serial: 0,
+      };
+      this.turns.set(id, turn);
+    }
+    return turn;
+  }
+
+  private setExpected(id: string, queue: TurnExpectation[]): void {
+    if (queue.length) this.expected.set(id, queue);
+    else this.expected.delete(id);
+  }
+
+  /**
+   * The one place a turn opens. `reported`: the source said a turn began;
+   * `operator`: he gave work; `door`: a bus door pressed Enter; `output`:
+   * the Session spoke with no turn open.
+   *
+   * A turn already open stays the same turn, with one exception: the source
+   * reporting a start for a turn it has already vouched for is the next turn
+   * (a CLI queue runs back-to-back turns with no idle gap between). Its first
+   * report of a turn opened here by an Enter is that same turn.
+   *
+   * The new turn is the oldest armed expectation's, else the operator's: a
+   * turn nobody claimed never "continues as the last turn's" (a parent
+   * resuming on its child's result after a peer's turn is his work).
+   */
+  private openTurn(
+    id: string,
+    cause: 'reported' | 'operator' | 'door' | 'output'
+  ): void {
+    const turn = this.turn(id);
+    if (turn.open) {
+      if (cause !== 'reported') return;
+      if (!turn.reported) {
+        turn.reported = true;
+        return;
+      }
+      this.closeTurn(id);
+    }
+    turn.open = true;
+    turn.reported = cause === 'reported';
+    turn.serial += 1;
+    const queue = this.expected.get(id) ?? [];
+    const claim =
+      cause === 'operator' ? -1 : queue.findIndex(item => item.armed);
+    turn.initiator = claim === -1 ? OPERATOR_TURN : queue[claim].initiator;
+    if (claim !== -1)
+      this.setExpected(
+        id,
+        queue.filter((_, index) => index !== claim)
+      );
+  }
+
+  /** The turn ended. A message queued for the next turn arms now. */
+  private closeTurn(id: string): void {
+    const turn = this.turns.get(id);
+    if (!turn?.open) return;
+    turn.open = false;
+    turn.reported = false;
+    this.interrupted.delete(id);
+    for (const item of this.expected.get(id) ?? []) item.armed = true;
   }
 
   private agentTurn(id: string): boolean {
     return this.turnInitiator(id).kind === 'agent';
+  }
+
+  /** A live, non-shell Session: the only kind with turns. */
+  private liveAgent(id: string) {
+    const session = this.manager?.list().find(item => item.id === id);
+    return session && !session.exited && session.harness !== 'shell'
+      ? session
+      : null;
+  }
+
+  /** A lone Escape stops this turn: it is open, the source reports it
+   *  generating, and no gate is open for the Escape to answer. */
+  private interruptible(id: string): boolean {
+    const report = this.reportedTurn(id);
+    return (
+      !!this.turns.get(id)?.open &&
+      report?.ownTurn === 'generating' &&
+      !report.blockedOn &&
+      !(this.attention.get(id) ?? []).some(
+        record => record.kind === 'blocked' && record.request === 'blocking'
+      )
+    );
   }
 
   private giveWork(id: string): void {
@@ -451,14 +668,8 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     this.settled.delete(id);
     this.burstBytes.set(id, 0);
     this.markEngaged(id);
-    const session = this.manager?.list().find(item => item.id === id);
-    if (
-      !this.disabled &&
-      session &&
-      !session.exited &&
-      session.harness !== 'shell'
-    ) {
-      this.lastDataAt.set(id, this.now());
+    if (!this.disabled && this.liveAgent(id)) {
+      this.lastDataAt.set(id, this.awake());
       this.setWorking(id, true);
     }
   }
@@ -483,27 +694,34 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     if (!session || session.exited || session.harness === 'shell') return;
     this.settled.add(id);
     this.setWorking(id, false);
+    this.closeTurn(id);
     // Consume the burst: the boundary is accounted for, and leaving it would
     // let the next quiescence sweep re-raise the same finished turn.
     this.burstBytes.set(id, 0);
     // A completed blocking turn backstops a lost gate-release event. An
     // asynchronous question can outlive this turn and needs its own reply
-    // correlation; completing work does not answer that question.
-    this.clear(
-      id,
-      record =>
-        record.source === 'harness' &&
-        record.kind !== 'turn-end' &&
-        record.request !== 'working'
-    );
+    // correlation; completing work does not answer that question. Retired in
+    // the same commit as the result raised below: one transition, one alert
+    // decision. A peer's turn ending leaves the operator's bell as it was.
+    const agentTurn = this.agentTurn(id);
+    const retire = (record: PtyAttentionRecord) =>
+      record.source === 'harness' &&
+      record.kind !== 'turn-end' &&
+      !(record.kind === 'bell' && agentTurn) &&
+      record.request !== 'working';
     // NO spawn grace here, deliberately. That guard exists because a revived
     // tab printing its banner and going quiet LOOKS like a finished turn to
     // inference; a reported boundary carries no such ambiguity, and honoring
     // the grace would swallow the result of any turn finished within 20s of
     // launch — which is most first turns.
-    // The Session's own turn ended, but its team has not (ENG-023).
-    if (this.delegatedBusy(id)) return;
-    this.raise(id, 'turn-end');
+    // The Session's own turn ended, but its team has not (ENG-023). The
+    // result that arrives when it has is the operator's if this turn was.
+    if (this.delegatedBusy(id)) {
+      if (!agentTurn) this.withheldForOperator.add(id);
+      this.clear(id, retire);
+      return;
+    }
+    this.raise(id, 'turn-end', { retire });
   }
 
   /** A previously observed completion settles execution without new news. */
@@ -511,6 +729,7 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     this.sourceObserved.add(id);
     this.settled.add(id);
     this.setWorking(id, false);
+    this.closeTurn(id);
     this.burstBytes.set(id, 0);
   }
 
@@ -636,7 +855,11 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    * ordinary `turn-end`, so every surface sees one fact change once.
    */
   private reclaimStaleReportedTurn(id: string, quietFor: number): boolean {
-    if (quietFor < this.reportedTurnStaleMs) return false;
+    // An operator's Escape stopped the turn (BUG-342): it ends at ordinary
+    // quiescence, and it is not a harness that stopped writing.
+    const interrupted = this.interrupted.has(id);
+    const staleMs = interrupted ? this.opts.quietMs : this.reportedTurnStaleMs;
+    if (quietFor < staleMs) return false;
     const report = this.reportedTurn(id);
     if (
       !report ||
@@ -647,9 +870,10 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       return false;
     const evidence: StaleReportEvidence = {
       quietMs: quietFor,
-      staleMs: this.reportedTurnStaleMs,
+      staleMs,
       ownTurn: report.ownTurn,
       children: report.children.length,
+      cause: interrupted ? 'interrupt' : 'silence',
     };
     this.emit('reported-turn-stale', id, evidence);
     return true;
@@ -672,20 +896,22 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     if (!session || session.exited || session.harness === 'shell') return;
     this.settled.delete(id);
     this.markEngaged(id);
-    this.takeExpectedTurn(id);
-    // A source-confirmed new turn supersedes its old result and proves a
-    // synchronous gate was released. Asynchronous requests can outlive turns
-    // and are retired only by their own correlated source reply. A turn
-    // another Agent started supersedes nothing the operator is owed: his
-    // result stays as he left it, read or unread (BUG-332).
+    this.openTurn(id, 'reported');
+    // A source-confirmed new turn supersedes its old result and bell, and
+    // proves a synchronous gate was released. Asynchronous requests can
+    // outlive turns and are retired only by their own correlated source
+    // reply. A turn another Agent started supersedes nothing the operator is
+    // owed: his result and his bell stay as he left them (BUG-332).
     const agentTurn = this.agentTurn(id);
     this.clear(
       id,
       record =>
         record.source === 'harness' &&
-        (record.kind === 'turn-end' ? !agentTurn : record.request !== 'working')
+        (record.kind === 'turn-end' || record.kind === 'bell'
+          ? !agentTurn
+          : record.request !== 'working')
     );
-    this.lastDataAt.set(id, this.now());
+    this.lastDataAt.set(id, this.awake());
     this.setWorking(id, true);
   }
 
@@ -721,7 +947,9 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // quiescence sweep re-raise the same pause as a finished turn.
     this.burstBytes.set(id, 0);
     this.markEngaged(id);
-    this.raise(id, 'blocked', request, requestId);
+    // Raised whoever started the turn: only the operator can answer it, and
+    // the Agent stalls until he does (the 2026-11-05 ruling's exception).
+    this.raise(id, 'blocked', { request, requestId });
   }
 
   /** The gate closed — the operator answered, or the harness withdrew it. */
@@ -794,45 +1022,82 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     // pause that latched it, and twelve seconds later
     // `reclaimStaleReportedTurn` declared a visibly-working turn stale and
     // put a green result on the tab (BUG-008).
-    this.lastDataAt.set(id, this.now());
+    this.lastDataAt.set(id, this.awake());
+    if (bell) {
+      this.onBell(id, bell);
+      return;
+    }
+    if (this.settled.has(id) && this.reportedTurn(id) !== null) return;
+    const sinceResize = this.awake() - (this.lastResizeAt.get(id) ?? -Infinity);
+    if (sinceResize >= RESIZE_GRACE_MS) {
+      // Output with no turn open is a turn opening (a source that reports
+      // none runs a queued message, or real work follows a settle). Output
+      // resuming inside an open turn, after any pause, opens nothing.
+      if (!this.turns.get(id)?.open && this.liveAgent(id))
+        this.openTurn(id, 'output');
+      this.setWorking(id, true);
+    }
+    this.burstBytes.set(id, (this.burstBytes.get(id) ?? 0) + data.length);
+  }
+
+  /**
+   * A terminal bell: a real BEL, or an OSC 9 / OSC 777 notification.
+   *
+   * Suppressed at the RAISE, not at any surface: main decides which signal
+   * survives and the renderer decides which one is navigable, and the one
+   * time a liveness rule was written on both sides of the IPC it drifted
+   * within a milestone (S1.1's post-landing review). Every bell writes one
+   * `bell` event with how it was taken, so a beep (or its absence) is a file
+   * read, not a guess.
+   */
+  private onBell(id: string, signal: TerminalBellSignal): void {
     const report = this.reportedTurn(id);
-    const hasReportedSource = report !== null;
     // A terminal nudge cannot overrule a source-owned unfinished/unknown
-    // turn. Structured requests have their own channel and identity.
+    // turn or a team still working (see `teamWorkingWithoutGate`). Structured
+    // requests have their own channel and identity.
     if (
-      bell &&
       report &&
       (!report.blockedOn || report.request === 'working') &&
       (report.ownTurn !== 'available' || sessionHasBackgroundWork(report))
-    )
+    ) {
+      this.emit('bell', id, {
+        signal,
+        outcome: 'suppressed',
+        reason:
+          report.ownTurn === 'available'
+            ? 'team-working'
+            : 'reported-turn-open',
+      });
       return;
-    if (!bell && this.settled.has(id) && hasReportedSource) return;
-    const sinceResize = this.now() - (this.lastResizeAt.get(id) ?? -Infinity);
-    if (bell) {
-      // BEL is an explicit turn boundary: the agent is now waiting, not
-      // working. Consume the burst too, otherwise acknowledging the bell
-      // can reveal stale working state or re-flag the same turn as quiet.
-      this.settleAgent(id);
-      this.setWorking(id, false);
-      this.burstBytes.set(id, 0);
-    } else {
-      if (sinceResize >= RESIZE_GRACE_MS) this.setWorking(id, true);
-      this.burstBytes.set(id, (this.burstBytes.get(id) ?? 0) + data.length);
     }
-    // A bell from a Session whose team is still working is ambient, not a
-    // gate. Suppressed at the RAISE, not at any surface: main decides which
-    // signal survives and the renderer decides which one is navigable, and the
-    // one time this liveness rule was written on both sides of the IPC it
-    // drifted within a milestone (S1.1's post-landing review).
-    if (bell && !this.teamWorkingWithoutGate(id)) {
-      this.raise(id, 'bell', 'unknown');
+    // BEL is an explicit turn boundary: the agent is now waiting, not
+    // working. Consume the burst too, otherwise acknowledging the bell
+    // can reveal stale working state or re-flag the same turn as quiet.
+    this.settleAgent(id);
+    this.setWorking(id, false);
+    this.burstBytes.set(id, 0);
+    // In or after a turn another Agent started, the harness's own bell is
+    // that Agent's business: nothing is raised, so nothing sounds and
+    // nothing changes on screen (Claude Code rings its idle nudge a minute
+    // after `Stop`; the operator's 2026-11-05 ruling).
+    if (this.agentTurn(id)) {
+      this.emit('bell', id, {
+        signal,
+        outcome: 'suppressed',
+        reason: 'agent-turn',
+      });
+      return;
     }
+    const alerted = this.raise(id, 'bell', { request: 'unknown' });
+    this.emit('bell', id, { signal, outcome: 'raised', alerted });
   }
 
   /** turn-boundary detection; public so tests can drive time explicitly */
   sweepNow(): void {
     if (this.disabled || !this.manager) return;
-    const now = this.now();
+    // Silence on the awake clock; the spawn grace compares wall times.
+    const now = this.awake();
+    const wall = this.now();
     const live = new Set<string>();
     for (const s of this.manager.list()) {
       live.add(s.id);
@@ -887,12 +1152,14 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
         (!reclaimed || this.delegatedBusy(s.id))
       )
         continue;
-      // decision time: the burst is consumed whether or not it flags
+      // decision time: the turn is over and the burst is consumed, whether
+      // or not it flags
+      this.closeTurn(s.id);
       const burst = this.burstBytes.get(s.id) ?? 0;
       this.burstBytes.set(s.id, 0);
       if (burst < this.opts.minBurstBytes) continue;
       // revived/new tabs printing their banner then waiting is not news
-      if (now - s.startedAt < this.opts.spawnGraceMs) continue;
+      if (wall - s.startedAt < this.opts.spawnGraceMs) continue;
       this.raise(s.id, 'turn-end');
     }
     for (const id of this.retainedAttention.keys()) {
@@ -904,39 +1171,68 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     }
   }
 
+  /**
+   * A source fact the operator may need: a result, a bell, a request.
+   * Returns whether it made attention visibly rise (and so alerted).
+   *
+   * `retire` names records the same source transition removes, so a turn
+   * end that releases a gate and delivers a result is one change and one
+   * alert decision, never a fall and a rise.
+   */
   private raise(
     id: string,
     kind: PtyAttentionKind,
-    request?: PtyAttention['request'],
-    requestId?: string
-  ): void {
+    {
+      request,
+      requestId,
+      retire,
+    }: {
+      request?: PtyAttention['request'];
+      requestId?: string;
+      retire?: (record: PtyAttentionRecord) => boolean;
+    } = {}
+  ): boolean {
     this.sourceObserved.add(id);
-    const records = this.attention.get(id) ?? [];
+    const records = (this.attention.get(id) ?? []).filter(
+      record => !retire?.(record)
+    );
+    let unread = !this.isWatched(id);
+    if (kind === 'turn-end') {
+      // A result is the operator's news when he started the turn, or a turn
+      // of his withheld it for his team; one another Agent started arrives
+      // read and never replaces his (BUG-332). A new turn's result supersedes
+      // the last one whatever its read bit; within one turn it is the same.
+      const operators = !this.agentTurn(id) || this.withheldForOperator.has(id);
+      this.withheldForOperator.delete(id);
+      const serial = this.turns.get(id)?.serial ?? 0;
+      const held = records.some(
+        record => record.source === 'harness' && record.kind === 'turn-end'
+      );
+      if (held && (!operators || this.resultTurn.get(id) === serial))
+        return this.commit(id, records);
+      this.resultTurn.set(id, serial);
+      if (!operators) unread = false;
+    }
     const next: PtyAttentionRecord = {
       source: 'harness',
       kind,
       since: this.now(),
-      // A result is the operator's news only when the operator started the
-      // turn; one another Agent started arrives already read, so it neither
-      // marks the Agent unread nor alerts nor joins ⌘J (BUG-332). Requests
-      // and bells need him whoever started the turn.
-      unread:
-        !this.isWatched(id) && !(kind === 'turn-end' && this.agentTurn(id)),
+      unread,
       ...(request ? { request } : {}),
       ...(requestId ? { requestId } : {}),
     };
     const key = attentionRecordKey(next);
     const existing = records.find(record => attentionRecordKey(record) === key);
-    if (existing) {
+    if (existing && kind !== 'turn-end') {
       const upgrade =
         (existing.kind === 'bell' && kind === 'blocked') ||
         (kind === 'blocked' &&
           requestId !== undefined &&
           existing.requestId !== requestId);
-      if (!upgrade) return;
+      if (!upgrade) return this.commit(id, records);
     }
     this.markEngaged(id);
-    this.attention.set(id, [
+    return this.commit(id, [
       ...records.filter(
         record =>
           attentionRecordKey(record) !== key &&
@@ -948,16 +1244,26 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
       ),
       next,
     ]);
-    this.emit('attention', id, this.get(id));
-    this.emitFactAlert(id, next);
   }
 
-  private emitFactAlert(id: string, record: PtyAttentionRecord): void {
-    // Alert the new fact, not the selected compatibility projection: a result
-    // can arrive behind an already-read request and still deserves one alert.
-    if (record.unread || attentionIsOperatorGate(record.kind)) {
-      this.emit('alert', id, record);
-    }
+  /**
+   * Every source change to a Session's live records lands here, and this is
+   * the only place an alert is emitted: exactly when the visible projection
+   * rose (`attentionVisibleRise`). Returns whether it did.
+   */
+  private commit(id: string, next: PtyAttentionRecord[]): boolean {
+    const previous = this.attention.get(id) ?? [];
+    if (
+      next.length === previous.length &&
+      next.every((record, index) => record === previous[index])
+    )
+      return false;
+    if (next.length) this.attention.set(id, next);
+    else this.attention.delete(id);
+    this.emit('attention', id, this.get(id));
+    const rose = attentionVisibleRise(previous, next);
+    if (rose) this.emit('alert', id, rose);
+    return rose !== null;
   }
 
   private clear(
@@ -966,19 +1272,15 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
   ): void {
     const records = this.attention.get(id);
     if (!records) return;
-    const next = records.filter(record => !matches(record));
-    if (next.length === records.length) return;
-    if (next.length) this.attention.set(id, next);
-    else this.attention.delete(id);
-    this.emit('attention', id, this.get(id));
+    this.commit(
+      id,
+      records.filter(record => !matches(record))
+    );
   }
 
   private setWorking(id: string, working: boolean): void {
     if (working) {
       if (this.working.has(id)) return;
-      // Output beginning is a turn opening for a source that reports none
-      // (a CLI queue runs a peer's message as its next turn).
-      this.takeExpectedTurn(id);
       this.working.add(id);
     } else if (!this.working.delete(id)) {
       return;
@@ -999,8 +1301,11 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
     this.carry.delete(id);
     this.engaged.delete(id);
     this.settled.delete(id);
-    this.initiators.delete(id);
+    this.turns.delete(id);
     this.expected.delete(id);
+    this.resultTurn.delete(id);
+    this.withheldForOperator.delete(id);
+    this.interrupted.delete(id);
     this.setWorking(id, false);
     this.clear(id);
   }
@@ -1012,15 +1317,15 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
    * skipped (their notify variants 9/777 count as bells); sequences split
    * across chunks are carried per-session and re-scanned when the rest lands.
    */
-  private scan(id: string, data: string): { bell: boolean } {
+  private scan(id: string, data: string): { bell: TerminalBellSignal | null } {
     let text = (this.carry.get(id) ?? '') + data;
     this.carry.delete(id);
-    let bell = false;
+    let bell: TerminalBellSignal | null = null;
     let i = 0;
     while (i < text.length) {
       const esc = text.indexOf('\x1b]', i);
       const plain = esc === -1 ? text.slice(i) : text.slice(i, esc);
-      if (plain.includes('\x07')) bell = true;
+      if (plain.includes('\x07')) bell ??= 'bel';
       if (esc === -1) {
         // a chunk ending mid "ESC ]" must not leak its BEL terminator into
         // the next chunk's plain text
@@ -1053,8 +1358,13 @@ export class AttentionMonitor extends EventEmitter<AttentionMonitorEvents> {
         return { bell };
       }
       const body = text.slice(esc + 2, end);
-      // terminal notifications ARE bells: OSC 9;<msg> / OSC 777;notify;…
-      if (body.startsWith('9;') || body.startsWith('777;notify;')) bell = true;
+      // Terminal notifications ARE bells: OSC 9;<message> / OSC 777;notify;…
+      // A numbered OSC 9 is a ConEmu command, not a message: Claude Code
+      // emits OSC 9;4 progress during long operations (2.1.318, a setting),
+      // and its own allowlist draws the same line ("OSC 9 bodies may not
+      // begin with a digit unless in the 9;4 progress form").
+      if (body.startsWith('9;') && !/^9;\d/.test(body)) bell ??= 'osc-9';
+      if (body.startsWith('777;notify;')) bell ??= 'osc-777';
       i = end + skip;
     }
     return { bell };
