@@ -6301,7 +6301,10 @@ turn record per Session. A turn opens in one place, at a reported start,
 work given with no turn open, or output with no turn open; it takes the
 oldest armed claim, else it is the operator's. Each door declares what a
 message delivered mid-turn becomes (Claude's socket joins the turn, a queue
-runs it next), and a failed delivery withdraws its claim. A new turn's
+runs it next), a failed delivery withdraws its claim, and no armed claim
+outlives the opening it was armed for (two messages that reach an idle
+Claude together are one turn, and an operator message in it makes it his).
+A new turn's
 result supersedes the last whatever its read bit. Under the operator's
 2026-11-05 ruling a peer's turn is quiet however it ends, its bell included,
 and alerts derive in one place from the visible projection rising, so a
