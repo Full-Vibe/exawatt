@@ -15,12 +15,12 @@ import { useId } from 'react';
 import { GitBranch, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export interface LaunchOptionsItem {
+interface LaunchOptionsItem {
   id: string;
   label: string;
 }
 
-export interface LaunchOptionsPanelProps {
+interface LaunchOptionsPanelProps {
   worktree: boolean;
   branch: string;
   onWorktreeChange: (worktree: boolean) => void;

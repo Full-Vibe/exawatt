@@ -1039,7 +1039,7 @@ export async function openShellFromLauncher(page) {
  * They have their own trigger on the launcher's status line and render
  * outside the form Start submits, so Enter in their fields starts nothing.
  */
-export async function openLaunchOptions(page) {
+async function openLaunchOptions(page) {
   await summonComposer(page);
   const options = page.locator('[data-agent-composer] [data-launch-options]');
   if (await options.isVisible().catch(() => false)) return options;
