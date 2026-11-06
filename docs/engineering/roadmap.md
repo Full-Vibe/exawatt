@@ -65,6 +65,21 @@ Every roadmap item, in queue order. Status here is the item's `Status:` line, wh
 
 ## Review front (2026-11-05): what the 2026-11-04 front's review found
 
+Merged 2026-11-06: packet 3 alone at `da28bdf9a`, packets 1, 2, 4, 5 and 6
+together at `48957873f`, with every gate passing on one run. Two earlier
+batch runs were red for reasons outside the cars, and each time the culprit
+search named a car that was not at fault: the Team-to-Fleet pose check depended
+on machine speed (BUG-343, fixed in the batch) and the delivery suite times out
+under heavy machine load (BUG-345). The Electron gates opened dev windows over
+the operator's foreground app (BUG-344). Leftovers from the reviews, not yet
+filed: `app-ipc.ts:126` checks `EXAWATT_TEST` loosely; Fleet's
+`updateFilters` reads `window.location.search`; a refused paint report leaves
+no trace; Clone to… drops the setup name; the
+`src/lib/launch-configurations.ts` re-export shim remains; the YOLO default can
+go stale; Codex may drop its queue on interrupt (unverified); an OpenCode or
+Grok repaint outside the resize grace can open a turn; React's purity rule has
+13 findings and set-state-in-effect 83, neither enabled.
+
 Seven independent reviews of the 2026-11-04 front, one per packet, read each
 landed change against its claimed bugs. Same rule as that front: each packet
 upgrades the system its findings share, and the records amend the bug they
@@ -6613,3 +6628,43 @@ logged as `operator-escape-then-quiet`, and liveness writes no stall for it.
 Proof: `turn-record.test.ts` ("an expected interrupt"),
 `session-liveness.test.ts` ("writes no stall for a turn the operator
 stopped").
+
+### BUG-343 The Team-to-Fleet pose check fails on a slow machine
+
+Status: bug · ENG-004 · found 2026-11-06 by the review front's batch merge
+
+`eval:spatial`'s `handoff-pose` failed whenever Fleet v2 took longer than the
+product's 900 ms handoff budget to build its first frame: 3 of 8 runs on
+master under load, 600-1200 ms measured from the click. The product taking
+the cut there is correct; the check was asking for machine speed.
+
+Fixed 2026-11-06. System change: a handoff snapshot carries its own claim
+budget (`captureAltitudeCards`' `budgetMs`, the product's 900 ms by default),
+read by the claim, the active window and the ghosts' deadline. The pose
+check widens it to 20 s and asserts the carry itself; `handoff-missed-budget`
+still asserts the 900 ms cut. Proof: `altitude-handoff.dom.test.ts` ("holds
+each snapshot to the budget it was captured with"), 10 of 10 repeated pose
+runs under load.
+
+### BUG-344 Merge-run Electron gates take focus from the operator's foreground app
+
+Status: bug · ENG-022 · reported 2026-11-06 by the operator
+
+While the batch merge ran its `eval:electron:*` gates (device-power,
+source-power, project-pause and neighbours), Exawatt dev builds kept opening
+and taking focus from a movie the operator was watching. Evals are meant to
+be headless and never take focus. Cause not yet traced; start with which
+launch path activates the app or shows a window under `EXAWATT_TEST`.
+
+### BUG-345 The delivery suite times out under machine load, and the culprit search convicts a bystander
+
+Status: bug · ENG-022 · found 2026-11-06 by the review front's batch merge
+
+At load averages of 65-110, `test:agent-delivery` failed with a different set
+of 4-9 tests on each run (no single test repeated except the transient-latch
+one), so the recheck failed too and the prefix search named
+`agent/dialog-broker`, a car that touches nothing the suite covers. The same
+cars passed the suite on a quiet machine. Two gaps: the suite's timing
+assertions depend on host speed, and a check whose failures differ run to run
+is evidence of a flake, not of the car under test.
+
