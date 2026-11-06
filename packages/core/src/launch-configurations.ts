@@ -5,12 +5,22 @@
  * permissions, worktrees, branches, prompts, and roadmap links do not belong
  * here. Shell is a peer launch target, but never an Agent configuration.
  *
- * Identity is (source, model, Agent Type). Reasoning effort is an orthogonal
- * axis the configuration CARRIES, not part of what it is (BUG-334): one model
- * is one configuration whatever effort it last launched at, and a launch at a
- * new effort updates the effort it carries. Pools written while effort was
- * identity collapse on parse; ids are always recomputed, never trusted from
- * disk, so the stored shape (schema 1) is unchanged.
+ * Identity is (source, model, Agent Type) plus, for a named setup, its name.
+ * Reasoning effort is an orthogonal axis a configuration CARRIES, not part of
+ * what it is (BUG-334), and the two kinds carry it differently:
+ *
+ *   - An unnamed configuration is the model as the operator last launched it:
+ *     one per model, and a launch at a new effort updates the effort it
+ *     carries.
+ *   - A named setup is the operator's own preset. It carries the effort it
+ *     was saved with; only saving it again under the same name changes that.
+ *     A launch credits it only when it starts exactly that setup, and never
+ *     renames it, re-efforts it or folds it into another configuration.
+ *
+ * Pools written while effort was identity collapse on parse, unnamed rows per
+ * model and named rows per name; ids are always recomputed, never trusted
+ * from disk, so the stored shape (schema 1) is unchanged and an older build
+ * reads it by its own identity rule.
  */
 
 export const LAUNCH_CONFIGURATION_SCHEMA_VERSION = 1 as const;
@@ -35,6 +45,12 @@ export interface AgentLaunchConfigurationInput {
   effort?: string | null;
   /** Optional portable Agent Type identity. A friendly name is not a Type. */
   typeId?: string | null;
+  /**
+   * A named setup's name, which is part of its identity: a named setup is
+   * never the same configuration as the unnamed one on its model, nor as a
+   * differently named one. Omitted/null is the unnamed configuration.
+   */
+  name?: string | null;
   labels?: AgentLaunchConfigurationLabels;
 }
 
@@ -55,7 +71,7 @@ export interface AgentLaunchConfiguration {
   typeId: string | null;
   /** Source-observed presentation snapshots; never part of identity. */
   labels: AgentLaunchConfigurationLabels;
-  /** Friendly preset label; never part of identity and never a Type. */
+  /** A named setup's name (part of its identity; never a Type). */
   name: string | null;
   createdAt: number;
 }
@@ -103,6 +119,12 @@ function optionalIdentityPart(value: unknown): string | null | undefined {
   return boundedNonEmptyString(value, MAX_IDENTITY_PART_LENGTH) ?? undefined;
 }
 
+/** null for the unnamed configuration, undefined for an invalid name. */
+function optionalName(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null;
+  return boundedNonEmptyString(value, MAX_NAME_LENGTH) ?? undefined;
+}
+
 function finiteTimestamp(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
@@ -146,16 +168,25 @@ export function launchConfigurationFingerprint(
   );
   const effort = optionalIdentityPart(input.effort);
   const typeId = optionalIdentityPart(input.typeId);
-  if (!sourceId || !modelId || effort === undefined || typeId === undefined) {
+  const name = optionalName(input.name);
+  if (
+    !sourceId ||
+    !modelId ||
+    effort === undefined ||
+    typeId === undefined ||
+    name === undefined
+  ) {
     throw new Error('Invalid Launch Configuration identity');
   }
   // A fixed-position tuple avoids object-key-order and delimiter ambiguity.
-  // Effort is validated above but is an axis, never identity (BUG-334).
-  return `launch-configuration:v2:${JSON.stringify([
-    sourceId,
-    modelId,
-    typeId,
-  ])}`;
+  // Effort is validated above but is an axis, never identity (BUG-334). A
+  // named setup appends its name, so the unnamed tuple (and every id already
+  // on disk for it) is unchanged.
+  return `launch-configuration:v2:${JSON.stringify(
+    name === null
+      ? [sourceId, modelId, typeId]
+      : [sourceId, modelId, typeId, name]
+  )}`;
 }
 
 export function launchConfigurationId(
@@ -168,15 +199,13 @@ export function launchConfigurationId(
 
 export function createAgentLaunchConfiguration(
   input: AgentLaunchConfigurationInput,
-  createdAt = Date.now(),
-  name: string | null = null
+  createdAt = Date.now()
 ): AgentLaunchConfiguration {
   const fingerprint = launchConfigurationFingerprint(input);
   const normalizedCreatedAt = finiteTimestamp(createdAt);
   if (normalizedCreatedAt === null)
     throw new Error('Invalid configuration timestamp');
-  const normalizedName =
-    name === null ? null : normalizeConfigurationName(name);
+  const normalizedName = optionalName(input.name) ?? null;
   return {
     kind: 'agent',
     id: `agent:${encodeURIComponent(fingerprint)}`,
@@ -249,17 +278,17 @@ function projectState(
   return pool.projects[project] ?? { usage: {}, pins: [] };
 }
 
+/**
+ * Write a configuration's effort and labels, adding it if it is new. The one
+ * place an existing row's effort changes: an unnamed row on every launch, a
+ * named setup only when it is saved again under its name.
+ */
 function upsertConfiguration(
   pool: LaunchConfigurationPoolV1,
   input: AgentLaunchConfigurationInput,
-  createdAt: number,
-  name?: string
+  createdAt: number
 ): AgentLaunchConfiguration {
-  const candidate = createAgentLaunchConfiguration(
-    input,
-    createdAt,
-    name ?? null
-  );
+  const candidate = createAgentLaunchConfiguration(input, createdAt);
   const existingIndex = pool.configurations.findIndex(
     configuration => configuration.fingerprint === candidate.fingerprint
   );
@@ -281,10 +310,40 @@ function upsertConfiguration(
     ...existing,
     effort: candidate.effort,
     labels,
-    name: name === undefined ? existing.name : candidate.name,
   };
   pool.configurations[existingIndex] = updated;
   return updated;
+}
+
+/**
+ * Which configuration a successful launch credits. A launch that names a
+ * setup credits it only while that setup exists and the launch starts it
+ * exactly, at the effort it was saved with; it refreshes the setup's model and
+ * source labels and nothing else. Any other launch, a named one whose effort
+ * the operator changed included, is the unnamed configuration on its model.
+ */
+function creditLaunch(
+  pool: LaunchConfigurationPoolV1,
+  target: AgentLaunchConfigurationInput,
+  launchedAt: number
+): string {
+  if (optionalName(target.name)) {
+    const fingerprint = launchConfigurationFingerprint(target);
+    const index = pool.configurations.findIndex(
+      configuration => configuration.fingerprint === fingerprint
+    );
+    const named = index < 0 ? undefined : pool.configurations[index];
+    if (named && named.effort === (target.effort?.trim() || null)) {
+      const labels = normalizeLabels(target.labels);
+      delete labels.effort;
+      pool.configurations[index] = {
+        ...named,
+        labels: { ...named.labels, ...labels },
+      };
+      return named.id;
+    }
+  }
+  return upsertConfiguration(pool, { ...target, name: null }, launchedAt).id;
 }
 
 export function recordLaunchConfigurationSuccess(
@@ -312,7 +371,7 @@ export function recordLaunchConfigurationSuccess(
     }
     id = SHELL_LAUNCH_TARGET_ID;
   } else {
-    id = upsertConfiguration(pool, target, timestamp).id;
+    id = creditLaunch(pool, target, timestamp);
   }
   const state = projectState(pool, project);
   const previous = state.usage[id];
@@ -330,11 +389,25 @@ export function saveNamedLaunchConfiguration(
   name: string,
   savedAt = Date.now()
 ): LaunchConfigurationPoolV1 {
+  if (!input || typeof input !== 'object') {
+    throw new Error('Invalid Launch Configuration identity');
+  }
   const pool = clonePool(current);
-  upsertConfiguration(pool, input, savedAt, normalizeConfigurationName(name));
+  upsertConfiguration(
+    pool,
+    { ...input, name: normalizeConfigurationName(name) },
+    savedAt
+  );
   return pool;
 }
 
+/**
+ * Name a configuration, or rename a named setup. The name is identity, so the
+ * configuration's id changes and its usage and pins move with it; naming the
+ * unnamed configuration on a model makes it a named setup carrying the effort
+ * it had. A name another setup on the same model already holds is refused,
+ * never merged.
+ */
 export function renameLaunchConfiguration(
   current: LaunchConfigurationPoolV1,
   id: string,
@@ -347,10 +420,26 @@ export function renameLaunchConfiguration(
     configuration => configuration.id === id
   );
   if (index < 0) throw new Error('Launch Configuration not found');
+  const renamed = createAgentLaunchConfiguration(
+    { ...pool.configurations[index], name: normalizedName },
+    pool.configurations[index].createdAt
+  );
+  if (renamed.id === id) return pool;
+  if (
+    pool.configurations.some(configuration => configuration.id === renamed.id)
+  )
+    throw new Error('A setup with that name already exists');
   pool.configurations[index] = {
-    ...pool.configurations[index],
-    name: normalizedName,
+    ...renamed,
+    labels: { ...pool.configurations[index].labels },
   };
+  for (const state of Object.values(pool.projects)) {
+    if (state.usage[id]) {
+      state.usage[renamed.id] = state.usage[id];
+      delete state.usage[id];
+    }
+    state.pins = state.pins.map(pin => (pin === id ? renamed.id : pin));
+  }
   return pool;
 }
 
@@ -499,10 +588,10 @@ function parseConfiguration(
         modelId,
         effort,
         typeId,
+        name,
         labels: parseLabels(candidate.labels),
       },
-      createdAt,
-      name
+      createdAt
     );
   } catch {
     return null;
@@ -599,10 +688,11 @@ export function parseLaunchConfigurationPool(
   const aliases = new Map<string, string>();
   const launchedAt = rawLaunchRecency(candidate);
   // Rows that differ only by effort (pools written while effort was identity)
-  // collapse into one configuration. The effort it carries is the one last
-  // launched in any Project; a name survives from the most recent named row.
+  // collapse into one configuration: the unnamed rows of a model into one,
+  // and the rows of one named setup into that setup. A name is identity, so
+  // two named setups, or a named and an unnamed row, never merge. The effort
+  // the collapsed row carries is the one last launched in any Project.
   const effortRecency = new Map<string, RowRecency>();
-  const nameRecency = new Map<string, RowRecency>();
   rawConfigurations.forEach((rawConfiguration, index) => {
     const parsed = parseConfiguration(rawConfiguration, index);
     if (!parsed) return;
@@ -622,7 +712,6 @@ export function parseLaunchConfigurationPool(
     if (!existing) {
       empty.configurations.push(parsed);
       effortRecency.set(parsed.fingerprint, recency);
-      if (parsed.name) nameRecency.set(parsed.fingerprint, recency);
       return;
     }
     const keptEffortLabel = existing.labels.effort;
@@ -636,13 +725,6 @@ export function parseLaunchConfigurationPool(
       existing.labels.effort = keptEffortLabel;
     } else {
       delete existing.labels.effort;
-    }
-    if (parsed.name) {
-      const named = nameRecency.get(parsed.fingerprint);
-      if (!named || moreRecent(recency, named)) {
-        nameRecency.set(parsed.fingerprint, recency);
-        existing.name = parsed.name;
-      }
     }
     existing.createdAt = Math.min(existing.createdAt, parsed.createdAt);
   });

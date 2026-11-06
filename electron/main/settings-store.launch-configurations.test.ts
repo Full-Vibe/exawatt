@@ -64,7 +64,11 @@ describe('Launch Configuration settings persistence', () => {
         SHELL_LAUNCH_TARGET_ID
       ]
     ).toEqual({ launchCount: 1, lastLaunchedAt: 40 });
-    expect(settings.launchConfigurations?.configurations).toHaveLength(1);
+    // An unnamed launch is the model's own configuration, never the setup
+    // named "Reviewer" on it.
+    expect(
+      settings.launchConfigurations?.configurations.map(({ name }) => name)
+    ).toEqual(['Reviewer', null]);
   });
 
   it('persists Project-local pins and explicit rename/delete operations', () => {
@@ -73,18 +77,23 @@ describe('Launch Configuration settings persistence', () => {
     setLaunchConfigurationPinned('/alpha', id, true);
     setLaunchConfigurationPinned('/beta', SHELL_LAUNCH_TARGET_ID, true);
     renameLaunchConfiguration(id, 'Primary reviewer');
+    // A name is identity: the pin moves to the named setup's id.
+    const namedId = launchConfigurationId({
+      ...opus,
+      name: 'Primary reviewer',
+    });
     let settings = loadSettings();
     expect(settings.launchConfigurations?.configurations[0].name).toBe(
       'Primary reviewer'
     );
     expect(settings.launchConfigurations?.projects['/alpha'].pins).toEqual([
-      id,
+      namedId,
     ]);
     expect(settings.launchConfigurations?.projects['/beta'].pins).toEqual([
       SHELL_LAUNCH_TARGET_ID,
     ]);
 
-    deleteLaunchConfiguration(id);
+    deleteLaunchConfiguration(namedId);
     settings = loadSettings();
     expect(settings.launchConfigurations?.configurations).toEqual([]);
     expect(settings.launchConfigurations?.projects['/alpha']).toBeUndefined();
