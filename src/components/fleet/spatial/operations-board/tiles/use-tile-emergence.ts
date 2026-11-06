@@ -25,11 +25,12 @@ export function useTileEmergence(
     [visible]
   );
   const tracker = useRef<EmergenceTracker | null>(null);
-  if (!tracker.current)
+  if (tracker.current == null) {
     tracker.current = createEmergenceTracker(
       solid.map(piece => piece.id),
       reduced ? 0 : undefined
     );
+  }
   const [retiring, setRetiring] = useState<string[]>([]);
   const previousReduced = useRef(reduced);
   const frames = useFrameScheduler();
