@@ -344,7 +344,7 @@ async function setMode(appearance, mode) {
   const button = appearance.locator(
     `#theme-mode [data-settings-option="${mode}"]`
   );
-  if ((await button.getAttribute('aria-pressed')) !== 'true') {
+  if ((await button.getAttribute('aria-checked')) !== 'true') {
     await button.click();
   }
 }
@@ -355,7 +355,7 @@ async function commitPreset(appearance, theme) {
   await card.click();
   await waitForCommittedState({ themeId: theme.id });
   assert(
-    (await card.getAttribute('aria-pressed')) === 'true',
+    (await card.getAttribute('aria-checked')) === 'true',
     `${theme.label} card did not expose its committed state`
   );
 }

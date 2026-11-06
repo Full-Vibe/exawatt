@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
 import { useAppearance } from '@/components/appearance/appearance-provider';
 import { THEME_DEFINITIONS } from '@/generated/theme-registry';
 import type {
@@ -38,56 +37,26 @@ const themeById = new Map<string, ThemeDefinitionV1>(
   THEME_DEFINITIONS.map(theme => [theme.id, theme])
 );
 
-function ThemeCard({
-  theme,
-  selected,
-  disabled,
-  onSelect,
-}: {
-  theme: ThemeDefinitionV1;
-  selected: boolean;
-  disabled: boolean;
-  onSelect: () => void;
-}) {
+/** A theme's own canvas, surface and action colours: the card's preview. */
+function ThemeSwatch({ theme }: { theme: ThemeDefinitionV1 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      data-theme-id={theme.id}
-      disabled={disabled}
-      onClick={onSelect}
-      className="min-w-0 rounded-md border p-2 text-left outline-none transition-[border-color,background-color] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] disabled:cursor-not-allowed disabled:opacity-50"
+    <span
+      aria-hidden
+      className="mb-2 flex h-8 overflow-hidden rounded border"
       style={{
-        borderColor: selected
-          ? 'var(--settings-teal)'
-          : 'var(--settings-line-strong)',
-        background: selected
-          ? 'var(--settings-teal-wash)'
-          : 'var(--settings-raised)',
+        background: theme.foundation.canvas,
+        borderColor: theme.foundation.border,
       }}
     >
       <span
-        aria-hidden
-        className="mb-2 flex h-8 overflow-hidden rounded border"
-        style={{
-          background: theme.foundation.canvas,
-          borderColor: theme.foundation.border,
-        }}
-      >
-        <span
-          className="m-1.5 flex-1 rounded-sm"
-          style={{ background: theme.foundation.surface }}
-        />
-        <span
-          className="my-1.5 mr-1.5 w-3 rounded-sm"
-          style={{ background: theme.foundation.action }}
-        />
-      </span>
-      <span className="flex items-center gap-1.5 font-ui text-chrome-label font-medium text-[var(--settings-soft)]">
-        <span className="truncate">{theme.label}</span>
-        {selected && <Check aria-hidden className="ml-auto h-3.5 w-3.5" />}
-      </span>
-    </button>
+        className="m-1.5 flex-1 rounded-sm"
+        style={{ background: theme.foundation.surface }}
+      />
+      <span
+        className="my-1.5 mr-1.5 w-3 rounded-sm"
+        style={{ background: theme.foundation.action }}
+      />
+    </span>
   );
 }
 
@@ -206,19 +175,25 @@ export function AppearanceSettings() {
         description="Auto switches with your Mac between light and dark."
         body={
           preferences.selection.mode === 'manual' ? (
-            <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-3">
-              {themes.map(theme => (
-                <ThemeCard
-                  key={theme.id}
-                  theme={theme}
-                  selected={manualThemeId === theme.id}
-                  disabled={disabled}
-                  onSelect={() =>
-                    commit(current => selectManualTheme(current, theme.id))
-                  }
-                />
-              ))}
-            </div>
+            // The theme cards are the same ChoiceGroup as Theme mode beside
+            // them, so the page has one selected treatment (BUG-326).
+            <ChoiceGroup
+              label="Theme"
+              layout="cards"
+              value={manualThemeId ?? null}
+              options={themes.map(theme => ({
+                value: theme.id,
+                label: theme.label,
+                preview: <ThemeSwatch theme={theme} />,
+              }))}
+              optionAttribute="data-theme-id"
+              disabled={disabled}
+              className="w-full max-w-md sm:grid-cols-3 xl:grid-cols-3"
+              optionClassName="p-2"
+              onChange={themeId =>
+                commit(current => selectManualTheme(current, themeId))
+              }
+            />
           ) : (
             <div className="flex flex-wrap gap-x-6 gap-y-3">
               <ThemeSelect

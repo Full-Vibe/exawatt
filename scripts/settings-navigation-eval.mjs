@@ -103,7 +103,7 @@ try {
     assert.equal(
       await view
         .locator('[data-settings-option="v1"]')
-        .getAttribute('aria-pressed'),
+        .getAttribute('aria-checked'),
       'true'
     );
     await view.locator('[data-settings-option="v2"]').click();
@@ -127,7 +127,7 @@ try {
       id =>
         document
           .querySelector(`[data-fleet-settings] [data-fleet-material="${id}"]`)
-          ?.getAttribute('aria-pressed') === 'true',
+          ?.getAttribute('aria-checked') === 'true',
       last.id
     );
     await page.locator('[data-fleet-material-reset]').click();
@@ -141,7 +141,7 @@ try {
     assert.equal(
       await page
         .locator('[data-fleet-material="gummy"]')
-        .getAttribute('aria-pressed'),
+        .getAttribute('aria-checked'),
       'true'
     );
     await page.screenshot({

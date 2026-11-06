@@ -18,11 +18,16 @@
  * foundation roles as `--settings-teal` and friends, and in the workspace
  * they resolve to the active preset's chrome, so one recipe serves both.
  *
- * Each option is a toggle button (`aria-pressed`) in a labelled group: the
- * choice is one click, and the pressed state is the contract evals read.
+ * It is a radio group, the codebase's pattern for one-of-a-set (the New
+ * Agent row, the launch configuration ribbon): `role="radiogroup"` over
+ * `role="radio"` options with `aria-checked`, which is the contract tests and
+ * evals read. The group is ONE Tab stop, on the checked option (the first
+ * enabled one when nothing is checked); arrow keys move the choice and wrap,
+ * Home and End go to the ends, and a disabled option is skipped. Moving is
+ * choosing, as with native radios.
  */
 
-import type { ReactNode } from 'react';
+import { useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 interface ChoiceGroupOption<T extends string> {
@@ -30,6 +35,8 @@ interface ChoiceGroupOption<T extends string> {
   label: ReactNode;
   /** Second line under the label (card layout only). */
   description?: ReactNode;
+  /** A visual above the label (card layout only), e.g. a theme swatch. */
+  preview?: ReactNode;
   /** Spoken name when the visible label is not text. */
   accessibleLabel?: string;
   disabled?: boolean;
@@ -77,10 +84,38 @@ export function ChoiceGroup<T extends string>({
   optionClassName,
 }: ChoiceGroupProps<T>) {
   const cards = layout === 'cards';
+  const optionRefs = useRef(new Map<T, HTMLButtonElement>());
+  const enabled = options.filter(
+    option => !(disabled || option.disabled === true)
+  );
+  const tabStop =
+    enabled.find(option => option.value === value)?.value ??
+    enabled[0]?.value ??
+    null;
+  const move = (from: T, key: string) => {
+    if (enabled.length === 0) return false;
+    const index = enabled.findIndex(option => option.value === from);
+    const next =
+      key === 'Home'
+        ? 0
+        : key === 'End'
+          ? enabled.length - 1
+          : key === 'ArrowRight' || key === 'ArrowDown'
+            ? (index + 1) % enabled.length
+            : key === 'ArrowLeft' || key === 'ArrowUp'
+              ? (index - 1 + enabled.length) % enabled.length
+              : null;
+    if (next === null) return false;
+    const target = enabled[next].value;
+    optionRefs.current.get(target)?.focus();
+    if (target !== value) onChange(target);
+    return true;
+  };
   return (
     <div
-      role="group"
+      role="radiogroup"
       aria-label={label}
+      aria-disabled={disabled || undefined}
       data-choice-group={layout}
       className={cn(
         cards
@@ -95,8 +130,14 @@ export function ChoiceGroup<T extends string>({
         return (
           <button
             key={option.value}
+            ref={element => {
+              if (element) optionRefs.current.set(option.value, element);
+              else optionRefs.current.delete(option.value);
+            }}
             type="button"
-            aria-pressed={selected}
+            role="radio"
+            aria-checked={selected}
+            tabIndex={option.value === tabStop ? 0 : -1}
             aria-label={option.accessibleLabel}
             data-choice-value={option.value}
             data-selected={selected || undefined}
@@ -104,6 +145,10 @@ export function ChoiceGroup<T extends string>({
             disabled={optionDisabled}
             title={option.disabled ? option.disabledReason : undefined}
             onClick={() => onChange(option.value)}
+            onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
+              if (event.altKey || event.metaKey || event.ctrlKey) return;
+              if (move(option.value, event.key)) event.preventDefault();
+            }}
             className={cn(
               'border outline-none transition-[border-color,background-color,color] duration-150 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none',
               cards
@@ -115,6 +160,7 @@ export function ChoiceGroup<T extends string>({
           >
             {cards ? (
               <>
+                {option.preview}
                 <span className="block text-sm font-medium text-foreground">
                   {option.label}
                 </span>

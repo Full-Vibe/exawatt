@@ -94,7 +94,7 @@ describe('AppearanceSettings', () => {
     render(<AppearanceSettings />);
 
     for (const [index, label] of ['Classic Dark', 'Air', 'Night'].entries()) {
-      const button = screen.getByRole('button', { name: label });
+      const button = screen.getByRole('radio', { name: label });
       await waitFor(() => expect(button).toBeEnabled());
       fireEvent.click(button);
       await waitFor(() =>
@@ -115,7 +115,7 @@ describe('AppearanceSettings', () => {
   it('restores Auto and keeps interface preferences app-global', async () => {
     render(<AppearanceSettings />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Auto' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Auto' }));
     await waitFor(() => expect(commitPreferences).toHaveBeenCalledOnce());
     const calls = commitPreferences.mock.calls as unknown as Array<
       [AppearancePreferencesV1]
@@ -182,7 +182,7 @@ describe('AppearanceSettings', () => {
     render(<AppearanceSettings />);
 
     act(() => {
-      screen.getByRole('button', { name: 'Air' }).click();
+      screen.getByRole('radio', { name: 'Air' }).click();
       screen.getByRole('switch', { name: 'Use system accent' }).click();
     });
 

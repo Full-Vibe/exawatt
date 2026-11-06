@@ -33,16 +33,16 @@ describe('Fleet presentation choices', () => {
     async environment => {
       vi.stubEnv('NODE_ENV', environment);
       renderSettings();
-      const preview = screen.getByRole('button', { name: /v2/ });
+      const preview = screen.getByRole('radio', { name: /v2/ });
       await waitFor(() => expect(preview).not.toBeDisabled());
-      expect(screen.getByRole('button', { name: /^v1/ })).toHaveAttribute(
-        'aria-pressed',
+      expect(screen.getByRole('radio', { name: /^v1/ })).toHaveAttribute(
+        'aria-checked',
         'true'
       );
       expect(localStorage.getItem(PRESENTATION_STORAGE_KEY)).toBeNull();
       fireEvent.click(preview);
       await waitFor(() =>
-        expect(preview).toHaveAttribute('aria-pressed', 'true')
+        expect(preview).toHaveAttribute('aria-checked', 'true')
       );
       expect(await createPresentationPreferenceSource().load()).toEqual({
         schemaVersion: 1,
@@ -53,13 +53,13 @@ describe('Fleet presentation choices', () => {
   it('offers every catalog material without changing the selected view', async () => {
     renderSettings();
     for (const material of FLEET_MATERIALS) {
-      const button = screen.getByRole('button', {
+      const button = screen.getByRole('radio', {
         name: material.name,
       });
       await waitFor(() => expect(button).not.toBeDisabled());
       fireEvent.click(button);
       await waitFor(() =>
-        expect(button).toHaveAttribute('aria-pressed', 'true')
+        expect(button).toHaveAttribute('aria-checked', 'true')
       );
       expect(await createPresentationPreferenceSource().load()).toEqual({
         schemaVersion: 1,
@@ -108,7 +108,7 @@ describe('Fleet presentation choices', () => {
     await waitFor(() => expect(preview).not.toBeDisabled());
     fireEvent.click(preview);
     await waitFor(() =>
-      expect(preview).toHaveAttribute('aria-pressed', 'true')
+      expect(preview).toHaveAttribute('aria-checked', 'true')
     );
     // BUG-326: v2 read as selected only by its label turning white. Both
     // controls are now the same component, so the chosen view carries the
@@ -122,7 +122,7 @@ describe('Fleet presentation choices', () => {
       for (const option of options) {
         expect(option.closest('[data-choice-group]')).not.toBeNull();
         expect(option.hasAttribute('data-selected')).toBe(
-          option.getAttribute('aria-pressed') === 'true'
+          option.getAttribute('aria-checked') === 'true'
         );
       }
     }
@@ -138,10 +138,10 @@ describe('Fleet presentation choices', () => {
     localStorage.setItem(PRESENTATION_STORAGE_KEY, saved);
     renderSettings();
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /v2/ })).not.toBeDisabled()
+      expect(screen.getByRole('radio', { name: /v2/ })).not.toBeDisabled()
     );
-    expect(screen.getByRole('button', { name: /v2/ })).toHaveAttribute(
-      'aria-pressed',
+    expect(screen.getByRole('radio', { name: /v2/ })).toHaveAttribute(
+      'aria-checked',
       'true'
     );
     expect(localStorage.getItem(PRESENTATION_STORAGE_KEY)).toBe(saved);

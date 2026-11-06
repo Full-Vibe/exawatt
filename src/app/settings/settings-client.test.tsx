@@ -358,7 +358,7 @@ describe('Settings navigation contract', () => {
     );
     expect(window.location.search).toBe('?section=fleet');
     expect(window.location.hash).toBe('#fleet-material');
-    expect(screen.getByRole('group', { name: 'Tile material' })).toBeVisible();
+    expect(screen.getByRole('radiogroup', { name: 'Tile material' })).toBeVisible();
     act(() => {
       window.history.replaceState(null, '', '/settings?section=appearance');
       window.dispatchEvent(new PopStateEvent('popstate'));
