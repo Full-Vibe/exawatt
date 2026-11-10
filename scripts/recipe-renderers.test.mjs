@@ -195,7 +195,9 @@ test('the recreated 0cbcb226 hunk is no longer a publication refusal', () => {
     'Status: bug · ENG-004',
     '',
   ];
-  assert.doesNotThrow(() => renderDocument(lines, 'docs/engineering/roadmap.md'));
+  assert.doesNotThrow(() =>
+    renderDocument(lines, 'docs/engineering/roadmap.md')
+  );
   assert.deepEqual(
     lintDocument(lines, 'docs/engineering/roadmap.md').map(
       finding => finding.message
@@ -232,7 +234,14 @@ test('a region removed with a blank line on each side is still refused', () => {
   );
   // An authored seam elsewhere must not mask the one the render created,
   // which is what a count of seams in source and output would let happen.
-  const masked = refusal(['# Title', '', 'Authored.', '', '', ...uneven.slice(1)]);
+  const masked = refusal([
+    '# Title',
+    '',
+    'Authored.',
+    '',
+    '',
+    ...uneven.slice(1),
+  ]);
   assert.match(masked.message, /that its public-variant directives created/u);
   // And the docs lint does not claim a created seam as authored.
   assert.deepEqual(
@@ -339,9 +348,11 @@ function formerRendering(source) {
   }).split('\n');
   if (lines[0] === '---') {
     const close = lines.indexOf('---', 1);
-    return [...lines.slice(0, close + 1), notice, ...lines.slice(close + 1)].join(
-      '\n'
-    );
+    return [
+      ...lines.slice(0, close + 1),
+      notice,
+      ...lines.slice(close + 1),
+    ].join('\n');
   }
   return [notice, ...lines].join('\n');
 }
@@ -366,8 +377,7 @@ test('the seam rule only relaxes: nothing the former rule published renders diff
   let published = 0;
   let newlyPublished = 0;
   for (let round = 0; round < 4000; round += 1) {
-    const lines =
-      random() < 0.2 ? ['---', 'exawatt-roadmap: v2', '---'] : [];
+    const lines = random() < 0.2 ? ['---', 'exawatt-roadmap: v2', '---'] : [];
     const length = 1 + Math.floor(random() * 12);
     for (let index = 0; index < length; index += 1) {
       const shape = random();
@@ -406,8 +416,14 @@ test('the seam rule only relaxes: nothing the former rule published renders diff
       assert.equal(current, former, JSON.stringify(source));
     }
   }
-  assert.ok(published > 500, `only ${published} documents exercised the equality`);
-  assert.ok(newlyPublished > 100, `only ${newlyPublished} authored seams exercised`);
+  assert.ok(
+    published > 500,
+    `only ${published} documents exercised the equality`
+  );
+  assert.ok(
+    newlyPublished > 100,
+    `only ${newlyPublished} authored seams exercised`
+  );
 });
 
 test('a JSON document declares its public variant in a reserved member', () => {
@@ -490,6 +506,35 @@ test('a JSON public-variant directive fails closed', () => {
   }
 });
 
+test('a narrower omit inside a dropped region stays dropped and keeps its own privacy', () => {
+  // The roadmap's Backlog is one private region, and a record inside it can
+  // carry its own omit (BUG-198): the inner one still matters if the outer
+  // switch is ever removed, so it is allowed to stand inside it.
+  const source = [
+    'before',
+    '# exawatt:public-replace-begin the backlog is private',
+    'record',
+    '# exawatt:public-omit-begin private screenshot names',
+    'names',
+    '# exawatt:public-omit-end',
+    'record tail',
+    '# exawatt:public-replace-with',
+    '# public stand-in',
+    '# exawatt:public-replace-end',
+    '# exawatt:public-omit-begin x',
+    'a',
+    '# exawatt:public-omit-begin y',
+    'b',
+    '# exawatt:public-omit-end',
+    '# exawatt:public-omit-end',
+    'after',
+  ].join('\n');
+  assert.equal(
+    applyPublicVariantDirectives(source, { path: 'fixture.yml' }),
+    ['before', 'public stand-in', 'after'].join('\n')
+  );
+});
+
 test('malformed directives throw instead of guessing', () => {
   const cases = [
     ['# exawatt:public-omit-begin\nkeep\n', /never closed/u],
@@ -497,6 +542,28 @@ test('malformed directives throw instead of guessing', () => {
     [
       '# exawatt:public-omit-begin\n# exawatt:public-replace-begin\n',
       /inside another one/u,
+    ],
+    // An omit may sit inside a dropped region; nothing else nests.
+    [
+      [
+        '# exawatt:public-replace-begin',
+        '# exawatt:public-replace-with',
+        '# public',
+        '# exawatt:public-omit-begin',
+      ].join('\n'),
+      /inside another one/u,
+    ],
+    [
+      [
+        '# exawatt:public-replace-begin',
+        '# exawatt:public-omit-begin',
+        '# exawatt:public-replace-with',
+      ].join('\n'),
+      /inside an omit opened within another region/u,
+    ],
+    [
+      '# exawatt:public-omit-begin\n# exawatt:public-omit-begin\n# exawatt:public-omit-end\n',
+      /never closed/u,
     ],
     ['# exawatt:public-replace-with\n', /outside a replace/u],
     [
@@ -705,6 +772,30 @@ test('no public Markdown source carries an authored seam', async () => {
     findings.push(...lintPublicMarkdown(input).map(entry => entry.message));
   }
   assert.deepEqual(findings, []);
+});
+
+test('the public roadmap carries no backlog record while the Backlog is declared private', async () => {
+  // The Backlog's PUBLIC-ROADMAP SWITCH makes every BUG-*/FIX-* record
+  // private. Records appended past its region published anyway, for weeks and
+  // by the dozen (BUG-198), so the switch is enforced here rather than by
+  // where an author happens to append.
+  const source = await readFile(
+    path.join(ROOT, 'docs/engineering/roadmap.md'),
+    'utf8'
+  );
+  if (!source.includes('PUBLIC-ROADMAP SWITCH')) return;
+  const published = applyPublicVariantDirectives(source, {
+    path: 'docs/engineering/roadmap.md',
+  })
+    .split('\n')
+    .flatMap(line => /^### ((?:BUG|FIX)-\d+)\b/u.exec(line)?.[1] ?? []);
+  assert.deepEqual(
+    published,
+    [],
+    `docs/engineering/roadmap.md publishes ${published.join(', ')}. ` +
+      'Backlog records are private: put each one above the ' +
+      '`exawatt:public-replace-with` marker at the end of the Backlog.'
+  );
 });
 
 test('an extra blank line before a public roadmap heading publishes and is linted', async t => {

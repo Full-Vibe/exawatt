@@ -98,7 +98,9 @@ function escapeRegExp(value) {
  */
 function commentToken(line, path, at) {
   const match =
-    /^(\s*)(\S+)[ \t]+exawatt:public-replace-with[ \t]*(\S*)[ \t]*$/u.exec(line);
+    /^(\s*)(\S+)[ \t]+exawatt:public-replace-with[ \t]*(\S*)[ \t]*$/u.exec(
+      line
+    );
   if (!match) {
     failDirective(
       path + ':' + at + ' must write ' + REPLACE_WITH + ' after a comment'
@@ -174,6 +176,10 @@ function applyDirectiveLines(source, { path }) {
   let mode = 'copy';
   let token = null;
   let openedAt = 0;
+  // Omits opened inside a region being dropped. They change nothing in this
+  // variant, but they are a record's own privacy and must still balance: the
+  // outer region may be removed one day (the roadmap's Backlog, BUG-198).
+  let innerOmits = 0;
 
   for (const [index, line] of sourceLines.entries()) {
     const at = index + 1;
@@ -187,6 +193,27 @@ function applyDirectiveLines(source, { path }) {
         origins.push(index);
       }
       continue;
+    }
+    if (
+      directive === OMIT_BEGIN &&
+      (mode === 'omit' || mode === 'replace-omit')
+    ) {
+      innerOmits += 1;
+      continue;
+    }
+    if (directive === OMIT_END && innerOmits > 0) {
+      innerOmits -= 1;
+      continue;
+    }
+    if (innerOmits > 0) {
+      failDirective(
+        path +
+          ':' +
+          at +
+          ' has ' +
+          directive +
+          ' inside an omit opened within another region'
+      );
     }
     if (directive === OMIT_BEGIN || directive === REPLACE_BEGIN) {
       if (mode !== 'copy') {
@@ -324,7 +351,10 @@ function markdownSeams({ text, lines, origins, sourceLines }) {
     seams.push({
       kind,
       renderedLine: first + 1,
-      sourceLines: [from === null ? null : from + 1, to === null ? null : to + 1],
+      sourceLines: [
+        from === null ? null : from + 1,
+        to === null ? null : to + 1,
+      ],
       authored,
     });
   };
@@ -580,7 +610,9 @@ function unescapePointerSegment(segment) {
  */
 function resolvePointer(document, pointer, path) {
   if (!pointer.startsWith('/')) {
-    failDirective(path + ' public-variant pointer must start with "/": ' + pointer);
+    failDirective(
+      path + ' public-variant pointer must start with "/": ' + pointer
+    );
   }
   const segments = pointer.slice(1).split('/').map(unescapePointerSegment);
   let container = document;
@@ -590,7 +622,9 @@ function resolvePointer(document, pointer, path) {
       typeof container !== 'object' ||
       !Object.hasOwn(container, segment)
     ) {
-      failDirective(path + ' public-variant pointer matches nothing: ' + pointer);
+      failDirective(
+        path + ' public-variant pointer matches nothing: ' + pointer
+      );
     }
     container = container[segment];
   }
@@ -716,7 +750,9 @@ export function applyPublicVariantJsonDirectives(source, { path = 'input' }) {
   for (const [pointer, entry] of Object.entries(directive.replace ?? {})) {
     const { container, key } = resolvePointer(document, pointer, path);
     if (!Object.hasOwn(entry ?? {}, 'value')) {
-      failDirective(path + ' public-variant replace needs a "value": ' + pointer);
+      failDirective(
+        path + ' public-variant replace needs a "value": ' + pointer
+      );
     }
     container[key] = entry.value;
   }

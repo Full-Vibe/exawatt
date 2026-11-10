@@ -116,7 +116,7 @@ bijective."
   no ⌘J entry and no sound, from its result or from the harness's own bell
   (BEL, OSC 9, OSC 777), in the turn or after it. It never clears or replaces
   what the operator is owed: his result and his bell stay as he left them.
-- **Exception, the coordinator's call pending the operator's confirmation:**
+- **Exception, confirmed by the operator 2026-11-10:**
   a request only the operator can answer (a reported permission prompt or
   question) still raises and alerts, with its visible blocked state,
   whoever started the turn. It is a specific reason to get his attention,

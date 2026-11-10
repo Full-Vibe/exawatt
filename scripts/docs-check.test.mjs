@@ -97,9 +97,13 @@ test('docs:check runs the landing checks’ own check definitions', () => {
   );
 });
 
-/** The line `0cbcb226` doubled, or a public heading if that item has moved. */
+/**
+ * A public heading to double a line before, as `0cbcb226` did before BUG-163.
+ * That record is private now with the rest of the Backlog (BUG-198), so the
+ * seam goes before a heading the public roadmap still carries.
+ */
 function seamAnchor(roadmap) {
-  for (const pattern of [/^### BUG-163 /mu, /^## Amendment chain$/mu]) {
+  for (const pattern of [/^## Amendment chain$/mu]) {
     const match = pattern.exec(roadmap);
     if (match) return match.index;
   }
