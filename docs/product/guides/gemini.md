@@ -52,3 +52,24 @@ answer before you apply it.
 
 Every message shows up in Team's **Chatter** tab. The
 [review loop](agents-review-each-other.md) works the same way with Gemini.
+
+## Antigravity swarms
+
+Antigravity CLI 1.5.5 (November 10, 2026) added `/swarm`, in preview. Your
+conversation becomes a coordinator that adds Gemini workers, each in its own
+conversation. They split the task, work in parallel and talk on one shared
+message board, which `/swarm board` or **Alt+S** opens full screen in the
+terminal ([Google's swarm docs](https://antigravity.google/docs/swarm),
+[release notes](https://github.com/google-antigravity/antigravity-cli/releases/tag/1.5.5)).
+
+A swarm and Exawatt's messaging do different jobs. A swarm is one Antigravity
+conversation handing pieces of a task to Gemini workers. Exawatt is agents from
+different labs messaging each other by name, with every message in Chatter.
+
+Swarm workers aren't Exawatt agents. They don't get a name like `gemini-1`,
+your other agents can't message them, and their posts stay on Antigravity's
+board, not in Chatter. When you want a second opinion from another lab, have
+Claude Code or Codex check Gemini's work with the
+[review loop](agents-review-each-other.md).
+
+Google warns that a swarm uses quota much faster than a single conversation.
