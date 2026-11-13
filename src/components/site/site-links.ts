@@ -2,9 +2,11 @@
  * The public site's own links, in one typed list (ENG-031 W6).
  *
  * W6's rule for the nav is short: Docs, Changelog, GitHub, and
- * `Download for Mac` as the only button, with Architecture dropped out of the
- * nav and into the footer. No site in the 16-site reference corpus carries a
- * project artifact like `/architecture` in its primary navigation.
+ * `Download for Mac` as the only button. No site in the 16-site reference
+ * corpus carries a project artifact like `/architecture` in its primary
+ * navigation, and the operator removed it from the footer and the app header
+ * too (2026-11-12: "confusing to users and doesn't really fit into the
+ * overall IA"). The page stays reachable by URL; nothing links to it.
  *
  * W6's `Docs` slot is `Guides` (ENG-031 W26): `/guides` renders the published
  * files in `docs/product/guides/`. The reference under `docs/product/` is not
@@ -57,7 +59,7 @@ export const SITE_NAV_LINKS: SiteNavLink[] = [
   // it to the promotion would be a surface going quietly dark rather than a
   // decision anyone made. It sits between the two external links because the
   // one Exawatt page in this row should not be the last thing before the
-  // button. Architecture stays OUT and stays in the footer, per W6.
+  // button. Architecture stays OUT of every nav (operator, 2026-11-12).
   { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'GitHub', href: GITHUB_URL, external: true },
 ];
@@ -105,7 +107,6 @@ export const SITE_FOOTER_COLUMNS: SiteFooterColumn[] = [
     heading: 'Product',
     links: [
       { label: 'Leaderboard', href: '/leaderboard' },
-      { label: 'Architecture', href: '/architecture' },
     ],
   },
   {

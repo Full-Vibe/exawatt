@@ -28,7 +28,6 @@ import {
   User,
   LogIn,
   LogOut,
-  Network,
   Trophy,
   Settings,
   MessageSquareWarning,
@@ -238,10 +237,9 @@ export function SiteHeaderNav({
 }: SiteHeaderNavProps) {
   const pathname = usePathname();
   const isHome = pathname === '/';
-  const isArchitecture = pathname?.startsWith('/architecture');
   const darkPublicChrome = usesDarkPublicChrome(pathname ?? '');
-  // ENG-031 W6: the proposed homepage carries its own nav. Architecture and
-  // Leaderboard drop to the footer, and `Download for Mac` is the ONLY button,
+  // ENG-031 W6: the proposed homepage carries its own nav. Leaderboard drops
+  // to the footer, and `Download for Mac` is the ONLY button,
   // because persistent conversion lives in the sticky header and the measured
   // cohort spends between three and six CTAs on a whole page.
   const proposedChrome = usesProposedSiteChrome(pathname ?? '');
@@ -429,30 +427,6 @@ export function SiteHeaderNav({
           </>
         ) : (
           <>
-            {!isArchitecture && (
-              <Button
-                variant="ghost"
-                size="sm"
-                asChild
-                className={inElectron ? 'px-1.5 xl:px-3' : undefined}
-              >
-                <Link
-                  href="/architecture"
-                  aria-label="Architecture"
-                  title="Architecture"
-                  className="text-chrome-title!"
-                >
-                  <Network className="h-3.5 w-3.5" />
-                  <span
-                    className={
-                      inElectron ? 'hidden xl:inline' : 'hidden sm:inline'
-                    }
-                  >
-                    Architecture
-                  </span>
-                </Link>
-              </Button>
-            )}
             {!isLeaderboard && (
               <Button
                 variant="ghost"

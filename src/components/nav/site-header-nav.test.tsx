@@ -76,10 +76,10 @@ describe('SiteHeaderNav leaderboard link', () => {
     expect(brand.querySelector('img')).not.toBeNull();
   });
 
-  it('shows Leaderboard beside Architecture', () => {
+  it('shows Leaderboard and no Architecture link', () => {
     render(<SiteHeaderNav isAuthenticated userEmail="person@example.com" />);
 
-    expect(screen.getByRole('link', { name: /architecture/i })).toBeVisible();
+    expect(screen.queryByRole('link', { name: /architecture/i })).toBeNull();
     expect(screen.getByRole('link', { name: /leaderboard/i })).toHaveAttribute(
       'href',
       '/leaderboard'

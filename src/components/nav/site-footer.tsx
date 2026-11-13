@@ -20,9 +20,7 @@ import { cn } from '@/lib/utils';
  * TWO SHAPES, ONE COMPONENT (ENG-031 W6). Every marketing route keeps the
  * quiet legal row it has always had. The surfaces that carry the proposed site
  * chrome get the full footer: the open-source column (the repository and the
- * licence boundary), and `Architecture` and `Leaderboard`, which W6 drops out
- * of the nav because no site in the reference corpus carries a project
- * artifact there.
+ * licence boundary), and `Leaderboard`.
  *
  * The split is a predicate, not a route list, so promoting the homepage
  * promotes its footer in the same edit.

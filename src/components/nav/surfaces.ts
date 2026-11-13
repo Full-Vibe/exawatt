@@ -395,7 +395,7 @@ export function usesDarkPublicChrome(pathname: string): boolean {
  * Surfaces that carry the W6 marketing chrome (ENG-031 W6, W8).
  *
  * W6's nav is Docs, Changelog, GitHub, and `Download for Mac` as the only
- * button, with Architecture dropped to the footer. The homepage and the
+ * button. The homepage and the
  * site's written pages carry it.
  */
 export function usesProposedSiteChrome(pathname: string): boolean {
