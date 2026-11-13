@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Browser-paint regression for the public home -> architecture command path.
+ * Browser-paint regression for the public home -> Guides navigation path.
  *
  * The two surfaces author dark grounds, so a light pixel at the stable probe
  * point is a real navigation discontinuity rather than a theme preference.
@@ -141,11 +141,11 @@ const context = await browser.newContext({
 const page = await context.newPage();
 page.setDefaultTimeout(30_000);
 
-// Hold any automatic architecture prefetch until the command is pressed, then
+// Hold any automatic Guides prefetch until the link is pressed, then
 // add a bounded response delay. This forces the real App Router pending path
 // through the pixel sampler instead of letting a warm local cache hide it.
 let navigationArmed = false;
-await page.route('**/architecture**', async route => {
+await page.route('**/guides**', async route => {
   while (!navigationArmed) {
     await new Promise(resolve => setTimeout(resolve, 20));
   }
@@ -161,13 +161,11 @@ page.on('console', message => {
 
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'load', timeout: 30_000 });
-  // The footer is the ONLY route from `/` to `/architecture` now: ENG-031 W6
-  // took Architecture out of the header's primary navigation and the fold
-  // carries no call to action of its own (operator, 2026-08-17), so this is
-  // the real reader's path rather than a convenient handle. Reading the
-  // header's link instead is what left this eval red for five weeks with
-  // nothing running it (BUG-211).
-  const command = page.locator('#site-footer a[href="/architecture"]');
+  // Home -> Guides through the header nav: the reader's own path between two
+  // dark grounds. This eval used to walk home -> Architecture through the
+  // footer, until the operator removed Architecture from every nav
+  // (2026-11-12); a gate on a path no reader can take guards nothing.
+  const command = page.locator('#site-header a[href="/guides"]');
   await command.waitFor({ state: 'visible' });
   await page.waitForFunction(
     () => document.documentElement.dataset.exaTheme === 'exawatt-air-light'
@@ -206,9 +204,7 @@ try {
     const state = await page.evaluate(() => ({
       path: location.pathname,
       theme: document.documentElement.dataset.exaTheme,
-      architectureLoading: !!document.querySelector(
-        '[data-architecture-loading]'
-      ),
+      routeLoading: !!document.querySelector('[data-route-loading]'),
       headerDarkChrome: document
         .querySelector('#site-header')
         ?.getAttribute('data-public-dark-chrome'),
@@ -220,7 +216,7 @@ try {
       ...state,
     });
 
-    if (state.path === '/architecture' && samples.length > 1) {
+    if (state.path === '/guides' && samples.length > 1) {
       await page.evaluate(
         () =>
           new Promise(resolve =>
@@ -252,7 +248,7 @@ try {
   const mismatchedChromeSamples = samples.filter(
     sample => sample.headerDarkChrome !== 'true'
   );
-  const loadingSamples = samples.filter(sample => sample.architectureLoading);
+  const loadingSamples = samples.filter(sample => sample.routeLoading);
   const final = samples.at(-1);
 
   if (firstLightFrame) {
@@ -260,7 +256,7 @@ try {
   }
 
   assert(samples.length > 1, 'Navigation paint sampler captured no transition');
-  assert(final?.path === '/architecture', `Navigation ended at ${final?.path}`);
+  assert(final?.path === '/guides', `Navigation ended at ${final?.path}`);
   assert(
     bodyFlashSamples.length === 0,
     `Detected ${bodyFlashSamples.length} light body frames: ${JSON.stringify(bodyFlashSamples)}`
@@ -276,17 +272,17 @@ try {
   );
   assert(
     loadingSamples.every(sample => !isLightFlash(sample.bodyPixel)),
-    `Architecture loading floor exposed a light frame: ${JSON.stringify(loadingSamples)}`
+    `The route loading state exposed a light frame: ${JSON.stringify(loadingSamples)}`
   );
   assert(
     !isLightFlash(documentGround),
-    `Architecture's document ground is light under the dark page: ${JSON.stringify(documentGround)}`
+    `Guides' document ground is light under the dark page: ${JSON.stringify(documentGround)}`
   );
   assert(errors.length === 0, `Browser errors:\n${errors.join('\n')}`);
 
   console.log(
     `PASS navigation paint: ${samples.length} sampled frames, ` +
-      `Air stayed dark from home to architecture; screenshots: ${OUTPUT}`
+      `Air stayed dark from home to Guides; screenshots: ${OUTPUT}`
   );
 } finally {
   await context.close();

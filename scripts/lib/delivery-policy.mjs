@@ -809,9 +809,10 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:typography-stability',
-    why: 'public typography must resolve once and hold through the home-to-Architecture navigation and appearance churn',
+    why: 'public typography must resolve once and hold through the home-to-Guides navigation and appearance churn',
     match: file =>
-      file.startsWith('src/app/architecture/') ||
+      file.startsWith('src/app/guides/') ||
+      file.startsWith('src/components/site/docs/') ||
       file === 'src/app/layout.tsx' ||
       file === 'src/lib/appearance/bootstrap-script.ts' ||
       file === 'src/lib/appearance/dom-adapter.ts' ||
@@ -820,9 +821,10 @@ export const SURFACE_GATES = [
   },
   {
     gate: 'eval:navigation-paint',
-    why: 'the home-to-Architecture path must never paint a light frame between two dark grounds',
+    why: 'the home-to-Guides path must never paint a light frame between two dark grounds',
     match: file =>
-      file.startsWith('src/app/architecture/') ||
+      file.startsWith('src/app/guides/') ||
+      file.startsWith('src/components/site/docs/') ||
       file === 'src/components/nav/site-header-nav.tsx' ||
       file === 'src/components/nav/site-footer.tsx' ||
       file === 'src/components/site/site-links.ts' ||

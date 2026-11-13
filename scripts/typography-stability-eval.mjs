@@ -347,7 +347,7 @@ async function sampleTypography(label) {
 async function sampleTitleRaster() {
   const title = page.locator('main h1');
   const box = await title.boundingBox();
-  assert(box, 'Architecture title has no browser bounding box');
+  assert(box, 'Page title has no browser bounding box');
   const clip = {
     x: Math.max(0, Math.floor(box.x)),
     y: Math.max(0, Math.floor(box.y)),
@@ -443,21 +443,21 @@ async function sampleThemeChurnIsolation() {
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'load' });
   await page.evaluate(() => window.__resetExaTypographyEarlyProbe());
-  // The footer is the only route from `/` to `/architecture` since ENG-031
-  // W6 took Architecture out of the header; the fold carries no call to
-  // action of its own (operator, 2026-08-17). BUG-211.
+  // Home -> Guides through the header nav, the reader's own path. It walked
+  // home -> Architecture through the footer until the operator removed
+  // Architecture from every nav (2026-11-12).
   await page
-    .locator('#site-footer a[href="/architecture"]')
+    .locator('#site-header a[href="/guides"]')
     .click({ noWaitAfter: true });
-  await page.waitForURL('**/architecture');
-  const clientNavigation = await sampleTypography('home-to-architecture');
+  await page.waitForURL('**/guides');
+  const clientNavigation = await sampleTypography('home-to-guides');
   clientNavigation.rasterHashes = await sampleTitleRaster();
   clientNavigation.themeChurn = await sampleThemeChurnIsolation();
   clientNavigation.early = await page.evaluate(
     () => window.__exaTypographyEarlyProbe
   );
 
-  await page.goto(`${BASE}/architecture`, { waitUntil: 'load' });
+  await page.goto(`${BASE}/guides`, { waitUntil: 'load' });
   const direct = await sampleTypography('direct');
   direct.rasterHashes = await sampleTitleRaster();
   direct.early = await page.evaluate(() => window.__exaTypographyEarlyProbe);
@@ -482,10 +482,10 @@ try {
   );
   assert(
     churnSignatures.size === 1,
-    `Architecture typography followed app-theme churn: ${JSON.stringify(clientNavigation.themeChurn)}`
+    `Guides typography followed app-theme churn: ${JSON.stringify(clientNavigation.themeChurn)}`
   );
   console.log(
-    'PASS Architecture typography ignored Air/Classic/Night font and 90–120% scale churn'
+    'PASS Guides typography ignored Air/Classic/Night font and 90–120% scale churn'
   );
   assert(errors.length === 0, errors.join('\n'));
   console.log('PASS public typography remained stable on every sampled frame');
