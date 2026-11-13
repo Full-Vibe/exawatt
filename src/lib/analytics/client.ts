@@ -141,7 +141,7 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
     installationId = identity.installationId;
     bootstrapId = identity.installationId;
     internal = identity.internal;
-    if (!internal) stopTeamWatch = startTeamWatch();
+    if (!identity.internal) stopTeamWatch = startTeamWatch();
     // The account stream is the desktop app's: Sessions live there.
     if (detectElectron()) accountStream = startAccountStream(target);
     return configured;
