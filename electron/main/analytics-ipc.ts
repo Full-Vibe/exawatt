@@ -6,6 +6,7 @@ import {
   setMainAnalyticsNotifier,
 } from './analytics-bridge';
 import {
+  markAnalyticsInternal,
   readAnalyticsIdentity,
   setAnalyticsOptOut,
 } from './analytics-identity';
@@ -25,6 +26,8 @@ import { ptySessions } from './pty/session-manager';
  *  - `analytics:identity` and `analytics:set-opt-out` (BUG-171): the device's
  *    opt-out and anonymous installation id, which main holds in settings so
  *    a launch on a fallback port reads the same answer as every other one.
+ *  - `analytics:mark-internal` (ENG-047 F6): the renderer saw a team account
+ *    sign in, so every later event from this device says `internal`.
  *
  * Events that arrive before any renderer exists sit in the bridge's bounded
  * queue; events a quitting app never drains are accepted losses (documented in
@@ -49,4 +52,5 @@ export function registerAnalyticsIPC(): void {
   handleTrusted('analytics:set-opt-out', (_event, optedOut) =>
     setAnalyticsOptOut(optedOut)
   );
+  handleTrusted('analytics:mark-internal', () => markAnalyticsInternal());
 }

@@ -1,16 +1,14 @@
-import { randomUUID } from 'node:crypto';
 import {
   isAnalyticsId,
+  isLocalDate,
   type AnalyticsDeviceRecord,
   type AnalyticsIdentityRead,
   type AnalyticsLegacyIdentity,
 } from '@exawatt/core/desktop-bridge';
 import {
-  readSettings,
-  writeSettings,
-  type SettingsRead,
-  type StoredSettings,
-} from './settings-store';
+  ANALYTICS_DEVICE_STORE,
+  type AnalyticsDeviceStore,
+} from './analytics-device-store';
 
 /**
  * BUG-171: product analytics identity is main's.
@@ -19,27 +17,29 @@ import {
  * renderer's `localStorage`, which is scoped to its loopback origin. Since
  * BUG-022 an install keeps one port, but a launch that finds it taken serves
  * from another origin with empty storage, and for that launch the opt-out
- * read as unset and a new id was minted. Both now live in `settings.json`,
- * which no port can change, and the renderer reads them through
+ * read as unset and a new id was minted. Both now live in main's device
+ * record (`analytics-device-store.ts`, its own file since ENG-047 F6), which
+ * no port can change, and the renderer reads them through
  * `analytics:identity`.
  *
- * Every read is strict: an unreadable settings file, or an id that could not
- * be kept, answers `unavailable` and the renderer starts no analytics. A
- * failed read never answers "opted in" (it would silently undo an opt-out),
- * and an id that was not persisted would be a new person every launch.
+ * Every read is strict: an unreadable record, or an id that could not be
+ * kept, answers `unavailable` and the renderer starts no analytics. A failed
+ * read never answers "opted in" (it would silently undo an opt-out), and an
+ * id that was not persisted would be a new person every launch.
  */
 
-export interface AnalyticsSettingsStore {
-  read(): SettingsRead;
-  write(settings: StoredSettings): void;
-  mint(): string;
-}
+export type { AnalyticsDeviceStore } from './analytics-device-store';
 
-const SETTINGS_STORE: AnalyticsSettingsStore = {
-  read: readSettings,
-  write: writeSettings,
-  mint: randomUUID,
-};
+/**
+ * ENG-047 F6: a dogfood build marks its device internal. Set once by the
+ * composition root from the build's own identity.
+ */
+let internalBuild = false;
+export function configureAnalyticsIdentity(options: {
+  internalBuild: boolean;
+}): void {
+  internalBuild = options.internalBuild;
+}
 
 const UNAVAILABLE: AnalyticsIdentityRead = { status: 'unavailable' };
 
@@ -100,20 +100,27 @@ function answer(
     status: 'ready',
     optedOut,
     installationId: optedOut ? null : (record?.installationId ?? null),
+    internal: record?.internal === true,
   };
 }
 
 function persist(
-  store: AnalyticsSettingsStore,
-  settings: StoredSettings,
+  store: AnalyticsDeviceStore,
   record: AnalyticsDeviceRecord
 ): boolean {
   try {
-    store.write({ ...settings, analytics: record });
+    store.write(record);
     return true;
   } catch {
     return false;
   }
+}
+
+/** The record marked internal; a device without one gains a bare record. */
+function withInternal(
+  current: AnalyticsDeviceRecord | undefined
+): AnalyticsDeviceRecord {
+  return { ...(current ?? { optedOut: false }), internal: true };
 }
 
 /**
@@ -123,7 +130,7 @@ function persist(
  */
 export function readAnalyticsIdentity(
   request: unknown,
-  store: AnalyticsSettingsStore = SETTINGS_STORE
+  store: AnalyticsDeviceStore = ANALYTICS_DEVICE_STORE
 ): AnalyticsIdentityRead {
   const read = store.read();
   if (read.status !== 'ready') return UNAVAILABLE;
@@ -131,13 +138,15 @@ export function readAnalyticsIdentity(
     request && typeof request === 'object'
       ? (request as Record<string, unknown>)
       : {};
-  const current = read.settings.analytics;
+  const current = read.record;
   let next = adopt(current, legacyOf(candidate.legacy));
   if (candidate.ensureId === true && !next?.optedOut && !next?.installationId) {
     next = { ...next, optedOut: false, installationId: store.mint() };
   }
+  // A dogfood build is the team's; the mark outlives it.
+  if (internalBuild && !next?.internal) next = withInternal(next);
   if (next && next !== current) {
-    if (!persist(store, read.settings, next)) return UNAVAILABLE;
+    if (!persist(store, next)) return UNAVAILABLE;
   }
   return answer(next);
 }
@@ -149,15 +158,31 @@ export function readAnalyticsIdentity(
  */
 export function setAnalyticsOptOut(
   optedOut: unknown,
-  store: AnalyticsSettingsStore = SETTINGS_STORE
+  store: AnalyticsDeviceStore = ANALYTICS_DEVICE_STORE
 ): AnalyticsIdentityRead {
   if (typeof optedOut !== 'boolean') {
     throw new TypeError('The analytics opt-out must be a boolean.');
   }
   const read = store.read();
   if (read.status !== 'ready') return UNAVAILABLE;
-  const next = withOptOut(read.settings.analytics, optedOut);
-  if (!persist(store, read.settings, next)) return UNAVAILABLE;
+  const next = withOptOut(read.record, optedOut);
+  if (!persist(store, next)) return UNAVAILABLE;
+  return answer(next);
+}
+
+/**
+ * ENG-047 F6: a team account signed in on this device. The mark is sticky:
+ * signing out and opting out both keep it. A mark that cannot be kept
+ * answers `unavailable`, so the renderer keeps what it already knew.
+ */
+export function markAnalyticsInternal(
+  store: AnalyticsDeviceStore = ANALYTICS_DEVICE_STORE
+): AnalyticsIdentityRead {
+  const read = store.read();
+  if (read.status !== 'ready') return UNAVAILABLE;
+  if (read.record?.internal) return answer(read.record);
+  const next = withInternal(read.record);
+  if (!persist(store, next)) return UNAVAILABLE;
   return answer(next);
 }
 
@@ -168,25 +193,25 @@ export function setAnalyticsOptOut(
  */
 function claimOnce(
   fact: 'agentLaunched' | 'webLinked',
-  store: AnalyticsSettingsStore,
+  store: AnalyticsDeviceStore,
   options: { unlessOptedOut: boolean }
 ): boolean {
   const read = store.read();
   if (read.status !== 'ready') return false;
-  const current = read.settings.analytics;
+  const current = read.record;
   if (current?.[fact]) return false;
   if (options.unlessOptedOut && current?.optedOut) return false;
   const next: AnalyticsDeviceRecord = {
     ...(current ?? { optedOut: false }),
     [fact]: true,
   };
-  return persist(store, read.settings, next);
+  return persist(store, next);
 }
 
 /** ENG-047 `first_for_install`: true for this installation's first Agent.
  *  Kept even while opted out, so opting in later does not claim a first. */
 export function takeFirstAgentLaunch(
-  store: AnalyticsSettingsStore = SETTINGS_STORE
+  store: AnalyticsDeviceStore = ANALYTICS_DEVICE_STORE
 ): boolean {
   return claimOnce('agentLaunched', store, { unlessOptedOut: false });
 }
@@ -194,7 +219,29 @@ export function takeFirstAgentLaunch(
 /** ENG-047 F2: true the one time this installation may record the
  *  web-to-app alias; never while opted out, never twice. */
 export function claimWebLink(
-  store: AnalyticsSettingsStore = SETTINGS_STORE
+  store: AnalyticsDeviceStore = ANALYTICS_DEVICE_STORE
 ): boolean {
   return claimOnce('webLinked', store, { unlessOptedOut: true });
+}
+
+/**
+ * ENG-047 F6 `app_active`: true the first time a local calendar day is
+ * claimed, false for the same day again, a malformed day, an opted-out
+ * device, an unreadable record, or a claim that could not be written (so a
+ * day is never counted twice, and never counted when it was not kept).
+ */
+export function claimActiveDay(
+  localDate: unknown,
+  store: AnalyticsDeviceStore = ANALYTICS_DEVICE_STORE
+): boolean {
+  if (!isLocalDate(localDate)) return false;
+  const read = store.read();
+  if (read.status !== 'ready') return false;
+  const current = read.record;
+  if (current?.optedOut) return false;
+  if (current?.activeDay === localDate) return false;
+  return persist(store, {
+    ...(current ?? { optedOut: false }),
+    activeDay: localDate,
+  });
 }

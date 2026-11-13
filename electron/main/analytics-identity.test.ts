@@ -2,35 +2,45 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ app: { getPath: () => '/nonexistent' } }));
 
+import type { AnalyticsDeviceRecord } from '@exawatt/core/desktop-bridge';
 import {
+  claimActiveDay,
   claimWebLink,
+  configureAnalyticsIdentity,
+  markAnalyticsInternal,
   readAnalyticsIdentity,
   setAnalyticsOptOut,
   takeFirstAgentLaunch,
-  type AnalyticsSettingsStore,
+  type AnalyticsDeviceStore,
 } from './analytics-identity';
-import type { StoredSettings } from './settings-store';
 
 const KEPT = '0b8e4f5e-3c1d-4a2b-9f6e-7d8c9b0a1e2f';
 const LEGACY = '5f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
 const MINTED = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
 
-/** settings.json as the store sees it; `unreadable` models a corrupt file. */
+/**
+ * The device record as the store holds it, kept in a settings-shaped object
+ * (`analytics`) so the assertions read like the file did before the move;
+ * `unreadable` models a record that cannot be read.
+ */
 function fakeStore(
-  initial: StoredSettings | 'unreadable' = {},
+  initial:
+    | { analytics?: AnalyticsDeviceRecord; [key: string]: unknown }
+    | 'unreadable' = {},
   options: { failWrites?: boolean } = {}
 ) {
   let disk = initial;
-  const writes: StoredSettings[] = [];
-  const store: AnalyticsSettingsStore = {
+  const writes: AnalyticsDeviceRecord[] = [];
+  const store: AnalyticsDeviceStore = {
     read: () =>
       disk === 'unreadable'
-        ? { status: 'unreadable' }
-        : { status: 'ready', settings: structuredClone(disk) },
-    write: settings => {
+        ? { status: 'unavailable' }
+        : { status: 'ready', record: structuredClone(disk.analytics) },
+    write: record => {
       if (options.failWrites) throw new Error('EACCES');
-      disk = structuredClone(settings);
-      writes.push(disk);
+      if (disk === 'unreadable') throw new Error('unreadable');
+      disk = { ...disk, analytics: structuredClone(record) };
+      writes.push(structuredClone(record));
     },
     mint: () => MINTED,
   };
@@ -48,6 +58,7 @@ describe('the analytics identity main holds (BUG-171)', () => {
       status: 'ready',
       optedOut: false,
       installationId: MINTED,
+      internal: false,
     });
     // A fallback-port launch has empty localStorage: no legacy values.
     const fallback = readAnalyticsIdentity(
@@ -62,14 +73,24 @@ describe('the analytics identity main holds (BUG-171)', () => {
     const { store } = fakeStore({ analytics: { optedOut: true } });
     expect(
       readAnalyticsIdentity({ legacy: null, ensureId: true }, store)
-    ).toEqual({ status: 'ready', optedOut: true, installationId: null });
+    ).toEqual({
+      status: 'ready',
+      optedOut: true,
+      installationId: null,
+      internal: false,
+    });
   });
 
   it('reading the switch creates no identity', () => {
     const { store, writes } = fakeStore();
     expect(
       readAnalyticsIdentity({ legacy: null, ensureId: false }, store)
-    ).toEqual({ status: 'ready', optedOut: false, installationId: null });
+    ).toEqual({
+      status: 'ready',
+      optedOut: false,
+      installationId: null,
+      internal: false,
+    });
     expect(writes).toEqual([]);
   });
 
@@ -91,7 +112,12 @@ describe('the analytics identity main holds (BUG-171)', () => {
         { legacy: { optedOut: true, installationId: LEGACY }, ensureId: true },
         optedOut.store
       )
-    ).toEqual({ status: 'ready', optedOut: true, installationId: null });
+    ).toEqual({
+      status: 'ready',
+      optedOut: true,
+      installationId: null,
+      internal: false,
+    });
   });
 
   it('keeps its own id over a legacy one, but a legacy opt-out still wins', () => {
@@ -114,7 +140,12 @@ describe('the analytics identity main holds (BUG-171)', () => {
         { legacy: { optedOut: true, installationId: null }, ensureId: true },
         overruled.store
       )
-    ).toEqual({ status: 'ready', optedOut: true, installationId: null });
+    ).toEqual({
+      status: 'ready',
+      optedOut: true,
+      installationId: null,
+      internal: false,
+    });
   });
 
   it('refuses a malformed legacy id and mints instead', () => {
@@ -156,6 +187,7 @@ describe('the runtime opt-out (decision 0031)', () => {
       status: 'ready',
       optedOut: true,
       installationId: null,
+      internal: false,
     });
     expect(disk()).toEqual({
       terminal: { fontSize: 14 },
@@ -165,6 +197,7 @@ describe('the runtime opt-out (decision 0031)', () => {
       status: 'ready',
       optedOut: false,
       installationId: null,
+      internal: false,
     });
     expect(
       readAnalyticsIdentity({ legacy: null, ensureId: true }, store)
@@ -201,11 +234,101 @@ describe('facts this device records once (ENG-047)', () => {
     expect(claimWebLink(fresh.store)).toBe(true);
     expect(claimWebLink(fresh.store)).toBe(false);
 
-    expect(claimWebLink(fakeStore({ analytics: { optedOut: true } }).store)).toBe(
-      false
-    );
+    expect(
+      claimWebLink(fakeStore({ analytics: { optedOut: true } }).store)
+    ).toBe(false);
     expect(claimWebLink(fakeStore('unreadable').store)).toBe(false);
     expect(claimWebLink(fakeStore({}, { failWrites: true }).store)).toBe(false);
   });
 });
 
+describe('who is internal (ENG-047 F6)', () => {
+  it('a team sign-in marks the device for good, through sign-out and opt-out', () => {
+    const { store, disk } = fakeStore({
+      analytics: { optedOut: false, installationId: KEPT },
+    });
+    expect(markAnalyticsInternal(store)).toMatchObject({
+      status: 'ready',
+      internal: true,
+    });
+    setAnalyticsOptOut(true, store);
+    setAnalyticsOptOut(false, store);
+    expect(disk()).toEqual({
+      analytics: { optedOut: false, internal: true },
+    });
+    expect(
+      readAnalyticsIdentity({ legacy: null, ensureId: true }, store)
+    ).toMatchObject({ installationId: MINTED, internal: true });
+  });
+
+  it('marks once, and answers unavailable for a mark it could not keep', () => {
+    const marked = fakeStore({
+      analytics: { optedOut: false, internal: true },
+    });
+    markAnalyticsInternal(marked.store);
+    expect(marked.writes).toEqual([]);
+    expect(
+      markAnalyticsInternal(fakeStore({}, { failWrites: true }).store)
+    ).toEqual({ status: 'unavailable' });
+    expect(markAnalyticsInternal(fakeStore('unreadable').store)).toEqual({
+      status: 'unavailable',
+    });
+  });
+
+  it('a dogfood build marks its device, and the mark outlives the build', () => {
+    const { store } = fakeStore();
+    try {
+      configureAnalyticsIdentity({ internalBuild: true });
+      expect(
+        readAnalyticsIdentity({ legacy: null, ensureId: true }, store)
+      ).toMatchObject({ installationId: MINTED, internal: true });
+    } finally {
+      configureAnalyticsIdentity({ internalBuild: false });
+    }
+    expect(
+      readAnalyticsIdentity({ legacy: null, ensureId: true }, store)
+    ).toMatchObject({ installationId: MINTED, internal: true });
+  });
+
+  it('a signed build on an unmarked device is not internal', () => {
+    expect(
+      readAnalyticsIdentity({ legacy: null, ensureId: true }, fakeStore().store)
+    ).toMatchObject({ internal: false });
+  });
+});
+
+describe('the active day (ENG-047 F6)', () => {
+  it('claims each local day once, and a new day again', () => {
+    const { store, disk } = fakeStore({
+      analytics: { optedOut: false, installationId: KEPT },
+    });
+    expect(claimActiveDay('2026-11-12', store)).toBe(true);
+    expect(claimActiveDay('2026-11-12', store)).toBe(false);
+    expect(claimActiveDay('2026-11-13', store)).toBe(true);
+    expect(disk()).toEqual({
+      analytics: {
+        optedOut: false,
+        installationId: KEPT,
+        activeDay: '2026-11-13',
+      },
+    });
+  });
+
+  it('never claims while opted out, on a bad read, a failed write or a bad day', () => {
+    expect(
+      claimActiveDay(
+        '2026-11-12',
+        fakeStore({ analytics: { optedOut: true } }).store
+      )
+    ).toBe(false);
+    expect(claimActiveDay('2026-11-12', fakeStore('unreadable').store)).toBe(
+      false
+    );
+    expect(
+      claimActiveDay('2026-11-12', fakeStore({}, { failWrites: true }).store)
+    ).toBe(false);
+    for (const bad of ['2026-13-01', '11/12/2026', '', null, 20261112]) {
+      expect(claimActiveDay(bad, fakeStore().store)).toBe(false);
+    }
+  });
+});
