@@ -71,6 +71,11 @@ import {
 import { clearSessionOrigins, createRendererPortPolicy } from './renderer-port';
 import { createRendererServer } from './renderer-server';
 import { loadSettings } from './settings-store';
+import { configureAnalyticsIdentity } from './analytics-identity';
+import {
+  buildForActiveDay,
+  startActiveDayRecorder,
+} from './analytics-active-day';
 import { createNoticeDismissalStore } from './notice-dismissals';
 import {
   createApplicationsPlacement,
@@ -542,6 +547,21 @@ app.whenReady().then(() => {
   runtime.hostPower = hostPower;
   handleTrusted('app:host-power', () => hostPower.getSnapshot());
   app.once('will-quit', hostPower.dispose);
+  // ENG-047 F6: a dogfood build's device is the team's, and `app_active`
+  // marks each local day the app is in use.
+  configureAnalyticsIdentity({
+    internalBuild: buildInfo.delivery === 'dogfood',
+  });
+  app.once(
+    'will-quit',
+    startActiveDayRecorder(
+      buildForActiveDay({
+        platform: process.platform,
+        delivery: buildInfo.delivery,
+        appVersion: app.getVersion(),
+      })
+    )
+  );
   // Registered BEFORE bootstrap so it survives bootstrap failing: this is the
   // channel that reports exactly that (BUG-016).
   registerCommandEngineIPC(() => BrowserWindow.getAllWindows());

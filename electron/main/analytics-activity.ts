@@ -34,6 +34,19 @@ const DEFAULTS: AgentActivityDependencies = {
 
 /** Session id → harness, for Agents that have not finished yet. */
 const live = new Map<string, AgentHarness>();
+/** ENG-047 F6: told when an Agent starts (`analytics-active-day.ts`). */
+const launchListeners = new Set<() => void>();
+
+/** Whether an Agent main started is still running. */
+export function hasLiveAgents(): boolean {
+  return live.size > 0;
+}
+
+/** Call `listener` after each accepted Agent launch; returns the remover. */
+export function onAgentLaunched(listener: () => void): () => void {
+  launchListeners.add(listener);
+  return () => launchListeners.delete(listener);
+}
 
 /** After `pty:create` accepted a launch. */
 export function recordAgentLaunched(
@@ -57,6 +70,7 @@ export function recordAgentLaunched(
         : null,
       firstForInstall: deps.firstAgentLaunch(),
     });
+    for (const listener of launchListeners) listener();
   } catch {
     // Analytics never propagate a failure into a launch.
   }
@@ -91,4 +105,5 @@ export function recordWebLink(
 /** Test seam. */
 export function __resetAgentActivityForTests(): void {
   live.clear();
+  launchListeners.clear();
 }

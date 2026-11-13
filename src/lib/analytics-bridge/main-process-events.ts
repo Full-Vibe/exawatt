@@ -23,15 +23,19 @@ import { isAgentHarness, isAgentPermissionMode } from '@exawatt/core';
 import {
   analyticsSurface,
   captureAnalyticsEvent,
+  hasAccountSession,
   hostedFailureForStatus,
   initAnalytics,
   recordWebAlias,
   type AnalyticsEvent,
 } from '@/lib/analytics';
 import {
+  BUILD_DELIVERIES,
   CRASH_REASONS,
   CRASH_SCOPES,
   HOSTED_SERVICES,
+  PLATFORMS,
+  sanitizeAppVersion,
   type CrashReason,
   type CrashScope,
   type HostedService,
@@ -112,6 +116,26 @@ export function normalizeMainProcessAnalyticsEvent(
       surface: analyticsSurface(),
       harness: candidate.harness,
       placement: 'local',
+    };
+  }
+
+  // ENG-047 F6: main claimed today; the renderer adds what it alone knows,
+  // whether an account session exists (presence only, as `app_launched`).
+  if (candidate.name === 'app_active') {
+    return {
+      name: 'app_active',
+      surface: analyticsSurface(),
+      platform: member(PLATFORMS, candidate.platform)
+        ? candidate.platform
+        : 'unknown',
+      delivery: member(BUILD_DELIVERIES, candidate.delivery)
+        ? candidate.delivery
+        : 'unknown',
+      appVersion: sanitizeAppVersion(candidate.appVersion),
+      signedIn: hasAccountSession(
+        typeof document === 'undefined' ? null : document.cookie
+      ),
+      agentsRunning: candidate.agentsRunning === true,
     };
   }
 

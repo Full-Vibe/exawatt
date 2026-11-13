@@ -186,6 +186,39 @@ describe('ENG-047 activity from main', () => {
     ).toBeNull();
   });
 
+  it('rebuilds the daily activity event, and degrades what it does not know (ENG-047 F6)', () => {
+    expect(
+      normalizeMainProcessAnalyticsEvent({
+        name: 'app_active',
+        platform: 'darwin',
+        delivery: 'dogfood',
+        appVersion: '0.1.26',
+        agentsRunning: true,
+      })
+    ).toMatchObject({
+      name: 'app_active',
+      platform: 'darwin',
+      delivery: 'dogfood',
+      appVersion: '0.1.26',
+      agentsRunning: true,
+      signedIn: false,
+    });
+    expect(
+      normalizeMainProcessAnalyticsEvent({
+        name: 'app_active',
+        platform: 'aix',
+        delivery: 'nightly',
+        appVersion: '/Users/example',
+        agentsRunning: 'yes',
+      })
+    ).toMatchObject({
+      platform: 'unknown',
+      delivery: 'unknown',
+      appVersion: null,
+      agentsRunning: false,
+    });
+  });
+
   it('routes the web alias to the alias sender, never to an event', async () => {
     const capture = vi.fn();
     const alias = vi.fn();

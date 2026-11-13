@@ -59,6 +59,14 @@ export const MAIN_CRASH_REASONS = [
 ] as const;
 export type MainCrashReason = (typeof MAIN_CRASH_REASONS)[number];
 
+/** `process.platform` values the allowlist names; anything else is unknown. */
+export const MAIN_PLATFORMS = ['darwin', 'win32', 'linux', 'unknown'] as const;
+export type MainPlatform = (typeof MAIN_PLATFORMS)[number];
+
+/** `BuildInfo['delivery']`, as the allowlist names it. */
+export const MAIN_DELIVERIES = ['signed', 'dogfood', 'unknown'] as const;
+export type MainDelivery = (typeof MAIN_DELIVERIES)[number];
+
 /** Only the hosted services main actually calls; the renderer covers the rest. */
 export const MAIN_HOSTED_SERVICES = [
   'context_labels',
@@ -99,7 +107,15 @@ export type MainProcessAnalyticsEvent =
   /** ENG-047 F5: that process ended (the signed-in stream only). */
   | { name: 'agent_finished'; harness: AgentHarness }
   /** ENG-047 F2: the visitor's web id, for the one alias. */
-  | { name: 'web_alias'; webId: string };
+  | { name: 'web_alias'; webId: string }
+  /** ENG-047 F6: the app was in use today (claimed once per local day). */
+  | {
+      name: 'app_active';
+      platform: MainPlatform;
+      delivery: MainDelivery;
+      appVersion: string | null;
+      agentsRunning: boolean;
+    };
 
 function member<T extends string>(
   allowed: readonly T[],
@@ -144,6 +160,15 @@ export function isMainProcessAnalyticsEvent(
     return isAgentHarness(candidate.harness);
   }
   if (candidate.name === 'web_alias') return isAnalyticsId(candidate.webId);
+  if (candidate.name === 'app_active') {
+    return (
+      member(MAIN_PLATFORMS, candidate.platform) &&
+      member(MAIN_DELIVERIES, candidate.delivery) &&
+      (candidate.appVersion === null ||
+        typeof candidate.appVersion === 'string') &&
+      typeof candidate.agentsRunning === 'boolean'
+    );
+  }
   return false;
 }
 
@@ -177,6 +202,14 @@ function cleanEvent(
       return { name: 'agent_finished', harness: event.harness };
     case 'web_alias':
       return { name: 'web_alias', webId: event.webId };
+    case 'app_active':
+      return {
+        name: 'app_active',
+        platform: event.platform,
+        delivery: event.delivery,
+        appVersion: event.appVersion,
+        agentsRunning: event.agentsRunning,
+      };
   }
 }
 
