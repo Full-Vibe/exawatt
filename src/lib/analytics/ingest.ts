@@ -31,6 +31,14 @@ export const INGEST_LIBS = {
 } as const;
 type IngestLib = (typeof INGEST_LIBS)[keyof typeof INGEST_LIBS];
 
+/**
+ * Senders whose request does not come from the person's own machine. PostHog
+ * geolocates by the request IP, so a server-sent record would place every
+ * visitor at the host's data center; it carries `$geoip_disable` instead and
+ * the person keeps the location their own page views gave it.
+ */
+const SERVER_SIDE_LIBS: ReadonlySet<IngestLib> = new Set([INGEST_LIBS.server]);
+
 export interface IngestTarget {
   /** The decision's `apiHost`: absolute, no trailing slash. */
   apiHost: string;
@@ -71,6 +79,7 @@ export function ingestRecordFor(
       ...properties,
       $lib: options.lib,
       ...(options.personless ? { $process_person_profile: false } : {}),
+      ...(SERVER_SIDE_LIBS.has(options.lib) ? { $geoip_disable: true } : {}),
     },
   };
 }

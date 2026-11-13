@@ -3,6 +3,7 @@ import {
   COMMUNITY_DISTRIBUTION,
   parseDistributionContract,
 } from '@exawatt/core/distribution';
+import { ANALYTICS_ALLOWLIST_VERSION } from './events';
 import { captureServerEvent } from './server';
 
 const OFFICIAL = parseDistributionContract({
@@ -40,13 +41,15 @@ describe('download_requested, recorded by the server', () => {
           event: 'download_requested',
           distinctId: VISITOR,
           properties: {
-            allowlist_version: 2,
+            allowlist_version: ANALYTICS_ALLOWLIST_VERSION,
             surface: 'web',
             internal: false,
             platform: 'darwin',
             arch: 'arm64',
             $lib: 'exawatt-server',
             $process_person_profile: false,
+            // The server's IP is not the visitor's location (ENG-047 F7).
+            $geoip_disable: true,
           },
         },
       ]
