@@ -49,7 +49,7 @@ type DashboardEventName =
   | AnalyticsEventName
   | (typeof POSTHOG_OWN_EVENTS)[number];
 
-type InsightDisplay = 'ActionsBar' | 'ActionsLineGraph' | 'Table';
+type InsightDisplay = 'ActionsLineGraph' | 'Table';
 
 interface AnalyticsInsight {
   /** PostHog's short id, for insights that already exist. */
@@ -88,14 +88,22 @@ const IN_RANGE = `{filters} AND timestamp >= toDateTime('${ANALYTICS_READ_FROM} 
  * `internal` is a boolean property; PostHog reads it as text. A missing value
  * (events from builds before allowlist version 2) is not internal.
  */
-const NOT_INTERNAL = `coalesce(toString(properties.internal), 'false') NOT IN ('true', '1')`;
+const MARKED_INTERNAL = `coalesce(toString(properties.internal), 'false') IN ('true', '1')`;
+
+/**
+ * The team, left out as people rather than events: anyone who ever sent an
+ * event marked `internal`, or launched a dogfood build. Person-level so the
+ * team's events from builds before allowlist version 2 (no `internal` on
+ * them, and `delivery` only on launches) leave with the rest of that person.
+ */
+const NOT_TEAM = `person_id NOT IN (SELECT person_id FROM events WHERE timestamp >= toDateTime('${ANALYTICS_READ_FROM} 00:00:00') AND (${MARKED_INTERNAL} OR (${eventIn(['app_launched', 'app_active'])} AND properties.delivery = 'dogfood')))`;
 
 const INSTALLATION_STREAM = `coalesce(properties.$lib, '') != ${quoted(ACCOUNT_STREAM_LIB)}`;
 const ACCOUNT_STREAM = `properties.$lib = ${quoted(ACCOUNT_STREAM_LIB)}`;
 
 /** `WHERE` for the installation stream: in range, not the team, not an account. */
 const installationEvents = (names: readonly DashboardEventName[]): string =>
-  `${IN_RANGE} AND ${eventIn(names)} AND ${INSTALLATION_STREAM} AND ${NOT_INTERNAL}`;
+  `${IN_RANGE} AND ${eventIn(names)} AND ${INSTALLATION_STREAM} AND ${NOT_TEAM}`;
 
 const at = 'toUnixTimestamp(timestamp)';
 const firstAt = (condition: string, alias: string): string =>
@@ -255,7 +263,7 @@ const ACCOUNT_ACTIVITY = lines(
     'agent_launched',
     'agent_directed',
     'agent_finished',
-  ])} AND ${ACCOUNT_STREAM} AND ${NOT_INTERNAL}`,
+  ])} AND ${ACCOUNT_STREAM} AND ${NOT_TEAM}`,
   'ORDER BY timestamp DESC',
   'LIMIT 500'
 );
@@ -268,7 +276,8 @@ export const ANALYTICS_INSIGHTS: readonly AnalyticsInsight[] = [
       'Visit, download, launch, first Project, first Agent, back on a later day. "installs" is the desktop funnel alone. Team installs and anything before 2026-10-15 left out.',
     query: ACTIVATION_FUNNEL,
     dateFrom: '-30d',
-    display: 'ActionsBar',
+    // A table: a bar chart scales to the visitors and hides every later step.
+    display: 'Table',
   },
   {
     shortId: 'FTDfDzeL',
@@ -280,6 +289,7 @@ export const ANALYTICS_INSIGHTS: readonly AnalyticsInsight[] = [
     display: 'Table',
   },
   {
+    shortId: 'KUVyDjcZ',
     name: 'Active installs per day',
     description:
       'Installations in use each day (app_active: a window focused or an Agent running), signed builds apart.',
@@ -289,6 +299,7 @@ export const ANALYTICS_INSIGHTS: readonly AnalyticsInsight[] = [
     axes: { x: 'day', y: ['installs', 'signed', 'other'] },
   },
   {
+    shortId: 'GsG13Oa6',
     name: 'Active installs per week',
     description:
       'Installations in use at least one day that week, signed builds apart.',
@@ -298,6 +309,7 @@ export const ANALYTICS_INSIGHTS: readonly AnalyticsInsight[] = [
     axes: { x: 'week', y: ['installs', 'signed', 'other'] },
   },
   {
+    shortId: 'VquZpO7U',
     name: 'Visits and downloads per week',
     description:
       'Unique web visitors, visitors who reached /download, and downloads the site recorded. Downloads count only when the link carried a web id; the first-party total is on /admin/adoption.',
@@ -306,6 +318,7 @@ export const ANALYTICS_INSIGHTS: readonly AnalyticsInsight[] = [
     display: 'Table',
   },
   {
+    shortId: 'lAizbdBN',
     name: 'Where visitors come from',
     description: 'Referring sites by unique visitors (hostname only).',
     query: REFERRERS,
