@@ -385,3 +385,38 @@ above>` through main's own `open-url`. PostHog holds every one, and the
   }
 }
 ```
+
+### 2026-11-12 — F6 to F8: activity, internal installs, every download, the dashboard as code
+
+The observability front (roadmap, 2026-11-12), from the operator's question
+whether anyone downloads and uses Exawatt and the six gaps the answer carried
+(`docs/research/2026-11-12-desktop-adoption-and-metrics-visibility.md`).
+
+- **F6.** Allowlist version 2: `app_active` once per local day an
+  installation is in use (a window focused or an Agent running; main claims
+  the day in the device record, so a restart never counts twice), on both
+  streams; `internal` on every event, true on dogfood builds and on any
+  device where an account with `app_metadata.exawatt_team` signed in
+  (sticky). Decision `0053` amended. **The re-minted ids were live:** a build
+  older than the analytics record rewrote `settings.json` with only the keys
+  it knew, so the next launch minted a new id (the operator's install went
+  `6e21a77a`, `6244e4cd`, `0f4a3875`). The record now lives in
+  `analytics-device.json`, which no other build writes, mirrored into
+  settings for 0.1.20 to 0.1.25.
+- **F7.** `/download/artifact` adds every handover to
+  `desktop_download_handovers` (day, version, arch, whether it carried a web
+  id; no identifier). The carried share calibrates PostHog's download count,
+  which closes F4. Server-sent records carry `$geoip_disable`.
+  `/admin/adoption` reads downloads, accounts (team excluded) and invites.
+- **F8.** The insight definitions above are history. The dashboard's source
+  of truth is `src/lib/analytics/dashboard.ts`: every insight's name,
+  description, default range and HogQL, assembled from shared fragments
+  (nothing read before F0 on 2026-10-15, `internal` installs left out, the
+  account stream read only by its own insight, coming back read from
+  `app_active` on a second local day, or a later-dated launch for builds
+  without it). `dashboard.test.ts` refuses a query that names an event
+  outside the allowlist or reads a property its events do not declare.
+  `pnpm analytics:dashboard` plans the live dashboard against the module,
+  `--apply` writes it (needs `POSTHOG_PERSONAL_API_KEY`), and `--json`
+  prints the payloads. New insights: active installs per day and per week,
+  visits and downloads per week, and referring sites.

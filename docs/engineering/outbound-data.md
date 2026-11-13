@@ -177,7 +177,12 @@ person profiles. Each posts the same allowlisted payload
 - **`download_requested`** (`src/lib/analytics/server.ts`, called from
   `/download/artifact` after the response) is keyed by the visitor's web id,
   which the download page adds to the artifact link (`w`) only while
-  analytics run in that browser. An opted-out visitor is never counted.
+  analytics run in that browser. An opted-out visitor never reaches PostHog.
+  Separately, every handover adds one to a first-party daily count in
+  Supabase (`desktop_download_handovers`: day, version, chip, whether
+  analytics were on in that browser), which holds no identifier, IP address
+  or browser details. Server-sent records carry `$geoip_disable`, so PostHog
+  does not place the visitor at Exawatt's server.
 - **The web-to-app alias.** After a download the page offers "Open Exawatt",
   `exawatt://welcome?w=<web id>`, with its disclosure beside the button. The
   app's deep-link handler (`electron/main/deep-link.ts`,
