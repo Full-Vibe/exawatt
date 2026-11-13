@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnalyticsIdentityRequest } from '@exawatt/core/desktop-bridge';
 import {
   ANALYTICS_INSTALLATION_ID_STORAGE_KEY,
+  ANALYTICS_INTERNAL_STORAGE_KEY,
   ANALYTICS_OPT_OUT_STORAGE_KEY,
   loadAnalyticsIdentity,
+  markAnalyticsDeviceInternal,
   persistAnalyticsOptOut,
 } from './identity';
 import {
@@ -24,12 +26,17 @@ describe('website analytics identity', () => {
     expect(await loadAnalyticsIdentity({ ensureId: false })).toEqual({
       optedOut: false,
       installationId: null,
+      internal: false,
     });
     expect(
       window.localStorage.getItem(ANALYTICS_INSTALLATION_ID_STORAGE_KEY)
     ).toBeNull();
     const first = await loadAnalyticsIdentity({ ensureId: true }, () => LEGACY);
-    expect(first).toEqual({ optedOut: false, installationId: LEGACY });
+    expect(first).toEqual({
+      optedOut: false,
+      installationId: LEGACY,
+      internal: false,
+    });
     expect(
       await loadAnalyticsIdentity({ ensureId: true }, () => 'never-used')
     ).toEqual(first);
@@ -40,6 +47,7 @@ describe('website analytics identity', () => {
     expect(await persistAnalyticsOptOut(true)).toEqual({
       optedOut: true,
       installationId: null,
+      internal: false,
     });
     expect(window.localStorage.getItem(ANALYTICS_OPT_OUT_STORAGE_KEY)).toBe(
       'true'
@@ -50,7 +58,20 @@ describe('website analytics identity', () => {
     expect(await loadAnalyticsIdentity({ ensureId: true })).toEqual({
       optedOut: true,
       installationId: null,
+      internal: false,
     });
+  });
+
+  it('a team sign-in marks this browser, and an opt-out keeps the mark (ENG-047 F6)', async () => {
+    expect(await markAnalyticsDeviceInternal()).toBe(true);
+    expect(window.localStorage.getItem(ANALYTICS_INTERNAL_STORAGE_KEY)).toBe(
+      'true'
+    );
+    await persistAnalyticsOptOut(true);
+    await persistAnalyticsOptOut(false);
+    expect(
+      await loadAnalyticsIdentity({ ensureId: true }, () => LEGACY)
+    ).toEqual({ optedOut: false, installationId: LEGACY, internal: true });
   });
 });
 
@@ -63,6 +84,7 @@ describe('desktop analytics identity (BUG-171)', () => {
             status: 'ready',
             optedOut: false,
             installationId: MAIN,
+            internal: false,
           } as const)
         : ({ status: 'unavailable' } as const);
     });
@@ -70,6 +92,7 @@ describe('desktop analytics identity (BUG-171)', () => {
       status: 'ready' as const,
       optedOut,
       installationId: null,
+      internal: false,
     }));
     installBridgeDouble({
       platform: 'darwin',
@@ -83,6 +106,7 @@ describe('desktop analytics identity (BUG-171)', () => {
     expect(await loadAnalyticsIdentity({ ensureId: true })).toEqual({
       optedOut: false,
       installationId: MAIN,
+      internal: false,
     });
     expect(identity).toHaveBeenCalledWith({ legacy: null, ensureId: true });
     expect(
@@ -115,11 +139,34 @@ describe('desktop analytics identity (BUG-171)', () => {
     );
   });
 
+  it('asks main to keep the team mark, and keeps nothing on the origin', async () => {
+    const markInternal = vi.fn(async () => ({
+      status: 'ready' as const,
+      optedOut: false,
+      installationId: MAIN,
+      internal: true,
+    }));
+    installBridgeDouble({
+      platform: 'darwin',
+      analytics: {
+        identity: vi.fn(async () => ({ status: 'unavailable' as const })),
+        setOptOut: vi.fn(async () => ({ status: 'unavailable' as const })),
+        markInternal,
+      },
+    });
+    expect(await markAnalyticsDeviceInternal()).toBe(true);
+    expect(markInternal).toHaveBeenCalledTimes(1);
+    expect(
+      window.localStorage.getItem(ANALYTICS_INTERNAL_STORAGE_KEY)
+    ).toBeNull();
+  });
+
   it('writes the opt-out to main, not to the origin', async () => {
     const { setOptOut } = installMain({ status: 'ready' });
     expect(await persistAnalyticsOptOut(true)).toEqual({
       optedOut: true,
       installationId: null,
+      internal: false,
     });
     expect(setOptOut).toHaveBeenCalledWith(true);
     expect(

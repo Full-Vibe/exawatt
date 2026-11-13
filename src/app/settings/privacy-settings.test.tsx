@@ -155,6 +155,7 @@ function installSettingsBridge(
     status: 'ready' as const,
     optedOut: analyticsDevice.optedOut,
     installationId: null,
+    internal: false,
   });
   installBridgeDouble({
     platform: 'darwin',

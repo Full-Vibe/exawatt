@@ -12,10 +12,13 @@
  *   are off, `posthog-js` is never even imported, so there is no queue, no
  *   local buffer, and nothing to flush later.
  * - Identity is an anonymous per-installation UUID (`identity.ts`: the
- *   browser's storage on the website, Electron main's settings in the app).
- *   We never call `identify()`, never set person properties, and never send
- *   an Exawatt account id. Installation identity and account identity stay
- *   separate.
+ *   browser's storage on the website, Electron main's device record in the
+ *   app). We never call `identify()`, never set person properties, and never
+ *   send an Exawatt account id. Installation identity and account identity
+ *   stay separate.
+ * - Every event is stamped `internal` here, from the device's identity
+ *   (ENG-047 F6), so no caller decides it. A team account signing in marks
+ *   the device for good; the account itself is never sent.
  */
 
 import {
@@ -25,13 +28,19 @@ import {
 } from './config';
 import { resolvedDistribution } from '@/lib/distribution/resolved';
 import { isAnalyticsId } from '@exawatt/core/desktop-bridge';
+import { watchForTeamAccount } from './account-session';
 import { startAccountStream, type AccountStream } from './account-stream';
 import {
   isInstallationStreamEvent,
   toAnalyticsPayload,
   type AnalyticsEvent,
 } from './events';
-import { loadAnalyticsIdentity, persistAnalyticsOptOut } from './identity';
+import {
+  loadAnalyticsIdentity,
+  markAnalyticsDeviceInternal,
+  persistAnalyticsOptOut,
+} from './identity';
+import { hasAccountSession } from './launch-context';
 import { INGEST_LIBS, sendToIngest, type IngestTarget } from './ingest';
 import { ANALYTICS_PROPERTY_DENYLIST, scrubAnalyticsCapture } from './redact';
 
@@ -48,6 +57,10 @@ let target: IngestTarget | null = null;
 let installationId: string | null = null;
 /** ENG-047 F5: the signed-in account's stream, desktop only. */
 let accountStream: AccountStream | null = null;
+/** ENG-047 F6: whether this device is the team's; stamped on every event. */
+let internal = false;
+/** Watches for a team account to sign in, until one does. */
+let stopTeamWatch: (() => void) | null = null;
 let emitting = false;
 /** Between a configured build's start and the device's identity answering. */
 let deciding = false;
@@ -68,13 +81,14 @@ const pending: AnalyticsEvent[] = [];
 const MAX_PENDING = 20;
 
 function send(event: AnalyticsEvent): void {
-  const payload = toAnalyticsPayload(event);
+  const stamped: AnalyticsEvent = { ...event, internal };
+  const payload = toAnalyticsPayload(stamped);
   if (!payload || !sink) return;
   try {
     if (isInstallationStreamEvent(payload.name)) {
       sink.capture(payload.name, payload.properties);
     }
-    accountStream?.capture(event);
+    accountStream?.capture(stamped);
   } catch {
     // Analytics never propagate a failure into product behavior.
   }
@@ -126,6 +140,8 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
     target = { apiHost: configured.apiHost, key: configured.key };
     installationId = identity.installationId;
     bootstrapId = identity.installationId;
+    internal = identity.internal;
+    if (!internal) stopTeamWatch = startTeamWatch();
     // The account stream is the desktop app's: Sessions live there.
     if (detectElectron()) accountStream = startAccountStream(target);
     return configured;
@@ -253,7 +269,28 @@ export async function setAnalyticsOptOut(optedOut: boolean): Promise<boolean> {
   return persisted?.optedOut ?? true;
 }
 
+/**
+ * ENG-047 F6: when a team account is signed in, this device is the team's
+ * from then on. The website looks only when an account session exists, so an
+ * anonymous visitor's page never starts the account client.
+ */
+function startTeamWatch(): (() => void) | null {
+  if (
+    !detectElectron() &&
+    !hasAccountSession(typeof document === 'undefined' ? null : document.cookie)
+  ) {
+    return null;
+  }
+  return watchForTeamAccount(() => {
+    internal = true;
+    void markAnalyticsDeviceInternal();
+  });
+}
+
 function stopEmission(): void {
+  stopTeamWatch?.();
+  stopTeamWatch = null;
+  internal = false;
   emitting = false;
   deciding = false;
   pending.length = 0;

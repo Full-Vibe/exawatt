@@ -1,15 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
-import { startAccountStream, type AccountSubscription } from './account-stream';
+import type { AccountSubscription, SignedInAccount } from './account-session';
+import { startAccountStream } from './account-stream';
 import { ACCOUNT_STREAM_EVENTS } from './events';
 import { EVERY_ANALYTICS_EVENT } from './examples.test-support';
 import { ingestBatchUrl, sendToIngest, type IngestRecord } from './ingest';
 
-const TARGET = { apiHost: 'https://ingest.example.test/ingest', key: 'phc_test' };
+const TARGET = {
+  apiHost: 'https://ingest.example.test/ingest',
+  key: 'phc_test',
+};
 const ACCOUNT = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 const INSTALLATION = '0b8e4f5e-3c1d-4a2b-9f6e-7d8c9b0a1e2f';
 
 function harness() {
-  let answer: ((id: string | null) => void) | null = null;
+  let answer: ((account: SignedInAccount | null) => void) | null = null;
   const subscribe: AccountSubscription = onAccount => {
     answer = onAccount;
     return () => {
@@ -25,7 +29,7 @@ function harness() {
   return {
     stream,
     sent,
-    signIn: (id: string | null) => answer?.(id),
+    signIn: (id: string | null) => answer?.(id ? { id, team: false } : null),
   };
 }
 
@@ -54,7 +58,7 @@ describe('the signed-in account stream (decision 0053, F5)', () => {
       async (_url: string | URL | Request, _init?: RequestInit) =>
         new Response(null, { status: 200 })
     );
-    let answer: (id: string | null) => void = () => undefined;
+    let answer: (account: SignedInAccount | null) => void = () => undefined;
     const stream = startAccountStream(TARGET, {
       subscribe: onAccount => {
         answer = onAccount;
@@ -62,7 +66,7 @@ describe('the signed-in account stream (decision 0053, F5)', () => {
       },
       send: (target, records) => sendToIngest(target, records, fetchImpl),
     });
-    answer(ACCOUNT);
+    answer({ id: ACCOUNT, team: false });
     // A caller that smuggles the installation identity alongside a valid
     // event, the way a careless spread would.
     for (const event of EVERY_ANALYTICS_EVENT) {

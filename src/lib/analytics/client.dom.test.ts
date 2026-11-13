@@ -8,7 +8,10 @@ import {
   removeBridgeDouble,
 } from '@/test-support/desktop-bridge-double';
 import { EVERY_ANALYTICS_EVENT } from './examples.test-support';
-import { ANALYTICS_INSTALLATION_ID_STORAGE_KEY } from './identity';
+import {
+  ANALYTICS_INSTALLATION_ID_STORAGE_KEY,
+  ANALYTICS_INTERNAL_STORAGE_KEY,
+} from './identity';
 
 /**
  * The client end to end on the website: which stream each event reaches,
@@ -21,6 +24,17 @@ const state = vi.hoisted(() => ({
   captured: [] as Array<{ name: string; properties: unknown }>,
   initialized: [] as Array<Record<string, unknown>>,
   streams: { started: 0, stopped: 0, captured: 0 },
+  team: { watching: 0, stopped: 0, onTeam: null as null | (() => void) },
+}));
+
+vi.mock('./account-session', () => ({
+  watchForTeamAccount: (onTeam: () => void) => {
+    state.team.watching += 1;
+    state.team.onTeam = onTeam;
+    return () => {
+      state.team.stopped += 1;
+    };
+  },
 }));
 
 vi.mock('./account-stream', () => ({
@@ -78,7 +92,10 @@ beforeEach(() => {
   state.captured = [];
   state.initialized = [];
   state.streams = { started: 0, stopped: 0, captured: 0 };
+  state.team = { watching: 0, stopped: 0, onTeam: null };
   window.localStorage.clear();
+  document.cookie =
+    'sb-test-auth-token=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
   fetchSpy = vi.fn(async () => new Response(null, { status: 200 }));
   vi.stubGlobal('fetch', fetchSpy);
 });
@@ -133,6 +150,53 @@ describe('an official website build', () => {
     });
     // The website has no account stream: nothing went around the SDK.
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('stamps internal from the device, whatever the caller says (ENG-047 F6)', async () => {
+    const client = await freshClient();
+    await client.initAnalytics();
+    client.captureAnalyticsEvent({
+      ...EVERY_ANALYTICS_EVENT[0]!,
+      internal: true,
+    });
+    expect(state.captured[0]!.properties).toMatchObject({ internal: false });
+
+    window.localStorage.setItem(ANALYTICS_INTERNAL_STORAGE_KEY, 'true');
+    state.captured = [];
+    const marked = await freshClient();
+    await marked.initAnalytics();
+    for (const event of EVERY_ANALYTICS_EVENT)
+      marked.captureAnalyticsEvent(event);
+    for (const capture of state.captured) {
+      expect(capture.properties, capture.name).toMatchObject({
+        internal: true,
+      });
+    }
+    // An already-marked browser does not look for a team account.
+    expect(state.team.watching).toBe(0);
+  });
+
+  it('a team account signed in marks this browser, from that event on', async () => {
+    document.cookie = 'sb-test-auth-token=present';
+    const client = await freshClient();
+    await client.initAnalytics();
+    expect(state.team.watching).toBe(1);
+    state.team.onTeam?.();
+    client.captureAnalyticsEvent(EVERY_ANALYTICS_EVENT[0]!);
+    expect(state.captured.at(-1)!.properties).toMatchObject({
+      internal: true,
+    });
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem(ANALYTICS_INTERNAL_STORAGE_KEY)).toBe(
+        'true'
+      )
+    );
+  });
+
+  it('an anonymous visitor never starts the account client', async () => {
+    const client = await freshClient();
+    await client.initAnalytics();
+    expect(state.team.watching).toBe(0);
   });
 
   it('hands out the web id only while emitting', async () => {
@@ -230,12 +294,14 @@ describe('an opt-out during the desktop start is authoritative', () => {
             status: 'ready' as const,
             optedOut: false,
             installationId: DESKTOP_ID,
+            internal: false,
           };
         },
         setOptOut: async () => ({
           status: 'ready' as const,
           optedOut: true,
           installationId: null,
+          internal: false,
         }),
       },
     });

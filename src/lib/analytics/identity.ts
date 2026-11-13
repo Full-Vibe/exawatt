@@ -19,11 +19,15 @@ import { detectElectron } from './config';
 export const ANALYTICS_OPT_OUT_STORAGE_KEY = 'exawatt.analytics.opt-out.v1';
 export const ANALYTICS_INSTALLATION_ID_STORAGE_KEY =
   'exawatt.analytics.installation-id.v1';
+/** ENG-047 F6: this browser is the team's (a team account signed in here). */
+export const ANALYTICS_INTERNAL_STORAGE_KEY = 'exawatt.analytics.internal.v1';
 
 interface AnalyticsIdentity {
   optedOut: boolean;
   /** Null while opted out, or before anything asked for one. */
   installationId: string | null;
+  /** ENG-047 F6: every event from this device says `internal`. */
+  internal: boolean;
 }
 
 type MinimalStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -46,17 +50,18 @@ function readWebIdentity(
 ): AnalyticsIdentity | null {
   if (!storage) return null;
   try {
+    const internal = storage.getItem(ANALYTICS_INTERNAL_STORAGE_KEY) === 'true';
     if (storage.getItem(ANALYTICS_OPT_OUT_STORAGE_KEY) === 'true') {
-      return { optedOut: true, installationId: null };
+      return { optedOut: true, installationId: null, internal };
     }
     const existing = storage.getItem(ANALYTICS_INSTALLATION_ID_STORAGE_KEY);
     if (isAnalyticsId(existing)) {
-      return { optedOut: false, installationId: existing };
+      return { optedOut: false, installationId: existing, internal };
     }
-    if (!ensureId) return { optedOut: false, installationId: null };
+    if (!ensureId) return { optedOut: false, installationId: null, internal };
     const created = generate();
     storage.setItem(ANALYTICS_INSTALLATION_ID_STORAGE_KEY, created);
-    return { optedOut: false, installationId: created };
+    return { optedOut: false, installationId: created, internal };
   } catch {
     return null;
   }
@@ -84,6 +89,18 @@ function writeWebOptOut(
 
 function desktopBridge() {
   return typeof window === 'undefined' ? undefined : window.electron?.analytics;
+}
+
+function identityOf(read: {
+  optedOut: boolean;
+  installationId: string | null;
+  internal?: boolean;
+}): AnalyticsIdentity {
+  return {
+    optedOut: read.optedOut,
+    installationId: read.installationId,
+    internal: read.internal === true,
+  };
 }
 
 /** What this origin kept before BUG-171, if anything. */
@@ -118,7 +135,7 @@ async function readDesktopIdentity(
     const read = await bridge.identity({ legacy, ensureId });
     if (read.status !== 'ready') return null;
     if (legacy) dropLegacyDesktopIdentity(storage);
-    return { optedOut: read.optedOut, installationId: read.installationId };
+    return identityOf(read);
   } catch {
     return null;
   }
@@ -148,10 +165,33 @@ export async function persistAnalyticsOptOut(
   if (!bridge) return null;
   try {
     const read = await bridge.setOptOut(optedOut);
-    return read.status === 'ready'
-      ? { optedOut: read.optedOut, installationId: read.installationId }
-      : null;
+    return read.status === 'ready' ? identityOf(read) : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * ENG-047 F6: mark this device the team's, for good (a team account signed
+ * in). The website keeps the mark in this browser's storage; the desktop app
+ * asks main, which keeps it in the device record. True when the mark is kept.
+ */
+export async function markAnalyticsDeviceInternal(): Promise<boolean> {
+  if (!detectElectron()) {
+    const storage = localStorageOrNull();
+    try {
+      storage?.setItem(ANALYTICS_INTERNAL_STORAGE_KEY, 'true');
+      return storage !== null;
+    } catch {
+      return false;
+    }
+  }
+  const bridge = desktopBridge();
+  if (!bridge?.markInternal) return false;
+  try {
+    const read = await bridge.markInternal();
+    return read.status === 'ready' && read.internal === true;
+  } catch {
+    return false;
   }
 }

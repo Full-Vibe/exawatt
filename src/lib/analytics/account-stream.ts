@@ -18,8 +18,10 @@
  */
 
 import { isAnalyticsId } from '@exawatt/core/desktop-bridge';
-import { resolvedDistribution } from '@/lib/distribution/resolved';
-import { createOptionalClient } from '@/lib/supabase/client';
+import {
+  subscribeToSignedInAccount,
+  type AccountSubscription,
+} from './account-session';
 import { isAccountStreamEvent, type AnalyticsEvent } from './events';
 import {
   INGEST_LIBS,
@@ -33,22 +35,6 @@ export interface AccountStream {
   capture(event: AnalyticsEvent): void;
   stop(): void;
 }
-
-/** Calls `onAccount` with the signed-in account id, or null, now and on
- *  every change; returns the unsubscribe. */
-export type AccountSubscription = (
-  onAccount: (accountId: string | null) => void
-) => () => void;
-
-/** The account seam's own session, read locally: no request is made. */
-const subscribeToSignedInAccount: AccountSubscription = onAccount => {
-  const supabase = createOptionalClient(resolvedDistribution());
-  if (!supabase) return () => undefined;
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-    onAccount(session?.user?.id ?? null);
-  });
-  return () => data.subscription.unsubscribe();
-};
 
 export function startAccountStream(
   target: IngestTarget,
@@ -96,14 +82,16 @@ export function startAccountStream(
     }
   };
 
-  const unsubscribe = (deps.subscribe ?? subscribeToSignedInAccount)(id => {
-    accountId = isAnalyticsId(id) ? id : null;
-    if (answered) return;
-    answered = true;
-    const held = waiting;
-    waiting = [];
-    for (const event of held) capture(event);
-  });
+  const unsubscribe = (deps.subscribe ?? subscribeToSignedInAccount)(
+    account => {
+      accountId = isAnalyticsId(account?.id) ? account.id : null;
+      if (answered) return;
+      answered = true;
+      const held = waiting;
+      waiting = [];
+      for (const event of held) capture(event);
+    }
+  );
 
   return {
     capture,
