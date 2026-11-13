@@ -27,6 +27,7 @@ export {
 export {
   FLEET_MATERIALS,
   isAnalyticsId,
+  isLocalDate,
   parseAnalyticsDeviceRecord,
   parsePresentationPreferences,
   applyPresentationUpdate,

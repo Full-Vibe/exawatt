@@ -40,8 +40,9 @@ describe('download_requested, recorded by the server', () => {
           event: 'download_requested',
           distinctId: VISITOR,
           properties: {
-            allowlist_version: 1,
+            allowlist_version: 2,
             surface: 'web',
+            internal: false,
             platform: 'darwin',
             arch: 'arm64',
             $lib: 'exawatt-server',

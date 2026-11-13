@@ -150,10 +150,14 @@ export interface ExawattSettings<ThemeId extends string = string> {
    */
   keyboardShortcuts?: KeyboardShortcutOverridesV1;
   /**
-   * Product analytics on this device (BUG-171): the runtime opt-out and the
-   * anonymous installation id, held by main so a launch that serves from a
-   * fallback port neither forgets the opt-out nor mints a new id. Absent
-   * means analytics have never asked; it never means opted out.
+   * Where builds from 2026-10-15 to 2026-11-12 kept the analytics device
+   * record (BUG-171). Main now keeps it in its own file,
+   * `analytics-device.json` (`electron/main/analytics-device-store.ts`),
+   * because a build that predates the record rewrote this file without it
+   * and the next launch minted a new installation id. Main adopts this copy
+   * once and keeps it as a mirror of the fields those builds read, so a
+   * mixed-version profile keeps one id and one opt-out. Absent means
+   * analytics have never asked; it never means opted out.
    */
   analytics?: AnalyticsDeviceRecord;
 }
@@ -168,6 +172,15 @@ export interface AnalyticsDeviceRecord {
   agentLaunched?: true;
   /** ENG-047 F2: the one web-to-app alias has been asked for. */
   webLinked?: true;
+  /**
+   * ENG-047 F6: this installation is the Exawatt team's (a dogfood build ran
+   * here, or a team account signed in). Sticky: signing out or opting out
+   * keeps it, so the team's use stays out of the counts.
+   */
+  internal?: true;
+  /** ENG-047 F6: the last local calendar day (`YYYY-MM-DD`) `app_active`
+   *  was claimed for, so a restart never counts a day twice. */
+  activeDay?: string;
 }
 
 /**
@@ -177,7 +190,13 @@ export interface AnalyticsDeviceRecord {
  * renderer starts no analytics for that launch.
  */
 export type AnalyticsIdentityRead =
-  | { status: 'ready'; optedOut: boolean; installationId: string | null }
+  | {
+      status: 'ready';
+      optedOut: boolean;
+      installationId: string | null;
+      /** ENG-047 F6: every event from this installation says `internal`. */
+      internal: boolean;
+    }
   | { status: 'unavailable' };
 
 /**
@@ -199,6 +218,13 @@ export interface AnalyticsIdentityRequest {
 const ANALYTICS_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+const LOCAL_DATE_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/;
+
+/** A local calendar day as `YYYY-MM-DD`, and nothing else. */
+export function isLocalDate(value: unknown): value is string {
+  return typeof value === 'string' && LOCAL_DATE_PATTERN.test(value);
+}
+
 /** An anonymous analytics id is a lowercase UUID, and nothing else. */
 export function isAnalyticsId(value: unknown): value is string {
   return typeof value === 'string' && ANALYTICS_ID_PATTERN.test(value);
@@ -217,6 +243,8 @@ export function parseAnalyticsDeviceRecord(
   }
   if (candidate.agentLaunched === true) record.agentLaunched = true;
   if (candidate.webLinked === true) record.webLinked = true;
+  if (candidate.internal === true) record.internal = true;
+  if (isLocalDate(candidate.activeDay)) record.activeDay = candidate.activeDay;
   return record;
 }
 

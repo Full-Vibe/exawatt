@@ -24,13 +24,18 @@ import {
   type AgentSourcePlacement,
 } from '@exawatt/core';
 
-/** Bumped whenever an event's declared properties change shape. */
-export const ANALYTICS_ALLOWLIST_VERSION = 1;
+/**
+ * Bumped whenever an event's declared properties change shape. Version 2
+ * (2026-11-12, ENG-047 F6): every event carries `internal`, and `app_active`
+ * joins the allowlist.
+ */
+export const ANALYTICS_ALLOWLIST_VERSION = 2;
 
 /**
  * The events decisions `0031` and `0053` authorize, and no others: the four
  * product-health events, then the activation funnel (ENG-047), then the one
  * event only a signed-in account's stream carries (`0053`'s 2026-10-15
+ * amendment), then the daily activity signal (`0053`'s 2026-11-12
  * amendment).
  */
 export const ANALYTICS_EVENT_NAMES = [
@@ -44,6 +49,7 @@ export const ANALYTICS_EVENT_NAMES = [
   'agent_launched',
   'agent_directed',
   'agent_finished',
+  'app_active',
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
@@ -60,6 +66,7 @@ export const ACCOUNT_ONLY_EVENTS = ['agent_finished'] as const;
 
 export const ACCOUNT_STREAM_EVENTS = [
   'app_launched',
+  'app_active',
   'project_opened',
   'agent_launched',
   'agent_directed',
@@ -382,17 +389,48 @@ interface AgentFinishedEvent {
   placement: AgentSourcePlacement;
 }
 
-export type AnalyticsEvent =
-  | AppLaunchedEvent
-  | SignInAttemptedEvent
-  | HostedCallFailedEvent
-  | AppCrashedEvent
-  | PageViewedEvent
-  | DownloadRequestedEvent
-  | ProjectOpenedEvent
-  | AgentLaunchedEvent
-  | AgentDirectedEvent
-  | AgentFinishedEvent;
+/**
+ * The desktop app was in use on a local calendar day: open, with a window
+ * focused or an Agent running. Electron main sends it at most once a day
+ * (`electron/main/analytics-active-day.ts`), so day-N return no longer
+ * depends on the app being relaunched.
+ */
+export interface AppActiveEvent {
+  name: 'app_active';
+  surface: AnalyticsSurface;
+  platform: AnalyticsPlatform;
+  delivery: AnalyticsBuildDelivery;
+  appVersion?: string | null;
+  signedIn: boolean;
+  /** Whether an Agent was running when the day was claimed. */
+  agentsRunning: boolean;
+}
+
+/**
+ * What every event may carry besides its own properties. `internal` is true
+ * only on the Exawatt team's own installs and browsers (a dogfood build, or
+ * a device where a team account signed in), so the team's use can be left
+ * out of every count. The client stamps it from the device's identity; a
+ * caller never decides it.
+ */
+interface AnalyticsEventCommon {
+  internal?: boolean;
+}
+
+export type AnalyticsEvent = AnalyticsEventCommon &
+  (
+    | AppLaunchedEvent
+    | SignInAttemptedEvent
+    | HostedCallFailedEvent
+    | AppCrashedEvent
+    | PageViewedEvent
+    | DownloadRequestedEvent
+    | ProjectOpenedEvent
+    | AgentLaunchedEvent
+    | AgentDirectedEvent
+    | AgentFinishedEvent
+    | AppActiveEvent
+  );
 
 /** Property values that may leave the machine: no strings beyond enums. */
 export type AnalyticsPropertyValue = string | number | boolean | null;
@@ -401,6 +439,9 @@ export interface AnalyticsPayload {
   name: AnalyticsEventName;
   properties: Record<string, AnalyticsPropertyValue>;
 }
+
+/** Properties every event carries. */
+const COMMON_PROPERTIES = ['allowlist_version', 'surface', 'internal'] as const;
 
 /**
  * The declared property key set per event. `redact.ts` enforces it at the
@@ -412,53 +453,40 @@ export const ANALYTICS_EVENT_PROPERTIES: Record<
   readonly string[]
 > = {
   app_launched: [
-    'allowlist_version',
-    'surface',
+    ...COMMON_PROPERTIES,
     'platform',
     'delivery',
     'app_version',
     'signed_in',
   ],
-  sign_in_attempted: [
-    'allowlist_version',
-    'surface',
-    'method',
-    'outcome',
-    'failure',
-  ],
+  sign_in_attempted: [...COMMON_PROPERTIES, 'method', 'outcome', 'failure'],
   hosted_call_failed: [
-    'allowlist_version',
-    'surface',
+    ...COMMON_PROPERTIES,
     'service',
     'failure',
     'status_code',
   ],
-  app_crashed: [
-    'allowlist_version',
-    'surface',
-    'scope',
-    'reason',
-    'app_version',
-  ],
-  page_viewed: ['allowlist_version', 'surface', 'path', 'referrer_host'],
-  download_requested: ['allowlist_version', 'surface', 'platform', 'arch'],
-  project_opened: [
-    'allowlist_version',
-    'surface',
-    'source',
-    'harness_hint',
-    'bound',
-  ],
+  app_crashed: [...COMMON_PROPERTIES, 'scope', 'reason', 'app_version'],
+  page_viewed: [...COMMON_PROPERTIES, 'path', 'referrer_host'],
+  download_requested: [...COMMON_PROPERTIES, 'platform', 'arch'],
+  project_opened: [...COMMON_PROPERTIES, 'source', 'harness_hint', 'bound'],
   agent_launched: [
-    'allowlist_version',
-    'surface',
+    ...COMMON_PROPERTIES,
     'harness',
     'placement',
     'permission_mode',
     'first_for_install',
   ],
-  agent_directed: ['allowlist_version', 'surface', 'recipients', 'delivered'],
-  agent_finished: ['allowlist_version', 'surface', 'harness', 'placement'],
+  agent_directed: [...COMMON_PROPERTIES, 'recipients', 'delivered'],
+  agent_finished: [...COMMON_PROPERTIES, 'harness', 'placement'],
+  app_active: [
+    ...COMMON_PROPERTIES,
+    'platform',
+    'delivery',
+    'app_version',
+    'signed_in',
+    'agents_running',
+  ],
 };
 
 export function isAnalyticsEventName(
@@ -568,6 +596,7 @@ export function toAnalyticsPayload(
   const base = {
     allowlist_version: ANALYTICS_ALLOWLIST_VERSION,
     surface,
+    internal: event.internal === true,
   } satisfies Record<string, AnalyticsPropertyValue>;
 
   switch (event.name) {
@@ -684,6 +713,18 @@ export function toAnalyticsPayload(
           ...base,
           harness: member(ANALYTICS_HARNESSES, event.harness, 'unknown'),
           placement: member(ANALYTICS_PLACEMENTS, event.placement, 'local'),
+        },
+      };
+    case 'app_active':
+      return {
+        name: 'app_active',
+        properties: {
+          ...base,
+          platform: member(PLATFORMS, event.platform, 'unknown'),
+          delivery: member(BUILD_DELIVERIES, event.delivery, 'unknown'),
+          app_version: sanitizeAppVersion(event.appVersion),
+          signed_in: event.signedIn === true,
+          agents_running: event.agentsRunning === true,
         },
       };
   }

@@ -82,3 +82,38 @@ a person who signs in has read that their activity is recorded to their
 account. Anonymous installations stay anonymous, and `0031`'s separation of
 installation identity from account identity still holds: the stream is keyed
 by the account, not joined to the installation id. Execution: ENG-047 F5.
+
+## Amendment, 2026-11-12: a daily activity signal, and who is internal
+
+The operator asked whether people download and use Exawatt. The answer took
+an hour of hand-written queries and could not separate the team's own use
+from everyone else's, nor see anyone who keeps the app open for days
+(`docs/research/2026-11-12-desktop-adoption-and-metrics-visibility.md`).
+Operator brief, 2026-11-12: "Fix all the observability issues
+holistically." Execution: ENG-047 F6.
+
+1. **`app_active` joins the allowlist** (desktop, both streams): at most
+   once per local calendar day, the first time that day the app is open with
+   a window focused or an Agent running. Properties: `platform`, `delivery`,
+   `app_version`, `signed_in`, `agents_running` (boolean). Electron main
+   claims the day in the device record before it queues the event, so a
+   restart never counts a day twice. Decision 1's "`return_day` is derived
+   from `app_launched`, not sent" is superseded: day-N return reads
+   `app_active`, which sees an app that was never relaunched.
+2. **Every event carries `internal`** (boolean), true only on the Exawatt
+   team's own installs and browsers: a dogfood build, or a device where an
+   account whose `app_metadata.exawatt_team` is true signed in. The mark is
+   kept on the device and outlives sign-out and opt-out. It is a property of
+   the installation, derived from the team's own sign-in; the account is
+   never sent on the installation stream, and every other installation reads
+   `false`, so `0031`'s separation of installation and account identity
+   holds. The allowlist version is 2.
+3. **The desktop device record moves to its own file**
+   (`analytics-device.json`). Builds that predated the record rewrote
+   `settings.json` without it, and the next launch minted a new installation
+   id. The settings copy is adopted once and kept as a mirror of the fields
+   older builds read, so a mixed-version profile keeps one id and honours
+   one opt-out.
+
+Disclosure moved with the code, as decision 4 requires: the outbound-data
+manifest, the Privacy page and their tests changed in the same change.

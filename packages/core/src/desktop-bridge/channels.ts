@@ -184,6 +184,8 @@ interface RequestTable {
     AnalyticsIdentityRead
   >;
   'analytics:set-opt-out': Call<[optedOut: boolean], AnalyticsIdentityRead>;
+  /** ENG-047 F6: a team account signed in here; the device is internal. */
+  'analytics:mark-internal': Call<[], AnalyticsIdentityRead>;
 
   'app:command-engine': Call<[], CommandEnginePhase>;
   'app:device-power': Call<[], DevicePowerStatus>;

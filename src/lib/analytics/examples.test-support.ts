@@ -77,6 +77,15 @@ const ANALYTICS_EVENT_EXAMPLES: {
     harness: 'codex',
     placement: 'local',
   },
+  app_active: {
+    name: 'app_active',
+    surface: 'desktop',
+    platform: 'darwin',
+    delivery: 'signed',
+    appVersion: '0.1.26',
+    signedIn: false,
+    agentsRunning: true,
+  },
 };
 
 export const EVERY_ANALYTICS_EVENT: AnalyticsEvent[] = Object.values(

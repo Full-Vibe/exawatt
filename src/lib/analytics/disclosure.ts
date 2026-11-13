@@ -64,7 +64,18 @@ export const ANALYTICS_EVENT_DISCLOSURES: Record<
     where: 'account',
     what: 'that an Agent finished, and which engine it ran',
   },
+  app_active: {
+    where: 'app',
+    what: 'that the app was in use that day, at most once a day, and whether Agents were running',
+  },
 };
+
+/**
+ * The one property every event carries besides its version and surface
+ * (ENG-047 F6). Rendered beside the event lists on `/privacy`.
+ */
+export const ANALYTICS_INTERNAL_DISCLOSURE =
+  "Every event also says whether it came from the Exawatt team's own installs and browsers, so our own use is left out of the counts.";
 
 /** `where: 'signed-in'` is the account stream's whole list, from
  *  `ACCOUNT_STREAM_EVENTS`; the others are the installation stream's. */

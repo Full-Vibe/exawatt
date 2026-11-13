@@ -416,6 +416,8 @@ interface DesktopAnalyticsApi {
   /** BUG-171: the opt-out and installation id live in main's settings. */
   identity: BridgeInvoke<'analytics:identity'>;
   setOptOut: BridgeInvoke<'analytics:set-opt-out'>;
+  /** ENG-047 F6: mark this installation the team's, for good. */
+  markInternal: BridgeInvoke<'analytics:mark-internal'>;
 }
 
 interface DesktopBridgeShape {

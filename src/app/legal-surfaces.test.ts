@@ -192,6 +192,8 @@ describe.skipIf(!HAS_LEGAL_SURFACES)('privacy page: what is collected', () => {
     }
     // The signed-in list is the account stream's own event list.
     expect(PRIVACY).toContain('<DisclosureList where="signed-in" />');
+    // ENG-047 F6: the one property every event carries, in the same place.
+    expect(PRIVACY).toContain('{ANALYTICS_INTERNAL_DISCLOSURE}');
   });
 
   it('discloses the signed-in stream where people sign in, and here', () => {

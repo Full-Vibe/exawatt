@@ -431,6 +431,8 @@ const bridge = {
     // on a fallback port reads the same answer as every other launch.
     identity: request => invoke('analytics:identity', request),
     setOptOut: optedOut => invoke('analytics:set-opt-out', optedOut),
+    // ENG-047 F6: a team account signed in; the device stays internal.
+    markInternal: () => invoke('analytics:mark-internal'),
   },
 } satisfies DesktopBridge;
 

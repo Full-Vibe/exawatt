@@ -29,6 +29,7 @@ describe('analytics event allowlist', () => {
       'agent_launched',
       'agent_directed',
       'agent_finished',
+      'app_active',
     ]);
   });
 
@@ -82,8 +83,9 @@ describe('analytics event allowlist', () => {
     ).toEqual({
       name: 'app_launched',
       properties: {
-        allowlist_version: 1,
+        allowlist_version: 2,
         surface: 'desktop',
+        internal: false,
         platform: 'darwin',
         delivery: 'signed',
         app_version: '0.1.8',
@@ -109,6 +111,7 @@ describe('analytics event allowlist', () => {
     expect(Object.keys(payload!.properties).sort()).toEqual([
       'allowlist_version',
       'failure',
+      'internal',
       'method',
       'outcome',
       'surface',
@@ -116,6 +119,51 @@ describe('analytics event allowlist', () => {
     expect(JSON.stringify(payload)).not.toContain('exawatt.ai/Users');
     expect(JSON.stringify(payload)).not.toContain('refactor');
     expect(JSON.stringify(payload)).not.toContain('developer@example.com');
+  });
+
+  it('says internal only when the client stamped it, and never takes a string', () => {
+    const launch = {
+      name: 'app_launched',
+      surface: 'desktop',
+      platform: 'darwin',
+      delivery: 'signed',
+      signedIn: false,
+    } as const;
+    expect(toAnalyticsPayload(launch)!.properties.internal).toBe(false);
+    expect(
+      toAnalyticsPayload({ ...launch, internal: true })!.properties.internal
+    ).toBe(true);
+    expect(
+      toAnalyticsPayload({ ...launch, internal: 'yes' as never })!.properties
+        .internal
+    ).toBe(false);
+  });
+
+  it('builds the daily activity payload (decision 0053, 2026-11-12)', () => {
+    expect(
+      toAnalyticsPayload({
+        name: 'app_active',
+        surface: 'desktop',
+        platform: 'darwin',
+        delivery: 'dogfood',
+        appVersion: '0.1.26',
+        signedIn: true,
+        agentsRunning: true,
+        internal: true,
+      })
+    ).toEqual({
+      name: 'app_active',
+      properties: {
+        allowlist_version: 2,
+        surface: 'desktop',
+        internal: true,
+        platform: 'darwin',
+        delivery: 'dogfood',
+        app_version: '0.1.26',
+        signed_in: true,
+        agents_running: true,
+      },
+    });
   });
 
   it('degrades unknown enum members instead of shipping them verbatim', () => {
@@ -127,8 +175,9 @@ describe('analytics event allowlist', () => {
       statusCode: 42,
     });
     expect(payload!.properties).toEqual({
-      allowlist_version: 1,
+      allowlist_version: 2,
       surface: 'web',
+      internal: false,
       service: 'unknown',
       failure: 'unknown',
       status_code: null,
@@ -210,7 +259,9 @@ describe('analytics event allowlist', () => {
   it('refuses an event name that is not on the allowlist', () => {
     expect(isAnalyticsEventName('session_transcript')).toBe(false);
     expect(
-      toAnalyticsPayload({ name: 'session_transcript' } as unknown as AnalyticsEvent)
+      toAnalyticsPayload({
+        name: 'session_transcript',
+      } as unknown as AnalyticsEvent)
     ).toBeNull();
   });
 });
@@ -234,6 +285,7 @@ describe('page_viewed carries a path and a hostname, nothing else', () => {
     expect(plain).toEqual({
       allowlist_version: ANALYTICS_ALLOWLIST_VERSION,
       surface: 'web',
+      internal: false,
       path: '/download',
       referrer_host: null,
     });
