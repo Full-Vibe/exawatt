@@ -24,9 +24,9 @@ import { claimActiveDay } from './analytics-identity';
  * here reads a window's content, a task, or a path.
  */
 
-export const ACTIVE_DAY_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+const ACTIVE_DAY_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 
-export interface ActiveDayBuild {
+interface ActiveDayBuild {
   platform: MainPlatform;
   delivery: MainDelivery;
   appVersion: string | null;
@@ -73,7 +73,7 @@ export function buildForActiveDay(input: {
   };
 }
 
-export interface ActiveDayRecorder {
+interface ActiveDayRecorder {
   /** Claim today if the app is in use and today is not claimed yet. */
   check(): void;
 }

@@ -22,7 +22,7 @@ export type AccountSubscription = (
 ) => () => void;
 
 /** The `app_metadata` key that marks a team account. */
-export const TEAM_APP_METADATA_KEY = 'exawatt_team';
+const TEAM_APP_METADATA_KEY = 'exawatt_team';
 
 /** A session's user as an analytics account; anything malformed is none. */
 export function accountOf(user: unknown): SignedInAccount | null {

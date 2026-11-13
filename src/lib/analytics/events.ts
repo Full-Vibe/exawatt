@@ -395,7 +395,7 @@ interface AgentFinishedEvent {
  * (`electron/main/analytics-active-day.ts`), so day-N return no longer
  * depends on the app being relaunched.
  */
-export interface AppActiveEvent {
+interface AppActiveEvent {
   name: 'app_active';
   surface: AnalyticsSurface;
   platform: AnalyticsPlatform;

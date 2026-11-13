@@ -44,7 +44,7 @@ import { readSettings, writeSettings } from './settings-store';
  * permanently unreadable record would silently end analytics on the device.
  */
 
-export type AnalyticsDeviceRead =
+type AnalyticsDeviceRead =
   | { status: 'ready'; record: AnalyticsDeviceRecord | undefined }
   | { status: 'unavailable' };
 

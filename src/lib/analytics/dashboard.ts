@@ -49,9 +49,9 @@ type DashboardEventName =
   | AnalyticsEventName
   | (typeof POSTHOG_OWN_EVENTS)[number];
 
-export type InsightDisplay = 'ActionsBar' | 'ActionsLineGraph' | 'Table';
+type InsightDisplay = 'ActionsBar' | 'ActionsLineGraph' | 'Table';
 
-export interface AnalyticsInsight {
+interface AnalyticsInsight {
   /** PostHog's short id, for insights that already exist. */
   shortId?: string;
   name: string;
