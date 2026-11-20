@@ -73,3 +73,13 @@ Claude Code or Codex check Gemini's work with the
 [review loop](agents-review-each-other.md).
 
 Google warns that a swarm uses quota much faster than a single conversation.
+Before Antigravity CLI 1.5.13 (November 19, 2026), an agent could start a
+swarm on its own when you hadn't typed `/swarm`. That includes a Gemini agent
+you start in Exawatt, since Exawatt runs your own `agy`. From 1.5.13 the agent
+isn't offered the swarm skill any more, so a swarm starts only when you type
+`/swarm` ([1.5.13 release notes](https://github.com/google-antigravity/antigravity-cli/releases/tag/1.5.13)).
+If your Gemini quota ran down faster than your tasks explain, update the CLI:
+
+```sh
+agy update
+```
