@@ -71,6 +71,7 @@ export default function GlobalError({
           </button>
           <button
             onClick={() => {
+              // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- the root layout failed, so only a full reload recovers
               window.location.href = '/workspace';
             }}
             style={{

@@ -275,6 +275,7 @@ try {
         .textContent();
       // Settings → Agent Sources on the same warm memory.
       await page.evaluate(() => {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- the probe measures a cold page load on purpose
         window.location.assign('/settings');
       });
       await page

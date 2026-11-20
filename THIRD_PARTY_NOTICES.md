@@ -5,7 +5,7 @@
 This inventory records the declared distribution basis for 814 third-party
 package versions in the current macOS pnpm dependency graph. Platform binary
 families use a `<platform>` placeholder so the same policy is checkable on Linux.
-Lockfile SHA-256: `846b8f3755976d45e24c095d1d26e3ce3acc524ddc6838fd6a309c08c90050d1`.
+Lockfile SHA-256: `9f6f841e15c85c7bc2f4d6512b5fca97fb083eb448b17ea3f7ad667b0883fb5b`.
 
 Regenerate it on macOS
 with `pnpm licenses:generate`; `pnpm licenses:check` fails when the graph,
@@ -132,9 +132,9 @@ license texts that need special handling are preserved under
 | @malept/flatpak-bundler                  | 0.4.0         | MIT                     |
 | @mediapipe/tasks-vision                  | 0.10.17       | Apache-2.0              |
 | @monogrid/gainmap-js                     | 3.4.0         | MIT                     |
-| @next/env                                | 16.4.2        | MIT                     |
-| @next/eslint-plugin-next                 | 16.4.2        | MIT                     |
-| @next/swc-<platform>                     | 16.4.2        | MIT                     |
+| @next/env                                | 16.4.6        | MIT                     |
+| @next/eslint-plugin-next                 | 16.4.6        | MIT                     |
+| @next/swc-<platform>                     | 16.4.6        | MIT                     |
 | @noble/ed25519                           | 3.0.1         | MIT                     |
 | @noble/hashes                            | 1.4.0         | MIT                     |
 | @noble/hashes                            | 2.2.0         | MIT                     |
@@ -421,7 +421,7 @@ license texts that need special handling are preserved under
 | escalade                                 | 3.2.0         | MIT                     |
 | escape-string-regexp                     | 4.0.0         | MIT                     |
 | eslint                                   | 9.39.1        | MIT                     |
-| eslint-config-next                       | 16.4.2        | MIT                     |
+| eslint-config-next                       | 16.4.6        | MIT                     |
 | eslint-config-prettier                   | 10.1.8        | MIT                     |
 | eslint-import-resolver-node              | 0.3.9         | MIT                     |
 | eslint-import-resolver-typescript        | 3.10.1        | ISC                     |
@@ -620,7 +620,7 @@ license texts that need special handling are preserved under
 | nanoid                                   | 3.3.20        | MIT                     |
 | napi-postinstall                         | 0.3.4         | MIT                     |
 | natural-compare                          | 1.4.0         | MIT                     |
-| next                                     | 16.4.2        | MIT                     |
+| next                                     | 16.4.6        | MIT                     |
 | node-abi                                 | 4.33.0        | MIT                     |
 | node-addon-api                           | 7.1.1         | MIT                     |
 | node-api-headers                         | 1.9.0         | MIT                     |

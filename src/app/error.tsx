@@ -43,6 +43,7 @@ export default function RouteError({
           variant="ghost"
           size="sm"
           onClick={() => {
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is the recovery: the tree that failed to render is not reused
             window.location.href = '/workspace';
           }}
         >
