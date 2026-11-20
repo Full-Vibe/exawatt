@@ -5,10 +5,14 @@
  * reading a log, not a chat (operator, 2026-10-15: "Chronological list,
  * collapsed to two lines, expand in place").
  */
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { sessionSource } from '@/components/workspace/harnesses';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 import { firstLine } from '@/lib/bus/selectors';
+import {
+  COMPOSER_PASTE_FAILED,
+  useComposerPaste,
+} from '@/hooks/use-composer-paste';
 import { useBackOut } from '@/lib/shortcuts/back-out';
 import type { BusEndpoint, MessageRecord, BusSendResult } from '@exawatt/core';
 import { DELIVERY_LABEL, chatterAge, chatterStamp } from './chatter-format';
@@ -208,6 +212,13 @@ export function ChatterComposer({
   const [state, setState] = useState<ComposerState>({ phase: 'idle' });
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const field = useCallback(() => fieldRef.current, []);
+  // Files and screenshots paste as paths the recipient Session can open
+  const clipboard = useComposerPaste({
+    value: text,
+    element: field,
+    onInsert: setText,
+  });
   // The composer's rung of the back-out ladder, from the field, a recipient
   // or Send alike: the draft stays, the keyboard goes back to the thread.
   useBackOut({
@@ -222,7 +233,8 @@ export function ChatterComposer({
 
   const send = async () => {
     const body = text.trim();
-    if (!body || !recipient || state.phase === 'sending') return;
+    if (!body || !recipient || state.phase === 'sending' || clipboard.pending)
+      return;
     setState({ phase: 'sending' });
     const result = await onSend(recipient.sessionId, body);
     setState({
@@ -300,7 +312,9 @@ export function ChatterComposer({
         }
         placeholder="Message"
         onChange={event => setText(event.target.value)}
+        onPaste={clipboard.onPaste}
         onKeyDown={event => {
+          if (clipboard.onKeyDown(event)) return;
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             event.stopPropagation();
@@ -324,17 +338,21 @@ export function ChatterComposer({
           style={{ color: refused ? HUD.amber : HUD.textDim }}
           title={sent?.reason ?? refused?.reason}
         >
-          {state.phase === 'sending'
-            ? 'Sending…'
-            : sent && state.phase === 'done'
-              ? `${DELIVERY_LABEL[sent.state]} · ${state.to}`
-              : refused
-                ? refusalLine(refused)
-                : null}
+          {clipboard.failed
+            ? COMPOSER_PASTE_FAILED
+            : state.phase === 'sending'
+              ? 'Sending…'
+              : sent && state.phase === 'done'
+                ? `${DELIVERY_LABEL[sent.state]} · ${state.to}`
+                : refused
+                  ? refusalLine(refused)
+                  : null}
         </span>
         <button
           type="submit"
-          disabled={!text.trim() || state.phase === 'sending'}
+          disabled={
+            !text.trim() || state.phase === 'sending' || clipboard.pending
+          }
           className="shrink-0 rounded px-2 py-1 font-ui text-chrome-label font-medium outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:opacity-40"
           style={{ background: HUD.fillHi, color: HUD.text }}
         >

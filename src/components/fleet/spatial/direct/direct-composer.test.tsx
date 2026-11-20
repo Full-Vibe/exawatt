@@ -15,9 +15,14 @@ import type { BusClient } from '@/lib/bus/client';
 import type { BusDeliveryState } from '@exawatt/core';
 import { BusClientProvider } from '@/lib/bus/use-bus';
 import { SpatialSelectionPanel } from '../spatial-selection-panel';
+import { DirectComposer } from './direct-composer';
 import type { DirectRecipient } from './direct-model';
 import { useDirect, type RecipientAddress } from './use-direct';
 import { useBackOut } from '@/lib/shortcuts/back-out';
+import {
+  installBridgeDouble,
+  removeBridgeDouble,
+} from '@/test-support/desktop-bridge-double';
 
 vi.mock('next/link', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -291,5 +296,38 @@ describe('Direct N Agents', () => {
     expect(onClear).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(onClear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DirectComposer paste', () => {
+  it('pastes files copied in Finder as their paths', async () => {
+    const clipboardRead = vi.fn(async () => ({
+      kind: 'files' as const,
+      text: "'/Users/user/Q3 report.pdf'",
+    }));
+    installBridgeDouble({ pty: { clipboardRead } });
+    try {
+      render(
+        <DirectComposer
+          count={2}
+          availability={{ kind: 'ready' }}
+          sending={false}
+          onSend={vi.fn(async () => true)}
+        />
+      );
+      const field = screen.getByLabelText('Direct 2 Agents');
+      const pasted = fireEvent.paste(field, {
+        clipboardData: {
+          items: [{ kind: 'file', type: 'application/pdf' }],
+          getData: () => 'Q3 report.pdf',
+        },
+      });
+      expect(pasted).toBe(false);
+      await waitFor(() =>
+        expect(field).toHaveValue("'/Users/user/Q3 report.pdf' ")
+      );
+    } finally {
+      removeBridgeDouble();
+    }
   });
 });

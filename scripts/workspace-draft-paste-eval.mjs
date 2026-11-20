@@ -7,6 +7,8 @@
  *     role fire a second paste),
  *   - a menu-driven paste (webContents.paste(), what Edit ▸ Paste sends)
  *     funnels through the same single image-aware write — once,
+ *   - files copied in Finder paste as their own paths, every one of them,
+ *     never as a saved picture of their icon (BUG-353; macOS only),
  *   - text typed into a ⌘T draft composer survives switching tabs away and
  *     back,
  *   - a draft WITH content persists and restores across an app relaunch,
@@ -20,7 +22,13 @@
  * and a count of what the terminal shows then fails a paste that happened
  * once.
  */
-import { existsSync, mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -28,6 +36,7 @@ import {
   waitForWorkspaceReady,
   withElectronApp,
 } from './lib/electron-eval.mjs';
+import { copyFilesLikeFinder } from './lib/macos-pasteboard.mjs';
 
 const OUT = process.env.DRAFT_SCREENSHOT_DIR || '/tmp/exawatt-draft-eval';
 mkdirSync(OUT, { recursive: true });
@@ -44,6 +53,7 @@ const PASTE_ONE = 'EXAWATT_PASTE_ONCE_4821';
 const PASTE_TWO = 'EXAWATT_MENU_PASTE_9317';
 const AFTER_ONE = 'EXAWATT_AFTER_KEY_PASTE_0512';
 const AFTER_TWO = 'EXAWATT_AFTER_MENU_PASTE_7760';
+const AFTER_FILES = 'EXAWATT_AFTER_FILE_PASTE_3164';
 
 const failures = [];
 const check = (name, ok) => {
@@ -199,6 +209,32 @@ await withElectronApp(
       'menu-driven paste funnels through one write',
       occurrences(await inputThrough(AFTER_TWO), PASTE_TWO) === 1
     );
+
+    // Finder ⌘C of two files: the pasteboard holds both file URLs and a
+    // picture of their icon. The paste is both paths, quoted, in order.
+    if (process.platform === 'darwin') {
+      const copied = mkdtempSync(join(tmpdir(), 'exawatt-finder-copy-'));
+      const files = ['1 Auto.png', "Jake's pin.png"].map(name => {
+        const file = join(copied, name);
+        writeFileSync(file, 'not really a png');
+        return file;
+      });
+      const quoted = file => `'${file.replace(/'/g, "'\\''")}'`;
+      const expected = files.map(quoted).join(' ');
+      copyFilesLikeFinder(files);
+      await textarea.focus();
+      await textarea.press('Meta+v');
+      await until(
+        () => recorded().includes(expected),
+        "the copied files' paths to reach the PTY"
+      );
+      const input = await inputThrough(AFTER_FILES);
+      check(
+        '⌘V of files copied in Finder pastes their paths, once',
+        occurrences(input, expected) === 1 &&
+          !input.includes('exawatt-clipboard')
+      );
+    }
 
     // An EMPTY draft in another Project, opened BEFORE the Alpha draft gets
     // its text: the save that carries that text serializes this draft too,

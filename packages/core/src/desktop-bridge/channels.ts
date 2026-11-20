@@ -88,7 +88,6 @@ import type {
 } from './connected-sources';
 import type {
   AgentModelCatalog,
-  ClipboardPasteResult,
   ClipboardReadResult,
   ClosedSessionEntry,
   GoalVisual,
@@ -390,7 +389,6 @@ interface RequestTable {
     [durableSessionId: string, maxLines?: number],
     RetainedTranscript
   >;
-  'pty:paste-clipboard': Call<[id: string], ClipboardPasteResult>;
   'pty:clipboard-read': Call<[], ClipboardReadResult>;
   'pty:copy-text': Call<[text: string], void>;
   'pty:open-external': Call<[url: string], void>;

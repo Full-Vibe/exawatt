@@ -65,8 +65,22 @@ const xterm = vi.hoisted(() => {
     registerLinkProvider() {
       return { dispose: vi.fn() };
     }
-    onData() {
+    dataListeners: Array<(data: string) => void> = [];
+    onData(listener: (data: string) => void) {
+      this.dataListeners.push(listener);
       return { dispose: vi.fn() };
+    }
+    /** Set by the program through `ESC[?2004h`. */
+    bracketedPasteMode = false;
+    /** As xterm 6 pastes (`browser/Clipboard.ts` `paste`): newlines become
+     *  Return, the text is bracketed when the program asked for it, and the
+     *  data event fires synchronously. */
+    paste(text: string) {
+      const typed = text.replace(/\r?\n/g, '\r');
+      const data = this.bracketedPasteMode
+        ? `\x1b[200~${typed}\x1b[201~`
+        : typed;
+      for (const listener of this.dataListeners) listener(data);
     }
   }
 
@@ -158,7 +172,7 @@ beforeEach(() => {
     openExternal: vi.fn(async () => undefined),
     openPath: vi.fn(async () => undefined),
     copyText: vi.fn(async () => undefined),
-    pasteClipboard: vi.fn(async () => ({ kind: 'empty' as const })),
+    clipboardRead: vi.fn(async () => ({ kind: 'empty' as const, text: '' })),
   };
   installBridgeDouble({ pty });
 });
@@ -288,5 +302,73 @@ describe('terminal scrollback search', () => {
     });
     fireEvent.click(close);
     expect(document.querySelector('[data-terminal-search]')).toBeNull();
+  });
+});
+
+describe('terminal paste', () => {
+  async function mountedTerminal() {
+    const view = render(
+      <TerminalPane active cwd="/tmp/project" font={font} sessionId="live-1" />
+    );
+    await waitFor(() =>
+      expect(xterm.state.terminals[0]?.keyHandler).toBeTruthy()
+    );
+    return { view, terminal: xterm.state.terminals[0] };
+  }
+
+  it('hands ⌘V to xterm, which brackets it for a program that asked', async () => {
+    const pty = window.electron!.pty!;
+    vi.mocked(pty.clipboardRead).mockResolvedValue({
+      kind: 'files',
+      text: "'/Users/user/1 Auto.png' /Users/user/plain.png",
+    });
+    const { terminal } = await mountedTerminal();
+    terminal.bracketedPasteMode = true;
+    act(() => {
+      terminal.keyHandler!(
+        new KeyboardEvent('keydown', { key: 'v', metaKey: true })
+      );
+    });
+    await waitFor(() =>
+      expect(pty.write).toHaveBeenCalledWith(
+        'live-1',
+        "\x1b[200~'/Users/user/1 Auto.png' /Users/user/plain.png\x1b[201~",
+        true
+      )
+    );
+  });
+
+  it('routes Edit ▸ Paste through the same paste, newlines as Return', async () => {
+    const pty = window.electron!.pty!;
+    vi.mocked(pty.clipboardRead).mockResolvedValue({
+      kind: 'text',
+      text: 'one\ntwo',
+    });
+    const { view } = await mountedTerminal();
+    const surface = view.container.querySelector('.terminal-pane > div')!;
+    expect(fireEvent.paste(surface)).toBe(false);
+    await waitFor(() =>
+      expect(pty.write).toHaveBeenCalledWith('live-1', 'one\rtwo', true)
+    );
+    expect(pty.write).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a clipboard read that settles after the pane is gone', async () => {
+    const pty = window.electron!.pty!;
+    let settle!: (clip: { kind: 'text'; text: string }) => void;
+    vi.mocked(pty.clipboardRead).mockReturnValue(
+      new Promise(resolve => {
+        settle = resolve;
+      })
+    );
+    const { view, terminal } = await mountedTerminal();
+    act(() => {
+      terminal.keyHandler!(
+        new KeyboardEvent('keydown', { key: 'v', metaKey: true })
+      );
+    });
+    view.unmount();
+    await act(async () => settle({ kind: 'text', text: 'late' }));
+    expect(pty.write).not.toHaveBeenCalled();
   });
 });

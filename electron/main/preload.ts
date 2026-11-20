@@ -207,7 +207,6 @@ const bridge = {
       invoke('pty:clone-context', durableSessionId),
     retainedTranscript: (durableSessionId, maxLines?) =>
       invoke('pty:retained-transcript', durableSessionId, maxLines),
-    pasteClipboard: id => invoke('pty:paste-clipboard', id),
     clipboardRead: () => invoke('pty:clipboard-read'),
     copyText: text => invoke('pty:copy-text', text),
     openExternal: url => invoke('pty:open-external', url),

@@ -366,7 +366,6 @@ await page.addInitScript(
           updatedAt: 1,
           corrupt: false,
         }),
-        pasteClipboard: async () => ({ ok: true }),
         copyText: async () => undefined,
         openExternal: async () => undefined,
         openPath: async () => undefined,
@@ -388,7 +387,7 @@ await page.addInitScript(
           }
           return true;
         },
-        clipboardRead: async () => ({ kind: 'empty' }),
+        clipboardRead: async () => ({ kind: 'empty', text: '' }),
         archiveSession: async entry => ({ ...entry, closedAt: 1 }),
         closedSessions: async () => [],
         reopenSession: async () => null,

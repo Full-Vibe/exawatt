@@ -20,7 +20,7 @@
  *   pnpm dev -p 7031
  *   EXA_BASE=http://localhost:7031 pnpm eval:electron:terminal
  */
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -517,15 +517,15 @@ await withElectronApp(
     await app.evaluate(({ clipboard, nativeImage }, dataUrl) => {
       clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
     }, onePixelPng);
-    const imagePaste = await page.evaluate(
-      async id => window.electron?.pty?.pasteClipboard(id),
-      sessionId
+    // every paste reads the clipboard through this one call (BUG-353)
+    const imagePaste = await page.evaluate(() =>
+      window.electron?.pty?.clipboardRead()
     );
     check(
       'image paste creates a private temporary file',
       imagePaste?.kind === 'image' &&
-        !!imagePaste.path &&
-        existsSync(imagePaste.path),
+        existsSync(imagePaste.text) &&
+        (statSync(imagePaste.text).mode & 0o777) === 0o600,
       JSON.stringify(imagePaste)
     );
 

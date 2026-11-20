@@ -1,8 +1,12 @@
 'use client';
 
-import { useRef, useState, type Ref } from 'react';
+import { useCallback, useRef, useState, type Ref } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  COMPOSER_PASTE_FAILED,
+  useComposerPaste,
+} from '@/hooks/use-composer-paste';
 import { useBackOut } from '@/lib/shortcuts/back-out';
 import { agentSourceIdentity } from '@/components/workspace/agent-source-identity';
 import { AgentSourceMark } from '@/components/workspace/agent-source-mark';
@@ -36,6 +40,19 @@ export function DirectComposer({
 }) {
   const [text, setText] = useState('');
   const formRef = useRef<HTMLFormElement>(null);
+  const field = useCallback(
+    () =>
+      formRef.current?.querySelector<HTMLTextAreaElement>(
+        '[data-direct-input]'
+      ) ?? null,
+    []
+  );
+  // Files and screenshots paste as paths the selected Agents can open
+  const clipboard = useComposerPaste({
+    value: text,
+    element: field,
+    onInsert: setText,
+  });
   useBackOut({
     rung: 'field',
     element: formRef,
@@ -46,7 +63,10 @@ export function DirectComposer({
     },
   });
   const canSend =
-    availability.kind === 'ready' && text.trim() !== '' && !sending;
+    availability.kind === 'ready' &&
+    text.trim() !== '' &&
+    !sending &&
+    !clipboard.pending;
   const submit = async () => {
     if (!canSend) return;
     if (await onSend(text)) setText('');
@@ -79,7 +99,9 @@ export function DirectComposer({
         data-direct-input
         className="min-h-0 resize-none text-sm"
         onChange={event => setText(event.target.value)}
+        onPaste={clipboard.onPaste}
         onKeyDown={event => {
+          if (clipboard.onKeyDown(event)) return;
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             void submit();
@@ -89,10 +111,15 @@ export function DirectComposer({
       <div className="flex items-center justify-between gap-2">
         {/* Where nothing can be sent, every recipient row already says why;
             the footnote stays the queue rule rather than a fourth copy. */}
-        <p className="min-w-0 text-chrome-micro text-muted-foreground">
-          {availability.kind === 'ready'
-            ? 'Busy Agents receive it when their turn ends.'
-            : null}
+        <p
+          role={clipboard.failed ? 'status' : undefined}
+          className="min-w-0 text-chrome-micro text-muted-foreground"
+        >
+          {clipboard.failed
+            ? COMPOSER_PASTE_FAILED
+            : availability.kind === 'ready'
+              ? 'Busy Agents receive it when their turn ends.'
+              : null}
         </p>
         <Button
           type="submit"

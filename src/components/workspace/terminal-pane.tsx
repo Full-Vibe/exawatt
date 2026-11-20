@@ -42,6 +42,10 @@ import {
 } from './terminal-targets';
 import { matchTerminalChord } from './terminal-chords';
 import {
+  createTerminalInputOrder,
+  terminalPasteText,
+} from './terminal-input-order';
+import {
   XTERM_MINIMUM_CONTRAST_RATIO,
   xtermThemeForAppearance,
 } from './terminal-theme';
@@ -108,6 +112,7 @@ export function TerminalPane({
     focus(): void;
     fit(): void;
     copySelection(): void;
+    paste(): void;
     selectAll(): void;
     applyFont(font: EffectiveTerminalFont): void;
     applyTheme(theme: Readonly<ITheme>): void;
@@ -182,7 +187,7 @@ export function TerminalPane({
       registerTerminalCommandHandle(sessionId, {
         copySelection: () => termRef.current?.copySelection(),
         paste: () => {
-          void window.electron?.pty?.pasteClipboard(sessionId);
+          termRef.current?.paste();
         },
         selectAll: () => termRef.current?.selectAll(),
         openLink: link => openTargetFromTerminal(link),
@@ -322,6 +327,26 @@ export function TerminalPane({
         markOperatorInput();
       };
       const onTerminalPointerDown = () => markOperatorInput();
+      // Everything xterm sends to the PTY goes through one line, so keys
+      // pressed while a paste reads the clipboard follow the paste.
+      const input = createTerminalInputOrder((data, operatorEngaged) => {
+        void api.write(sessionId, data, operatorEngaged);
+      });
+      // paste is ONE verb with ONE implementation (D28): ⌘V, Edit ▸ Paste and
+      // the menu's Paste all read the clipboard in main, which turns copied
+      // files and image data into paths (BUG-353), then hand the text to
+      // xterm's own paste. xterm brackets it when the program has bracketed
+      // paste on and sends newlines as Return, as a real terminal does. Its
+      // data event fires synchronously, so the mark labels it operator input.
+      const paste = () =>
+        input.paste(
+          async () => (await api.clipboardRead()).text,
+          text => {
+            if (disposed) return;
+            markOperatorInput();
+            term.paste(terminalPasteText(text));
+          }
+        );
       el.addEventListener('keydown', onTerminalKeyDown, true);
       el.addEventListener('pointerdown', onTerminalPointerDown, true);
       cleanup.push(() => {
@@ -360,7 +385,7 @@ export function TerminalPane({
             break;
           }
           case 'paste':
-            void api.pasteClipboard(sessionId);
+            paste();
             break;
           case 'select-all':
             term.selectAll();
@@ -368,14 +393,12 @@ export function TerminalPane({
         }
         return false;
       });
-      // paste is ONE verb with ONE implementation (D28): a menu-driven
-      // Edit ▸ Paste lands as a DOM paste event on xterm's textarea —
-      // capture it before xterm's text-only default and route it through
-      // the same image-aware main-process write as ⌘V
+      // a menu-driven Edit ▸ Paste lands as a DOM paste event on xterm's
+      // textarea: capture it before xterm's text-only default
       const onDomPaste = (event: Event) => {
         event.preventDefault();
         event.stopPropagation();
-        void api.pasteClipboard(sessionId);
+        paste();
       };
       el.addEventListener('paste', onDomPaste, true);
       cleanup.push(() => el.removeEventListener('paste', onDomPaste, true));
@@ -399,6 +422,7 @@ export function TerminalPane({
           const selection = term.getSelection();
           if (selection) void api.copyText(selection);
         },
+        paste,
         selectAll: () => term.selectAll(),
         applyFont: next => {
           term.options.fontFamily = next.family;
@@ -499,14 +523,14 @@ export function TerminalPane({
 
       // the exit marker arrives through the data stream (the session manager
       // appends it to the buffer too, so replays after a fast death show it)
-      const input = term.onData(data => {
+      const typed = term.onData(data => {
         const operatorEngaged = operatorInputPending;
         operatorInputPending = false;
         if (operatorInputTimer) clearTimeout(operatorInputTimer);
         operatorInputTimer = null;
-        void api.write(sessionId, data, operatorEngaged);
+        input.send(data, operatorEngaged);
       });
-      cleanup.push(() => input.dispose());
+      cleanup.push(() => typed.dispose());
       cleanup.push(() => {
         if (operatorInputTimer) clearTimeout(operatorInputTimer);
       });

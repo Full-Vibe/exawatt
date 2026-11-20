@@ -424,13 +424,12 @@ export interface SessionCloneContext {
   partial: boolean;
 }
 
-export type ClipboardReadResult =
-  | { kind: 'image'; path: string | null }
-  | { kind: 'text' | 'empty'; text: string };
-
-export interface ClipboardPasteResult {
-  kind: 'image' | 'text' | 'empty';
-  path?: string;
+/** What a paste inserts. `files` are paths of files copied in Finder, `image`
+ * is the path of a temp file holding pasted image data, and `text` is the
+ * text itself. `text` is always exactly what to insert. */
+export interface ClipboardReadResult {
+  kind: 'files' | 'image' | 'text' | 'empty';
+  text: string;
 }
 
 /**

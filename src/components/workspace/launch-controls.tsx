@@ -103,7 +103,10 @@ import { AgentLauncher } from './launcher/agent-launcher';
 import { sourceCardStep } from '@/components/agent-sources/source-card';
 import { localAgentSourceDeclaration } from '@/generated/agent-source-declarations';
 import { launcherSourceLines } from './launcher/source-lines';
-import { useComposerClipboard } from './launcher/use-composer-clipboard';
+import {
+  COMPOSER_PASTE_FAILED,
+  useComposerPaste,
+} from '@/hooks/use-composer-paste';
 import {
   LaunchOptionsPanel,
   launchOptionsSummary,
@@ -383,9 +386,9 @@ export function AgentComposer({
     []
   );
   const recentRef = useRef<RecentConversationsHandle>(null);
-  const clipboard = useComposerClipboard({
+  const clipboard = useComposerPaste({
     scope: projectDir,
-    task,
+    value: task,
     element: taskElement,
     onInsert: nextTask => {
       setTask(nextTask);
@@ -1872,28 +1875,11 @@ export function AgentComposer({
       data-preferences-ready={preferencesReady}
       aria-busy={launching !== null}
       onPointerDownCapture={() => onUserInteractionRef.current?.()}
-      onPasteCapture={event => {
-        const hasImage = Array.from(event.clipboardData?.items ?? []).some(
-          item => item.kind === 'file' && item.type.startsWith('image/')
-        );
-        if (!hasImage) return;
-        event.preventDefault();
-        void clipboard.paste();
-      }}
+      onPasteCapture={clipboard.onPaste}
       onKeyDownCapture={event => {
         onUserInteractionRef.current?.();
         if (event.nativeEvent.isComposing) return;
-        if (
-          event.key === 'v' &&
-          event.ctrlKey &&
-          !event.metaKey &&
-          !event.altKey
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-          void clipboard.paste();
-          return;
-        }
+        if (clipboard.onKeyDown(event)) return;
         const taskNode = taskElement();
         if (event.target !== taskNode || task !== '') return;
         if (
@@ -2095,9 +2081,7 @@ export function AgentComposer({
           className="px-0.5 pt-1 font-mono text-chrome-meta"
           style={{ color: HUD.textDim }}
         >
-          {clipboard.failed
-            ? 'Could not read the clipboard. Try pasting again.'
-            : configurationMessage}
+          {clipboard.failed ? COMPOSER_PASTE_FAILED : configurationMessage}
         </p>
       )}
       {sourceActionMessage && (

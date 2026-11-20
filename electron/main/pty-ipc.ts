@@ -89,7 +89,7 @@ import { applyNativeAppearancePreference } from './appearance';
 import { listResumeCandidates } from './pty/resume-candidates';
 import { RecentConversationCatalog } from './pty/conversation-catalog';
 import {
-  clipboardInput,
+  readClipboard,
   cleanupClipboardImages,
   writeClipboardText,
 } from './clipboard-paste';
@@ -887,27 +887,9 @@ export function registerPtyIPC(
           : 2_000
       )
   );
-  // read-only clipboard for the composer (D24 image paste): an image
-  // saves to a temp file (same lifecycle as terminal pastes), text
-  // returns as-is — nothing is written to any PTY
-  handleTrusted('pty:clipboard-read', async () => {
-    const result = await clipboardInput();
-    return result.kind === 'image'
-      ? { kind: 'image' as const, path: result.path ?? null }
-      : { kind: result.kind, text: result.input };
-  });
-  handleTrusted('pty:paste-clipboard', async (_event, id: string) => {
-    const payload = await clipboardInput();
-    if (payload.input) {
-      // Paste is operator input too. Open a finished turn before writing so
-      // even a synchronous echo cannot be mistaken for passive redraw data.
-      contextSummarizer.noteInput(id, payload.input);
-      attentionMonitor.noteEngaged(id);
-      ptySessions.write(id, payload.input);
-      attentionMonitor.noteInput(id);
-    }
-    return { kind: payload.kind, path: payload.path };
-  });
+  // read-only clipboard for every paste (D24, D28, BUG-353): the terminal
+  // hands the text to xterm's own paste, the composer inserts it
+  handleTrusted('pty:clipboard-read', () => readClipboard());
   handleBounded('pty:copy-text', (_event, text) => {
     writeClipboardText(text);
   });

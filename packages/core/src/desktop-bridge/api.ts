@@ -189,9 +189,8 @@ interface DesktopPtyApi {
   /** The source's own conversation, bounded, for Clone. */
   cloneContext: BridgeInvoke<'pty:clone-context'>;
   retainedTranscript: BridgeInvoke<'pty:retained-transcript'>;
-  pasteClipboard: BridgeInvoke<'pty:paste-clipboard'>;
-  /** Composer paste (D24): reads the clipboard without touching any PTY;
-   *  images land as temp-file paths. */
+  /** Every paste's clipboard read (D24, D28, BUG-353): copied files and
+   *  image data arrive as paths, never touching any PTY. */
   clipboardRead: BridgeInvoke<'pty:clipboard-read'>;
   copyText: BridgeInvoke<'pty:copy-text'>;
   openExternal: BridgeInvoke<'pty:open-external'>;

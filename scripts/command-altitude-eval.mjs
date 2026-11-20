@@ -102,7 +102,7 @@ await page.addInitScript(() => {
         cursor: 0,
       }),
       bufferSince: async () => ({ data: '', cursor: 0 }),
-      pasteClipboard: async () => ({ ok: true }),
+      clipboardRead: async () => ({ kind: 'empty', text: '' }),
       copyText: async () => undefined,
       openExternal: async () => undefined,
       openPath: async () => undefined,
@@ -153,18 +153,20 @@ try {
     'Spatial altitude did not advertise its absolute shortcut'
   );
   const initialTabText = await page
-    .locator('[data-active="true"]')
+    .locator('[data-tab-id][data-active="true"]')
     .textContent();
   await page.keyboard.press('Meta+Shift+BracketLeft');
   await page.waitForFunction(
     previous =>
-      document.querySelector('[data-active="true"]')?.textContent !== previous,
+      document.querySelector('[data-tab-id][data-active="true"]')
+        ?.textContent !== previous,
     initialTabText
   );
   await page.keyboard.press('Meta+Shift+BracketRight');
   await page.waitForFunction(
     initial =>
-      document.querySelector('[data-active="true"]')?.textContent === initial,
+      document.querySelector('[data-tab-id][data-active="true"]')
+        ?.textContent === initial,
     initialTabText
   );
   await page.screenshot({
@@ -246,21 +248,21 @@ try {
     'Tab from the Team grid did not reach the dock tabs'
   );
   await page.keyboard.press('Escape');
-  await page
-    .locator('[data-expose-tile][data-selected="true"]')
-    .evaluate(
-      element =>
-        new Promise((resolve, reject) => {
-          const deadline = Date.now() + 2000;
-          const check = () => {
-            if (element === document.activeElement) resolve(true);
-            else if (Date.now() > deadline)
-              reject(new Error('Escape on a dock tab did not return to the tile'));
-            else requestAnimationFrame(check);
-          };
-          check();
-        })
-    );
+  await page.locator('[data-expose-tile][data-selected="true"]').evaluate(
+    element =>
+      new Promise((resolve, reject) => {
+        const deadline = Date.now() + 2000;
+        const check = () => {
+          if (element === document.activeElement) resolve(true);
+          else if (Date.now() > deadline)
+            reject(
+              new Error('Escape on a dock tab did not return to the tile')
+            );
+          else requestAnimationFrame(check);
+        };
+        check();
+      })
+  );
   requireState(
     new URL(page.url()).searchParams.get('view') === 'sessions',
     'Escape on a dock tab left Team instead of returning to the tiles'
@@ -320,7 +322,9 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForURL(url => !url.searchParams.has('view'));
   requireState(
-    (await page.locator('[data-active="true"]').textContent())?.includes(
+    (
+      await page.locator('[data-tab-id][data-active="true"]').textContent()
+    )?.includes(
       originText?.includes('Secondary navigation evaluation')
         ? 'Secondary navigation evaluation'
         : 'Navigation evaluation'
@@ -493,11 +497,11 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.locator('[data-open-agent-session="nav-eval-session"]').click();
   await page.waitForURL('**/workspace');
-  await page.locator('[data-active="true"]').waitFor();
+  await page.locator('[data-tab-id][data-active="true"]').waitFor();
   requireState(
-    (await page.locator('[data-active="true"]').textContent())?.includes(
-      'Navigation evaluation'
-    ),
+    (
+      await page.locator('[data-tab-id][data-active="true"]').textContent()
+    )?.includes('Navigation evaluation'),
     'Session handoff did not activate the selected PTY'
   );
   await page.locator('[data-command-altitude-level="spatial"]').click();

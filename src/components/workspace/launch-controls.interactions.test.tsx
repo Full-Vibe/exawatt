@@ -20,10 +20,10 @@ describe('Agent composer · interactions and drafts', () => {
   installComposerTestHarness();
 
   it('preserves typing while a clipboard image is being saved', async () => {
-    let resolveClipboard!: (clip: { kind: 'image'; path: string }) => void;
+    let resolveClipboard!: (clip: { kind: 'image'; text: string }) => void;
     window.electron!.pty!.clipboardRead = vi.fn(
       () =>
-        new Promise<{ kind: 'image'; path: string }>(resolve => {
+        new Promise<{ kind: 'image'; text: string }>(resolve => {
           resolveClipboard = resolve;
         })
     );
@@ -41,7 +41,7 @@ describe('Agent composer · interactions and drafts', () => {
     fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
     fireEvent.change(task, { target: { value: 'Review this diagram ' } });
     await act(async () =>
-      resolveClipboard({ kind: 'image', path: '/tmp/diagram.png' })
+      resolveClipboard({ kind: 'image', text: '/tmp/diagram.png' })
     );
     expect(task).toHaveValue('Review this diagram /tmp/diagram.png ');
     expect(
@@ -54,10 +54,10 @@ describe('Agent composer · interactions and drafts', () => {
   });
 
   it('discards a clipboard completion belonging to a previous Project', async () => {
-    let resolveClipboard!: (clip: { kind: 'image'; path: string }) => void;
+    let resolveClipboard!: (clip: { kind: 'image'; text: string }) => void;
     window.electron!.pty!.clipboardRead = vi.fn(
       () =>
-        new Promise<{ kind: 'image'; path: string }>(resolve => {
+        new Promise<{ kind: 'image'; text: string }>(resolve => {
           resolveClipboard = resolve;
         })
     );
@@ -84,7 +84,7 @@ describe('Agent composer · interactions and drafts', () => {
       />
     );
     await act(async () =>
-      resolveClipboard({ kind: 'image', path: '/tmp/first.png' })
+      resolveClipboard({ kind: 'image', text: '/tmp/first.png' })
     );
     expect(screen.getByLabelText('Initial task for the new Agent')).toHaveValue(
       'Second draft'
@@ -97,10 +97,10 @@ describe('Agent composer · interactions and drafts', () => {
   });
 
   it('retains both attachments when clipboard reads complete in one React batch', async () => {
-    const reads: Array<(clip: { kind: 'image'; path: string }) => void> = [];
+    const reads: Array<(clip: { kind: 'image'; text: string }) => void> = [];
     window.electron!.pty!.clipboardRead = vi.fn(
       () =>
-        new Promise<{ kind: 'image'; path: string }>(resolve =>
+        new Promise<{ kind: 'image'; text: string }>(resolve =>
           reads.push(resolve)
         )
     );
@@ -117,8 +117,8 @@ describe('Agent composer · interactions and drafts', () => {
     fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
     fireEvent.keyDown(task, { key: 'v', ctrlKey: true });
     await act(async () => {
-      reads[0]({ kind: 'image', path: '/tmp/first.png' });
-      reads[1]({ kind: 'image', path: '/tmp/second.png' });
+      reads[0]({ kind: 'image', text: '/tmp/first.png' });
+      reads[1]({ kind: 'image', text: '/tmp/second.png' });
     });
     expect(task).toHaveValue('/tmp/first.png /tmp/second.png ');
     expect(
@@ -129,10 +129,10 @@ describe('Agent composer · interactions and drafts', () => {
   });
 
   it('waits for requested attachments before launching without preventing typing', async () => {
-    let resolveClipboard!: (clip: { kind: 'image'; path: string }) => void;
+    let resolveClipboard!: (clip: { kind: 'image'; text: string }) => void;
     window.electron!.pty!.clipboardRead = vi.fn(
       () =>
-        new Promise<{ kind: 'image'; path: string }>(resolve => {
+        new Promise<{ kind: 'image'; text: string }>(resolve => {
           resolveClipboard = resolve;
         })
     );
@@ -152,7 +152,7 @@ describe('Agent composer · interactions and drafts', () => {
     fireEvent.keyDown(task, { key: 'Enter' });
     expect(onLaunch).not.toHaveBeenCalled();
     await act(async () =>
-      resolveClipboard({ kind: 'image', path: '/tmp/diagram.png' })
+      resolveClipboard({ kind: 'image', text: '/tmp/diagram.png' })
     );
     fireEvent.keyDown(task, { key: 'Enter' });
     await settled(() =>
@@ -186,7 +186,7 @@ describe('Agent composer · interactions and drafts', () => {
     ).toBeInTheDocument();
     window.electron!.pty!.clipboardRead = vi
       .fn()
-      .mockResolvedValue({ kind: 'image', path: '/tmp/retry.png' });
+      .mockResolvedValue({ kind: 'image', text: '/tmp/retry.png' });
     (task as HTMLTextAreaElement).setSelectionRange(
       'Keep this draft'.length,
       'Keep this draft'.length
@@ -201,10 +201,10 @@ describe('Agent composer · interactions and drafts', () => {
   });
 
   it('does not restore focus after the operator moves away during a paste', async () => {
-    let resolveClipboard!: (clip: { kind: 'image'; path: string }) => void;
+    let resolveClipboard!: (clip: { kind: 'image'; text: string }) => void;
     window.electron!.pty!.clipboardRead = vi.fn(
       () =>
-        new Promise<{ kind: 'image'; path: string }>(resolve => {
+        new Promise<{ kind: 'image'; text: string }>(resolve => {
           resolveClipboard = resolve;
         })
     );
@@ -222,12 +222,64 @@ describe('Agent composer · interactions and drafts', () => {
     const handle = setupDrawerHandle();
     handle.focus();
     await act(async () =>
-      resolveClipboard({ kind: 'image', path: '/tmp/diagram.png' })
+      resolveClipboard({ kind: 'image', text: '/tmp/diagram.png' })
     );
     await act(async () => {
       await new Promise(resolve => requestAnimationFrame(resolve));
     });
     expect(handle).toHaveFocus();
+  });
+
+  it('pastes files copied in Finder as their paths, whatever their type', async () => {
+    // What the page sees for a Finder copy: file items with names, no paths
+    window.electron!.pty!.clipboardRead = vi.fn(async () => ({
+      kind: 'files' as const,
+      text: "'/Users/user/Q3 report.pdf' /Users/user/notes.txt",
+    }));
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialTask="Summarize "
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+    await composerReady();
+    const task = screen.getByLabelText('Initial task for the new Agent');
+    (task as HTMLTextAreaElement).setSelectionRange(10, 10);
+    const pasted = fireEvent.paste(task, {
+      clipboardData: {
+        items: [
+          { kind: 'file', type: 'application/pdf' },
+          { kind: 'file', type: 'text/plain' },
+        ],
+      },
+    });
+    expect(pasted).toBe(false);
+    await settled(() =>
+      expect(task).toHaveValue(
+        "Summarize '/Users/user/Q3 report.pdf' /Users/user/notes.txt "
+      )
+    );
+  });
+
+  it('leaves a plain text paste to the textarea', async () => {
+    const clipboardRead = vi.fn();
+    window.electron!.pty!.clipboardRead = clipboardRead;
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        onLaunch={vi.fn(async () => true)}
+      />
+    );
+    await composerReady();
+    const pasted = fireEvent.paste(
+      screen.getByLabelText('Initial task for the new Agent'),
+      { clipboardData: { items: [{ kind: 'string', type: 'text/plain' }] } }
+    );
+    expect(pasted).toBe(true);
+    expect(clipboardRead).not.toHaveBeenCalled();
   });
 
   it('recovers the controls when a launch request rejects', async () => {
